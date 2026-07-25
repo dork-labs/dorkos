@@ -1,7 +1,12 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { useModels } from './use-models';
+import {
+  useSessionSettingsOverride,
+  useSessionSettingsOverridesStore,
+  type SessionSettingsOverride,
+} from './session-settings-overrides';
 // Same-slice import via the sibling module (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { deriveContextPercent } from '../lib/context-health';
@@ -27,7 +32,13 @@ export interface SessionStatusData {
 
 /**
  * Computes derived session status data from streaming events, API data, and
- * optimistic local overrides.
+ * optimistic overrides.
+ *
+ * Optimism is SHARED, not per-instance: the pending model / permission mode /
+ * effort / fast-mode live in {@link useSessionSettingsOverridesStore} keyed by
+ * session, so every component reading the same session sees a change in the same
+ * tick. Two surfaces reading one session can no longer disagree for the length of
+ * a PATCH round-trip.
  *
  * @param sessionId - The active session ID, or null when no session is selected.
  *   When null, the session query is disabled and no API requests are made.
@@ -53,11 +64,11 @@ export function useSessionStatus(
     runtime: runtime ?? undefined,
   });
 
-  // Optimistic local overrides (applied immediately on user action)
-  const [localModel, setLocalModel] = useState<string | null>(null);
-  const [localPermissionMode, setLocalPermissionMode] = useState<PermissionMode | null>(null);
-  const [localEffort, setLocalEffort] = useState<EffortLevel | null>(null);
-  const [localFastMode, setLocalFastMode] = useState<boolean | null>(null);
+  // Optimistic overrides (applied immediately on user action), shared per session
+  // so every reader of this session agrees on them.
+  const overrides = useSessionSettingsOverride(sessionId ?? '');
+  const applyOverrides = useSessionSettingsOverridesStore((s) => s.apply);
+  const clearOverrides = useSessionSettingsOverridesStore((s) => s.clear);
 
   const { data: session } = useQuery({
     queryKey: ['session', sessionId, selectedCwd],
@@ -75,7 +86,10 @@ export function useSessionStatus(
   // last value and would permanently shadow session?.model (the PATCH-confirmed value). Gate it
   // behind isStreaming so model changes via the dropdown are reflected immediately post-stream.
   const model =
-    localModel ?? (isStreaming ? streamingStatus?.model : null) ?? session?.model ?? defaultModel;
+    overrides.model ??
+    (isStreaming ? streamingStatus?.model : null) ??
+    session?.model ??
+    defaultModel;
 
   // Context: derive from ModelOption.contextWindow (no hardcoded map)
   const selectedModel = models?.find((m: ModelOption) => m.value === model);
@@ -83,11 +97,11 @@ export function useSessionStatus(
   const contextMaxTokens =
     streamingStatus?.contextMaxTokens ?? selectedModel?.contextWindow ?? null;
 
-  const effort = localEffort ?? session?.effort ?? null;
-  const fastMode = localFastMode ?? session?.fastMode ?? false;
+  const effort = overrides.effort ?? session?.effort ?? null;
+  const fastMode = overrides.fastMode ?? session?.fastMode ?? false;
 
   const statusData: SessionStatusData = {
-    permissionMode: localPermissionMode ?? session?.permissionMode ?? 'default',
+    permissionMode: overrides.permissionMode ?? session?.permissionMode ?? 'default',
     model,
     effort,
     fastMode,
@@ -102,11 +116,16 @@ export function useSessionStatus(
       // No-op when no session is active — the UI should only invoke this with a live session.
       if (!sessionId) return;
 
-      // Apply optimistic update immediately
-      if (opts.model) setLocalModel(opts.model);
-      if (opts.permissionMode) setLocalPermissionMode(opts.permissionMode);
-      if (opts.effort) setLocalEffort(opts.effort);
-      if (opts.fastMode !== undefined) setLocalFastMode(opts.fastMode);
+      // Apply optimistic update immediately, for every reader of this session.
+      // Held onto so the failure path can revert exactly these values — see the
+      // `clear` contract: reverting by KEY would clobber a later writer.
+      const applied: SessionSettingsOverride = {
+        ...(opts.model ? { model: opts.model } : {}),
+        ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+        ...(opts.effort ? { effort: opts.effort } : {}),
+        ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
+      };
+      applyOverrides(sessionId, applied);
 
       try {
         const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
@@ -126,42 +145,48 @@ export function useSessionStatus(
         // This eliminates the render gap between setQueryData and useQuery re-render.
         return updated;
       } catch (err) {
-        // Revert optimistic state on failure
+        // Revert our own optimistic state on failure — and only ours. If another
+        // surface applied a newer value to the same key while this request was in
+        // flight, that value is still pending and must survive this rollback.
         console.error('[useSessionStatus] updateSession failed for session', sessionId, err);
-        if (opts.model) setLocalModel(null);
-        if (opts.permissionMode) setLocalPermissionMode(null);
-        if (opts.effort) setLocalEffort(null);
-        if (opts.fastMode !== undefined) setLocalFastMode(null);
+        clearOverrides(sessionId, applied);
       }
     },
-    [transport, sessionId, selectedCwd, queryClient]
+    [transport, sessionId, selectedCwd, queryClient, applyOverrides, clearOverrides]
   );
 
-  // Convergence effect: clear optimistic overrides once server data confirms the value.
-  // This eliminates the render gap where localModel is null but session?.model is stale.
+  // Convergence effect: drop each optimistic override once server data confirms
+  // it. This eliminates the render gap where the override is gone but the query
+  // still holds the stale value. Idempotent across instances — `clear` returns
+  // the same state when there is nothing to drop, so several `useSessionStatus`
+  // instances running this effect notify the store at most once.
   useEffect(() => {
-    if (localModel !== null && session?.model === localModel) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing optimistic override once server confirms the value
-      setLocalModel(null);
+    if (!sessionId) return;
+    const converged: SessionSettingsOverride = {};
+    if (overrides.model !== undefined && session?.model === overrides.model) {
+      converged.model = overrides.model;
     }
-    if (localPermissionMode !== null && session?.permissionMode === localPermissionMode) {
-      setLocalPermissionMode(null);
+    if (
+      overrides.permissionMode !== undefined &&
+      session?.permissionMode === overrides.permissionMode
+    ) {
+      converged.permissionMode = overrides.permissionMode;
     }
-    if (localEffort !== null && session?.effort === localEffort) {
-      setLocalEffort(null);
+    if (overrides.effort !== undefined && session?.effort === overrides.effort) {
+      converged.effort = overrides.effort;
     }
-    if (localFastMode !== null && session?.fastMode === localFastMode) {
-      setLocalFastMode(null);
+    if (overrides.fastMode !== undefined && session?.fastMode === overrides.fastMode) {
+      converged.fastMode = overrides.fastMode;
     }
+    if (Object.keys(converged).length > 0) clearOverrides(sessionId, converged);
   }, [
+    sessionId,
     session?.model,
     session?.permissionMode,
     session?.effort,
     session?.fastMode,
-    localModel,
-    localPermissionMode,
-    localEffort,
-    localFastMode,
+    overrides,
+    clearOverrides,
   ]);
 
   return { ...statusData, updateSession };

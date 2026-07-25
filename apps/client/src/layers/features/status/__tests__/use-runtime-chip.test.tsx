@@ -44,7 +44,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-import { useRuntimeChip } from '../use-runtime-chip';
+import { useRuntimeChip } from '../model/use-runtime-chip';
 import { useAppStore } from '@/layers/shared/model';
 
 /** One useRuntimeChip consumer, exposing its resolved runtime + selection button. */

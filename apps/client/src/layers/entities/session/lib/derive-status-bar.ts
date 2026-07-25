@@ -9,14 +9,16 @@
  * inputs so they populate immediately, falling back to the legacy/derived values
  * only when the stream status has not yet hydrated.
  *
- * @module features/chat/model/stream/derive-status-bar
+ * @module entities/session/lib/derive-status-bar
  */
-import { deriveContextPercent } from '@/layers/entities/session';
+// Same-slice import via the sibling module (not the entities/session barrel) to
+// avoid a self-referential barrel import within this slice.
+import { deriveContextPercent } from './context-health';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { UsageStatus } from '@dorkos/shared/types';
 
-/** Cache-item inputs derived from a session status. */
-export interface CacheStatusInput {
+/** Cache-item inputs derived from a session status. Read via {@link StatusBarValues}. */
+interface CacheStatusInput {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   contextTokens?: number;

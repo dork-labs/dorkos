@@ -1,19 +1,13 @@
 import { useCallback, useState } from 'react';
-import { useShallow } from 'zustand/shallow';
 import type { SessionStatusEvent, ConnectionState, PermissionMode } from '@dorkos/shared/types';
 import { useAppStore } from '@/layers/shared/model';
 import {
   useSessionStatus,
   useSessionChatStore,
-  useSessionStreamStatus,
-  useSessionLastEventSeq,
-  useSessionQueue,
   useSubagents,
   useModels,
   useHasConfirmedAuto,
-  resolveDisplayContextPercent,
 } from '@/layers/entities/session';
-import { useConfig } from '@/layers/entities/config';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
 import {
   useCapabilitiesForRuntime,
@@ -27,18 +21,17 @@ import {
   UsageRevealPopover,
   useGitStatus,
   isGitStatusOk,
+  useRuntimeChip,
+  useSessionDiagnostics,
   useStatusBarPins,
   useSessionPopoverShortcut,
   useStatusBudget,
   gitPromotionState,
   selectPromotedItems,
   applyStatusBudget,
-  type SessionDiagnostics,
   type StatusPromotionContext,
 } from '@/layers/features/status';
-import { deriveStatusBarValues } from '../../model/stream/derive-status-bar';
 import { compactComposerGate } from '../../model/build-palette-commands';
-import { useRuntimeChip } from '../../model/status/use-runtime-chip';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { buildStatusItemNodes } from './status-item-nodes';
@@ -99,31 +92,14 @@ export function ChatStatusSection({
   const setEnableMessagePolling = useAppStore((s) => s.setEnableMessagePolling);
   const { pins } = useStatusBarPins();
 
-  // Snapshot-backed status (spec chat-stream-reconnection): populated immediately
-  // on cold mount / refresh from the `/events` snapshot, so the server-derived
-  // items (context %, cost, model, cache) no longer wait for the first live event.
-  const streamValues = deriveStatusBarValues(useSessionStreamStatus(sessionId));
-  // Rich context breakdown (categories) is not carried by the snapshot — its
-  // tooltip fills in on the first live event; the percent renders immediately.
-  const contextUsage = useSessionChatStore(
-    useCallback((s) => s.sessions[sessionId]?.contextUsage ?? null, [sessionId])
-  );
-  const legacyCacheStatus = useSessionChatStore(
-    useShallow((s) => {
-      const ss = s.sessions[sessionId]?.sessionStatus;
-      if (!ss?.cacheReadTokens && !ss?.cacheCreationTokens) return null;
-      return {
-        cacheReadTokens: ss.cacheReadTokens ?? 0,
-        cacheCreationTokens: ss.cacheCreationTokens ?? 0,
-        contextTokens: ss.contextTokens,
-      };
-    })
-  );
-  const cacheStatus = streamValues.cacheStatus ?? legacyCacheStatus;
-  // NOTE: `model` is intentionally NOT overridden from the snapshot. The snapshot
-  // carries the SDK-resolved model id, whereas the model picker + auto-mode gating
-  // key off the user-selectable option VALUE that `use-session-status` populates.
-  const usage = streamValues.usage;
+  // The one session snapshot, shared with the right panel's Session tab. Every
+  // value the Session panel shows comes from here; the line's own item inputs
+  // (below) are read separately because they are item PROPS, not diagnostics —
+  // and they resolve to the same values, since both paths read the same stores
+  // through the same selectors and the optimistic overrides are now shared.
+  const diagnostics = useSessionDiagnostics(sessionId);
+  const usage = diagnostics.usage;
+  const contextUsage = diagnostics.contextUsage;
   const usageRevealOpen = useUsageReveal((s) => s.open);
   const setUsageRevealOpen = useUsageReveal((s) => s.setOpen);
 
@@ -131,9 +107,6 @@ export function ChatStatusSection({
   const workspace = useWorkspaceForSession(status.cwd);
   const { data: subagents } = useSubagents(sessionId);
   const { data: runtimeCaps } = useRuntimeCapabilities();
-  const { data: serverConfig } = useConfig();
-  const lastEventSeq = useSessionLastEventSeq(sessionId);
-  const queueDepth = useSessionQueue(sessionId).length;
 
   // Per-model gating for the 'auto' permission mode, scoped by the chip runtime
   // so a pre-launch Codex session gates on Codex's models.
@@ -173,10 +146,7 @@ export function ChatStatusSection({
   // Same runtime-support gate the composer's `/compact` dispatch uses — the
   // inline compact action must never disagree with the palette.
   const compactIntent = compactComposerGate(activeCaps?.commandIntents, runtimeLabel);
-  const displayContextPercent = resolveDisplayContextPercent(
-    streamValues.contextPercent ?? status.contextPercent,
-    contextUsage
-  );
+  const displayContextPercent = diagnostics.contextPercent;
   const compaction = useCompactionChip({
     sessionId,
     percent: displayContextPercent,
@@ -248,30 +218,6 @@ export function ChatStatusSection({
     selectPromotedItems({ ctx: promotionContext, pins, nodes }),
     budget
   );
-
-  const diagnostics: SessionDiagnostics = {
-    sessionId,
-    cwd: status.cwd,
-    gitBranch: isGitStatusOk(gitStatus) ? gitStatus.branch : null,
-    gitDirty: isGitStatusOk(gitStatus) ? !gitStatus.clean : null,
-    runtime: runtimeChip.runtime,
-    model: runtimeChip.model ?? streamValues.model ?? status.model,
-    effort: status.effort ?? null,
-    permissionMode: status.permissionMode,
-    contextPercent: displayContextPercent,
-    cache: cacheStatus
-      ? {
-          readTokens: cacheStatus.cacheReadTokens,
-          creationTokens: cacheStatus.cacheCreationTokens,
-          contextTokens: cacheStatus.contextTokens,
-        }
-      : null,
-    usage,
-    connectionState: syncConnectionState,
-    lastEventSeq,
-    queueDepth,
-    clientVersion: serverConfig?.version ?? null,
-  };
 
   return (
     // `barRef` measures this block, whose width comes from the composer around it

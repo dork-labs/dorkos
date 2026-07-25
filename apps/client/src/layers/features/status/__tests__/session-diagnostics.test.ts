@@ -5,27 +5,17 @@ import {
   statusRowValue,
   type SessionDiagnostics,
 } from '../model/session-diagnostics';
+import { makeDiagnostics } from './session-diagnostics-fixture';
 
-/** A fully-populated session snapshot. */
+/** A fully-populated session snapshot, on a clean default branch. */
 function diagnostics(overrides: Partial<SessionDiagnostics> = {}): SessionDiagnostics {
-  return {
+  return makeDiagnostics({
     sessionId: 'session-1',
-    cwd: '/Users/dev/work/dorkos',
-    gitBranch: 'main',
-    gitDirty: false,
-    runtime: 'claude-code',
-    model: 'claude-opus-4-6',
-    effort: 'high',
-    permissionMode: 'plan',
+    git: { state: 'repo', branch: 'main', dirty: false },
     contextPercent: 78,
     cache: { readTokens: 9_000, creationTokens: 1_000, contextTokens: 12_000 },
-    usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
-    connectionState: 'connected',
-    lastEventSeq: 412,
-    queueDepth: 2,
-    clientVersion: '1.4.0',
     ...overrides,
-  };
+  });
 }
 
 describe('cacheHitPercent', () => {
@@ -50,11 +40,19 @@ describe('statusRowValue', () => {
   });
 
   it('flags a dirty working tree beside the branch', () => {
-    expect(statusRowValue('git', diagnostics({ gitDirty: true }))).toBe('main · changed');
+    const d = diagnostics({ git: { state: 'repo', branch: 'main', dirty: true } });
+    expect(statusRowValue('git', d)).toBe('main · changed');
   });
 
   it('says so plainly when the directory is not a repository', () => {
-    expect(statusRowValue('git', diagnostics({ gitBranch: null }))).toBe('No repo');
+    expect(statusRowValue('git', diagnostics({ git: { state: 'no-repo' } }))).toBe('No repo');
+  });
+
+  it('claims nothing at all while the git query has not answered', () => {
+    // The one wrong answer here is "No repo": it is a positive claim about a
+    // directory that may well be a checkout, asserted only because a request is
+    // still in flight.
+    expect(statusRowValue('git', diagnostics({ git: { state: 'unknown' } }))).toBeNull();
   });
 
   it('reports context as a fullness, not a bare number', () => {
@@ -121,10 +119,38 @@ describe('formatDiagnostics', () => {
 
   it('reports absent values as null rather than omitting them', () => {
     const parsed: Record<string, unknown> = JSON.parse(
-      formatDiagnostics(diagnostics({ cache: null, gitBranch: null, clientVersion: null }))
+      formatDiagnostics(diagnostics({ cache: null, clientVersion: null }))
     );
     expect(parsed.cache).toBeNull();
-    expect(parsed.git).toBeNull();
     expect(parsed.clientVersion).toBeNull();
+  });
+
+  it('carries the repository state as its own discriminated value', () => {
+    // "not asked yet" and "not a repository" are different bug reports, so the
+    // blob has to be able to say which one it was.
+    const unknown: Record<string, unknown> = JSON.parse(
+      formatDiagnostics(diagnostics({ git: { state: 'unknown' } }))
+    );
+    expect(unknown.git).toEqual({ state: 'unknown' });
+
+    const noRepo: Record<string, unknown> = JSON.parse(
+      formatDiagnostics(diagnostics({ git: { state: 'no-repo' } }))
+    );
+    expect(noRepo.git).toEqual({ state: 'no-repo' });
+  });
+
+  it('carries the server subagent count beside this client’s fold', () => {
+    // A disagreement between the two is the signal, so a blob that dropped either
+    // one would hide it.
+    const parsed: Record<string, unknown> = JSON.parse(
+      formatDiagnostics(
+        diagnostics({
+          activeSubagents: [{ taskId: 't1', status: 'running' }],
+          runningSubagentCount: 2,
+        })
+      )
+    );
+    expect(parsed.activeSubagents).toEqual([{ taskId: 't1', status: 'running' }]);
+    expect(parsed.runningSubagentCount).toBe(2);
   });
 });

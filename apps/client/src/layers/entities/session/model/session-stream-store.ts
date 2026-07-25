@@ -81,6 +81,14 @@ export interface SessionStreamState {
   pendingInteractions: PendingInteractionDTO[];
   /** Highest `seq` applied so far; the idempotency/gap-free watermark. */
   lastAppliedSeq: number;
+  /**
+   * `Date.now()` when this session last APPLIED a frame (snapshot or event), or
+   * `null` before the first hydration. Diagnostics-only: heartbeats and comment
+   * frames keep an SSE connection `connected` without advancing the projection,
+   * so a healthy connection paired with a long-stale timestamp is exactly the
+   * signature of a stream that has quietly stopped delivering.
+   */
+  lastEventAt: number | null;
   /** Cursor of the most recent snapshot, or `null` before first hydration. */
   streamReadyCursor: number | null;
   /** Connection state of this session's durable `/events` stream. */
@@ -115,6 +123,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   status: null,
   pendingInteractions: [],
   lastAppliedSeq: 0,
+  lastEventAt: null,
   streamReadyCursor: null,
   connectionState: 'connecting',
   triggerPending: false,
@@ -446,6 +455,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       break;
   }
   session.lastAppliedSeq = event.seq;
+  session.lastEventAt = Date.now();
 }
 
 /**
@@ -486,6 +496,7 @@ export const useSessionStreamStore: SessionStreamStore = create<
             session.pendingInteractions = snapshot.pendingInteractions;
             session.inProgressTurn = snapshot.inProgressTurn ?? [];
             session.lastAppliedSeq = snapshot.cursor;
+            session.lastEventAt = Date.now();
             session.streamReadyCursor = snapshot.cursor;
             // Marks every lifecycle value the snapshot carries as hydration, not
             // a live transition (the turn-end reconcile re-baselines on this).
@@ -696,6 +707,17 @@ export function useSessionStreamStatus(sessionId: string): SessionStatus | null 
   );
 }
 
+/**
+ * Granular selector: the server-projected lifecycle, or `undefined` before the
+ * first hydration. Subscribing to the discriminant alone (rather than the whole
+ * status object) keeps a readout from re-rendering on every token-count delta.
+ */
+export function useSessionStreamLifecycle(sessionId: string): SessionLifecycle | undefined {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.status?.lifecycle, [sessionId])
+  );
+}
+
 /** Granular selector: this session's durable-stream connection state. */
 export function useSessionStreamConnection(sessionId: string): ConnectionState {
   return useSessionStreamStore(
@@ -711,6 +733,53 @@ export function useSessionStreamConnection(sessionId: string): ConnectionState {
 export function useSessionLastEventSeq(sessionId: string): number {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId]?.lastAppliedSeq ?? 0, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: when this session last applied a frame, or `null` before
+ * the first hydration. Pairs with {@link useSessionStreamConnection} — see
+ * {@link SessionStreamState.lastEventAt} for why "connected but silent" matters.
+ */
+export function useSessionLastEventAt(sessionId: string): number | null {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.lastEventAt ?? null, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: the cursor of the most recent snapshot this session
+ * hydrated from — the point live replay resumed at. `null` before the first
+ * hydration. Diagnostics-only: read beside `lastAppliedSeq` it says whether the
+ * client has advanced at all since it (re)connected.
+ */
+export function useSessionSnapshotCursor(sessionId: string): number | null {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.streamReadyCursor ?? null, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: whether a turn trigger is in flight for this session (the
+ * POST has been sent, the server's `turn_start` has not arrived). A latch stuck
+ * on is a stalled trigger, which is why the readout shows it.
+ */
+export function useSessionTriggerPending(sessionId: string): boolean {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.triggerPending ?? false, [sessionId])
+  );
+}
+
+/** Stable empty turn so unknown sessions return a referentially-stable value. */
+const EMPTY_TURN: SessionEvent[] = [];
+
+/**
+ * Granular selector: the events of the turn in progress, empty when the session
+ * is idle. Consumed by the session readout's live subagent fold.
+ */
+export function useSessionInProgressTurn(sessionId: string): SessionEvent[] {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.inProgressTurn ?? EMPTY_TURN, [sessionId])
   );
 }
 

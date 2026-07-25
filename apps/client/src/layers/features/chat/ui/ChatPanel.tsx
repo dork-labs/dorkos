@@ -9,7 +9,7 @@ import { useScrollOverlay } from '../model/view/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
 import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
-import { useRuntimeChip } from '../model/status/use-runtime-chip';
+import { useRuntimeChip } from '@/layers/features/status';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';

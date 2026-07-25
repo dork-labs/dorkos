@@ -9,13 +9,7 @@ import {
   CONTEXT_ACTION_PERCENT,
 } from '@/layers/entities/session';
 import type { ContextUsage } from '@dorkos/shared/types';
-
-/** Format a token count as a compact human-readable string (e.g. 42.1k, 200k). */
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
-  return String(tokens);
-}
+import { formatTokens } from '../lib/format-tokens';
 
 /** The one-click compaction action offered when the window is nearly full. */
 export interface ContextCompactAction {

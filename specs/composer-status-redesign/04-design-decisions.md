@@ -19,6 +19,8 @@ Work item: DOR-452
 **Options:** A) Popover on the `⋯`, absorbing the configure panel. B) Unfold in place — the line expands downward into a grid. C) Popover for humans + a right-panel Session tab for debugging.
 **Chosen:** **A.** The popover absorbs `StatusBarConfigurePopover` entirely rather than sitting beside it — one surface answering both "what is everything doing?" and "what do I want pinned?". C's right-panel tab is deferred to keep scope honest; the popover carries the diagnostics rows and Copy diagnostics, which covers the debugging need.
 
+**Revisited in DOR-460 — C shipped too, and A stayed.** Deferring the tab was right for scope but wrong on the merits: a popover closes when focus returns to the composer, so it cannot serve someone watching a stuck stream, and forcing both audiences into one container makes it wrong for one of them. The tab is now the roomier readout (full cwd, resolved model id **and** the selected option, stream cursors, time since the last event, cache split, context breakdown, live subagents); the popover stays the two-second peek with the pins. The constraint that keeps them honest is one shared `useSessionDiagnostics` — a second, independent read would have been a bug waiting to happen, and getting there required moving `useSessionStatus`'s optimistic overrides out of component state into a per-session store. Pinning was deliberately **not** duplicated into the tab: pins promote an item into the line, and the feedback for that lives beside the line.
+
 **Pins replace toggles.** Any row can be pinned to override its promotion rule. One verb that means something, versus ten booleans that only ever subtract.
 
 ## 3. Alignment

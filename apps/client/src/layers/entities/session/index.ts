@@ -19,12 +19,19 @@ export {
   resolveDisplayContextPercent,
 } from './lib/context-health';
 export type { ContextSeverity } from './lib/context-health';
+export { deriveStatusBarValues } from './lib/derive-status-bar';
+export { selectRenderedStatus } from './lib/select-rendered-status';
+export { useSessionRenderedStatus } from './model/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
 export { useSessionRuntime } from './model/use-session-runtime';
 export { useSessionId } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
 export { useSessionStatus } from './model/use-session-status';
 export type { SessionStatusData } from './model/use-session-status';
+// The store itself is published (tests reset it between cases); the per-session
+// selector and its types stay slice-private — `useSessionStatus` is the only
+// legitimate reader of a pending change.
+export { useSessionSettingsOverridesStore } from './model/session-settings-overrides';
 export { useDefaultCwd } from './model/use-default-cwd';
 export { useDirectoryState } from './model/use-directory-state';
 export type { SetDirOptions } from './model/use-directory-state';
@@ -45,8 +52,13 @@ export {
   useSessionStreamStore,
   useSessionStreamState,
   useSessionStreamStatus,
+  useSessionStreamLifecycle,
   useSessionStreamConnection,
   useSessionLastEventSeq,
+  useSessionLastEventAt,
+  useSessionSnapshotCursor,
+  useSessionTriggerPending,
+  useSessionInProgressTurn,
   useSessionQueue,
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/session-stream-store';

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { Pin, PinOff, ClipboardCopy, RotateCcw, MoreHorizontal } from 'lucide-react';
-import { toast } from 'sonner';
+import { Pin, PinOff, RotateCcw, MoreHorizontal } from 'lucide-react';
 import {
   ResponsivePopover,
   ResponsivePopoverTrigger,
@@ -23,11 +22,8 @@ import {
   type StatusBarItemKey,
   type StatusPromotionContext,
 } from '../model/status-bar-registry';
-import {
-  formatDiagnostics,
-  statusRowValue,
-  type SessionDiagnostics,
-} from '../model/session-diagnostics';
+import { statusRowValue, type SessionDiagnostics } from '../model/session-diagnostics';
+import { CopyDiagnosticsButton } from './CopyDiagnosticsButton';
 
 /** The two settings that live in the panel rather than the line. */
 export interface SessionControls {
@@ -105,11 +101,6 @@ export function SessionPopover({
   // can be asked the question without narrowing its key first.
   const pinned = new Set<string>(pins);
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(formatDiagnostics(diagnostics));
-    toast.success('Diagnostics copied to your clipboard');
-  };
-
   const hidden = overflowCount > 0;
 
   return (
@@ -179,10 +170,7 @@ export function SessionPopover({
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-2">
-          <Button variant="ghost" size="sm" className="gap-1.5 text-xs" onClick={handleCopy}>
-            <ClipboardCopy className="size-3.5" aria-hidden />
-            Copy diagnostics
-          </Button>
+          <CopyDiagnosticsButton diagnostics={diagnostics} />
           <Button
             variant="ghost"
             size="sm"

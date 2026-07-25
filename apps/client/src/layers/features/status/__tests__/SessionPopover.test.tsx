@@ -14,6 +14,7 @@ import { configKeys } from '@/layers/entities/config';
 import { SessionPopover } from '../ui/SessionPopover';
 import type { SessionDiagnostics } from '../model/session-diagnostics';
 import type { StatusPromotionContext } from '../model/status-bar-registry';
+import { makeDiagnostics } from './session-diagnostics-fixture';
 
 const toastSuccess = vi.fn();
 vi.mock('sonner', () => ({ toast: { success: (m: string) => toastSuccess(m) } }));
@@ -26,24 +27,7 @@ Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurab
 
 /** A fully-populated session snapshot. */
 function diagnostics(overrides: Partial<SessionDiagnostics> = {}): SessionDiagnostics {
-  return {
-    sessionId: 'session-42',
-    cwd: '/Users/dev/work/dorkos',
-    gitBranch: 'dor-452',
-    gitDirty: true,
-    runtime: 'claude-code',
-    model: 'claude-opus-4-6',
-    effort: 'high',
-    permissionMode: 'plan',
-    contextPercent: 88,
-    cache: { readTokens: 3, creationTokens: 1 },
-    usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
-    connectionState: 'connected',
-    lastEventSeq: 412,
-    queueDepth: 2,
-    clientVersion: '1.4.0',
-    ...overrides,
-  };
+  return makeDiagnostics(overrides);
 }
 
 /** Live state whose severity ranking orders the rows on a phone. */
