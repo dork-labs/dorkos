@@ -13,12 +13,14 @@ import type { ModelOption } from '@dorkos/shared/types';
 import { STATUS_VALUE_MAX_CHARS } from '@dorkos/shared/constants';
 import { formatModelLabel } from '@/layers/entities/runtime';
 
-// The bound itself lives in `@dorkos/shared/constants`, not here: every label
-// DorkOS writes is expected to fit it outright (`Reconnecting`, `Accept Edits`,
-// `Claude Code`, `GPT-5.3 Codex`), and that promise is only worth anything if the
-// server's own model catalogs can be held to the same number. Pixels stay the
-// browser's job — see `features/status/ui/StatusLine`, where a value that still
-// does not fit truncates with an ellipsis.
+// The bound itself lives in `@dorkos/shared/constants`, not here: the names
+// DorkOS's own catalogs and runtime descriptors carry are held to it by test
+// (`Claude Code`, `GPT-5.3 Codex`), and that promise is only worth anything if the
+// server's own model catalogs can be held to the same number. Labels written
+// elsewhere are not all inside it — `Bypass permissions` (18) and `Connection lost`
+// (15) both ship — so pixels stay the browser's job: see
+// `features/status/ui/StatusLine`, where a value that still does not fit truncates
+// with an ellipsis.
 
 /**
  * Bound a status value to {@link STATUS_VALUE_MAX_CHARS}, marking the cut.

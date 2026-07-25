@@ -94,12 +94,22 @@ capability flag.
 
 Several strings an adapter declares surface in the composer's status line, and that
 line's width budget **counts slots, not pixels** — an assumption that only holds
-while every slot is about one size. So each value is bounded to
-`STATUS_VALUE_MAX_CHARS` (`packages/shared/src/constants.ts`, currently **13**)
-before it is drawn. `13` is the width of the longest first-party name shipped today
-(`GPT-5.3 Codex`). The constant lives in `shared` rather than the client precisely
-because it is a **contract with runtime authors**, not a private UI detail: the
-server's own tests are held to it.
+while every slot is about one size. `STATUS_VALUE_MAX_CHARS`
+(`packages/shared/src/constants.ts`, currently **13**) is the width one slot is
+priced at. The constant lives in `shared` rather than the client precisely because
+it is a **contract with runtime authors**, not a private UI detail: the server's own
+tests are held to it.
+
+**Where the bound is actually applied is narrower than the price list.** Below the
+line's widest density tier every item drops its verbose parts and its value is cut to
+the bound. At the widest tier — a bar of 640px or more — only the model item is cut;
+a permission-mode label is drawn whole, and the row's own CSS truncation is all that
+stops it. That truncation fires when the whole row overflows, so an overlong label
+takes width from its neighbours instead of capping itself.
+
+`13` is the width of the longest name in the two places that _are_ asserted: the
+`CODEX_MODELS` catalog (`GPT-5.3 Codex`) and the client's runtime descriptors
+(`Claude Code`).
 
 The split that matters is authorship, not length:
 
@@ -107,12 +117,20 @@ The split that matters is authorship, not length:
 | -------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `displayName` in a **static, hand-written** model catalog (`CODEX_MODELS`)                                           | Must fit outright         | `apps/server/src/services/runtimes/__tests__/model-catalog-labels.test.ts`                                                                  |
 | `RuntimeDescriptor.label` (step 8)                                                                                   | Must fit outright         | `apps/client/src/layers/features/status/__tests__/status-labels.test.ts` (`describe('the compactness invariant the slot budget rests on')`) |
-| `permissionModes.values[].label`                                                                                     | Should fit outright       | Not asserted; truncated at render like any other overlong value                                                                             |
+| `permissionModes.values[].label`                                                                                     | Keep it short             | Nothing. Cut to the bound below the widest tier; drawn whole at the widest                                                                  |
 | Any name your adapter merely **relays** from a third party — a provider's model display name from OpenCode's catalog | Truncated, never rejected | `compactStatusValue` (`apps/client/src/layers/features/status/lib/status-labels.ts`)                                                        |
+
+**Shipped permission labels already overshoot, so do not read them as a licence.**
+`'Bypass permissions'` (18 characters) ships in both `claude-code` and `opencode`,
+and `'Workspace write'` (15) in `codex`. Below the widest tier they are cut and the
+slot budget holds; at the widest tier they are drawn in full, which is more width
+than the budget charged for them. The gap between what a slot is priced at and what
+the widest tier draws is tracked as DOR-461 — not something a new adapter should add
+to.
 
 **Relayed strings are cut, not rejected — deliberately.** DorkOS does not control
 what a third-party provider calls its model, and failing a session because a
-provider chose a verbose name would be the wrong trade. A first-party catalog is
+provider chose a verbose name would be the wrong trade. A static catalog is
 different: DorkOS wrote it, so it can be held to the bound, and a shipped
 `GPT-5.3 Cod…` on a wide desktop is a bug in the number rather than a budget doing
 its job (DOR-452).
