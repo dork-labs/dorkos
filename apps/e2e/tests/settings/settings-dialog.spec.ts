@@ -22,10 +22,10 @@ test.describe('Settings — Dialog @smoke', () => {
     await expect(settingsPage.dialog).toBeHidden();
   });
 
-  test('has all four tabs', async ({ settingsPage }) => {
+  test('has its core tabs', async ({ settingsPage }) => {
     await settingsPage.open();
 
-    const tabs = ['Appearance', 'Preferences', 'Status Bar', 'Server'];
+    const tabs = ['Appearance', 'Preferences', 'Server'];
     for (const tabName of tabs) {
       await expect(settingsPage.tab(tabName)).toBeVisible();
     }
@@ -37,9 +37,6 @@ test.describe('Settings — Dialog @smoke', () => {
     await settingsPage.switchTab('Preferences');
     await expect(settingsPage.tab('Preferences')).toHaveAttribute('aria-selected', 'true');
     await expect(settingsPage.activePanel).toBeVisible();
-
-    await settingsPage.switchTab('Status Bar');
-    await expect(settingsPage.tab('Status Bar')).toHaveAttribute('aria-selected', 'true');
 
     await settingsPage.switchTab('Server');
     await expect(settingsPage.tab('Server')).toHaveAttribute('aria-selected', 'true');
@@ -71,16 +68,11 @@ test.describe('Settings — Dialog @smoke', () => {
     await expect(settingsPage.activePanel.getByText('Notification sound')).toBeVisible();
   });
 
-  test('Status Bar tab shows toggle switches', async ({ settingsPage }) => {
+  // What the status line shows is no longer a Settings concern: items promote when
+  // they are actionable, and pins live in the Session panel beside each live value.
+  test('has no Status Bar tab', async ({ settingsPage }) => {
     await settingsPage.open();
-    await settingsPage.switchTab('Status Bar');
-
-    // Should have 8 status bar switches
-    const switchCount = await settingsPage.switches.count();
-    expect(switchCount).toBe(8);
-
-    await expect(settingsPage.activePanel.getByText('Show directory')).toBeVisible();
-    await expect(settingsPage.activePanel.getByText('Show git status')).toBeVisible();
+    await expect(settingsPage.tab('Status Bar')).toHaveCount(0);
   });
 
   test('Server tab shows server info', async ({ settingsPage }) => {

@@ -6,7 +6,6 @@
 export { ChatStatusSection } from './ChatStatusSection';
 export { ChatStatusStrip, deriveStripState } from './ChatStatusStrip';
 export type { StripState } from './ChatStatusStrip';
-export { CompactionChip } from './CompactionChip';
 export { DragHandle } from './DragHandle';
 export { TerminalReasonChip } from './TerminalReasonChip';
 export { TurnFailedNotice } from './TurnFailedNotice';

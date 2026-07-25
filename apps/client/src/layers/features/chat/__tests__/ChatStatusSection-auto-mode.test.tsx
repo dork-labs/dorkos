@@ -77,6 +77,11 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
+      // `default` permissions are quiet by design; this suite drives the auto-mode
+      // confirmation from that item, so pin it into the line.
+      statusBarPins: ['permission'],
+      toggleStatusBarPin: vi.fn(),
+      resetStatusBarPins: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -89,7 +94,7 @@ vi.mock('@/layers/shared/model/app-store', () => ({
 // Mock PermissionModeItem so we can drive its onChangeMode directly without
 // the dropdown internals. Render a button that selects 'auto'.
 // The identity chip needs a router; it is not part of the status line under test.
-vi.mock('../ui/input/AgentIdentityChip', () => ({
+vi.mock('../ui/status/AgentIdentityChip', () => ({
   AgentIdentityChip: () => null,
 }));
 
@@ -97,14 +102,12 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/features/status')>();
   return {
     ...actual,
-    StatusLine: Object.assign(
-      ({ children }: { children: React.ReactNode }) => (
-        <div data-testid="status-line">{children}</div>
-      ),
-      {
-        Item: ({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
-          visible ? <div>{children}</div> : null,
-      }
+    StatusLine: ({ items }: { items: { key: string; node: React.ReactNode }[] }) => (
+      <div data-testid="status-line">
+        {items.map((item) => (
+          <div key={item.key}>{item.node}</div>
+        ))}
+      </div>
     ),
     CwdItem: () => null,
     GitStatusItem: () => null,
@@ -114,35 +117,12 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
       </button>
     ),
     ModelConfigPopover: () => null,
-    CacheItem: () => null,
     ContextItem: () => null,
     UsageStatusItem: () => null,
-    NotificationSoundItem: () => null,
-    PollingItem: () => null,
     ConnectionItem: () => null,
     SubagentsItem: () => null,
-    StatusBarConfigurePopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    SessionPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
-    STATUS_BAR_REGISTRY: actual.STATUS_BAR_REGISTRY,
-    // Status-bar visibility lives in server config (DOR-431). Only the
-    // permission item is shown; this suite drives its onChangeMode.
-    useStatusBarPrefs: () => ({
-      cwd: false,
-      git: false,
-      runtime: false,
-      model: false,
-      cache: false,
-      context: false,
-      usage: false,
-      permission: true,
-      sound: false,
-      polling: false,
-    }),
-    useUpdateStatusBarPrefs: () => ({
-      setVisibility: vi.fn(),
-      reset: vi.fn(),
-      isPending: false,
-    }),
   };
 });
 

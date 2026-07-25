@@ -2,8 +2,6 @@ import { Wifi, WifiOff } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { ConnectionState } from '@dorkos/shared/types';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/layers/shared/ui';
-import { SSE_RESILIENCE } from '@/layers/shared/lib';
-import { StatusLine } from './StatusLine';
 
 const STATE_CONFIG: Record<
   ConnectionState,
@@ -17,47 +15,43 @@ const STATE_CONFIG: Record<
 
 interface ConnectionItemProps {
   connectionState: ConnectionState;
-  failedAttempts?: number;
 }
 
-/** StatusLine item showing live-sync connection health. Only visible when NOT connected. */
-export function ConnectionItem({ connectionState, failedAttempts }: ConnectionItemProps) {
-  const visible = connectionState !== 'connected';
+/**
+ * Status line item showing live-sync connection health. The registry decides when
+ * it shows (only when the link is not connected); this component only draws it.
+ *
+ * @param props - The session's live-sync connection state.
+ */
+export function ConnectionItem({ connectionState }: ConnectionItemProps) {
   const config = STATE_CONFIG[connectionState];
   const Icon = config.icon;
 
-  const shortLabel =
-    failedAttempts && connectionState === 'reconnecting'
-      ? `Reconnecting (${failedAttempts}/${SSE_RESILIENCE.DISCONNECTED_THRESHOLD})`
-      : config.label;
-
   return (
-    <StatusLine.Item itemKey="connection" visible={visible}>
-      <HoverCard openDelay={200}>
-        <HoverCardTrigger asChild>
-          <span className="flex cursor-default items-center gap-1.5 text-xs" role="status">
-            <span
-              className={cn('size-1.5 rounded-full', config.color, config.tasks && 'animate-tasks')}
-            />
-            <span className="text-muted-foreground">{shortLabel}</span>
-          </span>
-        </HoverCardTrigger>
-        <HoverCardContent side="top" align="center" className="w-72 p-3">
-          <div className="flex items-start gap-2.5">
-            <Icon
-              className={cn(
-                'mt-0.5 size-4 shrink-0',
-                connectionState === 'disconnected' ? 'text-red-500' : 'text-amber-500'
-              )}
-            />
-            <div className="min-w-0 space-y-1.5">
-              <p className="text-sm font-medium">{shortLabel}</p>
-              <HoverDescription connectionState={connectionState} />
-            </div>
+    <HoverCard openDelay={200}>
+      <HoverCardTrigger asChild>
+        <span className="flex cursor-default items-center gap-1.5 text-xs" role="status">
+          <span
+            className={cn('size-1.5 rounded-full', config.color, config.tasks && 'animate-tasks')}
+          />
+          <span className="text-muted-foreground">{config.label}</span>
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent side="top" align="center" className="w-72 p-3">
+        <div className="flex items-start gap-2.5">
+          <Icon
+            className={cn(
+              'mt-0.5 size-4 shrink-0',
+              connectionState === 'disconnected' ? 'text-red-500' : 'text-amber-500'
+            )}
+          />
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-sm font-medium">{config.label}</p>
+            <HoverDescription connectionState={connectionState} />
           </div>
-        </HoverCardContent>
-      </HoverCard>
-    </StatusLine.Item>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 

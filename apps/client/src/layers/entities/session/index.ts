@@ -12,6 +12,8 @@ export type { SwitchAgentCwdStore, SwitchAgentCwdDeps } from './lib/switch-agent
 export {
   CONTEXT_WARNING_PERCENT,
   CONTEXT_CRITICAL_PERCENT,
+  CONTEXT_PROMOTE_PERCENT,
+  CONTEXT_ACTION_PERCENT,
   contextSeverity,
   deriveContextPercent,
   resolveDisplayContextPercent,
@@ -44,6 +46,7 @@ export {
   useSessionStreamState,
   useSessionStreamStatus,
   useSessionStreamConnection,
+  useSessionLastEventSeq,
   useSessionQueue,
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/session-stream-store';

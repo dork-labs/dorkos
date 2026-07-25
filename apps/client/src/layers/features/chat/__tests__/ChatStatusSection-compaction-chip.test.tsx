@@ -26,16 +26,16 @@ vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) =
   useSessions: () => ({ sessions: [], isLoading: false }) as never,
 }));
 
-// A DELIBERATELY DIVERGENT coarse estimate (90) vs the SDK breakdown's 82.4:
-// both surfaces must prefer the SDK percentage, so any edit that changes one
-// derivation and not the other makes the two rendered numbers differ.
+// A DELIBERATELY DIVERGENT coarse estimate (99) vs the SDK breakdown's 88.4:
+// both the badge and the inline action must prefer the SDK percentage, so any edit
+// that changes one derivation and not the other makes the two numbers differ.
 vi.mock('@/layers/entities/session/model/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: 'default',
     cwd: '/test/dir',
     model: 'default',
     costUsd: null,
-    contextPercent: 90,
+    contextPercent: 99,
     updateSession: vi.fn(),
   }),
 }));
@@ -58,6 +58,9 @@ vi.mock('@/layers/shared/model/app-store', () => ({
     const state: Record<string, unknown> = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
+      statusBarPins: [],
+      toggleStatusBarPin: vi.fn(),
+      resetStatusBarPins: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -90,7 +93,7 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
 });
 
 // The identity chip needs a router; it is not part of the status line under test.
-vi.mock('../ui/input/AgentIdentityChip', () => ({
+vi.mock('../ui/status/AgentIdentityChip', () => ({
   AgentIdentityChip: () => null,
 }));
 
@@ -99,34 +102,15 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
   return {
     ...actual,
     // Keep the real ContextItem — its rendered percent is one side of the assert.
-    StatusLine: Object.assign(
-      ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-      {
-        Item: ({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
-          visible ? <div>{children}</div> : null,
-      }
+    StatusLine: ({ items }: { items: { key: string; node: React.ReactNode }[] }) => (
+      <div>
+        {items.map((item) => (
+          <div key={item.key}>{item.node}</div>
+        ))}
+      </div>
     ),
+    SessionPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
-    StatusBarConfigurePopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    // Status-bar visibility lives in server config (DOR-431). Only the context
-    // item is shown; this suite asserts its rendered percent.
-    useStatusBarPrefs: () => ({
-      cwd: false,
-      git: false,
-      runtime: false,
-      model: false,
-      cache: false,
-      context: true,
-      usage: false,
-      permission: false,
-      sound: false,
-      polling: false,
-    }),
-    useUpdateStatusBarPrefs: () => ({
-      setVisibility: vi.fn(),
-      reset: vi.fn(),
-      isPending: false,
-    }),
     ConnectionItem: () => null,
     SubagentsItem: () => null,
   };
@@ -148,11 +132,11 @@ const props = {
   syncConnectionState: 'connected' as const,
 };
 
-/** An SDK breakdown whose percentage (82.4) rounds differently from the coarse 90. */
+/** An SDK breakdown whose percentage (88.4) rounds differently from the coarse 99. */
 const contextUsage: ContextUsage = {
-  totalTokens: 164_800,
+  totalTokens: 176_800,
   maxTokens: 200_000,
-  percentage: 82.4,
+  percentage: 88.4,
   model: 'claude-opus-4-6',
   categories: [],
 };
@@ -166,31 +150,31 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('ChatStatusSection — compaction chip percent (DOR-112)', () => {
-  it('renders the SAME percent in the chip as in the ContextItem for one contextUsage', () => {
-    // Purpose: the chip's "Context N% full" copy and the ContextItem badge it
-    // sits beside must derive N from one source. The coarse estimate is pinned
-    // to a divergent 90 above, so if a future edit switches either surface to
-    // a different derivation, the two rendered numbers stop matching.
+describe('ChatStatusSection — inline compact action percent (DOR-112)', () => {
+  it('names the SAME percent in the action as the ContextItem badge beside it', () => {
+    // Purpose: the action's "Context N% full" label and the badge it sits beside
+    // must derive N from one source. The coarse estimate is pinned to a divergent
+    // 99 above, so if a future edit switches either surface to a different
+    // derivation, the two numbers stop matching.
     act(() => {
       useSessionChatStore.getState().updateSession(SESSION_ID, { contextUsage });
     });
 
     render(<ChatStatusSection {...props} />);
 
-    // ContextItem's badge: "<percent>%" (SDK-preferred: round(82.4) = 82).
+    // The badge: "<percent>%" (SDK-preferred: round(88.4) = 88).
     const badgeText = screen.getByText(/^\d+%$/).textContent ?? '';
     const badgePercent = Number(badgeText.replace('%', ''));
 
-    // The chip's copy: "Context <percent>% full — Compact now".
-    const chip = screen.getByTestId('compaction-chip');
-    const chipMatch = /Context (\d+)% full/.exec(chip.textContent ?? '');
-    expect(chipMatch).not.toBeNull();
-    const chipPercent = Number(chipMatch![1]);
+    // The action's label: "Context <percent>% full — compact now".
+    const action = screen.getByTestId('compaction-chip');
+    const match = /Context (\d+)% full/.exec(action.getAttribute('aria-label') ?? '');
+    expect(match).not.toBeNull();
+    const actionPercent = Number(match![1]);
 
-    expect(chipPercent).toBe(badgePercent);
+    expect(actionPercent).toBe(badgePercent);
     // Guard against both surfaces silently switching to the coarse estimate
     // together — the SDK percentage must win when a breakdown exists.
-    expect(chipPercent).toBe(82);
+    expect(actionPercent).toBe(88);
   });
 });

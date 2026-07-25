@@ -189,6 +189,7 @@ export const useAppStore = create<AppState>()(
             localStorage.removeItem(STORAGE_KEYS.FONT_FAMILY);
             localStorage.removeItem('dorkos-sidebar-active-tab');
             localStorage.removeItem('dorkos-dismissed-promo-ids');
+            localStorage.removeItem(STORAGE_KEYS.STATUS_BAR_PINS);
             localStorage.removeItem(STORAGE_KEYS.CANVAS_SESSIONS);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
             localStorage.removeItem(STORAGE_KEYS.RIGHT_PANEL_LAYOUTS);
@@ -206,6 +207,7 @@ export const useAppStore = create<AppState>()(
             fontFamily: DEFAULT_FONT as FontFamilyKey,
             sidebarActiveTab: 'overview' as const,
             dismissedPromoIds: [],
+            statusBarPins: [],
             rightPanelOpen: false,
             activeRightPanelTab: null,
             rightPanelLayoutKey: null,

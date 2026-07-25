@@ -58,8 +58,9 @@ When a session's working directory is a managed workspace, the **Git Status** it
 That reads as: you're in the `DOR-84` workspace of the `core` project, with 3 uncommitted changes. (Yes, `DOR-84` is a real ticket. We used it while building this feature and never got around to swapping in a placeholder.) Hovering the chip reveals the branch, provider, allocated ports, and pinned state. If the session is in an ordinary folder instead of a managed workspace, the item just shows the normal branch chip, nothing changes.
 
 <Callout type="info">
-  The Git Status item is shown on desktop-width layouts. If you don't see it, enable it from the
-  status-bar configuration popover.
+  The status line stays quiet about git while the working tree is clean and you're on the default
+  branch. If you'd rather always see it, open the Session panel from the `⋯` at the end of the
+  status line and pin the Git row.
 </Callout>
 
 ---

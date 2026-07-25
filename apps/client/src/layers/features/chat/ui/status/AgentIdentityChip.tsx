@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import { motion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAppStore } from '@/layers/shared/model';
 import { AgentIdentity } from '@/layers/entities/agent';
@@ -18,7 +17,7 @@ interface AgentIdentityChipProps {
 }
 
 /**
- * Who you are talking to, shown below the composer.
+ * Who you are talking to — the identity anchor of the status line's left cluster.
  *
  * Click opens the agent profile; right-click (long-press on touch) offers
  * switch agent / profile / new session. Renders nothing until name, color, and
@@ -53,13 +52,7 @@ export function AgentIdentityChip({
   if (!agentName || !agentColor || !agentEmoji) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      className="mt-1.5 flex items-center gap-2"
-    >
+    <span className="inline-flex min-w-0 items-center">
       {agentPath ? (
         <AgentChipContextMenu
           onSwitchAgent={handleSwitchAgent}
@@ -77,6 +70,6 @@ export function AgentIdentityChip({
       ) : (
         <AgentIdentity size="xs" name={agentName} color={agentColor} emoji={agentEmoji} />
       )}
-    </motion.div>
+    </span>
   );
 }

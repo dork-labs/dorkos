@@ -87,7 +87,7 @@ src/
 │   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
 │   │   ├── dashboard-status/ # SystemStatusRow — Tasks/Relay/Mesh health cards + activity sparkline
 │   │   ├── dashboard-activity/ # RecentActivityFeed — time-grouped event feed with last-visit tracking
-│   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Status Bar, Server, Tools, Advanced)
+│   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, ConnectionsTab)
 │   │   ├── files/       # FileBrowser
 │   │   ├── tasks/        # TasksPanel, ScheduleRow, CronVisualBuilder, AgentCombobox

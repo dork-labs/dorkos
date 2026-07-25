@@ -1,92 +1,243 @@
 import { describe, it, expect } from 'vitest';
-import { STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
-import { STATUS_BAR_REGISTRY, getGroupedRegistryItems } from '../model/status-bar-registry';
+import {
+  STATUS_BAR_REGISTRY,
+  getGroupedRegistryItems,
+  getStatusBarItem,
+  gitPromotionState,
+  isPinnable,
+  type StatusBarItemKey,
+  type StatusPromotionContext,
+} from '../model/status-bar-registry';
 
-describe('STATUS_BAR_REGISTRY', () => {
-  it('contains exactly 10 items', () => {
-    expect(STATUS_BAR_REGISTRY).toHaveLength(10);
+/** A resting session: connected, default everything, nothing to report. */
+function restingContext(overrides: Partial<StatusPromotionContext> = {}): StatusPromotionContext {
+  return {
+    cwd: '/work/repo',
+    git: { dirty: false, onDefaultBranch: true },
+    contextPercent: 12,
+    connectionState: 'connected',
+    permissionMode: 'default',
+    runtime: { isDefault: true, canSelect: false },
+    usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
+    subagentCount: 0,
+    ...overrides,
+  };
+}
+
+/** Which keys promote for a given context. */
+function promotedKeys(ctx: StatusPromotionContext): StatusBarItemKey[] {
+  return STATUS_BAR_REGISTRY.filter((item) => !item.neverInLine && item.promote(ctx)).map(
+    (item) => item.key
+  );
+}
+
+/** Resolve one item's severity for a context. */
+function severityOf(key: StatusBarItemKey, ctx: StatusPromotionContext): number {
+  return getStatusBarItem(key)!.severity(ctx);
+}
+
+describe('STATUS_BAR_REGISTRY — quiet by default', () => {
+  it('shows only identity, directory, and model on a resting session', () => {
+    // A creeping $0.03 and a 12%-full window are wallpaper. If they showed here,
+    // the 91% that matters would not register either.
+    expect(promotedKeys(restingContext())).toEqual(['agent', 'cwd', 'model']);
   });
 
-  it('has unique keys', () => {
+  it('never lets cache, sound, or refresh into the line', () => {
+    const neverInLine = STATUS_BAR_REGISTRY.filter((item) => item.neverInLine).map((i) => i.key);
+    expect(neverInLine).toEqual(['cache', 'sound', 'polling']);
+  });
+
+  it('has a unique key per item', () => {
     const keys = STATUS_BAR_REGISTRY.map((item) => item.key);
-    const uniqueKeys = new Set(keys);
-    expect(uniqueKeys.size).toBe(keys.length);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('has the expected keys in order', () => {
-    const keys = STATUS_BAR_REGISTRY.map((item) => item.key);
-    expect(keys).toEqual([
-      'cwd',
-      'git',
-      'runtime',
-      'model',
-      'cache',
-      'context',
-      'usage',
-      'permission',
-      'sound',
-      'polling',
-    ]);
+  it('puts identity, directory, and git in the left cluster and everything else right', () => {
+    const left = STATUS_BAR_REGISTRY.filter((i) => i.cluster === 'left').map((i) => i.key);
+    expect(left).toEqual(['agent', 'cwd', 'git']);
+  });
+});
+
+describe('STATUS_BAR_REGISTRY — promotion rules', () => {
+  it('promotes git when the working tree is dirty', () => {
+    expect(promotedKeys(restingContext({ git: { dirty: true, onDefaultBranch: true } }))).toContain(
+      'git'
+    );
   });
 
-  it('every item has label, description, group, icon, and defaultVisible', () => {
-    for (const item of STATUS_BAR_REGISTRY) {
-      expect(item.label).toBeTruthy();
-      expect(item.description).toBeTruthy();
-      expect(['session', 'controls']).toContain(item.group);
-      expect(item.icon).toBeDefined();
-      expect(typeof item.defaultVisible).toBe('boolean');
+  it('promotes git when the branch is not the default', () => {
+    expect(
+      promotedKeys(restingContext({ git: { dirty: false, onDefaultBranch: false } }))
+    ).toContain('git');
+  });
+
+  it('keeps git quiet on a clean default branch', () => {
+    expect(promotedKeys(restingContext())).not.toContain('git');
+  });
+
+  it('promotes context at 70% and not at 69%', () => {
+    expect(promotedKeys(restingContext({ contextPercent: 69 }))).not.toContain('context');
+    expect(promotedKeys(restingContext({ contextPercent: 70 }))).toContain('context');
+  });
+
+  it('keeps context quiet before the first reading', () => {
+    expect(promotedKeys(restingContext({ contextPercent: null }))).not.toContain('context');
+  });
+
+  it.each(['connecting', 'reconnecting', 'disconnected'] as const)(
+    'promotes connection when the stream is %s',
+    (state) => {
+      expect(promotedKeys(restingContext({ connectionState: state }))).toContain('connection');
+    }
+  );
+
+  it.each(['plan', 'acceptEdits', 'bypassPermissions', 'auto'] as const)(
+    'promotes permissions in %s mode',
+    (mode) => {
+      expect(promotedKeys(restingContext({ permissionMode: mode }))).toContain('permission');
+    }
+  );
+
+  it('promotes runtime when it is not the default', () => {
+    expect(
+      promotedKeys(restingContext({ runtime: { isDefault: false, canSelect: false } }))
+    ).toContain('runtime');
+  });
+
+  it('promotes runtime pre-launch, while it can still be chosen', () => {
+    expect(
+      promotedKeys(restingContext({ runtime: { isDefault: true, canSelect: true } }))
+    ).toContain('runtime');
+  });
+
+  it('keeps runtime quiet on a started session using the default', () => {
+    expect(promotedKeys(restingContext())).not.toContain('runtime');
+  });
+
+  it.each(['warning', 'exhausted'] as const)('promotes usage when it is %s', (state) => {
+    expect(
+      promotedKeys(restingContext({ usage: { kind: 'subscription', utilization: 0.9, state } }))
+    ).toContain('usage');
+  });
+
+  it('keeps usage quiet while it is healthy', () => {
+    expect(promotedKeys(restingContext())).not.toContain('usage');
+  });
+
+  it('promotes subagents once there is at least one', () => {
+    expect(promotedKeys(restingContext({ subagentCount: 1 }))).toContain('subagents');
+  });
+
+  it('keeps the directory out when it is unresolved', () => {
+    expect(promotedKeys(restingContext({ cwd: null }))).not.toContain('cwd');
+  });
+});
+
+describe('STATUS_BAR_REGISTRY — severity ranking', () => {
+  it('ranks the degraded state exactly as specified, highest first', () => {
+    // The order the mobile budget fills slots in: connection lost, context at the
+    // ceiling, usage exhausted, keys-handed-over permissions, running subagents,
+    // context merely warning, elevated permissions, non-default runtime, dirty
+    // git, model, directory.
+    const ranked: [StatusBarItemKey, StatusPromotionContext][] = [
+      ['connection', restingContext({ connectionState: 'disconnected' })],
+      ['context', restingContext({ contextPercent: 88 })],
+      ['usage', restingContext({ usage: { kind: 'subscription', state: 'exhausted' } })],
+      ['permission', restingContext({ permissionMode: 'bypassPermissions' })],
+      ['subagents', restingContext({ subagentCount: 2 })],
+      ['context', restingContext({ contextPercent: 74 })],
+      ['permission', restingContext({ permissionMode: 'plan' })],
+      ['runtime', restingContext({ runtime: { isDefault: false, canSelect: false } })],
+      ['git', restingContext({ git: { dirty: true, onDefaultBranch: true } })],
+      ['model', restingContext()],
+      ['cwd', restingContext()],
+    ];
+    const scores = ranked.map(([key, ctx]) => severityOf(key, ctx));
+
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeLessThan(scores[i - 1]);
     }
   });
 
-  it('every registry key maps to a boolean in the `ui.statusBar` config schema (DOR-431)', () => {
-    const configKeys = Object.keys(STATUS_BAR_PREFS_DEFAULTS);
-    for (const item of STATUS_BAR_REGISTRY) {
-      expect(configKeys).toContain(item.key);
-      expect(typeof STATUS_BAR_PREFS_DEFAULTS[item.key]).toBe('boolean');
-    }
+  it('ties a warning-level usage with a warning-level context', () => {
+    // The spec lists them at one rank; a tie is the honest encoding of that.
+    expect(
+      severityOf('usage', restingContext({ usage: { kind: 'subscription', state: 'warning' } }))
+    ).toBe(severityOf('context', restingContext({ contextPercent: 74 })));
   });
 
-  it('registry covers every `ui.statusBar` config field exactly (no drift)', () => {
-    const registryKeys = STATUS_BAR_REGISTRY.map((item) => item.key).sort();
-    const configKeys = Object.keys(STATUS_BAR_PREFS_DEFAULTS).sort();
-    expect(registryKeys).toEqual(configKeys);
+  it('ranks a context at the action threshold above one merely promoted', () => {
+    expect(severityOf('context', restingContext({ contextPercent: 85 }))).toBeGreaterThan(
+      severityOf('context', restingContext({ contextPercent: 84 }))
+    );
   });
 
-  it("each item's defaultVisible matches the config schema default", () => {
-    for (const item of STATUS_BAR_REGISTRY) {
-      expect(item.defaultVisible).toBe(STATUS_BAR_PREFS_DEFAULTS[item.key]);
-    }
+  it('never lets the identity anchor be outranked', () => {
+    expect(severityOf('agent', restingContext())).toBeGreaterThan(
+      severityOf('connection', restingContext({ connectionState: 'disconnected' }))
+    );
+  });
+});
+
+describe('gitPromotionState', () => {
+  it.each(['main', 'master'])('treats %s as the default branch', (branch) => {
+    expect(gitPromotionState(branch, true, false)).toEqual({ dirty: false, onDefaultBranch: true });
+  });
+
+  it('treats any other branch as not the default', () => {
+    expect(gitPromotionState('dor-452-composer-status', true, false).onDefaultBranch).toBe(false);
+  });
+
+  it('treats a detached HEAD as not the default branch', () => {
+    expect(gitPromotionState('main', true, true).onDefaultBranch).toBe(false);
+  });
+
+  it('reads dirtiness as the inverse of clean', () => {
+    expect(gitPromotionState('main', false, false).dirty).toBe(true);
+  });
+});
+
+describe('isPinnable', () => {
+  it('allows pinning exactly the Session rows that can appear in the line', () => {
+    const pinnable = STATUS_BAR_REGISTRY.filter(isPinnable).map((item) => item.key);
+    expect(pinnable).toEqual(['cwd', 'git', 'runtime', 'model', 'context', 'usage', 'permission']);
+  });
+
+  it('refuses to pin diagnostics rows', () => {
+    // System-managed rows can never be promoted by hand — the invariant that stops
+    // pins from quietly becoming ten visibility toggles again.
+    expect(isPinnable(getStatusBarItem('connection')!)).toBe(false);
+    expect(isPinnable(getStatusBarItem('subagents')!)).toBe(false);
+  });
+
+  it('refuses to pin controls or anything excluded from the line', () => {
+    expect(isPinnable(getStatusBarItem('sound')!)).toBe(false);
+    expect(isPinnable(getStatusBarItem('polling')!)).toBe(false);
+    expect(isPinnable(getStatusBarItem('cache')!)).toBe(false);
   });
 });
 
 describe('getGroupedRegistryItems', () => {
-  it('returns exactly 2 groups', () => {
-    const groups = getGroupedRegistryItems();
-    expect(groups).toHaveLength(2);
+  it('returns Session, Controls, and Diagnostics in that order', () => {
+    expect(getGroupedRegistryItems().map((g) => g.group)).toEqual([
+      'session',
+      'controls',
+      'diagnostics',
+    ]);
   });
 
-  it('returns groups in order: session, controls', () => {
-    const groups = getGroupedRegistryItems();
-    expect(groups[0].group).toBe('session');
-    expect(groups[1].group).toBe('controls');
+  it('covers every registry item that has a group', () => {
+    const grouped = getGroupedRegistryItems()
+      .flatMap((g) => g.items.map((i) => i.key))
+      .sort();
+    const withGroup = STATUS_BAR_REGISTRY.filter((i) => i.group !== null)
+      .map((i) => i.key)
+      .sort();
+    expect(grouped).toEqual(withGroup);
   });
 
-  it('session group has 7 items', () => {
-    const groups = getGroupedRegistryItems();
-    const sessionGroup = groups.find((g) => g.group === 'session');
-    expect(sessionGroup?.items).toHaveLength(7);
-  });
-
-  it('controls group has 3 items', () => {
-    const groups = getGroupedRegistryItems();
-    const controlsGroup = groups.find((g) => g.group === 'controls');
-    expect(controlsGroup?.items).toHaveLength(3);
-  });
-
-  it('includes correct group labels', () => {
-    const groups = getGroupedRegistryItems();
-    expect(groups[0].label).toBe('Session Info');
-    expect(groups[1].label).toBe('Controls');
+  it('leaves the identity anchor out — it is always there, so it has nothing to configure', () => {
+    expect(getStatusBarItem('agent')!.group).toBeNull();
   });
 });

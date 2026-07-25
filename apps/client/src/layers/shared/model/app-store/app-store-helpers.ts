@@ -25,6 +25,30 @@ export function writeBool(key: string, v: boolean): void {
   } catch {}
 }
 
+/**
+ * Read a list of strings from localStorage, dropping any non-string entries.
+ * Returns `defaultValue` when the key is absent, unparseable, or not an array —
+ * a corrupt value degrades to the default instead of throwing.
+ */
+export function readStringList(key: string, defaultValue: string[]): string[] {
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) return defaultValue;
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return defaultValue;
+    return parsed.filter((v): v is string => typeof v === 'string');
+  } catch {
+    return defaultValue;
+  }
+}
+
+/** Write a list of strings to localStorage with try/catch safety. */
+export function writeStringList(key: string, v: string[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(v));
+  } catch {}
+}
+
 export interface ContextFile {
   id: string;
   path: string;
@@ -58,11 +82,26 @@ export const BOOL_KEYS = {
  * so both preferences no longer exist. `dorkos-show-shortcut-chips` backed the
  * "Show shortcut chips" toggle; the `/` and `@` chips are gone (spec
  * composer-status-redesign) and the placeholder hints teach both triggers.
+ *
+ * The ten `dorkos-show-status-bar-*` keys backed the per-item visibility
+ * toggles. The status line is now quiet by default and promotes an item only
+ * when it is actionable, so the ten booleans are one list of pins
+ * (`dorkos-status-bar-pins`) that adds items rather than ten that subtract.
  */
 const ORPHANED_BOOL_KEYS = [
   'dorkos-enable-cross-client-sync',
   'dorkos-show-status-bar-sync',
   'dorkos-show-shortcut-chips',
+  'dorkos-show-status-bar-cwd',
+  'dorkos-show-status-bar-git',
+  'dorkos-show-status-bar-runtime',
+  'dorkos-show-status-bar-model',
+  'dorkos-show-status-bar-cache',
+  'dorkos-show-status-bar-context',
+  'dorkos-show-status-bar-usage',
+  'dorkos-show-status-bar-permission',
+  'dorkos-show-status-bar-sound',
+  'dorkos-show-status-bar-polling',
 ] as const;
 
 /**

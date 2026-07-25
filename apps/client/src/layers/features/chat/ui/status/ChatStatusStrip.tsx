@@ -4,6 +4,7 @@ import { Shield, MessageSquare, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PermissionMode } from '@dorkos/shared/types';
 import { useElapsedTime } from '@/layers/shared/model';
+import { TIMING } from '@/layers/shared/lib';
 import { DEFAULT_THEME, type IndicatorTheme } from './inference-themes';
 import { BYPASS_INFERENCE_VERBS } from './inference-verbs';
 import { useRotatingVerb } from '../../model/use-rotating-verb';
@@ -119,7 +120,7 @@ export function deriveStripState(input: StripStateInput): StripState {
     };
   }
 
-  // Priority 5: Complete (auto-dismisses after 8s)
+  // Priority 5: Complete (auto-dismisses)
   if (input.showComplete) {
     return { type: 'complete', elapsed: input.lastElapsed, tokens: input.lastTokens };
   }
@@ -187,10 +188,10 @@ function useStripState(input: UseStripStateInput): StripState {
     prevStatusRef.current = input.status;
   }, [input.status]);
 
-  // Auto-dismiss complete state after 8 seconds
+  // Auto-dismiss the post-turn summary
   useEffect(() => {
     if (!showComplete) return;
-    const timer = setTimeout(() => setShowComplete(false), 8000);
+    const timer = setTimeout(() => setShowComplete(false), TIMING.TURN_COMPLETE_DISMISS_MS);
     return () => clearTimeout(timer);
   }, [showComplete]);
 
@@ -234,7 +235,7 @@ function StreamingContent({ state }: { state: Extract<StripState, { type: 'strea
 
   return (
     <div
-      className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs md:justify-start"
+      className="flex items-center gap-1.5 px-4 py-2 text-xs"
       data-testid="chat-status-strip-streaming"
     >
       <span
@@ -283,7 +284,7 @@ function WaitingContent({ state }: { state: Extract<StripState, { type: 'waiting
 
   return (
     <div
-      className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs md:justify-start"
+      className="flex items-center gap-1.5 px-4 py-2 text-xs"
       data-testid="chat-status-strip-waiting"
     >
       <WaitIcon className="size-3 text-amber-500" />
@@ -300,7 +301,7 @@ function OperationProgressContent({
 }) {
   return (
     <div
-      className="flex flex-col gap-1.5 px-4 py-2 md:items-start"
+      className="flex flex-col items-start gap-1.5 px-4 py-2"
       data-testid="chat-status-strip-operation-progress"
       data-determinate={state.determinate}
     >
@@ -335,7 +336,7 @@ function SystemMessageContent({
   const Icon = state.icon;
   return (
     <div
-      className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs md:justify-start"
+      className="flex items-center gap-1.5 px-4 py-2 text-xs"
       data-testid="chat-status-strip-system-message"
     >
       <Icon className="text-muted-foreground/60 size-3 shrink-0" />
@@ -347,7 +348,7 @@ function SystemMessageContent({
 function CompleteContent({ state }: { state: Extract<StripState, { type: 'complete' }> }) {
   return (
     <div
-      className="text-muted-foreground/50 flex items-center justify-center gap-1.5 px-4 py-2 text-xs opacity-60 md:justify-start"
+      className="text-muted-foreground/50 flex items-center gap-1.5 px-4 py-2 text-xs opacity-60"
       data-testid="chat-status-strip-complete"
     >
       <span>{state.elapsed}</span>

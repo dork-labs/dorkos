@@ -124,6 +124,9 @@ vi.mock('@/layers/shared/model/app-store', () => ({
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
       setActiveForm: vi.fn(),
+      statusBarPins: [],
+      toggleStatusBarPin: vi.fn(),
+      resetStatusBarPins: vi.fn(),
       enableNotificationSound: false,
       setEnableNotificationSound: vi.fn(),
       enableMessagePolling: false,
@@ -142,57 +145,13 @@ vi.mock('../ui/MessageList', () => ({
   MessageList: vi.fn(() => <div data-testid="message-list">MessageList</div>),
 }));
 
-vi.mock('../ui/input/AgentIdentityChip', () => ({
-  AgentIdentityChip: vi.fn(() => <div data-testid="agent-identity-chip">AgentIdentityChip</div>),
-}));
-
-vi.mock('@/layers/features/status', () => ({
-  StatusLine: Object.assign(
-    vi.fn(() => <div data-testid="status-line">StatusLine</div>),
-    {
-      Item: vi.fn(({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
-        visible ? <>{children}</> : null
-      ),
-    }
-  ),
-  CwdItem: vi.fn(() => null),
-  GitStatusItem: vi.fn(() => null),
-  PermissionModeItem: vi.fn(() => null),
+vi.mock('@/layers/features/status', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/features/status')>()),
+  StatusLine: vi.fn(() => <div data-testid="status-line">StatusLine</div>),
+  SessionPopover: vi.fn(({ children }: { children: React.ReactNode }) => <>{children}</>),
   AutoModeConfirmDialog: vi.fn(() => null),
-  ModelConfigPopover: vi.fn(() => null),
-  UsageStatusItem: vi.fn(() => null),
   UsageRevealPopover: vi.fn(() => null),
-  hasRenderableUsage: vi.fn(() => false),
-  ContextItem: vi.fn(() => null),
-  NotificationSoundItem: vi.fn(() => null),
-  PollingItem: vi.fn(() => null),
-  ConnectionItem: vi.fn(() => null),
-  StatusBarConfigurePopover: vi.fn(({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  )),
   useGitStatus: vi.fn(() => ({ data: undefined })),
-  SubagentsItem: vi.fn(() => null),
-  STATUS_BAR_REGISTRY: [],
-  // Status-bar visibility lives in server config (DOR-431); ChatStatusSection
-  // reads/writes it through these hooks. Everything hidden — this suite asserts
-  // ChatPanel layout, not individual status items.
-  useStatusBarPrefs: () => ({
-    cwd: false,
-    git: false,
-    runtime: false,
-    model: false,
-    cache: false,
-    context: false,
-    usage: false,
-    permission: false,
-    sound: false,
-    polling: false,
-  }),
-  useUpdateStatusBarPrefs: () => ({
-    setVisibility: vi.fn(),
-    reset: vi.fn(),
-    isPending: false,
-  }),
 }));
 
 vi.mock('../ui/tasks/TaskListPanel', () => ({
@@ -253,29 +212,26 @@ describe('ChatPanel collapse', () => {
     expect(screen.queryByLabelText(/input extras/)).toBeNull();
   });
 
-  it('mobile: identity chip and status bar visible by default', () => {
+  it('mobile: status bar visible by default', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(<ChatPanel sessionId="test" />);
-    expect(screen.getByTestId('agent-identity-chip')).toBeTruthy();
     expect(screen.getByTestId('status-line')).toBeTruthy();
   });
 
-  it('mobile: tap handle hides identity chip and status bar', () => {
+  it('mobile: tap handle hides the status bar', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(<ChatPanel sessionId="test" />);
     fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.queryByTestId('agent-identity-chip')).toBeNull();
     expect(screen.queryByTestId('status-line')).toBeNull();
   });
 
-  it('mobile: tap handle again shows identity chip and status bar', () => {
+  it('mobile: tap handle again shows the status bar', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(<ChatPanel sessionId="test" />);
     const handle = screen.getByLabelText(/input extras/);
     fireEvent.click(handle);
-    expect(screen.queryByTestId('agent-identity-chip')).toBeNull();
+    expect(screen.queryByTestId('status-line')).toBeNull();
     fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.getByTestId('agent-identity-chip')).toBeTruthy();
     expect(screen.getByTestId('status-line')).toBeTruthy();
   });
 });

@@ -43,10 +43,10 @@ export const SHORTCUTS = {
     label: 'Toggle sidebar',
     group: 'navigation',
   },
-  TOGGLE_CANVAS: {
-    id: 'toggle-canvas',
+  TOGGLE_RIGHT_PANEL: {
+    id: 'toggle-right-panel',
     key: 'mod+.',
-    label: 'Toggle canvas',
+    label: 'Toggle right panel',
     group: 'navigation',
   },
   SHORTCUTS_PANEL: {
@@ -98,6 +98,12 @@ export const SHORTCUTS = {
     id: 'line-continuation',
     key: '\\+enter',
     label: 'Keep typing on the next line',
+    group: 'chat',
+  },
+  SESSION_DETAILS: {
+    id: 'session-details',
+    key: 'mod+shift+.',
+    label: 'Session details',
     group: 'chat',
   },
   CLEAR_MESSAGE: { id: 'clear-message', key: 'esc esc', label: 'Clear message', group: 'chat' },
