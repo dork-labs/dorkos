@@ -20,6 +20,10 @@ export { SessionPopover } from './ui/SessionPopover';
 export { useGitStatus, isGitStatusOk } from './model/use-git-status';
 export { useSessionPopoverShortcut } from './model/use-session-popover-shortcut';
 export { isNewer, isFeatureUpdate } from './lib/version-compare';
+// `lib/status-labels` is deliberately NOT re-exported: like `lib/model-menu-tiers`,
+// it is the slice's own presentation rule, consumed only by the items in this
+// folder. Publishing it would invite a caller outside the line to bound a value
+// that has nothing to do with the line's width.
 export { gitPromotionState, useStatusBarPins } from './model/status-bar-registry';
 export type { StatusBarItemKey, StatusPromotionContext } from './model/status-bar-registry';
 export { selectPromotedItems } from './model/promoted-items';

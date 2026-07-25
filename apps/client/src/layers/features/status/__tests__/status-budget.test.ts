@@ -80,6 +80,20 @@ describe('resolveStatusBudget', () => {
       expect(budget.dropped).toEqual(['cwd', 'git']);
     }
   });
+
+  it('hands every measured width under the full tier the compact contract', () => {
+    // This is what the slot count rests on (DOR-452): a count assumes the things
+    // counted are about one size, and the only thing that makes them one size is
+    // items rendering their compact form. `full` therefore has to mean "measured
+    // at 640px or more" — any narrower width that reported `full` would be a bar
+    // drawing "Default (recommended)" at ~160px in a 72px slot.
+    for (const width of [1, 200, 339, 340, 439, 440, 500, 639]) {
+      expect(resolveStatusBudget(width).density).not.toBe('full');
+    }
+    for (const width of [640, 900, 2000]) {
+      expect(resolveStatusBudget(width).density).toBe('full');
+    }
+  });
 });
 
 describe('applyStatusBudget — truncation per tier', () => {

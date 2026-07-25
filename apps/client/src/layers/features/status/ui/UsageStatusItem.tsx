@@ -95,7 +95,7 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
       <Tooltip>
         <TooltipTrigger asChild>
           <span
-            className={cn('inline-flex cursor-default items-center gap-1', colorClass)}
+            className={cn('inline-flex shrink-0 cursor-default items-center gap-1', colorClass)}
             aria-label="Subscription usage"
           >
             <Gauge className="size-(--size-icon-xs)" />
@@ -116,7 +116,7 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
 
   if (!usage.detail) {
     return (
-      <span className="inline-flex items-center gap-1" aria-label="Session cost">
+      <span className="inline-flex shrink-0 items-center gap-1" aria-label="Session cost">
         <DollarSign className="size-(--size-icon-xs)" />
         <span>{costLabel}</span>
       </span>
@@ -126,7 +126,10 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex cursor-default items-center gap-1" aria-label="Session cost">
+        <span
+          className="inline-flex shrink-0 cursor-default items-center gap-1"
+          aria-label="Session cost"
+        >
           <DollarSign className="size-(--size-icon-xs)" />
           <span>{costLabel}</span>
         </span>

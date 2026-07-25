@@ -5,16 +5,48 @@ import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/layers/shared/u
 
 const STATE_CONFIG: Record<
   ConnectionState,
-  { color: string; label: string; icon: typeof Wifi; tasks: boolean }
+  { color: string; label: string; shortLabel: string; icon: typeof Wifi; tasks: boolean }
 > = {
-  connecting: { color: 'bg-amber-500', label: 'Connecting', icon: Wifi, tasks: true },
-  connected: { color: 'bg-emerald-500', label: 'Connected', icon: Wifi, tasks: false },
-  reconnecting: { color: 'bg-amber-500', label: 'Reconnecting', icon: Wifi, tasks: true },
-  disconnected: { color: 'bg-red-500', label: 'Connection lost', icon: WifiOff, tasks: false },
+  connecting: {
+    color: 'bg-amber-500',
+    label: 'Connecting',
+    shortLabel: 'Connecting',
+    icon: Wifi,
+    tasks: true,
+  },
+  connected: {
+    color: 'bg-emerald-500',
+    label: 'Connected',
+    shortLabel: 'Connected',
+    icon: Wifi,
+    tasks: false,
+  },
+  reconnecting: {
+    color: 'bg-amber-500',
+    label: 'Reconnecting',
+    shortLabel: 'Reconnecting',
+    icon: Wifi,
+    tasks: true,
+  },
+  // "Offline" rather than a clipped "Connection los…": a narrow line gets a
+  // shorter true sentence, never a truncated one.
+  disconnected: {
+    color: 'bg-red-500',
+    label: 'Connection lost',
+    shortLabel: 'Offline',
+    icon: WifiOff,
+    tasks: false,
+  },
 };
 
 interface ConnectionItemProps {
   connectionState: ConnectionState;
+  /**
+   * Say it in as few pixels as possible — set below the status line's widest
+   * tier. Swaps in the state's short label; the full one still heads the hover
+   * card, and the Session panel reports it too.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -23,18 +55,27 @@ interface ConnectionItemProps {
  *
  * @param props - The session's live-sync connection state.
  */
-export function ConnectionItem({ connectionState }: ConnectionItemProps) {
+export function ConnectionItem({ connectionState, compact }: ConnectionItemProps) {
   const config = STATE_CONFIG[connectionState];
   const Icon = config.icon;
 
   return (
     <HoverCard openDelay={200}>
       <HoverCardTrigger asChild>
-        <span className="flex cursor-default items-center gap-1.5 text-xs" role="status">
+        {/* Deliberately unnamed: `role="status"` is a live region, so a screen
+            reader announces the CONTENT. An `aria-label` here would have it read
+            the long label and then the short one. */}
+        <span className="flex min-w-0 cursor-default items-center gap-1.5 text-xs" role="status">
           <span
-            className={cn('size-1.5 rounded-full', config.color, config.tasks && 'animate-tasks')}
+            className={cn(
+              'size-1.5 shrink-0 rounded-full',
+              config.color,
+              config.tasks && 'animate-tasks'
+            )}
           />
-          <span className="text-muted-foreground">{config.label}</span>
+          <span className="text-muted-foreground truncate">
+            {compact ? config.shortLabel : config.label}
+          </span>
         </span>
       </HoverCardTrigger>
       <HoverCardContent side="top" align="center" className="w-72 p-3">

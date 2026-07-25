@@ -55,14 +55,14 @@ export function ContextItem({ percent, contextUsage, compact }: ContextItemProps
   const showCompact = compact != null && displayPercent >= CONTEXT_ACTION_PERCENT;
 
   const badge = (
-    <span className={cn('inline-flex items-center gap-1', colorClass)}>
+    <span className={cn('inline-flex shrink-0 items-center gap-1', colorClass)}>
       <Layers className="size-(--size-icon-xs)" />
       <span>{displayPercent}%</span>
     </span>
   );
 
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex min-w-0 items-center gap-1.5">
       {contextUsage ? <ContextBreakdown usage={contextUsage}>{badge}</ContextBreakdown> : badge}
       <AnimatePresence initial={false}>
         {showCompact && (
@@ -110,7 +110,7 @@ function ContextBreakdown({ usage, children }: { usage: ContextUsage; children: 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex cursor-default" aria-label="Context window usage">
+        <span className="inline-flex shrink-0 cursor-default" aria-label="Context window usage">
           {children}
         </span>
       </TooltipTrigger>

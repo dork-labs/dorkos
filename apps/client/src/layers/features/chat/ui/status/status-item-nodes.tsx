@@ -64,9 +64,11 @@ export interface StatusItemNodesInput {
   /** Live-sync connection state. */
   connectionState: ConnectionState;
   /**
-   * How much the measured bar width lets each item say. Only the narrowest tier
-   * changes what is *drawn* rather than which items are drawn: the agent keeps its
-   * avatar and gives up its name.
+   * How much the measured bar width lets each item say.
+   *
+   * Every item below the `full` tier renders glyph + value: no runtime model half,
+   * no effort or Fast badges, bounded labels (spec composer-status-redesign §6.1).
+   * The narrowest tier goes further and drops the agent's name, keeping the avatar.
    */
   density: StatusDensity;
 }
@@ -86,6 +88,11 @@ export function buildStatusItemNodes(
 ): Partial<Record<StatusBarItemKey, ReactNode>> {
   const { sessionId, agent, status, runtimeChip, onUpdateSession } = input;
   const nodes: Partial<Record<StatusBarItemKey, ReactNode>> = {};
+  // One boolean, threaded to every item that can be verbose. The budget counts
+  // slots, so a count is only honest while the slots are all about one size —
+  // `"Default (recommended)"` at ~160px beside `"78%"` at ~33px is what broke it.
+  // (Not to be confused with `input.compact`, which is the *compaction* action.)
+  const compactItems = input.density !== 'full';
 
   // The chip renders nothing until name, color, and emoji have all resolved; gate
   // the slot on the same condition so the line never reserves space for it.
@@ -114,6 +121,7 @@ export function buildStatusItemNodes(
         model={runtimeChip.model}
         onChangeRuntime={runtimeChip.onChangeRuntime}
         canSelect={runtimeChip.canSelect}
+        compact={compactItems}
       />
     );
   }
@@ -129,6 +137,7 @@ export function buildStatusItemNodes(
       disabled={!sessionId}
       sessionId={sessionId || undefined}
       runtime={runtimeChip.runtime}
+      compact={compactItems}
     />
   );
 
@@ -139,6 +148,7 @@ export function buildStatusItemNodes(
       disabled={!sessionId}
       runtime={runtimeChip.runtime}
       modelSupportsAutoMode={input.modelSupportsAutoMode}
+      compact={compactItems}
     />
   );
 
@@ -163,7 +173,9 @@ export function buildStatusItemNodes(
     nodes.subagents = <SubagentsItem subagents={input.subagents} />;
   }
 
-  nodes.connection = <ConnectionItem connectionState={input.connectionState} />;
+  nodes.connection = (
+    <ConnectionItem connectionState={input.connectionState} compact={compactItems} />
+  );
 
   return nodes;
 }

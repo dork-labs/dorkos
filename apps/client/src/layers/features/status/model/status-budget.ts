@@ -13,6 +13,28 @@
  * breakpoint. A 767px tablet and a 320px phone are the same boolean, and no
  * breakpoint can see browser zoom, Dynamic Type, or the sidebar opening.
  *
+ * ## Why the budget counts slots instead of adding up pixels
+ *
+ * A count assumes the things counted are about the same size, and that
+ * assumption is the one this module has to buy. It buys it in
+ * `features/status/lib/status-labels`: every value a right-cluster item renders
+ * is bounded to `STATUS_VALUE_MAX_CHARS`, and every item drops its verbose parts
+ * below the `full` tier. Without that, one item can eat the whole bar — a
+ * `"Default (recommended)"` beside a `"78%"` is a 5× spread, and a count budget
+ * cannot see it (DOR-452).
+ *
+ * Charging real pixels instead would mean either measuring each item — which
+ * needs a second, hidden render of every item to have a width to measure, with
+ * duplicated tooltips, popovers, and `role="status"` nodes — or charging a
+ * per-item estimate, which is a hardcoded guess wearing a budget's clothes. The
+ * text is 1.25× larger below 768px and scales again with `--user-font-scale`, so
+ * any px estimate is wrong at exactly the widths that matter.
+ *
+ * So the counts stay, and the honesty comes from two places instead: bounded
+ * values keep the slots comparable, and the line itself can shrink — anything
+ * the count still gets wrong ends as an ellipsis, never as clipped, unreachable
+ * content. See {@link module:features/status/ui/StatusLine}.
+ *
  * @module features/status/model/status-budget
  */
 import type { PromotedStatusItem } from './promoted-items';
@@ -65,8 +87,10 @@ const BUDGET_FULL_BASE = 4;
 
 /**
  * Measured cost of one more full-label right-cluster item: a 12px glyph, its
- * value, the 8px gap, and the separator — about 110px in the composer's `text-xs`.
- * This is what turns the spec's "4+" into a real number instead of a guess.
+ * value, the 8px gap, and the separator — about 110px in the composer's `text-xs`
+ * once the value is bounded (12 characters measure ~96px in Chromium at the
+ * desktop text scale, plus ~20px for the middot and its gaps). This is what turns
+ * the spec's "4+" into a real number instead of a guess.
  */
 const FULL_SLOT_COST_PX = 110;
 

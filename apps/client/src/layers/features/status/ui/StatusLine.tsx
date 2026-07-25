@@ -43,9 +43,17 @@ interface StatusLineProps {
  * separates them, and separators only ever sit *between* items inside a cluster,
  * so no middot is ever left floating in the gap.
  *
- * Nothing here overflows: the width budget upstream decides how many items fit,
- * and the left cluster truncates its text right-to-left under pressure. The clip
- * is only a backstop for the one frame before the bar has been measured.
+ * **Both clusters can shrink**, and that is load-bearing. The width budget
+ * upstream keeps the line legible, but a budget is a prediction; a right cluster
+ * that could not shrink turned every mis-predicted pixel into silently clipped,
+ * unreachable content — worse than the scroller this replaced, because at least
+ * the old fade advertised that something was there. Now the row's total can
+ * always be made to fit, and anything the prediction got wrong degrades into an
+ * ellipsis: a cosmetic regression instead of invisible data.
+ *
+ * The one thing that never gives up a pixel is the trailing `⋯`. It is
+ * `shrink-0` and sits outside both clusters, so every dropped item stays one tap
+ * away at any width.
  *
  * @param props - The budgeted items and the trailing anchor.
  */
@@ -61,11 +69,14 @@ export function StatusLine({ items, trailing }: StatusLineProps) {
       data-testid="status-line"
       className="text-muted-foreground flex items-center gap-2 overflow-hidden px-1 text-xs whitespace-nowrap pointer-coarse:min-h-11"
     >
-      {/* Left absorbs the slack and gives it back first: under pressure the agent
-          name truncates right-to-left rather than pushing state off the row. */}
-      <StatusCluster items={left} className="min-w-0 flex-1" />
-      <StatusCluster items={right} className="shrink-0" />
-      {trailing}
+      {/* `flex-auto`, not `flex-1`: both grow into the slack, but a `flex-1`
+          basis of 0 collapses the left cluster to zero width the moment the row
+          overflows, hiding the agent instead of truncating its name. */}
+      <StatusCluster items={left} className="min-w-0 flex-auto" />
+      <StatusCluster items={right} className="min-w-0 shrink" />
+      {/* The anchor's `shrink-0` lives here, not in whatever is passed in: "the `⋯`
+          is never dropped" is the line's invariant to keep, not the caller's. */}
+      {trailing !== undefined && <span className="flex shrink-0 items-center">{trailing}</span>}
     </div>
   );
 }
@@ -114,7 +125,7 @@ function StatusCluster({
  */
 function StatusLineSeparator() {
   return (
-    <span className="text-muted-foreground/30" aria-hidden="true">
+    <span className="text-muted-foreground/30 shrink-0" aria-hidden="true">
       &middot;
     </span>
   );

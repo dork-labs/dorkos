@@ -43,6 +43,31 @@ describe('StatusLine', () => {
   });
 
   describe('never scrolled, never wrapped', () => {
+    it('lets both clusters shrink so a mis-sized item truncates instead of clipping', () => {
+      // The bug this fixes (DOR-452): the right cluster was `shrink-0` inside an
+      // `overflow-hidden` row, so any item wider than the budget predicted was
+      // silently clipped and unreachable — worse than the scroller this replaced,
+      // which at least advertised the overflow with a fade.
+      const { container } = render(
+        <StatusLine items={[item('agent', 'left', 1000), item('model')]} />
+      );
+      const [left, right] = [...container.querySelectorAll('[role="toolbar"] > div')];
+      expect(left.className).toContain('min-w-0');
+      expect(right.className).toContain('min-w-0');
+      expect(right.className).not.toContain('shrink-0');
+    });
+
+    it('never lets the reveal anchor be the thing that shrinks', () => {
+      // The `⋯` is the one guarantee the line makes: everything it dropped is one
+      // tap away. So its `shrink-0` belongs to the line, not to whatever is passed.
+      const { container } = render(
+        <StatusLine items={[item('model')]} trailing={<button>more</button>} />
+      );
+      const anchor = container.querySelector('[role="toolbar"] > span')!;
+      expect(anchor.className).toContain('shrink-0');
+      expect(anchor.querySelector('button')).not.toBeNull();
+    });
+
     it('clips instead of offering a scroller nobody can pan', () => {
       // `touch-action: pan-y` on an ancestor used to block the inner container's
       // horizontal panning, so overflowed items were unreachable on a phone while a

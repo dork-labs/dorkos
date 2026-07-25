@@ -23,11 +23,11 @@ export function GitStatusItem({ data, workspace }: GitStatusItemProps) {
   if (!isGitStatusOk(data)) {
     return (
       <span
-        className="text-muted-foreground/50 inline-flex items-center gap-1"
+        className="text-muted-foreground/50 inline-flex min-w-0 items-center gap-1"
         title="Not a git repository"
       >
-        <GitBranch className="size-(--size-icon-xs)" />
-        <span>No repo</span>
+        <GitBranch className="size-(--size-icon-xs) shrink-0" />
+        <span className="truncate">No repo</span>
       </span>
     );
   }
@@ -55,12 +55,16 @@ export function GitStatusItem({ data, workspace }: GitStatusItemProps) {
     ].filter(Boolean);
 
     return (
-      <span className="inline-flex items-center gap-1" title={tipParts.join(' · ')}>
-        <GitBranch className="size-(--size-icon-xs)" />
+      <span className="inline-flex min-w-0 items-center gap-1" title={tipParts.join(' · ')}>
+        <GitBranch className="size-(--size-icon-xs) shrink-0" />
         <span className="max-w-[20ch] truncate font-medium">{workspace.key}</span>
-        <span className="text-muted-foreground">· {workspace.projectKey}</span>
-        {workspace.pinned && <Pin className="text-muted-foreground size-(--size-icon-xs)" />}
-        {totalChanges > 0 && <span className="text-muted-foreground">· {changeLabel}</span>}
+        <span className="text-muted-foreground truncate">· {workspace.projectKey}</span>
+        {workspace.pinned && (
+          <Pin className="text-muted-foreground size-(--size-icon-xs) shrink-0" />
+        )}
+        {totalChanges > 0 && (
+          <span className="text-muted-foreground shrink-0">· {changeLabel}</span>
+        )}
       </span>
     );
   }
@@ -72,24 +76,24 @@ export function GitStatusItem({ data, workspace }: GitStatusItemProps) {
       : `${data.branch} · clean`;
 
   return (
-    <span className="inline-flex items-center gap-1" title={tooltip}>
-      <GitBranch className="size-(--size-icon-xs)" />
+    <span className="inline-flex min-w-0 items-center gap-1" title={tooltip}>
+      <GitBranch className="size-(--size-icon-xs) shrink-0" />
       <span className="max-w-[25ch] truncate">{data.branch}</span>
 
       {data.ahead > 0 && (
-        <span className="text-muted-foreground inline-flex items-center gap-0.5">
+        <span className="text-muted-foreground inline-flex shrink-0 items-center gap-0.5">
           <ArrowUp className="size-(--size-icon-xs)" />
           {data.ahead}
         </span>
       )}
       {data.behind > 0 && (
-        <span className="text-muted-foreground inline-flex items-center gap-0.5">
+        <span className="text-muted-foreground inline-flex shrink-0 items-center gap-0.5">
           <ArrowDown className="size-(--size-icon-xs)" />
           {data.behind}
         </span>
       )}
 
-      {totalChanges > 0 && <span className="text-muted-foreground">· {changeLabel}</span>}
+      {totalChanges > 0 && <span className="text-muted-foreground shrink-0">· {changeLabel}</span>}
     </span>
   );
 }

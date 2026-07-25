@@ -481,6 +481,59 @@ describe('PermissionModeItem', () => {
     });
   });
 
+  describe('Compact (below the status line’s widest tier)', () => {
+    it('bounds a runtime-supplied label so one verbose mode cannot spend the whole bar', () => {
+      // Mode labels come from the runtime's own descriptors, so their length is not
+      // DorkOS's to promise — and the line's slot budget counts slots, which only
+      // holds while every slot is about one size (DOR-452).
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="bypassPermissions"
+          onChangeMode={vi.fn()}
+          runtime="claude-code"
+          modelSupportsAutoMode
+          compact
+        />
+      );
+
+      const trigger = screen.getByTestId('dropdown-trigger');
+      expect(trigger).toHaveTextContent('Bypass perm…');
+      expect(trigger).not.toHaveTextContent('Bypass permissions');
+    });
+
+    it('keeps the full label as the accessible name — a shorter drawing, not a different answer', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="bypassPermissions"
+          onChangeMode={vi.fn()}
+          runtime="claude-code"
+          modelSupportsAutoMode
+          compact
+        />
+      );
+
+      expect(
+        screen.getByRole('button', { name: 'Permissions: Bypass permissions' })
+      ).toBeInTheDocument();
+    });
+
+    it('spells the label out at the widest tier', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="bypassPermissions"
+          onChangeMode={vi.fn()}
+          runtime="claude-code"
+          modelSupportsAutoMode
+        />
+      );
+
+      expect(screen.getByTestId('dropdown-trigger')).toHaveTextContent('Bypass permissions');
+    });
+  });
+
   describe('Loading state (capabilities undefined)', () => {
     it('still renders the trigger with a fallback label for the current mode', () => {
       mockCapabilitiesForRuntime.mockReturnValue(undefined);

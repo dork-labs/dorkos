@@ -1,0 +1,97 @@
+import { describe, it, expect } from 'vitest';
+import type { ModelOption } from '@dorkos/shared/types';
+import { RUNTIME_DESCRIPTORS } from '@/layers/entities/runtime';
+import { STATUS_VALUE_MAX_CHARS, compactStatusValue, statusModelLabel } from '../lib/status-labels';
+
+/** The catalog shape the model picker hands the status line. */
+function option(value: string, displayName: string): ModelOption {
+  return { value, displayName, description: `${displayName} description` };
+}
+
+const CATALOG: ModelOption[] = [
+  option('default', 'Default (recommended)'),
+  option('opus[1m]', 'Opus'),
+  option('sonnet', 'Sonnet'),
+  option('ollama/qwen2.5-coder', 'Qwen 2.5 Coder'),
+];
+
+describe('compactStatusValue', () => {
+  it('leaves a value that already fits exactly as it is', () => {
+    for (const value of ['78%', '$1.24', 'Plan Mode', 'Reconnecting', 'Claude Code']) {
+      expect(compactStatusValue(value)).toBe(value);
+    }
+  });
+
+  it('marks the cut with an ellipsis so a shortened value never reads as the whole value', () => {
+    expect(compactStatusValue('Bypass every permission check')).toBe('Bypass ever…');
+  });
+
+  it('never returns more characters than the bound, whatever it is handed', () => {
+    // The bound exists for strings DorkOS does not write — a runtime's own
+    // permission-mode descriptor, a provider's model name. One verbose third-party
+    // string must not be able to spend the whole bar.
+    for (const value of ['x'.repeat(200), 'A very long descriptive mode name', '🙂'.repeat(40)]) {
+      expect(Array.from(compactStatusValue(value))).toHaveLength(STATUS_VALUE_MAX_CHARS);
+    }
+  });
+
+  it('cuts by character, not by UTF-16 unit — half an emoji is a replacement glyph', () => {
+    expect(compactStatusValue('🙂'.repeat(40))).toBe(`${'🙂'.repeat(11)}…`);
+  });
+
+  it('does not leave a dangling space before the ellipsis', () => {
+    expect(compactStatusValue('Accept all edits')).toBe('Accept all…');
+  });
+});
+
+describe('statusModelLabel', () => {
+  it('drops the picker parenthetical — "recommended" is advice for choosing, not status', () => {
+    expect(statusModelLabel('default', CATALOG)).toBe('Default');
+  });
+
+  it('leaves a name that is already a name alone', () => {
+    expect(statusModelLabel('opus[1m]', CATALOG)).toBe('Opus');
+    expect(statusModelLabel('sonnet', CATALOG)).toBe('Sonnet');
+  });
+
+  it('drops a trailing detail clause after a middot', () => {
+    expect(statusModelLabel('m', [option('m', 'Opus · 1M context')])).toBe('Opus');
+  });
+
+  it('names a Claude model the catalog no longer offers by its family', () => {
+    expect(statusModelLabel('claude-unknown-1', CATALOG)).toBe('Unknown');
+  });
+
+  it('drops the provider half of an id the catalog no longer offers', () => {
+    expect(statusModelLabel('ollama/qwen-coder', [])).toBe('qwen-coder');
+  });
+
+  it('shows the raw id rather than nothing when it can say nothing else', () => {
+    expect(statusModelLabel('gpt-4o', [])).toBe('gpt-4o');
+  });
+
+  it('bounds a catalog display name it cannot shorten', () => {
+    const long = option('x', 'Extremely Verbose Model Name');
+    expect(statusModelLabel('x', [long]).length).toBeLessThanOrEqual(STATUS_VALUE_MAX_CHARS);
+  });
+});
+
+describe('the compactness invariant the slot budget rests on', () => {
+  // The budget counts slots, so a count is only honest while every slot is about
+  // one size. These are the label sources DorkOS itself authors: they must fit the
+  // bound outright, or the budget is over-promising before a third party is even
+  // involved. See features/status/model/status-budget.
+  it('keeps every runtime display label within the bound', () => {
+    for (const descriptor of Object.values(RUNTIME_DESCRIPTORS)) {
+      expect(descriptor.label.length).toBeLessThanOrEqual(STATUS_VALUE_MAX_CHARS);
+    }
+  });
+
+  it('keeps every model name the default catalog offers within the bound', () => {
+    for (const model of CATALOG) {
+      expect(statusModelLabel(model.value, CATALOG).length).toBeLessThanOrEqual(
+        STATUS_VALUE_MAX_CHARS
+      );
+    }
+  });
+});
