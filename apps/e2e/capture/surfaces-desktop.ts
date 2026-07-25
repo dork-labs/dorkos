@@ -548,8 +548,15 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
  *
  * Verified in a real browser through the consent chips (DOR-472). The candidate
  * wait after consent is the pre-redesign recipe, carried forward unchanged: it
- * depends on the seeded `DISCOVERY_PROJECTS` tree, not on the flow. If it ever
- * times out, `attempt` records the failure and the shot keeps its last asset.
+ * depends on the seeded `DISCOVERY_PROJECTS` tree, not on the flow.
+ *
+ * A timeout here costs one run and only one run. `WAIT_MS` (20s) outlives the
+ * beat's own `DISCOVERY_TIMEOUT_MS` (8s), so a scan slower than 8s makes the app
+ * hand the conversation off to the handoff beat — which writes `completedAt` —
+ * while this wait spends its remaining budget on cards that will never arrive.
+ * `attempt` records that failure and the shot keeps its last asset. The next run
+ * starts clean because `reopenOnboarding` clears `completedAt` too, so the
+ * overlay genuinely reopens rather than inheriting a finished onboarding.
  */
 async function driveOnboardingDiscovery(page: Page): Promise<void> {
   // With onboarding un-dismissed the wizard replaces the app shell entirely,
@@ -577,9 +584,18 @@ export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder):
     process.stdout.write('  ⤿ agent-discovery skipped (captured elsewhere)\n');
     return;
   }
+  // Mirrors the "Replay setup" reset in `PreferencesTab`: `completedAt` is the
+  // authoritative "onboarding is done" gate, so clearing `dismissedAt` alone
+  // leaves the overlay shut for good once any run reaches the handoff beat.
   const reopenOnboarding = () =>
     patch('/api/config', {
-      onboarding: { dismissedAt: null, completedSteps: [], skippedSteps: [] },
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+        completedAt: null,
+      },
     });
   const dismissOnboarding = () =>
     patch('/api/config', { onboarding: { dismissedAt: '2026-07-01T00:00:00.000Z' } });
