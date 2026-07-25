@@ -13,220 +13,31 @@
  * @module dev/showcases/StatusLineShowcases
  */
 import { useState } from 'react';
-import type { GitStatusResponse, SubagentInfo, UsageStatus } from '@dorkos/shared/types';
-import type { SessionStatusData } from '@/layers/entities/session';
 import {
   StatusLine,
   SessionPopover,
   applyStatusBudget,
-  gitPromotionState,
   selectPromotedItems,
-  type SessionDiagnostics,
-  type StatusPromotionContext,
 } from '@/layers/features/status';
 // `resolveStatusBudget` is not in the slice's barrel — in the app it is reached
 // only through `useStatusBudget`, which needs a live element to measure. The
 // showcase supplies the width itself, so it calls the same pure function directly
 // rather than reimplement the tier table and let it drift.
 import { resolveStatusBudget } from '@/layers/features/status/model/status-budget';
-import {
-  buildStatusItemNodes,
-  type StatusItemNodesInput,
-} from '@/layers/features/chat/ui/status/status-item-nodes';
+import { buildStatusItemNodes } from '@/layers/features/chat/ui/status/status-item-nodes';
 import { AgentIdentityChip } from '@/layers/features/chat/ui/status/AgentIdentityChip';
-import type { RuntimeChipState } from '@/layers/features/chat/model/status/use-runtime-chip';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-
-const AGENT = {
-  name: 'dorkbot',
-  color: '#6366f1',
-  emoji: '🤖',
-  path: '/Users/dev/code/dorkos',
-} as const;
-
-const CWD = '/Users/dev/code/dorkos';
-
-const CLEAN_GIT: GitStatusResponse = {
-  branch: 'main',
-  ahead: 0,
-  behind: 0,
-  modified: 0,
-  staged: 0,
-  untracked: 0,
-  conflicted: 0,
-  clean: true,
-  detached: false,
-  tracking: 'origin/main',
-};
-
-const DIRTY_GIT: GitStatusResponse = {
-  branch: 'dor-452-status-line',
-  ahead: 2,
-  behind: 0,
-  modified: 3,
-  staged: 1,
-  untracked: 2,
-  conflicted: 0,
-  clean: false,
-  detached: false,
-  tracking: 'origin/dor-452-status-line',
-};
-
-const DEFAULT_RUNTIME_CHIP: RuntimeChipState = {
-  runtime: 'claude-code',
-  model: 'claude-opus-4-6',
-  canSelect: false,
-  onChangeRuntime: () => {},
-};
-
-const CODEX_RUNTIME_CHIP: RuntimeChipState = {
-  runtime: 'codex',
-  model: 'gpt-5.3-codex',
-  canSelect: false,
-  onChangeRuntime: () => {},
-};
-
-const USAGE_OK: UsageStatus = {
-  kind: 'subscription',
-  utilization: 0.22,
-  windowLabel: '5-hour window',
-  costUsd: 0.41,
-  state: 'ok',
-};
-
-const USAGE_WARNING: UsageStatus = {
-  kind: 'subscription',
-  utilization: 0.87,
-  windowLabel: '5-hour window',
-  costUsd: 6.12,
-  state: 'warning',
-};
-
-const SUBAGENTS: SubagentInfo[] = [
-  { name: 'Explore', description: 'Read-only search agent' },
-  { name: 'code-reviewer', description: 'Reviews completed work' },
-];
-
-const HEALTHY_STATUS: SessionStatusData = {
-  permissionMode: 'default',
-  model: 'claude-opus-4-6',
-  effort: null,
-  fastMode: false,
-  costUsd: 0.41,
-  contextPercent: 31,
-  isStreaming: false,
-  cwd: CWD,
-};
-
-const DEGRADED_STATUS: SessionStatusData = {
-  ...HEALTHY_STATUS,
-  permissionMode: 'bypassPermissions',
-  model: 'gpt-5.3-codex',
-  costUsd: 6.12,
-  contextPercent: 88,
-};
-
-/** One session's worth of state, minus the density the width decides. */
-interface StatusScenario {
-  /** What this state is, in the words a reviewer would use. */
-  label: string;
-  /** Live state the promotion rules read. */
-  ctx: StatusPromotionContext;
-  /** Everything the items need, minus `density`. */
-  input: Omit<StatusItemNodesInput, 'density'>;
-}
-
-/**
- * A resting session: clean tree on the default branch, a third of the context
- * window used, connected, default permissions, the default runtime. Nothing here
- * is news, so almost nothing shows.
- */
-const HEALTHY: StatusScenario = {
-  label: 'Healthy — nothing to report',
-  ctx: {
-    cwd: CWD,
-    git: gitPromotionState(CLEAN_GIT.branch, CLEAN_GIT.clean, CLEAN_GIT.detached),
-    contextPercent: 31,
-    connectionState: 'connected',
-    permissionMode: 'default',
-    runtime: { isDefault: true, canSelect: false },
-    usage: USAGE_OK,
-    subagentCount: 0,
-  },
-  input: {
-    sessionId: 'showcase-healthy',
-    agent: { name: AGENT.name, color: AGENT.color, emoji: AGENT.emoji, path: AGENT.path },
-    status: HEALTHY_STATUS,
-    onUpdateSession: () => {},
-    onChangeMode: () => {},
-    modelSupportsAutoMode: true,
-    gitStatus: CLEAN_GIT,
-    workspace: null,
-    runtimeChip: DEFAULT_RUNTIME_CHIP,
-    contextPercent: 31,
-    contextUsage: null,
-    compact: null,
-    usage: USAGE_OK,
-    supportsCostTracking: true,
-    subagents: [],
-    connectionState: 'connected',
-  },
-};
-
-/**
- * Everything going wrong at once — the state the width budget exists for. The
- * live link is down, the context window is nearly full, permissions are bypassed,
- * the runtime is not the default, the tree is dirty on a feature branch, usage is
- * near its ceiling, and two subagents are available.
- */
-const DEGRADED: StatusScenario = {
-  label: 'Degraded — connection lost, context critical, bypass permissions, non-default runtime',
-  ctx: {
-    cwd: CWD,
-    git: gitPromotionState(DIRTY_GIT.branch, DIRTY_GIT.clean, DIRTY_GIT.detached),
-    contextPercent: 88,
-    connectionState: 'disconnected',
-    permissionMode: 'bypassPermissions',
-    runtime: { isDefault: false, canSelect: false },
-    usage: USAGE_WARNING,
-    subagentCount: SUBAGENTS.length,
-  },
-  input: {
-    sessionId: 'showcase-degraded',
-    agent: { name: AGENT.name, color: AGENT.color, emoji: AGENT.emoji, path: AGENT.path },
-    status: DEGRADED_STATUS,
-    onUpdateSession: () => {},
-    onChangeMode: () => {},
-    modelSupportsAutoMode: false,
-    gitStatus: DIRTY_GIT,
-    workspace: null,
-    runtimeChip: CODEX_RUNTIME_CHIP,
-    contextPercent: 88,
-    contextUsage: null,
-    compact: null,
-    usage: USAGE_WARNING,
-    supportsCostTracking: true,
-    subagents: SUBAGENTS,
-    connectionState: 'disconnected',
-  },
-};
-
-/**
- * One bar width per density tier, widest first — the tier floors from
- * `status-budget` (640 / 440 / 340) plus one width below the last of them.
- *
- * Capped at 640 on purpose. These boxes are a fixed pixel width, and the
- * playground's content column is ~680px on a 1280px laptop; a wider row would
- * scroll its own `⋯` out of sight, which is the one thing this demo must never
- * hide. The `full` tier's budget keeps growing above 640 — see `BudgetTable`,
- * which reports that from the same function without drawing a 1440px bar.
- */
-const TIER_WIDTHS = [640, 520, 375, 320] as const;
-
-/** Widths sampled by {@link BudgetTable} — two per tier, from phone to wide desktop. */
-const SAMPLED_WIDTHS = [320, 375, 440, 520, 640, 764, 890, 1024, 1440] as const;
+import {
+  AGENT,
+  DEGRADED,
+  DEGRADED_ON_DEFAULT,
+  HEALTHY,
+  SAMPLED_WIDTHS,
+  TIER_WIDTHS,
+  type StatusScenario,
+} from './status-line-showcase-data';
 
 /**
  * What each width affords, straight from `resolveStatusBudget`.
@@ -267,11 +78,45 @@ function BudgetTable() {
 }
 
 /**
+ * Local state for one demo Session panel: its open flag plus control toggles that
+ * actually flip. The controls are client state in the app too, so these are the real
+ * thing rather than a stub.
+ *
+ * @internal
+ */
+function useSessionPanelState() {
+  const [open, setOpen] = useState(false);
+  const [sound, setSound] = useState(true);
+  const [refresh, setRefresh] = useState(false);
+
+  return {
+    open,
+    onOpenChange: setOpen,
+    controls: {
+      sound,
+      onToggleSound: () => setSound((s) => !s),
+      refresh,
+      onToggleRefresh: () => setRefresh((r) => !r),
+    },
+  };
+}
+
+/**
  * One status line at one width, run through the real promotion + budget pipeline.
  *
- * @param props - The session state to promote and the bar width to fit it into.
+ * @param props - The session state to promote, the bar width to fit it into, and any
+ *   pinned keys.
  */
-function BudgetedLine({ scenario, width }: { scenario: StatusScenario; width: number }) {
+function BudgetedLine({
+  scenario,
+  width,
+  pins = [],
+}: {
+  scenario: StatusScenario;
+  width: number;
+  pins?: readonly string[];
+}) {
+  const panel = useSessionPanelState();
   const budget = resolveStatusBudget(width);
   // Mirrors `ChatStatusSection`: the inline Compact action is the first thing the
   // line gives up, so it is offered only at the widest tier. Below that the
@@ -286,7 +131,7 @@ function BudgetedLine({ scenario, width }: { scenario: StatusScenario; width: nu
     density: budget.density,
   });
   const { items, overflow } = applyStatusBudget(
-    selectPromotedItems({ ctx: scenario.ctx, pins: [], nodes }),
+    selectPromotedItems({ ctx: scenario.ctx, pins, nodes }),
     budget
   );
 
@@ -302,57 +147,47 @@ function BudgetedLine({ scenario, width }: { scenario: StatusScenario; width: nu
           'everything fits'
         )}
         {budget.dropped.length > 0 && ` · left cluster drops ${budget.dropped.join(', ')}`}
+        {pins.length > 0 && ` · pinned ${pins.join(', ')}`}
       </p>
       {/* A fixed width, because the budget is a function of the bar's measured
           width — a fluid box would make every row report the same tier. */}
       <div className="border-border/60 bg-background rounded-md border" style={{ width }}>
-        <StatusLine items={items} trailing={<span className="px-1 opacity-50">⋯</span>} />
+        {/* The real Session anchor, not a `⋯` glyph: it is `shrink-0`, it carries the
+            `+N`, and on a coarse pointer it claims a 44px target. A stand-in would
+            leave every row here ~25px roomier than the app, in the one section that
+            is about running out of room. */}
+        <StatusLine
+          items={items}
+          trailing={
+            <SessionPopover
+              open={panel.open}
+              onOpenChange={panel.onOpenChange}
+              diagnostics={scenario.diagnostics}
+              controls={panel.controls}
+              promotionContext={scenario.ctx}
+              overflowCount={overflow}
+            />
+          }
+        />
       </div>
     </div>
   );
 }
 
-const DIAGNOSTICS: SessionDiagnostics = {
-  sessionId: '9f3c1a7e-4b2d-4f10-9c85-2a6e1b0d7f44',
-  cwd: CWD,
-  gitBranch: DIRTY_GIT.branch,
-  gitDirty: true,
-  runtime: 'codex',
-  model: 'gpt-5.3-codex',
-  effort: 'high',
-  permissionMode: 'bypassPermissions',
-  contextPercent: 88,
-  cache: { readTokens: 141_200, creationTokens: 18_400, contextTokens: 176_000 },
-  usage: USAGE_WARNING,
-  connectionState: 'disconnected',
-  lastEventSeq: 2471,
-  queueDepth: 2,
-  clientVersion: '0.57.0',
-};
-
 /**
- * Status line and Session panel showcases: `StatusLine` across density tiers,
- * the promoted set at rest versus under stress, `SessionPopover`, and the
- * `AgentIdentityChip` anchor.
+ * Status line and Session panel showcases: `StatusLine` across density tiers, the
+ * promoted set at rest versus under stress, what a pin does and does not buy,
+ * `SessionPopover`, and the `AgentIdentityChip` anchor.
  */
 export function StatusLineShowcases() {
-  const [sessionOpen, setSessionOpen] = useState(false);
-  const [countedOpen, setCountedOpen] = useState(false);
-  const [sound, setSound] = useState(true);
-  const [refresh, setRefresh] = useState(false);
-
-  const controls = {
-    sound,
-    onToggleSound: () => setSound((s) => !s),
-    refresh,
-    onToggleRefresh: () => setRefresh((r) => !r),
-  };
+  const plainPanel = useSessionPanelState();
+  const countedPanel = useSessionPanelState();
 
   return (
     <>
       <PlaygroundSection
         title="StatusLine — density tiers"
-        description="One degraded session at four bar widths, one per tier. The line never scrolls and never wraps, so each width fills the right cluster by urgency until its budget runs out and reports the rest as +N on the ⋯. Read down the column: the item that goes first is the least urgent one, and nothing is ever lost."
+        description="One degraded session at each tier's floor — the most a tier may say in the fewest pixels it may say it in. The line never scrolls and never wraps, so each width fills the right cluster by urgency until its budget runs out and reports the rest as +N on the ⋯. Read down the column: the item that goes first is the least urgent one, and nothing is ever lost."
       >
         <ShowcaseLabel>Degraded session, narrowing bar</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
@@ -361,6 +196,13 @@ export function StatusLineShowcases() {
               <BudgetedLine key={width} scenario={DEGRADED} width={width} />
             ))}
           </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The same tier floor, holding the longest permission label DorkOS ships
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={640} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>What every width affords</ShowcaseLabel>
@@ -375,11 +217,23 @@ export function StatusLineShowcases() {
           same <code>resolveStatusBudget</code> the app measures with.
         </p>
         <p className="text-muted-foreground text-xs">
-          The 640px row is the tier at its floor holding everything that can promote, so it is the
-          most compressed the line ever gets: both clusters shrink, values truncate, and adjacent
-          items close to touching. The row still satisfies the invariant the e2e spec defends
-          (content never extends past the row, so nothing is clipped out of reach) — this is what
-          the budget looks like when its prediction is exactly spent.
+          The 640px rows are the <code>full</code> tier at its floor holding everything that can
+          promote, and the crowding there is the budget over-promising, not a prediction exactly
+          spent. Measured on the 640px row above: the agent chip runs ~22px past its own box and the
+          context item — the 88% plus the inline Compact action — runs ~39px past its, so each
+          paints over the item beside it. The item&apos;s own box knows (<code>scrollWidth</code>{' '}
+          128 against <code>clientWidth</code> 89); its cluster and the row report that everything
+          fits. The row is what the e2e spec measures, which is why no test catches this:{' '}
+          <code>scrollWidth ≤ clientWidth</code> on an <code>overflow-hidden</code> row with two
+          shrinkable clusters and a truncation on every value holds whether the content fit or was
+          absorbed.
+        </p>
+        <p className="text-muted-foreground text-xs">
+          The single row under the second heading is the same 640px carrying the longest permission
+          label DorkOS ships. A slot is priced at 13 characters (<code>STATUS_VALUE_MAX_CHARS</code>
+          ) and this tier draws the label whole, so <code>Bypass permissions</code> at 18 takes a
+          92px slot where Codex&apos;s <code>Full access</code> takes 63. Both defects are in the
+          shipped budget rather than in this showcase, and DOR-461 tracks the fix.
         </p>
       </PlaygroundSection>
 
@@ -399,16 +253,48 @@ export function StatusLineShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
+        title="StatusLine — what a pin does"
+        description="A pin says “show me”, not “shout at me”. It puts a quiet item in the line — and that is all it does: it buys no immunity from a contested slot or from a tier that gives up the whole left cluster. The pin controls need a server, but the pin's effect is a plain argument to selectPromotedItems, so these rows are the real behaviour."
+      >
+        <ShowcaseLabel>Pinned — a clean branch with nothing to report, shown anyway</ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <BudgetedLine scenario={HEALTHY} width={640} pins={['git']} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>The same pin at 340px — the tier drops it regardless</ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <BudgetedLine scenario={HEALTHY} width={340} pins={['git']} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Pinned and outranked — it enters the line, then loses the slot
+        </ShowcaseLabel>
+        <ShowcaseDemo className="overflow-x-auto">
+          <BudgetedLine scenario={DEGRADED_ON_DEFAULT} width={640} pins={['runtime']} />
+        </ShowcaseDemo>
+
+        <p className="text-muted-foreground text-xs">
+          Compare the first row with the at-rest row in the section above: the branch is the same
+          state either way, in the line only because it is pinned. At 340px it is gone again —{' '}
+          <code>applyStatusBudget</code> drops the left keys the density cannot afford without
+          consulting the pin, which is the one caveat the docs owe a reader who pins a branch. In
+          the third row the runtime is on the server default with nothing to report, so it enters at{' '}
+          <code>QUIET</code> and four louder items take the slots; it is not lost, it is the honest
+          part of the <code>+N</code>.
+        </p>
+      </PlaygroundSection>
+
+      <PlaygroundSection
         title="SessionPopover"
         description="The reveal behind the ⋯ — every row with its live value, a pin on the rows you may keep in the line, and Copy diagnostics. Click a ⋯ below to open it (⌘. does it in a real session)."
       >
         <ShowcaseLabel>Everything fits — plain ⋯</ShowcaseLabel>
         <ShowcaseDemo>
           <SessionPopover
-            open={sessionOpen}
-            onOpenChange={setSessionOpen}
-            diagnostics={DIAGNOSTICS}
-            controls={controls}
+            open={plainPanel.open}
+            onOpenChange={plainPanel.onOpenChange}
+            diagnostics={DEGRADED.diagnostics}
+            controls={plainPanel.controls}
             promotionContext={DEGRADED.ctx}
           />
         </ShowcaseDemo>
@@ -418,10 +304,10 @@ export function StatusLineShowcases() {
         </ShowcaseLabel>
         <ShowcaseDemo>
           <SessionPopover
-            open={countedOpen}
-            onOpenChange={setCountedOpen}
-            diagnostics={DIAGNOSTICS}
-            controls={controls}
+            open={countedPanel.open}
+            onOpenChange={countedPanel.onOpenChange}
+            diagnostics={DEGRADED.diagnostics}
+            controls={countedPanel.controls}
             promotionContext={DEGRADED.ctx}
             overflowCount={4}
             urgentAction={{ label: 'Compact conversation — 88% full', onAction: () => {} }}
@@ -429,11 +315,12 @@ export function StatusLineShowcases() {
         </ShowcaseDemo>
 
         <p className="text-muted-foreground text-xs">
-          Two things only a real session can show. <strong>Pins</strong> live in server config (
-          <code>ui.statusBar.pins</code>) so they sync across surfaces and an agent can set them —
-          the playground has no server, so every row reads unpinned and clicking a pin does not
-          stick. <strong>Row order</strong> is registry order here; on a phone the panel sorts
-          Session rows most-urgent-first, which needs a real viewport, not a narrowed demo box.
+          Two things only a real session can show. <strong>Pin controls</strong> write to server
+          config (<code>ui.statusBar.pins</code>) so they sync across surfaces and an agent can set
+          them — the playground has no server, so every row reads unpinned and clicking a pin does
+          not stick. (What a pin then <em>does</em> needs no server; see the section above.){' '}
+          <strong>Row order</strong> is registry order here; on a phone the panel sorts Session rows
+          most-urgent-first, which needs a real viewport, not a narrowed demo box.
         </p>
       </PlaygroundSection>
 

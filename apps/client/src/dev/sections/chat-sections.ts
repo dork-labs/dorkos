@@ -9,6 +9,13 @@ import type { PlaygroundSection } from '../playground-registry';
 export const CHAT_SECTIONS: PlaygroundSection[] = [
   // MessageShowcases
   {
+    id: 'permissiondeniedchip',
+    title: 'PermissionDeniedChip',
+    page: 'chat',
+    category: 'Messages',
+    keywords: ['permission', 'denied', 'chip', 'classifier', 'blocked', 'auto', 'safety', 'tool'],
+  },
+  {
     id: 'usermessagecontent',
     title: 'UserMessageContent',
     page: 'chat',
@@ -298,6 +305,25 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
       'degraded',
       'healthy',
       'registry',
+    ],
+  },
+  {
+    id: 'statusline-what-a-pin-does',
+    title: 'StatusLine — what a pin does',
+    page: 'chat',
+    category: 'Status',
+    keywords: [
+      'status',
+      'line',
+      'pin',
+      'pins',
+      'pinned',
+      'quiet',
+      'severity',
+      'budget',
+      'overflow',
+      'git',
+      'branch',
     ],
   },
   {
