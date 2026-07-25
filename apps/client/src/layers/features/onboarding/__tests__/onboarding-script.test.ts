@@ -49,9 +49,7 @@ describe('onboarding-script', () => {
 
   describe('computeGrouping', () => {
     it('marks a lone message as "only"', () => {
-      expect(computeGrouping([msg('a', 'assistant')])).toEqual([
-        { position: 'only', groupIndex: 0 },
-      ]);
+      expect(computeGrouping([msg('a', 'assistant')])).toEqual([{ position: 'only' }]);
     });
 
     it('groups consecutive same-role messages and splits on role change', () => {
@@ -60,11 +58,7 @@ describe('onboarding-script', () => {
         msg('b', 'assistant'),
         msg('c', 'user'),
       ]);
-      expect(grouping).toEqual([
-        { position: 'first', groupIndex: 0 },
-        { position: 'last', groupIndex: 0 },
-        { position: 'only', groupIndex: 1 },
-      ]);
+      expect(grouping).toEqual([{ position: 'first' }, { position: 'last' }, { position: 'only' }]);
     });
 
     it('marks the middle of a three-message run', () => {
@@ -74,7 +68,6 @@ describe('onboarding-script', () => {
         msg('c', 'assistant'),
       ]);
       expect(grouping.map((g) => g.position)).toEqual(['first', 'middle', 'last']);
-      expect(grouping.every((g) => g.groupIndex === 0)).toBe(true);
     });
   });
 });

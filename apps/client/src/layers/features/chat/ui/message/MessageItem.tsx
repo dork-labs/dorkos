@@ -1,10 +1,12 @@
 import { motion } from 'motion/react';
 import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
+import type { MessageAuthor } from '@/layers/shared/model';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { messageItem } from './message-variants';
 import { MessageProvider } from './MessageContext';
+import { MessageAuthorAvatar } from './MessageAuthorAvatar';
 import { UserMessageContent } from './UserMessageContent';
 import { AssistantMessageContent } from './AssistantMessageContent';
 import { RunWithMenu } from './RunWithMenu';
@@ -13,6 +15,8 @@ import type { InteractiveToolHandle } from './types';
 interface MessageItemProps {
   message: ChatMessage;
   grouping: MessageGrouping;
+  /** Who this message is from — the identity the gutter renders. */
+  author: MessageAuthor;
   sessionId: string;
   isNew?: boolean;
   isStreaming?: boolean;
@@ -39,8 +43,9 @@ interface MessageItemProps {
   textEffect?: TextEffectConfig;
   /**
    * Presentation mode for off-session, scripted lines (e.g. the onboarding
-   * conversation): suppress the hover timestamp and the hover background so a
-   * synthetic bubble reads as narration, not an interactive chat message.
+   * conversation): suppress the timestamp, the hover background, and the hover
+   * actions so a synthetic line reads as narration, not an interactive chat
+   * message.
    */
   presentation?: boolean;
   /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
@@ -57,13 +62,15 @@ function formatTime(timestamp: string): string {
 }
 
 /**
- * Message item orchestrator — reads grouping, role, and store settings,
- * then delegates rendering to UserMessageContent or AssistantMessageContent.
- * Provides MessageContext to all children for prop drilling elimination.
+ * Message item orchestrator — lays out the identity gutter and content column,
+ * reads grouping and store settings, then delegates rendering to
+ * UserMessageContent or AssistantMessageContent. Provides MessageContext to all
+ * children for prop drilling elimination.
  */
 export function MessageItem({
   message,
   grouping,
+  author,
   sessionId,
   isNew = false,
   isStreaming = false,
@@ -78,30 +85,45 @@ export function MessageItem({
   presentation = false,
   runtimeLabel,
 }: MessageItemProps) {
+  // A group start renders the avatar, the author's name, and the time; a
+  // continuation renders none of them and hangs under the group start, with its
+  // time in the gutter on hover. Derived, never passed in: the caller already
+  // states the same fact in `grouping.position`, and two sources for one fact
+  // can only ever drift apart.
+  const showAuthorHeader = grouping.position === 'first' || grouping.position === 'only';
   const isUser = message.role === 'user';
   // Local-command output is a `user`-role message, but its content is a command
-  // result (often a wide ANSI table), so it renders full-width like assistant
-  // output rather than crammed into the right-aligned user bubble (DOR-126).
-  const isCommandOutput = message.messageType === 'local_command_output';
-  const renderAsUserBubble = isUser && !isCommandOutput;
-  // "Run this with…" hangs off an actual prompt bubble — not slash commands or
-  // compaction markers, which are not re-runnable prompts. Web only: it launches
-  // a fresh routed session, which the embedded (Obsidian) shell — a single
-  // store-bound session with no route navigation — cannot host.
+  // result (often a wide ANSI table), so it takes the assistant's lighter
+  // typography rather than reading as something the human typed (DOR-126).
+  const isUserPrompt = isUser && message.messageType !== 'local_command_output';
+  // "Run this with…" hangs off an actual prompt — not slash commands or
+  // compaction markers, which are not re-runnable prompts, and not scripted
+  // narration. Web only: it launches a fresh routed session, which the embedded
+  // (Obsidian) shell — a single store-bound session with no route navigation —
+  // cannot host.
   const showRunWith =
-    renderAsUserBubble &&
+    isUserPrompt &&
+    !presentation &&
     !getPlatform().isEmbedded &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;
   const { showTimestamps } = useAppStore();
-  const { position, groupIndex } = grouping;
-  const isGroupStart = position === 'only' || position === 'first';
 
   const styles = messageItem({
-    role: renderAsUserBubble ? 'user' : 'assistant',
-    position,
+    role: isUserPrompt ? 'user' : 'assistant',
+    position: grouping.position,
   });
+
+  const time = message.timestamp ? formatTime(message.timestamp) : '';
+  const showTime = !presentation && time.length > 0;
+  // The group header's time is part of the identity line, so it always shows —
+  // a header reading "DorkBot" with a blank where the time belongs looks broken.
+  // `showTimestamps` governs only the per-message stamps in the continuation
+  // gutter, which are the noisy ones the preference exists to quiet.
+  const gutterTimeTone = showTimestamps
+    ? 'text-msg-timestamp'
+    : 'group-hover:text-msg-timestamp text-transparent';
 
   return (
     <MessageProvider
@@ -120,49 +142,45 @@ export function MessageItem({
       }}
     >
       <motion.div
-        initial={
-          isNew
-            ? {
-                opacity: 0,
-                y: 8,
-                x: renderAsUserBubble ? 12 : 0,
-                scale: renderAsUserBubble ? 0.97 : 1,
-              }
-            : false
-        }
-        animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+        initial={isNew ? { opacity: 0, y: 8 } : false}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         data-testid="message-item"
         data-role={message.role}
         className={cn(styles.root(), presentation && 'hover:bg-transparent')}
       >
-        {isGroupStart && groupIndex > 0 && !isUser && <div className={styles.divider()} />}
-        {!presentation && message.timestamp && (
-          <span
-            className={cn(
-              styles.timestamp(),
-              showTimestamps
-                ? 'text-msg-timestamp'
-                : 'group-hover:text-msg-timestamp text-transparent'
-            )}
-          >
-            {formatTime(message.timestamp)}
-          </span>
-        )}
-        {showRunWith && (
-          <RunWithMenu
-            prompt={message.content}
-            sessionId={sessionId}
-            className="absolute top-2 -left-9 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-          />
-        )}
-        <div className={styles.content()}>
-          {isUser ? (
-            <UserMessageContent message={message} />
-          ) : (
-            <AssistantMessageContent message={message} />
+        <div className={styles.gutter()}>
+          {showAuthorHeader && <MessageAuthorAvatar author={author} />}
+          {!showAuthorHeader && showTime && (
+            <span className={cn(styles.avatarTimestamp(), gutterTimeTone)}>{time}</span>
           )}
         </div>
+        <div className={styles.body()}>
+          {showAuthorHeader && (
+            <div className={styles.header()}>
+              <span className={styles.authorName()}>{author.displayName}</span>
+              {showTime && (
+                <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
+              )}
+            </div>
+          )}
+          <div data-slot="message-content" className={styles.content()}>
+            {isUser ? (
+              <UserMessageContent message={message} />
+            ) : (
+              <AssistantMessageContent message={message} />
+            )}
+          </div>
+        </div>
+        {showRunWith && (
+          <div className={styles.actions()}>
+            <RunWithMenu
+              prompt={message.content}
+              sessionId={sessionId}
+              className="hover:bg-muted size-6 justify-center rounded"
+            />
+          </div>
+        )}
       </motion.div>
     </MessageProvider>
   );

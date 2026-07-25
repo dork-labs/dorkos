@@ -3,41 +3,66 @@ import { tv } from 'tailwind-variants';
 /**
  * Multi-slot variant definition for MessageItem layout and styling.
  *
- * User messages render as right-aligned rounded bubbles with constrained width.
- * Assistant messages render full-width with no bubble (left-aligned).
+ * Every author renders in the same left-gutter layout (spec
+ * `multi-participant-message-list`, D1): a fixed-width identity column holding
+ * the avatar, then the content column. A continuation leaves the gutter empty —
+ * so its content stays flush under the group start — and its timestamp appears
+ * there on hover. There is no right-aligned bubble: identity comes from the
+ * avatar and the name, which keeps working past two participants.
  *
- * Slots: root, content, timestamp, divider.
- * Variants: role (user/assistant), position (first/middle/last/only), density (comfortable/compact).
+ * Slots: root, gutter, avatarTimestamp, body, header, authorName, timestamp,
+ * actions, content.
+ * Variants: role (user/assistant — typography only), position
+ * (first/middle/last/only — vertical rhythm), density (comfortable/compact).
  */
 export const messageItem = tv({
   slots: {
-    root: 'group relative flex gap-[var(--msg-gap)] transition-colors duration-150',
+    root: 'group hover:bg-muted rounded-msg relative flex w-full gap-[var(--msg-gap)] px-[var(--msg-padding-x)] transition-colors duration-150',
+    /** Identity column — the avatar on a group start, the hover timestamp on a continuation. */
+    gutter: 'relative flex w-[var(--msg-gutter-width)] shrink-0 justify-center',
+    /**
+     * A continuation's timestamp, right-aligned in the gutter. It overflows
+     * left into the row's padding, which is where the extra width for a
+     * locale's day period ("10:42 AM") comes from. Small-screen-hidden, as the
+     * old absolute timestamp was: it is a hover affordance, and touch has none.
+     */
+    avatarTimestamp:
+      'absolute top-0.5 right-0 hidden text-[10px] leading-none whitespace-nowrap tabular-nums transition-colors duration-150 sm:block',
+    body: 'flex min-w-0 flex-1 flex-col',
+    header: 'flex items-baseline gap-2',
+    authorName: 'truncate text-sm font-medium',
+    timestamp: 'text-xs tabular-nums transition-colors duration-150',
+    /**
+     * Hover action toolbar at the row's top-right (D6). A container, not a
+     * single button: reactions and reply-in-thread land here in later phases.
+     *
+     * `pointer-events-none` while invisible: the toolbar floats above message
+     * text that is explicitly selectable (see `content` below), so an
+     * unhittable-but-present click target would eat drags that start in its
+     * corner. Pointer events come back on hover, and on focus-within so the
+     * keyboard path still reaches it without a pointer ever being involved.
+     */
+    actions:
+      'bg-popover shadow-soft pointer-events-none absolute top-1 right-2 z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
     // desktop-darwin:select-text: the desktop shell defaults chrome to
     // non-selectable (index.css), but message bodies — text, code blocks,
     // command output — are exactly what a user copies out of a chat, so this
     // single container re-enables selection for everything a message renders
     // rather than scattering the re-enable across each content type (DOR-253).
-    content: 'min-w-0 text-sm desktop-darwin:select-text',
-    timestamp: 'absolute top-1 right-4 hidden text-xs transition-colors duration-150 sm:inline',
-    divider: 'absolute inset-x-0 top-0 h-px bg-[var(--msg-divider-color)]',
+    content: 'min-w-0 max-w-[var(--msg-content-max-width)] text-sm desktop-darwin:select-text',
   },
   variants: {
+    // Role no longer changes layout — only the weight the two voices read at.
     role: {
-      user: {
-        root: 'ml-auto max-w-[var(--msg-user-max-width)] rounded-msg bg-user-msg px-4 py-2.5 hover:bg-user-msg/90',
-        content: 'font-[var(--msg-user-font-weight)]',
-      },
-      assistant: {
-        root: 'w-full px-[var(--msg-padding-x)] py-[var(--msg-padding-y)] rounded-msg hover:bg-muted',
-        content:
-          'max-w-[var(--msg-content-max-width)] flex-1 font-[var(--msg-assistant-font-weight)]',
-      },
+      user: { content: 'font-[var(--msg-user-font-weight)]' },
+      assistant: { content: 'font-[var(--msg-assistant-font-weight)]' },
     },
+    // Vertical rhythm: a group opens and closes with air, its middle stays tight.
     position: {
-      first: {},
-      middle: {},
-      last: {},
-      only: {},
+      first: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-mid)]' },
+      middle: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-mid)]' },
+      last: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-end)]' },
+      only: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-end)]' },
     },
     density: {
       comfortable: {},
@@ -47,38 +72,6 @@ export const messageItem = tv({
       },
     },
   },
-  compoundVariants: [
-    // --- Assistant vertical padding (preserves existing token behavior) ---
-    {
-      role: 'assistant',
-      position: 'first',
-      class: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-mid)]' },
-    },
-    {
-      role: 'assistant',
-      position: 'middle',
-      class: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-mid)]' },
-    },
-    {
-      role: 'assistant',
-      position: 'last',
-      class: { root: 'pt-[var(--msg-padding-y-mid)] pb-[var(--msg-padding-y-end)]' },
-    },
-    {
-      role: 'assistant',
-      position: 'only',
-      class: { root: 'pt-[var(--msg-padding-y-start)] pb-[var(--msg-padding-y-end)]' },
-    },
-    // --- User vertical spacing (margin-based for bubble gaps) ---
-    { role: 'user', position: 'first', class: { root: 'mt-3 mb-px' } },
-    { role: 'user', position: 'middle', class: { root: 'my-px' } },
-    { role: 'user', position: 'last', class: { root: 'mt-px mb-3' } },
-    { role: 'user', position: 'only', class: { root: 'mt-3 mb-3' } },
-    // --- User grouped radius (tight right corners for stacked bubbles) ---
-    { role: 'user', position: 'first', class: { root: 'rounded-br-msg-tight' } },
-    { role: 'user', position: 'middle', class: { root: 'rounded-r-msg-tight' } },
-    { role: 'user', position: 'last', class: { root: 'rounded-tr-msg-tight' } },
-  ],
   defaultVariants: {
     role: 'assistant',
     position: 'only',

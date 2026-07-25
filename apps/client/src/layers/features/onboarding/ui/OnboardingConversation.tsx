@@ -17,9 +17,16 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useAgentBirthStore, useAppStore, type AgentBirthRecord } from '@/layers/shared/model';
-import { fireCelebration } from '@/layers/shared/lib';
+import { fireCelebration, resolveAgentVisual } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
-import { MessageItem, TypingDots, ChatInput, FirstLight } from '@/layers/features/chat';
+import {
+  MessageItem,
+  TypingDots,
+  ChatInput,
+  FirstLight,
+  resolveMessageAuthor,
+  type MessageAuthorAgent,
+} from '@/layers/features/chat';
 import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { useUpdateAgent } from '@/layers/entities/agent';
@@ -152,6 +159,14 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       }
     : {};
 
+  // DorkBot speaks every scripted line, so the list's identity gutter names it
+  // and wears the same avatar first light just showed — not the resolver's
+  // anonymous fallback.
+  const dorkbotAuthor = useMemo<MessageAuthorAgent>(() => {
+    const { color, emoji } = resolveAgentVisual({ id: 'dorkbot' });
+    return { id: 'dorkbot', displayName: 'DorkBot', emoji, color };
+  }, []);
+
   const dorkbotArrival = useMemo<AgentBirthRecord>(
     () => ({
       name: 'dorkbot',
@@ -199,6 +214,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
               key={message.id}
               message={message}
               grouping={convo.grouping[i]}
+              author={resolveMessageAuthor(message, { agent: dorkbotAuthor })}
               sessionId=""
               presentation
             />

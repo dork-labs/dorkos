@@ -1,0 +1,74 @@
+{
+  "spec": "multi-participant-message-list",
+  "id": "260725-014841",
+  "tracker": "DOR-455",
+  "phase": 1,
+  "contract": {
+    "note": "Frozen interface between tasks. Wave-2 tasks touch disjoint files and must not renegotiate this.",
+    "MessageAuthor": "apps/client/src/layers/shared/model/chat-message-types.ts — { kind: 'human'|'agent'|'system'; id: string; displayName: string; emoji?: string; color?: string; runtime?: string }",
+    "MessageItemProps": "gains `author: MessageAuthor` and `showAuthorHeader: boolean`; keeps every existing prop. MessageList supplies both from the row.",
+    "ListRow": "apps/client/src/layers/features/chat/lib/build-list-rows.ts — discriminated union on `kind`: 'message' | 'day-divider' | 'unread-divider'. Message rows carry `messageIndex` (index into the ORIGINAL messages array, load-bearing for the widget-fence and isNew rules)."
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "title": "MessageAuthor type + pure resolver",
+      "wave": 1,
+      "blockedBy": [],
+      "files": [
+        "apps/client/src/layers/shared/model/chat-message-types.ts",
+        "apps/client/src/layers/features/chat/lib/resolve-message-author.ts",
+        "apps/client/src/layers/features/chat/lib/__tests__/resolve-message-author.test.ts"
+      ],
+      "acceptance": "Pure, dependency-free resolver. Every D3 branch covered: agent match, runtime fallback, human, system/local_command_output. Never returns a bare 'Assistant'."
+    },
+    {
+      "id": "T2",
+      "title": "ListRow model + buildListRows (replaces computeGrouping)",
+      "wave": 1,
+      "blockedBy": ["T1"],
+      "files": [
+        "apps/client/src/layers/features/chat/lib/build-list-rows.ts",
+        "apps/client/src/layers/features/chat/lib/__tests__/build-list-rows.test.ts"
+      ],
+      "acceptance": "O(n) single pass. Grouping breaks on author change, >5min gap (named constant), day boundary. Day dividers inserted at boundaries; unread divider at first message after the cursor. messageIndex preserved on every message row. Covers empty list, single message, cursor pointing at an absent message."
+    },
+    {
+      "id": "T3",
+      "title": "MessageList virtualizes rows; divider components",
+      "wave": 2,
+      "blockedBy": ["T2"],
+      "files": [
+        "apps/client/src/layers/features/chat/ui/MessageList.tsx",
+        "apps/client/src/layers/features/chat/ui/message/DayDivider.tsx",
+        "apps/client/src/layers/features/chat/ui/message/UnreadDivider.tsx",
+        "apps/client/src/layers/features/chat/model/use-unread-cursor.ts"
+      ],
+      "acceptance": "Virtualizer config preserved VERBATIM (anchorTo, followOnAppend, scrollEndThreshold, measureElement zero-guard). Widget-fence and isNew rules read row.messageIndex, never the virtual row index. Dividers are real virtualized rows."
+    },
+    {
+      "id": "T4",
+      "title": "MessageItem gutter layout + variants",
+      "wave": 2,
+      "blockedBy": ["T1"],
+      "files": [
+        "apps/client/src/layers/features/chat/ui/message/MessageItem.tsx",
+        "apps/client/src/layers/features/chat/ui/message/MessageAuthorAvatar.tsx",
+        "apps/client/src/layers/features/chat/ui/message/message-variants.ts",
+        "apps/client/src/layers/features/chat/ui/message/UserMessageContent.tsx"
+      ],
+      "acceptance": "Left avatar gutter; group start shows avatar+name+time; continuations hang-indent with neither. User bubble removed. RunWithMenu moved to a top-right hover toolbar. `presentation` mode still suppresses hover chrome and timestamps."
+    },
+    {
+      "id": "T5",
+      "title": "Playground, mocks, RTL tests, verification",
+      "wave": 3,
+      "blockedBy": ["T3", "T4"],
+      "files": [
+        "apps/client/src/dev/mock-factories.ts",
+        "apps/client/src/layers/features/chat/ui/__tests__/"
+      ],
+      "acceptance": "Playground showcases the new list with multiple authors. RTL covers group start vs continuation, both dividers, presentation mode, command output full-width. pnpm verify green."
+    }
+  ]
+}
