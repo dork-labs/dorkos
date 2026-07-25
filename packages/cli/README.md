@@ -208,13 +208,16 @@ These talk to a running DorkOS server so you (or an agent in any runtime) can dr
 | `dorkos task trigger <id>`                       | Run a task now                                                        |
 | `dorkos task runs`                               | List recent task runs                                                 |
 | `dorkos activity`                                | Show the activity feed (`--actor`, `--category`, `--type`, `--limit`) |
-| `dorkos capabilities`                            | List everything you can do here (the live capability catalog)         |
+| `dorkos capabilities`                            | List the actions this DorkOS accepts by name (the live catalog)       |
 | `dorkos call <capability-id>`                    | Invoke any capability by id (`--input <json>`, prints raw JSON)       |
+| `dorkos call <id> --approval <token>`            | Retry a call that came back needing your OK                           |
 | `dorkos version --check`                         | Show the server and latest version                                    |
 
 Run any command with `--help` for its full options (for example `dorkos task create --help`).
 
-`dorkos capabilities` lists every capability the server exposes; `dorkos call <id>` invokes one by id and prints its result as JSON. Together they let an agent in any runtime discover and drive DorkOS without the in-app tools. Curated verbs like `dorkos agent` and `dorkos task` keep their own shapes; `dorkos call` is the generic, capability-shaped path to everything else.
+`dorkos capabilities` asks the running server for its live catalog: the actions it accepts by name, each with how risky it is. `dorkos call <id>` runs one of them and prints the result as JSON. Together they let an agent in any runtime, including Codex and OpenCode, find out what it can do and do it, without needing DorkOS's in-app tools.
+
+The catalog is not the full list of DorkOS tools. Agent messaging, discovery, and extensions are MCP tools, reachable from inside a session and from an external MCP client, but not by `dorkos call`. The catalog says as much in its own output. Curated verbs like `dorkos agent` and `dorkos task` keep their own shapes; `dorkos call` covers what the catalog carries.
 
 ### Environment variables
 

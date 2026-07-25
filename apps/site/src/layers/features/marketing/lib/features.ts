@@ -426,8 +426,51 @@ export const features: Feature[] = [
       crop: 'bottom',
     },
     docsUrl: '/docs/guides/tool-approval',
-    relatedFeatures: ['chat-interface', 'slack-adapter', 'telegram-adapter'],
+    relatedFeatures: ['chat-interface', 'slack-adapter', 'telegram-adapter', 'action-approvals'],
     sortOrder: 5,
+  },
+  {
+    slug: 'action-approvals',
+    name: 'Action Approvals',
+    product: 'console',
+    category: 'agent-control',
+    tagline: 'An agent asks before it removes a package, and waits for you',
+    description:
+      'Your agents can add and remove marketplace packages. Before one lands or leaves, DorkOS puts a card in front of you and waits for your answer.',
+    status: 'ga',
+    benefits: [
+      'A marker in the header when an agent is waiting',
+      'Read what would run, in plain words, before deciding',
+      'One yes covers one exact action, then it is spent',
+      'Requests run out after two hours, so none linger',
+      'Refusals land in your activity feed, not just approvals',
+    ],
+    moment:
+      'Your agent wants to remove a package, saved data and all. A marker appears in the header wherever you happen to be, you read the one sentence describing it, and you decide.',
+    docsUrl: '/docs/guides/action-approvals',
+    relatedFeatures: ['tool-approval', 'agent-attribution', 'capability-catalog', 'marketplace'],
+    sortOrder: 6,
+  },
+  {
+    slug: 'agent-attribution',
+    name: 'Agent Attribution',
+    product: 'console',
+    category: 'identity',
+    tagline: 'See which agent ran a DorkOS action, not just that it happened',
+    description:
+      'When several agents share one DorkOS, "something changed" is no answer. Your feed names the agent behind each DorkOS action it can attribute.',
+    status: 'ga',
+    benefits: [
+      'DorkOS actions a Claude Code or Codex agent runs are named',
+      'Refused and waiting attempts are recorded too',
+      'See what an agent tried, not only what it finished',
+      'Filter the feed down to agent activity alone with one flag',
+    ],
+    moment:
+      'A setting is not what you left it as. You open your activity feed and it names the agent, the change, and the minute, so you know who to go ask.',
+    docsUrl: '/docs/guides/operating-dorkos',
+    relatedFeatures: ['action-approvals', 'agent-identity', 'capability-catalog'],
+    sortOrder: 7,
   },
   {
     slug: 'question-prompts',
@@ -779,6 +822,28 @@ export const features: Feature[] = [
     docsUrl: '/docs/self-hosting/tunnel-setup',
     relatedFeatures: ['cli', 'relay-message-bus'],
     sortOrder: 3,
+  },
+  {
+    slug: 'capability-catalog',
+    name: 'Capability Catalog',
+    product: 'core',
+    category: 'integration',
+    tagline: 'Your agent asks DorkOS what it can do, and gets a live answer',
+    description:
+      'Agents guess from docs that go stale. One command asks your running DorkOS instead: the actions it accepts by name, and how risky each one is.',
+    status: 'ga',
+    benefits: [
+      'One command lists the actions DorkOS accepts by name',
+      'Each one says how risky it is up front',
+      'Run any of them by name with `dorkos call`',
+      'Reaches DorkOS from Codex and OpenCode, which get no in-app tools',
+      'Says what it leaves out, so an agent looks in the right place',
+    ],
+    moment:
+      'Your Codex agent has no DorkOS tools at all. It runs one command, reads back the current list of actions, and gets to work, without you pasting anything out of the docs.',
+    docsUrl: '/docs/guides/cli-usage',
+    relatedFeatures: ['cli', 'mcp-server', 'action-approvals', 'agent-attribution'],
+    sortOrder: 4,
   },
 ];
 

@@ -398,7 +398,7 @@ export function ActivityFeedHero({ ctaText, ctaHref, showGithubLink }: ActivityF
             className="mt-3 text-center font-mono text-[10px] leading-[1.6] tracking-[0.04em]"
             style={{ color: '#7A756A' }}
           >
-            Simulated. Real agents log every action, in real time.
+            Simulated. Your own feed fills in as your agents work.
           </p>
         </motion.div>
 
