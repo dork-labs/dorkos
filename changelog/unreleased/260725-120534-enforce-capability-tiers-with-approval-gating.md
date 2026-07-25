@@ -38,5 +38,5 @@
   catalog action that cannot be undone without your approval, and the card tells you
   plainly that DorkOS does not know who asked (DOR-448).
 - When an agent presents an identity DorkOS does not accept, that now shows up in
-  the debug log so you can see a shut-off agent still trying. The token itself is
-  never written down (DOR-448).
+  the debug log so you can see an agent with an expired or rejected token still
+  trying. The token itself is never written down (DOR-448).

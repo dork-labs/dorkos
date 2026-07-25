@@ -35,6 +35,19 @@ So the check is: grep the construction across `**/*.{md,mdx,ts,tsx,json}`, then 
 
 `.json` is in that glob for one generated file: `docs/api/openapi.json:11383` embeds the `list_capabilities` description verbatim, as does `docs/api/api/capabilities/catalog/get.mdx:18`. Both derive from `capabilities-domain.ts`, so they are correct exactly as long as their source is, and neither is ever hand-edited. The glob is there to catch the case where they have drifted from it.
 
+### The other half: implemented controls nobody can reach
+
+A grep finds sentences. It does not find the second failure mode this program produced three times, where a corrected sentence leaves its **premise** standing in the bullet beside it: copy describing a control the code implements correctly but exposes to nobody. All three sentences sat in one paragraph of one changelog fragment, and they trace to only **two** inert affordances rather than to careless wording, which is the point:
+
+| Inert affordance                                                                         | What the copy implied                                                                                                   |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `tierCeiling` (no setter; see above)                                                     | "Every agent can be limited to what it may do", and separately "DorkOS decides what an agent may do based on who it is" |
+| `AgentIdentityService.revoke` (`agent-identity-service.ts:320`, zero production callers) | "a shut-off agent still trying"                                                                                         |
+
+Nothing in production sets a ceiling or revokes a token: a token stops being accepted only by expiry (7 days idle, 30 absolute) or by being malformed.
+
+The useful property is that this class is **bounded by the number of implemented-but-unexposed controls, not by the number of sentences**. So the check is not another grep. Before writing user-facing copy about a subsystem, enumerate the affordances it implements but does not expose (a method with no route, tool, CLI verb, or client caller), and confirm no copy anywhere describes them as available to the reader. For the identity module that enumeration is now closed: `tierCeiling` and `revoke` were the only two, both are ticketed, and both are named above so the next writer inherits the list rather than rediscovering it.
+
 Knowing what you can do is the other half of the surface: see [The awareness surface](#the-awareness-surface).
 
 Everything above used to be hand-registered (a descriptor here, a CLI handler there, a `tool-security` entry). Phase 2 replaced that with the registry, so forgetting a surface is no longer possible: a single declaration lights them all up, and the [conformance suite](#the-conformance-suite) fails CI if a projection ever drifts. The [Phase 1 history](#phase-1-history) note at the end records what changed.
