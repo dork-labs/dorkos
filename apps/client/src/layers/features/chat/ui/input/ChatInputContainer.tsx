@@ -238,7 +238,14 @@ export function ChatInputContainer({
               onEdit={chatQueue.handleQueueEdit}
               onRemove={chatQueue.handleQueueRemove}
               onSend={chatQueue.handleQueueSend}
-              sendBlockedReason={chatQueue.sendBlockedReason}
+              // A failed attachment blocks a hand-send exactly as it blocks a
+              // normal one — and says so, instead of letting the click dequeue,
+              // fail inside the upload, and land as a generic "Could not send
+              // message". This component is the one place that holds both the
+              // queue and the attachment state.
+              sendBlockedReason={
+                hasFailedUpload ? 'An attachment did not upload' : chatQueue.sendBlockedReason
+              }
             />
             <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
 

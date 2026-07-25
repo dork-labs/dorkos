@@ -97,7 +97,7 @@ vi.mock('@/layers/entities/session', () => ({
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { ChatInput } from '../ui/input/ChatInput';
-import { FileChipBar } from '../ui/input/FileChipBar';
+import { QueuePanel } from '../ui/input/QueuePanel';
 import type { ToolCallState } from '../model/chat-types';
 import { createRef } from 'react';
 
@@ -296,25 +296,18 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     expect(lastChatInputProps().canSubmit).toBe(false);
   });
 
-  it('hands the retry down to the chips so the failure is actionable', () => {
-    const onFileRetry = vi.fn();
-    const pendingFiles = [
-      {
-        id: 'f-1',
-        file: new File(['x'], 'huge.bin', { type: 'text/plain' }),
-        status: 'error' as const,
-        progress: 12,
-        error: 'File too large',
-      },
-    ];
+  it('blocks a hand-send from the queue too, and says why', () => {
+    // Without this the click dequeues, the upload throws inside the flush, the
+    // restore fires, and the person gets a generic "Could not send message" for
+    // a cause that was on screen the whole time.
     render(
       <ChatInputContainer
         {...baseProps}
-        fileUpload={{ ...baseProps.fileUpload, pendingFiles, onFileRetry, hasFailedUpload: true }}
+        fileUpload={{ ...baseProps.fileUpload, hasFailedUpload: true }}
       />
     );
 
-    const chipProps = vi.mocked(FileChipBar).mock.calls.at(-1)![0];
-    expect(chipProps.onRetry).toBe(onFileRetry);
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    expect(panelProps.sendBlockedReason).toBe('An attachment did not upload');
   });
 });

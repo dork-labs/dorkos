@@ -46,7 +46,7 @@ function useHarness(status: ChatStatus = 'streaming', onFlush = vi.fn()) {
  * reason a session switch mid-edit could leave one session's composer holding
  * another value than the operator left there.
  */
-function useStoreBackedHarness(sessionId: string) {
+function useStoreBackedHarness(sessionId: string, selectedCwd = '/dir') {
   const { input } = useSessionChatState(sessionId);
   const setInput = useCallback(
     (value: string) => useSessionChatStore.getState().updateSession(sessionId, { input: value }),
@@ -59,7 +59,7 @@ function useStoreBackedHarness(sessionId: string) {
     status: 'streaming',
     sessionBusy: false,
     sessionId,
-    selectedCwd: '/dir',
+    selectedCwd,
     onFlush: vi.fn(),
     tryNativeCommand: () => ({ handled: false }),
     chatInputRef,
@@ -358,5 +358,112 @@ describe('useChatQueue — switching sessions mid-edit (DOR-480 duplicate send)'
     rerender({ sessionId: 'A' });
     expect(result.current.input).toBe('wait, also ');
     expect(queuedIn('A')).toEqual(['deploy to production instead']);
+  });
+
+  it('a cwd-only change gets the same handoff — the cursor resets on that too', () => {
+    // `useMessageQueue` scopes the editing cursor to (sessionId, cwd). Keying the
+    // handoff on sessionId alone left the identical duplicate-send shape behind a
+    // cwd change: cursor gone, item still queued, its body still in the composer.
+    // `switch-agent-cwd.ts` sets cwd and then navigates, one un-batched render
+    // apart, so this is a render ordering away from live.
+    const { result, rerender } = renderHook(
+      ({ sessionId, selectedCwd }) => useStoreBackedHarness(sessionId, selectedCwd),
+      { initialProps: { sessionId: 'A', selectedCwd: '/one' } }
+    );
+
+    act(() => result.current.setInput('deploy to staging'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.setInput('wait, also '));
+    act(() => result.current.handleQueueEdit(result.current.queue[0].id));
+    expect(result.current.input).toBe('deploy to staging');
+
+    rerender({ sessionId: 'A', selectedCwd: '/two' });
+
+    expect(result.current.editingIndex).toBeNull();
+    expect(queuedIn('A')).toEqual(['deploy to staging']);
+    expect(result.current.input).toBe('wait, also ');
+  });
+});
+
+describe('useChatQueue — a refused send leaves the edit exactly as it was (DOR-480)', () => {
+  it('does not swap the composer when Send-now is blocked', () => {
+    const onFlush = vi.fn();
+    // Streaming blocks a hand-send; the row's control is `aria-disabled`, but the
+    // handler must hold the line on its own — the keyboard path can still fire it.
+    const { result } = renderHook(() => useHarness('streaming', onFlush));
+
+    act(() => result.current.setInput('run the migration'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.setInput('half-written thought'));
+    act(() => result.current.handleQueueEdit(result.current.queue[0].id));
+    act(() => result.current.setInput('run the migration on staging first'));
+
+    act(() => result.current.handleQueueSend(result.current.queue[0].id));
+
+    expect(onFlush).not.toHaveBeenCalled();
+    // The rewrite is still on screen and still the item's content. Swapping in
+    // the parked draft here would leave the cursor pointing at this row, and the
+    // next Enter routes to onSaveEdit — writing the draft over the rewrite.
+    expect(result.current.input).toBe('run the migration on staging first');
+    expect(result.current.editingIndex).toBe(0);
+    expect(queuedIn(SESSION_ID)).toEqual(['run the migration on staging first']);
+  });
+
+  it('does not swap the composer when the row has already left the queue', () => {
+    // The unguarded branch: `sendNow` bails on `index === -1`, which no `disabled`
+    // attribute covers — the auto-flush can dequeue between render and click.
+    const onFlush = vi.fn();
+    const { result } = renderHook(() => useHarness('error', onFlush));
+
+    act(() => result.current.setInput('run the migration'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.setInput('half-written thought'));
+    const rowId = result.current.queue[0].id;
+    act(() => result.current.handleQueueEdit(rowId));
+    act(() => result.current.setInput('run the migration on staging first'));
+
+    // It flushes out from under the click.
+    act(() => {
+      useSessionStreamStore.getState().removeQueuedMessage(SESSION_ID, rowId);
+    });
+    act(() => result.current.handleQueueSend(rowId));
+
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(result.current.input).toBe('run the migration on staging first');
+  });
+});
+
+describe('useChatQueue — a native command cannot reach the queue by the edit door', () => {
+  it('refuses to save an edit that is a native command, keeping the text', () => {
+    // `handleQueue` runs the native funnel at enqueue time; the edit paths did
+    // not, so a rewrite could put one in the queue — where it flushes without
+    // starting a turn and the streaming→idle pump never re-arms.
+    const { result } = renderHook(() => useHarness());
+
+    act(() => result.current.setInput('run the tests'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.handleQueueEdit(result.current.queue[0].id));
+    act(() => result.current.setInput('/rename my session'));
+
+    act(() => result.current.handleQueueSaveEdit());
+
+    // Nothing saved, nothing lost, and the cursor stays put so the operator can
+    // correct it in place.
+    expect(queuedIn(SESSION_ID)).toEqual(['run the tests']);
+    expect(result.current.input).toBe('/rename my session');
+    expect(result.current.editingIndex).toBe(0);
+  });
+
+  it('still saves an edit that merely mentions a slash word', () => {
+    const { result } = renderHook(() => useHarness());
+
+    act(() => result.current.setInput('run the tests'));
+    act(() => result.current.handleQueue());
+    act(() => result.current.handleQueueEdit(result.current.queue[0].id));
+    act(() => result.current.setInput('explain what /rename does'));
+
+    act(() => result.current.handleQueueSaveEdit());
+
+    expect(queuedIn(SESSION_ID)).toEqual(['explain what /rename does']);
   });
 });

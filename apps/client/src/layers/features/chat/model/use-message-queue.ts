@@ -76,9 +76,16 @@ interface UseMessageQueueReturn {
    * The escape hatch for every state the pump cannot drain: a turn that ended in
    * `error` (the pump only arms on streaming→idle), a lock race that put a
    * message back, or simply a message the operator wants out first. A no-op when
-   * {@link UseMessageQueueReturn.sendBlockedReason} is set.
+   * {@link UseMessageQueueReturn.sendBlockedReason} is set or the id has already
+   * left the queue.
+   *
+   * @returns `true` only when the message was actually handed to the submit
+   *   path. Callers must gate any composer mutation on this: swapping the
+   *   composer for a send that did not happen leaves the editing cursor pointing
+   *   at a row whose rewrite is no longer on screen, and the next Enter saves the
+   *   parked draft over it.
    */
-  sendNow: (id: string) => void;
+  sendNow: (id: string) => boolean;
   /** Starts editing `id`; returns its content, or `null` if the item is gone. */
   startEditing: (id: string) => string | null;
   cancelEditing: () => void;
@@ -277,20 +284,21 @@ export function useMessageQueue({
   );
 
   const sendNow = useCallback(
-    (id: string) => {
-      if (!sessionId || sendBlockedReason !== null) return;
+    (id: string): boolean => {
+      if (!sessionId || sendBlockedReason !== null) return false;
       // Read the LIVE store, not the render-time snapshot: the caller may have
       // just committed an in-progress edit into this very item, and `queueRef`
       // still holds the pre-commit array (it is assigned during render).
       const items = useSessionStreamStore.getState().getSession(sessionId).queuedMessages;
       const index = items.findIndex((item) => item.id === id);
-      if (index === -1) return;
+      if (index === -1) return false;
       // A hand-sent message satisfies whatever flush was owed: the send starts a
       // turn, and re-arming would drain a SECOND message the operator did not
       // ask for. The next streaming→idle edge arms the pump again.
       flushOwedRef.current = false;
       setEditingId((prev) => (prev === id ? null : prev));
       deliver(sessionId, items[index]!, index);
+      return true;
     },
     [sessionId, sendBlockedReason, deliver]
   );

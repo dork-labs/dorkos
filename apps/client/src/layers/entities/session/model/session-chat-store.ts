@@ -128,6 +128,34 @@ interface SessionChatStoreState {
   autoConfirmedSessions: Record<string, true>;
 }
 
+/**
+ * Whether an over-limit session may be dropped by the LRU.
+ *
+ * Idle is not enough. A session holding an unsent COMPOSER DRAFT must survive
+ * too (DOR-480): that draft is text a person typed and never sent, and it is the
+ * one thing in this entry the server cannot hand back — everything else
+ * re-derives from history on the next visit. Without this, visiting 20 other
+ * conversations silently deleted it, which one person running ten agents across
+ * five projects does in an ordinary afternoon. (The compose-next QUEUE is
+ * guarded by the same rule in the session-stream store, where the queue lives.)
+ */
+function isEvictable(session: SessionState | undefined): boolean {
+  return session !== undefined && session.status === 'idle' && session.input.trim() === '';
+}
+
+/**
+ * Move `sessionId` to the front of the LRU and drop evictable sessions past the
+ * retention cap. Shared by `initSession` and `touchSession` so the two can never
+ * disagree about what is safe to delete.
+ */
+function touchAndEvict(state: SessionChatStoreState, sessionId: string): void {
+  const order = [sessionId, ...state.sessionAccessOrder.filter((id: string) => id !== sessionId)];
+  for (const id of order.slice(MAX_RETAINED_SESSIONS)) {
+    if (isEvictable(state.sessions[id])) delete state.sessions[id];
+  }
+  state.sessionAccessOrder = order.filter((id: string) => id in state.sessions);
+}
+
 interface SessionChatStoreActions {
   /** Create a session entry with default state if not already present. Calls touchSession. */
   initSession: (sessionId: string) => void;
@@ -135,7 +163,11 @@ interface SessionChatStoreActions {
   destroySession: (sessionId: string) => void;
   /** Shallow-merge patch into a session. Auto-initializes if not present. */
   updateSession: (sessionId: string, patch: Partial<SessionState>) => void;
-  /** Move session to front of access order. Evicts oldest idle sessions beyond MAX_RETAINED_SESSIONS. */
+  /**
+   * Move session to front of access order. Evicts the oldest sessions beyond
+   * MAX_RETAINED_SESSIONS that are both idle AND holding no unsent draft — see
+   * {@link isEvictable}.
+   */
   touchSession: (sessionId: string) => void;
   /** Return session state, or DEFAULT_SESSION_STATE for unknown IDs. */
   getSession: (sessionId: string) => SessionState;
@@ -177,17 +209,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
               mountGeneration: ++globalMountGenerationCounter,
             };
             // Inline touchSession to avoid double-dispatch
-            const order = [
-              sessionId,
-              ...state.sessionAccessOrder.filter((id: string) => id !== sessionId),
-            ];
-            const toEvict = order.slice(MAX_RETAINED_SESSIONS);
-            for (const id of toEvict) {
-              if (state.sessions[id]?.status === 'idle') {
-                delete state.sessions[id];
-              }
-            }
-            state.sessionAccessOrder = order.filter((id: string) => id in state.sessions);
+            touchAndEvict(state, sessionId);
           },
           false,
           'session-chat/initSession'
@@ -221,17 +243,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       touchSession: (sessionId) =>
         set(
           (state) => {
-            const order = [
-              sessionId,
-              ...state.sessionAccessOrder.filter((id: string) => id !== sessionId),
-            ];
-            const toEvict = order.slice(MAX_RETAINED_SESSIONS);
-            for (const id of toEvict) {
-              if (state.sessions[id]?.status === 'idle') {
-                delete state.sessions[id];
-              }
-            }
-            state.sessionAccessOrder = order.filter((id: string) => id in state.sessions);
+            touchAndEvict(state, sessionId);
           },
           false,
           'session-chat/touchSession'

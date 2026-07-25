@@ -77,7 +77,7 @@ export function QueuePanel({
                   type="button"
                   onClick={() => onEdit(item.id)}
                   aria-current={editingIndex === i ? true : undefined}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pl-3 text-left"
+                  className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pl-3 text-left"
                 >
                   <span className="text-muted-foreground shrink-0 text-xs font-medium">
                     {i + 1}.
@@ -88,21 +88,41 @@ export function QueuePanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onSend(item.id)}
-                  disabled={sendBlockedReason !== null}
+                  // `aria-disabled`, never `disabled`: a real `disabled` drops the
+                  // button out of the tab order, so the one person who most needs
+                  // the reason — a keyboard user, in the state that is BLOCKED —
+                  // could not reach it to hear one. The click is neutered by the
+                  // guard below instead, and `sendNow` refuses again on its own.
+                  aria-disabled={sendBlockedReason !== null}
+                  onClick={() => {
+                    if (sendBlockedReason === null) onSend(item.id);
+                  }}
                   title={sendBlockedReason ?? undefined}
+                  // The reason rides the ACCESSIBLE NAME, not `title`: an
+                  // aria-label wins over title, so a title-only reason is
+                  // announced to nobody. Blocked is the common state here — a
+                  // queue mostly exists while a reply is streaming.
+                  aria-label={
+                    sendBlockedReason === null
+                      ? `Send queued message ${i + 1} now`
+                      : `Send queued message ${i + 1} now — unavailable: ${sendBlockedReason}`
+                  }
                   // Always visible, unlike the tucked-away remove: this is the
                   // primary action on a queued row and the only way out of a
                   // stranded queue, so it must not need a hover to be found.
-                  className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors disabled:opacity-40"
-                  aria-label={`Send queued message ${i + 1} now`}
+                  className={cn(
+                    'focus-ring text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
+                    sendBlockedReason === null
+                      ? 'hover:text-foreground'
+                      : 'cursor-default opacity-40'
+                  )}
                 >
                   <CornerDownLeft className="size-3" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onRemove(item.id)}
-                  className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                  className="focus-ring text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                   aria-label={`Remove queued message ${i + 1}`}
                 >
                   <X className="size-3" />

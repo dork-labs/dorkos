@@ -330,6 +330,77 @@ describe('queue → submit — a refused trigger never destroys the message (DOR
     expect(useSessionStreamStore.getState().getSession('s1').queuedMessages).toHaveLength(0);
   });
 
+  it('a queued message rewritten into a REJECTED native command is put back, not destroyed', async () => {
+    // The narrowest path in the set, and the one that falsifies the whole claim.
+    // Neither `saveEditing` nor the edit-in-place commit runs the native-command
+    // funnel — only `handleQueue` does, at original queue time — so a queued
+    // message can be rewritten into a bare `/rename` and reach the flush. The
+    // funnel's early return sits UPSTREAM of the try/catch that restores, and
+    // `deliver` has already dequeued: the row vanished, the composer held the
+    // parked draft, and the text existed nowhere at all.
+    const postMessage = vi.fn();
+    const transport = createMockTransport({ postMessage });
+
+    const { result, rerender } = renderHook(({ status }) => useQueueWiredToSubmit('s1', status), {
+      initialProps: { status: 'streaming' as ChatStatus },
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.chat.status).toBe('idle'));
+
+    // A bare `/rename` is `{ handled: true, ran: false }` — the registry rejects
+    // it for a missing title without performing anything.
+    act(() => {
+      useSessionStreamStore.getState().enqueueMessage('s1', '/rename');
+    });
+    await act(async () => {
+      rerender({ status: 'idle' as ChatStatus });
+    });
+
+    // Never reached the runtime (it is a client-side command) …
+    expect(postMessage).not.toHaveBeenCalled();
+    // … and it is still in the queue, where the person can correct it.
+    await waitFor(() => {
+      expect(
+        useSessionStreamStore
+          .getState()
+          .getSession('s1')
+          .queuedMessages.map((m) => m.content)
+      ).toEqual(['/rename']);
+    });
+  });
+
+  it('a queued native command that RAN is consumed, not re-queued forever', async () => {
+    // The converse: `/clear` performs its action, so the message is spent.
+    // Restoring it would re-run the command on every subsequent edge.
+    const transport = createMockTransport({ postMessage: vi.fn() });
+    const startFreshSession = vi.fn();
+
+    const { result, rerender } = renderHook(
+      ({ status }) => {
+        const chat = useChatSession('s1', { startFreshSession });
+        const queue = useMessageQueue({
+          ...baseQueueOptions,
+          status,
+          sessionId: 's1',
+          onFlush: chat.submitContent,
+        });
+        return { chat, queue };
+      },
+      { initialProps: { status: 'streaming' as ChatStatus }, wrapper: createWrapper(transport) }
+    );
+    await waitFor(() => expect(result.current.chat.status).toBe('idle'));
+
+    act(() => {
+      useSessionStreamStore.getState().enqueueMessage('s1', '/clear');
+    });
+    await act(async () => {
+      rerender({ status: 'idle' as ChatStatus });
+    });
+
+    await waitFor(() => expect(startFreshSession).toHaveBeenCalledTimes(1));
+    expect(useSessionStreamStore.getState().getSession('s1').queuedMessages).toHaveLength(0);
+  });
+
   it('a queued flush that fails for any other reason is also put back', async () => {
     // A dead network is the same data-loss shape: the composer never held this
     // text, so dropping it leaves nowhere to recover it from.

@@ -176,6 +176,17 @@ export function useSessionSubmit({
       if (!opts.kickoff) {
         const native = tryNativeCommand(content);
         if (native.handled) {
+          // A REJECTED command performed nothing, and this return is upstream of
+          // the try/catch that restores a queued flush — so a queued message the
+          // operator had rewritten into one (say a bare `/rename`) was dequeued
+          // and then simply ceased to exist: the composer never held it either
+          // (DOR-480). Put it back. Restoring is idempotent, so a later edge that
+          // flushes it again just returns it again, and the row stays on screen
+          // with its Send-now control until the text is corrected.
+          // A command that RAN is deliberately not restored: it did the thing the
+          // operator asked for, so the message is consumed, and re-queueing it
+          // would run it on every subsequent edge.
+          if (!native.ran) opts.restoreQueued?.();
           if (clearInput && native.ran) setInput('');
           return;
         }

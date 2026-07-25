@@ -141,24 +141,49 @@ describe('QueuePanel — send now (a queued message is never trapped)', () => {
     renderPanel({ queue: [makeItem('Test', 0)], sendBlockedReason: null });
     const sendBtn = screen.getByLabelText('Send queued message 1 now');
 
-    expect(sendBtn).not.toBeDisabled();
+    expect(sendBtn.getAttribute('aria-disabled')).toBe('false');
     expect(sendBtn.className).not.toContain('opacity-0');
   });
 
-  it('disables send-now with the reason as its title when a send cannot happen', () => {
+  it('states the reason in the accessible name when a send cannot happen', () => {
+    // `title` alone was announced to nobody: an aria-label wins the accessible
+    // name outright. And blocked is the COMMON state here — a queue mostly
+    // exists while a reply streams — so this is the reading most people get.
     const onSend = vi.fn();
     renderPanel({
       queue: [makeItem('Test', 0)],
       onSend,
       sendBlockedReason: 'Waiting for the reply to finish',
     });
-    const sendBtn = screen.getByLabelText('Send queued message 1 now');
 
-    expect(sendBtn).toBeDisabled();
+    const sendBtn = screen.getByLabelText(
+      'Send queued message 1 now — unavailable: Waiting for the reply to finish'
+    );
     expect(sendBtn.getAttribute('title')).toBe('Waiting for the reply to finish');
 
-    // A disabled control must refuse visibly, never by silently doing nothing.
+    // Refuses the click, but visibly and by its own guard.
     fireEvent.click(sendBtn);
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('keeps a blocked send-now reachable by keyboard, so the reason can be heard', () => {
+    // A real `disabled` drops the button out of the tab order — hiding the
+    // explanation from exactly the person who most needs it, in exactly the
+    // state where it applies.
+    renderPanel({ queue: [makeItem('Test', 0)], sendBlockedReason: 'This session is busy' });
+    const sendBtn = screen.getByRole('button', { name: /Send queued message 1 now/ });
+
+    expect(sendBtn).not.toBeDisabled();
+    expect(sendBtn.getAttribute('aria-disabled')).toBe('true');
+    sendBtn.focus();
+    expect(document.activeElement).toBe(sendBtn);
+  });
+
+  it('gives every row button a keyboard focus ring', () => {
+    renderPanel({ queue: [makeItem('Test', 0)] });
+
+    for (const name of [/Test/, /Send queued message 1 now/, /Remove queued message 1/]) {
+      expect(screen.getByRole('button', { name }).className).toContain('focus-ring');
+    }
   });
 });

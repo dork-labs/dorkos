@@ -74,6 +74,40 @@ describe('useSessionChatStore', () => {
     expect(sessions['s0'].status).toBe('streaming');
   });
 
+  it('never evicts a session holding an unsent composer draft (DOR-480)', () => {
+    // The most literal instance of the whole class: type something, don't send
+    // it, visit 21 other conversations, and your words were deleted. The draft
+    // is the one thing in this entry the server cannot hand back.
+    const { initSession, updateSession, getSession } = useSessionChatStore.getState();
+    initSession('s0');
+    updateSession('s0', { input: 'half a thought I want to keep' });
+    for (let i = 1; i < 21; i++) {
+      initSession(`s${i}`);
+    }
+
+    expect(useSessionChatStore.getState().sessions['s0']).toBeDefined();
+    expect(getSession('s0').input).toBe('half a thought I want to keep');
+  });
+
+  it('evicts once the draft is gone — the guard protects words, not entries', () => {
+    const { initSession, updateSession } = useSessionChatStore.getState();
+    initSession('s0');
+    updateSession('s0', { input: 'draft' });
+    for (let i = 1; i < 21; i++) {
+      initSession(`s${i}`);
+    }
+    expect(useSessionChatStore.getState().sessions['s0']).toBeDefined();
+
+    // Sending clears the composer; s0 is now ordinary. Walk past the cap again,
+    // since the write above moved it to the front of the LRU.
+    updateSession('s0', { input: '   ' }); // whitespace is not a draft
+    for (let i = 21; i < 43; i++) {
+      initSession(`s${i}`);
+    }
+
+    expect(useSessionChatStore.getState().sessions['s0']).toBeUndefined();
+  });
+
   it('tracks access order for LRU eviction', () => {
     const { initSession, touchSession } = useSessionChatStore.getState();
     initSession('s1');
