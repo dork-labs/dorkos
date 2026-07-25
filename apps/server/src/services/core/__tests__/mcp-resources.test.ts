@@ -229,15 +229,20 @@ describe('external MCP dorkos:// resources (real resources/list + resources/read
     // Own server/client pair (same pattern as the drift test in
     // mcp-structured-output.test.ts): two runtimes, one of which rejects
     // listSessions — mirroring ADR-0310's per-runtime degradation contract.
+    // `getInternalSessionId` is part of the AgentRuntime contract (and pinned by
+    // the shared conformance suite): aggregation calls it to drop ids a runtime
+    // has retired, so a stub without it is not a runtime.
     const healthyRuntime = {
       type: 'claude-code',
       listSessions: async () => [SESSION],
+      getInternalSessionId: (sessionId: string) => sessionId,
     };
     const brokenRuntime = {
       type: 'codex',
       listSessions: async () => {
         throw new Error('codex sidecar unavailable');
       },
+      getInternalSessionId: (sessionId: string) => sessionId,
     };
     const deps: McpToolDeps = {
       transcriptReader: {

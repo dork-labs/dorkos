@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import express, { type Express } from 'express';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import express, { type RequestHandler } from 'express';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import request from 'supertest';
 import { buildAuthRateLimiter } from '../auth-rate-limit.js';
 
@@ -10,27 +12,67 @@ import { buildAuthRateLimiter } from '../auth-rate-limit.js';
 const MAX_ATTEMPTS = 10;
 
 /**
- * Build a throwaway app that mounts a FRESH limiter (its own in-memory store, so
- * tests never bleed budget into one another) ahead of stand-in auth and non-auth
- * routes, mirroring the real `app.ts` wiring: app-wide limiter, then handlers.
+ * The limiter the single app delegates to, swapped per test by {@link makeApp}.
+ * Each test still gets a FRESH limiter (its own in-memory store, so budgets
+ * never bleed between tests) without a new listener.
+ */
+let currentLimiter: RequestHandler = (_req, _res, next) => next();
+
+/**
+ * ONE listener for the whole file — zero port churn (DOR-465).
+ *
+ * Two things had to go, and the second is why one-listener-per-test was not
+ * enough. Supertest handed a non-listening app opens a fresh ephemeral listener
+ * per REQUEST (`if (!addr) this._server = app.listen(0)`) and closes it in the
+ * response callback; this file makes ~130 requests. But Node 24's
+ * `http.globalAgent` sets `keepAlive: true`, so superagent pools sockets keyed
+ * by `host:port` — and an ephemeral port freed by a closing listener is
+ * immediately reclaimable by the next `listen(0)`. A pooled socket for
+ * `127.0.0.1:P` then gets handed to a request meant for the NEW server on P.
+ * That surfaces two ways: `Error: Parse Error: Expected HTTP/, RTSP/ or ICE/`
+ * when the peer is gone, and — worse because it is silent — a request routed to
+ * a PREVIOUS test's server and its limiter, scoring a 200 where a 429 was due.
+ * `closeAllConnections()` narrows that window but cannot close it; the agent can
+ * hand out the entry before the RST lands.
+ *
+ * Binding once and never rebinding removes the mechanism instead of narrowing
+ * it: no port is ever freed mid-file, so no pooled socket can be misrouted.
+ */
+const app = express();
+// Match production: read the client IP from the first proxy hop.
+app.set('trust proxy', 1);
+app.use((req, res, next) => currentLimiter(req, res, next));
+// Stand-ins for the Better Auth handler and a normal API route.
+app.post('/api/auth/sign-in/email', (_req, res) => res.status(200).json({ ok: true }));
+app.post('/api/auth/sign-up/email', (_req, res) => res.status(200).json({ ok: true }));
+app.get('/api/auth/get-session', (_req, res) => res.status(200).json({ session: null }));
+// A future OAuth-initiation endpoint (invites/OAuth spec) — a redirect
+// handshake, not a password guess. Must never be throttled.
+app.post('/api/auth/sign-in/social', (_req, res) => res.status(200).json({ url: 'https://x' }));
+app.post('/api/sessions', (_req, res) => res.status(200).json({ ok: true }));
+
+const server = createServer(app);
+
+beforeAll(async () => {
+  server.listen(0);
+  await once(server, 'listening');
+});
+
+afterAll(async () => {
+  server.closeAllConnections();
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+/**
+ * Install a FRESH limiter for the current test and return the shared server.
+ * Mirrors the real `app.ts` wiring: app-wide limiter, then handlers.
  *
  * @param maxAttempts - Optional override for the per-window budget (defaults to
  *   the limiter's own default of 10), used to exercise the env-override path.
  */
-function makeApp(maxAttempts?: number): Express {
-  const app = express();
-  // Match production: read the client IP from the first proxy hop.
-  app.set('trust proxy', 1);
-  app.use(buildAuthRateLimiter({ maxAttempts }));
-  // Stand-ins for the Better Auth handler and a normal API route.
-  app.post('/api/auth/sign-in/email', (_req, res) => res.status(200).json({ ok: true }));
-  app.post('/api/auth/sign-up/email', (_req, res) => res.status(200).json({ ok: true }));
-  app.get('/api/auth/get-session', (_req, res) => res.status(200).json({ session: null }));
-  // A future OAuth-initiation endpoint (invites/OAuth spec) — a redirect
-  // handshake, not a password guess. Must never be throttled.
-  app.post('/api/auth/sign-in/social', (_req, res) => res.status(200).json({ url: 'https://x' }));
-  app.post('/api/sessions', (_req, res) => res.status(200).json({ ok: true }));
-  return app;
+function makeApp(maxAttempts?: number): typeof server {
+  currentLimiter = buildAuthRateLimiter({ maxAttempts });
+  return server;
 }
 
 describe('buildAuthRateLimiter', () => {
@@ -61,8 +103,14 @@ describe('buildAuthRateLimiter', () => {
   it('also throttles sign-up POSTs (credential probing)', async () => {
     const app = makeApp();
 
+    // Assert every request in the loop, not just the one after it: an unchecked
+    // 429 mid-loop (or a request that reached a DIFFERENT test's limiter) would
+    // otherwise be invisible and leave the final assertion passing by luck.
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      await request(app).post('/api/auth/sign-up/email').send({ email: 'a@b.c' });
+      const res = await request(app).post('/api/auth/sign-up/email').send({ email: 'a@b.c' });
+      expect(res.status, `sign-up attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(
+        200
+      );
     }
     const blocked = await request(app).post('/api/auth/sign-up/email').send({ email: 'a@b.c' });
     expect(blocked.status).toBe(429);
@@ -116,10 +164,11 @@ describe('buildAuthRateLimiter', () => {
 
     // Exhaust the budget for one forwarded client IP.
     for (let i = 0; i < MAX_ATTEMPTS; i++) {
-      await request(app)
+      const res = await request(app)
         .post('/api/auth/sign-in/email')
         .set('X-Forwarded-For', '203.0.113.1')
         .send({ email: 'a@b.c' });
+      expect(res.status, `attempt ${i + 1} of ${MAX_ATTEMPTS} must be within budget`).toBe(200);
     }
     const blocked = await request(app)
       .post('/api/auth/sign-in/email')

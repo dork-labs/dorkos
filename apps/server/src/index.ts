@@ -1190,7 +1190,10 @@ async function start() {
   // stream (session_upserted/session_removed/session_status) onto /api/events
   // with no timer poll (ADR-0310 fan-in). Started here because all runtimes
   // are registered by this point.
-  sessionListBroadcaster.start(runtimeRegistry.listRuntimes());
+  // The registry is passed as the settings store too: every broadcast session
+  // carries the operator's persisted mode/model, so a client refreshing its
+  // list from this stream agrees with GET /api/sessions (DOR-463).
+  sessionListBroadcaster.start(runtimeRegistry.listRuntimes(), runtimeRegistry);
   logger.info('[SessionList] Discovery broadcaster started');
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)

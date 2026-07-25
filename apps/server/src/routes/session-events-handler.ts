@@ -24,6 +24,7 @@ import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { resolveSettingsKey } from '../services/session/index.js';
 import { initSSEStream, endSSEStream } from '../services/core/stream-adapter.js';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
@@ -133,8 +134,11 @@ export const sessionEventsHandler = async (
     // Build the SessionOpts context the same way other handlers derive it: the
     // boundary-validated cwd plus the effective permission mode. SessionOpts
     // requires `permissionMode`; the snapshot/subscribe adapter only reads `cwd`,
-    // so the persisted mode (or runtime default) is sufficient here.
-    const stored = await runtimeRegistry.getSessionSettings(sessionId);
+    // so the persisted mode (or runtime default) is sufficient here. The key
+    // goes through the shared resolver — the raw request id is an ALIAS once the
+    // runtime binds a canonical one, and the store is keyed canonically
+    // (DOR-463).
+    const stored = await runtimeRegistry.getSessionSettings(resolveSettingsKey(sessionId, runtime));
     ctx = {
       cwd,
       permissionMode: stored?.permissionMode ?? 'default',
