@@ -58,16 +58,25 @@ URL.
 
 ## Remove a package (tier: destructive)
 
-Removing a package cannot be undone, so \`marketplace_uninstall\` is gated on a
-person's approval and returns the APPROVAL payload, not a \`confirmationToken\`:
+Removing a package cannot be undone, so it is gated on a person's approval and
+returns the APPROVAL payload, not a \`confirmationToken\`. Two gated paths, pick the
+one your session has:
 
-1. Call \`marketplace_uninstall\` with \`name\` (and \`purge: true\` only if the user
-   asked to delete saved data). It comes back with \`status: approval_required\`,
-   an \`approvalId\`, and an \`approvalToken\`.
+- **In-session tool:** \`marketplace_uninstall\`, retried with an \`approvalToken\`
+  argument.
+- **Any runtime, from a shell:** \`dorkos call marketplace.uninstall --input
+  '{"name":"<pkg>"}'\`, retried with \`--approval <token>\`. This is the gated path
+  for a Codex or OpenCode session, which has no \`marketplace_uninstall\` tool.
+
+Either way:
+
+1. Call it with \`name\` (and \`purge: true\` only if the user asked to delete saved
+   data). It comes back with \`status: approval_required\`, an \`approvalId\`, and an
+   \`approvalToken\`.
 2. Tell the user what would be removed and that an approval card is waiting for
    them in DorkOS. Wait for their answer.
-3. Call again with the SAME arguments plus \`approvalToken: "<token>"\`. Changing
-   any argument, \`purge\` included, invalidates the approval.
+3. Call again with the SAME arguments plus the token. Changing any argument,
+   \`purge\` included, invalidates the approval.
 
 Read \`reason\` and \`status\` as operating-dorkos describes: \`awaiting_decision\`
 means present the same token later, and \`status: "denied"\` means stop.
@@ -75,10 +84,10 @@ means present the same token later, and \`status: "denied"\` means stop.
 By default uninstall keeps \`.dork/data/\` and \`.dork/secrets.json\`; \`purge: true\`
 removes them, which is a bigger action and worth saying out loud.
 
-\`dorkos uninstall <name>\` exists, but it is the PERSON's path: it does not go
-through the approval gate. Use \`marketplace_uninstall\` and wait for the approval
-rather than shelling out to the CLI to avoid it. Reaching for the ungated path
-because the gated one asked you to wait is exactly the thing not to do.
+\`dorkos uninstall <name>\` also exists, but it is the PERSON's path and it does NOT
+go through the approval gate. Do not use it as an agent, and above all do not
+reach for it because the gated path asked you to wait: use one of the two gated
+paths above. \`dorkos call marketplace.uninstall\` is the shell one.
 
 ## Manage sources
 

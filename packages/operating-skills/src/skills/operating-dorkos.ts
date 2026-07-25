@@ -16,8 +16,8 @@ export const operatingDorkos: OperatingSkill = {
 
 You are running inside DorkOS: the control layer a person uses to run many AI
 agents. You can do the things the person can do in the app: make agents, schedule
-work, install packages, read activity, and change settings. This skill orients
-you; the sibling skills (managing-agents, scheduling-tasks, using-the-marketplace,
+work, install packages, read activity, and change settings. This skill orients you;
+the siblings (managing-agents, scheduling-tasks, using-the-marketplace,
 reading-activity) cover each area.
 
 ## Two ways to act, pick one
@@ -36,13 +36,10 @@ otherwise shell out to the CLI.
 
 ## Discover, then act
 
-Ask the running instance what it can do rather than guessing:
-
-    dorkos capabilities            # table of id, tier, title
-    dorkos capabilities --json     # the raw catalog, pipes into jq
-
-The \`list_capabilities\` tool returns the same catalog in-session. Then run any
-entry by id:
+Ask the running instance what it can do rather than guessing. \`dorkos capabilities\`
+prints a table of id, tier, and title (\`--json\` for the raw catalog, which pipes
+into jq); the \`list_capabilities\` tool returns the same thing in-session. Then run
+any entry by id:
 
     dorkos call <capability-id> [--input '<json>'] [--approval <token>]
     dorkos call operator.activity_list --input '{"limit":5}'
@@ -54,7 +51,10 @@ them. It prints raw JSON on stdout.
 The catalog covers capabilities only. The agent, task, relay, mesh, binding,
 extension, and UI tools are registered straight onto the MCP server: they appear
 in your own tool list, not in the catalog, and \`dorkos call\` cannot reach them.
-Use the curated CLI verbs below for those.
+Only some have a CLI path instead: agent reads map to \`dorkos agent list|show\`
+and tasks to \`dorkos task list|create|trigger|runs\`. Relay, mesh, binding,
+extension, and UI have no CLI verb, so without the MCP tools they are out of
+reach entirely. Say that plainly rather than hunting for a command.
 
 ## Permission tiers
 
@@ -84,12 +84,10 @@ What to do:
    - CLI: \`dorkos call <id> --input '<the same json>' --approval <token>\`
 4. Changing ANY argument invalidates the approval. It covers one exact action.
 
-Read \`reason\` to know where you stand:
-
-- \`awaiting_decision\` means nobody has answered yet. Present the SAME token
-  again later; do not ask for a new approval.
-- \`expired\`, \`already_used\`, \`wrong_action\`, \`unknown_token\` mean DorkOS has
-  already asked again for you, so use the token in THIS payload from now on.
+Read \`reason\` to know where you stand: \`awaiting_decision\` means nobody has
+answered yet, so present the SAME token again later rather than asking for a new
+approval; \`expired\`, \`already_used\`, \`wrong_action\`, and \`unknown_token\` mean
+DorkOS already asked again for you, so use the token in THIS payload from now on.
 
 A refusal is a different payload, and \`approvable\` says whether asking again can
 ever help:
@@ -101,39 +99,42 @@ ever help:
 - \`operator_denied\`: a person said no. Do not try again unless they ask you to.
 
 \`retry.instructions\` in the payload always spells out the exact retry for the
-surface you called from. Follow it over anything you remember.
-
-Two marketplace tools run an older, separate handshake with different field names
-(\`status: requires_confirmation\` plus a \`confirmationToken\`). See
+surface you called from; follow it over anything you remember. Two marketplace
+tools run an older, separate handshake with different field names
+(\`status: requires_confirmation\` plus a \`confirmationToken\`): see
 using-the-marketplace.
 
 ## The dorkos CLI at a glance
 
 The operator verbs hit the running server over its local HTTP API:
 
-- \`dorkos capabilities [--json]\` and \`dorkos call <id>\` (above) reach anything.
+- \`dorkos capabilities [--json]\` and \`dorkos call <id>\` (above) reach any
+  capability by id, and nothing else: the \`tasks_*\`, \`relay_*\`, \`mesh_*\`, binding,
+  extension, and UI tools are not capabilities.
 - \`dorkos agent list|show <path-or-id>|create|update\` manage agents.
-- \`dorkos task list|create|trigger <id>|runs\` manage scheduled tasks.
+- \`dorkos task list|create|trigger <id>|runs\` manage tasks. No update, no delete.
 - \`dorkos activity [--actor <t>] [--category <c>] [--type <e>] [--limit <n>]\` reads the feed.
 - \`dorkos version --check\` shows the current server version and the latest release.
 - \`dorkos marketplace list|add|remove|refresh|validate\` manage sources.
 - \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages.
+  \`uninstall\` is the person's ungated path: see using-the-marketplace.
 
-Every operator verb takes \`--json\`. Exit code is \`0\` on success, non-zero when no
-server is reachable, the request fails, or a call is waiting on an approval.
+There is no \`dorkos relay\`, \`dorkos mesh\`, \`dorkos binding\`, or \`dorkos ui\`. Every
+operator verb takes \`--json\`. Exit code is \`0\` on success, non-zero when no server
+is reachable, the request fails, or a call is waiting on an approval.
 
 ## Where live facts come from
 
 Skills teach procedure. They do NOT hold live state. Never guess the current
 agents, tasks, versions, or settings. Read them:
 
-- Current agents: \`dorkos agent list --json\` or the \`mesh_list\` tool.
-- Current tasks and their runs: \`dorkos task list --json\`, \`dorkos task runs --json\`.
-- Current settings: the \`config_get\` tool or \`dorkos call operator.config_get\`.
-- Recent activity: \`dorkos activity --json\` or \`activity_list\`.
-- Version and updates: \`dorkos version --check\` or the \`check_update\` tool. The
-  latest version reads as unknown in dev builds or when the registry is
-  unreachable. Report the result; do not upgrade DorkOS yourself.
+- Agents: \`dorkos agent list --json\` or the \`mesh_list\` tool.
+- Tasks and runs: \`dorkos task list --json\`, \`dorkos task runs --json\`.
+- Settings: the \`config_get\` tool or \`dorkos call operator.config_get\`.
+- Activity: \`dorkos activity --json\` or \`activity_list\`.
+- Version: \`dorkos version --check\` or \`check_update\`. The latest version reads as
+  unknown in dev builds or when the registry is unreachable. Report the result; do
+  not upgrade DorkOS yourself.
 
 ## Changing settings
 
@@ -158,6 +159,6 @@ arrays replace, patching \`pins\` sets the whole list.
 - **Read before you write.** Fetch current state, act, then report what changed.
 - **System agents are protected.** DorkBot and other system agents reject renames,
   deletion, and identity edits. Do not fight the guard.
-- **Prefer one canonical command per job.** Do not script around a tool that
-  already does the job, and never try to route around a gate.`,
+- **Never route around a gate.** Do not script around a tool that already does the
+  job, and do not reach for an ungated path because a gated one made you wait.`,
 };

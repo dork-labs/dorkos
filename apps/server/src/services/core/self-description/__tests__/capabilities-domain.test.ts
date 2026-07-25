@@ -21,7 +21,11 @@ import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
-import { capabilitiesDomain, capabilityCatalogSchema } from '../capabilities-domain.js';
+import {
+  capabilitiesDomain,
+  capabilityCatalogSchema,
+  UNREGISTERED_TOOL_FAMILIES,
+} from '../capabilities-domain.js';
 import { composeDorkOsCapabilityRegistry } from '../dorkos-registry.js';
 
 const stubOperatorDeps = {} as McpToolDeps;
@@ -128,14 +132,21 @@ describe('list_capabilities surface', () => {
     /**
      * Asserted against the REGISTRY, not against the description's own wording.
      *
-     * A `toContain('task')` check is a one-way ratchet: once the task, relay, and
-     * mesh domains migrate onto the registry the caveat becomes false, and a
-     * wording assertion would keep passing and preserve it. That is the exact
-     * inverse of the instruction on the domain itself, which says to DELETE the
-     * caveat at migration rather than reword it. So the test binds the two
-     * together: naming a family in the description is only correct while that
-     * family is genuinely absent from the registry, and migrating one turns this
-     * red on purpose.
+     * A wording-only check (`toContain('task')`) is a one-way ratchet: once those
+     * domains migrate onto the registry the caveat becomes false, and the assertion
+     * keeps passing and preserves it. That is the exact inverse of the instruction
+     * on the domain itself, which says to DELETE the caveat at migration rather
+     * than reword it. So the test binds the two together: naming a family is only
+     * correct while it is genuinely absent from the composed registry.
+     *
+     * The list is NOT restated here. It comes from the same exported
+     * `UNREGISTERED_TOOL_FAMILIES` the description is built from, so the prose and
+     * the guard cannot drift, and every family the description claims is absent is
+     * covered rather than an arbitrary three of them. The entries are domain
+     * prefixes (`tasks`, not `task`) precisely because that is what a migrated
+     * capability id would carry: an earlier version of this test compared `'task'`
+     * by exact `Set` membership and therefore could never have caught the `tasks`
+     * domain migrating, which is the family the original defect was about.
      */
     it('only names families that really are absent from the registry', () => {
       const text = description().toLowerCase();
@@ -146,14 +157,26 @@ describe('list_capabilities surface', () => {
         }).capabilities.map((c) => c.id.split('.')[0])
       );
 
-      const namedAsAbsent = ['task', 'relay', 'mesh'];
-      for (const family of namedAsAbsent) {
+      expect(UNREGISTERED_TOOL_FAMILIES.length).toBeGreaterThan(0);
+      for (const family of UNREGISTERED_TOOL_FAMILIES) {
+        // The description really does name it...
         expect(text).toContain(family);
-        // If this fails, the family migrated onto the registry: delete it from the
-        // description's caveat (and from this list), do not reword the caveat.
+        // ...and it really is absent. If this fails, the family migrated onto the
+        // registry: drop it from UNREGISTERED_TOOL_FAMILIES, which removes it from
+        // the description too. Do not reword the caveat.
         expect(registeredDomains).not.toContain(family);
       }
       expect(text).toContain('tool list');
+    });
+
+    it('does not name a family that IS on the registry (the agent overclaim)', () => {
+      // `operator.update_agent` and `operator.agents_recent_activity` are catalog
+      // entries with tiers, and `managing-agents` teaches
+      // `dorkos call operator.update_agent`. So a bare "agent" in the absent list
+      // would be its own overclaim, one surface further out.
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('agent');
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('operator');
+      expect(UNREGISTERED_TOOL_FAMILIES).not.toContain('marketplace');
     });
 
     it('points at the universal actuation path by name', () => {

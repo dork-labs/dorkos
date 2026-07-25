@@ -42,14 +42,25 @@ import { SERVER_VERSION } from '../../../lib/version.js';
  * The `dorkos capabilities` pointer leads because it is the one actuation path
  * every runtime has. `list_capabilities` is named second, as the in-session
  * equivalent for a runtime that was given MCP tools.
+ *
+ * The Tasks/Relay/Mesh caveat is not padding. This block is injected on EVERY
+ * turn of EVERY runtime, ahead of any skill that may or may not be loaded, so it
+ * is the most-read agent-facing text in the product. Naming three subsystems on
+ * one line and then saying `dorkos capabilities` lists "every capability" on the
+ * next completes exactly the false inference this program exists to stop: none of
+ * the three is reachable by `dorkos call`. Keep the two facts adjacent.
  */
 function buildDorkosContextBlock(): string {
   return `<dorkos_context>
 DorkOS is the operating system for autonomous AI agents.
 Subsystems: Console (chat), Tasks (scheduling), Relay (messaging), Mesh (discovery).
-Run \`dorkos capabilities\` to list every capability this instance exposes, then
+Run \`dorkos capabilities\` to list the capabilities you can invoke by id, then
 \`dorkos call <capability-id> [--input '<json>']\` to run one. If you have DorkOS MCP
 tools in this session, \`list_capabilities\` returns the same catalog.
+Tasks, Relay, and Mesh are NOT in that catalog and \`dorkos call\` cannot reach them:
+they are MCP tools (\`tasks_*\`, \`relay_*\`, \`mesh_*\`) when your session has them, and
+otherwise only \`dorkos task list|create|trigger|runs\` and \`dorkos agent list|show\`
+exist. Relay and Mesh have no CLI path at all.
 Documentation: https://dorkos.ai/llms.txt
 Full docs: https://dorkos.ai/docs
 </dorkos_context>`;

@@ -36,9 +36,11 @@ export function registerCapabilitiesResource(
     {
       title: 'Capabilities',
       description:
-        'The live catalog of everything you can do in this DorkOS: every registered capability with ' +
-        'its id, title, description, permission tier, input/output JSON Schema, and surfaces (MCP tool, ' +
-        'CLI verb, HTTP route). Includes a content-hash catalogVersion you can cache on.',
+        'The live catalog of the DorkOS capabilities you can invoke by id: each one with its id, ' +
+        'title, description, permission tier, input/output JSON Schema, and surfaces (MCP tool, CLI ' +
+        'verb, HTTP route). Includes a content-hash catalogVersion you can cache on. This is NOT the ' +
+        'full list of DorkOS tools: the task, relay, mesh, binding, extension, and UI tools are ' +
+        'registered directly on the MCP server, so they carry no tier and do not appear here.',
       mimeType: 'application/json',
     },
     async () => jsonResourceContents('dorkos://capabilities', registry.catalog())
