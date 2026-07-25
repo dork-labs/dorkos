@@ -1,5 +1,13 @@
 import { lazy } from 'react';
-import { Activity, FolderTree, PanelRight, Puzzle, SquareTerminal, User } from 'lucide-react';
+import {
+  Activity,
+  FolderTree,
+  Gauge,
+  PanelRight,
+  Puzzle,
+  SquareTerminal,
+  User,
+} from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { getPlatform } from '@/layers/shared/lib';
 
@@ -27,8 +35,8 @@ export function initializeExtensions(): void {
   // (CreateAgentDialog / ImportProjectsDialog) that mount only in AppShell;
   // Agent Profile and Canvas open the right panel the embed never renders; and
   // Dashboard / Agents call navigate(), which throws with no RouterProvider (the
-  // pattern documented in chat/model/status/use-runtime-chip.ts). Skip them under
-  // the embed.
+  // pattern documented in features/status/model/use-runtime-chip.ts). Skip them
+  // under the embed.
   //
   // NOTE: this is a DEFENSIVE gate, not a live fix — the embed does not currently
   // call initializeExtensions at all (only the web entry, apps/client/src/main.tsx,
@@ -182,6 +190,27 @@ export function registerRightPanelTabs(register: RegisterFn): void {
       return explicitAgentPath != null;
     },
     priority: 10,
+  });
+
+  // Session readout as right-panel contribution (lazy-loaded).
+  //
+  // The status line's `⋯` panel and this tab answer the same question at two
+  // different commitments: the panel is a two-second peek that closes the moment
+  // focus returns to the composer, this stays open while you work. Someone
+  // watching a stuck stream needs the second one, so both exist — and both read
+  // one `useSessionDiagnostics`, which is what keeps them from ever disagreeing.
+  //
+  // Session-scoped like Files and Canvas: there is nothing to report without a
+  // session, so it is gated to /session (a constant in the Obsidian embed).
+  register('right-panel', {
+    id: 'session',
+    title: 'Session',
+    icon: Gauge,
+    component: lazy(() =>
+      import('@/layers/features/status').then((m) => ({ default: m.SessionInspector }))
+    ),
+    visibleWhen: ({ pathname }) => pathname === '/session',
+    priority: 12,
   });
 
   // File explorer as right-panel contribution (lazy-loaded — the tree + CRUD UI

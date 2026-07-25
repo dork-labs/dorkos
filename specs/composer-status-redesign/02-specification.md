@@ -10,7 +10,7 @@ Make the composer footer honest: **one line, quiet by default, everything one ta
 
 ## Non-goals
 
-- The right-panel Session tab (deferred; the popover covers it).
+- ~~The right-panel Session tab (deferred; the popover covers it).~~ **Shipped in DOR-460**, after the popover proved to be the wrong container for the second audience: someone watching a stuck stream needs a surface that stays open while they work, and a popover that closes when focus returns to the composer cannot. Landed as `features/status/ui/SessionInspector.tsx`, registered as the `session` right-panel tab in `app/init-extensions.ts`. Both surfaces read one `useSessionDiagnostics` hook, so they can never disagree about the same session; the tab is a readout only — pinning stays in the popover, beside the live value. See `04-design-decisions.md` §2.
 - Per-agent pin scoping (global only).
 - Any change to the agents list / `/agents` page beyond deleting dead code.
 - Any change to `PromptSuggestionChips` beyond its alignment fix — it is a separate, legitimate component.

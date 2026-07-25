@@ -18,6 +18,8 @@ export { ConnectionItem } from './ui/ConnectionItem';
 export { SubagentsItem } from './ui/SubagentsItem';
 export { SessionPopover } from './ui/SessionPopover';
 export { useGitStatus, isGitStatusOk } from './model/use-git-status';
+export { useRuntimeChip, useResolvedSessionRuntime } from './model/use-runtime-chip';
+export type { RuntimeChipState, ResolvedSessionRuntime } from './model/use-runtime-chip';
 export { useSessionPopoverShortcut } from './model/use-session-popover-shortcut';
 export { isNewer, isFeatureUpdate } from './lib/version-compare';
 // `lib/status-labels` is deliberately NOT re-exported: like `lib/model-menu-tiers`,
@@ -30,4 +32,7 @@ export { selectPromotedItems } from './model/promoted-items';
 export { applyStatusBudget } from './model/status-budget';
 export type { StatusDensity } from './model/status-budget';
 export { useStatusBudget } from './model/use-status-budget';
-export type { SessionDiagnostics } from './model/session-diagnostics';
+export { SessionInspector, SessionReadout } from './ui/SessionInspector';
+export { useSessionDiagnostics } from './model/use-session-diagnostics';
+export { formatDiagnostics } from './model/session-diagnostics';
+export type { SessionDiagnostics, ActiveSubagent } from './model/session-diagnostics';

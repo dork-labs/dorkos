@@ -23,7 +23,15 @@
  *    the instant a selection changes, with no URL round-trip and no divergence.
  *    Mirrors how `selectedCwd`/`useDirectoryState` share the working directory.
  *
- * @module features/chat/model/status/use-runtime-chip
+ * Split in two on purpose. {@link useResolvedSessionRuntime} answers questions 1
+ * and 2 and is a PURE READ — no effects, no router — so any number of surfaces
+ * (the chip, the Session readout, the Session panel) can ask them without side
+ * effects. {@link useRuntimeChip} adds question 3: the selection action, and the
+ * one effect that clears a stale pending selection when the session changes. That
+ * effect belongs to the chip alone; a read-only consumer that ran it would wipe a
+ * pre-launch runtime choice just by mounting.
+ *
+ * @module features/status/model/use-runtime-chip
  */
 import { useCallback, useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -45,8 +53,8 @@ function readRuntimeParam(): string | null {
   }
 }
 
-/** Runtime-chip state consumed by ChatStatusSection. */
-export interface RuntimeChipState {
+/** What a read-only consumer can know about a session's runtime. */
+export interface ResolvedSessionRuntime {
   /**
    * Runtime type the chip displays, or `null` when it should not render —
    * while the capability map / session list are loading, started-ness cannot
@@ -63,42 +71,76 @@ export interface RuntimeChipState {
   model: string | null;
   /** False once the session has started — runtime is immutable (ADR-0255). */
   canSelect: boolean;
+}
+
+/** Runtime-chip state consumed by ChatStatusSection — a resolution plus its action. */
+export interface RuntimeChipState extends ResolvedSessionRuntime {
   /** Apply a pre-launch selection (updates display state and the URL). */
   onChangeRuntime: (type: string) => void;
 }
 
 /**
- * Resolve the status-bar runtime chip's display state for a session.
+ * Resolve which runtime owns a session, and its resolved model id — read-only.
+ *
+ * The single resolution every runtime-aware surface reads, so the chip, the
+ * Session panel, and the Session readout can never disagree about which runtime
+ * a session runs on. Deliberately free of effects and of the router: a readout
+ * that mounts later must observe the pending pre-launch selection, never disturb
+ * it (see {@link useRuntimeChip}).
  *
  * @param sessionId - Active session id (may be a loader-minted UUID with no
  *   messages yet; empty string when no session context exists).
  */
-export function useRuntimeChip(sessionId: string): RuntimeChipState {
+export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRuntime {
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const { sessions: sessionList, isLoading: sessionListLoading } = useSessions();
   const sessionRow = sessionId ? (sessionList.find((s) => s.id === sessionId) ?? null) : null;
   const hasStarted = sessionRow !== null;
   const startednessKnown = hasStarted || (!sessionListLoading && selectedCwd !== null);
 
-  // Pending pre-launch selection, shared via the app store so both this hook's
-  // consumers (status-bar chip + command palette) resolve one value. A selection
-  // belongs only to the session it was made in, so clear it whenever the active
-  // session changes (switch, agent launch, or the first send binding the
-  // canonical id); the new session then resolves from its own ?runtime= param.
-  // Effect — never a render-time external-store write, which would update the
-  // sibling consumer mid-render.
+  // Pending pre-launch selection, shared via the app store so every consumer
+  // resolves one value.
   const { data: runtimeCaps } = useRuntimeCapabilities();
   const pendingRuntime = useAppStore((s) => s.pendingRuntime);
-  const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
-  useEffect(() => {
-    setPendingRuntime(null);
-  }, [sessionId, setPendingRuntime]);
 
   // The in-session chip override (shared, reactive) wins; otherwise the
   // ?runtime= launch param read straight off the URL — identical for every
   // consumer and router-free, so it never crashes embedded mode.
   const pendingSelection = pendingRuntime ?? readRuntimeParam();
   const resolved = sessionRow?.runtime ?? pendingSelection ?? runtimeCaps?.defaultRuntime ?? null;
+
+  return {
+    runtime: startednessKnown ? resolved : null,
+    // Identity pairs the runtime with the started session's resolved model. Only
+    // a listed session carries a model; pre-launch it stays null so the chip
+    // shows the runtime alone (honest — no invented model).
+    model: sessionRow?.model ?? null,
+    canSelect: !hasStarted,
+  };
+}
+
+/**
+ * The status-bar runtime chip: {@link useResolvedSessionRuntime} plus the
+ * selection action, and the one effect that discards a stale pending selection.
+ *
+ * Call this only from a surface that OWNS the chip. A selection belongs to the
+ * session it was made in, so the effect clears it whenever the active session
+ * changes (switch, agent launch, or the first send binding the canonical id); the
+ * new session then resolves from its own `?runtime=` param. A read-only consumer
+ * must use {@link useResolvedSessionRuntime} instead — mounting this hook would
+ * clear a pre-launch choice the operator had just made.
+ *
+ * @param sessionId - Active session id (see {@link useResolvedSessionRuntime}).
+ */
+export function useRuntimeChip(sessionId: string): RuntimeChipState {
+  const resolved = useResolvedSessionRuntime(sessionId);
+  const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
+
+  // Effect — never a render-time external-store write, which would update the
+  // sibling consumer mid-render.
+  useEffect(() => {
+    setPendingRuntime(null);
+  }, [sessionId, setPendingRuntime]);
 
   const navigate = useNavigate();
   const onChangeRuntime = useCallback(
@@ -118,13 +160,5 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
     [navigate, setPendingRuntime]
   );
 
-  return {
-    runtime: startednessKnown ? resolved : null,
-    // Identity pairs the runtime with the started session's resolved model. Only
-    // a listed session carries a model; pre-launch it stays null so the chip
-    // shows the runtime alone (honest — no invented model).
-    model: sessionRow?.model ?? null,
-    canSelect: !hasStarted,
-    onChangeRuntime,
-  };
+  return { ...resolved, onChangeRuntime };
 }

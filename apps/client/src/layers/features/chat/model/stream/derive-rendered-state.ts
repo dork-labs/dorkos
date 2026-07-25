@@ -3,16 +3,19 @@
  * (spec chat-stream-reconnection).
  *
  * The durable `/events` stream ({@link SessionStreamState}) is the canonical
- * source for the rendered message list, the chat status, and the recoverable
- * pending interactions. Until the session hydrates (the cold snapshot has not
- * landed yet), these helpers fall back to the legacy chat-store values so the
- * first paint after a switch is instant rather than blank.
+ * source for the rendered message list and the recoverable pending interactions.
+ * Until the session hydrates (the cold snapshot has not landed yet), these
+ * helpers fall back to the legacy chat-store values so the first paint after a
+ * switch is instant rather than blank.
+ *
+ * The matching status selector lives at the entity level
+ * (`selectRenderedStatus`) because the Session readout needs the same answer.
  *
  * @module features/chat/model/stream/derive-rendered-state
  */
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { SessionStreamState } from '@/layers/entities/session';
-import type { ChatMessage, ChatStatus } from '../chat-types';
+import type { ChatMessage } from '../chat-types';
 import { projectSessionMessages } from './project-session-turn';
 
 /** Whether the stream store holds hydrated server state for this session. */
@@ -55,37 +58,4 @@ export function selectRenderedMessages(
       )
     : legacyMessages;
   return filterKickoffHistory(projected);
-}
-
-/**
- * Map the server-projected lifecycle onto the renderer's coarse {@link ChatStatus},
- * falling back to the legacy status when the stream store has not hydrated.
- *
- * `streaming` → `streaming`; `error` → `error`; `idle`/`blocked`/`interrupted`
- * collapse to `idle` (the renderer expresses blocked/interrupted via pending
- * interactions and the interrupted-turn chip, not the coarse status).
- *
- * A pending trigger reads as `streaming` (CLI-B7): the POST is a 202 trigger,
- * so between Enter and the server's `turn_start` the lifecycle still says
- * `idle` — without this the composer would accept a second Enter as a
- * duplicate send instead of queueing it.
- *
- * @param stream - The per-session durable-stream projection.
- * @param legacyStatus - The legacy send-path status (transitional fallback).
- */
-export function selectRenderedStatus(
-  stream: SessionStreamState,
-  legacyStatus: ChatStatus
-): ChatStatus {
-  if (stream.triggerPending) return 'streaming';
-  const lifecycle = stream.status?.lifecycle;
-  if (lifecycle === undefined) return legacyStatus;
-  switch (lifecycle) {
-    case 'streaming':
-      return 'streaming';
-    case 'error':
-      return 'error';
-    default:
-      return 'idle';
-  }
 }

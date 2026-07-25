@@ -7,6 +7,7 @@ import {
   useSessionChatState,
   useSessionListStore,
   useSessionStreamConnection,
+  selectRenderedStatus,
 } from '@/layers/entities/session';
 import { useSessionStoreActions } from './use-session-store-actions';
 import { useSessionHistory } from './use-session-history';
@@ -18,7 +19,7 @@ import { useStreamTiming } from './use-stream-timing';
 import { useTodoEvents } from './use-todo-events';
 import { useSystemStatusEvents } from './use-system-status-events';
 import { useTurnEndReconcile } from './use-turn-end-reconcile';
-import { selectRenderedMessages, selectRenderedStatus } from './stream/derive-rendered-state';
+import { selectRenderedMessages } from './stream/derive-rendered-state';
 import type { ChatSessionOptions } from './chat-types';
 
 // Re-export types for backward compat

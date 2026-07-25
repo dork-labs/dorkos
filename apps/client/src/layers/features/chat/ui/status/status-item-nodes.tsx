@@ -25,8 +25,8 @@ import {
   type ContextCompactAction,
   type StatusBarItemKey,
   type StatusDensity,
+  type RuntimeChipState,
 } from '@/layers/features/status';
-import type { RuntimeChipState } from '../../model/status/use-runtime-chip';
 import { AgentIdentityChip } from './AgentIdentityChip';
 
 /** Everything the status line's items need in order to render. */

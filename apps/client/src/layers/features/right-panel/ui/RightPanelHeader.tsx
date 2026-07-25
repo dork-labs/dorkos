@@ -74,41 +74,47 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
       className="flex w-full items-center justify-between border-b px-3 py-2"
       data-slot="right-panel-header"
     >
-      {/* Segmented control — only when >1 contribution */}
+      {/* Segmented control — only when >1 contribution.
+          The strip scrolls rather than clipping: six tabs are wider than a
+          375px overlay panel, and a tab pushed past the edge with no way to
+          reach it is a lost surface. Each tab keeps its full width
+          (`shrink-0`, no wrapping) so labels stay readable while scrolling. */}
       {contributions.length > 1 ? (
-        <div
-          className="bg-accent/60 inline-flex gap-0.5 rounded-lg p-0.5"
-          role="tablist"
-          aria-label="Right panel tabs"
-        >
-          {contributions.map((contribution) => {
-            const isActive = contribution.id === activeTab;
-            return (
-              <Tooltip key={contribution.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    aria-label={contribution.title}
-                    id={rightPanelTabDomId(contribution.id)}
-                    aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
-                    {...getTabProps(contribution.id)}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors',
-                      isActive
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <TabIcon raw={contribution.icon} className="size-3.5" />
-                    <span>{contribution.title}</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{contribution.title}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <div
+            className="bg-accent/60 inline-flex gap-0.5 rounded-lg p-0.5"
+            role="tablist"
+            aria-label="Right panel tabs"
+          >
+            {contributions.map((contribution) => {
+              const isActive = contribution.id === activeTab;
+              return (
+                <Tooltip key={contribution.id}>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-label={contribution.title}
+                      id={rightPanelTabDomId(contribution.id)}
+                      aria-controls={isActive ? RIGHT_PANEL_PANEL_ID : undefined}
+                      {...getTabProps(contribution.id)}
+                      className={cn(
+                        'flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-medium whitespace-nowrap transition-colors',
+                        isActive
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <TabIcon raw={contribution.icon} className="size-3.5" />
+                      <span>{contribution.title}</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">{contribution.title}</TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
         </div>
       ) : contributions.length === 1 ? (
         // Single panel: name it (icon + title) instead of a blank bar. Not a
@@ -122,7 +128,7 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
         <div />
       )}
 
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1 pl-1">
         {actions}
         {/* Close button */}
         <Button

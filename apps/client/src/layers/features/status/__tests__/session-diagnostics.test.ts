@@ -5,27 +5,18 @@ import {
   statusRowValue,
   type SessionDiagnostics,
 } from '../model/session-diagnostics';
+import { makeDiagnostics } from './session-diagnostics-fixture';
 
-/** A fully-populated session snapshot. */
+/** A fully-populated session snapshot, on a clean default branch. */
 function diagnostics(overrides: Partial<SessionDiagnostics> = {}): SessionDiagnostics {
-  return {
+  return makeDiagnostics({
     sessionId: 'session-1',
-    cwd: '/Users/dev/work/dorkos',
     gitBranch: 'main',
     gitDirty: false,
-    runtime: 'claude-code',
-    model: 'claude-opus-4-6',
-    effort: 'high',
-    permissionMode: 'plan',
     contextPercent: 78,
     cache: { readTokens: 9_000, creationTokens: 1_000, contextTokens: 12_000 },
-    usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
-    connectionState: 'connected',
-    lastEventSeq: 412,
-    queueDepth: 2,
-    clientVersion: '1.4.0',
     ...overrides,
-  };
+  });
 }
 
 describe('cacheHitPercent', () => {
