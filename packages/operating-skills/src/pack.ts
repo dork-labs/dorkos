@@ -46,8 +46,24 @@ export interface OperatingSkill {
  *   `operator_only_marketplace_source`, and no approval unlocks them, so the pack
  *   had to stop teaching a command that cannot work and start teaching what to ask
  *   the person for instead.
+ * - 6: the pack stops calling a `destructive` tool ungated (DOR-509). Version 4
+ *   told every agent that `tasks_delete` "carries no gate of its own". It has been
+ *   `destructive` since DOR-468 and stops for a person, so the pack was teaching
+ *   agents not to warn anybody before an irreversible delete, and to read a refusal
+ *   as a malfunction rather than an answer. Same round: `operating-dorkos` now says
+ *   that hand-registered tools carry tiers too (the catalog not listing one is not
+ *   the same as it being ungated), names `marketplace.uninstall` alongside the two
+ *   destructive tools, and stops claiming every CLI verb takes `--json`;
+ *   `managing-agents` gained the missing `mesh_unregister` section.
+ *
+ *   This entry is 6 rather than 5 because DOR-502 landed on `main` first and took
+ *   5. Both corrections had to reach already-seeded agents, and a version that
+ *   merely EQUALS what `main` already ships delivers neither: `seed.ts` upgrades
+ *   only on a strictly lower stored stamp, so the second PR to merge must re-bump
+ *   rather than resolve the conflict by keeping its own number. That is not
+ *   hypothetical, it is what happened here and what review caught.
  */
-export const OPERATING_SKILLS_VERSION = 5;
+export const OPERATING_SKILLS_VERSION = 6;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

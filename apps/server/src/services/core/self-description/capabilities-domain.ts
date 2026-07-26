@@ -161,10 +161,21 @@ export const UNREGISTERED_TOOL_FAMILIES: readonly string[] = [
  * what actions and tools are available", which is a false premise an obedient model
  * reasons correctly from: it sees no task or relay entry and concludes it cannot
  * manage tasks or message another agent. The wording is therefore scoped to what
- * the catalog is (the by-id, tier-carrying surface) and points at the tool list for
- * the rest. The honest fix ends when those domains migrate onto the registry, at
- * which point the catalog really is exhaustive and this caveat should be deleted,
- * not reworded.
+ * the catalog is (the by-id surface) and points at the tool list for the rest. The
+ * honest fix ends when those domains migrate onto the registry, at which point the
+ * catalog really is exhaustive and this caveat should be deleted, not reworded.
+ *
+ * ## Absent from the catalog is not the same as untiered (DOR-509)
+ *
+ * Until DOR-509 the caveat also said those tools "carry no permission tier". That
+ * was true when it was written and stopped being true at DOR-468, which gave every
+ * one of the 47 hand-registered tools a tier in `core/mcp-tool-tiers.ts` behind the
+ * choke point in `core/mcp-tool-gate.ts`. Two of them are `destructive` and really
+ * do stop for a person. The sentence therefore told every model that calls
+ * `list_capabilities` that a whole half of the product runs unasked, which is the
+ * premise an agent reasons from when it deletes something without warning anybody
+ * first. The description now separates the two facts it was conflating: what the
+ * CATALOG lists, and what carries a TIER. Keep them separate if you reword this.
  */
 export const capabilitiesDomain: CapabilityDomain = {
   name: 'capabilities',
@@ -180,9 +191,12 @@ export const capabilitiesDomain: CapabilityDomain = {
         'This is NOT the full list of DorkOS tools: the ' +
         UNREGISTERED_TOOL_FAMILIES.join(', ') +
         ' tools are registered directly on the MCP server, so they appear in your own tool list ' +
-        'rather than in this catalog, carry no permission tier, and cannot be reached by ' +
-        '`dorkos call`. Call this to find out what is invocable by capability id and at what tier; ' +
-        'look at your tool list for the rest.',
+        'rather than in this catalog and cannot be reached by `dorkos call`. They carry a ' +
+        'permission tier all the same and answer to the same approval gate, so a tool being ' +
+        'absent here is not a tool that runs unasked: `tasks_delete` and `mesh_unregister` are ' +
+        'destructive and stop for a person. A destructive tool advertises an `approvalToken` ' +
+        'argument, which is how you can tell one from its own schema. Call this to find out what ' +
+        'is invocable by capability id and at what tier; look at your tool list for the rest.',
       tier: 'observe',
       input: z.object({}),
       output: capabilityCatalogSchema,
