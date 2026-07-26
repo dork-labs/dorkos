@@ -234,7 +234,9 @@ FSD layers apply without exception: `shared ← entities ← features ← widget
 
 ### `entities/room/`
 
-`model/` — `useRooms()` (query key `['rooms']`), `useRoom(id)`, `useRoomEntries(id)`, `usePostToRoom()`, `useRoomStream(id)` bridging SSE into the query cache the way the session stream already does. All data access goes through the `Transport` interface (`packages/shared/src/transport.ts`) — **never raw `fetch`**; add the room methods to `HttpTransport` and `DirectTransport` both, or the Obsidian embed breaks at runtime with no type error.
+`model/` — `useRooms()` (query key `['rooms']`), `useRoom(id)`, `useRoomEntries(id)`, `usePostToRoom()`, `useRoomStream(id)` bridging SSE into the query cache the way the session stream already does. All data access goes through the `Transport` interface (`packages/shared/src/transport.ts`) — **never raw `fetch`**.
+
+Both implementations must gain the methods. `DirectTransport` composes factory return types via declaration merging (`direct-transport.ts:37-44`), which structurally checks each factory against `Transport` at compile time — so a missing method is a **type error in the factory file**, not a runtime surprise. Because rooms are out of scope for the Obsidian embed in v1 (§9), the room methods belong in `direct/stub-methods.ts` alongside the other server-only subsystems, not in a real in-process implementation.
 
 `ui/` — `RoomAvatar`, `RoomTitle`, `MemberList`.
 
