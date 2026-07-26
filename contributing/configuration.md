@@ -163,11 +163,11 @@ The `approvals` section holds the policy for standing permissions: an operator's
 
 These settings are enforced. The tier gate reads both on every gated call (`readStandingGrantSettings`), so turning the master switch off stops the very next call rather than the next restart.
 
-| Key                            | Type              | Default | Description                                                                     |
-| ------------------------------ | ----------------- | ------- | ------------------------------------------------------------------------------- |
-| `approvals.standingGrants`     | boolean           | `false` | Whether standing permissions may exist at all                                   |
-| `approvals.trustWindowMinutes` | integer (5--1440) | `480`   | How long a new standing permission lasts, counted from the moment it is granted |
-| `approvals.standingGrantsVoidBefore` | ISO 8601 string \| null | `null` | **Machine-managed.** The moment the settings last stopped licensing standing permissions. Every permission granted at or before it is void |
+| Key                                  | Type                    | Default | Description                                                                                                                                |
+| ------------------------------------ | ----------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `approvals.standingGrants`           | boolean                 | `false` | Whether standing permissions may exist at all                                                                                              |
+| `approvals.trustWindowMinutes`       | integer (5--1440)       | `480`   | How long a new standing permission lasts, counted from the moment it is granted                                                            |
+| `approvals.standingGrantsVoidBefore` | ISO 8601 string \| null | `null`  | **Machine-managed.** The moment the settings last stopped licensing standing permissions. Every permission granted at or before it is void |
 
 Both leaves are `operator-only`, so under login-on they need a session cookie like every other operator-only setting (see [Who may write which setting](#who-may-write-which-setting)). On top of that, they **cannot be written at all while login is off** — that extra bar is `REQUIRES_LOGIN_CONFIG_PATHS` in `config-write-policy.ts`. The consequence is that **standing permissions require `auth.enabled`**.
 
