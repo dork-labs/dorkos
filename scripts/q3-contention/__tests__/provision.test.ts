@@ -88,12 +88,7 @@ describe('assertSafeRunRoot', () => {
       // for the unrelated reason that TMPDIR sits outside the trusted temp root —
       // the same environment-keyed blind spot that let the ~/Documents version
       // silently stop asserting.
-      const home = os.homedir().replace(
-        /[.*+?^${}()|[\]\\]/g,
-        String.raw`\      await expect(assertSafeRunRoot(link, REPO_ROOT, { fullyResolve: true })).rejects.toThrow(
-        /REFUSING TO RUN/
-      );`
-      );
+      const home = os.homedir().replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
       await expect(assertSafeRunRoot(link, REPO_ROOT, { fullyResolve: true })).rejects.toThrow(
         new RegExp(`REFUSING TO RUN[\\s\\S]*run root "${home}"`)
       );
