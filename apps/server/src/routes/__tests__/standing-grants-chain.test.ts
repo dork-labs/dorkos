@@ -24,15 +24,21 @@
  * Nothing here goes through the client. The refusals are read straight off the
  * HTTP surface, because a guard that only exists in the cockpit is not a guard.
  *
- * Today the chain is closed twice over: the cookie bar refuses the callers above,
- * and `standing: true` is refused for EVERY caller while nothing enforces a
- * standing permission. The cases below assert the bar specifically, by the code it
- * answers with, so they keep testing the bar rather than the temporary refusal
- * once that refusal is replaced by the gate lookup.
+ * The cases below assert the bar specifically, by the code it answers with, so they
+ * test the bar rather than whatever else happens to refuse the same call.
+ *
+ * ## Now that enforcement exists, the positive half carries as much weight
+ *
+ * A guard that refuses everybody is not a guard, it is an outage nobody noticed. So
+ * this file also drives the whole honest flow — a signed-in person opens a
+ * permission, the agent stops being asked — and then proves the permission cannot
+ * outlive its scope: it ends when the window closes, when somebody revokes it, when
+ * the master switch goes off, and when login goes off, and it never covers a
+ * capability nobody granted.
  *
  * @vitest-environment node
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -46,6 +52,7 @@ import {
   ApprovalGrantService,
   ApprovalService,
   initStandingGrantPosture,
+  readStandingGrantSettings,
   resetStandingGrantPosture,
 } from '../../services/core/approvals/index.js';
 import {
@@ -78,6 +85,22 @@ const UNINSTALL = defineCapability({
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_uninstall', servers: ['external'] } },
+  invoke: async () => ({ ok: true }),
+});
+
+/**
+ * A SECOND destructive capability, so "a permission for A does not cover B" is
+ * asserted against a real second door rather than a made-up id the registry would
+ * refuse anyway.
+ */
+const PURGE = defineCapability({
+  id: 'demo.purge',
+  title: 'Delete a package and its data',
+  description: 'A second destructive capability, so a permission cannot be shown to cover both.',
+  tier: 'destructive',
+  input: z.object({ name: z.string() }),
+  output: z.unknown(),
+  surfaces: { mcp: { toolName: 'demo_purge', servers: ['external'] } },
   invoke: async () => ({ ok: true }),
 });
 
@@ -121,9 +144,9 @@ describe('the self-grant chain, against the real routers', () => {
    *
    * @returns The approval id the refusal handed back.
    */
-  async function askAsAgent(): Promise<string> {
+  async function askAsAgent(capabilityId: string = UNINSTALL.id): Promise<string> {
     try {
-      await registry.invoke(UNINSTALL.id, INPUT, { identity: IDENTITY });
+      await registry.invoke(capabilityId, INPUT, { identity: IDENTITY });
     } catch (err) {
       if (err instanceof CapabilityGateRefusal && err.decision.outcome === 'approval_required') {
         return err.decision.payload.approvalId;
@@ -133,14 +156,42 @@ describe('the self-grant chain, against the real routers', () => {
     throw new Error('the destructive capability was not gated');
   }
 
-  /** Whether the gate still stops the next identified call. */
-  async function stillAsks(): Promise<boolean> {
+  /**
+   * Whether the gate still stops the next identified call.
+   *
+   * @param capabilityId - Which door to try. Defaults to the uninstall one.
+   * @returns True when the call was parked for approval, false when it ran.
+   */
+  async function stillAsks(capabilityId: string = UNINSTALL.id): Promise<boolean> {
     try {
-      await registry.invoke(UNINSTALL.id, INPUT, { identity: IDENTITY });
+      await registry.invoke(capabilityId, INPUT, { identity: IDENTITY });
       return false;
     } catch (err) {
       return err instanceof CapabilityGateRefusal && err.decision.outcome === 'approval_required';
     }
+  }
+
+  /**
+   * Open a permission the honest way: the person turns the feature on, the agent
+   * asks, the person answers with `standing: true`.
+   *
+   * @returns The permission id the route reported.
+   */
+  async function openPermissionAsPerson(): Promise<string> {
+    setLoginEnabled(true);
+    const config = await request(app)
+      .patch('/api/config')
+      .set('Cookie', cookies)
+      .send({ approvals: { standingGrants: true, trustWindowMinutes: 480 } });
+    expect(config.status).toBe(200);
+
+    const approvalId = await askAsAgent();
+    const grant = await request(app)
+      .post(`/api/approvals/${approvalId}/grant`)
+      .set('Cookie', cookies)
+      .send({ standing: true });
+    expect(grant.status).toBe(200);
+    return grant.body.standingPermission.grantId as string;
   }
 
   beforeAll(async () => {
@@ -152,12 +203,19 @@ describe('the self-grant chain, against the real routers', () => {
     const auth = initAuth(db, tmpDir);
 
     approvals = new ApprovalService(db, {
-      describeCapability: (id) =>
-        id === UNINSTALL.id ? { title: UNINSTALL.title, tier: UNINSTALL.tier } : undefined,
+      describeCapability: (id) => registry?.get(id),
     });
     grants = new ApprovalGrantService(db);
-    registry = composeRegistry([{ name: 'demo', capabilities: [UNINSTALL] }], {} as never);
-    initCapabilityTierGate({ approvals });
+    registry = composeRegistry([{ name: 'demo', capabilities: [UNINSTALL, PURGE] }], {} as never);
+    // Wired exactly as boot wires it, so the lookup this file exercises is the
+    // production one and not a stand-in that could disagree with it.
+    initCapabilityTierGate({
+      approvals,
+      standingGrants: {
+        enabled: () => readStandingGrantSettings().enabled,
+        findLive: (agentPath, capabilityId) => grants.findLive(agentPath, capabilityId),
+      },
+    });
     initStandingGrantPosture(grants);
 
     // Mirrors `app.ts`: Better Auth before the JSON body parser, then the gate,
@@ -168,7 +226,7 @@ describe('the self-grant chain, against the real routers', () => {
     app.use(express.json());
     app.use(sessionGate);
     app.use('/api/config', configRouter);
-    app.use('/api/approvals', createApprovalsRouter(approvals, { grants }));
+    app.use('/api/approvals', createApprovalsRouter(approvals, grants));
 
     const signUp = await request(app)
       .post('/api/auth/sign-up/email')
@@ -184,6 +242,10 @@ describe('the self-grant chain, against the real routers', () => {
 
     const ownerId = db.select().from(user).get()!.id;
     apiKey = (await auth.api.createApiKey({ body: { userId: ownerId, name: 'chain-key' } })).key;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   beforeEach(() => {
@@ -283,29 +345,15 @@ describe('the self-grant chain, against the real routers', () => {
       expect(grants.findLive(AGENT_PATH, UNINSTALL.id)).toBeUndefined();
     });
 
-    it('lets the signed-in person past the bar, and no further yet', async () => {
+    it('lets the signed-in person through, and the agent stops being asked', async () => {
       // The positive half, which is what keeps the guard from being a deny-all
-      // that nobody would notice was broken. The person clears both bars; the
-      // request then stops on the honest refusal that stands in for the
-      // enforcement nobody has built.
-      setLoginEnabled(true);
+      // nobody would notice was broken. Everything the person does here is the
+      // thing the header-stripping caller above could not do.
+      await openPermissionAsPerson();
 
-      const config = await request(app)
-        .patch('/api/config')
-        .set('Cookie', cookies)
-        .send({ approvals: { standingGrants: true, trustWindowMinutes: 480 } });
-      expect(config.status).toBe(200);
       expect(configManager.getDot('approvals.standingGrants')).toBe(true);
-
-      const approvalId = await askAsAgent();
-      const grant = await request(app)
-        .post(`/api/approvals/${approvalId}/grant`)
-        .set('Cookie', cookies)
-        .send({ standing: true });
-
-      expect(grant.status).toBe(409);
-      expect(grant.body.code).toBe('STANDING_GRANTS_NOT_YET_ENFORCED');
-      expect(grants.findLive(AGENT_PATH, UNINSTALL.id)).toBeUndefined();
+      expect(grants.findLive(AGENT_PATH, UNINSTALL.id)).toBeDefined();
+      expect(await stillAsks(), 'the whole point: the next call runs with no card').toBe(false);
     });
 
     it('ends every live permission when login is turned off', async () => {
@@ -331,6 +379,87 @@ describe('the self-grant chain, against the real routers', () => {
       // Not dormant. A permission that survived would wake up under a posture
       // that can no longer justify it.
       expect(grants.list()).toEqual([]);
+    });
+  });
+
+  describe('a permission does not outlive its scope', () => {
+    it('stops working when the window closes, with no sweep in between', async () => {
+      await openPermissionAsPerson();
+      expect(await stillAsks()).toBe(false);
+
+      // 480 minutes on. Nothing runs a cleanup here on purpose: expiry is applied
+      // on READ, so a stale row must be invisible the instant its window closes.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(Date.now() + 481 * 60_000));
+
+      expect(await stillAsks()).toBe(true);
+    });
+
+    it('stops working the moment a person ends it', async () => {
+      const grantId = await openPermissionAsPerson();
+      expect(await stillAsks()).toBe(false);
+
+      const ended = await request(app)
+        .delete(`/api/approvals/grants/${grantId}`)
+        .set('Cookie', cookies);
+      expect(ended.status).toBe(200);
+
+      expect(await stillAsks()).toBe(true);
+    });
+
+    it('stops working when the master switch goes off', async () => {
+      await openPermissionAsPerson();
+      expect(await stillAsks()).toBe(false);
+
+      const off = await request(app)
+        .patch('/api/config')
+        .set('Cookie', cookies)
+        .send({ approvals: { standingGrants: false } });
+      expect(off.status).toBe(200);
+
+      // Twice over, and both matter: the posture seam ended the row, AND the gate
+      // would refuse to read one even if a row had survived.
+      expect(grants.list()).toEqual([]);
+      expect(await stillAsks()).toBe(true);
+    });
+
+    it('stops working when Require login goes off', async () => {
+      await openPermissionAsPerson();
+      expect(await stillAsks()).toBe(false);
+
+      const off = await request(app)
+        .patch('/api/config')
+        .set('Cookie', cookies)
+        .send({ auth: { enabled: false } });
+      expect(off.status).toBe(200);
+
+      expect(grants.list()).toEqual([]);
+      expect(await stillAsks()).toBe(true);
+    });
+
+    it('covers the one action it was granted for and nothing else', async () => {
+      // No wildcard exists in the schema, and this is what that means in practice:
+      // the second destructive door still asks, for the same agent, at the same
+      // moment, under the same switch.
+      await openPermissionAsPerson();
+
+      expect(await stillAsks(UNINSTALL.id)).toBe(false);
+      expect(await stillAsks(PURGE.id)).toBe(true);
+    });
+
+    it('never covers a caller that presents no identity', async () => {
+      // A permission keys on agent path, so shedding a credential can get a caller
+      // the gate and never past it. This is the mirror of the ceiling reasoning.
+      await openPermissionAsPerson();
+
+      let refused = false;
+      try {
+        await registry.invoke(UNINSTALL.id, INPUT);
+      } catch (err) {
+        refused =
+          err instanceof CapabilityGateRefusal && err.decision.outcome === 'approval_required';
+      }
+      expect(refused, 'an anonymous caller must still be asked about').toBe(true);
     });
   });
 });

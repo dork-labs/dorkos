@@ -19,6 +19,29 @@
  */
 import { z } from 'zod';
 
+/**
+ * How long a new standing permission lasts by default, in minutes (eight hours —
+ * about one working day, which is the span the button on the approval card names).
+ */
+export const DEFAULT_TRUST_WINDOW_MINUTES = 480;
+
+/**
+ * Shortest standing permission a person can choose, in minutes.
+ *
+ * A floor keeps the window from becoming a deny-all that looks like a broken
+ * feature, which is the reasoning already applied to the approval window in
+ * `approval-service.ts`.
+ */
+export const MIN_TRUST_WINDOW_MINUTES = 5;
+
+/**
+ * Longest standing permission a person can choose, in minutes (one day).
+ *
+ * The ceiling is what makes "forever" unrepresentable. It is a schema bound rather
+ * than a UI one, so no surface can offer a window the store would accept.
+ */
+export const MAX_TRUST_WINDOW_MINUTES = 1440;
+
 /** Sensitive fields that trigger a warning when set via CLI or API */
 export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.authtoken',
@@ -793,9 +816,17 @@ export const UserConfigSchema = z.object({
        * feature, which is the reasoning already applied to the approval window in
        * `approval-service.ts`.
        */
-      trustWindowMinutes: z.number().int().min(5).max(1440).default(480),
+      trustWindowMinutes: z
+        .number()
+        .int()
+        .min(MIN_TRUST_WINDOW_MINUTES)
+        .max(MAX_TRUST_WINDOW_MINUTES)
+        .default(DEFAULT_TRUST_WINDOW_MINUTES),
     })
-    .default(() => ({ standingGrants: false, trustWindowMinutes: 480 })),
+    .default(() => ({
+      standingGrants: false,
+      trustWindowMinutes: DEFAULT_TRUST_WINDOW_MINUTES,
+    })),
   cloud: z
     .object({
       /**

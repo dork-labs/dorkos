@@ -323,25 +323,18 @@ export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
  * would be wrong, but be precise about WHY, because the imprecise version gets
  * this list deleted:
  *
- * **This is a forward-looking guard, not a fix for a live escalation.** Writing
- * `approvals.standingGrants` today changes no behavior whatsoever. Nothing
- * enforces a standing permission yet: the tier gate has no grant lookup,
- * `ApprovalGrantService.findLive` has no production caller, and
- * `POST /api/approvals/:id/grant` refuses `standing: true` for EVERY caller with
- * `STANDING_GRANTS_NOT_YET_ENFORCED`. So a pre-armed switch buys an attacker
- * nothing until the gate lookup ships.
+ * **`approvals.standingGrants` decides real behavior.** The tier gate reads it on
+ * every gated call, so an agent that could set it while login is off would be
+ * arming the thing that makes DorkOS stop asking, not flipping an inert flag. The
+ * write also PERSISTS and nothing sweeps it —
+ * `revokeStandingGrantsIfPostureNarrowed` only fires on a narrowing, never on a
+ * widening — so a switch set in the login-off posture is still set on the day the
+ * person turns login on, reading as something they chose.
  *
- * What makes it worth guarding anyway is that the write PERSISTS and nothing
- * sweeps it: `revokeStandingGrantsIfPostureNarrowed` only fires on a narrowing,
- * never on a widening. So an agent can set the switch now and it is still set on
- * the day enforcement lands and the person turns login on, with the setting
- * reading as something they chose. Guarding a field before it becomes load-bearing
- * is the cheap moment to do it; the expensive moment is after.
- *
- * Stated this plainly on purpose. A reader who tests the "attack" today finds it
- * inert, and if the only justification on offer had been "this is live", they
- * would rightly conclude the guard is theatre and delete it. Which is exactly the
- * failure the note this replaced was written to prevent.
+ * This list was written before enforcement existed, as a forward-looking guard,
+ * and the note it replaced said so at length because a reader who tested the
+ * "attack" then found it inert. That is no longer the situation: the attack is live
+ * and the guard is what stops it.
  *
  * So the two mechanisms no longer overlap: this one asks "is login on", the
  * general rule asks "with login on, is this a person". They compose.

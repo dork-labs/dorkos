@@ -95,7 +95,9 @@ describe('invokeCapabilityAsMcpResult — tier enforcement', () => {
   });
 
   /** The plain payload inside an MCP text result. */
-  function payloadOf(result: { content: { type: string; text?: string }[] }): Record<string, unknown> {
+  function payloadOf(result: {
+    content: { type: string; text?: string }[];
+  }): Record<string, unknown> {
     return JSON.parse(result.content[0].text ?? 'null') as Record<string, unknown>;
   }
 
@@ -153,8 +155,9 @@ describe('invokeCapabilityAsMcpResult — tier enforcement', () => {
     expect(ran).toHaveLength(1);
     // The handler sees the capability's input and nothing else.
     expect(ran[0].input).toEqual({ name: 'production' });
-    // …and it can see that a person already approved THIS call.
-    expect(ran[0].context.approval?.approvalId).toBe(asked.approvalId);
+    // …and it can see that a person already approved THIS call, tagged as a
+    // decision on this exact call rather than a standing permission.
+    expect(ran[0].context.approval).toEqual({ via: 'approval', approvalId: asked.approvalId });
   });
 
   it('lets an act capability straight through, with no approval on the context', async () => {
@@ -222,7 +225,7 @@ describe('invokeCapabilityAsMcpResult — tier enforcement', () => {
     // skip a self-gating capability's own confirmation.
     const poisoned = {
       identity: AGENT,
-      approval: { approvalId: 'not-a-real-approval' },
+      approval: { via: 'approval' as const, approvalId: 'not-a-real-approval' },
     } as CapabilityInvocationContext;
 
     const result = await invokeCapabilityAsMcpResult(

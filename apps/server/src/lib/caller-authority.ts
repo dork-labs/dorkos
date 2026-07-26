@@ -129,13 +129,12 @@ function loginEnabledFromConfig(): boolean {
  * This is deliberately a SEPARATE bar from
  * {@link requireOperatorCookieUnderLogin}, not a special case inside it. That one
  * allows every caller while login is off, which is right for an ordinary setting
- * and wrong here. The reason is FORWARD-LOOKING and worth stating as such:
- * `approvals.standingGrants` written in the login-off posture is genuinely inert
- * today, because nothing enforces a standing permission yet at all. But the value
- * PERSISTS and nothing revokes it when the posture later widens, so it would still
- * be set when enforcement lands, reading as something the person chose. See
- * `config-write-policy.ts` at REQUIRES_LOGIN_CONFIG_PATHS for the full argument
- * and why it is spelled out rather than asserted.
+ * and wrong here: the tier gate reads `approvals.standingGrants` on every gated
+ * call, so a caller that could write it in the login-off posture would be arming
+ * the thing that makes DorkOS stop asking. The value also PERSISTS and nothing
+ * revokes it when the posture later widens, so it would still be set once login is
+ * on, reading as something the person chose. See `config-write-policy.ts` at
+ * REQUIRES_LOGIN_CONFIG_PATHS for the full argument.
  *
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns `undefined` when login is on, or the refusal to answer with.

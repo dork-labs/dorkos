@@ -5,7 +5,11 @@
  * Two settings license a standing permission to exist: `auth.enabled`, because a
  * session cookie is the only thing that tells the person in the cockpit from an
  * agent on the same machine, and `approvals.standingGrants`, the master switch.
- * When either is switched off, every live permission ends immediately.
+ * When either is switched off, every live permission ends immediately — and BOTH
+ * paths that enforce that check both settings, which is not a detail. The boot
+ * sweep first read only the master switch, so turning login off through the CLI left
+ * permissions live and honored; the login half is the one §3.0 calls load-bearing,
+ * so the half-covered version was worse than none.
  *
  * The alternative — leaving rows dormant and honoring them again if the setting
  * comes back — is the thing this module exists to prevent. A permission granted
@@ -14,12 +18,36 @@
  *
  * ## Why a boot-wired seam rather than injection
  *
- * `PATCH /api/config` is a module-level router with no construction seam to pass
- * a service through, and it is the only live write path for either setting (both
- * are `operator-only`, so the capability surface refuses them outright). This
- * mirrors `initCapabilityTierGate`, for the same reason and with the same
- * fail-quiet behavior: an unwired seam revokes nothing and says so in the log
- * rather than throwing inside a config write.
+ * `PATCH /api/config` is a module-level router with no construction seam to pass a
+ * service through. This mirrors `initCapabilityTierGate`, for the same reason and
+ * with the same fail-quiet behavior: an unwired seam revokes nothing and says so in
+ * the log rather than throwing inside a config write.
+ *
+ * ## `PATCH /api/config` is NOT the only write path, and the gap is real
+ *
+ * An earlier version of this comment said it was. It is not: `dorkos config set
+ * approvals.standingGrants false` and `dorkos config reset` write
+ * `~/.dork/config.json` directly through `ConfigStore.setDot`
+ * (`packages/cli/src/config-commands.ts`), out of process, and reach nothing here.
+ * The capability surface genuinely cannot write these (both leaves are
+ * `operator-only`); the CLI can, and deliberately, because it has to work with no
+ * server running.
+ *
+ * So a CLI round trip — switch off, switch back on — would leave permissions live
+ * and wake them up, which is exactly the failure this module exists to prevent.
+ * Two things narrow it, and neither closes it:
+ *
+ * - The gate reads the switch FRESH on every gated call, so nothing is honored
+ *   while the switch is off. The window is only the off-then-on round trip.
+ * - Boot runs {@link revokeStandingGrantsIfPostureForbids} (`index.ts`), so the
+ *   invariant "no permission is live unless BOTH settings license one" holds across
+ *   a restart — including a CLI write to `auth.enabled`, which is the half the first
+ *   version of that sweep missed.
+ *
+ * What is left is an off-then-on round trip inside one server lifetime with no
+ * gated call in between. Closing that needs the server to watch the config file
+ * rather than only its own write path, which is a change to how config reaches the
+ * server and is not being improvised here.
  *
  * @module services/core/approvals/standing-grant-posture
  */
@@ -71,17 +99,47 @@ export function revokeStandingGrantsIfPostureNarrowed(
     (before.loginEnabled && !after.loginEnabled) ||
     (before.standingGrants && !after.standingGrants);
   if (!narrowed) return 0;
+  return endAll('after a settings change');
+}
 
+/**
+ * End every live permission when the CURRENT posture does not license one at all.
+ *
+ * The sibling above compares two postures and therefore only fires on a write it
+ * can see. This one asks a question that needs no history: given how the settings
+ * stand right now, may a permission exist? Boot calls it, which is what makes the
+ * invariant survive a write this process never saw — `dorkos config set` edits
+ * `~/.dork/config.json` directly and out of process, so it reaches no seam.
+ *
+ * Both settings are checked, not just the master switch. Getting that wrong is the
+ * defect this function was extracted to fix: the first version read only
+ * `approvals.standingGrants`, so turning `auth.enabled` off through the CLI left
+ * permissions live AND still honored by the gate, which is the half §3.0 calls
+ * load-bearing.
+ *
+ * @param posture - How the two settings stand right now.
+ * @returns How many permissions were ended. Zero when the posture allows them.
+ */
+export function revokeStandingGrantsIfPostureForbids(posture: StandingGrantPosture): number {
+  if (posture.loginEnabled && posture.standingGrants) return 0;
+  return endAll('because standing permissions are not switched on');
+}
+
+/**
+ * End every live permission, or say why nothing happened.
+ *
+ * @param why - How the log line explains itself, for the operator reading it.
+ * @returns How many permissions were ended.
+ */
+function endAll(why: string): number {
   if (!grants) {
-    logger.warn(
-      '[Approvals] A posture change should have ended standing permissions, but the store is not wired'
-    );
+    logger.warn('[Approvals] Standing permissions should have ended, but the store is not wired');
     return 0;
   }
 
   const ended = grants.revokeAll();
   if (ended > 0) {
-    logger.info(`[Approvals] Ended ${ended} standing permission(s) after a settings change`);
+    logger.info(`[Approvals] Ended ${ended} standing permission(s) ${why}`);
   }
   return ended;
 }

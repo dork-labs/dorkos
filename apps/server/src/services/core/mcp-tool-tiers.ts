@@ -255,3 +255,19 @@ export function gatedActionForMcpTool(toolName: string): GatedAction {
       : {}),
   };
 }
+
+/**
+ * The human-facing title of a hand-registered MCP tool, or `undefined`.
+ *
+ * The forgiving sibling of {@link gatedActionForMcpTool}, and it exists because the
+ * two callers want opposite things from an unknown name. Building a server must
+ * FAIL on one, so an ungated tool cannot ship. Naming an action in a list a person
+ * reads must not: a permissions list that threw would take the whole cockpit panel
+ * down to avoid showing one raw id.
+ *
+ * @param toolName - The registered MCP tool name.
+ * @returns Its title, or `undefined` when nothing declares one.
+ */
+export function titleForMcpTool(toolName: string): string | undefined {
+  return (MCP_TOOL_TIERS as Record<string, McpToolTier | undefined>)[toolName]?.title;
+}

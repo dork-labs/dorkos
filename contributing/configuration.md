@@ -161,7 +161,7 @@ When `auth.enabled` is `false` (the default), no auth gate runs and DorkOS shows
 
 The `approvals` section holds the policy for standing permissions: an operator's "stop asking about this agent doing this thing" (DOR-501). It is the policy only: the permissions themselves are rows in the `approval_grants` SQLite table, so nothing about which agents are trusted can ever leave through `config_get`.
 
-**Nothing enforces a standing permission yet.** The tier gate has no grant lookup, `ApprovalGrantService.findLive` has no production caller, and `POST /api/approvals/:id/grant` refuses `standing: true` with `STANDING_GRANTS_NOT_YET_ENFORCED`. Both settings are therefore inert: flipping them changes no behavior. What IS live is everything below about who may write them, which had to land first so the rest can be built on a guard that is already tested.
+These settings are enforced. The tier gate reads both on every gated call (`readStandingGrantSettings`), so turning the master switch off stops the very next call rather than the next restart.
 
 | Key                            | Type              | Default | Description                                                                     |
 | ------------------------------ | ----------------- | ------- | ------------------------------------------------------------------------------- |
@@ -170,7 +170,7 @@ The `approvals` section holds the policy for standing permissions: an operator's
 
 Both leaves are `operator-only`, so under login-on they need a session cookie like every other operator-only setting (see [Who may write which setting](#who-may-write-which-setting)). On top of that, they **cannot be written at all while login is off** — that extra bar is `REQUIRES_LOGIN_CONFIG_PATHS` in `config-write-policy.ts`. The consequence is that **standing permissions require `auth.enabled`**.
 
-That bar is not redundant with the general cookie rule, which allows any caller while login is off. But it is a **forward-looking guard, not a fix for a live escalation**, and the distinction matters if you are deciding whether to keep it: writing `approvals.standingGrants` today changes no behavior at all, since nothing enforces a standing permission yet and the grant route refuses `standing: true` for every caller. What the bar buys is that the write persists and nothing sweeps it (`revokeStandingGrantsIfPostureNarrowed` only fires on a narrowing), so an agent could set the switch now and have it still set on the day enforcement ships. Test the attack today and you will find it inert; that is expected, and is not a reason to delete the guard.
+That bar is not redundant with the general cookie rule, which allows any caller while login is off. It was written as a forward-looking guard, before anything enforced a permission, and it is now load-bearing: with the gate reading the switch, a caller that could write it while login is off would be pre-arming real behavior rather than an inert flag. Do not fold it into the general rule.
 
 The window is bounded in the schema in both directions. The maximum of one day is what makes "forever" unrepresentable; the minimum of 5 minutes keeps the window from becoming a deny-all that looks like a broken feature. Expiry is absolute from the moment of the grant and never slides on use, so an agent cannot extend its own trust by acting. Turning either `auth.enabled` or `approvals.standingGrants` off ends every live permission immediately.
 

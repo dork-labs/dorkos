@@ -139,6 +139,9 @@ import {
   ApprovalGrantService,
   ApprovalService,
   initStandingGrantPosture,
+  readStandingGrantPosture,
+  readStandingGrantSettings,
+  revokeStandingGrantsIfPostureForbids,
   resolveApprovalTtlMs,
 } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
@@ -963,6 +966,19 @@ async function start() {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+  // No permission may be live unless BOTH settings license one. The posture seam
+  // above catches a setting being turned off through `PATCH /api/config`, but
+  // `dorkos config set` writes the file directly and out of process, so it reaches
+  // no seam at all. This is the floor under both: a restart always starts from a
+  // state that matches the settings, rather than waking permissions the operator
+  // switched the feature — or login — off with.
+  try {
+    revokeStandingGrantsIfPostureForbids(readStandingGrantPosture());
+  } catch (err) {
+    logger.warn('[Approvals] Failed to reconcile standing permissions with the setting', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   // Connector registry + the per-account → session tool-server binder, created
   // up front (both need only `db`) so the MCP factory closure can inject a
   // session's attached connector accounts as named MCP tool servers alongside
@@ -1308,7 +1324,16 @@ async function start() {
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
-  app.use('/api/approvals', createApprovalsRouter(approvalService, { activity: activityService }));
+  app.use(
+    '/api/approvals',
+    createApprovalsRouter(approvalService, approvalGrantService, {
+      activity: activityService,
+      // The permissions list names the action the way the approval card does, from
+      // the registry rather than from whoever asked. Read lazily for the same
+      // reason `approvalService` reads it lazily: the registry is composed later.
+      describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
+    })
+  );
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
@@ -1678,6 +1703,14 @@ async function start() {
   initCapabilityTierGate({
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),
+    // Standing permissions (spec `agent-approval-settings` §3.3). Both halves are
+    // read per gated call rather than captured here: the master switch can be
+    // turned off between two invocations and a permission runs out on a clock, so
+    // the guarantee "the very next call asks again" has to come from a fresh read.
+    standingGrants: {
+      enabled: () => readStandingGrantSettings().enabled,
+      findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
+    },
   });
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a

@@ -92,6 +92,9 @@ describe('ApprovalService', () => {
         // No registry lookup is wired here, so the title falls back to the id.
         capabilityTitle: 'marketplace.uninstall',
         tier: 'destructive',
+        // Nobody identified themselves, so this approval can never become a
+        // standing permission and the card must not offer to make it one.
+        hasAgentPath: false,
         summary: 'Uninstall "sentry-monitor"',
         requestedBy: 'ops-agent',
         requestedAt: expect.any(String),

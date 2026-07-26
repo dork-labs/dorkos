@@ -248,6 +248,9 @@ function toPendingApproval(row: ApprovalRow): PendingApproval {
     tier: row.tier,
     summary: row.summary,
     ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
+    // The raw path stays off the wire (see `requestedByPath`'s own comment); what
+    // goes out is the one bit a surface needs, which is whether there is one.
+    hasAgentPath: row.requestedByPath !== null,
     requestedAt: row.createdAt,
     expiresAt: row.expiresAt,
   };
@@ -411,6 +414,32 @@ export class ApprovalService {
       .orderBy(asc(approvals.createdAt))
       .all();
     return rows.filter((row) => !this.isExpired(row)).map(toPendingApproval);
+  }
+
+  /**
+   * What a standing permission created from this approval would cover.
+   *
+   * The card shows a display LABEL for who asked, which is not a key — two agents
+   * can share a display name, and a label is caller-supplied text. A permission has
+   * to key on the agent path the gate recorded, so this reads that instead.
+   *
+   * `agentPath` is null for a request nobody identified themselves for, and the
+   * caller must treat that as "this approval cannot become a permission" rather
+   * than as an empty key. Distinguishing it from an unknown approval (`undefined`)
+   * is the whole reason this returns a shape rather than a string: the two produce
+   * different answers for a person, and collapsing them would report "no such
+   * approval" for a card sitting in front of them.
+   *
+   * @param approvalId - ULID of the approval.
+   * @returns The action and the agent that asked, or `undefined` when there is no
+   *   such approval.
+   */
+  standingPermissionScope(
+    approvalId: string
+  ): { capabilityId: string; agentPath: string | null } | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    if (!row) return undefined;
+    return { capabilityId: row.capabilityId, agentPath: row.requestedByPath };
   }
 
   /**
