@@ -176,6 +176,10 @@
     "./smart-groups": {
       "types": "./src/smart-groups.ts",
       "default": "./dist/smart-groups.js"
+    },
+    "./room-schemas": {
+      "types": "./src/room-schemas.ts",
+      "default": "./dist/room-schemas.js"
     }
   },
   "scripts": {
