@@ -28,6 +28,13 @@ export default defineConfig({
     //   destructive tool permanently auto-approved, passed all 85 targeted tests
     //   AND `tsc`, because the type-level assertions only compare key SETS and the
     //   keys had not changed. With the alias the same edit fails immediately.
+    // - `@dorkos/operating-skills` backs the tier-consistency guard
+    //   (`services/core/__tests__/operating-skills-tier-consistency.test.ts`),
+    //   which reads the SKILL PROSE agents are seeded with and checks it against
+    //   `MCP_TOOL_TIERS`. Its whole subject is the text of that package, so a dist
+    //   copy is the wrong text by construction: reintroducing "carries no gate of
+    //   its own" in `src/` would pass against a dist built before the edit. That is
+    //   the DOR-509 bug itself, checked by a test that cannot see it.
     //
     // Scoped to these modules on purpose. Aliasing all 43 subpaths made every
     // worker re-transform the whole package and took the suite from ~51s to
@@ -54,6 +61,12 @@ export default defineConfig({
         find: '@dorkos/shared/mcp-tool-groups',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/mcp-tool-groups.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/operating-skills',
+        replacement: fileURLToPath(
+          new URL('../../packages/operating-skills/src/index.ts', import.meta.url)
         ),
       },
     ],

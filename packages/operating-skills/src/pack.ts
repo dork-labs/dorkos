@@ -40,12 +40,14 @@ export interface OperatingSkill {
  *   verb was "the person's ungated path" and to stay off it. That was true when
  *   written and is not any more: the route behind it now answers to the same
  *   approval gate, so the sentence had to stop describing a hole that is closed.
- * - 5: adding and removing a marketplace SOURCE is the person's, not the agent's
- *   (DOR-502). Version 4 taught `dorkos marketplace list|add|remove|refresh|
- *   validate` as five verbs an agent could run. Two of them now answer 403 with
- *   `operator_only_marketplace_source`, and no approval unlocks them, so the pack
- *   had to stop teaching a command that cannot work and start teaching what to ask
- *   the person for instead.
+ * - 5: the pack stops calling a `destructive` tool ungated (DOR-509). Version 4
+ *   told every agent that `tasks_delete` "carries no gate of its own". It has been
+ *   `destructive` since DOR-468 and stops for a person, so the pack was teaching
+ *   agents not to warn anybody before an irreversible delete, and to read a refusal
+ *   as a malfunction rather than an answer. Same round: `operating-dorkos` now says
+ *   that hand-registered tools carry tiers too (the catalog not listing one is not
+ *   the same as it being ungated), and `managing-agents` gained the missing
+ *   `mesh_unregister` section, the other `destructive` tool.
  */
 export const OPERATING_SKILLS_VERSION = 5;
 

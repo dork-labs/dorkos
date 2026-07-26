@@ -51,10 +51,11 @@ them. It prints raw JSON on stdout.
 The catalog covers capabilities only. The agent, task, relay, mesh, binding,
 extension, and UI tools are registered straight onto the MCP server: they appear
 in your own tool list, not in the catalog, and \`dorkos call\` cannot reach them.
-Only some have a CLI path instead: agent reads map to \`dorkos agent list|show\`
-and tasks to \`dorkos task list|create|trigger|runs\`. Relay, mesh, binding,
-extension, and UI have no CLI verb, so without the MCP tools they are out of
-reach entirely. Say that plainly rather than hunting for a command.
+They carry a tier all the same and answer to the same gate. Only some have a CLI
+path instead: agent reads map to \`dorkos agent list|show\` and tasks to
+\`dorkos task list|create|trigger|runs\`. Relay, mesh, binding, extension, and UI
+have no CLI verb, so without the MCP tools they are out of reach entirely. Say
+that plainly rather than hunting for a command.
 
 ## Permission tiers
 
@@ -64,6 +65,8 @@ Every capability in the catalog carries a tier. Read it before you act:
 - \`act\` changes something recoverable. It runs, and DorkOS records it in the
   activity feed under your name.
 - \`destructive\` cannot be undone. It does NOT run until a person approves it.
+  \`tasks_delete\` and \`mesh_unregister\` are the two, and only a destructive tool
+  advertises an \`approvalToken\` argument: that is how you spot one.
 
 ## When a call comes back \`approval_required\`
 
@@ -109,20 +112,17 @@ using-the-marketplace.
 The operator verbs hit the running server over its local HTTP API:
 
 - \`dorkos capabilities [--json]\` and \`dorkos call <id>\` (above) reach any
-  capability by id, and nothing else: the \`tasks_*\`, \`relay_*\`, \`mesh_*\`, binding,
-  extension, and UI tools are not capabilities.
+  capability by id, and nothing else.
 - \`dorkos agent list|show <path-or-id>|create|update\` manage agents.
 - \`dorkos task list|create|trigger <id>|runs\` manage tasks. No update, no delete.
 - \`dorkos activity [--actor <t>] [--category <c>] [--type <e>] [--limit <n>]\` reads the feed.
 - \`dorkos version --check\` shows the current server version and the latest release.
-- \`dorkos marketplace list|refresh|validate\` read sources. Only a person may \`add\` or \`remove\` one: see using-the-marketplace.
-- \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages.
-  \`uninstall\` is gated on a person's approval like every destructive path, and
-  answers with the approval payload: see using-the-marketplace.
+- \`dorkos marketplace list|add|remove|refresh|validate\` manage sources.
+- \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages;
+  \`uninstall\` is gated and answers with the approval payload (using-the-marketplace).
 
-There is no \`dorkos relay\`, \`dorkos mesh\`, \`dorkos binding\`, or \`dorkos ui\`. Every
-operator verb takes \`--json\`. Exit code is \`0\` on success, non-zero when no server
-is reachable, the request fails, or a call is waiting on an approval.
+Every operator verb takes \`--json\`. Exit code is \`0\` on success, non-zero when no
+server is reachable, the request fails, or a call is waiting on an approval.
 
 ## Where live facts come from
 

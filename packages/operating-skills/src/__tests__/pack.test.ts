@@ -72,12 +72,17 @@ describe('OPERATING_SKILLS_PACK', () => {
  * `config_patch`, which is why these are asserted rather than trusted.
  */
 describe('the pack teaches the world as it actually is', () => {
-  it('is stamped at a version at least 4 (dorkos uninstall is gated too)', () => {
+  it('is stamped at a version at least 5 (tasks_delete is destructive)', () => {
     // The stamp is what makes a correction REACH agents: `seed.ts` rewrites an
     // unmodified seeded copy only when its stored version is lower than this. A
     // corrected body shipped without a bump would sit in the repo while every
     // already-seeded agent kept reading the old text (DOR-467).
-    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(4);
+    //
+    // A ratchet, raised once per correction that had to reach already-seeded
+    // agents. It is at 5 for DOR-509, where v4 called `tasks_delete` ungated. The
+    // floor is what makes "we fixed the words" and "the fix shipped" the same
+    // event: the corrected body cannot land without the bump that delivers it.
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(5);
   });
 
   it('no longer tells agents that `dorkos uninstall` skips the approval gate', () => {
