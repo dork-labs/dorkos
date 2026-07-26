@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { fetchMarketplaceJson } from '../fetch';
 import { fetchRegistryUpdatedAt } from '../updated-at';
@@ -38,7 +38,7 @@ function mockRegistry(plugins: Array<ReturnType<typeof entry>>, pluginRoot?: str
   } as never);
 }
 
-let fetchSpy: ReturnType<typeof vi.spyOn>;
+let fetchSpy: MockInstance<typeof globalThis.fetch>;
 
 beforeEach(() => {
   fetchSpy = vi.spyOn(globalThis, 'fetch');

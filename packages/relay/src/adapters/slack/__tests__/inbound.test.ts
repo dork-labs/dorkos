@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createMockRelay } from '../../../__tests__/fixtures.js';
 import {
   buildSubject,
   extractChannelId,
@@ -19,12 +20,6 @@ import { ThreadParticipationTracker } from '../thread-tracker.js';
 /** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
 const testCodec = new SlackThreadIdCodec();
 
-function createMockRelay(): RelayPublisher {
-  return {
-    publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
-    onSignal: vi.fn().mockReturnValue(() => {}),
-  };
-}
 
 function createMockClient(): WebClient & { reactions: { add: ReturnType<typeof vi.fn> } } {
   return {
@@ -317,9 +312,9 @@ describe('handleInboundMessage', () => {
     });
 
     it('logs warning when reaction add fails', async () => {
-      client.reactions.add.mockRejectedValueOnce(new Error('no_permission'));
+      vi.mocked(client.reactions.add).mockRejectedValueOnce(new Error('no_permission'));
       const event = createEvent({ ts: '1234.5678' });
-      const mockLogger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      const mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
       await handleInboundMessage(
         event,
@@ -339,7 +334,7 @@ describe('handleInboundMessage', () => {
     });
 
     it('does not track reaction when add fails', async () => {
-      client.reactions.add.mockRejectedValueOnce(new Error('no_permission'));
+      vi.mocked(client.reactions.add).mockRejectedValueOnce(new Error('no_permission'));
       const event = createEvent({ ts: '1234.5678' });
       const pendingReactions = new Map<string, string[]>();
 

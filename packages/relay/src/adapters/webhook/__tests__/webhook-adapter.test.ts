@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createMockRelay } from '../../../__tests__/fixtures.js';
 import { WebhookAdapter, verifySignature } from '../webhook-adapter.js';
 import { runAdapterComplianceSuite } from '../../../testing/index.js';
 import type { RelayPublisher } from '../../../types.js';
@@ -39,12 +40,6 @@ function buildHeaders(
   };
 }
 
-function createMockRelay(): RelayPublisher {
-  return {
-    publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
-    onSignal: vi.fn().mockReturnValue(() => {}),
-  };
-}
 
 function makeAdapter(opts?: {
   inboundSubject?: string;

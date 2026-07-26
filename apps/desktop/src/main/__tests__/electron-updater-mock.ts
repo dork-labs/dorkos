@@ -15,7 +15,7 @@ class MockAutoUpdater extends EventEmitter {
   autoInstallOnAppQuit = false;
   checkForUpdates = vi.fn(async () => null);
   checkForUpdatesAndNotify = vi.fn(async () => null);
-  quitAndInstall = vi.fn();
+  quitAndInstall = vi.fn<() => void>();
 }
 
 export const autoUpdater = new MockAutoUpdater();

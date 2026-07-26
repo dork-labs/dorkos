@@ -128,9 +128,12 @@ describe('installed-plugin projection via buildPlan', () => {
       );
       expect(drop?.reason).toMatch(/repo-local command format/);
       // The `commands` layer is NOT reported as a non-portable-layer drop anymore.
-      expect(plan.drops.some((d) => d.name === 'acme:commands' && d.reason.includes('layer'))).toBe(
-        false
-      );
+      // `reason` is optional on ProjectionAction (required only by convention for
+      // drops), so it is narrowed rather than asserted — an absent reason cannot
+      // mention a layer either, so the `false` expectation is unchanged.
+      expect(
+        plan.drops.some((d) => d.name === 'acme:commands' && d.reason?.includes('layer'))
+      ).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

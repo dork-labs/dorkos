@@ -1762,7 +1762,7 @@ describe('trace store integration', () => {
 
   beforeEach(async () => {
     traceTmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-trace-test-'));
-    mockTraceStore = { insertSpan: vi.fn() };
+    mockTraceStore = { insertSpan: vi.fn(), updateSpan: vi.fn() };
     traceRelay = new RelayCore({
       dataDir: traceTmpDir,
       traceStore: mockTraceStore,

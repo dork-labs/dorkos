@@ -1,0 +1,21 @@
+{
+  // The EMIT program. tsconfig.json is the check program and deliberately includes
+  // test files; compiling those would scatter *.test.js through dist/ and make
+  // Vitest's own `include` trip over the compiled copies.
+  //
+  // `exclude` REPLACES the parent's array rather than merging with it, so the
+  // parent's structural entries are restated here. This only ever NARROWS the
+  // parent, which is the invariant that matters: the check program stays a
+  // SUPERSET of the emit program. Break that and `typecheck` can pass while
+  // `build` fails. The same split, with the reasoning in full, is in
+  // apps/server/tsconfig.build.json (DOR-508).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Dropping the tests also drops `scripts/check-categories.ts` (only a test
+    // imports it), so this program spans `src/` alone and rootDir returns to the
+    // value dist/ is built around. The parent widens it to `.` for the check
+    // program only — see the comment there.
+    "rootDir": "./src"
+  },
+  "exclude": ["node_modules", "dist", "src/**/__tests__/**"]
+}
