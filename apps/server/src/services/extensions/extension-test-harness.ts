@@ -14,6 +14,12 @@ import type {
 } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import type { TestExtensionResult } from './extension-manager-types.js';
+import {
+  EXTENSION_NOT_APPROVED_CODE,
+  describeExtensionLoadRefusal,
+  mayRunExtensionCode,
+} from './extension-load-policy.js';
+import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 
 /** All known extension slot IDs for contribution counting. */
@@ -110,6 +116,14 @@ export class MockExtensionAPI {
 /**
  * Compile and activate an extension against a mock API to verify it loads.
  *
+ * "Mock API" describes the ExtensionAPI the bundle is handed, NOT a sandbox. Step 3
+ * really does `import()` the compiled bundle into this Node process and step 4
+ * really does call its `activate()`, so whatever the source says runs with the
+ * server's own privileges — no sandbox, no boundary check, and the manifest's
+ * declared capabilities constrain nothing at this point. That makes this the
+ * sharpest of the in-process load paths, which is why the approval gate is the
+ * first thing it does, ahead of even compiling.
+ *
  * @param record - The extension's discovery record
  * @param compiler - Extension compiler instance
  * @returns Test result with contribution counts or error details
@@ -119,6 +133,23 @@ export async function testClientExtension(
   compiler: ExtensionCompiler
 ): Promise<TestExtensionResult> {
   const { id } = record;
+
+  // Step 0: A person approves an extension once before its code may run in this
+  // process (DOR-516). Deliberately ahead of the compile: refusing early keeps the
+  // refusal about consent instead of burying it under whatever esbuild says, and
+  // there is no reason to build a bundle nothing may evaluate.
+  if (!mayRunExtensionCode(id, record.origin, configManager.get('extensions').approvedToRun)) {
+    logger.warn(
+      `[Extensions] Test refused for ${id}: waiting for a person to approve it ` +
+        `(${EXTENSION_NOT_APPROVED_CODE})`
+    );
+    return {
+      status: 'error',
+      id,
+      phase: 'approval',
+      error: describeExtensionLoadRefusal(id),
+    };
+  }
 
   // Step 1: Compile
   const compileResult = await compiler.compile(record);

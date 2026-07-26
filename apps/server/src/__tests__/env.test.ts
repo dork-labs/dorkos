@@ -53,4 +53,26 @@ describe('serverEnv', () => {
     exitSpy.mockRestore();
     errorSpy.mockRestore();
   });
+
+  // Name assembled from fragments, not written as a literal — same reason
+  // `env.ts` assembles it: an intentional mention of the retired variable
+  // that shouldn't trip `no-auto-approve-env-var.test.ts`'s reintroduction
+  // guard. See that file's module TSDoc.
+  const RETIRED_AUTO_APPROVE_ENV_VAR = ['MARKETPLACE', 'AUTO', 'APPROVE'].join('_');
+
+  it('warns on boot when the retired marketplace auto-approve variable is still set', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubEnv(RETIRED_AUTO_APPROVE_ENV_VAR, '1');
+    await import('../env.js');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(RETIRED_AUTO_APPROVE_ENV_VAR));
+    warnSpy.mockRestore();
+  });
+
+  it('stays quiet when the retired marketplace auto-approve variable is unset', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubEnv(RETIRED_AUTO_APPROVE_ENV_VAR, undefined as unknown as string);
+    await import('../env.js');
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });

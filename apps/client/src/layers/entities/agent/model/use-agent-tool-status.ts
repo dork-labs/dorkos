@@ -6,9 +6,12 @@ import { useTasksEnabled } from '@/layers/entities/tasks';
 /**
  * The three possible states for an agent tool chip.
  *
- * - `enabled`: Feature flag on and agent has not disabled this group.
- * - `disabled-by-agent`: Agent manifest explicitly disables this group.
+ * - `enabled`: Feature flag on and agent has not turned this group off.
+ * - `disabled-by-agent`: Agent manifest explicitly turns this group off.
  * - `disabled-by-server`: Server feature flag is off; agent override is irrelevant.
+ *
+ * "Disabled" here means the agent is not told about the group's tools. It does not
+ * mean they were removed from the session; see `EnabledToolGroupsSchema` (DOR-519).
  */
 export type ChipState = 'enabled' | 'disabled-by-agent' | 'disabled-by-server';
 

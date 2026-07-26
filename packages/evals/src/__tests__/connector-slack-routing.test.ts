@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { connectorSlackCase } from '../suite/connectors.js';
 import { ALL_CASES, selectSuite } from '../suite/index.js';
-import type { OracleContext } from '../types.js';
+import { emptyApprovalLog, type OracleContext } from '../types.js';
 
 // Fake-backed routing eval: the oracle ignores the live OracleContext (no
 // server, no model) and asserts the recommendConnector precedence contract
@@ -11,6 +11,7 @@ const stubCtx: OracleContext = {
   baseUrl: '',
   sessionId: '',
   frames: [],
+  approvals: emptyApprovalLog(),
 };
 
 describe('connector-slack (W4) — "Connect to Slack" routes to the relay adapter, not the gateway', () => {

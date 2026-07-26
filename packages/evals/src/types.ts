@@ -428,9 +428,13 @@ export interface EvalCase extends EvalCaseMeta {
    * (`claude-code-cheap` / `real-provider`). The in-process `test-mode` boot
    * ignores it (it reads no such flags). A case sets this when its product path
    * needs a server-level switch the default boot does not provide — e.g. the
-   * marketplace install eval sets `MARKETPLACE_AUTO_APPROVE=1` so a headless
-   * agent's `marketplace_install` completes without the cockpit approval a
-   * person otherwise has to grant (spec `agent-trust` §3.3).
+   * approval-expiry governance case sets `DORKOS_APPROVAL_TTL_MS=5000` so the
+   * approval window it is about closes inside one turn instead of two hours.
+   *
+   * NOT a way to switch a product gate off. A case that needs an approval
+   * answered answers it, through {@link ApprovalPolicy}, against the same routes
+   * the cockpit uses — which is what makes the eval evidence about production
+   * code rather than about a branch only the harness takes.
    */
   serverEnv?: Record<string, string>;
   /**

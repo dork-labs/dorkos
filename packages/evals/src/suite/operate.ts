@@ -37,8 +37,9 @@
  * - `config-toggle`: the agent used `config_patch` and `ui.statusBar.pins` became
  *   exactly `['git']` in the sandbox `config.json` — a SCOPED edit, with nothing
  *   else pinned into the status line.
- * - `marketplace-search-and-install`: the agent used `marketplace_install`
- *   and the package tree materialized under the sandbox `DORK_HOME`.
+ * - `marketplace-search-and-install`: the agent used `marketplace_install`, the
+ *   harness answered the install's confirmation the way a person would, and the
+ *   package tree materialized under the sandbox `DORK_HOME` only after that.
  *
  * SANDBOXING: every case runs in the harness's `mkdtemp` sandbox (a fresh
  * `DORK_HOME` + project cwd, `runner/sandbox.ts`); no case reads or writes the
@@ -48,7 +49,7 @@
  *
  * @module evals/suite/operate
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { writeManifest } from '@dorkos/shared/manifest';
@@ -74,6 +75,7 @@ import {
 } from '../oracles/filesystem.js';
 import type { Oracle } from '../types.js';
 import { toolInvokedInStream } from '../oracles/stream.js';
+import { approvalDecided } from '../oracles/approvals.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared: what "read-only" has to mean
@@ -476,12 +478,47 @@ async function seedMarketplaceFixture(sandbox: EvalSandbox): Promise<void> {
 }
 
 /**
+ * The capability id the marketplace install confirmation is recorded under, and
+ * the tool the agent reaches for. Pinned as constants because the approval
+ * policy and the oracles must name the SAME pair — a typo in either would make
+ * the driver ignore the approval and the red would read as "the gate never
+ * asked".
+ */
+const INSTALL_CAPABILITY_ID = 'marketplace.install';
+const INSTALL_TOOL_NAME = 'marketplace_install';
+
+/**
+ * Whether the pre-decision probe says the package had NOT been installed yet.
+ *
+ * @param probe - The recorded probe value.
+ * @returns True when the install tree was still absent at the moment consent was given.
+ */
+function notYetInstalled(probe: unknown): boolean {
+  return (probe as { installed?: boolean } | undefined)?.installed === false;
+}
+
+/**
  * `marketplace-search-and-install` — the agent finds the fixture package and
- * installs it. Asserts `marketplace_install` fired and the package tree
- * materialized under the sandbox `DORK_HOME`. Sets `MARKETPLACE_AUTO_APPROVE=1`
- * on the credentialed server so the headless agent's install completes without
- * the cockpit approval a person otherwise has to grant (spec `agent-trust` §3.3)
- * — the confirmation provider is still exercised, just auto-approved.
+ * installs it. Asserts `marketplace_install` fired, a person answered the
+ * install's confirmation, and the package tree materialized under the sandbox
+ * `DORK_HOME`.
+ *
+ * ## Why this case answers a real approval instead of switching one off
+ *
+ * `marketplace.install` is an `act` capability, so the tier gate lets it
+ * through and the marketplace handler's OWN confirmation flow is what stops it:
+ * `TokenConfirmationProvider` records the request on the shared
+ * `ApprovalService` (`services/marketplace-mcp/confirmation-provider.ts`), which
+ * is the same store `GET /api/approvals/pending` serves and
+ * `POST /api/approvals/:id/grant` decides. So the harness can answer it exactly
+ * as the cockpit does, through its `approvalPolicy`, and the case exercises
+ * production code end to end rather than a test-only auto-approve branch.
+ *
+ * That also CLOSES the tracked gap this case used to carry (DOR-435): the
+ * confirmation flow is no longer proven only by inference from a materialized
+ * install tree. {@link approvalDecided} asserts the approval existed, was
+ * granted, and — via `probeBeforeDecision` — that nothing had been installed
+ * yet at the instant consent was given.
  */
 export const marketplaceInstallCase: EvalCase = {
   id: 'marketplace-search-and-install',
@@ -492,22 +529,30 @@ export const marketplaceInstallCase: EvalCase = {
   tags: ['core'],
   quarantined: true,
   perEvalCeilingUsd: 0.5,
-  serverEnv: { MARKETPLACE_AUTO_APPROVE: '1' },
   // Real install turns execute tools and write a package tree; prefer a container
   // when one is available so the agent's file tools are bounded by more than a
   // sandbox directory (falls back to child-process when docker is absent).
   preferDocker: true,
   seed: seedMarketplaceFixture,
+  approvalPolicy: {
+    // Only the two tools the task legitimately needs. Everything else — `Bash`,
+    // the file tools — is denied by the driver's default, so an agent that gave
+    // up on the MCP tool and hand-copied the package tree cannot make the
+    // filesystem oracle green for the wrong reason.
+    allowTools: ['marketplace_search', INSTALL_TOOL_NAME],
+    capability: { capabilityId: INSTALL_CAPABILITY_ID, decision: 'grant' },
+  },
+  probeBeforeDecision: async (sandbox) => ({
+    installed:
+      (await readFile(installedManifestPath(sandbox), 'utf8').catch(() => undefined)) !== undefined,
+  }),
   oracles: [
-    // TRACKED GAP (DOR-435): the task contract's "confirmation flow was
-    // exercised" is proven here only INDIRECTLY — a materialized install tree
-    // implies the install path ran, and `tool-install.ts` calls the
-    // confirmation provider UNCONDITIONALLY before any side effect, so a
-    // completed install cannot bypass it today. There is no confirmation SSE
-    // frame to assert on. Revisit and add a DIRECT assertion if either changes:
-    // (a) `MARKETPLACE_AUTO_APPROVE` ever short-circuits BEFORE the provider is
-    // consulted, or (b) the confirmation flow gains an observable stream frame.
-    toolInvokedInStream('marketplace_install', 'the agent invoked marketplace_install'),
+    toolInvokedInStream(INSTALL_TOOL_NAME, 'the agent invoked marketplace_install'),
+    approvalDecided(INSTALL_CAPABILITY_ID, 'granted', {
+      probeShows: notYetInstalled,
+      probeLabel: 'the package was not yet installed',
+      label: 'the install waited on a person, who approved it — and only then did it run',
+    }),
     fileExists(
       installedManifestPath,
       `the ${FIXTURE_PLUGIN_NAME} package tree was installed under DORK_HOME`

@@ -243,6 +243,20 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     keywords: ['approval', 'queue', 'stack', 'cap', 'pending', 'waiting on you'],
   },
   {
+    id: 'standingpermissionlist',
+    title: 'StandingPermissionList',
+    page: 'features',
+    category: 'Approvals',
+    keywords: [
+      'approval',
+      'standing permission',
+      'stop asking',
+      'trust',
+      'revoke',
+      'stop trusting',
+    ],
+  },
+  {
     id: 'approvalsunavailable',
     title: 'ApprovalsUnavailable',
     page: 'features',

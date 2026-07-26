@@ -59,6 +59,7 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     registeredAt: '2026-02-24T00:00:00.000Z',
     registeredBy: 'test',
     personaEnabled: true,
+    enabledToolGroups: {},
     ...overrides,
   };
 }
@@ -806,7 +807,8 @@ describe('shared registration logic', () => {
         description: 'Test agent',
         inferredCapabilities: ['code'],
       },
-      detectedBy: 'test',
+      strategy: 'test',
+      discoveredAt: '2026-02-24T00:00:00.000Z',
     };
     const fromDiscover = await mesh.register(candidate);
 

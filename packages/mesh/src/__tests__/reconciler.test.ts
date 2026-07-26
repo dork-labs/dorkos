@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { reconcile } from '../reconciler.js';
 import type { ReconcilerDeps } from '../reconciler.js';
 import type { AgentRegistry, AgentRegistryEntry } from '../agent-registry.js';
@@ -21,6 +21,8 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     runtime: 'claude-code',
     capabilities: ['code-review'],
     behavior: { responseMode: 'always' },
+    personaEnabled: true,
+    enabledToolGroups: {},
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     projectPath: '/home/user/projects/backend',
@@ -41,6 +43,7 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     personaEnabled: true,
+    enabledToolGroups: {},
     ...overrides,
   };
 }
@@ -60,6 +63,7 @@ function createMockRegistry(): MockRegistry {
     remove: vi.fn().mockReturnValue(true),
     get: vi.fn(),
     getByPath: vi.fn(),
+    isRegistered: vi.fn().mockReturnValue(false),
     upsert: vi.fn(),
     listWithHealth: vi.fn().mockReturnValue([]),
     getWithHealth: vi.fn(),
@@ -75,13 +79,15 @@ function createMockRegistry(): MockRegistry {
 
 describe('reconcile()', () => {
   let registry: ReturnType<typeof createMockRegistry>;
-  let removeAgent: ReturnType<typeof vi.fn>;
+  let removeAgent: Mock<(entry: AgentRegistryEntry) => Promise<void>>;
   let deps: ReconcilerDeps;
 
   beforeEach(() => {
     vi.clearAllMocks();
     registry = createMockRegistry();
-    removeAgent = vi.fn().mockResolvedValue(undefined);
+    removeAgent = vi
+      .fn<(entry: AgentRegistryEntry) => Promise<void>>()
+      .mockResolvedValue(undefined);
     deps = {
       registry: registry as unknown as AgentRegistry,
       defaultScanRoot: '/root',
@@ -293,7 +299,6 @@ describe('reconcile()', () => {
           runtime: entry.runtime,
           capabilities: entry.capabilities,
           behavior: entry.behavior,
-          budget: entry.budget,
         })
       );
 

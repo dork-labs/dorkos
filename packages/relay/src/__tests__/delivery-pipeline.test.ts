@@ -67,6 +67,7 @@ function createEndpoint(overrides?: Partial<EndpointInfo>): EndpointInfo {
     subject: 'relay.agent.test',
     hash: 'hash-001',
     maildirPath: '/tmp/test/mailboxes/hash-001',
+    registeredAt: '2026-02-24T00:00:00.000Z',
     ...overrides,
   };
 }
@@ -124,7 +125,7 @@ describe('DeliveryPipeline', () => {
     });
 
     it('rejects when circuit breaker is open', async () => {
-      vi.mocked(deps.circuitBreaker.check).mockReturnValue({ allowed: false });
+      vi.mocked(deps.circuitBreaker.check).mockReturnValue({ allowed: false, state: 'OPEN' });
       const endpoint = createEndpoint();
       const envelope = createEnvelope();
 
@@ -184,11 +185,12 @@ describe('DeliveryPipeline', () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
       vi.mocked(deps.maildirStore.claim).mockResolvedValue({
         ok: true,
-        envelope: { subject: 'test' },
+        envelope: createEnvelope(),
+        path: '/tmp/test/mailboxes/hash-001/cur/msg-001',
       });
 
       const endpoint = createEndpoint();
-      await pipeline.dispatchToSubscribers(endpoint, 'msg-001', createEnvelope());
+      await pipeline.dispatchToSubscribers(endpoint, 'msg-001');
 
       expect(deps.maildirStore.claim).toHaveBeenCalledWith(endpoint.hash, 'msg-001');
       expect(handler).toHaveBeenCalled();
@@ -205,11 +207,12 @@ describe('DeliveryPipeline', () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
       vi.mocked(deps.maildirStore.claim).mockResolvedValue({
         ok: true,
-        envelope: { subject: 'test' },
+        envelope: createEnvelope(),
+        path: '/tmp/test/mailboxes/hash-001/cur/msg-001',
       });
 
       const endpoint = createEndpoint();
-      await pipeline.dispatchToSubscribers(endpoint, 'msg-001', createEnvelope());
+      await pipeline.dispatchToSubscribers(endpoint, 'msg-001');
 
       expect(deps.maildirStore.fail).toHaveBeenCalledWith(endpoint.hash, 'msg-001', 'handler boom');
       expect(deps.sqliteIndex.updateStatus).toHaveBeenCalledWith(
@@ -228,7 +231,8 @@ describe('DeliveryPipeline', () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
       vi.mocked(deps.maildirStore.claim).mockResolvedValue({
         ok: true,
-        envelope: { subject: 'test' },
+        envelope: createEnvelope(),
+        path: '/tmp/test/mailboxes/hash-001/cur/msg-001',
       });
       vi.mocked(deps.maildirStore.fail).mockResolvedValue({
         ok: false,
@@ -236,7 +240,7 @@ describe('DeliveryPipeline', () => {
       });
 
       const endpoint = createEndpoint();
-      await pipeline.dispatchToSubscribers(endpoint, 'msg-001', createEnvelope());
+      await pipeline.dispatchToSubscribers(endpoint, 'msg-001');
 
       expect(deps.sqliteIndex.updateStatus).not.toHaveBeenCalledWith('msg-001', 'failed');
       expect(deps.circuitBreaker.recordFailure).not.toHaveBeenCalled();
@@ -245,16 +249,16 @@ describe('DeliveryPipeline', () => {
     it('skips dispatch when no subscribers match', async () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([]);
 
-      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-001', createEnvelope());
+      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-001');
 
       expect(deps.maildirStore.claim).not.toHaveBeenCalled();
     });
 
     it('skips dispatch when claim fails', async () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([vi.fn()]);
-      vi.mocked(deps.maildirStore.claim).mockResolvedValue({ ok: false });
+      vi.mocked(deps.maildirStore.claim).mockResolvedValue({ ok: false, error: 'claim failed' });
 
-      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-001', createEnvelope());
+      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-001');
 
       expect(deps.maildirStore.complete).not.toHaveBeenCalled();
     });
@@ -270,19 +274,20 @@ describe('DeliveryPipeline', () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
       vi.mocked(deps.maildirStore.claim).mockResolvedValue({
         ok: true,
-        envelope: createEnvelope() as unknown as Parameters<typeof deps.maildirStore.claim>[1],
+        envelope: createEnvelope(),
+        path: '/tmp/test/mailboxes/hash-001/cur/msg-001',
       });
 
-      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-dedup-1', createEnvelope());
+      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-dedup-1');
 
       expect(pipeline.wasDispatched('msg-dedup-1')).toBe(true);
     });
 
     it('does not mark a message when claim fails', async () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([vi.fn()]);
-      vi.mocked(deps.maildirStore.claim).mockResolvedValue({ ok: false });
+      vi.mocked(deps.maildirStore.claim).mockResolvedValue({ ok: false, error: 'claim failed' });
 
-      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-claim-fail', createEnvelope());
+      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-claim-fail');
 
       expect(pipeline.wasDispatched('msg-claim-fail')).toBe(false);
     });
@@ -292,10 +297,11 @@ describe('DeliveryPipeline', () => {
       vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
       vi.mocked(deps.maildirStore.claim).mockResolvedValue({
         ok: true,
-        envelope: createEnvelope() as unknown as Parameters<typeof deps.maildirStore.claim>[1],
+        envelope: createEnvelope(),
+        path: '/tmp/test/mailboxes/hash-001/cur/msg-001',
       });
 
-      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-handler-err', createEnvelope());
+      await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-handler-err');
 
       // Message was claimed and attempted — should still be deduped
       expect(pipeline.wasDispatched('msg-handler-err')).toBe(true);
@@ -323,10 +329,11 @@ describe('DeliveryPipeline', () => {
         vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
         vi.mocked(deps.maildirStore.claim).mockResolvedValue({
           ok: true,
-          envelope: createEnvelope() as never,
+          envelope: createEnvelope(),
+          path: '/tmp/test/mailboxes/hash-001/cur/msg-001',
         });
 
-        await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-timer-1', createEnvelope());
+        await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-timer-1');
         expect(pipeline.wasDispatched('msg-timer-1')).toBe(true);
 
         pipeline.close();
@@ -344,10 +351,11 @@ describe('DeliveryPipeline', () => {
         vi.mocked(deps.subscriptionRegistry.getSubscribers).mockReturnValue([handler]);
         vi.mocked(deps.maildirStore.claim).mockResolvedValue({
           ok: true,
-          envelope: createEnvelope() as never,
+          envelope: createEnvelope(),
+          path: '/tmp/test/mailboxes/hash-001/cur/msg-001',
         });
 
-        await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-timer-2', createEnvelope());
+        await pipeline.dispatchToSubscribers(createEndpoint(), 'msg-timer-2');
         pipeline.close();
 
         vi.advanceTimersByTime(10_000);

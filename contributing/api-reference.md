@@ -371,7 +371,7 @@ Update user configuration. Accepts a partial config object that is deep-merged w
 }
 ```
 
-The `agentContext` section controls global tool domain toggles. Each toggle determines whether the corresponding MCP tool group is injected into agent sessions by default. Per-agent overrides are set via `enabledToolGroups` on the agent manifest (see [PATCH /api/agents/current](#patch-apiagentscurrent)).
+The `agentContext` section controls global tool domain toggles. Each toggle determines whether the corresponding MCP tool group's DOCUMENTATION is included in agent system prompts by default. It does not restrict which tools a session can call: every tool stays registered either way (ADR-260726-171347). Per-agent overrides are set via `enabledToolGroups` on the agent manifest (see [PATCH /api/agents/current](#patch-apiagentscurrent)).
 
 **Responses:**
 

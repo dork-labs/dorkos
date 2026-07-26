@@ -29,6 +29,7 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     runtime: 'claude-code',
     capabilities: [],
     behavior: { responseMode: 'always' },
+    enabledToolGroups: {},
     registeredAt: '2026-02-24T00:00:00.000Z',
     registeredBy: 'test',
     personaEnabled: true,

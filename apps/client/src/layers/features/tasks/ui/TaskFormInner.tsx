@@ -1,7 +1,7 @@
 import { ChevronRight, Trash2 } from 'lucide-react';
 import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
-import { ResponsiveDialogFooter, Label, Button } from '@/layers/shared/ui';
+import { ResponsiveDialogFooter, Label, Button, PermissionModeScopeNote } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
 import type { Task } from '@dorkos/shared/types';
 import { ScheduleBuilder } from './TaskBuilder';
@@ -291,6 +291,7 @@ export function ScheduleForm({
                         Warning: This allows the agent to execute any tool without approval.
                       </p>
                     )}
+                    <PermissionModeScopeNote mode={field.state.value} />
                   </fieldset>
                 )}
               </form.AppField>

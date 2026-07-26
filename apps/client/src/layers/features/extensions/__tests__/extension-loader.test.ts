@@ -52,6 +52,7 @@ function makeRecord(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRe
     bundleReady: true,
     hasServerEntry: false,
     hasDataProxy: false,
+    approvedToRun: true,
     ...overrides,
   };
 }
@@ -93,6 +94,33 @@ describe('ExtensionLoader', () => {
     expect(loaded.size).toBe(0);
     // Full list still returned for callers that need all records
     expect(extensions).toHaveLength(2);
+  });
+
+  // 1b. An extension nobody approved is never fetched, let alone activated
+  // (DOR-516). The server withholds the bundle regardless — that is the actual
+  // guarantee — but the cockpit must not ask for it and log a console error on the
+  // very screen where the person is deciding.
+  it('never requests the bundle of an extension the person has not approved', async () => {
+    mockFetch([
+      makeCompiledRecord('approved'),
+      makeRecord({ id: 'awaiting', status: 'compiled', bundleReady: true, approvedToRun: false }),
+    ]);
+    // jsdom cannot resolve the dynamic import of a bundle URL, so every extension
+    // the loader ATTEMPTS logs `Failed to import <id>`. That failure is what makes
+    // the attempt observable here: an id that appears was asked for, an id that
+    // does not was filtered out before the import.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const loader = new ExtensionLoader(makeDeps());
+    const { extensions } = await loader.initialize();
+
+    // Both records still reach the caller, so the settings tab can render the card
+    // that asks about the second one.
+    expect(extensions).toHaveLength(2);
+    const attempted = errors.mock.calls.map((args) => String(args[0]));
+    expect(attempted.some((msg) => msg.includes('approved'))).toBe(true);
+    expect(attempted.some((msg) => msg.includes('awaiting'))).toBe(false);
+    errors.mockRestore();
   });
 
   // 2. Load and activate: successfully activates a pre-seeded extension via getLoaded

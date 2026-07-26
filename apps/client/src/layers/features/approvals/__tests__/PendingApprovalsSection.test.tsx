@@ -107,7 +107,9 @@ describe('PendingApprovalsSection', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Allow' }));
 
-    expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001');
+    // No second argument: a plain Allow is a one-time yes and must never ask for
+    // a standing permission by accident.
+    expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001', undefined);
   });
 
   it('denies through the transport when the refuse button is clicked', async () => {

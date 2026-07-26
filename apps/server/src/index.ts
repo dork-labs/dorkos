@@ -119,7 +119,6 @@ import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
-  AutoApproveConfirmationProvider,
   TokenConfirmationProvider,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
@@ -161,6 +160,7 @@ import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
+import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
@@ -677,6 +677,14 @@ async function start() {
     logger.info('[Workspace] WorkspaceManager registered');
   }
 
+  // Rooms subsystem (spec `rooms`, ADR 260726-170125) — channels, DMs and
+  // threads. Unconditional: a room is a durable store plus an in-process
+  // broadcaster, so an install with no rooms in it costs one object graph and
+  // no background work. Nothing triggers agents from a room yet (R3).
+  const { service: roomService } = createRoomSubsystem({ db });
+  setRoomService(roomService);
+  logger.info('[Rooms] RoomService registered');
+
   // Initialize Tasks scheduler if enabled
   const schedulerConfig = configManager.get('scheduler');
 
@@ -974,6 +982,17 @@ async function start() {
   // switched the feature — or login — off with.
   try {
     revokeStandingGrantsIfPostureForbids(readStandingGrantPosture());
+    // …and end the ones an out-of-process settings round trip already voided
+    // (DOR-520). The sweep above cannot see those: by the time the server starts,
+    // the switch is back on and the posture looks fine. The store refuses them on
+    // every read regardless of this call; running it here is what makes the stored
+    // rows say so too, instead of reading as permissions that quietly expired.
+    const voided = approvalGrantService.revokeVoidedByPosture();
+    if (voided > 0) {
+      logger.info(
+        `[Approvals] Ended ${voided} standing permission(s) that a settings change had voided`
+      );
+    }
   } catch (err) {
     logger.warn('[Approvals] Failed to reconcile standing permissions with the setting', {
       error: err instanceof Error ? err.message : String(err),
@@ -1630,14 +1649,13 @@ async function start() {
     }
 
     // Build the confirmation provider that gates marketplace mutation tools.
-    // `MARKETPLACE_AUTO_APPROVE=1` selects the auto-approve provider for CI
-    // and tests; everything else uses the token provider, which records an
-    // approval the operator decides from the cockpit's approval card
-    // (`POST /api/approvals/:id/grant|deny`).
-    const confirmationProvider: ConfirmationProvider =
-      env.MARKETPLACE_AUTO_APPROVE === '1'
-        ? new AutoApproveConfirmationProvider()
-        : new TokenConfirmationProvider(approvalService);
+    // There is exactly one, and no way to switch it off: it records an approval
+    // the operator decides from the cockpit's approval card
+    // (`POST /api/approvals/:id/grant|deny`). Automation answers that approval
+    // through the same routes a person uses rather than skipping it (DOR-501).
+    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
+      approvalService
+    );
 
     marketplaceMcpDeps = {
       dorkHome,

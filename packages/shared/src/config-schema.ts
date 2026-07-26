@@ -513,14 +513,38 @@ export const UserConfigSchema = z.object({
     .default(() => ({ defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' })),
   extensions: z
     .object({
-      // Both lists record DEVIATIONS from each extension's default state, à la
-      // JetBrains' `disabled_plugins.txt` generalized to two defaults.
+      // `enabled` and `disabled` record DEVIATIONS from each extension's default
+      // state, à la JetBrains' `disabled_plugins.txt` generalized to two defaults.
       /** Extension IDs the user turned ON that default OFF (user/marketplace + default-off core). */
       enabled: z.array(z.string()).default(() => []),
       /** Extension IDs the user turned OFF that default ON (default-on core). */
       disabled: z.array(z.string()).default(() => []),
+      /**
+       * Extension IDs a person has approved to RUN CODE inside the DorkOS server
+       * process (DOR-516).
+       *
+       * Not a deviation list and not an on/off switch: it is a standing consent
+       * about one artifact, and it is deliberately independent of `enabled`.
+       * Enabling an extension says "I want this in my cockpit"; approving it says
+       * "I have looked at this code and DorkOS may execute it in-process, with the
+       * server's own privileges and outside the tier gate". Turning an extension
+       * off and on again must not re-ask, and re-asking on every compile of a
+       * half-written extension is exactly the routine-card harm this repo avoided
+       * on DOR-504/DOR-506 — so the approval is keyed to the extension id and
+       * survives the whole edit-test-reload loop.
+       *
+       * Core extensions (`origin: 'core'`) are NOT listed here and never need to
+       * be: they ship inside the DorkOS binary the person already installed, so
+       * requiring a click for them would gate DorkOS on approving itself. Only
+       * `origin: 'user'` extensions — anything an agent scaffolded, or the
+       * marketplace installed — are gated. See `extension-load-policy.ts`.
+       *
+       * `operator-only` in `config-write-policy.ts`: an agent that could add its
+       * own id here would be approving its own code.
+       */
+      approvedToRun: z.array(z.string()).default(() => []),
     })
-    .default(() => ({ enabled: [], disabled: [] })),
+    .default(() => ({ enabled: [], disabled: [], approvedToRun: [] })),
   mcp: z
     .object({
       enabled: z.boolean().default(true),
@@ -822,10 +846,35 @@ export const UserConfigSchema = z.object({
         .min(MIN_TRUST_WINDOW_MINUTES)
         .max(MAX_TRUST_WINDOW_MINUTES)
         .default(DEFAULT_TRUST_WINDOW_MINUTES),
+      /**
+       * The moment the settings last stopped licensing standing permissions, as
+       * an ISO 8601 UTC string. Every permission granted at or before it is void
+       * and is never honored again (DOR-520). `null` until the posture has
+       * narrowed once.
+       *
+       * Machine-managed, like `onboarding` and `tours`: `ConfigManager` stamps it
+       * on any write that takes `auth.enabled` or `standingGrants` away, and
+       * nothing else should write it by hand.
+       *
+       * It lives in the config file rather than beside the permissions in SQLite
+       * for one reason, and it is the whole point of the field: `dorkos config
+       * set` runs in a process with no database, so the config file is the ONLY
+       * thing every writer of these settings touches. A marker anywhere else
+       * would be invisible to exactly the write that motivated it.
+       *
+       * Constrained to a real timestamp, not merely a string. The store treats a
+       * FALSY floor as "no floor", so a bare `z.string()` let the empty string
+       * through as a value that silently disables the filter — the one direction
+       * this field must never fail. Garbage that is not empty already fails
+       * closed (it sorts above every real timestamp, so everything is voided);
+       * `''` was the single value that failed open.
+       */
+      standingGrantsVoidBefore: z.string().datetime().nullable().default(null),
     })
     .default(() => ({
       standingGrants: false,
       trustWindowMinutes: DEFAULT_TRUST_WINDOW_MINUTES,
+      standingGrantsVoidBefore: null,
     })),
   cloud: z
     .object({

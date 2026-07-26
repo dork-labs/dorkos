@@ -27,6 +27,8 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     runtime: 'claude-code',
     capabilities: ['code-review', 'refactoring'],
     behavior: { responseMode: 'always' },
+    personaEnabled: true,
+    enabledToolGroups: {},
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     projectPath: '/home/user/projects/backend',
@@ -180,10 +182,10 @@ describe('update', () => {
   it('persists behavior changes', () => {
     registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1' }));
     registry.update('a1', {
-      behavior: { responseMode: 'on-mention' },
+      behavior: { responseMode: 'mention-only' },
     });
     const entry = registry.get('a1');
-    expect(entry?.behavior.responseMode).toBe('on-mention');
+    expect(entry?.behavior.responseMode).toBe('mention-only');
   });
 });
 
@@ -228,7 +230,7 @@ describe('upsert()', () => {
   });
 
   it('persists behavior_json from entry', () => {
-    const behavior = { responseMode: 'on-mention' as const };
+    const behavior = { responseMode: 'mention-only' as const };
     registry.upsert(makeEntry({ id: 'agent-1', projectPath: '/path/a', behavior }));
     const entry = registry.get('agent-1');
     expect(entry?.behavior).toEqual(behavior);
@@ -246,7 +248,7 @@ describe('upsert()', () => {
 
 describe('rowToEntry()', () => {
   it('parses behavior_json from DB column', () => {
-    const behavior = { responseMode: 'on-mention' as const };
+    const behavior = { responseMode: 'mention-only' as const };
     registry.upsert(makeEntry({ id: 'a1', projectPath: '/p/a1', behavior }));
     const entry = registry.get('a1');
     expect(entry?.behavior).toEqual(behavior);
@@ -423,7 +425,7 @@ describe('anti-regression: Drizzle migration', () => {
     // Agent ID from makeEntry uses a short test ID; verify real ULID-style IDs
     // work through insert/get. The denial list generates real ULIDs.
     const denialList = new DenialList(db);
-    denialList.deny('/tmp/test-anti-regression-ulid', 'claude-code', 'test', 'user');
+    denialList.deny('/tmp/test-anti-regression-ulid', 'test', 'user');
 
     const denials = denialList.list();
     expect(denials).toHaveLength(1);
@@ -452,7 +454,7 @@ describe('anti-regression: Drizzle migration', () => {
 
     // Verify denial timestamps too
     const denialList = new DenialList(db);
-    denialList.deny('/tmp/test-anti-regression-ts', 'claude-code', 'test', 'user');
+    denialList.deny('/tmp/test-anti-regression-ts', 'test', 'user');
     const denialRows = db.$client.prepare('SELECT created_at FROM agent_denials').all() as Array<{
       created_at: string;
     }>;

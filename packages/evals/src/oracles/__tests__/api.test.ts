@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { OracleContext } from '../../types.js';
+import { emptyApprovalLog, type OracleContext } from '../../types.js';
 import { httpGetAssert } from '../api.js';
 
 let server: http.Server | undefined;
@@ -34,6 +34,7 @@ function ctx(baseUrl: string): OracleContext {
     baseUrl,
     sessionId: 's',
     frames: [],
+    approvals: emptyApprovalLog(),
   };
 }
 

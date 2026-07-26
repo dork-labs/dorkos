@@ -69,6 +69,25 @@ import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 
 /**
+ * The later of two posture-floor instants, treating a missing one as "no floor".
+ *
+ * Both values are `Date.prototype.toISOString()` output — fixed-width UTC — so
+ * ordering them as text orders them as instants, the same property the grant
+ * store's own comparison relies on. The schema pins the format
+ * (`standingGrantsVoidBefore` is `z.string().datetime().nullable()`), so a value that
+ * reaches here through any validated path is comparable this way.
+ *
+ * @param a - One instant, or `null`.
+ * @param b - The other instant, or `null`.
+ * @returns The later of the two, or `null` when both are absent.
+ */
+function latestInstant(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a > b ? a : b;
+}
+
+/**
  * Append-only `conf` migration chain keyed by app version. See
  * `contributing/configuration.md` → Schema Migrations and
  * `.claude/skills/adding-config-fields/SKILL.md` for the full process.
@@ -102,6 +121,44 @@ export function backfillExtensionsDisabled(store: {
   const ext = store.get('extensions');
   if (ext && typeof ext === 'object' && !Array.isArray((ext as { disabled?: unknown }).disabled)) {
     store.set('extensions', { ...(ext as Record<string, unknown>), disabled: [] });
+  }
+}
+
+/**
+ * Migration body: backfill `extensions.approvedToRun: []` for configs persisted
+ * before extension code needed a person's approval to run in-process (DOR-516).
+ *
+ * Seeds the list EMPTY, which means nothing an upgrading user already had
+ * installed is pre-approved. That is the deliberate choice, and it is the one
+ * place this migration could have gone wrong: backfilling from
+ * `extensions.enabled` would read "the person once toggled this on in the
+ * cockpit" as "the person reviewed this code", and an agent can turn an extension
+ * on through an ungated route. An upgrade must never hand out an approval nobody
+ * gave. The cost is that anyone already running a user extension with a server
+ * entry approves it once, which is one click and is stated in the changelog.
+ *
+ * Core extensions are unaffected either way — they are exempt by origin, not by
+ * this list (see `extension-load-policy.ts`), so the shipped `linear-issues`
+ * data proxy keeps working across the upgrade with nothing to click.
+ *
+ * Additive and idempotent — only writes when `approvedToRun` is not already an
+ * array, and never touches `enabled` or `disabled`. Configs with no `extensions`
+ * key are skipped (the schema default supplies the object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillExtensionsApprovedToRun(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (
+    ext &&
+    typeof ext === 'object' &&
+    !Array.isArray((ext as { approvedToRun?: unknown }).approvedToRun)
+  ) {
+    store.set('extensions', { ...(ext as Record<string, unknown>), approvedToRun: [] });
   }
 }
 
@@ -202,6 +259,12 @@ export function backfillAuthDefaults(store: {
  * Seeds `standingGrants: false`. A safety feature does not get quietly relaxed
  * by an upgrade — nothing changes for an existing user until they ask for it.
  *
+ * Also seeds `standingGrantsVoidBefore: null` (DOR-520) onto an `approvals` block
+ * an earlier build of this same unreleased key already created, which is why the
+ * two seeds are separate `if`s rather than one. `null` means "nothing has been
+ * voided yet", which is the honest starting point: no upgrade should retroactively
+ * end permissions the person still expects to hold.
+ *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
  */
@@ -209,8 +272,18 @@ export function backfillApprovalsDefaults(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
-  if (store.get('approvals') == null) {
-    store.set('approvals', { standingGrants: false, trustWindowMinutes: 480 });
+  const approvals = store.get('approvals');
+  if (approvals == null) {
+    store.set('approvals', {
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
+    return;
+  }
+  const section = approvals as Record<string, unknown>;
+  if (!('standingGrantsVoidBefore' in section)) {
+    store.set('approvals', { ...section, standingGrantsVoidBefore: null });
   }
 }
 
@@ -993,10 +1066,10 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Composite: DOR-452 and DOR-501 both target "the next unreleased version"
-  // (0.56.0 is already tagged) and an object literal cannot repeat a key, so
-  // their bodies compose here in insertion order — the same convention as the
-  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. Both are independent and
+  // Composite: DOR-452, DOR-501 and DOR-516 all target "the next unreleased
+  // version" (0.56.0 is already tagged) and an object literal cannot repeat a key,
+  // so their bodies compose here in insertion order — the same convention as the
+  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. All three are independent and
   // idempotent. /system:release reconciles the key at tag time if the real
   // release differs.
   '0.57.0': (store: {
@@ -1014,6 +1087,10 @@ export const CONFIG_MIGRATIONS = {
     // `approvals` section (standing permissions, DOR-501). Additive +
     // idempotent; seeds the feature OFF, so an upgrade never relaxes the gate.
     backfillApprovalsDefaults(store);
+    // `extensions.approvedToRun` (extension load approval, DOR-516). Additive +
+    // idempotent; seeds the list EMPTY, so an upgrade never hands out an approval
+    // nobody gave.
+    backfillExtensionsApprovedToRun(store);
   },
 } as const;
 
@@ -1032,8 +1109,16 @@ const confSchema = jsonSchemaProperties as unknown as Schema<UserConfig>;
  * Uses `conf` for atomic JSON I/O with Ajv validation via the JSON Schema
  * generated from UserConfigSchema. Handles first-run detection, corrupt
  * config recovery (backup + recreate), and sensitive field warnings.
+ *
+ * The class is exported alongside the {@link configManager} singleton for one
+ * reason: a SECOND manager over the same directory is the faithful stand-in for
+ * `dorkos config set`, which is a different process holding its own manager over
+ * the same file. Tests that need to reproduce an out-of-process write build one
+ * here rather than re-running {@link initConfigManager}, which would replace the
+ * singleton and read like a restart — the very thing those tests must not
+ * simulate. Production code uses the singleton.
  */
-class ConfigManager {
+export class ConfigManager {
   private store: Conf<UserConfig>;
   private _isFirstRun = false;
 
@@ -1097,7 +1182,10 @@ class ConfigManager {
 
   /** Set a top-level config section */
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void {
+    const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key, value);
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
   }
 
   /** Set a nested value via dot-path. Returns warning if key is sensitive. */
@@ -1106,7 +1194,10 @@ class ConfigManager {
     if (SENSITIVE_CONFIG_KEYS.includes(key as (typeof SENSITIVE_CONFIG_KEYS)[number])) {
       result.warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
     }
+    const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key as keyof UserConfig, value as UserConfig[keyof UserConfig]);
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     return result;
   }
 
@@ -1117,12 +1208,104 @@ class ConfigManager {
 
   /** Reset a specific key or all keys to defaults */
   reset(key?: string): void {
+    const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
       this.store.clear();
       this.store.set(USER_CONFIG_DEFAULTS);
     }
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
+  }
+
+  /**
+   * Whether the two settings, as stored RIGHT NOW, license a standing permission
+   * to exist: local login is on (a cookie is the only thing that tells the person
+   * in the cockpit from an agent on the same machine) and the master switch is on.
+   *
+   * Reads the store rather than taking a posture argument, because the callers are
+   * the write methods and the answer has to reflect the file on both sides of the
+   * write. Mirrors `readStandingGrantPosture` in
+   * `services/core/approvals/standing-grant-settings.ts`, which cannot be reused
+   * here: it reads the module singleton, and this may be any manager — including
+   * the one the CLI holds in another process, which is the whole point.
+   */
+  private standingGrantsLicensed(): boolean {
+    return (
+      this.store.get('auth')?.enabled === true &&
+      this.store.get('approvals')?.standingGrants === true
+    );
+  }
+
+  /** The posture floor as stored right now, or `null` when nothing has narrowed. */
+  private standingGrantVoidFloor(): string | null {
+    return this.store.get('approvals')?.standingGrantsVoidBefore ?? null;
+  }
+
+  /**
+   * Hold the posture floor at or above where it was before this write, and move
+   * it to now when this write is what took the license away (DOR-520).
+   *
+   * ## Why the marker lives in the config file, written here
+   *
+   * `revokeStandingGrantsIfPostureNarrowed` ends live permissions, but it only
+   * fires on a write the SERVER performs. `dorkos config set
+   * approvals.standingGrants false` and `dorkos config reset` are a different
+   * process holding its own manager, with no database and no route — so they end
+   * nothing, and switching the setting back on used to wake every surviving
+   * permission. This method is on the one seam BOTH processes travel: every write
+   * to `~/.dork/config.json` in DorkOS goes through a `ConfigManager`.
+   *
+   * The floor is durable, which the alternatives are not. It survives the server
+   * being down for the whole round trip — the case a config-file watcher cannot
+   * see at all, and the case the boot sweep misses too, because by the time the
+   * server starts the settings look fine again.
+   *
+   * ## The floor is MONOTONIC, and that is the whole guarantee
+   *
+   * The first version stamped on the licensed → unlicensed TRANSITION and nothing
+   * else. Review broke it in one line: any write performed while the posture was
+   * ALREADY narrowed is not a transition, so it did not stamp — while
+   * `dorkos config reset` had meanwhile rewritten the whole file from defaults and
+   * put the leaf back to `null`. Switch off, reset, switch on, and the permission
+   * was live again, through nothing but the verbs this feature claims to cover.
+   *
+   * The same shape reached `PATCH /api/config`: `applyConfigPatch` computes the
+   * merged value ONCE from the pre-write snapshot and then writes each top-level
+   * section in turn, so a batch carrying `auth` before `approvals` stamped the
+   * floor and then wrote the snapshot's stale `null` straight back over it.
+   *
+   * So the rule is stated as an invariant on the STORED value rather than as a
+   * reaction to a transition: after any write, the floor is `floorBefore`, except
+   * on a narrowing where it becomes `max(floorBefore, now)`. Never lower, on any
+   * path, whatever the write happened to contain.
+   *
+   * `max` rather than `now` is what makes it monotonic rather than merely current:
+   * a backwards clock (an NTP correction, a container with a bad RTC) would
+   * otherwise lower a floor that had already voided permissions.
+   *
+   * ## It still writes nothing when nothing narrowed
+   *
+   * Stating the rule as "stamp whenever the posture is unlicensed after the write"
+   * would also close the hole, and would move the floor on EVERY config write for
+   * the vast majority of installs, which never switch this feature on — doubling
+   * config write I/O to maintain a marker with nothing to void. Comparing against
+   * the stored value first keeps the common path free.
+   *
+   * @param licensedBefore - Whether the posture licensed a permission before the
+   *   write that just happened.
+   * @param floorBefore - The floor as it stood before the write, which this write
+   *   may raise but must never lower.
+   */
+  private stampStandingGrantVoidFloor(licensedBefore: boolean, floorBefore: string | null): void {
+    const narrowed = licensedBefore && !this.standingGrantsLicensed();
+    const required = narrowed ? latestInstant(floorBefore, new Date().toISOString()) : floorBefore;
+    if (required === null) return;
+
+    const approvals = this.store.get('approvals');
+    if (approvals?.standingGrantsVoidBefore === required) return;
+    this.store.set('approvals', { ...approvals, standingGrantsVoidBefore: required });
   }
 
   /** Validate the current config against the Zod schema */

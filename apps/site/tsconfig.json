@@ -31,5 +31,9 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "vitest.config.ts", "**/__tests__/**"]
+  // Test files are IN this program on purpose (DOR-518), so a type error in one
+  // fails `pnpm --filter @dorkos/site typecheck`. There is no sibling emit program
+  // here and none is needed: this config is `noEmit`, and `next build` does its own
+  // transpilation, so including tests cannot leak *.test.js into the output.
+  "exclude": ["node_modules", "vitest.config.ts"]
 }

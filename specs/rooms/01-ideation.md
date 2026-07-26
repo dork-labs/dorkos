@@ -4,6 +4,7 @@
 - **Id:** 260726-170533
 - **Date:** 2026-07-26
 - **Project:** Agents as First-Class Operators
+- **Tracker:** DOR-521 (phases: DOR-523 R0, DOR-524 R1, DOR-525 R2, DOR-526 R3, DOR-527 R4)
 
 ## Intent
 
@@ -44,7 +45,11 @@ This spec does not re-open its own design. The decisions were taken elsewhere an
 
 Three metaphors, one word, and the last one would sit two inches from a nav section using the word differently.
 
-**The call: "Channel" means an in-cockpit conversation. Relay's concept becomes "Connection" everywhere.** This is alignment, not invention — the Relay panel's own tab is already called Connections, so the rename settles an existing inconsistency rather than creating churn. The session-origin badge becomes "Connection", which is also more accurate: it says the session arrived over a connection to an outside service.
+**The call: "Channel" means an in-cockpit conversation. Relay's concept becomes "Integration". "Connection" is left alone and keeps meaning network connectivity.** ADR 260726-193526, superseding ADR-0224.
+
+The first attempt used "Connection" and was wrong. ADR-0224 had already named that collision — it lists "eliminates the 'Connections' naming collision" as a benefit — and the collision is real: `ConnectionStatusBanner`, `ConnectionItem` ("Connection lost"), `use-sse-connection.ts`, `SessionInspector`'s "Connection" row and `TestStep.tsx`'s "Connection successful/failed" all mean _is the socket up_. The status bar is always visible, so "Connection lost" beside a "Connections" tab would read as a dropped Telegram integration.
+
+"Integration" was already the answer sitting in the repo: `docs/integrations/building-relay-adapters.mdx` has been filing relay adapters under Integrations the whole time. It also collides with nothing, is what Slack, Linear, Notion and GitHub call this, and serves ADR-0224's own discovery goal better than "Channels" did — a user connecting an agent to Telegram looks under Integrations. "Channels" only reads that way on CPaaS products like Twilio and Intercom, which have no conversation concept competing for the word. DorkOS now does.
 
 Sidebar agent groups keep their name. They are groups, and no user-facing copy calls them channels.
 

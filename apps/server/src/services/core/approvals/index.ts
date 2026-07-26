@@ -30,6 +30,7 @@ export {
 export {
   readStandingGrantPosture,
   readStandingGrantSettings,
+  readStandingGrantVoidFloor,
   type StandingGrantSettings,
 } from './standing-grant-settings.js';
 export {

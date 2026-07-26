@@ -16,7 +16,12 @@ import path from 'node:path';
 import { buildSoulContent } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
-import type { EvalSandbox, OracleContext, OracleResult } from '../../types.js';
+import {
+  emptyApprovalLog,
+  type EvalSandbox,
+  type OracleContext,
+  type OracleResult,
+} from '../../types.js';
 import { designYourOwnInterviewCase } from '../agents.js';
 
 let sandbox: EvalSandbox;
@@ -48,7 +53,13 @@ function goodInterviewFrames(): SseFrame[] {
 
 /** An OracleContext over the seeded sandbox with an optional transcript. */
 function ctx(frames: SseFrame[] = []): OracleContext {
-  return { sandbox, baseUrl: 'http://unused', sessionId: 's', frames };
+  return {
+    sandbox,
+    baseUrl: 'http://unused',
+    sessionId: 's',
+    frames,
+    approvals: emptyApprovalLog(),
+  };
 }
 
 /** Run every oracle on the case with the given transcript and return their results. */

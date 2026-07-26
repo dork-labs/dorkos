@@ -47,6 +47,7 @@ function createEndpoint(maildirPath: string): EndpointInfo {
     subject: 'relay.agent.test',
     hash: 'hash-test',
     maildirPath,
+    registeredAt: '2026-02-24T00:00:00.000Z',
   };
 }
 
@@ -150,6 +151,7 @@ describe('WatcherManager', () => {
         subject: 'relay.agent.other',
         hash: 'hash-2',
         maildirPath: path2,
+        registeredAt: '2026-02-24T00:00:00.000Z',
       });
 
       await manager.closeAll();
@@ -207,6 +209,7 @@ describe('WatcherManager', () => {
         subject: 'relay.agent.test',
         hash: 'hash-dispatch',
         maildirPath,
+        registeredAt: '2026-02-24T00:00:00.000Z',
       };
 
       await manager.startWatcher(endpoint);
@@ -237,6 +240,7 @@ describe('WatcherManager', () => {
         subject: 'relay.agent.test',
         hash: 'hash-handle',
         maildirPath,
+        registeredAt: '2026-02-24T00:00:00.000Z',
       };
 
       await manager.startWatcher(endpoint);
@@ -267,6 +271,7 @@ describe('WatcherManager', () => {
         subject: 'relay.agent.test',
         hash: 'hash-nonjson',
         maildirPath,
+        registeredAt: '2026-02-24T00:00:00.000Z',
       };
 
       await manager.startWatcher(endpoint);
@@ -297,6 +302,7 @@ describe('WatcherManager', () => {
         subject: 'relay.agent.test',
         hash: 'hash-fail',
         maildirPath,
+        registeredAt: '2026-02-24T00:00:00.000Z',
       };
 
       await manager.startWatcher(endpoint);
