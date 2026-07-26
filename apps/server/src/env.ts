@@ -88,7 +88,28 @@ const serverEnvSchema = z.object({
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
   // binding a non-loopback host without a login. Off by default; set only by
   // container images that own their own network boundary (see Dockerfile.*).
+  // It also switches OFF the two request-level locality checks, for the same
+  // reason — the surrounding environment owns the boundary, and inside a
+  // container neither check can succeed anyway (a browser's request arrives from
+  // the bridge gateway, not loopback):
+  //   - the `/api` host guard (middleware/host-guard.ts)
+  //   - the local-only gate on the runtime connect/provision routes (routes/runtimes.ts)
   DORKOS_ALLOW_INSECURE_BIND: boolFlag,
+  // Extra host names the `/api` host guard accepts, comma-separated and without
+  // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
+  // in login-off mode: with login on, the guard is inert because auth cookies
+  // are already origin-scoped. Set this when a login-off reverse proxy forwards
+  // its own `Host` to DorkOS. See middleware/host-guard.ts.
+  DORKOS_TRUSTED_HOSTS: z.string().optional(),
+  // Set by a supervising process that owns the server's lifecycle (DOR-532).
+  // `desktop` means the Electron shell started this server as a utility process,
+  // so the admin restart/reset endpoints refuse (409) rather than exit into a
+  // process nothing will bring back. See routes/admin.ts.
+  DORKOS_MANAGED_BY: z.enum(['desktop']).optional(),
+  // Single-instance lock escape hatch (DOR-532) — when 'true', skip the
+  // per-data-directory lock that stops two servers from sharing one `~/.dork`.
+  // The lock is already inert under NODE_ENV=test.
+  DORKOS_SKIP_INSTANCE_LOCK: boolFlag,
   // Activity feed — retention period for pruning (defaults to 30 days in service)
   DORKOS_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime
