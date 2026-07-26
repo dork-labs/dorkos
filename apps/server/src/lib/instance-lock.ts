@@ -90,11 +90,26 @@ export function isInstanceLockEnabled(): boolean {
  * have started before we call it a different process.
  *
  * A real holder starts, then writes its lock milliseconds later, so its start
- * time is always at or before `startedAt`. The slack absorbs coarse reporting
- * (`ps` truncates to whole seconds) and small clock adjustments. A recycled pid
- * is off by minutes or days, so a generous window costs nothing.
+ * time is always at or before `startedAt`. The window is generous on purpose,
+ * because the two errors are not symmetric. Too tight and a LIVE holder reads as
+ * gone, whereupon the next boot deletes its lock and two servers open the same
+ * SQLite file — the exact corruption this module exists to prevent. Too loose
+ * only means a recycled pid keeps the lock a little longer, and a recycled pid
+ * is off by minutes or days, never seconds.
+ *
+ * Wall-clock steps are the realistic source of skew: Linux `procps` derives
+ * `lstart` from `btime + start_jiffies/Hz`, and `btime` is itself `now − uptime`,
+ * so NTP correcting a bad RTC, or a VM resuming from a snapshot, shifts a live
+ * process's reported start time.
  */
-const PID_REUSE_TOLERANCE_MS = 5_000;
+const PID_REUSE_TOLERANCE_MS = 120_000;
+
+/**
+ * Ceiling on the `ps` call. It is synchronous and on the boot path, so a wedged
+ * or unusually slow `ps` must not hang startup. A throw lands on
+ * `live-unconfirmed`, which is the safe direction (never steals a lock).
+ */
+const PS_TIMEOUT_MS = 2_000;
 
 /**
  * Whether a process id belongs to a process that is running right now.
@@ -124,6 +139,15 @@ function isProcessAlive(pid: number): boolean {
  * back to pid-only liveness. The spawn happens only on the rare path where a
  * lock file exists AND names a live pid, never on a normal boot.
  *
+ * `LC_ALL=C` is load-bearing, not tidiness. macOS renders `lstart` through
+ * `strftime("%c")`, which is locale-dependent, and `new Date()` parses almost
+ * none of those forms — `fr_FR` gives `dim. 26 juil. 15:40:36 2026` → `NaN`, as
+ * do most non-English UTF-8 locales. Without this, the corroboration in
+ * {@link assessHolder} silently does nothing on a large share of Macs, and the
+ * recycled-pid lockout it exists to prevent comes straight back. It also keeps
+ * the suite honest: a contributor on a French-locale Mac would otherwise watch
+ * that test go red while CI, which runs Linux in the `C` locale, stayed green.
+ *
  * @param pid - The process id recorded in the lock file.
  */
 function processStartTime(pid: number): Date | null {
@@ -131,12 +155,15 @@ function processStartTime(pid: number): Date | null {
     const raw = execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: PS_TIMEOUT_MS,
+      // eslint-disable-next-line no-restricted-syntax -- forwarding the real environment to a child process, with the C locale forced so `lstart` parses
+      env: { ...process.env, LC_ALL: 'C' },
     }).trim();
     if (!raw) return null;
     const parsed = new Date(raw);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   } catch {
-    // No `ps` (Windows), no such process, or an unparseable format.
+    // No `ps` (Windows), no such process, a timeout, or an unparseable format.
     return null;
   }
 }

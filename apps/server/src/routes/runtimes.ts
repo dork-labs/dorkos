@@ -44,27 +44,44 @@ import {
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/ollama-catalog.js';
 import { logger } from '../lib/logger.js';
-import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
+import { isLoopbackHostHeader, isLoopbackPeer } from '../lib/trusted-origins.js';
 
 const router = Router();
 
 /**
- * Reject non-loopback requests with 403; returns `true` when the request was
- * rejected.
+ * Whether this request came from a person at this machine.
  *
- * The locality test reads the RAW `Host` header through the shared
- * {@link isLoopbackHostHeader}. It used to compare `req.hostname`, which was
- * spoofable: `app.ts` sets `trust proxy: 1`, so `req.hostname` prefers
- * `X-Forwarded-Host` from the first hop, and on a direct connection the first
- * hop is the caller. `Host: dorkos.example.com` + `X-Forwarded-Host: localhost`
- * passed this gate and reached the package-install and OAuth-callback endpoints
- * below (DOR-532 review). The repo's own documented nginx config forwards a
- * client-supplied `X-Forwarded-Host` untouched, so a login-off reverse proxy —
- * the exact configuration `DORKOS_TRUSTED_HOSTS` exists to support — exposed
- * this to the internet.
+ * Two independent signals, and BOTH must hold, because each one alone admits a
+ * different attacker (DOR-532 review):
+ *
+ * - **The TCP peer must be loopback.** This is the part a caller cannot write.
+ *   Header-only checks fell to a raw socket from another host on the LAN:
+ *   `Host: localhost` from peer `192.168.86.200` returned 200 and would have run
+ *   a Homebrew/winget install. `req.hostname` and `req.ip` are both derived
+ *   through `trust proxy` from `X-Forwarded-*` and are caller-controlled, so
+ *   neither is usable here; only `req.socket.remoteAddress` is.
+ * - **The `Host` header must name loopback.** This is the part that stops a
+ *   browser. Under DNS rebinding the peer genuinely IS `127.0.0.1` — the request
+ *   comes from the user's own browser — but the page was served from
+ *   `evil.com`, and the browser writes that into `Host` and cannot lie about it.
+ *
+ * Socket alone admits the rebound browser; `Host` alone admits the remote
+ * caller. Together they close both.
+ *
+ * Two consequences worth knowing. A reverse proxy on this same host connects
+ * from `127.0.0.1`, so its traffic is indistinguishable from a local caller's
+ * (see {@link isLoopbackPeer}). And in Docker the browser's requests arrive from
+ * the bridge gateway, not loopback, so these actions are refused inside the
+ * container — correct, since nothing there can tell the operator apart from
+ * anyone else who can reach the published port.
  */
+function isLocalCaller(req: Request): boolean {
+  return isLoopbackPeer(req.socket.remoteAddress) && isLoopbackHostHeader(req.headers.host);
+}
+
+/** Reject non-local requests with 403; returns `true` when the request was rejected. */
 function rejectNonLoopback(req: Request, res: Response): boolean {
-  if (isLoopbackHostHeader(req.headers.host)) return false;
+  if (isLocalCaller(req)) return false;
   res.status(403).json({ error: 'Runtime connect actions are only available locally' });
   return true;
 }
@@ -111,7 +128,7 @@ async function streamRuntimeProvision(
   provision: ProvisionFn,
   runtimeLabel: string
 ): Promise<void> {
-  if (!isLoopbackHostHeader(req.headers.host)) {
+  if (!isLocalCaller(req)) {
     res.status(403).json({ error: 'Runtime provisioning is only available locally' });
     return;
   }
@@ -206,7 +223,7 @@ router.post('/opencode/openrouter/oauth/start', (req, res) => {
  * the user to return to DorkOS. Loopback-only (the user's own browser hits it).
  */
 router.get('/opencode/openrouter/oauth/callback', async (req, res) => {
-  if (!isLoopbackHostHeader(req.headers.host)) {
+  if (!isLocalCaller(req)) {
     return res.status(403).send('Not available.');
   }
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
@@ -309,7 +326,7 @@ router.post('/opencode/ollama/pull', async (req, res) => {
  * `ok: false` (the client shows the copyable command). Loopback-only, no sudo.
  */
 router.post('/opencode/ollama/provision', async (req, res) => {
-  if (!isLoopbackHostHeader(req.headers.host)) {
+  if (!isLocalCaller(req)) {
     res.status(403).json({ error: 'Runtime provisioning is only available locally' });
     return;
   }

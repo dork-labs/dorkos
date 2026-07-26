@@ -12,6 +12,7 @@
  *
  * @module lib/trusted-origins
  */
+import { isIPv4 } from 'node:net';
 import { env } from '../env.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 
@@ -60,16 +61,58 @@ export function parseHostname(hostHeader: string | undefined): string | null {
  * `X-Forwarded-Host` from the first hop — and on a direct connection the first
  * hop IS the caller. A request carrying `Host: dorkos.example.com` plus
  * `X-Forwarded-Host: localhost` therefore reports `req.hostname === 'localhost'`
- * (verified against Express 5 with a raw socket, DOR-532 review). Any check that
- * decides "is this caller local" from `req.hostname` is spoofable by anyone who
- * can reach the port; the `Host` header is the value a browser sets from the
- * address bar and a proxy rewrites deliberately, so it is the one to read.
+ * (verified against Express 5 with a raw socket, DOR-532 review).
+ *
+ * What this answers is "which name did the caller ask for", which is the right
+ * question for browser DNS rebinding, because a browser sets `Host` from the
+ * address bar and cannot lie about it. It is NOT a proof of locality: a
+ * non-browser caller writes `Host` as freely as any other header. Anything
+ * deciding "is this caller on this machine" must ALSO check the TCP peer with
+ * {@link isLoopbackPeer}.
  *
  * @param hostHeader - `req.headers.host`, the raw header value.
  */
 export function isLoopbackHostHeader(hostHeader: string | undefined): boolean {
   const hostname = parseHostname(hostHeader);
   return hostname !== null && isLoopbackHost(hostname);
+}
+
+/**
+ * Whether the other end of the TCP connection is on this machine.
+ *
+ * This is the only locality signal a caller cannot write: it comes from the
+ * socket, not from a header. Pass `req.socket.remoteAddress` — deliberately NOT
+ * `req.ip`, which Express derives through `trust proxy` from `X-Forwarded-For`
+ * and is therefore caller-controlled, the very bug this replaces.
+ *
+ * Handles the shapes Node reports: the whole `127.0.0.0/8` block (a local caller
+ * may legitimately use `127.0.0.2`), IPv6 `::1`, the `::ffff:127.0.0.1`
+ * v4-mapped form a dual-stack listener reports for IPv4 peers, and a trailing
+ * `%zone` index. A missing address (a socket already torn down) is not local.
+ *
+ * ## The residual
+ *
+ * A reverse proxy running on this same host connects from `127.0.0.1`, so its
+ * forwarded requests are indistinguishable from a genuinely local caller's. That
+ * is inherent to the signal, not an oversight: at the socket layer there is
+ * nothing left to tell them apart. Pairing this with
+ * {@link isLoopbackHostHeader} narrows it — such a proxy normally forwards its
+ * own public `Host` — but an operator who configures the proxy to rewrite `Host`
+ * to `localhost` re-opens it. Deployments that expose DorkOS should require a
+ * login, which gates these routes independently.
+ *
+ * @param address - `req.socket.remoteAddress`.
+ */
+export function isLoopbackPeer(address: string | undefined): boolean {
+  let addr = address?.trim().toLowerCase();
+  if (!addr) return false;
+
+  const zone = addr.indexOf('%');
+  if (zone !== -1) addr = addr.slice(0, zone);
+  if (addr.startsWith('::ffff:')) addr = addr.slice('::ffff:'.length);
+
+  if (isIPv4(addr)) return addr.startsWith('127.');
+  return addr === '::1' || addr === '0:0:0:0:0:0:0:1';
 }
 
 /**

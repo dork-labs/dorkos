@@ -8,22 +8,25 @@ import { env } from '../env.js';
  * Error code accompanying the 409 when the desktop app owns the server's
  * lifecycle.
  *
- * The client does not branch on it today: `system-methods.ts` throws the raw
- * response text and the Advanced tab toasts that message, so what a person
- * actually reads is the `error` string below. That is why each message has to
- * stand on its own. The code is here so a future client CAN branch, and so logs
- * and tests have something stable to match.
+ * The client does not branch on it today. `system-methods.ts` does
+ * `throw new Error(await res.text())` and the Advanced tab passes that straight
+ * to `toast.error`, so a person is shown the ENTIRE raw response body — this
+ * code, the braces, and all — with the sentence buried inside it. Each message
+ * below therefore has to read well even when it arrives wrapped in JSON, and
+ * teaching the client to render `error` on its own is a real follow-up. The code
+ * is here so that client CAN branch, and so logs and tests match on something
+ * stable.
  */
 export const MANAGED_BY_DESKTOP_CODE = 'MANAGED_BY_DESKTOP';
 
 /**
  * What each admin action says when the desktop app owns the lifecycle.
  *
- * Keyed by the router-relative path so the refusal can run ahead of the rate
- * limiter (see {@link createAdminRouter}). Restart and reset need different
- * copy: quitting and reopening the app IS a restart, so that advice completes
- * the user's intent, but it deletes nothing, so offering it for a reset would
- * send someone away believing their data was wiped when it was not.
+ * Keyed by the router-relative path, normalized by
+ * {@link desktopManagedMessage}. Restart and reset need different copy:
+ * quitting and reopening the app IS a restart, so that advice completes the
+ * user's intent, but it deletes nothing, so offering it for a reset would send
+ * someone away believing their data was wiped when it was not.
  */
 const DESKTOP_MANAGED_REFUSALS: Record<string, (dorkHome: string) => string> = {
   '/restart': () =>
@@ -35,6 +38,28 @@ const DESKTOP_MANAGED_REFUSALS: Record<string, (dorkHome: string) => string> = {
     'Nothing has been deleted. To start over, quit DorkOS, delete the folder at ' +
     `${dorkHome}, then open DorkOS again. It will set itself up from scratch.`,
 };
+
+/** Said when the refusal fires on a path with no specific copy (an unknown admin route). */
+const GENERIC_DESKTOP_MANAGED_REFUSAL =
+  'The DorkOS app starts and stops the server for you, so this action is not available here.';
+
+/**
+ * Pick the refusal copy for a request, tolerating every path spelling Express
+ * still routes to a handler.
+ *
+ * Express 5 routes non-strictly, so `/reset/` reaches the `/reset` handler while
+ * `req.path` reads `/reset/`, and it matches case-insensitively. A literal table
+ * lookup missed both. Message selection is allowed to fall back; REFUSING is
+ * not, which is why the caller refuses everything rather than keying off this
+ * (see {@link createAdminRouter}).
+ *
+ * @param routerPath - `req.path`, relative to this router's mount point.
+ * @param dorkHome - Data directory, named by the reset copy.
+ */
+function desktopManagedMessage(routerPath: string, dorkHome: string): string {
+  const normalized = routerPath.toLowerCase().replace(/\/+$/, '') || '/';
+  return DESKTOP_MANAGED_REFUSALS[normalized]?.(dorkHome) ?? GENERIC_DESKTOP_MANAGED_REFUSAL;
+}
 
 /** Dependencies injected into the admin router. */
 export interface AdminDeps {
@@ -89,24 +114,26 @@ function triggerRestart(): void {
 export function createAdminRouter(deps: AdminDeps): Router {
   const router = Router();
 
-  // Ahead of the rate limiter on purpose. A desktop-managed refusal is a fixed
-  // fact about this deployment, not a burst of work to shed, and it costs
-  // nothing to answer. Behind the limiter, a person tapping Restart four times
-  // would get "Too many admin requests" for five minutes instead of the
-  // explanation that tells them what to do.
+  // Refuses EVERY request into this router, not a list of paths. Every route
+  // here ends the process, and one of them deletes the data directory first, so
+  // "which path is this" must not be able to decide whether the guard runs. An
+  // earlier revision keyed the refusal off `req.path` and Express's non-strict
+  // routing walked straight around it: `POST /api/admin/reset/` reached the
+  // handler and ran `fs.rm(dorkHome, { recursive: true })`, in the one mode
+  // where the guard exists to prevent exactly that. Matching nothing cannot be
+  // out-spelled; only the message text is chosen by path.
+  //
+  // Ahead of the rate limiter on purpose, too. A desktop-managed refusal is a
+  // fixed fact about this deployment, not a burst of work to shed. Behind the
+  // limiter, a person tapping Restart four times got "Too many admin requests"
+  // for five minutes instead of the explanation that tells them what to do.
   router.use((req, res, next) => {
     if (env.DORKOS_MANAGED_BY !== 'desktop') {
       next();
       return;
     }
-    // Express routes case-insensitively, so normalize before the lookup.
-    const buildMessage = DESKTOP_MANAGED_REFUSALS[req.path.toLowerCase()];
-    if (!buildMessage) {
-      next();
-      return;
-    }
     res.status(409).json({
-      error: buildMessage(deps.dorkHome),
+      error: desktopManagedMessage(req.path, deps.dorkHome),
       code: MANAGED_BY_DESKTOP_CODE,
     });
   });

@@ -22,6 +22,7 @@ vi.mock('child_process', () => ({
 
 import { createAdminRouter, MANAGED_BY_DESKTOP_CODE } from '../admin.js';
 import { spawn } from 'child_process';
+import fs from 'fs/promises';
 
 /** The data directory the refusal copy has to name so "delete it" is actionable. */
 const DORK_HOME = '/tmp/test-dork-home';
@@ -115,6 +116,31 @@ describe('Admin routes', () => {
       expect(res.body.error).toContain('Nothing has been deleted');
       expect(res.body.error).toContain(DORK_HOME);
       expect(res.body.error).not.toMatch(/open it again instead/);
+    });
+
+    // Express 5 routes non-strictly and case-insensitively, so every spelling
+    // below reaches the same handler while `req.path` differs. A path-keyed
+    // refusal missed the trailing-slash forms, and `POST /api/admin/reset/`
+    // ran `fs.rm(dorkHome, { recursive: true })` and exited — in the one mode
+    // whose whole purpose is to prevent that, past a message promising
+    // "Nothing has been deleted."
+    it.each([
+      '/api/admin/reset',
+      '/api/admin/reset/',
+      '/api/admin/RESET',
+      '/api/admin/RESET/',
+      '/api/admin/restart',
+      '/api/admin/restart/',
+      '/api/admin/RESTART/',
+    ])('refuses %s without touching the data directory', async (path) => {
+      const res = await request(app).post(path).send({ confirm: 'reset' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
+      expect(mockShutdownServices).not.toHaveBeenCalled();
+      expect(mockCloseDb).not.toHaveBeenCalled();
+      expect(mockExit).not.toHaveBeenCalled();
+      expect(fs.rm).not.toHaveBeenCalled();
     });
 
     // The 409 is a fixed fact about this deployment, not load to shed. Behind

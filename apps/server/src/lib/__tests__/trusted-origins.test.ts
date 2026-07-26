@@ -5,7 +5,12 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { url: null } },
 }));
 
-import { isLoopbackHost, isLoopbackHostHeader, parseHostname } from '../trusted-origins.js';
+import {
+  isLoopbackHost,
+  isLoopbackHostHeader,
+  isLoopbackPeer,
+  parseHostname,
+} from '../trusted-origins.js';
 
 describe('parseHostname', () => {
   it.each([
@@ -57,5 +62,48 @@ describe('isLoopbackHostHeader', () => {
   // "localhost" for this request; passing the real Host keeps it honest.
   it('judges the real Host, so a spoofed X-Forwarded-Host cannot reach it', () => {
     expect(isLoopbackHostHeader('dorkos.example.com')).toBe(false);
+  });
+});
+
+describe('isLoopbackPeer', () => {
+  it.each([
+    ['127.0.0.1', 'the usual IPv4 loopback'],
+    ['127.0.0.2', 'the rest of the 127.0.0.0/8 block'],
+    ['127.255.255.254', 'the top of the block'],
+    ['::1', 'IPv6 loopback'],
+    ['0:0:0:0:0:0:0:1', 'IPv6 loopback, expanded'],
+    ['::ffff:127.0.0.1', 'the v4-mapped form a dual-stack listener reports'],
+    ['::FFFF:127.0.0.1', 'v4-mapped, upper case'],
+    ['::1%lo0', 'with a zone index'],
+  ])('accepts %s (%s)', (address) => {
+    expect(isLoopbackPeer(address)).toBe(true);
+  });
+
+  it.each([
+    ['192.168.86.200', 'a LAN peer — the address that defeated the header-only check'],
+    ['10.0.0.5', 'another private range'],
+    ['172.17.0.1', "Docker's bridge gateway, which is how the browser reaches a container"],
+    ['203.0.113.7', 'a public address'],
+    ['128.0.0.1', 'adjacent to the loopback block but outside it'],
+    ['27.0.0.1', 'a prefix of the loopback block'],
+    ['1270.0.0.1', 'not a valid address at all'],
+    ['::2', 'a non-loopback IPv6 address'],
+    ['::ffff:192.168.86.200', 'a v4-mapped LAN peer'],
+    ['', 'an empty address'],
+  ])('rejects %s (%s)', (address) => {
+    expect(isLoopbackPeer(address)).toBe(false);
+  });
+
+  it('rejects a missing address, so a torn-down socket is never treated as local', () => {
+    expect(isLoopbackPeer(undefined)).toBe(false);
+  });
+
+  // The two signals answer different questions and neither substitutes for the
+  // other: a rebound browser is a loopback peer sending a hostile Host, and the
+  // LAN attacker is a hostile peer sending a loopback Host.
+  it('is independent of the Host header', () => {
+    expect(isLoopbackPeer('192.168.86.200') && isLoopbackHostHeader('localhost')).toBe(false);
+    expect(isLoopbackPeer('127.0.0.1') && isLoopbackHostHeader('evil.com')).toBe(false);
+    expect(isLoopbackPeer('127.0.0.1') && isLoopbackHostHeader('localhost:4242')).toBe(true);
   });
 });
