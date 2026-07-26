@@ -115,7 +115,7 @@ The operator verbs hit the running server over its local HTTP API:
 - \`dorkos task list|create|trigger <id>|runs\` manage tasks. No update, no delete.
 - \`dorkos activity [--actor <t>] [--category <c>] [--type <e>] [--limit <n>]\` reads the feed.
 - \`dorkos version --check\` shows the current server version and the latest release.
-- \`dorkos marketplace list|add|remove|refresh|validate\` manage sources.
+- \`dorkos marketplace list|refresh|validate\` read sources. Only a person may \`add\` or \`remove\` one: see using-the-marketplace.
 - \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages.
   \`uninstall\` is gated on a person's approval like every destructive path, and
   answers with the approval payload: see using-the-marketplace.

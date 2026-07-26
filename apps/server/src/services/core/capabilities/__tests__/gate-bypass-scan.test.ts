@@ -35,16 +35,12 @@
  * touched an effect that is listed — but a scan cannot fail for an effect nobody
  * added, which is the same shape of hole `GATED_ADAPTER_PATHS` had one level up.
  *
- * A live counterexample, named here so the next reader inherits it rather than
- * rediscovering it: `POST /api/marketplace/sources` and
- * `DELETE /api/marketplace/sources/:name` reach `sourceManager.add` /
- * `sourceManager.remove` and are ungated for every caller, so an agent can point
- * this instance at a package feed somebody else controls. It is NOT covered below.
- * Gating it needs a tier decision that is deliberately not being made in passing:
- * there is no `marketplace.*` source capability to authorize against, adding one
- * moves the registry count that four documented surfaces assert, and refusing
- * agents outright would break `dorkos marketplace add`, which the seeded skill
- * pack teaches. Tracked separately (DOR-467 review, M2).
+ * That is not a theoretical worry: this file used to carry a live counterexample,
+ * the ungated marketplace SOURCE routes, sitting in the prose because nobody had
+ * decided what to do about them. They are gated now and listed below (DOR-502), so
+ * the honest general statement is what remains — an effect is covered from the day
+ * somebody adds it here, and not before. When you find the next one, add it rather
+ * than describe it.
  *
  * ## What it does not catch
  *
@@ -95,6 +91,24 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the marketplace.uninstall capability handler — reached only through registry.invoke, which gates',
       'services/marketplace/marketplace-installer.ts':
         'the first half of an in-place update (uninstall then install); its callers are gated, not this',
+    },
+  },
+  {
+    what: 'points this install at a package feed it will fetch and run code from',
+    call: 'sourceManager.add(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller, with no approval that could unlock it (DOR-502)',
+      'services/marketplace-mcp/personal-marketplace.ts':
+        'the boot-time bootstrap of the local personal marketplace; no request reaches it and the source it registers is always a file:// URL under this dork home',
+    },
+  },
+  {
+    what: 'drops a package feed, silently taking away every package it served',
+    call: 'sourceManager.remove(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller (DOR-502)',
     },
   },
   {

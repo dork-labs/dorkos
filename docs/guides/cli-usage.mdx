@@ -150,12 +150,14 @@ dorkos update <package> --project <path>          # Check or apply within a spec
 **`dorkos marketplace`**: manage the marketplace sources that list available packages.
 
 ```bash
-dorkos marketplace add <url> [--name <name>]   # Register a new source
-dorkos marketplace remove <name>               # Remove a source
+dorkos marketplace add <url> [--name <name>]   # Register a new source (you only)
+dorkos marketplace remove <name>               # Remove a source (you only)
 dorkos marketplace list                        # List configured sources
 dorkos marketplace refresh [<name>]            # Re-fetch one or every source's listing
 dorkos marketplace validate <path-or-url>      # Validate a marketplace.json before publishing
 ```
+
+`add` and `remove` are yours alone. A source is a place DorkOS will download and run code from, so an agent that runs either one is turned down with a plain refusal telling it to ask you. See [Marketplace sources](/docs/marketplace#marketplace-sources).
 
 **`dorkos package`**: scaffold and validate marketplace packages before publishing them. See [Publishing to the Marketplace](/docs/marketplace/publishing) for the full walkthrough.
 

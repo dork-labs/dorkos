@@ -1059,6 +1059,92 @@ describe('Marketplace Routes', () => {
     });
   });
 
+  describe('the operator-only bar on the source routes (DOR-502)', () => {
+    /** Read the source names back as the cockpit would, with no agent header. */
+    async function listSourceNames(): Promise<string[]> {
+      agentHeader = undefined;
+      const res = await request(app).get('/api/marketplace/sources');
+      return res.body.sources.map((s: { name: string }) => s.name);
+    }
+
+    it('refuses an AGENT that tries to add a source, and adds nothing', async () => {
+      // The door this closes: a source decides which feed `install` may fetch
+      // code from, and the install gate never asks where a package came from.
+      agentHeader = 'agent-token';
+
+      const res = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only_marketplace_source');
+      expect(res.body.error).toBe('Only the person running DorkOS can add a package source');
+      // Legible to a model: it must learn to ask the person, not to retry.
+      expect(res.body.message).toContain('dorkos marketplace add');
+      expect(res.body.message).toContain('Retrying will not help');
+
+      expect(await listSourceNames()).not.toContain('attacker');
+    });
+
+    it('refuses an AGENT that tries to remove a source, and the source survives', async () => {
+      await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'keeper', source: 'https://example.com/keeper' });
+
+      agentHeader = 'agent-token';
+      const res = await request(app).delete('/api/marketplace/sources/keeper');
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only_marketplace_source');
+      expect(res.body.error).toBe('Only the person running DorkOS can remove a package source');
+      expect(res.body.message).toContain('dorkos marketplace remove');
+
+      expect(await listSourceNames()).toContain('keeper');
+    });
+
+    it('refuses an agent BEFORE validating the body, so the schema cannot be probed', async () => {
+      // Pins the guard's position in the handler. If it moved below the Zod
+      // parse, an agent would get a 400 with `details` describing the schema —
+      // a different answer for a caller that may not do this at all.
+      agentHeader = 'agent-token';
+
+      const res = await request(app).post('/api/marketplace/sources').send({ name: '' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only_marketplace_source');
+      expect(res.body.details).toBeUndefined();
+    });
+
+    it('lets the person in the cockpit add and then remove a source', async () => {
+      // The other half of the bar. Without this, inverting the guard so it
+      // refuses the operator and allows the agent would still look green.
+      const added = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'mine', source: 'https://example.com/mine' });
+      expect(added.status).toBe(201);
+      expect(await listSourceNames()).toContain('mine');
+
+      const removed = await request(app).delete('/api/marketplace/sources/mine');
+      expect(removed.status).toBe(204);
+      expect(await listSourceNames()).not.toContain('mine');
+    });
+
+    it('leaves reading, refreshing, and listing open to an agent', async () => {
+      // Refusing more than the line justifies makes the surface useless. An
+      // agent still needs to see what this install reads from.
+      await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'readable', source: 'https://example.com/readable' });
+
+      agentHeader = 'agent-token';
+      const list = await request(app).get('/api/marketplace/sources');
+      expect(list.status).toBe(200);
+
+      const refresh = await request(app).post('/api/marketplace/sources/readable/refresh');
+      expect(refresh.status).toBe(200);
+    });
+  });
+
   describe('POST /packages/:name/uninstall', () => {
     it('returns the uninstall result on success', async () => {
       uninstallFlow.uninstall.mockResolvedValue({

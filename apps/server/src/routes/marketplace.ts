@@ -62,6 +62,12 @@ import {
 } from '../services/core/capabilities/index.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
+import {
+  OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
+  describeMarketplaceSourceRefusal,
+  marketplaceSourceRefusalError,
+  type MarketplaceSourceAction,
+} from '../services/marketplace/source-write-policy.js';
 
 /**
  * Re-export the canonical {@link InstalledPackage} type from this route module
@@ -211,8 +217,8 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  * (typically `/api/marketplace`):
  *
  * - `GET /sources` — list configured marketplace sources
- * - `POST /sources` — add a new source
- * - `DELETE /sources/:name` — remove a source
+ * - `POST /sources` — add a new source (operator-only; agents are refused)
+ * - `DELETE /sources/:name` — remove a source (operator-only; agents are refused)
  * - `POST /sources/:name/refresh` — force refetch of a source's marketplace.json
  * - `GET /installed` — list installed packages across scopes (or one project via `?projectPath`)
  * - `GET /installed/:name` — every installation of a package, one entry per scope
@@ -313,6 +319,35 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   ): Response =>
     res.status(decision.outcome === 'approval_required' ? 202 : 403).json(decision.payload);
 
+  /**
+   * Refuse a package-source write unless the caller is the operator (DOR-502).
+   *
+   * This is NOT the tier gate above and deliberately not shaped like it: there is
+   * no approval a caller could come back with, because there is no capability and
+   * no card. Changing which feeds this install fetches code from is the person's,
+   * the same way `CONFIG_WRITE_POLICY` makes the hosts DorkOS reaches the person's.
+   * The full reasoning, including why the `PATCH /api/config` cookie bar is not
+   * copied here, lives in `services/marketplace/source-write-policy.ts`.
+   *
+   * @param req - The incoming request.
+   * @param res - The response, for `sessionGate`'s resolved user.
+   * @param action - Which write was attempted, for the refusal wording.
+   * @returns The sent `403` response when refused, otherwise `undefined`. Callers
+   *   must `return` a truthy result so the effect below never runs.
+   */
+  const refuseUntrustedSourceWrite = (
+    req: Request,
+    res: Response,
+    action: MarketplaceSourceAction
+  ): Response | undefined => {
+    if (trustedCaller(readCallerAuthority(req, res))) return undefined;
+    return res.status(403).json({
+      error: marketplaceSourceRefusalError(action),
+      code: OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
+      message: describeMarketplaceSourceRefusal(action),
+    });
+  };
+
   // GET /sources -- list configured marketplace sources
   router.get('/sources', async (_req, res) => {
     try {
@@ -324,8 +359,13 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // POST /sources -- add a new marketplace source
+  // POST /sources -- add a new marketplace source (operator-only, DOR-502)
   router.post('/sources', async (req, res) => {
+    // Ahead of validation on purpose: a caller that may not do this at all gets
+    // one answer whatever it sent, rather than a schema it can probe.
+    const refused = refuseUntrustedSourceWrite(req, res, 'add');
+    if (refused) return refused;
+
     const parsed = AddSourceBodySchema.safeParse(req.body);
     if (!parsed.success) {
       return res
@@ -346,8 +386,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // DELETE /sources/:name -- remove a marketplace source
+  // DELETE /sources/:name -- remove a marketplace source (operator-only, DOR-502)
   router.delete('/sources/:name', async (req, res) => {
+    const refused = refuseUntrustedSourceWrite(req, res, 'remove');
+    if (refused) return refused;
+
     try {
       await sourceManager.remove(req.params.name);
       res.status(204).send();

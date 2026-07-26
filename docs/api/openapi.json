@@ -8532,7 +8532,8 @@
         "tags": [
           "Marketplace"
         ],
-        "summary": "Add a marketplace source",
+        "summary": "Add a marketplace source (operator only)",
+        "description": "Only the person running DorkOS may add a package source. A caller presenting an agent identity is refused with 403 and there is no approval that unlocks it.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8601,6 +8602,35 @@
               }
             }
           },
+          "403": {
+            "description": "Caller is not the operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "operator_only_marketplace_source"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
           "409": {
             "description": "Duplicate source name",
             "content": {
@@ -8619,7 +8649,8 @@
         "tags": [
           "Marketplace"
         ],
-        "summary": "Remove a marketplace source",
+        "summary": "Remove a marketplace source (operator only)",
+        "description": "Only the person running DorkOS may remove a package source. A caller presenting an agent identity is refused with 403 and there is no approval that unlocks it.",
         "parameters": [
           {
             "schema": {
@@ -8633,6 +8664,35 @@
         "responses": {
           "204": {
             "description": "Source removed"
+          },
+          "403": {
+            "description": "Caller is not the operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "operator_only_marketplace_source"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
           }
         }
       }
