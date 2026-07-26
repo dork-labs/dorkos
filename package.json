@@ -13,7 +13,7 @@
     "test": "dotenv -- turbo test",
     "typecheck": "dotenv -- turbo typecheck",
     "verify": "pnpm test:scripts && turbo run typecheck lint --affected && turbo run test --affected -- --run",
-    "test:scripts": "bash scripts/test-review-classifier.sh && vitest run --project scripts",
+    "test:scripts": "pnpm typecheck:scripts && bash scripts/test-review-classifier.sh && vitest run --project scripts",
     "start": "dotenv -- pnpm --filter=@dorkos/server run start",
     "lint": "turbo lint",
     "lint:fix": "turbo lint -- --fix",
@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
-    "@types/node": "^24.12.2",
+    "@types/node": "^24",
     "concurrently": "^10.0.3",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
