@@ -432,7 +432,22 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps, identity
 }
 
 /**
- * Returns the Relay tool definitions for registration with the MCP server.
+ * The relay tool definitions: name, description, input schema, and handler
+ * (8 tools, including `relay_notify_user`).
+ *
+ * The single source for all of that on BOTH MCP servers. The external `/mcp`
+ * server projects the other 7 (the subject-facing send/inbox/endpoint tools)
+ * through `registerFromDefinitions` rather than typing them out again, which is
+ * what stops the two surfaces describing them differently (DOR-499).
+ * `relay_notify_user` has no entry in the external config, which is what keeps
+ * it in-session-only. Unguarded, so it needs no separate definitions function.
+ *
+ * Because one description now reaches both servers, WORD CHOICE HERE HAS TO BE
+ * TRUE ON BOTH. Say "caller", not "agent": an in-session caller is always an
+ * agent, but the external `/mcp` surface has no per-session identity and acts as
+ * one server-controlled external principal that may not be an agent at all (see
+ * `resolveSenderIdentity(deps, undefined)` in `core/mcp-server.ts`). The two
+ * files briefly disagreed on exactly that word before they shared a source.
  *
  * @param deps - Tool dependencies
  * @param identity - Server-resolved sender identity. Injected as the publish
@@ -513,7 +528,7 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     tool(
       'relay_register_endpoint',
       'Register a new Relay endpoint to receive messages on a subject. The endpoint belongs to you, ' +
-        'so you are the only agent that can read or unregister it, and it keeps belonging to you ' +
+        'so you are the only caller that can read or unregister it, and it keeps belonging to you ' +
         'across server restarts. Use the relay.inbox.* namespace: relay.agent.*, relay.system.* and ' +
         'relay.human.* are managed by the server and fail with code RESERVED_SUBJECT. A subject that ' +
         'differs from an existing endpoint only by letter case is refused, because the two would ' +
@@ -586,7 +601,7 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
       'relay_unregister_endpoint',
       'Unregister a Relay endpoint you own, deleting its mailbox and every message still in it. Use to ' +
         'clean up dispatch inboxes after relay_send_async completes (when done:true received). ' +
-        "Another agent's endpoint fails with code ENDPOINT_ACCESS_DENIED.",
+        "Another caller's endpoint fails with code ENDPOINT_ACCESS_DENIED.",
       {
         subject: z.string().describe('Subject of the endpoint to unregister. Must be one you own.'),
       },

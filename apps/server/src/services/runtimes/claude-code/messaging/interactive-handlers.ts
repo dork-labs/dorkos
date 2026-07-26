@@ -37,8 +37,32 @@ const READ_ONLY_TOOLS = new Set([
  * server injects the caller's identity and the endpoint tools refuse any inbox
  * the caller does not own, so an `ack` can only ever destroy the caller's own
  * mail. Cross-agent messaging authorization lives in relay/access-rules.json.
+ *
+ * ## Why this is a hand-written list and not derived (DOR-499)
+ *
+ * This is the fourth place DorkOS names a subset of its MCP tools, and the most
+ * consequential: everything here is auto-allowed in `canUseTool` without ever
+ * asking a person. DOR-499 collapsed three OTHER such lists into
+ * `@dorkos/shared/mcp-tool-groups` and deliberately left this one alone, for the
+ * same reason the tokenless read-only carve-out in
+ * `core/external-mcp/tool-security.ts` was left alone.
+ *
+ * It is not the same predicate as any group or tier. A group answers "which toggle
+ * takes this away". A tier answers "does this need approval in general". This list
+ * answers the narrower question above: does this tool carry its own authorization,
+ * so that a card would add friction without adding safety? That is a hand-picked
+ * judgment, not a property of the tier. `relay_register_endpoint` and
+ * `mesh_register` are `act` and are here; plenty of other `act` tools are
+ * deliberately not. Deriving the list from `act` + `observe` would auto-admit every
+ * future `act` tool to a no-prompt path as a side effect of picking a tier, and
+ * that is fail-open on the one axis where it costs something real.
+ *
+ * So it stays hand-written, and the relationship is pinned in the safe direction
+ * instead: `core/__tests__/mcp-tool-gate.test.ts` asserts every name here is a real
+ * tool and that none is `destructive`. That catches a rename going stale and a
+ * dangerous addition, without letting the tier table grant anything.
  */
-const DORKOS_AGENT_TOOLS = new Set([
+export const DORKOS_AGENT_TOOLS = new Set([
   'mcp__dorkos__relay_send',
   'mcp__dorkos__relay_inbox',
   'mcp__dorkos__relay_list_endpoints',

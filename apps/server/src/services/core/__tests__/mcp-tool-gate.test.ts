@@ -84,6 +84,8 @@ import {
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
+import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
+import { DORKOS_AGENT_TOOLS } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
 import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
 import {
   initCapabilityTierGate,
@@ -348,6 +350,51 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       expect(
         DESTRUCTIVE.filter((name) => READ_ONLY_MCP_TOOL_NAMES.has(name)),
         'a destructive tool is in the tokenless read-only carve-out'
+      ).toEqual([]);
+    });
+
+    it('never lets a destructive tool into the always-on session set', () => {
+      // `SESSION_CORE_TOOL_NAMES` is the set `buildAllowedTools` puts in EVERY
+      // session's list regardless of the person's toggles, and that list is handed
+      // to the SDK's `allowedTools` — an approval bypass, not an availability
+      // filter (see `tooling/tool-filter.ts`). So a destructive tool landing in one
+      // of those groups is not a cosmetic miscategorization: it is an irreversible
+      // action that stops asking, for every agent, permanently.
+      //
+      // Pinned by NAME rather than left to the count assertions in
+      // `tool-filter.test.ts`, which catch this only incidentally and say nothing
+      // about why it matters. Review demonstrated the gap: moving `tasks_delete`
+      // from `tasks` to `core` passed `tsc` (the type-level guards compare key
+      // SETS, and the keys do not change) and passed the whole targeted suite
+      // against a stale `dist`, which is why `vitest.config.ts` now aliases this
+      // module to source.
+      expect(
+        DESTRUCTIVE.filter((name) => (SESSION_CORE_TOOL_NAMES as readonly string[]).includes(name)),
+        'a destructive tool is always-on and therefore permanently auto-approved'
+      ).toEqual([]);
+    });
+
+    it('keeps the interactive auto-allow list real and never destructive', () => {
+      // `DORKOS_AGENT_TOOLS` is the fourth hand-written subset of the tool surface
+      // and the one with the least ceremony in front of it: `canUseTool` allows
+      // everything in it outright, with no prompt, in every interactive session.
+      // DOR-499 left it hand-written on purpose (see its TSDoc), so this is the
+      // safe-direction pin that replaces derivation.
+      const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.replace('mcp__dorkos__', ''));
+
+      // A renamed tool leaves a dead entry behind, which silently starts prompting
+      // for something meant to be frictionless. Safe, but nobody would notice.
+      expect(
+        bare.filter((name) => !(name in MCP_TOOL_TIERS)),
+        'these auto-allow entries name no real tool, so they do nothing'
+      ).toEqual([]);
+
+      // The direction that actually costs something.
+      expect(
+        bare.filter(
+          (name) => MCP_TOOL_TIERS[name as keyof typeof MCP_TOOL_TIERS]?.tier === 'destructive'
+        ),
+        'a destructive tool is auto-allowed with no prompt in interactive sessions'
       ).toEqual([]);
     });
 

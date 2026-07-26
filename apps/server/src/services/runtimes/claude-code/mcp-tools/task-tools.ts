@@ -230,7 +230,15 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the Tasks tool definitions for registration with the MCP server. */
+/**
+ * The Tasks tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers — the external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again (DOR-499). Unguarded, so it needs no separate definitions function.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
 export function getTasksTools(deps: McpToolDeps) {
   return [
     tool(
@@ -241,7 +249,7 @@ export function getTasksTools(deps: McpToolDeps) {
     ),
     tool(
       'tasks_create',
-      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it runs.',
+      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it can run.',
       {
         name: z.string().describe('Name for the scheduled job'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),

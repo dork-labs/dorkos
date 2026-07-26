@@ -40,6 +40,30 @@ import { capabilitiesDomain } from '../self-description/capabilities-domain.js';
  * out of this list and into a `readOnlyCarveOut` capability flag as their
  * domains migrate. Mirrors the `readOnlyHint` audit in
  * `specs/mcp-local-auth-posture`.
+ *
+ * ## Why this list is written out rather than derived (DOR-499)
+ *
+ * These 18 names are exactly the `observe`-tier tools that reach the external
+ * server, so deriving them from `MCP_TOOL_TIERS` would produce an identical set
+ * today. That was considered and rejected, because the two lists mean different
+ * things and only one of them is a security boundary:
+ *
+ * - A tier answers "does calling this need a person's approval". `observe` is
+ *   chosen freely, and it is the DEFAULT-ish choice for anything that mostly
+ *   reads.
+ * - This list answers "may this be called with NO CREDENTIAL AT ALL when login
+ *   is off". That is a much stronger claim, and it must be made deliberately,
+ *   one tool at a time.
+ *
+ * Deriving it would convert the module's fail-closed property into a fail-open
+ * one: the next `observe` tool anybody adds would join the tokenless carve-out on
+ * its own, silently, as a side effect of picking a tier. A list that must be
+ * edited by hand is the point here — the cost of one extra line is what buys the
+ * guarantee that nothing reaches the unauthenticated surface by accident.
+ *
+ * The relationship is still pinned, in the safe direction: `mcp-tool-gate.test.ts`
+ * asserts that every name here is `observe` tier and that no `destructive` tool
+ * appears. That catches a mistake without letting the tier table grant anything.
  */
 const LEGACY_READ_ONLY_TOOL_NAMES: readonly string[] = [
   // core

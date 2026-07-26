@@ -13,12 +13,10 @@ interface RegisteredTool {
   handler: (...args: unknown[]) => unknown;
 }
 
-const { registeredTools, mockConnect, stubHandler, stubFactory } = vi.hoisted(() => {
+const { registeredTools, mockConnect } = vi.hoisted(() => {
   const registeredTools: RegisteredTool[] = [];
   const mockConnect = vi.fn();
-  const stubHandler = vi.fn();
-  const stubFactory = vi.fn().mockReturnValue(stubHandler);
-  return { registeredTools, mockConnect, stubHandler, stubFactory };
+  return { registeredTools, mockConnect };
 });
 
 vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
@@ -63,79 +61,20 @@ vi.mock('@modelcontextprotocol/sdk/server/mcp.js', () => ({
   }),
 }));
 
-// ── Mock all tool handler modules to return stubs ───────────────────────────
+// ── Mocks so the real in-session tool modules import cleanly ────────────────
+// The tool definitions (name, description, inputSchema) now come from the
+// real in-session modules under runtimes/claude-code/mcp-tools/ — this file
+// asserts against those real definitions rather than stubs, mirroring
+// surface-parity.test.ts's mock set (DOR-499).
 
-vi.mock('../../runtimes/claude-code/mcp-tools/core-tools.js', () => ({
-  handlePing: stubHandler,
-  handleGetServerInfo: stubHandler,
-  createGetSessionCountHandler: stubFactory,
-  createGetAgentHandler: stubFactory,
+vi.mock('../../../env.js', () => ({
+  env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined },
 }));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/task-tools.js', () => ({
-  createListSchedulesHandler: stubFactory,
-  createCreateScheduleHandler: stubFactory,
-  createUpdateScheduleHandler: stubFactory,
-  createDeleteScheduleHandler: stubFactory,
-  createGetRunHistoryHandler: stubFactory,
-  // Not handlers: the shared argument descriptions for the two operator-only
-  // fields, which both servers import so they cannot drift (DOR-504).
-  // Registration reads them at build time.
-  REFUSED_PERMISSION_MODE_DESCRIPTION: 'Not yours to set.',
-  REFUSED_STATUS_DESCRIPTION: 'Not yours to set.',
+vi.mock('../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD: false }));
+vi.mock('../../../lib/logger.js', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/relay-tools.js', () => ({
-  createRelaySendHandler: stubFactory,
-  createRelayInboxHandler: stubFactory,
-  createRelayListEndpointsHandler: stubFactory,
-  createRelayRegisterEndpointHandler: stubFactory,
-  createRelayQueryHandler: stubFactory,
-  createRelayDispatchHandler: stubFactory,
-  createRelayUnregisterEndpointHandler: stubFactory,
-}));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/adapter-tools.js', () => ({
-  createRelayListAdaptersHandler: stubFactory,
-  createRelayEnableAdapterHandler: stubFactory,
-  createRelayDisableAdapterHandler: stubFactory,
-  createRelayReloadAdaptersHandler: stubFactory,
-}));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/binding-tools.js', () => ({
-  createBindingListHandler: stubFactory,
-  createBindingCreateHandler: stubFactory,
-  createBindingDeleteHandler: stubFactory,
-}));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/trace-tools.js', () => ({
-  createRelayGetTraceHandler: stubFactory,
-  createRelayGetMetricsHandler: stubFactory,
-}));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/agent-tools.js', () => ({
-  createCreateAgentHandler: stubFactory,
-}));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/mesh-tools.js', () => ({
-  createMeshDiscoverHandler: stubFactory,
-  createMeshRegisterHandler: stubFactory,
-  createMeshListHandler: stubFactory,
-  createMeshDenyHandler: stubFactory,
-  createMeshUnregisterHandler: stubFactory,
-  createMeshStatusHandler: stubFactory,
-  createMeshInspectHandler: stubFactory,
-  createMeshQueryTopologyHandler: stubFactory,
-}));
-
-vi.mock('../../runtimes/claude-code/mcp-tools/extension-tools.js', () => ({
-  createListExtensionsHandler: stubFactory,
-  createGetExtensionErrorsHandler: stubFactory,
-  createGetExtensionApiHandler: stubFactory,
-  createCreateExtensionHandler: stubFactory,
-  createReloadExtensionsHandler: stubFactory,
-  createTestExtensionHandler: stubFactory,
-}));
+vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
 
 import { createExternalMcpServer } from '../mcp-server.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -158,8 +97,10 @@ function createFullDeps(): McpToolDeps {
     relayCore: {} as unknown as McpToolDeps['relayCore'],
     adapterManager: {} as unknown as McpToolDeps['adapterManager'],
     bindingStore: {} as unknown as McpToolDeps['bindingStore'],
+    bindingRouter: {} as unknown as McpToolDeps['bindingRouter'],
     traceStore: {} as unknown as McpToolDeps['traceStore'],
     meshCore: {} as unknown as McpToolDeps['meshCore'],
+    extensionManager: {} as unknown as McpToolDeps['extensionManager'],
   };
 }
 
@@ -296,11 +237,17 @@ describe('createExternalMcpServer', () => {
     expect(() => createExternalMcpServer(createFullDeps())).not.toThrow();
   });
 
-  it('passes deps to handler factory functions', () => {
+  it('passes deps to handler factory functions', async () => {
+    // Proven behaviorally rather than via a mocked factory: invoke the real,
+    // registered `get_session_count` handler and confirm it reached all the
+    // way through to the `deps` object passed into createExternalMcpServer
+    // (via `deps.transcriptReader.listSessions`), which only happens if the
+    // handler factory actually received `deps`.
     const deps = createMinimalDeps();
     createExternalMcpServer(deps);
-    // Factory functions (e.g., createGetSessionCountHandler) should receive deps
-    expect(stubFactory).toHaveBeenCalledWith(deps);
+    const tool = findTool('get_session_count');
+    await tool.handler({ cwd: '/tmp/test' }, {});
+    expect(deps.transcriptReader.listSessions).toHaveBeenCalledWith('/tmp/test');
   });
 
   it('groups tools by domain prefix', () => {
