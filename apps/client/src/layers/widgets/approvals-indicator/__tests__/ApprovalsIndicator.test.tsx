@@ -13,7 +13,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectionState } from '@dorkos/shared/types';
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { PendingApproval, StandingPermission } from '@dorkos/shared/approval-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
 /** Global stream state the widget reads; mutable so a test can drop the link. */
@@ -49,6 +49,48 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,
   };
+}
+
+/** Build a live standing permission. */
+function buildPermission(overrides: Partial<StandingPermission> = {}): StandingPermission {
+  return {
+    grantId: '01JZ00000000000000000000G1',
+    agentPath: '/Users/dev/agents/dorkbot',
+    agentLabel: 'dorkbot',
+    capabilityId: 'marketplace.uninstall',
+    capabilityTitle: 'Uninstall a marketplace package',
+    expiresAt: new Date(Date.now() + 120 * 60_000).toISOString(),
+    ...overrides,
+  };
+}
+
+/**
+ * A config with both standing-permission settings on.
+ *
+ * The list is only read when they are, so a test about live permissions that
+ * forgot this would assert against an empty list and pass for the wrong reason.
+ */
+function configWithStandingGrants() {
+  return vi.fn().mockResolvedValue({
+    version: '1.0.0',
+    port: 4242,
+    uptime: 0,
+    workingDirectory: '/test',
+    nodeVersion: 'v20.0.0',
+    platform: 'linux-x64',
+    runtimes: ['claude-code'],
+    claudeCliPath: null,
+    tunnel: {
+      enabled: false,
+      connected: false,
+      url: null,
+      authEnabled: false,
+      tokenConfigured: false,
+    },
+    tasks: { enabled: true },
+    auth: { enabled: true },
+    approvals: { standingGrants: true, trustWindowMinutes: 480 },
+  });
 }
 
 /** Render the marker over a mock transport. */
@@ -240,6 +282,71 @@ describe('ApprovalsIndicator', () => {
     // what this marker means, which is only ever "an agent is blocked".
     mockConnectionState = 'reconnecting';
     renderIndicator({ listPendingApprovals: vi.fn().mockRejectedValue(new Error('offline')) });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument()
+    );
+  });
+
+  it('shows a quiet marker, not the amber one, when only standing permissions are live', async () => {
+    // Nobody is blocked and nothing needs answering. The amber pill means exactly
+    // one thing — an agent is waiting on you — and spending it on news that is not
+    // urgent is how a marker stops being read.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      getConfig: configWithStandingGrants(),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+    });
+
+    const marker = await screen.findByTestId('approvals-indicator');
+    expect(marker).toHaveAccessibleName('1 standing permission is live. Open to see it or end it.');
+    expect(marker.className).not.toContain('bg-status-warning-bg');
+  });
+
+  it('opens onto the permissions, with the button that ends one', async () => {
+    // A permission a person cannot find is a dark pattern, and this is the surface
+    // they are most likely looking at when they wonder why nothing asked them.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      getConfig: configWithStandingGrants(),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+    });
+
+    await userEvent.click(await screen.findByTestId('approvals-indicator'));
+
+    expect(await screen.findByText('Uninstall a marketplace package')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Stop trusting dorkbot/ })).toBeInTheDocument();
+  });
+
+  it('reports the pending queue when both are true, and puts the permissions under the cards', async () => {
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      getConfig: configWithStandingGrants(),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+    });
+
+    const marker = await screen.findByTestId('approvals-indicator');
+    expect(marker).toHaveAccessibleName('1 request needs your approval. Open to answer it.');
+
+    await userEvent.click(marker);
+    await screen.findByRole('button', { name: 'Allow' });
+    const card = document.querySelector('[data-slot="approval-card"]');
+    const permission = document.querySelector('[data-slot="standing-permission"]');
+    expect(card).not.toBeNull();
+    expect(permission).not.toBeNull();
+    // Something waiting on a person outranks something already decided.
+    expect(
+      (card as Node).compareDocumentPosition(permission as Node) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('stays silent about permissions the settings do not allow to exist', async () => {
+    // Standing permissions off means there is nothing to find, and the server
+    // would refuse the read anyway. A marker here would be pure noise.
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listStandingPermissions: vi.fn().mockResolvedValue({ grants: [buildPermission()] }),
+    });
 
     await waitFor(() =>
       expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument()

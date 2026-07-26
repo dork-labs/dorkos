@@ -4,7 +4,10 @@ import { Badge, Button } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { formatTimeLeft } from '../lib/format-time-left';
+import { formatTrustWindow } from '../lib/format-trust-window';
+import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
+import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
 import { RequestingAgent } from './RequestingAgent';
 
 const staggerItem = {
@@ -51,6 +54,15 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
   const grant = useGrantApproval();
   const deny = useDenyApproval();
   const deciding = grant.isPending || deny.isPending;
+  const { canGrant, windowMinutes } = useStandingGrantPolicy();
+
+  // Both conditions are needed and neither implies the other. `canGrant` is a
+  // setting (and login being on); `hasAgentPath` is a property of THIS request.
+  // Offering the button on a request DorkOS cannot attribute would draw a control
+  // the server refuses — permissions key on the agent path, and an anonymous
+  // request has none to key on.
+  const offerStanding = canGrant && approval.hasAgentPath;
+  const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
 
   return (
     // The container is declared HERE, on the wrapper, and queried on the card
@@ -100,24 +112,58 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            disabled={deciding}
-            onClick={() => deny.mutate({ approvalId: approval.approvalId })}
-          >
-            Don&apos;t allow
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            disabled={deciding}
-            onClick={() => grant.mutate(approval.approvalId)}
-          >
-            Allow
-          </Button>
+        {/* A column so the standing answer can sit UNDER the two one-time ones in
+            both layouts. `items-end` only where the card is horizontal — stacked,
+            the buttons stretch to the card's width like everything above them. */}
+        <div className="flex min-w-0 shrink-0 flex-col gap-1.5 @[34rem]/approval:items-end">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2.5 text-xs"
+              disabled={deciding}
+              onClick={() => deny.mutate({ approvalId: approval.approvalId })}
+            >
+              Don&apos;t allow
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 px-2.5 text-xs"
+              disabled={deciding}
+              onClick={() => grant.mutate({ approvalId: approval.approvalId })}
+            >
+              Allow
+            </Button>
+          </div>
+
+          {/* The third answer. Quieter than Allow (ghost, no fill) because a
+              bounded one-time yes should stay the obvious default — but it names
+              its whole scope on the button itself, so nobody learns what they
+              granted afterwards. "Don't allow" stays first and unstyled: neither
+              answer is dressed up as the safe one. */}
+          {offerStanding && (
+            <div className="flex min-w-0 flex-col gap-0.5 @[34rem]/approval:items-end">
+              {/* `whitespace-normal` and `h-auto` override the Button base, which
+                  is nowrap and fixed-height. The label is a whole sentence and the
+                  card renders as narrow as ~240px in a phone sheet; a nowrap button
+                  there sets a minimum width the card cannot meet, and the card
+                  scrolls sideways. Verified in a real engine, not reasoned: jsdom
+                  has no layout and reported the broken version as fine. */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground h-auto min-h-7 px-2.5 py-1 text-xs leading-snug font-normal whitespace-normal @[34rem]/approval:text-right"
+                disabled={deciding}
+                onClick={() => grant.mutate({ approvalId: approval.approvalId, standing: true })}
+              >
+                Allow, and stop asking about this for {formatTrustWindow(windowMinutes)}
+              </Button>
+              <p className="text-muted-foreground max-w-xs text-[11px] @[34rem]/approval:text-right">
+                Covers {agentLabel} doing &ldquo;{approval.capabilityTitle}&rdquo;, and nothing
+                else. End it any time in Settings, under Security.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

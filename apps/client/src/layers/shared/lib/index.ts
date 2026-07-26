@@ -23,6 +23,7 @@ export {
   localDeviceNoun,
   type PlatformAdapter,
 } from './platform';
+export { isBypassPermissionMode } from './permission-mode';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
 export { HttpTransport, streamManager } from './transport';

@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalGrantService } from '../approval-grant-service.js';
+import { eventFanOut } from '../../event-fan-out.js';
 
 const AGENT = '/Users/dev/agents/dorkbot';
 const OTHER_AGENT = '/Users/dev/agents/scout';
@@ -21,13 +22,16 @@ const WHO = { grantedBy: 'user_owner', posture: 'signed-in-operator' as const };
 
 describe('ApprovalGrantService', () => {
   let grants: ApprovalGrantService;
+  let broadcast: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     grants = new ApprovalGrantService(createTestDb());
+    broadcast = vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('covers exactly the agent and capability it was created for', () => {
@@ -153,6 +157,75 @@ describe('ApprovalGrantService', () => {
     expect(grant.posture).toBe('local-trust');
     expect(grant.grantedBy).toBe('Local operator');
     expect(grant.sourceApprovalId).toBe('01JAPPROVAL');
+  });
+
+  describe('announcing itself', () => {
+    // The cockpit lists live permissions in two places. Every change has to reach
+    // both, including the two that happen nowhere near a route: the master switch
+    // going off and Require login going off both call revokeAll directly.
+    it('announces a permission being opened', () => {
+      const row = grants.create({
+        agentPath: AGENT,
+        capabilityId: CAPABILITY,
+        windowMinutes: 480,
+        ...WHO,
+      });
+
+      expect(broadcast).toHaveBeenCalledWith(
+        'approval_grant_changed',
+        expect.objectContaining({ change: 'created', grantId: row.id })
+      );
+    });
+
+    it('announces a permission being ended', () => {
+      const row = grants.create({
+        agentPath: AGENT,
+        capabilityId: CAPABILITY,
+        windowMinutes: 480,
+        ...WHO,
+      });
+      broadcast.mockClear();
+
+      grants.revoke(row.id);
+
+      expect(broadcast).toHaveBeenCalledWith(
+        'approval_grant_changed',
+        expect.objectContaining({ change: 'revoked', grantId: row.id })
+      );
+    });
+
+    it('says nothing when a second click ends nothing', () => {
+      const row = grants.create({
+        agentPath: AGENT,
+        capabilityId: CAPABILITY,
+        windowMinutes: 480,
+        ...WHO,
+      });
+      grants.revoke(row.id);
+      broadcast.mockClear();
+
+      grants.revoke(row.id);
+
+      expect(broadcast).not.toHaveBeenCalled();
+    });
+
+    it('announces the sweep that ends every permission at once', () => {
+      grants.create({ agentPath: AGENT, capabilityId: CAPABILITY, windowMinutes: 480, ...WHO });
+      grants.create({
+        agentPath: OTHER_AGENT,
+        capabilityId: CAPABILITY,
+        windowMinutes: 480,
+        ...WHO,
+      });
+      broadcast.mockClear();
+
+      grants.revokeAll();
+
+      expect(broadcast).toHaveBeenCalledWith(
+        'approval_grant_changed',
+        expect.objectContaining({ change: 'ended-all' })
+      );
+    });
   });
 });
 

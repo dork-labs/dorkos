@@ -1,4 +1,5 @@
-import { isBypassPermissionMode, useSessionPermissionMode } from '@/layers/entities/session';
+import { useSessionPermissionMode } from '@/layers/entities/session';
+import { isBypassPermissionMode } from '@/layers/shared/lib';
 import { useSafePathname } from '@/layers/shared/model';
 
 /**

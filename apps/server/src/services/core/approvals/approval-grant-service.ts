@@ -31,6 +31,15 @@
  * again. Re-granting is a fresh human decision, which is why it may reset the
  * clock and why using a permission may not.
  *
+ * ## Every change is broadcast from HERE, not from the callers
+ *
+ * Three different things end permissions — the Stop-trusting button, turning the
+ * master switch off, and turning login off — and two of them run nowhere near a
+ * route. Announcing from the store means a cockpit showing a permission that no
+ * longer exists is impossible to arrange by adding a fourth caller, which is the
+ * property a list of trust has to have. Same placement, and the same reason, as
+ * `ApprovalService`'s own broadcasts.
+ *
  * ## Synchronous by design
  *
  * Same contract as `ApprovalService`: better-sqlite3 is synchronous, and a
@@ -42,6 +51,7 @@
 import { ulid } from 'ulidx';
 import { and, asc, eq, gt, isNull, lt, lte, approvalGrants, type Db } from '@dorkos/db';
 
+import { broadcastStandingPermissionsChanged } from './approval-events.js';
 import { readStandingGrantVoidFloor } from './standing-grant-settings.js';
 
 /** A stored standing-permission row, as Drizzle infers it. */
@@ -114,6 +124,7 @@ export class ApprovalGrantService {
       revokedAt: null,
     };
     this.db.insert(approvalGrants).values(row).run();
+    broadcastStandingPermissionsChanged('created', row.id);
     return row;
   }
 
@@ -182,6 +193,10 @@ export class ApprovalGrantService {
       .set({ revokedAt: new Date().toISOString() })
       .where(and(eq(approvalGrants.id, id), isNull(approvalGrants.revokedAt)))
       .run();
+    // Only when this call is the one that ended it. A second click changed
+    // nothing, and announcing it would tell every cockpit to re-read for news
+    // that is not there.
+    if (result.changes === 1) broadcastStandingPermissionsChanged('revoked', id);
     return result.changes === 1;
   }
 
@@ -200,6 +215,7 @@ export class ApprovalGrantService {
       .set({ revokedAt: new Date().toISOString() })
       .where(isNull(approvalGrants.revokedAt))
       .run();
+    if (result.changes > 0) broadcastStandingPermissionsChanged('ended-all');
     return result.changes;
   }
 

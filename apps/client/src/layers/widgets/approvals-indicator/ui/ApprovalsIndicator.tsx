@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { TriangleAlert } from 'lucide-react';
+import { ShieldCheck, TriangleAlert } from 'lucide-react';
 import {
   ResponsivePopover,
   ResponsivePopoverTrigger,
@@ -8,10 +8,13 @@ import {
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
 import { useEventStream } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
 import {
   ApprovalList,
   ApprovalsUnavailable,
+  StandingPermissionList,
   usePendingApprovals,
+  useStandingPermissions,
 } from '@/layers/features/approvals';
 
 /**
@@ -38,6 +41,20 @@ function waitingLabel(count: number): string {
 function waitingSummary(count: number): string {
   const subject = count === 1 ? '1 request is' : `${count} requests are`;
   return `${subject} waiting for your answer. Nothing runs until you decide.`;
+}
+
+/**
+ * The pill's accessible name when nothing is waiting but trust is live.
+ *
+ * A different sentence, not a variation on the one above: nobody is blocked and
+ * nothing needs answering. It reports a state a person chose and can end.
+ *
+ * @param count - How many standing permissions are live.
+ */
+function trustedLabel(count: number): string {
+  return count === 1
+    ? '1 standing permission is live. Open to see it or end it.'
+    : `${count} standing permissions are live. Open to see them or end them.`;
 }
 
 /**
@@ -72,26 +89,45 @@ function waitingSummary(count: number): string {
  * status line's connection item is the signal for an outage and a second amber
  * marker would only dilute what this one means.
  *
+ * ## It also carries standing permissions, quietly
+ *
+ * A permission a person cannot find is a dark pattern, so live trust shows here
+ * too — but as a neutral marker, never the amber one. The amber pill means exactly
+ * one thing and keeps meaning it: an agent is blocked on you. A standing
+ * permission is the opposite state, something you decided so that nothing would be
+ * blocked, and painting the two the same colour would spend the alarm on news that
+ * is not urgent. When both are true the pill reports the pending queue, because
+ * that is the half with a clock on it, and the permissions sit under the cards in
+ * the panel.
+ *
  * Only the standalone shell (`AppShell`) mounts this. The Obsidian embed renders
  * `App` instead and never mounts it, which is the actual reason the embed's
  * stubbed-out approvals cannot produce a permanently empty pill there.
  */
 export function ApprovalsIndicator() {
   const { approvals, isError, retry } = usePendingApprovals();
+  const { permissions } = useStandingPermissions();
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
 
   const count = approvals.length;
+  const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it is
   // the same outage the connection item already reports. Staying quiet keeps one
   // amber marker in the header meaning exactly one thing: an agent is blocked.
   const linkDown = connectionState !== 'connected';
   const unreadable = count === 0 && isError && !linkDown;
-  const quiet = count === 0 && !unreadable;
+  const quiet = count === 0 && trustedCount === 0 && !unreadable;
+  // Trust that is live is worth showing and is NOT worth an alarm: nobody is
+  // blocked and nothing is waiting. It takes the amber pill only when something
+  // actually needs answering, and reads as a quiet neutral marker otherwise.
+  const trustedOnly = count === 0 && !unreadable && trustedCount > 0;
 
   const label = unreadable
     ? 'DorkOS could not check for approvals. Open for details.'
-    : waitingLabel(count);
+    : trustedOnly
+      ? trustedLabel(trustedCount)
+      : waitingLabel(count);
 
   return (
     <>
@@ -132,11 +168,27 @@ export function ApprovalsIndicator() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-              className="bg-status-warning-bg text-status-warning-fg border-status-warning-border/60 hover:border-status-warning-border hover:bg-status-warning-border/25 active:bg-status-warning-border/40 focus-visible:ring-ring/60 flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2"
+              className={cn(
+                'focus-visible:ring-ring/60 flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2',
+                trustedOnly
+                  ? 'text-muted-foreground border-border/60 hover:border-border hover:bg-muted active:bg-muted/70'
+                  : 'bg-status-warning-bg text-status-warning-fg border-status-warning-border/60 hover:border-status-warning-border hover:bg-status-warning-border/25 active:bg-status-warning-border/40'
+              )}
             >
-              <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+              {trustedOnly ? (
+                <ShieldCheck aria-hidden className="size-3.5 shrink-0" />
+              ) : (
+                <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+              )}
               {unreadable ? (
                 <span className="hidden sm:inline">can&apos;t check approvals</span>
+              ) : trustedOnly ? (
+                <>
+                  <span className="tabular-nums">
+                    {trustedCount > DISPLAY_CAP ? `${DISPLAY_CAP}+` : trustedCount}
+                  </span>
+                  <span className="hidden sm:inline">trusted</span>
+                </>
               ) : (
                 <>
                   <span className="tabular-nums">
@@ -158,21 +210,41 @@ export function ApprovalsIndicator() {
             {/* Mobile sheet header. Returns null on desktop, where the heading
                 below takes over — the two are exact complements at the same
                 breakpoint (768px) that decides sheet versus popover. */}
-            <ResponsivePopoverTitle>Waiting on you</ResponsivePopoverTitle>
+            <ResponsivePopoverTitle>
+              {trustedOnly ? 'Standing permissions' : 'Waiting on you'}
+            </ResponsivePopoverTitle>
             <div className="flex min-w-0 flex-col gap-3">
-              <div>
-                <h2 className="text-status-warning-fg hidden text-xs font-medium tracking-widest uppercase md:block">
-                  Waiting On You
-                </h2>
-                {!unreadable && (
-                  <p className="text-muted-foreground text-xs md:mt-1">{waitingSummary(count)}</p>
-                )}
-              </div>
+              {!trustedOnly && (
+                <div>
+                  <h2 className="text-status-warning-fg hidden text-xs font-medium tracking-widest uppercase md:block">
+                    Waiting On You
+                  </h2>
+                  {!unreadable && (
+                    <p className="text-muted-foreground text-xs md:mt-1">{waitingSummary(count)}</p>
+                  )}
+                </div>
+              )}
               {/* Shown alongside the cards when a refresh failed but earlier
                   results are still on screen — the list may be out of date, and
                   saying so beats a stale count nobody thinks to question. */}
               {isError && <ApprovalsUnavailable onRetry={retry} />}
               {count > 0 && <ApprovalList approvals={approvals} />}
+
+              {/* Under any pending cards, never above them: something waiting on a
+                  person outranks something already decided. A permission a person
+                  cannot find is a dark pattern, and this is the surface they are
+                  most likely to be looking at when they wonder why nothing asked. */}
+              {trustedCount > 0 && (
+                <div>
+                  <h2 className="text-muted-foreground hidden text-xs font-medium tracking-widest uppercase md:block">
+                    Standing Permissions
+                  </h2>
+                  <p className="text-muted-foreground text-xs md:mt-1">
+                    These run without asking until the time runs out.
+                  </p>
+                  <StandingPermissionList permissions={permissions} className="mt-2" />
+                </div>
+              )}
             </div>
           </ResponsivePopoverContent>
         </ResponsivePopover>

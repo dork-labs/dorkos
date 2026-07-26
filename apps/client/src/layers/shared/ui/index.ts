@@ -193,6 +193,8 @@ export {
 export type { SelectTriggerProps, SelectItemProps } from './select';
 export { Separator } from './separator';
 export { Slider } from './slider';
+export { PermissionModeScopeNote } from './permission-mode-scope-note';
+export type { PermissionModeScopeNoteProps } from './permission-mode-scope-note';
 export { Switch } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
 export {

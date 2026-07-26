@@ -30,11 +30,8 @@ import { useCallback } from 'react';
 import type { ConnectionState, PermissionMode, UsageStatus } from '@dorkos/shared/types';
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
-import {
-  CONTEXT_ACTION_PERCENT,
-  CONTEXT_PROMOTE_PERCENT,
-  isBypassPermissionMode,
-} from '@/layers/entities/session';
+import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
+import { isBypassPermissionMode } from '@/layers/shared/lib';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
 
 /** Union of every status line item key. */

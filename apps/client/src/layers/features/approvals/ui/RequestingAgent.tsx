@@ -1,5 +1,6 @@
 import { agentAvatarVariants } from '@/layers/entities/agent';
 import { cn, hashToHslColor } from '@/layers/shared/lib';
+import { agentLabelFrom } from '../lib/agent-label';
 
 /** Glyph for a name with no letter or digit to draw an initial from. */
 const FALLBACK_INITIAL = '?';
@@ -37,7 +38,7 @@ export function RequestingAgent({ requestedBy, className }: RequestingAgentProps
     );
   }
 
-  const label = requestedBy.split('/').filter(Boolean).pop() ?? requestedBy;
+  const label = agentLabelFrom(requestedBy);
 
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>

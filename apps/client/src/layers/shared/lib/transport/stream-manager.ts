@@ -159,6 +159,7 @@ export const GENERIC_EVENTS = [
   'mesh_liveness_changed',
   'approval_pending',
   'approval_resolved',
+  'approval_grant_changed',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */
