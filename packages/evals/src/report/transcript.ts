@@ -29,8 +29,18 @@ export type TranscriptRecord =
 export interface TranscriptInput {
   /** The run id (transcript directory name). */
   runId: string;
-  /** The eval's stable id (transcript file name). */
+  /** The eval's stable id (and, by default, the transcript file name). */
   evalId: string;
+  /**
+   * Override the file name (not the path) this transcript is written to.
+   * Defaults to `<evalId>.jsonl`.
+   *
+   * The retry policy writes a second attempt under its own name so it cannot
+   * overwrite the first attempt's frames. `evalId` still names the case, so a
+   * reader parsing the `meta` record sees which case a retry transcript belongs
+   * to rather than a mangled id.
+   */
+  fileName?: string;
   /** The eval's one-line title. */
   title: string;
   /** ISO timestamp the eval started. */
@@ -81,7 +91,9 @@ export function toRecords(input: TranscriptInput): TranscriptRecord[] {
  */
 export async function writeTranscript(runDir: string, input: TranscriptInput): Promise<string> {
   await mkdir(runDir, { recursive: true });
-  const file = transcriptPath(runDir, input.evalId);
+  const file = input.fileName
+    ? path.join(runDir, input.fileName)
+    : transcriptPath(runDir, input.evalId);
   const lines = toRecords(input).map((r) => JSON.stringify(r));
   await writeFile(file, lines.join('\n') + '\n', 'utf8');
   return file;

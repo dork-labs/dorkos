@@ -87,20 +87,40 @@ export function frameCostUsd(frame: SseFrame): number | null {
 }
 
 /**
- * The cumulative cost an eval's collected frames report: the maximum cost any
- * status frame carried (the values are cumulative, so max === latest total).
- * Zero when no frame reported a cost (e.g. `test-mode`).
+ * The cost signal an eval's collected frames carry: the maximum cost any status
+ * frame reported (the values are cumulative, so max === latest total), or `null`
+ * when NO frame reported a cost at all.
+ *
+ * The `null` is the whole point of this function existing beside
+ * {@link evalCostUsd}. "The runtime said this turn cost nothing" and "nothing
+ * ever told us what this turn cost" are different facts, and collapsing them
+ * into `0` is how two of ten measured runs burned 92 seconds of real tokens each
+ * and were recorded as free. The runner turns a `null` here into
+ * `costUnmetered` on the result, and the report prints it as unknown rather than
+ * as zero.
+ *
+ * @param frames - The frames collected while driving one eval.
+ * @returns The cumulative USD cost, or `null` when no frame carried one.
+ */
+export function evalCostSignal(frames: SseFrame[]): number | null {
+  let max: number | null = null;
+  for (const frame of frames) {
+    const cost = frameCostUsd(frame);
+    if (cost !== null && (max === null || cost > max)) max = cost;
+  }
+  return max;
+}
+
+/**
+ * The cumulative cost an eval's collected frames report, floored at zero.
+ * Zero when no frame reported a cost (e.g. `test-mode`) — use
+ * {@link evalCostSignal} when you need to tell "free" from "unknown".
  *
  * @param frames - The frames collected while driving one eval.
  * @returns The eval's cumulative USD cost.
  */
 export function evalCostUsd(frames: SseFrame[]): number {
-  let max = 0;
-  for (const frame of frames) {
-    const cost = frameCostUsd(frame);
-    if (cost !== null && cost > max) max = cost;
-  }
-  return max;
+  return evalCostSignal(frames) ?? 0;
 }
 
 /**

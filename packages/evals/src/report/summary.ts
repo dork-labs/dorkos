@@ -17,6 +17,10 @@
  *    every case is quarantined exits 0 with zero gating coverage, which is
  *    indistinguishable from a real pass unless the count is on screen — so
  *    {@link evaluateRunGate} treats gating on ZERO cases as a failure.
+ * 3. an eval whose spend the harness could not measure renders as `unmetered`,
+ *    never as `$0.0000`. Two measured runs burned about 92 seconds of real
+ *    tokens each and printed as free, which made them the cheapest-looking rows
+ *    in a table where they were the most expensive.
  *
  * @module evals/report/summary
  */
@@ -25,7 +29,6 @@ import path from 'node:path';
 import {
   RunSummarySchema,
   describeCredentialSource,
-  isSubscriptionBilled,
   type EvalResult,
   type RunSummary,
 } from '../types.js';
@@ -56,6 +59,15 @@ export async function writeResults(runDir: string, summary: RunSummary): Promise
  */
 function statusLabel(result: EvalResult): string {
   return result.quarantined ? `quarantined:${result.status}` : result.status;
+}
+
+/**
+ * The cost cell for one eval. An eval whose spend never reported renders as
+ * `unmetered`: its `costUsd` is 0 only because nothing measured it, and printing
+ * `$0.0000` there states the opposite of what is known.
+ */
+function costLabel(result: EvalResult): string {
+  return result.costUnmetered ? 'unmetered' : `$${result.costUsd.toFixed(4)}`;
 }
 
 /** Pad a cell to a fixed width for the console table. */
@@ -97,7 +109,7 @@ export function formatSummaryTable(summary: RunSummary): string {
     id: r.id,
     tier: r.runtimeTier,
     isolation: r.isolation ?? 'not-run',
-    cost: `$${r.costUsd.toFixed(4)}`,
+    cost: costLabel(r),
     duration: `${Math.round(r.durationMs)}ms`,
   }));
 
@@ -152,25 +164,35 @@ export function formatSummaryTable(summary: RunSummary): string {
   }
   const costLine = costSignalLine(summary);
   if (costLine) lines.push(costLine);
+  const unmetered = unmeteredSpendLine(summary);
+  if (unmetered) lines.push(unmetered);
   return lines.join('\n');
 }
 
 /**
- * Say something about a CREDENTIALED run that reported no cost at all, scaled to
- * WHICH credential it used. Getting this wrong in either direction is a real
- * failure: a warning that always fires teaches people to ignore it, and a warning
- * that never fires hides a broken cost signal.
+ * Say something about a CREDENTIALED run that reported no cost at all, and say
+ * WHICH of the two reasons it was — because the harness now knows.
  *
- * - On an **API key**, a real turn always reports a cumulative cost, so
- *   `$0.0000` means either no turn ran or the cost signal never arrived. Both
- *   mean the spend cap was never exercised, which on screen is indistinguishable
- *   from spending unmetered. That is a WARNING.
- * - On **subscription auth** (a `claude setup-token` token, or the machine's own
- *   Claude sign-in), `$0.0000` is the expected reading: those turns are paid for
- *   by the subscription and report no per-turn cost. Warning there would be a
- *   false alarm on the ordinary local path. It is still worth saying out loud
- *   that the cap did not gate anything, so this is a NOTE.
- * - `test-mode` is free by design and says nothing.
+ * This used to be scaled to the credential instead, on the belief that
+ * subscription turns report no per-turn cost and that `$0.0000` on a local run
+ * was therefore expected. That belief is false in both directions. The SDK
+ * computes `total_cost_usd` from token counts with no auth-mode branch, and ten
+ * measured credentialed runs on a local Claude sign-in reported $0.0380 to
+ * $0.1220 per case. So the reassuring NOTE was firing on exactly the path where
+ * a broken cost signal is most likely to be seen and least likely to be
+ * questioned. (On subscription auth the figure is a list-price ESTIMATE of what
+ * the tokens would cost through the API, not money billed; the subscription is
+ * spent as quota. It is still the only spend number the cap can enforce on.)
+ *
+ * What replaces it is the distinction the run itself carries:
+ *
+ * - every zero-cost case is `costUnmetered` ⇒ no turn ever reached the frame
+ *   that carries a total. Not a mystery and not a broken signal: those turns
+ *   died first. The cap still gated nothing.
+ * - at least one case completed a turn and STILL reported nothing ⇒ the cost
+ *   signal is missing. That is the symptom worth a warning.
+ *
+ * `test-mode` is free by design and says nothing.
  *
  * @param summary - The run summary.
  * @returns The line to print, or undefined when there is nothing to say.
@@ -179,18 +201,47 @@ function costSignalLine(summary: RunSummary): string | undefined {
   if (summary.tier === 'test-mode') return undefined;
   if (summary.totalCostUsd > 0) return undefined;
 
-  if (summary.credentialSource && isSubscriptionBilled(summary.credentialSource)) {
+  const everyZeroCostCaseIsUnmetered = summary.results.every(
+    (r) => r.costUsd > 0 || r.costUnmetered
+  );
+  if (summary.results.length > 0 && everyZeroCostCaseIsUnmetered) {
     return (
-      'NOTE: this run reported $0.0000 because subscription turns do not report a per-turn ' +
-      'cost. That is expected here, but it does mean the spend cap never gated anything, so ' +
-      'these results are not evidence about spend.'
+      `WARNING: this ${summary.tier} run reported $0.0000 because no turn survived long enough ` +
+      'to report a cost, not because nothing was spent. Every case here is unmetered. The spend ' +
+      'cap gated nothing and these results are not evidence about spend.'
     );
   }
 
   return (
-    `WARNING: this ${summary.tier} run reported $0.0000 across every case, and it was not on ` +
-    'subscription auth. A real turn reports cost, so either no turn ran or the cost signal is ' +
-    'missing. The spend cap was not exercised, and these results are not evidence about spend.'
+    `WARNING: this ${summary.tier} run reported $0.0000 across every case. A completed turn ` +
+    'reports a cumulative cost, so either no turn ran or the cost signal is missing. The spend ' +
+    'cap was not exercised, and these results are not evidence about spend.'
+  );
+}
+
+/**
+ * Say that the printed total is a FLOOR when some of the run's evals spent
+ * tokens nobody measured.
+ *
+ * Scoped to the mixed case — a run that reported some real cost AND has
+ * unmetered evals — on purpose. That is the reading that lies: a total sits at
+ * the bottom of the table looking like the run's spend, while the two priciest
+ * turns contributed nothing to it. When the total is $0.0000 instead,
+ * {@link costSignalLine} has already said the results are not evidence about
+ * spend, and repeating it here would be the second warning that teaches people
+ * to skim past the first.
+ *
+ * @param summary - The run summary.
+ * @returns The line to print, or undefined when there is nothing to say.
+ */
+function unmeteredSpendLine(summary: RunSummary): string | undefined {
+  const unmetered = summary.results.filter((r) => r.costUnmetered).length;
+  if (unmetered === 0 || summary.totalCostUsd <= 0) return undefined;
+  return (
+    `SPEND: ${unmetered} of ${summary.results.length} case(s) drove a real turn that never ` +
+    `reported a cost, so $${summary.totalCostUsd.toFixed(4)} is a floor, not a total. The ` +
+    'budget cap cannot see what those turns spent — a turn killed by the timeout guard is ' +
+    'usually the most expensive one in the run.'
   );
 }
 

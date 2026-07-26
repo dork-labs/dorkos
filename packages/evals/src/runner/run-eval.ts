@@ -39,7 +39,8 @@ import {
 } from './harness-server.js';
 import type { IsolationLauncher } from './isolation/index.js';
 import { driveConversation, driveWidgetAction, DriveError, type TurnOutcome } from './drive.js';
-import { BudgetTracker, evalCostUsd } from './budget.js';
+import { BudgetTracker, evalCostSignal, evalCostUsd } from './budget.js';
+import { TURN_TIMEOUT_ERROR } from './retry.js';
 import {
   resolveModelCredential,
   noCredentialMessage,
@@ -75,6 +76,16 @@ export interface RunEvalOptions {
    * tests). `test-mode` ignores it.
    */
   credential?: ModelCredential;
+  /**
+   * The transcript file name (without a directory) this attempt writes into.
+   * Defaults to `<eval id>.jsonl`.
+   *
+   * The retry policy (`runner/retry.ts`) sets it so a second attempt cannot
+   * overwrite the first one's frames — the transcript of the attempt that got
+   * classified as infrastructure is the only evidence FOR that classification,
+   * and a reader who cannot open it has to take it on trust.
+   */
+  transcriptName?: string;
 }
 
 /** Normalize an eval case's prompt into an ordered list (empty ⇒ no drive). */
@@ -92,6 +103,7 @@ function baseResult(evalCase: EvalCase, tier: RuntimeTier): EvalResult {
     runtimeTier: tier,
     costClass: evalCase.costClass,
     costUsd: 0,
+    costUnmetered: false,
     durationMs: 0,
     oracleResults: [],
     quarantined: evalCase.quarantined ?? false,
@@ -194,7 +206,7 @@ function bootServerForTier(
 function applyNonDoneOutcome(result: EvalResult, outcome: TurnOutcome): boolean {
   if (outcome === 'timeout') {
     result.status = 'error';
-    result.error = 'Turn timed out before reaching a terminal frame.';
+    result.error = TURN_TIMEOUT_ERROR;
     return true;
   }
   if (outcome === 'aborted') {
@@ -253,6 +265,9 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   const clientId = randomUUID();
   let failed = false;
   let approvalDriver: ApprovalDriver | undefined;
+  // True once a trigger has been POSTed to a real runtime — from that instant
+  // the eval may have spent money, whether or not it ever reports a cost.
+  let turnAttempted = false;
 
   // Ctrl-C mid-run must not leave a container running or a sandbox on disk. The
   // handler disposes UNCONDITIONALLY (an interrupt is not a failure to debug).
@@ -299,6 +314,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     const onFrames = driver ? (fs: SseFrame[], id: string) => driver.observe(fs, id) : undefined;
 
     if (turns.length > 0) {
+      turnAttempted = true;
       const drive = await driveConversation({
         baseUrl: server.baseUrl,
         sessionId,
@@ -317,6 +333,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // A widget-round-trip case POSTs its action AFTER the prompt(s) established
     // the session — a fresh turn on the runtime-agnostic /ui-action channel.
     if (!failed && evalCase.widgetAction) {
+      turnAttempted = true;
       const widget = await driveWidgetAction({
         baseUrl: server.baseUrl,
         sessionId,
@@ -384,10 +401,17 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // path, where an unstopped poll timer would keep the process alive.
     await approvalDriver?.stop();
     result.durationMs = Date.now() - start;
-    result.transcript = `${evalCase.id}.jsonl`;
+    // A credentialed turn that never reported a cost SPENT something the harness
+    // cannot measure. Recorded here rather than beside `tracker.record` so the
+    // paths that skip it — a timeout, a thrown DriveError — are covered too:
+    // those are the expensive ones, and they were the ones reporting $0.0000.
+    result.costUnmetered =
+      turnAttempted && opts.tier !== 'test-mode' && evalCostSignal(frames) === null;
+    result.transcript = opts.transcriptName ?? `${evalCase.id}.jsonl`;
     await writeTranscript(opts.runDir, {
       runId: opts.runId,
       evalId: evalCase.id,
+      ...(opts.transcriptName ? { fileName: opts.transcriptName } : {}),
       title: evalCase.title,
       startedAt: startedAt.toISOString(),
       prompts: turns,

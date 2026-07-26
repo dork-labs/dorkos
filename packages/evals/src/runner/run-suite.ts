@@ -1,7 +1,8 @@
 /**
  * Run a whole suite: select the cases, run each through {@link runEval} under a
- * shared per-run {@link BudgetTracker}, skip the remainder once the run budget
- * is spent, and emit `results.json`. Phase 1 runs cases SERIALLY because the
+ * shared per-run {@link BudgetTracker}, retry the one measured infrastructure
+ * signature once (`runner/retry.ts`), skip the remainder once the run budget is
+ * spent, and emit `results.json`. Phase 1 runs cases SERIALLY because the
  * in-process server is a process-level singleton; bounded concurrency arrives
  * with the child-process tier (Phase 2).
  *
@@ -17,6 +18,7 @@ import {
 } from '../types.js';
 import { BudgetTracker, DEFAULT_RUN_BUDGET_USD } from './budget.js';
 import { runEval } from './run-eval.js';
+import { runWithInfrastructureRetry, transcriptNameForAttempt } from './retry.js';
 import { createLauncherResolver, type IsolationTier } from './isolation/resolve-launcher.js';
 import { resolveModelCredential } from './credentials.js';
 import { writeResults } from '../report/summary.js';
@@ -65,6 +67,7 @@ function skippedResult(evalCase: EvalCase, tier: RuntimeTier): EvalResult {
     runtimeTier: tier,
     costClass: evalCase.costClass,
     costUsd: 0,
+    costUnmetered: false,
     durationMs: 0,
     oracleResults: [],
     quarantined: evalCase.quarantined ?? false,
@@ -129,17 +132,25 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
       opts.tier === 'test-mode'
         ? undefined
         : await launchers.forCase({ preferDocker: evalCase.preferDocker ?? false });
+    // A turn that timed out before any oracle ran is infrastructure, not a
+    // verdict, and it gets exactly one more attempt (`runner/retry.ts`). The
+    // budget guard is the retry's brake: a second attempt spends again.
     results.push(
-      await runEval(evalCase, {
-        tier: opts.tier,
-        runId,
-        runDir,
-        tracker,
-        timeoutMs: opts.timeoutMs,
-        model: opts.model,
-        ...(launcher ? { launcher } : {}),
-        ...(credential ? { credential } : {}),
-      })
+      await runWithInfrastructureRetry(
+        (attemptNumber) =>
+          runEval(evalCase, {
+            tier: opts.tier,
+            runId,
+            runDir,
+            tracker,
+            timeoutMs: opts.timeoutMs,
+            model: opts.model,
+            transcriptName: transcriptNameForAttempt(evalCase.id, attemptNumber),
+            ...(launcher ? { launcher } : {}),
+            ...(credential ? { credential } : {}),
+          }),
+        { canRetry: () => !tracker.isOverRunBudget() }
+      )
     );
   }
 
