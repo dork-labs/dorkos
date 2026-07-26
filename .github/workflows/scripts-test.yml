@@ -32,7 +32,9 @@ name: scripts-test
 
 ### The `harness` job depends on two files OUTSIDE scripts/: the root package.json
 ### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts
-### (holds the vitest dep this job executes). Without them
+### (registers the scripts project for path-based bare-vitest runs from the repo
+### root; the harness job itself no longer reads it, so that entry is conservative).
+### Without them
 ### in the filter, a PR touching only those could break this job without triggering
 ### it, and the breakage would surface later on an unrelated scripts/ PR.
 on:

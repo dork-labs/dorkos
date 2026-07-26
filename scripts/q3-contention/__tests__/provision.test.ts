@@ -83,8 +83,19 @@ describe('assertSafeRunRoot', () => {
     const outside = os.homedir();
     await fs.symlink(outside, link);
     try {
-      await expect(assertSafeRunRoot(link, REPO_ROOT, { fullyResolve: true })).rejects.toThrow(
+      // Assert the refusal names the RESOLVED target, not the link path. Without
+      // this the test still passes when the guard ignores fullyResolve and refuses
+      // for the unrelated reason that TMPDIR sits outside the trusted temp root —
+      // the same environment-keyed blind spot that let the ~/Documents version
+      // silently stop asserting.
+      const home = os.homedir().replace(
+        /[.*+?^${}()|[\]\\]/g,
+        String.raw`\      await expect(assertSafeRunRoot(link, REPO_ROOT, { fullyResolve: true })).rejects.toThrow(
         /REFUSING TO RUN/
+      );`
+      );
+      await expect(assertSafeRunRoot(link, REPO_ROOT, { fullyResolve: true })).rejects.toThrow(
+        new RegExp(`REFUSING TO RUN[\\s\\S]*run root "${home}"`)
       );
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
