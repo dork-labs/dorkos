@@ -1,3 +1,8 @@
+---
+covers:
+  - "fix(security): tool-group toggles no longer widen an agent's auto-approval (DOR-519)"
+---
+
 ### Fixed
 
-- Turning a tool group off for an agent did close to the opposite of what it looked like. Instead of holding those tools back, it let about 30 other DorkOS tools run without asking you first, including ones that delete scheduled tasks or drop agents from the mesh. An agent could even switch a group off itself to widen its own permissions. Now every DorkOS tool asks for approval the same way, whatever the toggles say. If you had a group switched off, expect approval prompts again for those tools: that is the fix working. The toggles keep doing the useful part they always did, which is that an agent is not told about a group you turn off, so it stops reaching for those tools.
+- Turning off a group of tools for an agent had the opposite effect: instead of holding those tools back, it let the agent run about 30 other DorkOS tools, including deleting scheduled tasks and removing agents, without asking you first. Now the switches only control which tools an agent is told about. Turning a group off never grants extra automatic approval, so you still get asked before anything risky happens (DOR-519)
