@@ -2,6 +2,33 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260726-022251",
+      "slug": "in-session-identity-comes-from-the-working-directory",
+      "title": "An in-session agent's identity comes from its working directory, not a presented token",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260726-022250",
+      "slug": "agent-tokens-expire-on-two-clocks",
+      "title": "Agent identity tokens expire on two clocks, seven days idle and thirty days absolute",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260726-022249",
+      "slug": "tier-gate-is-boot-wired-and-refuses-destructive-calls-unwired",
+      "title": "The tier gate is wired once at boot into a module global, and an unwired gate refuses destructive calls",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
       "id": "260725-004456",
       "slug": "status-bar-items-are-registry-driven-and-quiet-by-default",
       "title": "Status bar items are registry-driven and quiet by default",
@@ -2782,10 +2809,11 @@
       "id": "260723-013234",
       "slug": "status-bar-prefs-live-in-server-config",
       "title": "Status-bar preferences live in server config, not client localStorage",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-23",
       "extractedFrom": "agents-as-operators",
-      "specSlug": "agents-as-operators"
+      "specSlug": "agents-as-operators",
+      "supersededBy": "260725-004456"
     },
     {
       "id": "260723-013235",
