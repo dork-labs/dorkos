@@ -22,7 +22,7 @@ interface BuildPreviewSentenceInput {
 /**
  * Builds a short, human-readable description of a binding's routing behavior.
  *
- * Used on ConnectionBindingCard (as the card's subtitle) and in BindingDialog
+ * Used on IntegrationBindingCard (as the card's subtitle) and in BindingDialog
  * (as the live preview while editing).
  *
  * @param input - The binding configuration fields relevant to the preview.

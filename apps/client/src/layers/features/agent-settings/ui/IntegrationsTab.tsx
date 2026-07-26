@@ -18,11 +18,11 @@ import { getAgentDisplayName } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { BoundConnectionRow } from './BoundConnectionRow';
-import { ConnectionPicker } from './ConnectionPicker';
+import { BoundIntegrationRow } from './BoundIntegrationRow';
+import { IntegrationPicker } from './IntegrationPicker';
 
-interface ConnectionsTabProps {
-  /** The agent whose connection bindings are displayed and managed. */
+interface IntegrationsTabProps {
+  /** The agent whose integration bindings are displayed and managed. */
   agent: AgentManifest;
 }
 
@@ -50,13 +50,13 @@ const CLOSED_EDIT_DIALOG: EditDialogState = { open: false, binding: null, adapte
 const CLOSED_WIZARD: WizardState = { open: false };
 
 /**
- * Connections tab in the Agent dialog.
+ * Integrations tab in the Agent dialog.
  *
  * Lists all relay bindings for the agent, lets the user add new bindings via
- * the ConnectionPicker, opens the BindingDialog for editing existing bindings,
+ * the IntegrationPicker, opens the BindingDialog for editing existing bindings,
  * and renders AdapterSetupWizard inline for configuring new adapter types.
  */
-export function ConnectionsTab({ agent }: ConnectionsTabProps) {
+export function IntegrationsTab({ agent }: IntegrationsTabProps) {
   const relayEnabled = useRelayEnabled();
   const { data: allBindings = [] } = useBindings();
   const { data: externalCatalog = [] } = useExternalAdapterCatalog(relayEnabled);
@@ -109,7 +109,7 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
     [agentBindings]
   );
 
-  const handleSelectConnection = useCallback(
+  const handleSelectIntegration = useCallback(
     async (adapterId: string) => {
       try {
         await createBinding.mutateAsync({
@@ -121,9 +121,9 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
           canReply: true,
           canReceive: true,
         });
-        toast.success('Connection connected');
+        toast.success('Integration connected');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to add connection');
+        toast.error(err instanceof Error ? err.message : 'Failed to add integration');
       }
     },
     [agent.id, createBinding]
@@ -148,9 +148,9 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
     async (bindingId: string) => {
       try {
         await deleteBinding.mutateAsync(bindingId);
-        toast.success('Connection removed');
+        toast.success('Integration removed');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
+        toast.error(err instanceof Error ? err.message : 'Failed to remove integration');
       }
     },
     [deleteBinding]
@@ -160,9 +160,9 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
     async (bindingId: string, enabled: boolean) => {
       try {
         await updateBinding.mutateAsync({ id: bindingId, updates: { enabled } });
-        toast.success(enabled ? 'Connection resumed' : 'Connection paused');
+        toast.success(enabled ? 'Integration resumed' : 'Integration paused');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
+        toast.error(err instanceof Error ? err.message : 'Failed to update integration');
       }
     },
     [updateBinding]
@@ -194,10 +194,10 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
           id: editDialog.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Connection updated');
+        toast.success('Integration updated');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
+        toast.error(err instanceof Error ? err.message : 'Failed to update integration');
       }
     },
     [editDialog.binding, updateBinding]
@@ -207,10 +207,10 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
     async (bindingId: string) => {
       try {
         await deleteBinding.mutateAsync(bindingId);
-        toast.success('Connection removed');
+        toast.success('Integration removed');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
+        toast.error(err instanceof Error ? err.message : 'Failed to remove integration');
       }
     },
     [deleteBinding]
@@ -270,7 +270,7 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
           <div className="space-y-1 text-center">
             <p className="text-sm font-medium">The Relay message bus is off</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              Connections link this agent to external messaging platforms. Enable Relay in Settings
+              Integrations link this agent to external messaging platforms. Enable Relay in Settings
               to get started.
             </p>
           </div>
@@ -290,14 +290,14 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
           <Radio className="text-muted-foreground/40 size-8" />
           <div className="space-y-1 text-center">
-            <p className="text-sm font-medium">No connections available</p>
+            <p className="text-sm font-medium">No integrations available</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              To connect this agent to Telegram, Slack, or a webhook, first add a connection in
+              To connect this agent to Telegram, Slack, or a webhook, first add an integration in
               Settings. It will appear here as soon as it&apos;s ready.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openSettingsToTab('connections')}>
-            Add a connection
+          <Button variant="outline" size="sm" onClick={() => openSettingsToTab('integrations')}>
+            Add an integration
           </Button>
         </div>
         {dialogs}
@@ -318,10 +318,10 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
               while you are away.
             </p>
           </div>
-          <ConnectionPicker
+          <IntegrationPicker
             catalog={externalCatalog}
             boundAdapterIds={boundAdapterIds}
-            onSelectConnection={handleSelectConnection}
+            onSelectIntegration={handleSelectIntegration}
             onRequestSetup={handleRequestSetup}
             disabled={createBinding.isPending}
           />
@@ -339,12 +339,12 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
         {agentBindings.map((binding) => {
           const display = resolveAdapterDisplay(binding.adapterId);
           return (
-            <BoundConnectionRow
+            <BoundIntegrationRow
               key={binding.id}
               binding={binding}
-              connectionName={display.name}
-              connectionIconId={display.iconId}
-              connectionAdapterType={display.adapterType}
+              integrationName={display.name}
+              integrationIconId={display.iconId}
+              integrationAdapterType={display.adapterType}
               adapterState={display.state}
               errorMessage={display.errorMessage}
               onTogglePause={(enabled) => handleTogglePause(binding.id, enabled)}
@@ -356,11 +356,11 @@ export function ConnectionsTab({ agent }: ConnectionsTabProps) {
         })}
       </div>
 
-      {/* Add connection picker */}
-      <ConnectionPicker
+      {/* Add integration picker */}
+      <IntegrationPicker
         catalog={externalCatalog}
         boundAdapterIds={boundAdapterIds}
-        onSelectConnection={handleSelectConnection}
+        onSelectIntegration={handleSelectIntegration}
         onRequestSetup={handleRequestSetup}
         disabled={createBinding.isPending}
       />

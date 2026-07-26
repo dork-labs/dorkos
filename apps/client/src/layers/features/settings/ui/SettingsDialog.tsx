@@ -19,7 +19,7 @@ import { PreferencesTab } from './tabs/PreferencesTab';
 import { RuntimesTab } from './tabs/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
-import { ConnectionsTab } from './ConnectionsTab';
+import { IntegrationsTab } from './IntegrationsTab';
 import { AgentsTab } from './AgentsTab';
 import { SecurityTab } from './SecurityTab';
 import { CloudAccountTab } from './CloudAccountTab';
@@ -33,7 +33,7 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   { id: 'preferences', label: 'Preferences', icon: Settings2, component: PreferencesTab },
   { id: 'server', label: 'Server', icon: Server, component: ServerTab },
   { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab },
-  { id: 'connections', label: 'Connections', icon: Radio, component: ConnectionsTab },
+  { id: 'integrations', label: 'Integrations', icon: Radio, component: IntegrationsTab },
   { id: 'agents', label: 'Agents', icon: Bot, component: AgentsTab },
   { id: 'runtimes', label: 'Runtimes', icon: Cpu, component: RuntimesTab },
   { id: 'security', label: 'Security', icon: ShieldCheck, component: SecurityTab },

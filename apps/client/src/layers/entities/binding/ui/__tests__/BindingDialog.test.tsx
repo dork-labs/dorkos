@@ -167,9 +167,9 @@ describe('BindingDialog', () => {
   };
 
   describe('create mode', () => {
-    it('renders "Add Connection" title', () => {
+    it('renders "Add Integration" title', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
-      expect(screen.getByRole('heading', { name: 'Add Connection' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Add Integration' })).toBeInTheDocument();
     });
 
     it('renders adapter picker dropdown', () => {
@@ -194,10 +194,10 @@ describe('BindingDialog', () => {
       expect(screen.getByPlaceholderText('e.g., Customer support bot')).toBeInTheDocument();
     });
 
-    it('renders "Add Connection" and "Cancel" buttons', () => {
+    it('renders "Add Integration" and "Cancel" buttons', () => {
       render(<BindingDialog {...defaultCreateProps} />, { wrapper: Wrapper });
       const dialog = getDialog();
-      expect(within(dialog).getByRole('button', { name: /add connection/i })).toBeInTheDocument();
+      expect(within(dialog).getByRole('button', { name: /add integration/i })).toBeInTheDocument();
       expect(within(dialog).getByRole('button', { name: /cancel/i })).toBeInTheDocument();
     });
 
@@ -220,7 +220,7 @@ describe('BindingDialog', () => {
       );
       const labelInput = screen.getByPlaceholderText('e.g., Customer support bot');
       fireEvent.change(labelInput, { target: { value: 'Customer support' } });
-      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add integration/i }));
       await waitFor(() => {
         expect(onConfirm).toHaveBeenCalledWith(
           expect.objectContaining({ sessionStrategy: 'per-chat', label: 'Customer support' })
@@ -238,7 +238,7 @@ describe('BindingDialog', () => {
         />,
         { wrapper: Wrapper }
       );
-      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add integration/i }));
       await waitFor(() => {
         expect(onConfirm).toHaveBeenCalled();
       });
@@ -249,9 +249,9 @@ describe('BindingDialog', () => {
   });
 
   describe('edit mode', () => {
-    it('renders "Edit Connection" title', () => {
+    it('renders "Edit Integration" title', () => {
       render(<BindingDialog {...defaultEditProps} />, { wrapper: Wrapper });
-      expect(screen.getByRole('heading', { name: 'Edit Connection' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Edit Integration' })).toBeInTheDocument();
     });
 
     it('renders "Save Changes" button', () => {
@@ -341,7 +341,7 @@ describe('BindingDialog', () => {
         />,
         { wrapper: Wrapper }
       );
-      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add integration/i }));
       await waitFor(() => {
         expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ chatId: '999' }));
       });
@@ -364,7 +364,7 @@ describe('BindingDialog', () => {
       );
       const clearBtn = screen.getByRole('button', { name: /clear filters/i });
       fireEvent.click(clearBtn);
-      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add integration/i }));
       await waitFor(() => {
         expect(onConfirm).toHaveBeenCalled();
       });
@@ -401,7 +401,7 @@ describe('BindingDialog', () => {
         />,
         { wrapper: Wrapper }
       );
-      fireEvent.click(screen.getByRole('button', { name: /add connection/i }));
+      fireEvent.click(screen.getByRole('button', { name: /add integration/i }));
       await waitFor(() => {
         expect(onConfirm).toHaveBeenCalledWith(
           expect.objectContaining({

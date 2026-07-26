@@ -5,20 +5,20 @@ import { cn } from '@/layers/shared/lib';
 import { AdapterIcon, ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from '@/layers/features/relay';
 import type { AdapterManifest, AdapterStatus, CatalogEntry } from '@dorkos/shared/relay-schemas';
 
-interface ConnectionPickerProps {
+interface IntegrationPickerProps {
   /** Pre-filtered external adapter catalog (no `category: 'internal'` entries). */
   catalog: CatalogEntry[];
   /** Adapter IDs already bound to this agent (shown as "connected" in the picker). */
   boundAdapterIds: Set<string>;
   /** Called when the user selects an existing adapter instance to bind. */
-  onSelectConnection: (adapterId: string) => void;
+  onSelectIntegration: (adapterId: string) => void;
   /** Called when the user picks an adapter type to configure from scratch. */
   onRequestSetup: (manifest: AdapterManifest) => void;
   /** Whether the popover trigger button is disabled. */
   disabled?: boolean;
 }
 
-interface ConnectionItem {
+interface IntegrationItem {
   id: string;
   displayName: string;
   label: string | undefined;
@@ -32,23 +32,23 @@ interface ConnectionItem {
 }
 
 /**
- * Popover listing all configured relay connection instances for binding to an agent,
+ * Popover listing all configured relay integration instances for binding to an agent,
  * plus unconfigured adapter types available to set up.
  *
  * Receives a pre-filtered catalog as a prop (no internal data fetching).
  * Shows a status dot, adapter name, optional label, and connection state for each
- * configured connection. A second section lists adapter types available for fresh setup.
+ * configured integration. A second section lists adapter types available for fresh setup.
  */
-export function ConnectionPicker({
+export function IntegrationPicker({
   catalog,
   boundAdapterIds,
-  onSelectConnection,
+  onSelectIntegration,
   onRequestSetup,
   disabled,
-}: ConnectionPickerProps) {
+}: IntegrationPickerProps) {
   const [open, setOpen] = useState(false);
 
-  const configuredConnections: ConnectionItem[] = useMemo(
+  const configuredIntegrations: IntegrationItem[] = useMemo(
     () =>
       catalog.flatMap((entry) =>
         entry.instances.map((inst) => ({
@@ -76,7 +76,7 @@ export function ConnectionPicker({
   );
 
   function handleSelect(adapterId: string) {
-    onSelectConnection(adapterId);
+    onSelectIntegration(adapterId);
     setOpen(false);
   }
 
@@ -85,32 +85,32 @@ export function ConnectionPicker({
     onRequestSetup(manifest);
   }
 
-  const isEmpty = configuredConnections.length === 0 && availableToSetup.length === 0;
+  const isEmpty = configuredIntegrations.length === 0 && availableToSetup.length === 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled}>
           <Plus className="mr-1.5 size-3.5" />
-          Add Connection
+          Add Integration
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">
         <div className="max-h-64 overflow-y-auto">
           {isEmpty ? (
             <div className="px-3 py-4 text-center">
-              <p className="text-muted-foreground text-sm">No connections available</p>
+              <p className="text-muted-foreground text-sm">No integrations available</p>
             </div>
           ) : (
             <>
               {/* Configured instances */}
-              {configuredConnections.length > 0 && (
+              {configuredIntegrations.length > 0 && (
                 <div className="py-1">
-                  {configuredConnections.map((connection) => (
+                  {configuredIntegrations.map((integration) => (
                     <button
-                      key={connection.id}
-                      disabled={connection.isDisabled || connection.alreadyBound}
-                      onClick={() => handleSelect(connection.id)}
+                      key={integration.id}
+                      disabled={integration.isDisabled || integration.alreadyBound}
+                      onClick={() => handleSelect(integration.id)}
                       className={cn(
                         'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
                         'hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50'
@@ -118,30 +118,30 @@ export function ConnectionPicker({
                     >
                       <div className="relative shrink-0">
                         <AdapterIcon
-                          iconId={connection.iconId}
-                          adapterType={connection.adapterType}
+                          iconId={integration.iconId}
+                          adapterType={integration.adapterType}
                           size={20}
                           className="text-muted-foreground"
                         />
                         <span
                           className={cn(
                             'ring-background absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-[1.5px]',
-                            ADAPTER_STATE_DOT_CLASS[connection.state]
+                            ADAPTER_STATE_DOT_CLASS[integration.state]
                           )}
                         />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{connection.displayName}</p>
-                        {connection.label && (
+                        <p className="truncate font-medium">{integration.displayName}</p>
+                        {integration.label && (
                           <p className="text-muted-foreground truncate text-xs">
-                            {connection.label}
+                            {integration.label}
                           </p>
                         )}
                       </div>
                       <span className="text-muted-foreground/60 text-xs">
-                        {connection.alreadyBound
+                        {integration.alreadyBound
                           ? 'Connected'
-                          : ADAPTER_STATE_LABEL[connection.state]}
+                          : ADAPTER_STATE_LABEL[integration.state]}
                       </span>
                     </button>
                   ))}

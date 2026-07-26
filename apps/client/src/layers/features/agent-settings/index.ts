@@ -6,5 +6,5 @@
 // Tab components — exported for reuse in sibling feature UI (agent-hub).
 export { IdentityTab } from './ui/IdentityTab';
 export { PersonalityTab } from './ui/PersonalityTab';
-export { ConnectionsTab } from './ui/ConnectionsTab';
+export { IntegrationsTab } from './ui/IntegrationsTab';
 export { ToolsTab } from './ui/ToolsTab';

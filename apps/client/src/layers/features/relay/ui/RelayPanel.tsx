@@ -5,14 +5,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent, FeatureDisabledState } from '
 import { useRelayEnabled, useRelayEventStream, useAdapterCatalog } from '@/layers/entities/relay';
 import { ActivityFeed } from './ActivityFeed';
 import { ConnectionStatusBanner } from './ConnectionStatusBanner';
-import { ConnectionsTab } from './ConnectionsTab';
+import { IntegrationsTab } from './IntegrationsTab';
 import { RelayEmptyState } from './RelayEmptyState';
 import { RelayHealthBar } from './RelayHealthBar';
 
 /** Main Relay panel — progressive disclosure based on adapter configuration state. */
 export function RelayPanel() {
   const relayEnabled = useRelayEnabled();
-  const [activeTab, setActiveTab] = useState('connections');
+  const [activeTab, setActiveTab] = useState('integrations');
   const [showCatalog, setShowCatalog] = useState(false);
   const [autoShowFailures, setAutoShowFailures] = useState(false);
   const deadLetterRef = useRef<HTMLDivElement>(null);
@@ -65,7 +65,7 @@ export function RelayPanel() {
             <ConnectionStatusBanner connectionState={connectionState} className="mx-4 mt-2" />
 
             <TabsList className="mx-4 mt-3 shrink-0">
-              <TabsTrigger value="connections">Connections</TabsTrigger>
+              <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
 
@@ -78,15 +78,15 @@ export function RelayPanel() {
                 transition={{ duration: 0.15 }}
                 className="min-h-0 flex-1 overflow-y-auto"
               >
-                <TabsContent value="connections" className="h-full">
-                  <ConnectionsTab enabled={relayEnabled} />
+                <TabsContent value="integrations" className="h-full">
+                  <IntegrationsTab enabled={relayEnabled} />
                 </TabsContent>
 
                 <TabsContent value="activity" className="h-full">
                   <ActivityFeed
                     enabled={relayEnabled}
                     deadLetterRef={deadLetterRef}
-                    onSwitchToConnections={() => setActiveTab('connections')}
+                    onSwitchToIntegrations={() => setActiveTab('integrations')}
                     autoShowFailures={autoShowFailures}
                   />
                 </TabsContent>
@@ -105,10 +105,10 @@ export function RelayPanel() {
         >
           {showCatalog ? (
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <ConnectionsTab enabled={relayEnabled} />
+              <IntegrationsTab enabled={relayEnabled} />
             </div>
           ) : (
-            <RelayEmptyState onAddConnection={() => setShowCatalog(true)} />
+            <RelayEmptyState onAddIntegration={() => setShowCatalog(true)} />
           )}
         </motion.div>
       )}

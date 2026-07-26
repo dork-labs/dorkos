@@ -23,5 +23,5 @@ export { ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from '@/layers/entities/
 export { DeadLetterSection } from './ui/DeadLetterSection';
 export { ComposeMessageDialog } from './ui/ComposeMessageDialog';
 export { AdapterEventLog } from './ui/AdapterEventLog';
-export { ConnectionsTab } from './ui/ConnectionsTab';
+export { IntegrationsTab } from './ui/IntegrationsTab';
 export { RelativeTime } from './ui/RelativeTime';

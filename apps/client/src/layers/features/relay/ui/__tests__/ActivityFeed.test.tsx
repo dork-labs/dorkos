@@ -108,10 +108,10 @@ describe('ActivityFeed', () => {
       ).toBeInTheDocument();
     });
 
-    it('never shows "Set up a connection" button', () => {
+    it('never shows "Set up an integration" button', () => {
       mockUseRelayConversations.mockReturnValue({ data: { conversations: [] }, isLoading: false });
-      render(<ActivityFeed enabled={true} onSwitchToConnections={vi.fn()} />);
-      expect(screen.queryByText('Set up a connection')).not.toBeInTheDocument();
+      render(<ActivityFeed enabled={true} onSwitchToIntegrations={vi.fn()} />);
+      expect(screen.queryByText('Set up an integration')).not.toBeInTheDocument();
     });
 
     it('shows the "no messages match filters" state when filters are active and nothing matches', () => {

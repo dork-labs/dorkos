@@ -493,7 +493,7 @@ describe('TopologyGraph', () => {
       });
 
       expect(
-        screen.getByText('Drag from a connection to an agent to connect it')
+        screen.getByText('Drag from an integration to an agent to connect it')
       ).toBeInTheDocument();
     });
 
@@ -509,7 +509,7 @@ describe('TopologyGraph', () => {
         screen.queryByText('Add adapters from the Relay panel to connect them to agents')
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByText('Drag from a connection to an agent to connect it')
+        screen.queryByText('Drag from an integration to an agent to connect it')
       ).not.toBeInTheDocument();
     });
   });
@@ -1097,7 +1097,7 @@ describe('TopologyGraph', () => {
       // Confirm dialog is shown; nothing is deleted yet.
       expect(
         screen.getByText(
-          'Remove this connection? The agent will no longer receive messages from it.'
+          'Remove this integration? The agent will no longer receive messages from it.'
         )
       ).toBeInTheDocument();
       expect(mockDeleteBindingMutate).not.toHaveBeenCalled();

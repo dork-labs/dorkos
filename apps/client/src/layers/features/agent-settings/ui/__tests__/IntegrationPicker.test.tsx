@@ -4,7 +4,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
 
-import { ConnectionPicker } from '../ConnectionPicker';
+import { IntegrationPicker } from '../IntegrationPicker';
 
 // --- Test helpers ---
 
@@ -56,7 +56,7 @@ function makeCatalogEntry(overrides: {
 
 interface RenderPickerOptions {
   catalog?: CatalogEntry[];
-  onSelectConnection?: ReturnType<typeof vi.fn<(adapterId: string) => void>>;
+  onSelectIntegration?: ReturnType<typeof vi.fn<(adapterId: string) => void>>;
   onRequestSetup?: ReturnType<typeof vi.fn<(manifest: CatalogEntry['manifest']) => void>>;
   boundAdapterIds?: Set<string>;
   disabled?: boolean;
@@ -65,43 +65,43 @@ interface RenderPickerOptions {
 function renderPicker(options: RenderPickerOptions = {}) {
   const props = {
     catalog: options.catalog ?? [],
-    onSelectConnection: options.onSelectConnection ?? vi.fn<(adapterId: string) => void>(),
+    onSelectIntegration: options.onSelectIntegration ?? vi.fn<(adapterId: string) => void>(),
     onRequestSetup: options.onRequestSetup ?? vi.fn<(manifest: CatalogEntry['manifest']) => void>(),
     boundAdapterIds: options.boundAdapterIds ?? new Set<string>(),
     disabled: options.disabled,
   };
-  const { container } = render(<ConnectionPicker {...props} />);
+  const { container } = render(<IntegrationPicker {...props} />);
   return { view: within(container), container, ...props };
 }
 
 // --- Tests ---
 
-describe('ConnectionPicker', () => {
+describe('IntegrationPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders an "Add Connection" button', () => {
+  it('renders an "Add Integration" button', () => {
     const { view } = renderPicker();
-    expect(view.getByText('Add Connection')).toBeInTheDocument();
+    expect(view.getByText('Add Integration')).toBeInTheDocument();
   });
 
   it('disables the button when disabled prop is true', () => {
     const { view } = renderPicker({ disabled: true });
-    expect(view.getByText('Add Connection').closest('button')).toBeDisabled();
+    expect(view.getByText('Add Integration').closest('button')).toBeDisabled();
   });
 
   describe('popover content', () => {
     // PopoverContent renders via Radix portal — use screen for portal queries.
 
-    it('shows "No connections available" when catalog is empty', () => {
+    it('shows "No integrations available" when catalog is empty', () => {
       const { view } = renderPicker({ catalog: [] });
 
-      fireEvent.click(view.getByText('Add Connection'));
-      expect(screen.getByText('No connections available')).toBeInTheDocument();
+      fireEvent.click(view.getByText('Add Integration'));
+      expect(screen.getByText('No integrations available')).toBeInTheDocument();
     });
 
-    it('lists configured connections from the catalog', () => {
+    it('lists configured integrations from the catalog', () => {
       const catalog = [
         makeCatalogEntry({ displayName: 'Telegram', instanceId: 'tg-1' }),
         makeCatalogEntry({
@@ -112,7 +112,7 @@ describe('ConnectionPicker', () => {
       ];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       expect(screen.getByText('Telegram')).toBeInTheDocument();
       expect(screen.getByText('Slack')).toBeInTheDocument();
     });
@@ -121,7 +121,7 @@ describe('ConnectionPicker', () => {
       const catalog = [makeCatalogEntry({ label: 'Work Bot' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       expect(screen.getByText('Work Bot')).toBeInTheDocument();
     });
 
@@ -129,63 +129,63 @@ describe('ConnectionPicker', () => {
       const catalog = [makeCatalogEntry({ state: 'connected' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
-      // ConnectionPicker uses ADAPTER_STATE_LABEL which humanizes 'connected' → 'Connected'
+      fireEvent.click(view.getByText('Add Integration'));
+      // IntegrationPicker uses ADAPTER_STATE_LABEL which humanizes 'connected' → 'Connected'
       expect(screen.getByText('Connected')).toBeInTheDocument();
     });
 
-    it('shows "Connected" text for already-bound connections', () => {
+    it('shows "Connected" text for already-bound integrations', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1' })];
       const { view } = renderPicker({ catalog, boundAdapterIds: new Set(['tg-1']) });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       expect(screen.getByText('Connected')).toBeInTheDocument();
     });
 
-    it('disables already-bound connections', () => {
+    it('disables already-bound integrations', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
       const { view } = renderPicker({ catalog, boundAdapterIds: new Set(['tg-1']) });
 
-      fireEvent.click(view.getByText('Add Connection'));
-      const connectionButton = screen.getByText('Telegram').closest('button');
-      expect(connectionButton).toBeDisabled();
+      fireEvent.click(view.getByText('Add Integration'));
+      const integrationButton = screen.getByText('Telegram').closest('button');
+      expect(integrationButton).toBeDisabled();
     });
 
-    it('disables connections in error state', () => {
+    it('disables integrations in error state', () => {
       const catalog = [makeCatalogEntry({ state: 'error', displayName: 'Broken Bot' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
-      const connectionButton = screen.getByText('Broken Bot').closest('button');
-      expect(connectionButton).toBeDisabled();
+      fireEvent.click(view.getByText('Add Integration'));
+      const integrationButton = screen.getByText('Broken Bot').closest('button');
+      expect(integrationButton).toBeDisabled();
     });
 
-    it('disables connections that are not enabled', () => {
+    it('disables integrations that are not enabled', () => {
       const catalog = [makeCatalogEntry({ enabled: false, displayName: 'Disabled Bot' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
-      const connectionButton = screen.getByText('Disabled Bot').closest('button');
-      expect(connectionButton).toBeDisabled();
+      fireEvent.click(view.getByText('Add Integration'));
+      const integrationButton = screen.getByText('Disabled Bot').closest('button');
+      expect(integrationButton).toBeDisabled();
     });
 
-    it('calls onSelectConnection when a connection is clicked', () => {
+    it('calls onSelectIntegration when an integration is clicked', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
-      const onSelectConnection = vi.fn();
-      const { view } = renderPicker({ catalog, onSelectConnection });
+      const onSelectIntegration = vi.fn();
+      const { view } = renderPicker({ catalog, onSelectIntegration });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       fireEvent.click(screen.getByText('Telegram'));
-      expect(onSelectConnection).toHaveBeenCalledWith('tg-1');
+      expect(onSelectIntegration).toHaveBeenCalledWith('tg-1');
     });
 
-    it('closes popover after selecting a connection', () => {
+    it('closes popover after selecting an integration', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       fireEvent.click(screen.getByText('Telegram'));
-      // After selection, popover should close — connection name should no longer be in portal
+      // After selection, popover should close — integration name should no longer be in portal
       expect(screen.queryByText('Telegram')).not.toBeInTheDocument();
     });
   });
@@ -195,7 +195,7 @@ describe('ConnectionPicker', () => {
       const catalog = [makeCatalogEntry({ displayName: 'Webhook', noInstances: true })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       expect(screen.getByText('Available to set up')).toBeInTheDocument();
       expect(screen.getByText('Webhook')).toBeInTheDocument();
     });
@@ -206,7 +206,7 @@ describe('ConnectionPicker', () => {
       ];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       expect(screen.getByText('Available to set up')).toBeInTheDocument();
     });
 
@@ -216,7 +216,7 @@ describe('ConnectionPicker', () => {
       ];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       expect(screen.queryByText('Available to set up')).not.toBeInTheDocument();
     });
 
@@ -225,7 +225,7 @@ describe('ConnectionPicker', () => {
       const onRequestSetup = vi.fn();
       const { view } = renderPicker({ catalog, onRequestSetup });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       fireEvent.click(screen.getByText('Webhook'));
       expect(onRequestSetup).toHaveBeenCalledWith(catalog[0].manifest);
     });
@@ -235,7 +235,7 @@ describe('ConnectionPicker', () => {
       const onRequestSetup = vi.fn();
       const { view } = renderPicker({ catalog, onRequestSetup });
 
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       fireEvent.click(screen.getByText('Webhook'));
       // The popover should close — the "Available to set up" text should not be visible
       expect(screen.queryByText('Available to set up')).not.toBeInTheDocument();

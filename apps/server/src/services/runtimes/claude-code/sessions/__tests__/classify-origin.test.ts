@@ -69,7 +69,7 @@ describe('classifyOrigin', () => {
     ['slack:C0123', { origin: 'channel', originLabel: 'Slack' }],
     ['Slack-App', { origin: 'channel', originLabel: 'Slack' }],
     ['relay.webhook.generic', { origin: 'channel', originLabel: 'Webhook' }],
-    ['relay.human.discord', { origin: 'channel', originLabel: 'Connection' }],
+    ['relay.human.discord', { origin: 'channel', originLabel: 'Integration' }],
     [
       'relay.agent.01H8ABCDEFGHIJKLMNOPQRSTUV',
       { origin: 'agent', originLabel: '01H8ABCDEFGHIJKLMNOPQRST (agent)' },

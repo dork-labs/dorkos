@@ -129,42 +129,42 @@ function makeClaudeCodeEntry(overrides?: Partial<CatalogEntry['instances'][0]>):
   };
 }
 
-import { ConnectionsTab } from '../ui/ConnectionsTab';
+import { IntegrationsTab } from '../ui/IntegrationsTab';
 
-describe('ConnectionsTab', () => {
+describe('IntegrationsTab', () => {
   it('shows relay disabled message when relay is off', () => {
     mockRelayEnabled = false;
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('Relay is disabled')).toBeInTheDocument();
     expect(
-      screen.getByText('Enable the Relay message bus to manage connections here')
+      screen.getByText('Enable the Relay message bus to manage integrations here')
     ).toBeInTheDocument();
   });
 
   it('shows loading skeletons while catalog is loading', () => {
     mockIsLoading = true;
 
-    const { container } = render(<ConnectionsTab />);
+    const { container } = render(<IntegrationsTab />);
 
     // Skeleton elements are rendered (3 skeleton placeholders)
     const skeletons = container.querySelectorAll('[data-slot="skeleton"]');
     expect(skeletons.length).toBe(3);
   });
 
-  it('shows empty state when no connections are configured', () => {
+  it('shows empty state when no integrations are configured', () => {
     mockCatalogData = [];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByText('No connections configured')).toBeInTheDocument();
+    expect(screen.getByText('No integrations configured')).toBeInTheDocument();
     expect(
-      screen.getByText('Add a connection below to connect agents to external platforms')
+      screen.getByText('Add an integration below to connect agents to external platforms')
     ).toBeInTheDocument();
   });
 
-  it('renders connection rows for configured instances', () => {
+  it('renders integration rows for configured instances', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -183,12 +183,12 @@ describe('ConnectionsTab', () => {
       ]),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('Bot Alpha')).toBeInTheDocument();
   });
 
-  it('stamps the relay-connections tour anchor on the active-connections list', () => {
+  it('stamps the relay-integrations tour anchor on the active-integrations list', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -207,9 +207,9 @@ describe('ConnectionsTab', () => {
       ]),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByTestId(TOUR_ANCHORS.relayConnections)).toBeInTheDocument();
+    expect(screen.getByTestId(TOUR_ANCHORS.relayIntegrations)).toBeInTheDocument();
   });
 
   it('renders multiple instances from different adapter types', () => {
@@ -246,13 +246,13 @@ describe('ConnectionsTab', () => {
       ]),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('TG Bot')).toBeInTheDocument();
     expect(screen.getByText('Slack Workspace')).toBeInTheDocument();
   });
 
-  it('calls toggleAdapter when a connection switch is toggled', async () => {
+  it('calls toggleAdapter when an integration switch is toggled', async () => {
     const user = userEvent.setup();
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
@@ -272,7 +272,7 @@ describe('ConnectionsTab', () => {
       ]),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     const toggle = screen.getByRole('switch', { name: /my bot enabled/i });
     await user.click(toggle);
@@ -280,20 +280,20 @@ describe('ConnectionsTab', () => {
     expect(mockToggleAdapter).toHaveBeenCalledWith({ id: 'tg-1', enabled: false });
   });
 
-  it('renders Available Connections section for unconfigured adapter types', () => {
+  it('renders Available Integrations section for unconfigured adapter types', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', []),
       makeCatalogEntry('slack', 'Slack', []),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByText('Available Connections')).toBeInTheDocument();
+    expect(screen.getByText('Available Integrations')).toBeInTheDocument();
     expect(screen.getByTestId('catalog-card-telegram')).toBeInTheDocument();
     expect(screen.getByTestId('catalog-card-slack')).toBeInTheDocument();
   });
 
-  it('hides Available Connections when all types are configured (non-multiInstance)', () => {
+  it('hides Available Integrations when all types are configured (non-multiInstance)', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -311,12 +311,12 @@ describe('ConnectionsTab', () => {
       ]),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.queryByText('Available Connections')).not.toBeInTheDocument();
+    expect(screen.queryByText('Available Integrations')).not.toBeInTheDocument();
   });
 
-  it('shows multiInstance adapters in Available Connections even when they have instances', () => {
+  it('shows multiInstance adapters in Available Integrations even when they have instances', () => {
     mockCatalogData = [
       {
         manifest: {
@@ -345,13 +345,13 @@ describe('ConnectionsTab', () => {
       },
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByText('Available Connections')).toBeInTheDocument();
+    expect(screen.getByText('Available Integrations')).toBeInTheDocument();
     expect(screen.getByTestId('catalog-card-webhook')).toBeInTheDocument();
   });
 
-  it('passes binding count to ConnectionSettingRow', () => {
+  it('passes binding count to IntegrationSettingRow', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -390,13 +390,13 @@ describe('ConnectionsTab', () => {
       },
     ] as AdapterBinding[];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
-    // The binding count is rendered in ConnectionSettingRow's metadata line
+    // The binding count is rendered in IntegrationSettingRow's metadata line
     expect(screen.getByText('2 agents')).toBeInTheDocument();
   });
 
-  it('excludes internal adapters from configured connections', () => {
+  it('excludes internal adapters from configured integrations', () => {
     // useExternalAdapterCatalog pre-filters internal adapters, so the mock
     // returns only external entries — verifying that the component uses the
     // shared hook rather than raw useAdapterCatalog.
@@ -418,21 +418,21 @@ describe('ConnectionsTab', () => {
       ]),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('My Bot')).toBeInTheDocument();
     // Internal adapters never reach the component — the hook filters them.
     expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
   });
 
-  it('excludes internal adapters from Available Connections', () => {
+  it('excludes internal adapters from Available Integrations', () => {
     // When only internal adapters exist, the hook returns an empty array.
-    // The component should show the empty state, not the Available Connections section.
+    // The component should show the empty state, not the Available Integrations section.
     mockCatalogData = [];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.queryByText('Available Connections')).not.toBeInTheDocument();
+    expect(screen.queryByText('Available Integrations')).not.toBeInTheDocument();
     expect(screen.queryByTestId('catalog-card-claude code')).not.toBeInTheDocument();
   });
 
@@ -441,7 +441,7 @@ describe('ConnectionsTab', () => {
   it('renders the Session Delivery card when the internal claude-code instance exists', () => {
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('Session Delivery')).toBeInTheDocument();
     expect(screen.getByText('Deliver to Claude Code')).toBeInTheDocument();
@@ -452,7 +452,7 @@ describe('ConnectionsTab', () => {
   it('hides the Session Delivery card when no internal claude-code instance exists', () => {
     mockFullCatalogData = [];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.queryByText('Session Delivery')).not.toBeInTheDocument();
   });
@@ -461,7 +461,7 @@ describe('ConnectionsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry({ enabled: true })];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     await user.click(screen.getByRole('switch', { name: 'Deliver to Claude Code' }));
 
@@ -473,7 +473,7 @@ describe('ConnectionsTab', () => {
       makeClaudeCodeEntry({ config: { maxConcurrent: 5, defaultTimeoutMs: 600000 } }),
     ];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByDisplayValue('5')).toBeInTheDocument();
     expect(screen.getByDisplayValue('600000')).toBeInTheDocument();
@@ -483,7 +483,7 @@ describe('ConnectionsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('3');
     await user.clear(input);
@@ -500,7 +500,7 @@ describe('ConnectionsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('300000');
     await user.clear(input);
@@ -517,7 +517,7 @@ describe('ConnectionsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry({ config: { maxConcurrent: 5 } })];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('5');
     await user.click(input);
@@ -530,7 +530,7 @@ describe('ConnectionsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry({ config: undefined })];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     // With no persisted config, the input displays the default fallback (3).
     const input = screen.getByDisplayValue('3');
@@ -543,7 +543,7 @@ describe('ConnectionsTab', () => {
   it('does not call updateConfig when the value is invalid (zero, empty, or non-numeric)', () => {
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
     const input = screen.getByDisplayValue('3');
 
     fireEvent.change(input, { target: { value: '0' } });
@@ -563,7 +563,7 @@ describe('ConnectionsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('3');
     await user.clear(input);
@@ -579,7 +579,7 @@ describe('ConnectionsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ConnectionsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('300000');
     await user.clear(input);

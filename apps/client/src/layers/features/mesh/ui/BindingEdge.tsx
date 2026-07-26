@@ -34,11 +34,11 @@ export interface BindingEdgeData extends Record<string, unknown> {
   onDelete?: (edgeId: string) => void;
 }
 
-/** Resolve the display label: prefer explicit label, then a friendly strategy label, then 'Connection'. */
+/** Resolve the display label: prefer explicit label, then a friendly strategy label, then 'Integration'. */
 function resolveDisplayLabel(data: BindingEdgeData | undefined): string {
   if (data?.label) return data.label;
   if (data?.sessionStrategy) return sessionStrategyLabel(data.sessionStrategy);
-  return 'Connection';
+  return 'Integration';
 }
 
 /** React Flow custom edge for adapter-agent bindings with hover-to-reveal label. */
@@ -152,7 +152,7 @@ function BindingEdgeInner({
                 <button
                   onClick={handleDelete}
                   className="text-destructive/60 hover:bg-destructive/10 hover:text-destructive ml-0.5 shrink-0 rounded-sm p-0.5"
-                  aria-label="Remove connection"
+                  aria-label="Remove integration"
                 >
                   <X className="size-3" />
                 </button>

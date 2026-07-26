@@ -94,7 +94,7 @@ export function AdapterCard({
         sessionStrategy: 'per-chat',
         label: '',
       });
-      toast.success('Connection connected');
+      toast.success('Integration connected');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to connect');
     }

@@ -77,7 +77,7 @@ Scheduled tasks for this agent (if any), followed by its sessions, grouped by ti
 
 Edit the agent's description, runtime, and tags, and manage two collapsible sections:
 
-- **Connections**: connect chat apps (like Slack or Discord) to this agent through Relay, the message bus DorkOS uses to route agent traffic. Relay is shipped, but multi-agent coordination through it is still unverified end to end, so treat any connection as an early feature and test it before relying on it.
+- **Integrations**: connect chat apps (like Slack or Discord) to this agent through Relay, the message bus DorkOS uses to route agent traffic. Relay is shipped, but multi-agent coordination through it is still unverified end to end, so treat any integration as an early feature and test it before relying on it.
 - **Advanced**: the agent's personality and any custom instruction files. See the [Persona Injection](/docs/guides/persona) guide for details.
 
 ### Toolkit
@@ -89,7 +89,7 @@ Two sections here:
 
 <Callout type="info">
   Mesh and Relay power discovery and cross-agent routing, but that coordination is still being
-  hardened. Tool toggles and connections work today; treat multi-agent handoffs as an early
+  hardened. Tool toggles and integrations work today; treat multi-agent handoffs as an early
   capability, not a guarantee.
 </Callout>
 

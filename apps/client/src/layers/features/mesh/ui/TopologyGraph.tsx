@@ -290,13 +290,14 @@ function TopologyGraphInner({
       aria-describedby="topology-graph-summary"
     >
       {/* Screen-reader summary. Also names the keyboard-accessible path to
-          creating a connection: canvas binding is drag-only (no keyboard
+          creating an integration: canvas binding is drag-only (no keyboard
           equivalent — see PR notes), so assistive-tech users are pointed at the
-          Connections tab, which is fully keyboard-operable. */}
+          Integrations tab, which is fully keyboard-operable. */}
       <div id="topology-graph-summary" className="sr-only">
         Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} adapter
         {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}. To
-        bind a connection to an agent with the keyboard, use the Connections tab in the Relay panel.
+        bind an integration to an agent with the keyboard, use the Integrations tab in the Relay
+        panel.
       </div>
       <ReactFlow
         nodes={layoutedNodes}
@@ -368,7 +369,7 @@ function TopologyGraphInner({
       )}
       {hasAdapters && hasAgents && !hasBindings && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
-          Drag from a connection to an agent to connect it
+          Drag from an integration to an agent to connect it
         </div>
       )}
       {/* Subtle re-layout indicator — canvas stays mounted so the viewport is preserved. */}
@@ -392,7 +393,7 @@ function TopologyGraphInner({
           onConfirm={handleBindingConfirm}
         />
       )}
-      {/* Confirm before removing a binding edge — consistent with ConnectionBindingCard. */}
+      {/* Confirm before removing a binding edge — consistent with IntegrationBindingCard. */}
       <AlertDialog
         open={!!pendingDeleteEdgeId}
         onOpenChange={(open) => {
@@ -401,9 +402,9 @@ function TopologyGraphInner({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove connection</AlertDialogTitle>
+            <AlertDialogTitle>Remove integration</AlertDialogTitle>
             <AlertDialogDescription>
-              Remove this connection? The agent will no longer receive messages from it.
+              Remove this integration? The agent will no longer receive messages from it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -93,7 +93,7 @@ vi.mock('@/layers/entities/binding', async (importOriginal) => {
 
 const mockUseRelayEnabled = vi.fn<() => boolean>(() => true);
 const mockUseExternalAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
-// BoundConnectionRow calls useObservedChats once per binding to resolve chatId → displayName.
+// BoundIntegrationRow calls useObservedChats once per binding to resolve chatId → displayName.
 const mockUseObservedChats = vi.fn<() => { data: ObservedChat[] }>(() => ({ data: [] }));
 
 vi.mock('@/layers/entities/relay', () => ({
@@ -143,7 +143,7 @@ vi.mock('@/layers/features/relay', () => ({
   },
 }));
 
-import { ConnectionsTab } from '../ConnectionsTab';
+import { IntegrationsTab } from '../IntegrationsTab';
 
 // --- Test fixtures ---
 
@@ -243,13 +243,13 @@ function makeCatalogEntryInternal(): CatalogEntry {
 }
 
 function renderTab(agent: AgentManifest = baseAgent) {
-  const { container } = render(<ConnectionsTab agent={agent} />);
+  const { container } = render(<IntegrationsTab agent={agent} />);
   return within(container);
 }
 
 // --- Tests ---
 
-describe('ConnectionsTab', () => {
+describe('IntegrationsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseRelayEnabled.mockReturnValue(true);
@@ -278,27 +278,27 @@ describe('ConnectionsTab', () => {
     it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
-      expect(view.getByText('No connections available')).toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Add a connection' })).toBeInTheDocument();
+      expect(view.getByText('No integrations available')).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Add an integration' })).toBeInTheDocument();
     });
 
-    it('State B: CTA calls openSettingsToTab("connections")', () => {
+    it('State B: CTA calls openSettingsToTab("integrations")', () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
-      fireEvent.click(view.getByRole('button', { name: 'Add a connection' }));
-      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('connections');
+      fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
+      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('integrations');
     });
 
-    it('State C: shows no-bindings message with ConnectionPicker CTA when relay is on and adapters exist', () => {
+    it('State C: shows no-bindings message with IntegrationPicker CTA when relay is on and adapters exist', () => {
       // Default beforeEach: relay enabled, one catalog entry, no bindings.
       const view = renderTab();
       expect(view.getByText('Let this agent reach the outside world')).toBeInTheDocument();
-      expect(view.getByText('Add Connection')).toBeInTheDocument();
+      expect(view.getByText('Add Integration')).toBeInTheDocument();
     });
   });
 
   describe('binding list', () => {
-    it('renders a ConnectionBindingCard for each agent binding', () => {
+    it('renders an IntegrationBindingCard for each agent binding', () => {
       const bindings = [
         makeBinding({ id: 'b-1', adapterId: 'telegram-1' }),
         makeBinding({ id: 'b-2', adapterId: 'slack-1' }),
@@ -350,25 +350,25 @@ describe('ConnectionsTab', () => {
     });
   });
 
-  describe('ConnectionPicker integration', () => {
-    it('renders the Add Connection button in State C (no bindings)', () => {
+  describe('IntegrationPicker integration', () => {
+    it('renders the Add Integration button in State C (no bindings)', () => {
       // Default beforeEach: relay enabled, one catalog entry, no bindings → State C.
       const view = renderTab();
-      expect(view.getByText('Add Connection')).toBeInTheDocument();
+      expect(view.getByText('Add Integration')).toBeInTheDocument();
     });
 
-    it('renders the Add Connection button in State D (bindings exist)', () => {
+    it('renders the Add Integration button in State D (bindings exist)', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-1', adapterId: 'telegram-1' })],
       });
       const view = renderTab();
-      expect(view.getByText('Add Connection')).toBeInTheDocument();
+      expect(view.getByText('Add Integration')).toBeInTheDocument();
     });
 
-    it('does not render ConnectionPicker in State A (relay off) — shows relay CTA instead', () => {
+    it('does not render IntegrationPicker in State A (relay off) — shows relay CTA instead', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.queryByText('Add Connection')).not.toBeInTheDocument();
+      expect(view.queryByText('Add Integration')).not.toBeInTheDocument();
       expect(view.getByRole('button', { name: 'Open Relay settings' })).toBeInTheDocument();
     });
   });
@@ -516,7 +516,7 @@ describe('ConnectionsTab', () => {
       });
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Connection paused');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Integration paused');
       });
     });
 
@@ -542,7 +542,7 @@ describe('ConnectionsTab', () => {
       });
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Connection resumed');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Integration resumed');
       });
     });
   });
@@ -689,7 +689,7 @@ describe('ConnectionsTab', () => {
       const view = renderTab();
 
       // Open the picker popover
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       // Click the available-to-setup item (renders via portal)
       fireEvent.click(screen.getByText('Webhook'));
 
@@ -701,7 +701,7 @@ describe('ConnectionsTab', () => {
      * Verifies that the inline wizard flow does NOT call openSettingsToTab —
      * that action is reserved for the empty-state CTAs (States A and B).
      */
-    it('does not dispatch cross-dialog navigation when setting up a new connection', async () => {
+    it('does not dispatch cross-dialog navigation when setting up a new integration', async () => {
       // Provide a catalog entry with an unconfigured adapter
       mockUseExternalAdapterCatalog.mockReturnValue({
         data: [
@@ -723,7 +723,7 @@ describe('ConnectionsTab', () => {
       const view = renderTab();
 
       // Open the picker and trigger setup
-      fireEvent.click(view.getByText('Add Connection'));
+      fireEvent.click(view.getByText('Add Integration'));
       fireEvent.click(screen.getByText('Webhook'));
 
       // The wizard opens inline; openSettingsToTab was NOT called.

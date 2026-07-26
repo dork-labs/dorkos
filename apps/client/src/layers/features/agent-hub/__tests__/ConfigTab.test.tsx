@@ -13,7 +13,7 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 
 vi.mock('@/layers/features/agent-settings', () => ({
   PersonalityTab: () => <div data-testid="personality-inner">PersonalityInner</div>,
-  ConnectionsTab: () => <div data-testid="connections-inner">ConnectionsInner</div>,
+  IntegrationsTab: () => <div data-testid="integrations-inner">IntegrationsInner</div>,
 }));
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
@@ -119,23 +119,23 @@ describe('ConfigTab', () => {
   // --- Accordion sections ---
   // Note: Tools & MCP moved to Toolkit tab (marketplace-scoped-installs spec)
 
-  it('renders accordion section titles (Connections and Advanced)', () => {
+  it('renders accordion section titles (Integrations and Advanced)', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
     expect(screen.queryByText('Tools & MCP')).not.toBeInTheDocument();
-    expect(screen.getByText('Connections')).toBeInTheDocument();
+    expect(screen.getByText('Integrations')).toBeInTheDocument();
     expect(screen.getByText('Advanced')).toBeInTheDocument();
   });
 
   it('accordion sections are collapsed by default', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    expect(screen.queryByTestId('connections-inner')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('integrations-inner')).not.toBeInTheDocument();
     expect(screen.queryByTestId('personality-inner')).not.toBeInTheDocument();
   });
 
-  it('clicking Connections expands to show ConnectionsTab content', () => {
+  it('clicking Integrations expands to show IntegrationsTab content', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Connections'));
-    expect(screen.getByTestId('connections-inner')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Integrations'));
+    expect(screen.getByTestId('integrations-inner')).toBeInTheDocument();
   });
 
   it('clicking Advanced expands to show PersonalityTab content', () => {
@@ -146,25 +146,25 @@ describe('ConfigTab', () => {
 
   it('toggling an accordion section closed hides its content', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Connections'));
-    expect(screen.getByTestId('connections-inner')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Connections'));
-    expect(screen.queryByTestId('connections-inner')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Integrations'));
+    expect(screen.getByTestId('integrations-inner')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Integrations'));
+    expect(screen.queryByTestId('integrations-inner')).not.toBeInTheDocument();
   });
 
   it('section buttons have aria-expanded reflecting open state', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    const connectionsButton = screen.getByText('Connections').closest('button')!;
-    expect(connectionsButton).toHaveAttribute('aria-expanded', 'false');
-    fireEvent.click(connectionsButton);
-    expect(connectionsButton).toHaveAttribute('aria-expanded', 'true');
+    const integrationsButton = screen.getByText('Integrations').closest('button')!;
+    expect(integrationsButton).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(integrationsButton);
+    expect(integrationsButton).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('multiple sections can be open simultaneously', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Connections'));
+    fireEvent.click(screen.getByText('Integrations'));
     fireEvent.click(screen.getByText('Advanced'));
-    expect(screen.getByTestId('connections-inner')).toBeInTheDocument();
+    expect(screen.getByTestId('integrations-inner')).toBeInTheDocument();
     expect(screen.getByTestId('personality-inner')).toBeInTheDocument();
   });
 });

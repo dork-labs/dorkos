@@ -31,7 +31,7 @@ const SPIKE_STEPS: TourStep[] = [
 /** A tour whose anchor never mounts, to show the honest timeout-skip. */
 const MISSING_ANCHOR_STEPS: TourStep[] = [
   {
-    anchor: TOUR_ANCHORS.relayConnections,
+    anchor: TOUR_ANCHORS.relayIntegrations,
     caption:
       'You should never see this: the anchor is absent, so the step skips after four seconds.',
   },

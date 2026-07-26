@@ -39,12 +39,12 @@ interface WizardState {
   instanceId?: string;
 }
 
-interface ConnectionsTabProps {
+interface IntegrationsTabProps {
   enabled: boolean;
 }
 
-/** Renders active connection instances and available connection types from the catalog. */
-export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
+/** Renders active integration instances and available integration types from the catalog. */
+export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
   const { data: catalog = [], isLoading } = useAdapterCatalog(enabled);
   const { data: agentsData } = useRegisteredAgents();
   const { mutate: toggleAdapter } = useToggleAdapter();
@@ -78,24 +78,24 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
           id: target.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Connection updated');
+        toast.success('Integration updated');
       } else {
         await createBinding.mutateAsync(toCreateBindingRequest(values));
-        toast.success('Connection connected');
+        toast.success('Integration connected');
       }
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save connection');
+      toast.error(err instanceof Error ? err.message : 'Failed to save integration');
     }
   }
 
   async function handleBindingDelete(bindingId: string) {
     try {
       await deleteBinding.mutateAsync(bindingId);
-      toast.success('Connection removed');
+      toast.success('Integration removed');
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove integration');
     }
   }
 
@@ -174,18 +174,18 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
 
   return (
     <div className="space-y-6 p-4">
-      {/* Active Connections */}
+      {/* Active Integrations */}
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-            Active Connections
+            Active Integrations
           </h3>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleRefresh}
             className="size-7 p-0"
-            aria-label="Refresh connection catalog"
+            aria-label="Refresh integration catalog"
           >
             <RefreshCw className="size-3.5" />
           </Button>
@@ -194,9 +194,9 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-8">
             <Plug2 className="text-muted-foreground/40 size-8" />
             <div className="text-center">
-              <p className="text-muted-foreground text-sm">No connections active</p>
+              <p className="text-muted-foreground text-sm">No integrations active</p>
               <p className="text-muted-foreground/60 text-xs">
-                Add a connection below to connect agents to external services
+                Add an integration below to connect agents to external services
               </p>
             </div>
           </div>
@@ -219,14 +219,14 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
         )}
       </section>
 
-      {/* Add Connection */}
+      {/* Add Integration */}
       <section>
         <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-          Add Connection
+          Add Integration
         </h3>
         {availableEntries.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            All connection types are active. Multi-instance connections like Webhook can be added
+            All integration types are active. Multi-instance integrations like Webhook can be added
             again from the active list.
           </p>
         ) : (

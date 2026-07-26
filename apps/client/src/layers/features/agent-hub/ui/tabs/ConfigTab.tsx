@@ -13,7 +13,7 @@ import {
 import { useRuntimeCapabilities, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import {
   PersonalityTab as AgentPersonalityTab,
-  ConnectionsTab as AgentConnectionsTab,
+  IntegrationsTab as AgentIntegrationsTab,
 } from '@/layers/features/agent-settings';
 import { useAgentHubContext } from '../../model/agent-hub-context';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -81,7 +81,7 @@ type AgentWithConventions = AgentManifest & {
  * Config tab for the Agent Hub panel.
  *
  * Renders agent metadata (description, runtime, directory, capabilities) at
- * the top, followed by collapsible accordion sections for Connections and
+ * the top, followed by collapsible accordion sections for Integrations and
  * Advanced settings. Tools & MCP moved to the Toolkit tab. Personality
  * editing lives in the hero popover.
  */
@@ -251,9 +251,9 @@ export function ConfigTab() {
         </div>
       </div>
 
-      {/* Section 2: Connections */}
-      <AccordionSection title="Connections" icon={Radio}>
-        <AgentConnectionsTab agent={agent} />
+      {/* Section 2: Integrations */}
+      <AccordionSection title="Integrations" icon={Radio}>
+        <AgentIntegrationsTab agent={agent} />
       </AccordionSection>
 
       {/* Section 4: Advanced */}

@@ -5,8 +5,8 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
-import { ConnectionBindingCard } from '../ConnectionBindingCard';
-import type { CardAdapterState } from '../ConnectionBindingCard';
+import { IntegrationBindingCard } from '../IntegrationBindingCard';
+import type { CardAdapterState } from '../IntegrationBindingCard';
 
 // Mock AdapterIcon to avoid logo resolution in tests
 vi.mock('@/layers/features/relay', () => ({
@@ -63,11 +63,11 @@ function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
   };
 }
 
-function renderCard(props: Partial<React.ComponentProps<typeof ConnectionBindingCard>> = {}) {
-  const defaultProps: React.ComponentProps<typeof ConnectionBindingCard> = {
+function renderCard(props: Partial<React.ComponentProps<typeof IntegrationBindingCard>> = {}) {
+  const defaultProps: React.ComponentProps<typeof IntegrationBindingCard> = {
     binding: makeBinding(),
-    connectionName: 'Telegram',
-    connectionAdapterType: 'telegram',
+    integrationName: 'Telegram',
+    integrationAdapterType: 'telegram',
     adapterState: 'connected',
     onTogglePause: vi.fn(),
     onTest: vi.fn().mockResolvedValue({ ok: true, resolved: true, latencyMs: 42 }),
@@ -77,7 +77,7 @@ function renderCard(props: Partial<React.ComponentProps<typeof ConnectionBinding
   };
   const { container } = render(
     <TooltipProvider>
-      <ConnectionBindingCard {...defaultProps} />
+      <IntegrationBindingCard {...defaultProps} />
     </TooltipProvider>
   );
   return { view: within(container), container, props: defaultProps };
@@ -85,24 +85,24 @@ function renderCard(props: Partial<React.ComponentProps<typeof ConnectionBinding
 
 // --- Tests ---
 
-describe('ConnectionBindingCard', () => {
+describe('IntegrationBindingCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFormatRelativeTime.mockReturnValue('5m ago');
   });
 
-  it('renders connection name as primary text', () => {
+  it('renders integration name as primary text', () => {
     const { view } = renderCard();
     expect(view.getByText('Telegram')).toBeInTheDocument();
   });
 
-  it('renders connection name + chat display name with em-dash when chatDisplayName provided', () => {
+  it('renders integration name + chat display name with em-dash when chatDisplayName provided', () => {
     const { view } = renderCard({ chatDisplayName: 'Dev chat' });
     expect(view.getByText('Telegram — Dev chat')).toBeInTheDocument();
   });
 
-  it('renders AdapterIcon with connectionAdapterType', () => {
-    const { view } = renderCard({ connectionAdapterType: 'telegram' });
+  it('renders AdapterIcon with integrationAdapterType', () => {
+    const { view } = renderCard({ integrationAdapterType: 'telegram' });
     const icon = view.getByTestId('adapter-icon');
     expect(icon).toBeInTheDocument();
     expect(icon).toHaveAttribute('data-adapter-type', 'telegram');
@@ -220,13 +220,13 @@ describe('ConnectionBindingCard', () => {
 
     it('shows remove confirmation dialog when Remove is clicked in the kebab menu', async () => {
       const user = userEvent.setup();
-      const { view } = renderCard({ connectionName: 'Telegram' });
+      const { view } = renderCard({ integrationName: 'Telegram' });
       await user.click(view.getByRole('button', { name: 'Actions' }));
       fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
-      expect(screen.getByText('Remove connection binding')).toBeInTheDocument();
+      expect(screen.getByText('Remove integration binding')).toBeInTheDocument();
       expect(
         screen.getByText(
-          /Remove the binding to Telegram\? The agent will no longer receive messages from this connection./
+          /Remove the binding to Telegram\? The agent will no longer receive messages from this integration./
         )
       ).toBeInTheDocument();
     });
@@ -277,7 +277,7 @@ describe('ConnectionBindingCard', () => {
       expect(card.className).not.toContain('opacity-60');
     });
 
-    it('shows a "Paused" badge next to the connection name', () => {
+    it('shows a "Paused" badge next to the integration name', () => {
       const { view } = renderCard({ binding: makeBinding({ enabled: false }) });
       expect(view.getByText('Paused')).toBeInTheDocument();
     });

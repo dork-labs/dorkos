@@ -1,17 +1,17 @@
 import { useMemo } from 'react';
 import { useObservedChats } from '@/layers/entities/relay';
 import type { AdapterBinding, BindingTestResult } from '@dorkos/shared/relay-schemas';
-import { ConnectionBindingCard, type CardAdapterState } from './ConnectionBindingCard';
+import { IntegrationBindingCard, type CardAdapterState } from './IntegrationBindingCard';
 
-interface BoundConnectionRowProps {
+interface BoundIntegrationRowProps {
   /** The binding to display. */
   binding: AdapterBinding;
-  /** Display name of the connection (adapter displayName from catalog). */
-  connectionName: string;
+  /** Display name of the integration (adapter displayName from catalog). */
+  integrationName: string;
   /** Icon identifier from the adapter manifest. */
-  connectionIconId?: string;
-  /** Adapter type — used as icon fallback when connectionIconId is absent. */
-  connectionAdapterType: string;
+  integrationIconId?: string;
+  /** Adapter type — used as icon fallback when integrationIconId is absent. */
+  integrationAdapterType: string;
   /** Current adapter connection state. */
   adapterState: CardAdapterState;
   /** Error message to show when adapterState === 'error'. */
@@ -27,7 +27,7 @@ interface BoundConnectionRowProps {
 }
 
 /**
- * Thin wrapper around ConnectionBindingCard that resolves a binding's raw chatId
+ * Thin wrapper around IntegrationBindingCard that resolves a binding's raw chatId
  * to a human-readable display name and computes `lastMessageAt` from observed
  * chat data via useObservedChats.
  *
@@ -35,18 +35,18 @@ interface BoundConnectionRowProps {
  * binding (per adapterId). Calling hooks in a loop violates React rules, so
  * each binding row owns its own hook call.
  */
-export function BoundConnectionRow({
+export function BoundIntegrationRow({
   binding,
-  connectionName,
-  connectionIconId,
-  connectionAdapterType,
+  integrationName,
+  integrationIconId,
+  integrationAdapterType,
   adapterState,
   errorMessage,
   onTogglePause,
   onTest,
   onEdit,
   onRemove,
-}: BoundConnectionRowProps) {
+}: BoundIntegrationRowProps) {
   const { data: observedChats = [] } = useObservedChats(binding.adapterId);
 
   // Resolve chatId → displayName; fall back to #<last-4-chars> when not found.
@@ -66,11 +66,11 @@ export function BoundConnectionRow({
   }, [chat, observedChats]);
 
   return (
-    <ConnectionBindingCard
+    <IntegrationBindingCard
       binding={binding}
-      connectionName={connectionName}
-      connectionIconId={connectionIconId}
-      connectionAdapterType={connectionAdapterType}
+      integrationName={integrationName}
+      integrationIconId={integrationIconId}
+      integrationAdapterType={integrationAdapterType}
       adapterState={adapterState}
       errorMessage={errorMessage}
       chatDisplayName={chatDisplayName}

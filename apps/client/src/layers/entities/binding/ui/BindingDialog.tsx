@@ -173,12 +173,12 @@ export function BindingDialog({
       <ResponsiveDialogContent className="max-h-[85vh] max-w-md gap-0 p-0">
         <ResponsiveDialogHeader className="border-b px-4 py-3">
           <ResponsiveDialogTitle>
-            {isEdit ? 'Edit Connection' : 'Add Connection'}
+            {isEdit ? 'Edit Integration' : 'Add Integration'}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
             {isEdit
-              ? "Edit this connection's configuration"
-              : 'Add a new connection for this agent'}
+              ? "Edit this integration's configuration"
+              : 'Add a new integration for this agent'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -238,8 +238,9 @@ export function BindingDialog({
                   {isEdit ? (
                     /* Edit mode: adapter and agent are read-only */
                     <p className="text-muted-foreground text-sm">
-                      Connection: <span className="text-foreground font-medium">{adapterName}</span>{' '}
-                      &rarr; <span className="text-foreground font-medium">{agentName}</span>
+                      Integration:{' '}
+                      <span className="text-foreground font-medium">{adapterName}</span> &rarr;{' '}
+                      <span className="text-foreground font-medium">{agentName}</span>
                     </p>
                   ) : (
                     /* Create mode: adapter and agent pickers */
@@ -447,9 +448,9 @@ export function BindingDialog({
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Remove connection</AlertDialogTitle>
+                          <AlertDialogTitle>Remove integration</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Remove this connection? The agent will no longer receive messages from
+                            Remove this integration? The agent will no longer receive messages from
                             it.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
@@ -470,7 +471,7 @@ export function BindingDialog({
                   </Button>
                   <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
                     {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Connection'}
+                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Integration'}
                   </Button>
                 </ResponsiveDialogFooter>
               </>

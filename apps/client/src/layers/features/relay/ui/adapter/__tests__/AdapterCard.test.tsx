@@ -59,7 +59,7 @@ vi.mock('@dorkos/icons/adapter-logos', () => ({
   },
 }));
 
-// BindingDialog is no longer rendered inside AdapterCard — dialogs live in ConnectionsTab.
+// BindingDialog is no longer rendered inside AdapterCard — dialogs live in IntegrationsTab.
 
 // ---------------------------------------------------------------------------
 // Fixtures
