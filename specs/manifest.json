@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260726-170533",
+      "slug": "rooms",
+      "title": "Rooms — channels, DMs and threads",
+      "created": "2026-07-26",
+      "status": "specified"
+    },
+    {
       "id": "260726-162747",
       "slug": "channel-workspace",
       "title": "Channel workspaces — a room's shared working context, distributed by git, layered by harness sync",

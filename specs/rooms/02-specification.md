@@ -1,0 +1,326 @@
+# Specification: Rooms — channels, DMs and threads
+
+- **Slug:** rooms
+- **Id:** 260726-170533
+- **Date:** 2026-07-26
+- **Status:** specified
+- **Decisions:** ADR 260726-170125 (room model), ADR 260726-170126 (author identity), ADR 260726-170127 (cascade guard)
+
+Read `01-ideation.md` first for what is already settled and must not be re-argued.
+
+---
+
+## 1. Vocabulary
+
+| Term           | Meaning                                                                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Room**       | A membership-scoped durable stream. Three kinds: `channel`, `dm`, `thread`.                                                               |
+| **Author**     | Anyone who can post: a human, an agent, or the system. Identified by an opaque `authorId`.                                                |
+| **Membership** | An author's binding to one room, carrying that room's addressing override and read cursor.                                                |
+| **Entry**      | One durable, turn-atomic item in a room's log. Either a `post` (someone said something) or a `notice` (the room says something happened). |
+| **Connection** | The renamed Relay concept — an external adapter (Telegram, Slack, webhook). Never called a channel after this spec.                       |
+
+---
+
+## 2. Data model
+
+New Drizzle schema file `packages/db/src/schema/rooms.ts`, registered in `packages/db/src/schema/index.ts` and `packages/db/drizzle.config.ts`. Migration generated with `pnpm --filter @dorkos/db db:generate` and **committed** — `db:check` fails CI otherwise.
+
+### `authors`
+
+```ts
+export const authors = sqliteTable(
+  'authors',
+  {
+    id: text('id').primaryKey(), // ULID, opaque, this is what everything else stores
+    kind: text('kind').notNull(), // 'human' | 'agent' | 'system'
+    naturalKey: text('natural_key').notNull(), // agent: agentPath. human: local account key. system: 'system'
+    displayName: text('display_name').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('authors_kind_natural_key_unique').on(t.kind, t.naturalKey)]
+);
+```
+
+**The natural key for an agent is its `agentPath`, never its manifest ULID** (ADR 260726-170126). Resolution is mint-on-first-use: look up `(kind, naturalKey)`, insert if absent, return `id`. `agents.project_path` is already `NOT NULL UNIQUE` (`packages/db/src/schema/mesh.ts:9`), so the natural key is genuinely unique.
+
+`displayName` is a **cache for rendering**, refreshed on resolve. It is never the key.
+
+v1 mints exactly one `human` author (`naturalKey: 'local'`) and one `system` author.
+
+### `rooms`
+
+```ts
+id               text primary key      // ULID
+kind             text not null         // 'channel' | 'dm' | 'thread'
+parentId         text                  // non-null iff kind = 'thread'
+slug             text                  // channels only; unique among non-archived channels
+title            text not null
+topic            text
+workspaceId      text                  // optional reference; behavior is out of scope (see §9)
+rootEntryId      text                  // threads only: the parent entry this thread hangs off
+archived         integer not null default 0
+createdAt        text not null
+lastActivityAt   text not null
+```
+
+Unique index on `slug` where `kind = 'channel'`. Index on `parentId`.
+
+**A thread is a room with a parent.** One level only: creating a thread whose parent is itself a thread is rejected at the service boundary with a typed error, not silently flattened.
+
+### `room_members`
+
+```ts
+roomId        text not null
+authorId      text not null
+responseMode  text not null       // 'always' | 'direct-only' | 'mention-only' | 'silent'
+joinedAt      text not null
+lastReadSeq   integer not null default 0
+primary key (roomId, authorId)
+```
+
+`lastReadSeq` **is** the `(member, room)` read cursor. The unread divider reads it.
+
+`responseMode` is always written explicitly at join time, seeded by room kind:
+
+| Room kind | Seed                                                                                                        |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| `dm`      | the agent's manifest `behavior.responseMode` (`packages/shared/src/mesh-schemas.ts:62`), default `'always'` |
+| `channel` | `'mention-only'`                                                                                            |
+| `thread`  | inherit the parent room's membership value                                                                  |
+
+Storing it explicitly means there is no dynamic rule to reason about later, and the value is editable per room.
+
+### `room_entries`
+
+```ts
+roomId        text not null
+seq           integer not null      // per-room monotonic, allocated in-transaction
+id            text not null         // ULID, stable, what a reaction would attach to
+authorId      text not null
+kind          text not null         // 'post' | 'notice'
+body          text not null         // JSON
+mentions      text not null default '[]'   // JSON array of authorId
+sessionId     text                  // the session that produced this, if any
+cascadeRoot   text not null         // entry id that began this cascade (own id at depth 0)
+cascadeDepth  integer not null default 0
+signature     text                  // reserved for phase 4; always null in v1
+createdAt     text not null
+primary key (roomId, seq)
+```
+
+Indexes on `(roomId, id)` and `(roomId, cascadeRoot)`.
+
+**`seq` is allocated inside the insert transaction** (`SELECT COALESCE(MAX(seq),0)+1 FROM room_entries WHERE room_id = ?` in the same tx). SQLite serialises writers, so this is safe and does not need a separate counter table.
+
+**There is no trim.** Unlike `EventLog` (capped at 5000, oldest evicted) and `SessionEventStore`, a room log never discards entries — a room that forgets what was said is not a room. Retention, if it is ever needed, is a product decision with its own spec.
+
+### `room_sessions`
+
+```ts
+roomId     text not null
+authorId   text not null
+sessionId  text not null
+createdAt  text not null
+primary key (roomId, authorId)
+```
+
+The session an agent member uses when it answers in this room. Three agents in a room means three rows here — three sessions on one stream, each keeping its own runtime binding (ADR-0255).
+
+---
+
+## 3. Shared schemas
+
+New subpath `@dorkos/shared/room-schemas` (`packages/shared/src/room-schemas.ts` + an `exports` block in `packages/shared/package.json`, matching the `./smart-groups` block at lines 176-179).
+
+Exports, all with `.openapi()` metadata: `RoomKindSchema`, `AuthorKindSchema`, `AuthorRefSchema`, `RoomSchema`, `RoomMemberSchema`, `RoomEntrySchema`, `RoomEntryKindSchema`, `CreateRoomRequestSchema`, `PostToRoomRequestSchema`, `UpdateMembershipRequestSchema`, and the room SSE event union `RoomEventSchema`.
+
+`responseMode` **reuses the existing enum** — import the values from `mesh-schemas.ts`, do not re-declare them. A second copy of that enum is a review-blocking finding.
+
+### Canonical serialization (reserved for signing)
+
+`room-schemas.ts` exports `canonicalizeEntry(entry): string` — a deterministic, key-sorted, UTF-8 NFC serialization of the signable subset (`roomId`, `id`, `authorId`, `kind`, `body`, `createdAt`). Nothing signs in v1; the function exists so phase 4 lands without a migration, and it must have tests pinning its output byte-for-byte.
+
+---
+
+## 4. Server
+
+New service domain `apps/server/src/services/rooms/`, following the `workspace` domain's layout (`apps/server/src/services/workspace/index.ts:40-82` is the factory + singleton-accessor template):
+
+```
+rooms/
+  room-store.ts        Drizzle CRUD over the four tables
+  author-registry.ts   mint-on-first-use resolution of (kind, naturalKey) -> authorId
+  room-service.ts      orchestration: create, join, post, read cursor, thread create
+  addressing.ts        who should be triggered by an entry (§5)
+  cascade-guard.ts     depth + ancestry (§6)
+  mentions.ts          parse @name -> authorId[] at post time
+  index.ts             createRoomSubsystem() + get/setRoomService
+```
+
+Wired in `apps/server/src/index.ts` beside `createWorkspaceSubsystem`. Routes at `apps/server/src/routes/rooms.ts`, mounted `app.use('/api/rooms', roomRoutes)` in `apps/server/src/app.ts` next to line 163.
+
+### REST surface
+
+| Method   | Path                               | Purpose                                                                                              |
+| -------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/rooms`                       | List rooms visible to the caller. `?kind=` filter. Includes `unreadCount` per room.                  |
+| `POST`   | `/api/rooms`                       | Create a channel or DM.                                                                              |
+| `GET`    | `/api/rooms/:id`                   | One room with its roster.                                                                            |
+| `PATCH`  | `/api/rooms/:id`                   | Title, topic, archive.                                                                               |
+| `GET`    | `/api/rooms/:id/entries`           | Paginated history, `?before=<seq>&limit=`.                                                           |
+| `POST`   | `/api/rooms/:id/entries`           | Post. **Trigger-only, returns 202** — mirrors `POST /api/sessions/:id/messages`. Delivery rides SSE. |
+| `POST`   | `/api/rooms/:id/members`           | Add a member (agent or human).                                                                       |
+| `PATCH`  | `/api/rooms/:id/members/:authorId` | Change `responseMode`.                                                                               |
+| `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                                                                     |
+| `PUT`    | `/api/rooms/:id/read-cursor`       | Set `lastReadSeq`.                                                                                   |
+| `POST`   | `/api/rooms/:id/threads`           | Open a thread off an entry.                                                                          |
+
+Every route obtains runtimes via `runtimeRegistry`, never an SDK import.
+
+### SSE
+
+`GET /api/rooms/:id/events` — same three-part contract as the session stream (`apps/server/src/routes/session-events-handler.ts:94-254` is the reference): snapshot on cold connect, gap-free replay from `Last-Event-ID`, then live. Cursor format `<roomId>-<epoch>-<seq>`, validated against the process `STREAM_EPOCH` exactly as `parseResumeCursor` does (`:64-83`), so a cursor minted by a dead process is rejected rather than silently mis-replayed.
+
+Room lifecycle events (created, archived, member added/removed, `lastActivityAt` bumped) fan out on the existing global `GET /api/events`.
+
+**Ephemeral signals never enter the room log.** Typing, presence, read receipts, delivery receipts, progress and backpressure are delivered live and dropped on replay. They reuse `SignalTypeSchema` (`packages/shared/src/relay-envelope-schemas.ts:21`) rather than declaring new names.
+
+---
+
+## 5. Addressing — who answers
+
+On a committed `post` entry by author `A` in room `R`, for each agent member `M` of `R` where `M.authorId !== A.authorId`:
+
+| `M.responseMode` | Triggered when                                      |
+| ---------------- | --------------------------------------------------- |
+| `silent`         | never                                               |
+| `mention-only`   | `M.authorId ∈ entry.mentions`                       |
+| `direct-only`    | `R.kind === 'dm'`, or `M.authorId ∈ entry.mentions` |
+| `always`         | always                                              |
+
+Then the cascade guard (§6) may veto. Survivors are triggered on their `room_sessions` row, creating the session if absent.
+
+Addressing three agents and getting three answers is the intended outcome, not a pathology. `responseMode` exists to stop agents answering when they were **not** addressed; it makes no attempt to order or serialise the ones who were.
+
+### Mentions
+
+`mentions.ts` parses `@name` at post time against the room's roster (agent name, then author `displayName`), resolves to `authorId[]`, and stores the resolved list on the entry. Resolution happens once, at write; the client renders from the stored list and never re-parses. An unresolvable `@name` stays plain text.
+
+---
+
+## 6. Cascade guard
+
+Per ADR 260726-170127. The relay's budget envelope does not reach here — `enforceBudget` has exactly two call sites, both inside `packages/relay`, and nothing in `services/session` constructs an envelope.
+
+Before triggering author `X` from entry `E`:
+
+1. `depth = E.cascadeDepth + 1`. Refuse if `depth > maxAgentDepth` (config, default **3**).
+2. Refuse if `X` appears among `SELECT DISTINCT author_id FROM room_entries WHERE room_id = ? AND cascade_root = E.cascadeRoot`.
+
+A post by a **human** author always starts a fresh cascade: `cascadeRoot = <own id>`, `cascadeDepth = 0`. A human can therefore always re-engage a room the guard has stopped.
+
+A refusal writes a `notice` entry into the room. The copy is the room's voice, not a stack trace, and follows `writing-for-humans`:
+
+> Ana stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.
+
+A silently dropped trigger is indistinguishable from a broken agent, and in a shared room the person who notices is not the person who configured it.
+
+---
+
+## 7. Client
+
+FSD layers apply without exception: `shared ← entities ← features ← widgets`, barrel imports only.
+
+### `entities/room/`
+
+`model/` — `useRooms()` (query key `['rooms']`), `useRoom(id)`, `useRoomEntries(id)`, `usePostToRoom()`, `useRoomStream(id)` bridging SSE into the query cache the way the session stream already does. All data access goes through the `Transport` interface (`packages/shared/src/transport.ts`) — **never raw `fetch`**; add the room methods to `HttpTransport` and `DirectTransport` both, or the Obsidian embed breaks at runtime with no type error.
+
+`ui/` — `RoomAvatar`, `RoomTitle`, `MemberList`.
+
+### Sidebar
+
+Two new sections in `apps/client/src/layers/features/dashboard-sidebar/`, composed directly into `DashboardSidebar.tsx` (around line 465, beside `RecentSessionsSection` and `PinnedSection`).
+
+`sidebar-contributions.ts` is **not** the mechanism — it is a footer-button registry (`SIDEBAR_FOOTER_BUTTONS`). Nor is the `sidebar.body` slot, which is a route-scoped whole-body takeover and would replace the agent roster rather than sit beside it.
+
+- `ChannelsSection.tsx` — collapsible `SidebarGroup`, `#`-prefixed rows, unread badge, "New channel" affordance. Mirrors `RecentSessionsSection.tsx:79-95` for the collapse header.
+- `DirectMessagesSection.tsx` — same shape, avatar rows, "New message" affordance.
+
+Collapse state: two new booleans on `SidebarPrefsSchema` (`packages/shared/src/config-schema.ts:250-267`), `channelsCollapsed` and `dmsCollapsed`, with matching setters in `use-sidebar-prefs.ts`. **Follow the `adding-config-fields` skill** — a config schema change without a semver-keyed migration is a review-blocking finding.
+
+`EmbedSidebar.tsx` is a **separate component with no shared roster abstraction**. Rooms do not appear in the Obsidian embed in v1; that is a deliberate scope call, and the embed must not regress.
+
+### Route
+
+```ts
+const channelsRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/channels',
+  component: ChannelsPage,
+  validateSearch: zodValidator(channelsSearchSchema), // { id?: string, thread?: string }
+});
+```
+
+Room identity travels as a **search param**, matching how `/session` carries `?session=` rather than a path param (`router.tsx:71-79`). Discord does the same thing for DMs, so `/channels?id=<dmId>` is precedented rather than odd.
+
+### Room view
+
+`widgets/room-view/` composes the existing chat message list unchanged. Phase 1 already renders authors, grouping, day and unread separators; a room is simply the first place that list has more than two participants. Header shows title, topic and member avatars. The composer posts to `/api/rooms/:id/entries`.
+
+The unread divider now reads `lastReadSeq` from the membership rather than `localStorage` — this is what resolves D4 of `multi-participant-message-list` from "client-local for phase 1" to the real cursor.
+
+### Author rendering
+
+`resolve-message-author.ts` keeps deriving a **view model** for session chat. Room entries arrive with a persisted `authorId` and are rendered from the room's roster. **Do not persist the view model, and do not feed `ctx.agent.id` into a room column** — that is the exact bug ADR 260726-170126 exists to prevent.
+
+---
+
+## 8. The Connection rename
+
+Mechanical, independently shippable, and it must land before the sidebar section does — two "Channels" in one product, one of them a badge inside the sidebar, is a UX defect on its own.
+
+| File                                                                                                               | Change                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `features/settings/ui/ChannelsTab.tsx` + `SettingsDialog.tsx:36`                                                   | Tab label `Channels` → `Connections`; `ChannelSettingRow` → `ConnectionSettingRow`                       |
+| `features/agent-settings/ui/ChannelsTab.tsx`, `ChannelPicker.tsx`, `BoundChannelRow.tsx`, `ChannelBindingCard.tsx` | User-facing copy and component names → Connection                                                        |
+| `features/relay/ui/ConnectionsTab.tsx`, `RelayEmptyState.tsx:70`                                                   | Body copy "Active Channels" / "Add Channel" → Connections, resolving the existing tab/body inconsistency |
+| `features/mesh/ui/BindingEdge.tsx:37-41`                                                                           | Default edge label `Channel` → `Connection`                                                              |
+| `features/dashboard-status/lib/subsystem-copy.ts:34-42`                                                            | "No channels connected yet" → connections                                                                |
+| `entities/session/config/origin-descriptors.ts:28`                                                                 | `channel: { label: 'Channel' }` → `'Connection'`                                                         |
+
+The `origin` **value** `'channel'` is wire data and stays — this is a display-label change, not a schema change. Run the REVIEW.md dangling-reference sweep over `docs/`, `contributing/` and `*.md`.
+
+---
+
+## 9. Explicitly out of scope
+
+- **Room-workspace cwd resolution.** `rooms.workspaceId` is stored and returned; how it composes with the `agent-workspace-binding` precedence chain belongs to that spec.
+- **Reactions.** Phase 2 of `multi-participant-message-list`, unblocked by the author key here.
+- **A′-mechanism**, the resource-keyed write lock. Not thread-gated.
+- **Signing.** Field reserved, `canonicalizeEntry` written and tested, nothing signs.
+- **Accounts.** One local human author until they land.
+- **Rooms in the Obsidian embed.**
+
+---
+
+## 10. Phasing
+
+| Phase  | Deliverable                                                                                          | Depends on |
+| ------ | ---------------------------------------------------------------------------------------------------- | ---------- |
+| **R0** | The Connection rename (§8)                                                                           | —          |
+| **R1** | Shared schemas, four tables + migration, rooms service, REST + SSE, tests                            | —          |
+| **R2** | `entities/room`, Transport methods, sidebar sections, `/channels` route, room view rendering history | R1         |
+| **R3** | Posting, addressing, mentions, triggering agents, cascade guard, read cursor                         | R2         |
+| **R4** | Threads: child rooms, summary rows, `conversation_context` digest                                    | R3         |
+
+R0 and R1 are independent and run in parallel. Each phase is one PR, in its own worktree, reviewed by a separate agent against `REVIEW.md`.
+
+## 11. Testing
+
+- Server: `FakeAgentRuntime` and scenarios from `@dorkos/test-utils`; SSE via `collectDurableEvents`.
+- **Cascade guard needs a test that actually cascades** — two `always` agents in one room, asserting the run terminates, a `notice` lands, and the ancestry rule fires before the depth ceiling. The guard's absence is invisible except under a cascade.
+- `seq` allocation needs a concurrent-insert test; the in-transaction `MAX(seq)+1` is the load-bearing claim.
+- `canonicalizeEntry` needs byte-exact fixtures.
+- Client: React Testing Library with a mock `Transport` via `TransportProvider`.
+- The sidebar sections need **browser** verification, not just jsdom — menu-to-editor focus races in this repo are invisible to jsdom.
