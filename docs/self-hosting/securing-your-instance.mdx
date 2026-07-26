@@ -96,10 +96,11 @@ Separate names with commas and leave the port off. DorkOS matches the name only,
 </Callout>
 
 <Callout type="warn">
-  **`DORKOS_ALLOW_INSECURE_BIND=true` also turns this address check off.** That setting now does two
-  jobs: it lets DorkOS listen beyond your own machine, and it stops DorkOS checking the address each
-  request arrived under. So if you set it once to get past the startup error, you gave up the
-  rebinding protection above as well, even on `localhost`.
+  **`DORKOS_ALLOW_INSECURE_BIND=true` also turns this address check off.** That setting says "the
+  thing around DorkOS controls who reaches it", so it does more than let DorkOS listen beyond your
+  own machine. It also stops DorkOS checking where each request came from, both the address it
+  arrived under and whether it came from this computer at all. So if you set it once to get past the
+  startup error, you gave up the rebinding protection above as well, even on `localhost`.
 
 That is the right trade inside a container, which owns its own network boundary, and it is why the
 official Docker image ships with it. It is the wrong trade on a normal machine. If you set it for

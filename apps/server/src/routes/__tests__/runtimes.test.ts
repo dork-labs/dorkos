@@ -28,6 +28,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import express from 'express';
 import request from 'supertest';
 import { createApp } from '../../app.js';
+import { env } from '../../env.js';
 import runtimesRouter from '../runtimes.js';
 import { provisionOpenCode } from '../../services/runtimes/opencode/provision.js';
 import { provisionCodex } from '../../services/runtimes/codex/provision.js';
@@ -257,6 +258,48 @@ describe('TCP peer is required to be loopback', () => {
       vi.mocked(provisionCodex).mockReset();
     }
   );
+
+  /**
+   * In a container the browser's request arrives from the bridge gateway, not
+   * loopback, so requiring a loopback peer would refuse provisioning for every
+   * Docker operator. `DORKOS_ALLOW_INSECURE_BIND` already means "this deployment
+   * owns its network boundary" and already switches off the host guard; it
+   * relaxes this gate for the same reason. The flag is read per request, so
+   * flipping the parsed snapshot is enough to exercise both directions.
+   */
+  describe('DORKOS_ALLOW_INSECURE_BIND', () => {
+    afterEach(() => {
+      env.DORKOS_ALLOW_INSECURE_BIND = false;
+    });
+
+    it.each([
+      ['172.17.0.1', "Docker's bridge gateway"],
+      ['192.168.86.200', 'a LAN peer'],
+    ])('admits %s (%s) when the flag is set', async (peer) => {
+      env.DORKOS_ALLOW_INSECURE_BIND = true;
+      vi.mocked(provisionCodex).mockResolvedValue({ ok: true, binaryPath: '/dork/codex' });
+
+      const res = await request(appWithPeer(peer))
+        .post('/api/runtimes/codex/provision')
+        .set('Host', 'localhost:4242');
+
+      expect(res.status).toBe(200);
+      expect(provisionCodex).toHaveBeenCalledOnce();
+
+      vi.mocked(provisionCodex).mockReset();
+    });
+
+    it('refuses the same request when the flag is not set', async () => {
+      env.DORKOS_ALLOW_INSECURE_BIND = false;
+
+      const res = await request(appWithPeer('172.17.0.1'))
+        .post('/api/runtimes/codex/provision')
+        .set('Host', 'localhost:4242');
+
+      expect(res.status).toBe(403);
+      expect(provisionCodex).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('POST /api/runtimes/codex/provision', () => {

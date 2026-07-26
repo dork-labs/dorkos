@@ -91,8 +91,12 @@ const serverEnvSchema = z.object({
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
   // binding a non-loopback host without a login. Off by default; set only by
   // container images that own their own network boundary (see Dockerfile.*).
-  // Also switches OFF the `/api` host guard, for the same reason: the container
-  // owns the boundary (see middleware/host-guard.ts).
+  // It also switches OFF the two request-level locality checks, for the same
+  // reason — the surrounding environment owns the boundary, and inside a
+  // container neither check can succeed anyway (a browser's request arrives from
+  // the bridge gateway, not loopback):
+  //   - the `/api` host guard (middleware/host-guard.ts)
+  //   - the local-only gate on the runtime connect/provision routes (routes/runtimes.ts)
   DORKOS_ALLOW_INSECURE_BIND: boolFlag,
   // Extra host names the `/api` host guard accepts, comma-separated and without
   // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted

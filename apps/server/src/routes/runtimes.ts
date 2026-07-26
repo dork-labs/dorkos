@@ -43,6 +43,7 @@ import {
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/ollama-catalog.js';
+import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
 import { isLoopbackHostHeader, isLoopbackPeer } from '../lib/trusted-origins.js';
 
@@ -66,16 +67,33 @@ const router = Router();
  *   `evil.com`, and the browser writes that into `Host` and cannot lie about it.
  *
  * Socket alone admits the rebound browser; `Host` alone admits the remote
- * caller. Together they close both.
+ * caller. Neither substitutes for the other. A live ngrok tunnel is the clearest
+ * case: its agent runs on this machine, so the peer IS loopback, and only the
+ * `Host` check (which sees the public tunnel domain) turns that traffic away.
  *
- * Two consequences worth knowing. A reverse proxy on this same host connects
- * from `127.0.0.1`, so its traffic is indistinguishable from a local caller's
- * (see {@link isLoopbackPeer}). And in Docker the browser's requests arrive from
- * the bridge gateway, not loopback, so these actions are refused inside the
- * container — correct, since nothing there can tell the operator apart from
- * anyone else who can reach the published port.
+ * ## `DORKOS_ALLOW_INSECURE_BIND` relaxes this, as it does the host guard
+ *
+ * In a container the browser's request arrives from the bridge gateway rather
+ * than loopback, so requiring a loopback peer would refuse runtime provisioning
+ * for every Docker operator — a feature that works today, broken for the people
+ * the flag already exists to accommodate. The flag's established meaning is
+ * "this deployment owns its network boundary", and the official image sets it;
+ * `docs/self-hosting/docker.mdx` already states that anyone who reaches the
+ * published port has full control. Refusing here would not shrink that blast
+ * radius (such a caller can already run agent turns and open shells), so it buys
+ * nothing and costs a working feature. Honoring the flag is the same decision
+ * `middleware/host-guard.ts` makes, for the same reason.
+ *
+ * Unflagged — the default on a normal machine — both signals are still required.
+ *
+ * One residual remains and is inherent: a reverse proxy on this same host
+ * connects from `127.0.0.1`, so it is indistinguishable from a local caller at
+ * the socket layer (see {@link isLoopbackPeer}). Its forwarded `Host` normally
+ * carries the public name and is refused, but an operator who rewrites `Host` to
+ * `localhost` re-opens it.
  */
 function isLocalCaller(req: Request): boolean {
+  if (env.DORKOS_ALLOW_INSECURE_BIND) return true;
   return isLoopbackPeer(req.socket.remoteAddress) && isLoopbackHostHeader(req.headers.host);
 }
 
