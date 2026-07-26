@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): the room primitive — durable streams with membership (DOR-524)'
+  - 'fix(rooms): address review — atomic create, slug reclaim, agent-scoped reads'
 ---
 
 ### Added
