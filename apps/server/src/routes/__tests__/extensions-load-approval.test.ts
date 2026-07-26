@@ -299,6 +299,49 @@ describe('POST /api/extensions/:id/approve', () => {
       expect(state.extensions.approvedToRun).toEqual([]);
     });
 
+    it('cannot talk its way in by controlling the Host header (DNS rebinding)', async () => {
+      // The bar originally computed the expected origin from `req.headers.host`,
+      // which the attacker sets. Under DNS rebinding the browser sends BOTH
+      // `Host: evil.example` and `Origin: http://evil.example` — they match, the
+      // "same origin as this very request" shortcut fires, and the bar is skipped.
+      // An expected value derived from the request cannot judge the request. The
+      // allowlist has to be the server's own, which is what `validateMcpOrigin`
+      // does, and its docstring names this attack.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('host', 'evil.example')
+        .set('origin', 'http://evil.example')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
+    });
+
+    it('is not fooled by a host that merely starts with a trusted one', async () => {
+      // `http://localhost:4242.evil.example` is a host the attacker owns. Exact
+      // `.includes()` membership refuses it; a prefix comparison would not, and a
+      // prefix comparison is the natural way to write this wrong.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', 'http://localhost:4242.evil.example')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
+    });
+
+    it('refuses the opaque `null` origin a sandboxed frame sends', async () => {
+      // A sandboxed iframe or a `data:` URL sends the literal string `null`. It is
+      // an Origin header, so it is judged, and it is in no allowlist.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', 'null')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
+    });
+
     it('lets the cockpit through on its own origin', async () => {
       const res = await request(app)
         .post('/api/extensions/my-ext/approve')

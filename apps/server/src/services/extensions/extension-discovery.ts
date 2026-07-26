@@ -90,7 +90,9 @@ export class ExtensionDiscovery {
       // marketplace/server.ts` was `origin: 'core'`, and core short-circuits the
       // load approval, so the planted code was never asked about.
       const origin: 'core' | 'user' =
-        core.has(rec.id) && path.resolve(rec.path) === path.join(stagingDir, rec.id)
+        core.has(rec.id) &&
+        path.resolve(rec.path) === path.join(stagingDir, rec.id) &&
+        (await this.isRealDirectory(rec.path))
           ? 'core'
           : 'user';
 
@@ -122,6 +124,43 @@ export class ExtensionDiscovery {
       }`
     );
     return results;
+  }
+
+  /**
+   * Whether `target` is a real directory, rather than a symlink standing where one
+   * belongs.
+   *
+   * The third condition on `origin: 'core'`, and it has to be checked HERE rather
+   * than trusted from staging. The path comparison above is lexical —
+   * `path.resolve` normalizes `..` and separators but does not follow links — and
+   * {@link ExtensionDiscovery.scanDirectory} admits symlink entries on purpose, so
+   * a symlink at `{dorkHome}/extensions/<core-id>` matches the staged path exactly
+   * while its contents live wherever the link points.
+   *
+   * `ensureCoreExtensions` deletes such a symlink before staging, but that runs
+   * once, at boot (`index.ts`). {@link ExtensionManager.reload} re-runs discovery
+   * with no re-staging, and it is reachable from `POST /api/extensions/reload` and
+   * the `reload_extensions` tool — so the repair sat on the wrong side of the check
+   * it was protecting, and a symlink planted after boot re-derived as `core` until
+   * the next restart. Both defenses are kept: this one refuses, that one heals.
+   *
+   * `fs.realpath` on both sides would NOT have worked. When the staged path itself
+   * is the link, both sides resolve to the same target and compare equal. The
+   * question is not "where does this path lead" but "is this path the directory
+   * DorkOS wrote", and only `lstat` answers that.
+   *
+   * Scoped honestly: creating a symlink needs a shell, so this is not the no-shell
+   * `acceptEdits` adversary that made the id-membership derivation critical.
+   *
+   * @param target - Absolute path to the extension directory.
+   */
+  private async isRealDirectory(target: string): Promise<boolean> {
+    try {
+      const stats = await fs.lstat(target);
+      return stats.isDirectory();
+    } catch {
+      return false;
+    }
   }
 
   /**

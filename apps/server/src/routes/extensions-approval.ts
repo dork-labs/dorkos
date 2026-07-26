@@ -57,9 +57,32 @@ import {
  * send one DorkOS trusts. Without it, any web page a person visits could POST this
  * approval through their browser — no cookie required in the default posture, and
  * CORS does not help, since it withholds the RESPONSE while the write has already
- * happened. Requests with no `Origin` (curl, the CLI, the desktop shell) pass, the
- * same allowance `validateMcpOrigin` makes for the same reason: only browsers send
- * the header, so only browsers can be judged by it.
+ * happened.
+ *
+ * The allowlist is the SERVER's (`resolveTrustedOrigins`, the repo's single origin
+ * policy), and membership is exact. It deliberately does not compare the `Origin`
+ * against anything derived from the request: an earlier version allowed an origin
+ * equal to `${req.protocol}://${req.headers.host}`, borrowed from the CORS delegate
+ * in `app.ts` to cover port remaps, and that is precisely what DNS rebinding
+ * defeats — the browser sends `Host: evil.example` AND `Origin: http://evil.example`,
+ * they match, and the bar never runs. An expected value taken from the request
+ * cannot judge the request. `middleware/mcp-origin.ts` has always done it this way
+ * and names this attack outright.
+ *
+ * The cost, stated: a deployment that serves the cockpit on an origin other than
+ * DorkOS's own port (a container published on a different host port) is refused
+ * here even though CORS lets it through. Every documented Docker invocation
+ * publishes `4242:4242`, and the tunnel origin is in the trusted set, so the
+ * shipped paths are covered. `DORKOS_CORS_ORIGIN` is NOT consulted on purpose:
+ * "which sites may read my responses" is a different question from "which page may
+ * record a person's security decision", and quietly answering the second with the
+ * first is how a convenience setting becomes an authorization one.
+ *
+ * Requests with no `Origin` (curl, the CLI, the desktop shell) pass, the same
+ * allowance `validateMcpOrigin` makes for the same reason: only browsers send the
+ * header, so only browsers can be judged by it. Both routes are POST-only, and
+ * browsers have sent `Origin` on every POST — `fetch`, `XMLHttpRequest`, and plain
+ * form submission — for years, so a browser cannot reach that branch.
  *
  * @param req - The request, read for the `Origin` header and the agent-identity and
  *   approval-token headers.
@@ -69,9 +92,7 @@ import {
  */
 function refuseIfNotAPerson(req: Request, res: Response): boolean {
   const origin = req.headers.origin;
-  const host = req.headers.host;
-  const sameOrigin = host ? origin === `${req.protocol}://${host}` : false;
-  if (origin && !sameOrigin && !resolveTrustedOrigins().includes(origin)) {
+  if (origin && !resolveTrustedOrigins().includes(origin)) {
     res.status(403).json({
       error: EXTENSION_NOT_APPROVED_ERROR,
       code: EXTENSION_NOT_APPROVED_CODE,

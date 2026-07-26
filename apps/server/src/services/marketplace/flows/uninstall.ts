@@ -263,6 +263,21 @@ export class UninstallFlow {
     req: UninstallRequest
   ): Promise<void> {
     const type = located.inferredType;
+    // Only these two types walk `.dork/extensions/`. `shape` and `adapter` packages
+    // may carry that directory too, and the asymmetry looks like an oversight, so:
+    // a bundled extension under either of those types never becomes a discovery
+    // record today, and therefore has nothing to turn off and no approval to forget
+    // (DOR-516). `ExtensionDiscovery` scans exactly two roots, one level deep —
+    // `{dorkHome}/extensions` and `{cwd}/.dork/extensions` — and neither
+    // `{dorkHome}/shapes/**` nor an adapter's install root is among them.
+    // `applyShape` does not close the gap either: it iterates `manifest.activates`,
+    // a list of ids, and skips any id `extensionManager.get()` does not already
+    // know, so a Shape's own bundled tree is never registered.
+    //
+    // Two changes would make this live, and whoever makes one has to add the walk
+    // here as part of it: discovery gaining a third root, or `applyShape` learning
+    // to read `manifest.extensions` instead of only `activates`. Adding the call
+    // now would be dead code that reads like coverage.
     if (type === 'plugin' || type === 'skill-pack') {
       await this.disableBundledExtensions(stagingPath);
     }

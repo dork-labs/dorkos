@@ -2,6 +2,7 @@
 covers:
   - 'feat(extensions): a person approves an extension once before its code runs in the server (DOR-516)'
   - 'fix(extensions): close two ways around the extension load gate (DOR-516)'
+  - "fix(extensions): the origin bar has to use the server's own allowlist (DOR-516)"
 ---
 
 ### Added

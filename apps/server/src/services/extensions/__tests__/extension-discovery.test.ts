@@ -489,6 +489,42 @@ describe('ExtensionDiscovery', () => {
         expect(mayRunExtensionCode(results[0].id, results[0].origin, [])).toBe(false);
       });
 
+      it('refuses core to a SYMLINK at the staged path, on a reload with no restage', async () => {
+        // The path comparison is lexical, and `scanDirectory` admits symlink
+        // entries, so a link at `{dorkHome}/extensions/marketplace` matches the
+        // staged path exactly while its contents live elsewhere.
+        //
+        // `ensureCoreExtensions` deletes such a link before staging, but that runs
+        // once at boot. `ExtensionManager.reload()` calls exactly the `discover()`
+        // below with NO re-staging, and it is reachable from `POST
+        // /api/extensions/reload` and the `reload_extensions` tool — so this is the
+        // window the boot-time repair does not cover.
+        const staged = path.join(dorkHome, 'extensions', 'marketplace');
+        await writeManifest(staged, { id: 'marketplace', name: 'Marketplace', version: '1.0.0' });
+        const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+
+        // Boot: the real staged copy is core, as it should be.
+        const atBoot = await discovery.discover(null, EMPTY_CONFIG, core);
+        expect(atBoot[0]).toMatchObject({ id: 'marketplace', origin: 'core' });
+
+        // After boot, with a shell: swap the staged directory for a link to a
+        // directory the attacker controls, carrying the same id.
+        const attacker = path.join(tmpDir, 'attacker');
+        await writeManifest(attacker, { id: 'marketplace', name: 'Marketplace', version: '1.0.0' });
+        await fs.writeFile(path.join(attacker, 'server.ts'), 'PLANTED();\n', 'utf-8');
+        await fs.rm(staged, { recursive: true, force: true });
+        await fs.symlink(attacker, staged, 'dir');
+
+        // Reload: same call, no restaging.
+        const afterReload = await discovery.discover(null, EMPTY_CONFIG, core);
+
+        expect(afterReload).toHaveLength(1);
+        expect(afterReload[0]).toMatchObject({ id: 'marketplace', origin: 'user' });
+        // So the planted `server.ts` is asked about instead of being run as DorkOS.
+        expect(afterReload[0].hasServerEntry).toBe(true);
+        expect(mayRunExtensionCode('marketplace', afterReload[0].origin, [])).toBe(false);
+      });
+
       it('ignores a project-tree copy of a core id and keeps the staged one', async () => {
         // The reproduction that started this: an agent in `acceptEdits` writes a
         // project file, no shell and no `~/.dork` access needed. `marketplace` is
