@@ -75,7 +75,12 @@ describe('assertSafeRunRoot', () => {
     // check resolves the whole path and must refuse it.
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'q3-symlink-'));
     const link = path.join(dir, 'run-root');
-    const outside = path.join(os.homedir(), 'Documents');
+    // Must be a directory that actually EXISTS on every platform: when realpath
+    // cannot resolve the target it falls back to the unresolved link path, which
+    // lives inside tmp and is legitimately accepted — so a non-existent target
+    // would assert nothing. ~/Documents exists on macOS but not on a Linux CI
+    // runner, which is exactly how this passed locally and failed in CI.
+    const outside = os.homedir();
     await fs.symlink(outside, link);
     try {
       await expect(assertSafeRunRoot(link, REPO_ROOT, { fullyResolve: true })).rejects.toThrow(
