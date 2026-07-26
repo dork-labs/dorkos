@@ -16,12 +16,12 @@ import {
   isExposureAllowed,
   readExposureState,
   canExpose,
-  isLoopbackHost,
   checkBindAllowed,
   checkA2aExposure,
   AUTH_REQUIRED_FOR_EXPOSURE,
   EXPOSURE_REQUIRES_LOGIN_MESSAGE,
 } from '../exposure-guard.js';
+import { isLoopbackHost } from '../../../../lib/trusted-origins.js';
 import { configManager } from '../../config-manager.js';
 import { hasAnyUser } from '../index.js';
 

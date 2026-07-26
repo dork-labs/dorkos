@@ -159,6 +159,7 @@ import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import { createDb, runMigrations, agents } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
+import { acquireInstanceLock } from './lib/instance-lock.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
@@ -223,6 +224,10 @@ let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
+// Drops this process's claim on the data directory. Called from
+// shutdownServices() rather than shutdown(), because the admin restart path runs
+// the former and then spawns a successor that must find the directory free.
+let releaseInstanceLock: (() => void) | undefined;
 
 async function start() {
   // KEEP IN SYNC with `bootInProcessTestServer()` in `harness-boot.ts`: the
@@ -241,6 +246,21 @@ async function start() {
 
   const logLevel = env.DORKOS_LOG_LEVEL;
   initLogger({ level: logLevel, logDir: path.join(dorkHome, 'logs') });
+
+  // One server per data directory (DOR-532). Claimed here, before the database
+  // opens and before any reconciler starts, because a second instance sharing
+  // this directory would corrupt both. The port check further down catches only
+  // the case where both listen on the same port; this catches the rest.
+  const lock = acquireInstanceLock({ dorkHome, port: PORT, version: SERVER_VERSION });
+  if (!lock.acquired) {
+    logger.error(lock.reason);
+    // Also to stderr: an operator starting from a terminal must see this even
+    // when the logger only writes to the log file.
+    console.error(`\n${lock.reason}\n`);
+    process.exit(1);
+  }
+  releaseInstanceLock = lock.release;
+
   initConfigManager(dorkHome);
   // Credential substrate (ADR-0315): resolves stored credential references to
   // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
@@ -1943,6 +1963,11 @@ async function shutdownServices() {
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
   await shutdownObservability();
+  // Give up the data directory last, once nothing is still writing to it. The
+  // admin restart path calls this function and then spawns a successor, so the
+  // release has to happen here rather than in shutdown().
+  releaseInstanceLock?.();
+  releaseInstanceLock = undefined;
 }
 
 // Graceful shutdown — guarded against concurrent signals (SIGINT + SIGTERM)

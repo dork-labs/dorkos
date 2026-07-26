@@ -1,16 +1,35 @@
 /**
- * Trusted-origin resolution shared by the CORS allowlist and Better Auth.
+ * Network-trust resolution shared by the CORS allowlist, the `/api` host guard,
+ * the bind/exposure guards, and Better Auth.
  *
  * The set of origins DorkOS accepts is dynamic: the static loopback dev origins
  * are always trusted, and the ngrok tunnel origin is added at request time once
- * a tunnel connects (so exposing the instance never needs a restart). Both the
- * CORS callback in `app.ts` and Better Auth's `trustedOrigins` CSRF check read
- * from here so there is a single origin policy.
+ * a tunnel connects (so exposing the instance never needs a restart). The CORS
+ * callback in `app.ts`, the `Host` allowlist in `middleware/host-guard.ts`, and
+ * Better Auth's `trustedOrigins` CSRF check all read from here so there is a
+ * single origin policy. {@link isLoopbackHost} lives here too, so "which names
+ * mean this machine" is stated exactly once.
  *
  * @module lib/trusted-origins
  */
 import { env } from '../env.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
+
+/**
+ * Host names that resolve to this machine and nowhere else. Used both for bind
+ * addresses (`DORKOS_HOST`) and for inbound `Host` header validation.
+ */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+/**
+ * Whether a host name is loopback-only (reachable only from this machine).
+ * `0.0.0.0` and any other address are treated as public (non-loopback).
+ *
+ * @param host - A bare host name with no port, e.g. `localhost` or `::1`.
+ */
+export function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host.trim().toLowerCase());
+}
 
 /**
  * Static loopback dev origins the server always trusts: `localhost` and
@@ -36,6 +55,16 @@ export function getStaticLocalOrigins(): string[] {
 export function getTunnelOrigin(): string | null {
   const tunnelUrl = tunnelManager.status.url;
   return tunnelUrl ? new URL(tunnelUrl).origin : null;
+}
+
+/**
+ * Host name (no scheme, no port) of the active ngrok tunnel, or `null` when no
+ * tunnel is connected. The `Host` header of a request that arrives through the
+ * tunnel carries exactly this name, so the host guard compares against it.
+ */
+export function getTunnelHost(): string | null {
+  const tunnelOrigin = getTunnelOrigin();
+  return tunnelOrigin ? new URL(tunnelOrigin).hostname.toLowerCase() : null;
 }
 
 /**

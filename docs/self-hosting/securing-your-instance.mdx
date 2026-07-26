@@ -74,6 +74,34 @@ Remote visitors reaching an exposed instance get the **sign-in screen**: static 
   number if that default gets in your way.
 </Callout>
 
+## Which addresses DorkOS answers to
+
+With login off, DorkOS answers to `localhost` and `127.0.0.1` only, plus your tunnel address while a tunnel is running. A request that arrives under any other name gets a `403`.
+
+That closes a browser trick called DNS rebinding. A web page you happen to visit can point its own domain at your own machine, and the browser then treats that page as if it came from DorkOS itself. Checking the address the request arrived under is what stops it, because the page cannot fake that.
+
+Reach DorkOS by another name, such as `dorkos.example.com` through a reverse proxy? List it:
+
+```bash
+DORKOS_TRUSTED_HOSTS=dorkos.example.com,dorkos.internal
+```
+
+Separate names with commas and leave the port off. DorkOS matches the name only, so the port your proxy or `ssh -L` forward uses never matters.
+
+<Callout type="info">
+  Turning on login retires the whole question. A sign-in cookie belongs to one real address, so a
+  rebound page never receives one and gets turned away at the door. DorkOS skips the address check
+  entirely once login is on, which is why proxies and remote setups with a login need no extra
+  configuration.
+</Callout>
+
+<Callout type="warn">
+  **Docker operators:** the official image skips this check too, for the same reason it skips the
+  bind check. `DORKOS_ALLOW_INSECURE_BIND=true` hands the network boundary to the container. If
+  other people can reach that container, [enable login
+  first](/docs/self-hosting/docker#with-a-reverse-proxy).
+</Callout>
+
 ## API keys for MCP, scripts, and agents
 
 External agents (Claude Code, Cursor, Windsurf), scripts, and the MCP endpoint authenticate with **per-user API keys** instead of a single global key.

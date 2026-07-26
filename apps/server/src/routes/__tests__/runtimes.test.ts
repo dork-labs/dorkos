@@ -15,9 +15,11 @@ vi.mock('../../services/runtimes/opencode/ollama-provision.js', () => ({
   detectOllamaInstallMethod: vi.fn().mockResolvedValue('manual'),
 }));
 
-vi.mock('../../services/core/tunnel-manager.js', () => ({
-  tunnelManager: { status: { enabled: false, connected: false, url: null } },
+const mockTunnelManager = vi.hoisted(() => ({
+  status: { enabled: false, connected: false, url: null as string | null },
 }));
+
+vi.mock('../../services/core/tunnel-manager.js', () => ({ tunnelManager: mockTunnelManager }));
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
@@ -30,6 +32,21 @@ import { provisionCodex } from '../../services/runtimes/codex/provision.js';
 import { provisionOllama } from '../../services/runtimes/opencode/ollama-provision.js';
 
 const app = createApp();
+
+/**
+ * A connected tunnel, whose public host the `/api` host guard trusts. That is
+ * what makes it the right probe for the routes' own loopback rule: the request
+ * reaches the handler, and the handler still has to refuse it.
+ */
+const TUNNEL_HOST = 'abc123.ngrok-free.app';
+
+function connectTunnel(): void {
+  mockTunnelManager.status.url = `https://${TUNNEL_HOST}`;
+}
+
+beforeEach(() => {
+  mockTunnelManager.status.url = null;
+});
 
 describe('POST /api/runtimes/opencode/provision', () => {
   beforeEach(() => {
@@ -72,13 +89,25 @@ describe('POST /api/runtimes/opencode/provision', () => {
     expect(res.text).toContain('Could not install OpenCode');
   });
 
-  it('rejects a non-loopback origin with 403 and never provisions', async () => {
+  it('rejects a non-loopback request with 403 and never provisions', async () => {
+    connectTunnel();
+
+    const res = await request(app)
+      .post('/api/runtimes/opencode/provision')
+      .set('Host', TUNNEL_HOST);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/locally/i);
+    expect(provisionOpenCode).not.toHaveBeenCalled();
+  });
+
+  it('rejects a rebound Host at the app edge, before the route runs', async () => {
     const res = await request(app)
       .post('/api/runtimes/opencode/provision')
       .set('Host', 'evil.example.com');
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toMatch(/locally/i);
+    expect(res.body.code).toBe('HOST_NOT_ALLOWED');
     expect(provisionOpenCode).not.toHaveBeenCalled();
   });
 });
@@ -124,10 +153,10 @@ describe('POST /api/runtimes/codex/provision', () => {
     expect(res.text).toContain('Could not install Codex');
   });
 
-  it('rejects a non-loopback origin with 403 and never provisions', async () => {
-    const res = await request(app)
-      .post('/api/runtimes/codex/provision')
-      .set('Host', 'evil.example.com');
+  it('rejects a non-loopback request with 403 and never provisions', async () => {
+    connectTunnel();
+
+    const res = await request(app).post('/api/runtimes/codex/provision').set('Host', TUNNEL_HOST);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);
@@ -177,10 +206,12 @@ describe('POST /api/runtimes/opencode/ollama/provision', () => {
     expect(res.text).toContain('One-click install is not available');
   });
 
-  it('rejects a non-loopback origin with 403 and never installs', async () => {
+  it('rejects a non-loopback request with 403 and never installs', async () => {
+    connectTunnel();
+
     const res = await request(app)
       .post('/api/runtimes/opencode/ollama/provision')
-      .set('Host', 'evil.example.com');
+      .set('Host', TUNNEL_HOST);
 
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/locally/i);

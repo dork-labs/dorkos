@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createAdminRouter } from '../admin.js';
+
+// Mutable env stand-in — DORKOS_MANAGED_BY is read per request, so each test
+// sets it without re-importing the module.
+const mockEnv = vi.hoisted(() => ({
+  NODE_ENV: 'test',
+  DORKOS_MANAGED_BY: undefined as 'desktop' | undefined,
+}));
+vi.mock('../../env.js', () => ({ env: mockEnv }));
 
 // Mock fs/promises
 vi.mock('fs/promises', () => ({
@@ -13,6 +20,9 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
 }));
 
+import { createAdminRouter, MANAGED_BY_DESKTOP_CODE } from '../admin.js';
+import { spawn } from 'child_process';
+
 // Mock process.exit to prevent test runner from exiting
 const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
@@ -23,6 +33,7 @@ describe('Admin routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnv.DORKOS_MANAGED_BY = undefined;
     mockShutdownServices = vi.fn().mockResolvedValue(undefined);
     mockCloseDb = vi.fn();
     app = express();
@@ -65,6 +76,31 @@ describe('Admin routes', () => {
       const res = await request(app).post('/api/admin/restart');
       expect(res.status).toBe(200);
       expect(res.body.message).toContain('Restart initiated');
+    });
+  });
+
+  describe('when the desktop app manages the server (DORKOS_MANAGED_BY=desktop)', () => {
+    beforeEach(() => {
+      mockEnv.DORKOS_MANAGED_BY = 'desktop';
+    });
+
+    it('refuses a restart with 409 and never exits the process', async () => {
+      const res = await request(app).post('/api/admin/restart');
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
+      expect(res.body.error).toContain('Quit DorkOS and open it again');
+      expect(mockShutdownServices).not.toHaveBeenCalled();
+      expect(mockExit).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it('refuses a reset with 409 and never deletes the data directory', async () => {
+      const res = await request(app).post('/api/admin/reset').send({ confirm: 'reset' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
+      expect(mockCloseDb).not.toHaveBeenCalled();
+      expect(mockShutdownServices).not.toHaveBeenCalled();
+      expect(mockExit).not.toHaveBeenCalled();
     });
   });
 
