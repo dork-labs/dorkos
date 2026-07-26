@@ -7,22 +7,19 @@ import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
 const {
   _mockBuildSystemPromptAppend,
   _mockResolveToolConfig,
-  _mockBuildAllowedTools,
   contextBuilderFactory,
   toolFilterFactory,
 } = vi.hoisted(() => {
   const bspa = vi.fn().mockResolvedValue('<env>\nWorking directory: /mock\n</env>');
   const rtc = vi.fn().mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true });
-  const bat = vi.fn().mockReturnValue(undefined);
   return {
     _mockBuildSystemPromptAppend: bspa,
     _mockResolveToolConfig: rtc,
-    _mockBuildAllowedTools: bat,
     contextBuilderFactory: () => ({
       buildSystemPromptAppend: bspa,
       renderContextEntry: vi.fn((entry: { kind: string }) => `<${entry.kind}>mock</${entry.kind}>`),
     }),
-    toolFilterFactory: () => ({ resolveToolConfig: rtc, buildAllowedTools: bat }),
+    toolFilterFactory: () => ({ resolveToolConfig: rtc }),
   };
 });
 
@@ -797,7 +794,7 @@ describe('ClaudeCodeRuntime', () => {
     });
   });
 
-  describe('sendMessage() tool filtering', () => {
+  describe('sendMessage() tool-group resolution', () => {
     /** SDK mock that yields init + result (minimal successful flow). */
     function mockSuccessFlow() {
       return wrapSdkQuery(sdkSimpleText(''));
@@ -860,44 +857,32 @@ describe('ClaudeCodeRuntime', () => {
       );
     });
 
-    it('applies allowedTools to SDK options when buildAllowedTools returns a list', async () => {
+    // Regression guard for DOR-519. The toggles used to feed the SDK's `allowedTools`,
+    // which auto-approves the names in it rather than restricting them, and the list
+    // was only non-empty once a group was turned OFF. Switching a group off therefore
+    // widened the agent's auto-approval. Nothing may put DorkOS tools back on that
+    // option: `canUseTool` is the only place allowed to decide what skips a prompt.
+    it('never sets allowedTools, not even when a tool group is turned off', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { buildAllowedTools } = await import('../tooling/tool-filter.js');
+      const { readManifest } = await import('@dorkos/shared/manifest');
+      const { resolveToolConfig } = await import('../tooling/tool-filter.js');
 
       (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
-      (buildAllowedTools as ReturnType<typeof vi.fn>).mockReturnValue([
-        'mcp__dorkos__ping',
-        'mcp__dorkos__get_server_info',
-      ]);
+      (readManifest as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        id: 'test-id',
+        name: 'test',
+        enabledToolGroups: { relay: false, tasks: false, mesh: false, adapter: false },
+      });
+      (resolveToolConfig as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+        tasks: false,
+        relay: false,
+        mesh: false,
+        adapter: false,
+      });
 
       agentManager.ensureSession('tf-3', { permissionMode: 'default' });
       const events = [];
       for await (const event of agentManager.sendMessage('tf-3', 'hello')) {
-        events.push(event);
-      }
-
-      expect(mockedQuery).toHaveBeenCalledWith(
-        expect.objectContaining({
-          options: expect.objectContaining({
-            allowedTools: expect.arrayContaining([
-              'mcp__dorkos__ping',
-              'mcp__dorkos__get_server_info',
-            ]),
-          }),
-        })
-      );
-    });
-
-    it('does not set allowedTools when buildAllowedTools returns undefined', async () => {
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      const { buildAllowedTools } = await import('../tooling/tool-filter.js');
-
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(mockSuccessFlow());
-      (buildAllowedTools as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
-
-      agentManager.ensureSession('tf-4', { permissionMode: 'default' });
-      const events = [];
-      for await (const event of agentManager.sendMessage('tf-4', 'hello')) {
         events.push(event);
       }
 

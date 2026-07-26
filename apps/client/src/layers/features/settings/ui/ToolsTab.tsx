@@ -122,8 +122,10 @@ export function ToolsTab() {
         Tools
       </NavigationLayoutPanelHeader>
       <p className="text-muted-foreground text-sm">
-        Control which MCP tool groups are available to agents. These are global defaults —
-        individual agents can override them in their Tools tab.
+        Choose which tool groups your agents are told about by default. Turning a group off leaves
+        it out of an agent's instructions, so agents stop reaching for it. It is guidance, not a
+        lock: a tool an agent asks for anyway still needs your approval. Individual agents can
+        override these in their own Tools tab.
       </p>
       <FieldCard>
         <FieldCardContent>

@@ -69,14 +69,19 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
 // === Agent Tool Groups ===
 
 /**
- * Per-domain MCP tool group enable/disable overrides for an individual agent.
+ * Per-domain MCP tool group overrides for an individual agent.
  *
  * `undefined` means "inherit global default". Explicit `true`/`false` overrides the global setting.
  *
+ * Turning a group off leaves its tool block out of the agent's context, so the agent
+ * is never told those tools exist. It does not remove them: the tools stay registered
+ * on the session and an agent that names one anyway still gets the normal approval
+ * prompt. This steers an agent rather than restricting it (DOR-519).
+ *
  * Implicit grouping rules:
- * - `adapter: false` also disables the chat-route tools
- * - `relay: false` also disables the trace tools
- * - The core tools are always enabled
+ * - `adapter: false` also turns off the chat-route tools
+ * - `relay: false` also turns off the trace tools
+ * - The core tools are never gated
  *
  * Which tools each of those covers is declared in `mcp-tool-groups.ts` and read
  * from there by both the server and the cockpit. It is deliberately not listed
@@ -93,7 +98,8 @@ export const EnabledToolGroupsSchema = z
   .default({})
   .openapi('EnabledToolGroups', {
     description:
-      'Per-domain tool group enable/disable. undefined = inherit global default. ' +
+      'Per-domain tool groups. undefined = inherit global default. Off means the agent ' +
+      'is not told about the group, not that the tools are blocked. ' +
       'Binding tools follow adapter toggle. Trace tools follow relay toggle.',
   });
 

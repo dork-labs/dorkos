@@ -316,7 +316,7 @@ apps/server/src/
 │   │       │   ├── session-store.ts        # In-memory session state
 │   │       │   └── session-list-watcher.ts # Fleet-wide session-list watcher (chokidar)
 │   │       ├── tooling/                # Tool/command/dependency configuration
-│   │       │   ├── tool-filter.ts          # Per-agent MCP tool filtering
+│   │       │   ├── tool-filter.ts          # Per-agent MCP tool-group resolution
 │   │       │   ├── command-registry.ts     # Slash command discovery
 │   │       │   └── check-dependency.ts     # Verifies the Claude CLI dependency
 │   │       └── mcp-tools/              # In-process MCP tool server for Claude Agent SDK

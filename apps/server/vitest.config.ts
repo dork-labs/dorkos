@@ -21,13 +21,16 @@ export default defineConfig({
     //   leaves of `UserConfigSchema` to prove every config field has been
     //   classified for the tokenless `config_get` surface. Against a stale dist a
     //   newly added field reads as "already classified".
-    // - `mcp-tool-groups` backs the tool-group guards, and it decides
-    //   `buildAllowedTools`, which is an APPROVAL BYPASS list (see
-    //   `services/runtimes/claude-code/tooling/tool-filter.ts`). Measured against
-    //   a stale dist: moving `tasks_delete` into an always-on group, making a
-    //   destructive tool permanently auto-approved, passed all 85 targeted tests
-    //   AND `tsc`, because the type-level assertions only compare key SETS and the
-    //   keys had not changed. With the alias the same edit fails immediately.
+    // - `mcp-tool-groups` backs the tool-group guards, which decide what the cockpit
+    //   shows for each toggle and which groups no toggle gates. Measured against a
+    //   stale dist, back when this table also fed the SDK's `allowedTools`: moving
+    //   `tasks_delete` into an always-on group, making a destructive tool permanently
+    //   auto-approved, passed all 85 targeted tests AND `tsc`, because the type-level
+    //   assertions only compare key SETS and the keys had not changed. Nothing feeds
+    //   `allowedTools` anymore (DOR-519), so that exact edit no longer bypasses a
+    //   prompt, but the guard is still the only thing that notices the table moved,
+    //   and a stale dist still turns it into decoration. With the alias the same edit
+    //   fails immediately.
     //
     // Scoped to these modules on purpose. Aliasing all 43 subpaths made every
     // worker re-transform the whole package and took the suite from ~51s to
