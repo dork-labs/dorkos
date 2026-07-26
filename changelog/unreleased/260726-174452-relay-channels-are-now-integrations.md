@@ -4,6 +4,8 @@ covers:
   - 'test(tours): assert the Connections deep-link tab id (DOR-523)'
   - 'refactor(ui): rename Relay integrations from "Connection" to "Integration" (DOR-523)'
   - 'fix(ui): close the gaps review found in the channel-to-integration rename (DOR-523)'
+  - 'fix(client): dispatch the room SSE events the rooms PR forgot to allowlist'
+  - 'fix(server): stop hardcoding port 4242 in the extension-approval origin test'
 ---
 
 ### Changed
