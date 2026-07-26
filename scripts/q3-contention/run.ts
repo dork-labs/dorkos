@@ -131,6 +131,9 @@ function printSummary(
   const peakFds = samples.reduce((max, s) => Math.max(max, s.openFiles), 0);
 
   console.log('');
+  if (plan.smoke) {
+    console.log('[q3] SMOKE RUN — plumbing check only. These numbers are NOT data.');
+  }
   console.log(`[q3] arm ${plan.arm}  agents=${plan.agents.length}  trees=${plan.trees.join(',')}`);
   console.log(
     `[q3] overlap: all-overlap=${overlap.allOverlap} commonWindow=${overlap.commonWidthMs}ms ` +

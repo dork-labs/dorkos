@@ -30,16 +30,25 @@ name: scripts-test
 # locally it is one command (and `pnpm verify` calls it), but in CI running it
 # from either job would re-run the other job's suite for nothing.
 
+### The `harness` job depends on two files OUTSIDE scripts/: the root package.json
+### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts
+### (registers the `scripts` project that `--project scripts` resolves). Without them
+### in the filter, a PR touching only those could break this job without triggering
+### it, and the breakage would surface later on an unrelated scripts/ PR.
 on:
   pull_request:
     paths:
       - 'scripts/**'
+      - 'package.json'
+      - 'vitest.config.ts'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
   push:
     branches: [main]
     paths:
       - 'scripts/**'
+      - 'package.json'
+      - 'vitest.config.ts'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
 

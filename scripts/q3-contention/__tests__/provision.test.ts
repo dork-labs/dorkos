@@ -127,6 +127,7 @@ function stubPlan(arm: 1 | 2, agentCount: number): RunPlan {
     port: 4371,
     minOverlapMs: 100,
     outDir: undefined,
+    smoke: false,
     keepRunRoot: false,
     skipBuild: true,
   };

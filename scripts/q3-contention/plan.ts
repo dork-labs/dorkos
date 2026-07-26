@@ -46,6 +46,13 @@ export interface RunPlan {
   readonly minOverlapMs: number;
   /** Where CSVs and copies of the canaries land; undefined means the default. */
   readonly outDir: string | undefined;
+  /**
+   * True when `--smoke` was passed: a plumbing check, NOT data. Recorded on the
+   * plan so it is serialized into `summary.json` — a reader must be able to
+   * tell a smoke artifact from a measurement artifact by looking at the file,
+   * not by inferring it from the agent count.
+   */
+  readonly smoke: boolean;
   /** Keep the throwaway run root on disk after the run. */
   readonly keepRunRoot: boolean;
   /** Skip the `turbo run build --filter=@dorkos/server` step. */
@@ -181,6 +188,7 @@ export function parseArgs(argv: readonly string[]): RunPlan | null {
       smoke ? SMOKE_MIN_OVERLAP_MS : DEFAULT_MIN_OVERLAP_MS
     ),
     outDir: flagValue(argv, '--out'),
+    smoke,
     keepRunRoot: argv.includes('--keep'),
     skipBuild: argv.includes('--skip-build'),
   };

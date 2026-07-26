@@ -21,6 +21,18 @@
  * deleted, the second time against the fully realpath-resolved root, so a
  * symlink planted at the final path component cannot redirect the delete.
  *
+ * THE INVARIANT TO PRESERVE IF YOU TOUCH THE DELETE PATH. Because teardown now
+ * deletes the REALPATH, `fs.rm` follows a symlinked run root instead of merely
+ * unlinking it — which it used to do, and which made a symlinked root harmless
+ * by accident. The only thing standing between that and an `rm -rf` of the
+ * symlink's target is that the guard checks the SAME resolved path it hands
+ * back, and teardown deletes the value the guard RETURNED rather than the value
+ * it was given. Keep those two facts together. Splitting them — checking one
+ * path and deleting another, or resolving without re-checking — reintroduces
+ * the hole with no visible symptom until it fires. A refusal here is the
+ * correct outcome even though it leaks an undeleted run root; the caller's
+ * `finally` logs that and moves on.
+ *
  * @module scripts/q3-contention/provision
  */
 import { execFile } from 'child_process';

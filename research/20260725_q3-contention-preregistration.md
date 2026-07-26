@@ -9,7 +9,13 @@ tags: [q3, contention, multi-agent, measurement, pre-registration, DOR-500]
 # Q3 Resource Contention — Pre-Registration
 
 - **Question:** At 2 humans and 6 agents on one machine, which resource class collides first?
-- **Status:** Design frozen. No run has been executed. No data exists.
+- **Status:** Design frozen. **No measurement run has been executed. No data exists.** Smoke
+  runs HAVE been executed, and each wrote a full `summary.json`. Those artifacts are not
+  data and must not be read as results — 2 agents rather than 6, turns of a few seconds
+  rather than tens of seconds, run only to prove the plumbing works. They are identifiable
+  from the file itself: `plan.smoke` is `true`. Treat any run with `plan.smoke === true`,
+  fewer than 6 agents, or a `plan.durationMs` under 10000 as a plumbing check, whatever its
+  numbers say.
 - **Harness:** `scripts/q3-contention/` (`pnpm q3:contention`) and the `q3-*` test-mode
   scenarios in `apps/server/src/services/runtimes/test-mode/q3-contention-scenarios.ts`.
 - **Origin:** Ledger row Q3 of the multi-user review exchange, whose subject artifact is

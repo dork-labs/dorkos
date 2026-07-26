@@ -57,6 +57,21 @@ describe('parseArgs', () => {
     expect(plan.durationMs).toBeLessThan(10_000);
   });
 
+  it('records --smoke on the plan so summary.json marks the artifact as not data', () => {
+    // The plan is serialized whole into summary.json. Without this flag a reader
+    // would have to infer "plumbing check" from the agent count, and the
+    // pre-registration promises them a field they can read directly.
+    expect(parseArgs(['--arm', '1', '--smoke'])!.smoke).toBe(true);
+    expect(parseArgs(['--arm', '1'])!.smoke).toBe(false);
+  });
+
+  it('keeps the smoke marker even when its defaults are overridden', () => {
+    // A smoke run with a hand-raised duration is still a smoke run; the marker
+    // must not quietly clear just because the numbers look more like data.
+    const plan = parseArgs(['--arm', '1', '--smoke', '--duration', '30000', '--agents', '6'])!;
+    expect(plan.smoke).toBe(true);
+  });
+
   it('lets explicit flags win over --smoke defaults', () => {
     const plan = parseArgs(['--arm', '1', '--smoke', '--duration', '9000', '--agents', '3'])!;
     expect(plan.durationMs).toBe(9000);
