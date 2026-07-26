@@ -322,6 +322,33 @@ describe('startServer — the readiness handshake', () => {
     expect(err.message).not.toContain(token.slice(22, 40));
   });
 
+  it('bounds one runaway line, whether or not it ever ends', async () => {
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+
+    // Length alone cannot prove this: the display cap truncates to 200 either
+    // way, so an unbounded carry would look identical while still growing all
+    // session and handing scrubMessage a string long enough to block the UI
+    // thread. What distinguishes them is *which* characters can reach the
+    // dialog. Each unit below is redacted down to a tenth of its length, so
+    // without the bound the marker far past it shrinks up into view; with the
+    // bound the marker was never retained at all.
+    const unit = `sk-${'a'.repeat(60)} `;
+    const marker = 'MARKERWORD';
+    child.emitStderr(`${unit.repeat(10)}${marker}`);
+    // Same again with no newline ever, so only the carry holds it.
+    for (let n = 0; n < 10; n++) child.emitStderrChunk(unit);
+    child.emitStderrChunk(marker);
+    child.emitExit(1);
+
+    const err = await started.catch((e: unknown) => e as Error);
+    expect(err.message).toContain('[redacted]');
+    expect(err.message).not.toContain(marker);
+    for (const line of err.message.split('\n')) expect(line.length).toBeLessThanOrEqual(210);
+  });
+
   it('takes a final line the dying child never terminated', async () => {
     const { startServer } = await import('../server-process');
 

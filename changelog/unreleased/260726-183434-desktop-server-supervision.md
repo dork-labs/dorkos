@@ -4,6 +4,7 @@ covers:
   - "fix(desktop): watch the shell's pid so an orphaned dev server actually dies (DOR-533)"
   - 'fix(desktop): show what the server said, and stop offering a restart that keeps failing (DOR-533)'
   - 'fix(desktop): keep the reason, cap crash loops, and use the shared redactor (DOR-533)'
+  - 'fix(desktop): bound the stderr carry, and stop the guide contradicting the cap (DOR-533)'
 ---
 
 ### Fixed
