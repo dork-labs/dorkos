@@ -39,9 +39,6 @@ const serverEnvSchema = z.object({
   // shared seam also bundled into the CLI, and this schema's parse-once
   // snapshot is a server-boot concern. See readEnvSecret() there; same
   // carve-out routes/tunnel.ts uses for NGROK_AUTHTOKEN.
-  // Marketplace MCP — when '1', auto-approves every install/uninstall/create
-  // confirmation request without prompting the user. Used by CI and tests.
-  MARKETPLACE_AUTO_APPROVE: z.string().optional(),
   // Approval decision window (ms). Boot-time only, and CLAMPED AT BOOT so it can
   // only ever SHORTEN the two-hour default, never lengthen it — a one-directional
   // knob cannot be turned into a way to keep consent alive past the moment a

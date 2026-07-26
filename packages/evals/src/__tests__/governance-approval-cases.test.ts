@@ -155,9 +155,14 @@ describe('the governance cases — registration', () => {
     expect(selectSuite('core').map((c) => c.id)).toContain(id);
   });
 
-  it.each(cases)('%s never auto-approves the marketplace flow it is testing', (_id, evalCase) => {
-    expect(evalCase.serverEnv?.MARKETPLACE_AUTO_APPROVE).toBeUndefined();
-  });
+  // There used to be a "%s never auto-approves the marketplace flow it is
+  // testing" case here, asserting that none of the three set the retired
+  // marketplace auto-approve env var. That variable no longer exists anywhere
+  // (DOR-501), so the assertion could not fail — and an assertion that cannot
+  // fail is worse than none. What it protected is covered twice over: the exact
+  // `serverEnv` of all three cases is pinned below, and a repo-wide drift guard
+  // (`apps/server/src/__tests__/no-auto-approve-env-var.test.ts`) fails if the
+  // name comes back anywhere under `apps/server/src` or `packages/`.
 
   it('all three drive the same prompt, so only the operator differs', () => {
     const prompts = new Set(governanceCases.map((c) => JSON.stringify(c.prompt)));
