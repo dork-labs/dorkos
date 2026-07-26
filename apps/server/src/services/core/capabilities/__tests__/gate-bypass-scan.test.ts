@@ -79,7 +79,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'applyConfigPatch(',
     allowed: {
       'routes/config.ts':
-        'the cockpit REST route — refuses operator-only paths unless the caller is a trusted caller (DOR-467)',
+        'the cockpit REST route — refuses operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505)',
       'services/core/operator/operator-tool-handlers.ts':
         'the agent capability — refuses operator-only paths unconditionally (DOR-488)',
       'services/core/operator/config-patch.ts': 'the definition itself',

@@ -11,14 +11,18 @@ import {
 import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
 import {
   describeOperatorOnlyRefusal,
-  findCookieRequiredPaths,
+  findLoginRequiredPaths,
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
-  REQUIRES_COOKIE_CONFIG_ERROR,
+  REQUIRES_LOGIN_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
-import { readCallerAuthority, requireOperatorCookie } from '../lib/caller-authority.js';
+import {
+  readCallerAuthority,
+  requireOperatorCookieUnderLogin,
+  requireStandingGrantsLogin,
+} from '../lib/caller-authority.js';
 import {
   revokeStandingGrantsIfPostureNarrowed,
   type StandingGrantPosture,
@@ -211,24 +215,32 @@ router.get('/', async (_req, res) => {
 
 router.patch('/', (req, res) => {
   try {
-    // A few settings need MORE than the block below can ask for, and they are
-    // checked FIRST, outside it, so the outcome of `trustedCaller` cannot change
-    // the answer (spec `agent-approval-settings` §3.0-3.1).
+    // ## THE LOGIN BAR — the standing-permission settings need login on at all
     //
-    // The reason is written out at REQUIRES_COOKIE_CONFIG_PATHS: the operator-only
-    // check underneath is skipped for a caller that omits its agent header and
-    // its approval token, which an agent with a shell can do. For most settings
-    // that is an accepted trade. For "may standing permissions exist, and for how
-    // long" it is not, because a standing permission keeps saying yes for hours,
-    // and this exact chain was reproduced before the feature shipped.
-    const cookieRequired = findCookieRequiredPaths(req.body);
-    if (cookieRequired.length > 0) {
-      const refusal = requireOperatorCookie(res);
+    // Three bars guard this route. They are named for what they CHECK, never for
+    // the order they run in ("first", "bar 2"), because the order carries no
+    // meaning here and ordinal names rot the moment somebody reorders them, which
+    // already happened once and inverted two comments.
+    //
+    // Checked ahead of the other two, so neither can change the answer. The
+    // reason it is not folded into the cookie bar is written out at
+    // REQUIRES_LOGIN_CONFIG_PATHS: that bar allows every caller while login is
+    // off, and for these two paths that would leave the switch pre-armable.
+    //
+    // Forward-looking, and say so: writing this setting changes no behavior today,
+    // because nothing enforces a standing permission yet and the grant route
+    // refuses `standing: true` for every caller. What it buys is that the write
+    // persists and nothing sweeps it, so it would still be set on the day
+    // enforcement lands. Guarding it while it is inert is the point, not an
+    // oversight.
+    const loginRequired = findLoginRequiredPaths(req.body);
+    if (loginRequired.length > 0) {
+      const refusal = requireStandingGrantsLogin();
       if (refusal) {
         return res.status(refusal.status).json({
-          error: REQUIRES_COOKIE_CONFIG_ERROR,
+          error: REQUIRES_LOGIN_CONFIG_ERROR,
           code: refusal.code,
-          paths: cookieRequired,
+          paths: loginRequired,
           message: refusal.error,
         });
       }
@@ -241,37 +253,79 @@ router.patch('/', (req, res) => {
     // with a shell could `curl` straight past the guard whose whole promise is
     // that agents cannot change the settings protecting the instance.
     //
-    // The cockpit must keep working: its own enable-login and disable-login flows
-    // legitimately write `auth.enabled` through here, and under `local-trust`
-    // nothing distinguishes the cockpit's request from any other loopback caller.
-    // So the policy is skipped for a caller that presents no agent identity and no
-    // approval token, and applied to everyone else.
-    //
-    // ## Do not read `trusted-caller.ts`'s invariant as covering this
-    //
-    // That module justifies its escape with "whoever may decide an approval may
-    // act without one", which rests on the two-step path existing: ask, get the
-    // 202, grant it, retry. For operator-only config paths THERE IS NO SUCH PATH.
-    // `operator.config_patch` is tier `act`, so its refusal is not an approval
-    // gate at all — the capability twin refuses these paths unconditionally, with
-    // no approval that could ever unlock them (`operator-tool-handlers.ts`).
-    //
-    // So state the divergence plainly rather than dressing it up: for this one
-    // effect the trusted escape grants something the two-step path cannot, and the
-    // twins disagree — the same principal is refused on the capability surface and
-    // allowed here. That is accepted, not overlooked, for one reason only: the
-    // cockpit needs this route and `local-trust` cannot tell it apart from anything
-    // else on loopback. It is also strictly TIGHTER than before, since this route
-    // had no policy check for any caller.
-    //
-    // Under login-on the divergence sharpens: a caller holding a valid per-user API
-    // key that strips its agent header satisfies `resolveDecisionAuthority` (DOR-474)
-    // and could write `auth.enabled` here while being refused on the capability
-    // surface. That last step is REASONED FROM CODE, NOT RUN — treat it as a lead to
-    // verify, not as a finding.
-    if (!trustedCaller(readCallerAuthority(req, res))) {
-      const operatorOnly = findOperatorOnlyPaths(req.body);
-      if (operatorOnly.length > 0) {
+    // A patch touching one of those settings has to clear TWO bars, the cookie bar
+    // and the agent bar. They refuse different callers and neither one covers the
+    // other. Their order decides only WHICH refusal a caller that fails both
+    // hears, never what is allowed: the cookie bar goes first so the more specific
+    // answer wins, since "sign in first" is more use to a caller than "only a
+    // person can change those" when both are true.
+    const operatorOnly = findOperatorOnlyPaths(req.body);
+    if (operatorOnly.length > 0) {
+      // ## THE COOKIE BAR — with login on, prove you are a person in the cockpit
+      // (DOR-505)
+      //
+      // The agent bar is cleared by omitting two headers, which anything
+      // with a shell can do; under login-on that included a program holding one of
+      // the person's per-user API keys, which `sessionGate` accepts as the same
+      // identity a browser session proves (DOR-474). It could write `auth.enabled`
+      // here — voiding every approval this instance would ever enforce — while the
+      // capability surface refused it that same write. Reproduced against a live
+      // server, not reasoned. A session cookie is the one signal a header-stripping
+      // caller cannot fake, and under login-on a real operator has one.
+      //
+      // The enable-login flow is unaffected, and that is load-bearing rather than
+      // lucky: `OwnerSetupHost.tsx` writes `auth.enabled: true` while login is
+      // still OFF, so this bar does not apply to it. A guard that read the
+      // POST-patch state instead of the current state would make login impossible
+      // to turn on.
+      //
+      // ### What stays open, said plainly
+      //
+      // With login OFF there is no cookie for ANYONE, so THIS bar allows and the
+      // agent bar is the only one left. So the hole the agent bar leaves is
+      // NOT closed: a program on this machine that omits its agent header can
+      // still write every operator-only setting through here. That is the residual
+      // DOR-505 could not close, because the cockpit in the default posture
+      // presents nothing such a program cannot also present, and refusing it would
+      // lock a person out of their own settings. Pinned by a test that says so,
+      // and documented for users under "Settings your agents cannot change" in
+      // `docs/guides/action-approvals.mdx`. Turning on Require login closes it. Do
+      // not describe this route as "operator-only enforced" without that
+      // qualifier.
+      const refusal = requireOperatorCookieUnderLogin(
+        res,
+        'the settings that protect this instance'
+      );
+      if (refusal) {
+        return res.status(refusal.status).json({
+          error: OPERATOR_ONLY_CONFIG_ERROR,
+          code: refusal.code,
+          paths: operatorOnly,
+          message: refusal.error,
+        });
+      }
+
+      // ## THE AGENT BAR — anything that names itself an agent is refused, in
+      // every posture, and in the login-off posture it is the ONLY bar left
+      //
+      // The cockpit must keep working: its own enable-login and disable-login
+      // flows legitimately write `auth.enabled` through here, and under
+      // `local-trust` nothing distinguishes the cockpit's request from any other
+      // loopback caller. So this bar is skipped for a caller that presents no
+      // agent identity and no approval token, and applied to everyone else.
+      //
+      // ### Do not read `trusted-caller.ts`'s invariant as covering this
+      //
+      // That module justifies its escape with "whoever may decide an approval may
+      // act without one", which rests on the two-step path existing: ask, get the
+      // 202, grant it, retry. For operator-only config paths THERE IS NO SUCH
+      // PATH. `operator.config_patch` is tier `act`, so its refusal is not an
+      // approval gate at all — the capability twin refuses these paths
+      // unconditionally, with no approval that could ever unlock them
+      // (`operator-tool-handlers.ts`). For this one effect the trusted escape
+      // grants something the two-step path cannot, which is exactly what the
+      // cookie bar takes back in the posture where DorkOS has the evidence to.
+      if (!trustedCaller(readCallerAuthority(req, res))) {
         return res.status(403).json({
           error: OPERATOR_ONLY_CONFIG_ERROR,
           code: OPERATOR_ONLY_CONFIG_CODE,

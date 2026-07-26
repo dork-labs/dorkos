@@ -771,8 +771,9 @@ export const UserConfigSchema = z.object({
    * person edits. Keeping them out also means nothing about WHICH agents are
    * trusted can ever leave through `config_get`.
    *
-   * Both leaves are `operator-only`, and writing either also requires a session
-   * cookie — see `REQUIRES_COOKIE_CONFIG_PATHS`.
+   * Both leaves are `operator-only`, writing either requires a session cookie
+   * like every other operator-only setting, and on top of that neither can be
+   * written at all while login is off — see `REQUIRES_LOGIN_CONFIG_PATHS`.
    */
   approvals: z
     .object({
