@@ -120,6 +120,15 @@ interface UseInputKeyboardOptions {
   onCancelEdit?: () => void;
   onQueueNavigateUp?: () => void;
   onQueueNavigateDown?: () => void;
+  /**
+   * Identifies the draft the composer is holding — the session/cwd pair for the
+   * chat composer, `undefined` for hosts that have neither. A change disarms the
+   * pending double-Escape: the arm belongs to the text that was on screen when
+   * the first tap landed, and the composer is re-rendered rather than remounted
+   * on a session switch, so without this an arm from session A could wipe
+   * session B's draft on a single tap.
+   */
+  contextKey?: string;
 }
 
 interface UseInputKeyboardReturn {
@@ -161,25 +170,32 @@ export function useInputKeyboard({
   onCancelEdit,
   onQueueNavigateUp,
   onQueueNavigateDown,
+  contextKey,
 }: UseInputKeyboardOptions): UseInputKeyboardReturn {
-  const [clearArmed, setClearArmed] = useState(false);
+  // The arm remembers WHICH draft it was raised against, not merely that it was
+  // raised. Switching sessions re-renders this composer rather than remounting
+  // it, so a bare boolean would still be live against the next session's text —
+  // one tap, and words nobody armed are gone. Storing the context makes that
+  // expire by derivation, with no effect to run and no extra render.
+  const [armedContext, setArmedContext] = useState<string | null>(null);
   const disarmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearArmed = armedContext !== null && armedContext === (contextKey ?? '');
 
   const disarm = useCallback(() => {
     if (disarmTimerRef.current !== null) clearTimeout(disarmTimerRef.current);
     disarmTimerRef.current = null;
-    setClearArmed(false);
+    setArmedContext(null);
   }, []);
 
   // The timer IS the window — there is no second clock to drift against it.
   const arm = useCallback(() => {
     if (disarmTimerRef.current !== null) clearTimeout(disarmTimerRef.current);
-    setClearArmed(true);
+    setArmedContext(contextKey ?? '');
     disarmTimerRef.current = setTimeout(() => {
       disarmTimerRef.current = null;
-      setClearArmed(false);
+      setArmedContext(null);
     }, DOUBLE_ESCAPE_THRESHOLD_MS);
-  }, []);
+  }, [contextKey]);
 
   useEffect(() => {
     return () => {

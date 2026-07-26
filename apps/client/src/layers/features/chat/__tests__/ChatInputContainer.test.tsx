@@ -332,6 +332,31 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     expect(lastChatInputProps().editingPosition).toBe(2);
   });
 
+  it('draws the armed-to-clear readout in the overlay lane, above the queue rows', () => {
+    // The composer owns when the arm is raised; this component owns where it
+    // reads out. Anchored inside the composer it landed on the bottom queue
+    // row's Send-now and Remove buttons (measured in a browser) — the one way
+    // out of a queue the flush pump cannot drain. The lane floats above the
+    // whole card, so nothing it contains can cover a control.
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'queued while armed');
+    const { container } = render(<ChatInputContainer {...baseProps} />);
+
+    expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
+
+    act(() => lastChatInputProps().onClearArmedChange!(true));
+
+    const hint = screen.getByTestId('clear-armed-hint');
+    expect(hint).toBeInTheDocument();
+    // The lane, not the composer: `bottom-full` on the card is what puts it
+    // clear of everything stacked inside.
+    const lane = container.querySelector('.absolute.right-0.bottom-full.left-0');
+    expect(lane).not.toBeNull();
+    expect(lane!.contains(hint)).toBe(true);
+
+    act(() => lastChatInputProps().onClearArmedChange!(false));
+    expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
+  });
+
   it('keeps the queue panel out of the tree entirely when nothing is queued', () => {
     // The presence guard lives at the call site so AnimatePresence can watch the
     // panel leave; a panel that merely renders null never animates out.

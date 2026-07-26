@@ -12,13 +12,21 @@ import { motion, useReducedMotion } from 'motion/react';
  *
  * Deliberately not a live region and hidden from assistive tech. It fires on
  * every Escape, so announcing it would talk over whatever a screen-reader user
- * was listening to, several times a minute, to teach a shortcut for something
- * the labelled "Clear message" button already does.
+ * was listening to, several times a minute. That is only defensible because the
+ * labelled "Clear message" button is the equal alternative, so the composer
+ * refuses to raise the arm at all where that button is missing or disabled
+ * (`clearReachable` in `ChatInput.tsx`) — otherwise this would hand sighted
+ * people a destructive shortcut and nobody else.
  *
- * Floats above the composer in the same lane the command and file palettes use
- * — the one region that is guaranteed free here, since an Escape that closes a
- * palette never arms the clear — so it costs the resting composer no pixels and
- * moves nothing when it appears.
+ * Rendered by `ChatInputContainer` into the overlay lane it shares with the
+ * command and file palettes, floating above the whole composer card, and NOT by
+ * the text field that owns the state. Anchored to the field it would sit
+ * directly on top of whatever is stacked above it: measured in a browser, it
+ * landed squarely across the bottom queue row's Send-now and Remove buttons —
+ * the one way out of a queue the flush pump cannot drain. Stacked in the lane
+ * it costs the resting composer no pixels, moves nothing when it appears, and
+ * shares the lane cleanly on the one occasion a palette is open at the same
+ * time (arm on a bare Escape, then type `/` inside the window).
  */
 export function ClearArmedHint() {
   const reducedMotion = useReducedMotion();
@@ -33,7 +41,7 @@ export function ClearArmedHint() {
       transition={{ duration: 0.12, ease: 'easeOut' }}
       aria-hidden="true"
       data-testid="clear-armed-hint"
-      className="bg-popover text-muted-foreground shadow-soft pointer-events-none absolute right-0 bottom-full z-10 mb-1.5 rounded-md border px-2 py-1 text-xs"
+      className="bg-popover text-muted-foreground shadow-soft pointer-events-none mt-1.5 ml-auto w-fit rounded-md border px-2 py-1 text-xs"
     >
       Press Esc again to clear
     </motion.div>

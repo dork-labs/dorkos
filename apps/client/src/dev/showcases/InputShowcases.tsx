@@ -185,6 +185,7 @@ export function InputShowcases() {
             onRemove={() => {}}
             onSend={() => {}}
             sendBlockedReason={null}
+            whenUnblocked="Will send next"
           />
         </ShowcaseDemo>
 
@@ -197,6 +198,7 @@ export function InputShowcases() {
             onRemove={() => {}}
             onSend={() => {}}
             sendBlockedReason={null}
+            whenUnblocked="Will send next"
           />
         </ShowcaseDemo>
 
@@ -209,6 +211,7 @@ export function InputShowcases() {
             onRemove={() => {}}
             onSend={() => {}}
             sendBlockedReason="Waiting for the reply to finish"
+            whenUnblocked="Will send next"
           />
         </ShowcaseDemo>
       </PlaygroundSection>

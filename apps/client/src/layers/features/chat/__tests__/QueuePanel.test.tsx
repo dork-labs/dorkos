@@ -39,6 +39,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof QueuePanel>> = {
       onRemove={vi.fn()}
       onSend={vi.fn()}
       sendBlockedReason={null}
+      whenUnblocked="Will send next"
       {...props}
     />
   );
@@ -133,6 +134,7 @@ describe('QueuePanel', () => {
         onRemove={vi.fn()}
         onSend={vi.fn()}
         sendBlockedReason={null}
+        whenUnblocked="Will send next"
       />
     );
     expect(rowClasses()).toContain('border-l-2');
@@ -150,9 +152,20 @@ describe('QueuePanel', () => {
     expect(screen.getByText(/Waiting for the reply to finish/)).toBeInTheDocument();
   });
 
-  it('reads "ready to send" when nothing is holding the queue back', () => {
+  it('says what happens next when nothing is holding the queue back', () => {
+    // The caller decides the words: an unblocked queue normally drains itself,
+    // but after a turn that ended in error it genuinely waits for a person.
     renderPanel({ queue: [makeItem('A', 0)], sendBlockedReason: null });
-    expect(screen.getByText(/ready to send/)).toBeInTheDocument();
+    expect(screen.getByText(/Will send next/)).toBeInTheDocument();
+  });
+
+  it('lets the caller say the queue is waiting on a person instead', () => {
+    renderPanel({
+      queue: [makeItem('A', 0)],
+      sendBlockedReason: null,
+      whenUnblocked: 'Ready to send',
+    });
+    expect(screen.getByText(/Ready to send/)).toBeInTheDocument();
   });
 
   it('remove button is always visible (opacity-100 base class, not standalone opacity-0)', () => {

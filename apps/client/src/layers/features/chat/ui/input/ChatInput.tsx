@@ -6,7 +6,6 @@ import { useIsTouchOnly } from '@/layers/shared/model';
 import { useInputKeyboard } from './use-input-keyboard';
 import { useTextareaResize } from './use-textarea-resize';
 import { InputActionButton } from './InputActionButton';
-import { ClearArmedHint } from './ClearArmedHint';
 
 export interface ChatInputHandle {
   focus: () => void;
@@ -118,6 +117,26 @@ interface ChatInputProps {
    * when another surface already states the reason.
    */
   canSubmitReason?: string;
+  /**
+   * Identifies the draft this composer holds — the session/cwd pair for the chat
+   * composer, omitted by hosts that have neither. Only the pending
+   * double-Escape reads it, to drop an arm raised against a draft that is no
+   * longer on screen.
+   */
+  contextKey?: string;
+  /**
+   * Raised while a second Escape would wipe the draft, lowered when it would
+   * not. This component owns WHEN — it owns the keyboard — but not WHERE: the
+   * readout has to float clear of the queue panel and the attachment chips,
+   * which sit above this component and are the host's to position against.
+   * Measured: anchored inside this component it lands squarely on the bottom
+   * queue row's Send-now and Remove buttons.
+   *
+   * Already folded with the reachability of the labelled Clear button, so a
+   * host cannot accidentally advertise the shortcut where that button is
+   * missing or disabled — see {@link ChatInputProps.onClear}.
+   */
+  onClearArmedChange?: (armed: boolean) => void;
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput(
@@ -151,6 +170,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     placeholderOverlay,
     onQueueNavigateUp,
     onQueueNavigateDown,
+    contextKey,
+    onClearArmedChange,
     queueHasItems = false,
     canSubmit = true,
     canSubmitReason,
@@ -215,6 +236,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onCancelEdit,
     onQueueNavigateUp,
     onQueueNavigateDown,
+    contextKey,
   });
 
   // Sizing is driven by `value` alone, so a programmatic change (a queued item
@@ -242,10 +264,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
 
   const hasText = value.trim().length > 0;
   const showClear = hasText && !sessionBusy;
+  // Whether the labelled "Clear message" button is on screen AND usable: a host
+  // has to wire `onClear` for it to render at all, and a busy session leaves it
+  // disabled and out of the tab order. This gates the armed readout below,
+  // because that readout is deliberately hidden from assistive tech — showing
+  // it anywhere the button is unreachable would advertise a destructive
+  // keyboard shortcut to sighted people and to nobody else.
+  const clearReachable = onClear !== undefined && showClear;
+
+  useEffect(() => {
+    onClearArmedChange?.(clearArmed && clearReachable);
+  }, [clearArmed, clearReachable, onClearArmedChange]);
 
   return (
-    <div className="relative flex flex-col gap-1.5">
-      {clearArmed && hasText && <ClearArmedHint />}
+    <div className="flex flex-col gap-1.5">
       {sessionBusy && (
         <div className="px-1 text-xs text-amber-600 dark:text-amber-500">
           Your agent is still finishing the last message. Try again in a moment.

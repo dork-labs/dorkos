@@ -23,6 +23,14 @@ interface QueuePanelProps {
    * disabled control's title so the refusal always says why.
    */
   sendBlockedReason: string | null;
+  /**
+   * What happens next once nothing is blocking the queue — the header's answer
+   * to "when do these go out". Two different truths hide behind an unblocked
+   * queue and only the caller can tell them apart: the flush pump normally
+   * drains it on the streaming→idle edge, but a turn that ended in error never
+   * arms that edge, so the queue sits until someone sends it by hand.
+   */
+  whenUnblocked: string;
 }
 
 /**
@@ -47,6 +55,7 @@ export function QueuePanel({
   onRemove,
   onSend,
   sendBlockedReason,
+  whenUnblocked,
 }: QueuePanelProps) {
   // Also guarded at the call site, which is what lets AnimatePresence see this
   // panel leave and play the exit below. Kept here too so the component never
@@ -66,7 +75,7 @@ export function QueuePanel({
           answer, already written for a human, so it says it here too. */}
       <div className="text-muted-foreground mb-1 flex items-baseline gap-1 text-xs">
         <span className="font-medium">Queued ({queue.length})</span>
-        <span className="truncate">&mdash; {sendBlockedReason ?? 'ready to send'}</span>
+        <span className="truncate">&mdash; {sendBlockedReason ?? whenUnblocked}</span>
       </div>
       <div className="space-y-0.5">
         <AnimatePresence mode="popLayout">

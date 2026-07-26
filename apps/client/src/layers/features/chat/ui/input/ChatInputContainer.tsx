@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
@@ -17,6 +17,7 @@ import { useChatQueue } from '../../model/use-chat-queue';
 import type { NativeCommandResult } from '../../model/native-commands';
 import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
+import { ClearArmedHint } from './ClearArmedHint';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
@@ -34,6 +35,7 @@ import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
 import { useDragAndPaste } from './use-drag-and-paste';
+import { sessionContextKey } from '../../lib/session-context-key';
 
 interface ChatInputContainerProps {
   chatInputRef: RefObject<ChatInputHandle | null>;
@@ -174,6 +176,12 @@ export function ChatInputContainer({
     onFilesSelected,
   });
 
+  // The composer owns WHEN the double-Escape is armed (it owns the keyboard);
+  // this component owns WHERE that reads out, because the lane it belongs in
+  // floats above the queue panel and the attachment chips, which are rendered
+  // here.
+  const [clearArmed, setClearArmed] = useState(false);
+
   // Sending closes the palettes. It used to happen by accident: an open palette
   // swallowed Enter, and `onCommandSelect` found no row and closed the panel on
   // its way out. Now that Enter falls through to the send when there is nothing
@@ -249,6 +257,9 @@ export function ChatInputContainer({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
+            {/* The composer's overlay lane: everything transient that floats
+                above the card, stacked bottom-up so nothing lands on the queue
+                rows' controls. */}
             <div className="absolute right-0 bottom-full left-0 mb-2">
               <AnimatePresence>
                 {autocomplete.commands.show && (
@@ -266,6 +277,7 @@ export function ChatInputContainer({
                   />
                 )}
               </AnimatePresence>
+              {clearArmed && <ClearArmedHint />}
             </div>
 
             {pendingFiles.length > 0 && (
@@ -291,6 +303,11 @@ export function ChatInputContainer({
                   sendBlockedReason={
                     hasFailedUpload ? 'An attachment did not upload' : chatQueue.sendBlockedReason
                   }
+                  // A turn that ended in error never armed the flush pump, so
+                  // its queue really is waiting on a person — every other
+                  // unblocked queue drains itself on the next idle edge, and
+                  // telling someone to act would be wrong for that one.
+                  whenUnblocked={status === 'error' ? 'Ready to send' : 'Will send next'}
                 />
               )}
             </AnimatePresence>
@@ -337,6 +354,13 @@ export function ChatInputContainer({
               onQueueNavigateUp={chatQueue.handleQueueNavigateUp}
               onQueueNavigateDown={chatQueue.handleQueueNavigateDown}
               queueHasItems={chatQueue.queue.length > 0}
+              // The SAME key the queue and the parked draft are scoped by, so a
+              // pending double-Escape dies on exactly the boundary its draft
+              // does. This composer is re-rendered rather than remounted on a
+              // session switch, so an arm would otherwise survive into the next
+              // session's text.
+              contextKey={sessionContextKey(sessionId, selectedCwd) ?? undefined}
+              onClearArmedChange={setClearArmed}
               placeholder={getPlaceholder(
                 chatQueue.editingIndex,
                 isStreaming,
