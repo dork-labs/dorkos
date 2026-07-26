@@ -89,8 +89,9 @@ nothing was deleted and names the folder to remove (`routes/admin.ts:31-40`).
   through the supervisor that already owns the lifecycle — the state machine DOR-533
   landed in `apps/desktop/src/main/server-process.ts`, which since #500 treats every
   unexpected exit as a crash and can stop and restart the child deliberately. That
-  work is filed separately. Whoever picks it up should replace this refusal, not
-  build alongside it.
+  work is **DOR-542** ("Desktop: make Restart Server and Reset All Data work again,
+  via the supervisor"). Whoever picks it up should replace this refusal, not build
+  alongside it.
 - The client does not branch on `MANAGED_BY_DESKTOP` yet. `system-methods.ts` throws
   the raw response text and the Advanced tab passes it to `toast.error`, so a person
   is shown the whole JSON body with the sentence inside it. Each message is written
@@ -98,6 +99,23 @@ nothing was deleted and names the folder to remove (`routes/admin.ts:31-40`).
   (`routes/admin.ts:11-18`).
 - `triggerRestart()`'s `process.argv[0]` assumption is still wrong in principle; it
   is now merely unreachable in the one environment that broke it.
+
+### The same lesson from the other end
+
+This ADR says a lifecycle operation belongs to whoever owns the lifecycle. The
+converse is also true and is easier to miss: **an operation the supervisor delegates
+to a platform installer may silently not happen, so the code either side of it must
+not assume the process is about to exit.** `autoUpdater.quitAndInstall()` is the live
+example — reached from the in-app "Restart to install" card via `restartToInstall()`
+(`apps/desktop/src/main/auto-updater.ts:267`) and from the native dialog
+(`:156`), with `index.ts:231-241` describing a two-stage quit dance built on the
+assumption that the call is on its way out of the process. Review of PR #511 found
+that assumption does not hold: on macOS the call can return with the app still alive
+whenever the native download has not finished, and `update-downloaded` — which raises
+the card at `auto-updater.ts:139` — fires well before that point, which is exactly
+when a person clicks. Nothing here is decided by this ADR (#511 has not merged), but
+whoever revisits either side of the lifecycle boundary should treat "I called the
+thing that exits" as a request, not a fact.
 
 ### Alternatives considered
 
