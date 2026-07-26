@@ -124,6 +124,21 @@ describe('callerContext turns a proof of consent into preApproved', () => {
     expect(await invokeWith({})).toEqual({ asked: true, ran: false });
   });
 
+  it('does not ask again when the tier gate spent an approval', async () => {
+    const result = await invokeWith({ approval: { via: 'approval', approvalId: 'appr_01' } });
+
+    expect(result).toEqual({ asked: false, ran: true });
+  });
+
+  it('does not ask again when a standing permission allowed the call', async () => {
+    // Spec §3.4: the gate resolves a permission and puts it on the context, where
+    // the same arm converts it. One lookup, two enforcement points — which is what
+    // stops "stop asking" meaning "stop asking at one of the two places that ask".
+    const result = await invokeWith({ approval: { via: 'standing-grant', grantId: 'grant_01' } });
+
+    expect(result).toEqual({ asked: false, ran: true });
+  });
+
   it('does not ask again when the caller proved it may DECIDE approvals', async () => {
     // The arm this file exists for. A trusted caller has already cleared a bar at
     // least as high as the confirmation this flow would go and fetch, so asking it

@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { ApprovalService } from '../../services/core/approvals/index.js';
+import { ApprovalGrantService, ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
 import { createInstallHandler } from '../../services/marketplace-mcp/tool-install.js';
@@ -41,12 +41,15 @@ function parsePayload<T>(result: { content: { text: string }[] }): T {
 
 describe('marketplace install → cockpit approval → retry', () => {
   let approvals: ApprovalService;
+  let grants: ApprovalGrantService;
   let installer: InstallerLike;
   let handler: ReturnType<typeof createInstallHandler>;
   let app: express.Express;
 
   beforeEach(() => {
-    approvals = new ApprovalService(createTestDb());
+    const db = createTestDb();
+    approvals = new ApprovalService(db);
+    grants = new ApprovalGrantService(db);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
 
     installer = {
@@ -68,7 +71,10 @@ describe('marketplace install → cockpit approval → retry', () => {
     app.use(express.json());
     // Local login off: the DEFAULT posture, and therefore the one this flow has to
     // work in. Who may decide is `resolveDecisionAuthority`; see its module TSDoc.
-    app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
+    app.use(
+      '/api/approvals',
+      createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
+    );
   });
 
   afterEach(() => {
@@ -164,7 +170,7 @@ describe('marketplace install → cockpit approval → retry', () => {
     });
     agentApp.use(
       '/api/approvals',
-      createApprovalsRouter(approvals, { isLoginEnabled: () => false })
+      createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
     );
 
     const first = await handler({ name: 'sentry-monitor', marketplace: 'community' });

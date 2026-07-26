@@ -24,8 +24,8 @@ import {
   requireStandingGrantsLogin,
 } from '../lib/caller-authority.js';
 import {
+  readStandingGrantPosture,
   revokeStandingGrantsIfPostureNarrowed,
-  type StandingGrantPosture,
 } from '../services/core/approvals/index.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isTasksEnabled, getTasksInitError } from '../services/tasks/task-state.js';
@@ -57,14 +57,6 @@ function configuredRuntimes(): string[] {
   if (config?.codex?.enabled !== false) runtimes.push('codex');
   if (config?.opencode?.enabled !== false) runtimes.push('opencode');
   return runtimes;
-}
-
-/** The two settings that license a standing permission to exist, as stored now. */
-function readStandingGrantPosture(): StandingGrantPosture {
-  return {
-    loginEnabled: configManager.get('auth')?.enabled === true,
-    standingGrants: configManager.get('approvals')?.standingGrants === true,
-  };
 }
 
 router.get('/', async (_req, res) => {
@@ -227,12 +219,10 @@ router.patch('/', (req, res) => {
     // REQUIRES_LOGIN_CONFIG_PATHS: that bar allows every caller while login is
     // off, and for these two paths that would leave the switch pre-armable.
     //
-    // Forward-looking, and say so: writing this setting changes no behavior today,
-    // because nothing enforces a standing permission yet and the grant route
-    // refuses `standing: true` for every caller. What it buys is that the write
-    // persists and nothing sweeps it, so it would still be set on the day
-    // enforcement lands. Guarding it while it is inert is the point, not an
-    // oversight.
+    // These settings decide real behavior: the tier gate reads
+    // `approvals.standingGrants` on every gated call. The write also persists and
+    // nothing sweeps it, so a switch set while login is off would still be set once
+    // login is on, reading as something the person chose.
     const loginRequired = findLoginRequiredPaths(req.body);
     if (loginRequired.length > 0) {
       const refusal = requireStandingGrantsLogin();

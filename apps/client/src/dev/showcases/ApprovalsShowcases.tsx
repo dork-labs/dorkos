@@ -37,6 +37,7 @@ function sample(overrides: Partial<PendingApproval> = {}): PendingApproval {
     summary:
       'DorkBot wants to run "Uninstall a marketplace package" with name: sentry-monitor, purge: yes',
     requestedBy: '/Users/dev/agents/dorkbot',
+    hasAgentPath: true,
     requestedAt: new Date(LOADED_AT).toISOString(),
     expiresAt: expiresIn(105),
     ...overrides,
@@ -143,6 +144,11 @@ export function ApprovalsShowcases() {
               sample({
                 approvalId: '01JZ0000000000000000000022',
                 requestedBy: undefined,
+                // No agent path either, which is what makes this card ineligible to
+                // become a standing permission. The two travel together on a real
+                // anonymous request, and a showcase that split them would teach the
+                // wrong thing to whoever draws the third button off it.
+                hasAgentPath: false,
                 summary: 'An unidentified caller wants to run "Uninstall a marketplace package"',
               }),
               // Inside the last minute, where the countdown reads "expiring".

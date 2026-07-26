@@ -44,6 +44,7 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     tier: 'destructive',
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: '/Users/dev/agents/dorkbot',
+    hasAgentPath: true,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,
