@@ -74,3 +74,26 @@ export function readStandingGrantPosture(): StandingGrantPosture {
     standingGrants: configManager.get('approvals')?.standingGrants === true,
   };
 }
+
+/**
+ * The moment the settings last stopped licensing standing permissions, as stored
+ * right now. Every permission granted at or before it is void (DOR-520).
+ *
+ * `ConfigManager` stamps this on any write that takes either setting away —
+ * including a write from the CLI, in another process, which is the write no seam
+ * in this server ever sees. Reading it here, fresh, is what lets the store refuse
+ * a permission that a settings round trip invalidated while nothing was watching.
+ *
+ * Returns `null` when nothing has narrowed yet, and ALSO when no config manager
+ * has been initialized. That second case is a test that never built one; `null`
+ * means "no floor", which leaves behavior exactly as it was rather than voiding
+ * every permission because a store is missing.
+ *
+ * @returns The floor as an ISO 8601 string, or `null` when there is none.
+ */
+export function readStandingGrantVoidFloor(): string | null {
+  // Boot-wired singleton: a test that never called `initConfigManager` reads it as
+  // undefined, and the declared type does not say so.
+  const manager = configManager as typeof configManager | undefined;
+  return manager?.get('approvals')?.standingGrantsVoidBefore ?? null;
+}

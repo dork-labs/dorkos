@@ -8,13 +8,17 @@
  * to create one is decided at the routes, by `resolveDecisionAuthority` plus a
  * session cookie, and is deliberately not re-litigated here.
  *
- * ## Two behaviors are load-bearing
+ * ## Three behaviors are load-bearing
  *
  * 1. **Expiry is evaluated on READ**, inside {@link ApprovalGrantService.findLive},
  *    not only by the sweep. Same property the approval token already commits to,
  *    for the same reason: a stale row must never be honored just because no
  *    cleanup has run.
- * 2. **At most one live permission per (agentPath, capabilityId).**
+ * 2. **The posture floor is evaluated on READ too**, for the same reason and in
+ *    the same two places. A permission granted at or before the moment the
+ *    settings last stopped licensing permissions is void, and stays invisible
+ *    whether or not anything has swept it (DOR-520 — see `readVoidFloor` below).
+ * 3. **At most one live permission per (agentPath, capabilityId).**
  *    {@link ApprovalGrantService.create} revokes any existing live row for the
  *    pair before inserting, so answering the same question again EXTENDS rather
  *    than accumulating, and the list a person reads never has duplicates in it.
@@ -36,7 +40,9 @@
  * @module services/core/approvals/approval-grant-service
  */
 import { ulid } from 'ulidx';
-import { and, asc, eq, gt, isNull, lt, approvalGrants, type Db } from '@dorkos/db';
+import { and, asc, eq, gt, isNull, lt, lte, approvalGrants, type Db } from '@dorkos/db';
+
+import { readStandingGrantVoidFloor } from './standing-grant-settings.js';
 
 /** A stored standing-permission row, as Drizzle infers it. */
 export type ApprovalGrantRow = typeof approvalGrants.$inferSelect;
@@ -69,8 +75,18 @@ export class ApprovalGrantService {
    * Build the service over a database handle.
    *
    * @param db - The DorkOS database handle.
+   * @param readVoidFloor - Reads the posture floor FRESH on every lookup: the
+   *   moment the settings last stopped licensing standing permissions, or `null`
+   *   when they never have. Defaults to the live user config, so the invariant
+   *   holds without anybody remembering to wire it; the seam exists so a test can
+   *   supply a floor without a config file. Never captured — a floor read once at
+   *   construction would be a stale answer to a question that has to be current,
+   *   which is the same reason the tier gate reads the master switch per call.
    */
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly readVoidFloor: () => string | null = readStandingGrantVoidFloor
+  ) {}
 
   /**
    * Record a standing permission, replacing any live one for the same pair.
@@ -120,7 +136,8 @@ export class ApprovalGrantService {
           eq(approvalGrants.agentPath, agentPath),
           eq(approvalGrants.capabilityId, capabilityId),
           isNull(approvalGrants.revokedAt),
-          gt(approvalGrants.expiresAt, new Date().toISOString())
+          gt(approvalGrants.expiresAt, new Date().toISOString()),
+          this.notVoidedByPosture()
         )
       )
       .orderBy(asc(approvalGrants.expiresAt))
@@ -142,7 +159,8 @@ export class ApprovalGrantService {
       .where(
         and(
           isNull(approvalGrants.revokedAt),
-          gt(approvalGrants.expiresAt, new Date().toISOString())
+          gt(approvalGrants.expiresAt, new Date().toISOString()),
+          this.notVoidedByPosture()
         )
       )
       .orderBy(asc(approvalGrants.expiresAt))
@@ -202,6 +220,51 @@ export class ApprovalGrantService {
       .where(lt(approvalGrants.expiresAt, olderThan.toISOString()))
       .run();
     return result.changes;
+  }
+
+  /**
+   * End every permission the settings already voided, once, so the stored rows
+   * say what is true rather than relying on the read filter to hide them.
+   *
+   * Boot calls this. It is deliberately NOT what makes the invariant hold — the
+   * filter on {@link findLive} and {@link list} does that, on every read, with no
+   * dependence on this having run. What it buys is an honest table: a permission a
+   * settings round trip voided reads as revoked instead of as one that quietly
+   * expired on its own.
+   *
+   * @returns How many permissions were ended. Zero when there is no floor.
+   */
+  revokeVoidedByPosture(): number {
+    const floor = this.readVoidFloor();
+    if (!floor) return 0;
+    const result = this.db
+      .update(approvalGrants)
+      .set({ revokedAt: new Date().toISOString() })
+      .where(and(isNull(approvalGrants.revokedAt), lte(approvalGrants.grantedAt, floor)))
+      .run();
+    return result.changes;
+  }
+
+  /**
+   * The condition that hides a permission the settings voided.
+   *
+   * `grantedAt` and the floor are both `new Date().toISOString()`, a fixed-width
+   * UTC format, so comparing them as text orders them as instants.
+   *
+   * The comparison is `grantedAt > floor`, and the direction is the whole thing:
+   * a permission is honored only when it was granted STRICTLY AFTER the settings
+   * last stopped licensing one. Reversing it would void exactly the permissions a
+   * person just granted while resurrecting the ones a posture change killed, and
+   * nothing about the outcome would look wrong from outside — every install that
+   * never toggled the setting has no floor at all and behaves identically either
+   * way. `__tests__/approval-grant-service.test.ts` pins both directions.
+   *
+   * @returns A Drizzle condition, or `undefined` when there is no floor (which
+   *   `and()` drops, leaving the query exactly as it was before this existed).
+   */
+  private notVoidedByPosture() {
+    const floor = this.readVoidFloor();
+    return floor ? gt(approvalGrants.grantedAt, floor) : undefined;
   }
 
   /** Stamp every live row for one pair as revoked, so `create` can supersede it. */

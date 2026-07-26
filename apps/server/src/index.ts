@@ -974,6 +974,17 @@ async function start() {
   // switched the feature — or login — off with.
   try {
     revokeStandingGrantsIfPostureForbids(readStandingGrantPosture());
+    // …and end the ones an out-of-process settings round trip already voided
+    // (DOR-520). The sweep above cannot see those: by the time the server starts,
+    // the switch is back on and the posture looks fine. The store refuses them on
+    // every read regardless of this call; running it here is what makes the stored
+    // rows say so too, instead of reading as permissions that quietly expired.
+    const voided = approvalGrantService.revokeVoidedByPosture();
+    if (voided > 0) {
+      logger.info(
+        `[Approvals] Ended ${voided} standing permission(s) that a settings change had voided`
+      );
+    }
   } catch (err) {
     logger.warn('[Approvals] Failed to reconcile standing permissions with the setting', {
       error: err instanceof Error ? err.message : String(err),

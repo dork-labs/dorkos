@@ -229,6 +229,11 @@ export const CONFIG_DISCLOSURE = {
   // an agent to learn about anyone's trust but its own instance's settings.
   'approvals.standingGrants': 'expose',
   'approvals.trustWindowMinutes': 'expose',
+  // Same reasoning one step further: a timestamp saying when this install last
+  // switched standing permissions off names no agent and no person. Exposing it
+  // also lets an agent understand why a permission it used to have stopped
+  // working, which is better than silently finding out.
+  'approvals.standingGrantsVoidBefore': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',
