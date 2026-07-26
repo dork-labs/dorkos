@@ -40,20 +40,32 @@ export const STREAM_EPOCH = Date.now();
  * still validated against the stream's own replay window on subscribe).
  * Returns `undefined` for a cold connect.
  *
+ * When `resourceId` is given, the header must also name THAT resource. A
+ * session's `seq` is per-process so a foreign cursor is usually caught by the
+ * epoch, but a room's `seq` is per-room and durable: room A's cursor replayed
+ * against room B has a plausible-looking number that would silently skip real
+ * entries. Callers with a per-resource seq space should always pass it.
+ *
  * @param lastEventId - The `Last-Event-ID` request header, if any.
  * @param after - The `?after=` query param, if any.
- * @param epoch - This process's stream epoch (injectable for tests).
+ * @param opts.epoch - This process's stream epoch (injectable for tests).
+ * @param opts.resourceId - Require the cursor to belong to this resource.
  */
 export function parseResumeCursor(
   lastEventId: string | undefined,
   after: string | undefined,
-  epoch: number = STREAM_EPOCH
+  opts: { epoch?: number; resourceId?: string } = {}
 ): number | undefined {
+  const epoch = opts.epoch ?? STREAM_EPOCH;
   if (lastEventId) {
     // Take the trailing `-<epoch>-<seq>` so resource ids that contain hyphens
     // (session UUIDs) don't break the split — only the final two segments are
     // ours.
     const match = /-(\d+)-(\d+)$/.exec(lastEventId);
+    if (opts.resourceId !== undefined && !lastEventId.startsWith(`${opts.resourceId}-`)) {
+      // A cursor minted for a different resource: cold connect, never resume.
+      return undefined;
+    }
     if (match && Number(match[1]) === epoch) return Number(match[2]);
     // Mismatched or absent epoch: the cursor belongs to another seq space —
     // treat as cold rather than resuming into the wrong stream.

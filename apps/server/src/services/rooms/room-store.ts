@@ -35,14 +35,36 @@ export class RoomStore {
   // === Rooms ===
 
   /**
-   * Insert a room.
+   * Insert a room and seed its roster in ONE transaction.
+   *
+   * Atomic on purpose. Seeding used to run as separate statements after the
+   * room row was already committed, so a bad member id left a room that the
+   * caller had just been told (404) was not created — holding its slug, showing
+   * up in listings, and turning the obvious retry into a 409 SLUG_TAKEN for a
+   * room they did not know they owned. Either the whole room exists with its
+   * roster or none of it does.
    *
    * @param room - Every column of the new room.
+   * @param members - The roster to seed, already resolved and validated.
    * @returns The inserted room.
    */
-  createRoom(room: NewRoom): Room {
+  createRoom(
+    room: NewRoom,
+    members: ReadonlyArray<{ authorId: string; responseMode: ResponseMode; joinedAt: string }>
+  ): Room {
     const row = { ...room, archived: false, lastActivityAt: room.createdAt };
-    this.db.insert(rooms).values(row).run();
+    this.db.transaction(
+      (tx) => {
+        tx.insert(rooms).values(row).run();
+        for (const member of members) {
+          tx.insert(roomMembers)
+            .values({ ...member, roomId: room.id, lastReadSeq: 0 })
+            .onConflictDoNothing()
+            .run();
+        }
+      },
+      { behavior: 'immediate' }
+    );
     return toRoom(row);
   }
 
@@ -57,7 +79,11 @@ export class RoomStore {
   }
 
   /**
-   * Rooms, newest activity first.
+   * Every room, newest activity first.
+   *
+   * Unscoped. The operator's own listing uses this — a single-player cockpit
+   * that hid rooms from the person running it would be absurd. An AGENT's
+   * listing must use {@link RoomStore.listRoomsForMember} instead.
    *
    * @param filter.kind - Restrict to one room kind.
    * @param filter.includeArchived - Include archived rooms (default false).
@@ -73,6 +99,35 @@ export class RoomStore {
       .orderBy(desc(rooms.lastActivityAt))
       .all();
     return rows.map(toRoom);
+  }
+
+  /**
+   * The rooms one author belongs to, newest activity first.
+   *
+   * Scoped by an inner join on `room_members` rather than by filtering after
+   * the read: a room an agent is not in must never be loaded, not loaded and
+   * then hidden. This is the boundary that stops an agent enumerating the
+   * operator's DMs with other agents.
+   *
+   * @param memberAuthorId - Whose rooms to list.
+   * @param filter.kind - Restrict to one room kind.
+   * @param filter.includeArchived - Include archived rooms (default false).
+   */
+  listRoomsForMember(
+    memberAuthorId: string,
+    filter: { kind?: RoomKind; includeArchived?: boolean } = {}
+  ): Room[] {
+    const conditions = [eq(roomMembers.authorId, memberAuthorId)];
+    if (filter.kind) conditions.push(eq(rooms.kind, filter.kind));
+    if (!filter.includeArchived) conditions.push(eq(rooms.archived, false));
+    const rows = this.db
+      .select({ room: rooms })
+      .from(rooms)
+      .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
+      .where(and(...conditions))
+      .orderBy(desc(rooms.lastActivityAt))
+      .all();
+    return rows.map((row) => toRoom(row.room));
   }
 
   /**
@@ -105,21 +160,6 @@ export class RoomStore {
       this.db.update(rooms).set(patch).where(eq(rooms.id, id)).run();
     }
     return this.getRoom(id);
-  }
-
-  /**
-   * Child rooms of a room — its threads.
-   *
-   * @param parentId - The parent room id.
-   */
-  listThreads(parentId: string): Room[] {
-    const rows = this.db
-      .select()
-      .from(rooms)
-      .where(eq(rooms.parentId, parentId))
-      .orderBy(desc(rooms.lastActivityAt))
-      .all();
-    return rows.map(toRoom);
   }
 
   // === Membership ===
@@ -406,42 +446,6 @@ export class RoomStore {
       .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.cascadeRoot, cascadeRoot)))
       .all();
     return rows.map((row) => row.authorId);
-  }
-
-  // === Per-room agent sessions ===
-
-  /**
-   * The session an agent member answers in for this room, if it has one yet.
-   *
-   * @param roomId - The room.
-   * @param authorId - The agent member.
-   */
-  getRoomSession(roomId: string, authorId: string): string | null {
-    const row = this.db
-      .select()
-      .from(roomSessions)
-      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-      .get();
-    return row?.sessionId ?? null;
-  }
-
-  /**
-   * Bind an agent member's session for this room. First write wins, mirroring
-   * the runtime binding it will carry (ADR-0255).
-   *
-   * @param roomId - The room.
-   * @param authorId - The agent member.
-   * @param sessionId - The session to bind.
-   * @param createdAt - When the binding was made.
-   * @returns The bound session id — the existing one when there already was one.
-   */
-  bindRoomSession(roomId: string, authorId: string, sessionId: string, createdAt: string): string {
-    this.db
-      .insert(roomSessions)
-      .values({ roomId, authorId, sessionId, createdAt })
-      .onConflictDoNothing()
-      .run();
-    return this.getRoomSession(roomId, authorId) ?? sessionId;
   }
 }
 

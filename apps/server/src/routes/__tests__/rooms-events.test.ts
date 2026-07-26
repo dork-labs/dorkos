@@ -301,4 +301,61 @@ describe('GET /api/rooms/:id/events', () => {
     const entries = await request(app).get(`/api/rooms/${roomId}/entries`);
     expect(entries.body.entries).toHaveLength(0);
   });
+
+  it('ignores an out-of-range ?after= instead of going deaf for the connection', async () => {
+    const server = await listen();
+    // A cursor past the end used to set the live-dedupe watermark above every
+    // seq this room will ever issue, silently suppressing every entry for the
+    // life of the connection. Past the end is a cold connect, not a resume.
+    const stream = openRoomStream(server.port, roomId, {
+      after: 99_999,
+      until: (frames) => frames.some((f) => f.event === 'entry'),
+    });
+    await stream.ready;
+    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'still delivered' });
+
+    const frames = await stream.frames;
+    server.close();
+
+    expect(frames.some((f) => f.event === 'snapshot')).toBe(true);
+    expect(frames.find((f) => f.event === 'entry')?.id).toBe(`${roomId}-${STREAM_EPOCH}-1`);
+  });
+
+  it('refuses a cursor minted for a different room', async () => {
+    const other = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'Other' });
+    for (const text of ['one', 'two']) {
+      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+    }
+
+    const server = await listen();
+    // Room seqs are per-room and durable, so another room's cursor is a
+    // plausible number that would silently skip real entries here.
+    const stream = openRoomStream(server.port, roomId, {
+      lastEventId: `${other.body.id}-${STREAM_EPOCH}-1`,
+      until: (frames) => frames.some((f) => f.event === 'snapshot'),
+    });
+    const frames = await stream.frames;
+    server.close();
+
+    const snapshot = frames.find((f) => f.event === 'snapshot')?.data as {
+      entries: Array<{ seq: number }>;
+    };
+    expect(snapshot.entries.map((e) => e.seq)).toEqual([1, 2]);
+  });
+
+  it('404s the stream for an agent that is not a member', async () => {
+    const { initAgentIdentityService, resetAgentIdentityService } =
+      await import('../../services/core/agent-identity/agent-identity-service.js');
+    resetAgentIdentityService();
+    const token = await initAgentIdentityService(db).mint({
+      agentPath: '/agents/outsider',
+      displayName: 'Outsider',
+    });
+
+    const res = await request(app).get(`/api/rooms/${roomId}/events`).set('X-DorkOS-Agent', token);
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    resetAgentIdentityService();
+  });
 });

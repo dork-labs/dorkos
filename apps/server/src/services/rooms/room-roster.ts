@@ -20,6 +20,13 @@ import type { RoomStore } from './room-store.js';
 /** The membership seed a channel gets, per spec §2. */
 const CHANNEL_RESPONSE_MODE: ResponseMode = 'mention-only';
 
+/**
+ * What a non-agent membership stores. The column is NOT NULL and the value is
+ * never read for a human or the system, so this is the enum default, not a
+ * claim about behavior.
+ */
+const INERT_RESPONSE_MODE: ResponseMode = 'always';
+
 /** How to name a member: by an existing author, or by an agent's directory. */
 export interface AddMemberInput {
   authorId?: string;
@@ -61,25 +68,27 @@ export class RoomRoster {
   }
 
   /**
-   * Copy a parent room's roster onto a new thread.
+   * The roster a new thread inherits from its parent, as rows ready to insert.
+   *
+   * Returns rather than writes, so the caller can put the thread row and its
+   * roster in one transaction.
    *
    * Each membership inherits the PARENT's `responseMode` rather than re-seeding
    * from the room kind: an agent you asked to stay quiet in `#backend` should
    * not start answering everything because somebody opened a thread there.
    *
    * @param parentRoomId - The room to copy from.
-   * @param threadRoomId - The thread to copy onto.
+   * @param joinedAt - Timestamp to stamp every inherited membership with.
    */
-  inherit(parentRoomId: string, threadRoomId: string): void {
-    const joinedAt = new Date().toISOString();
-    for (const member of this.store.listMembers(parentRoomId)) {
-      this.store.addMember({
-        roomId: threadRoomId,
-        authorId: member.authorId,
-        responseMode: member.responseMode,
-        joinedAt,
-      });
-    }
+  inheritedFrom(
+    parentRoomId: string,
+    joinedAt: string
+  ): Array<{ authorId: string; responseMode: ResponseMode; joinedAt: string }> {
+    return this.store.listMembers(parentRoomId).map((member) => ({
+      authorId: member.authorId,
+      responseMode: member.responseMode,
+      joinedAt,
+    }));
   }
 
   /**
@@ -165,16 +174,21 @@ export class RoomRoster {
    * later and changing the manifest never rewrites a room somebody already
    * configured.
    *
+   * The field describes when an AGENT answers without being addressed. Humans
+   * and the system are never auto-triggered — addressing filters to agent
+   * members — so for them it is inert, and they get the enum's own default
+   * rather than a restriction nothing enforces and nobody chose.
+   *
    * @param room - The room being joined.
    * @param author - The author joining.
    */
   seedResponseMode(room: Room, author: AuthorRecord): ResponseMode {
+    if (author.kind !== 'agent') return INERT_RESPONSE_MODE;
     if (room.kind === 'thread' && room.parentId) {
       const inherited = this.store.getMember(room.parentId, author.id);
       if (inherited) return inherited.responseMode;
     }
     if (room.kind === 'channel') return CHANNEL_RESPONSE_MODE;
-    if (author.kind !== 'agent') return CHANNEL_RESPONSE_MODE;
     return this.agents.byPath(author.naturalKey)?.responseMode ?? 'always';
   }
 

@@ -70,13 +70,13 @@ describe('cascade guard', () => {
     room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
     // Both agents answer everything, in a channel. Without a guard this loops
     // until somebody notices the bill.
-    service.addMember(room.id, { agentPath: '/agents/ana', responseMode: 'always' });
-    service.addMember(room.id, { agentPath: '/agents/bo', responseMode: 'always' });
+    service.addMember(room.id, human, { agentPath: '/agents/ana', responseMode: 'always' });
+    service.addMember(room.id, human, { agentPath: '/agents/bo', responseMode: 'always' });
   });
 
   /** The roster as addressing sees it. */
   function members(): AddressingMember[] {
-    const current = service.getRoom(room.id);
+    const current = service.getRoom(room.id, human);
     return (current?.members ?? []).map((m) => ({
       authorId: m.authorId,
       kind: m.author.kind,
@@ -162,7 +162,7 @@ describe('cascade guard', () => {
     runCascade(seed);
 
     const notices = service
-      .listEntries(room.id, { limit: 100 })
+      .listEntries(room.id, human, { limit: 100 })
       .filter((entry) => entry.kind === 'notice');
 
     expect(notices.length).toBeGreaterThan(0);
@@ -178,7 +178,7 @@ describe('cascade guard', () => {
     const seed = service.post(room.id, { authorId: human, text: 'thoughts?' });
     runCascade(seed);
 
-    const entries = service.listEntries(room.id, { limit: 100 });
+    const entries = service.listEntries(room.id, human, { limit: 100 });
     expect(entries.every((entry) => entry.cascadeRoot === seed.id)).toBe(true);
     expect(service.authorsInCascade(room.id, seed.id).sort()).toEqual(
       [human, ana, bo, authors.system().id].sort()
@@ -187,7 +187,7 @@ describe('cascade guard', () => {
 
   it('lets a human re-engage a room the guard has stopped', () => {
     runCascade(service.post(room.id, { authorId: human, text: 'round one' }));
-    const before = service.listEntries(room.id, { limit: 100 }).length;
+    const before = service.listEntries(room.id, human, { limit: 100 }).length;
 
     // A human post always starts a fresh cascade: its own id at depth 0.
     const second = service.post(room.id, { authorId: human, text: 'round two' });
@@ -195,7 +195,7 @@ describe('cascade guard', () => {
     expect(second.cascadeDepth).toBe(0);
 
     const run = runCascade(second);
-    expect(service.listEntries(room.id, { limit: 200 }).length).toBeGreaterThan(before + 1);
+    expect(service.listEntries(room.id, human, { limit: 200 }).length).toBeGreaterThan(before + 1);
     expect(run.refusals.length).toBeGreaterThan(0);
   });
 });

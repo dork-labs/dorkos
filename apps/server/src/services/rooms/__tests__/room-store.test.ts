@@ -39,17 +39,20 @@ function entry(overrides: Partial<NewRoomEntry> & { id: string }): NewRoomEntry 
 
 /** Seed a room so `appendEntry`'s `lastActivityAt` update has something to hit. */
 function seedRoom(store: RoomStore, id = ROOM_ID): void {
-  store.createRoom({
-    id,
-    kind: 'channel',
-    parentId: null,
-    slug: id,
-    title: `#${id}`,
-    topic: null,
-    workspaceId: null,
-    rootEntryId: null,
-    createdAt: '2026-07-26T11:00:00.000Z',
-  });
+  store.createRoom(
+    {
+      id,
+      kind: 'channel',
+      parentId: null,
+      slug: id,
+      title: `#${id}`,
+      topic: null,
+      workspaceId: null,
+      rootEntryId: null,
+      createdAt: '2026-07-26T11:00:00.000Z',
+    },
+    []
+  );
 }
 
 describe('RoomStore seq allocation', () => {
@@ -90,6 +93,10 @@ describe('RoomStore seq allocation', () => {
 });
 
 describe('RoomStore never trims the log', () => {
+  // Deliberately heavy: proving the absence of a trim means writing past the cap
+  // through the real append path, which is 5000+ IMMEDIATE transactions. The
+  // default 5s budget is not enough for that on a loaded machine, and a timeout
+  // here would read as "the log trims" — the exact thing this test denies.
   it(`keeps more than EVENT_LOG_MAX_EVENTS (${EVENT_LOG_MAX_EVENTS}) entries`, () => {
     const store = new RoomStore(createTestDb());
     seedRoom(store);
@@ -101,7 +108,7 @@ describe('RoomStore never trims the log', () => {
     expect(store.maxSeq(ROOM_ID)).toBe(total);
     expect(store.listEntriesAfter(ROOM_ID, 0)).toHaveLength(total);
     expect(store.listEntries(ROOM_ID, { limit: 1, before: 2 })[0].seq).toBe(1);
-  });
+  }, 60_000);
 });
 
 /**

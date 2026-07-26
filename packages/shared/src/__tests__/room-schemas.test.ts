@@ -133,6 +133,11 @@ describe('CreateRoomRequestSchema', () => {
     expect(CreateRoomRequestSchema.safeParse({ kind: 'thread', title: 'x' }).success).toBe(false);
   });
 
+  it('refuses a DM named only by a slug, which used to render as a bare "#"', () => {
+    expect(CreateRoomRequestSchema.safeParse({ kind: 'dm', slug: 'ana' }).success).toBe(false);
+    expect(CreateRoomRequestSchema.safeParse({ kind: 'dm', title: 'Ana' }).success).toBe(true);
+  });
+
   it('refuses a slug with characters a URL would have to escape', () => {
     expect(CreateRoomRequestSchema.safeParse({ kind: 'channel', slug: 'Back End!' }).success).toBe(
       false

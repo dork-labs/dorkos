@@ -34,6 +34,7 @@ import { deriveCascade } from './cascade-guard.js';
 import { resolveMentions } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import { RoomRoster, type AddMemberInput } from './room-roster.js';
+import type { NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
 
@@ -100,7 +101,7 @@ export class RoomService {
       throw new RoomError('SLUG_TAKEN', `A channel called #${slug} already exists`);
     }
 
-    const room = this.store.createRoom({
+    const draft: NewRoom = {
       id: ulid(),
       kind: request.kind,
       parentId: null,
@@ -110,11 +111,20 @@ export class RoomService {
       workspaceId: request.workspaceId ?? null,
       rootEntryId: null,
       createdAt: new Date().toISOString(),
-    });
+    };
 
-    for (const authorId of new Set([creatorAuthorId, ...request.members])) {
-      this.roster.add(room, { authorId });
-    }
+    // Resolve and seed the whole roster BEFORE anything is written. An unknown
+    // author id has to fail while the room does not exist yet — otherwise the
+    // caller gets a 404 for a room that is sitting in the table holding its slug.
+    const joinedAt = draft.createdAt;
+    const seeded = { ...draft, archived: false, lastActivityAt: joinedAt };
+    const members = [...new Set([creatorAuthorId, ...request.members])].map((authorId) => ({
+      authorId,
+      responseMode: this.roster.seedResponseMode(seeded, this.roster.requireAuthor(authorId)),
+      joinedAt,
+    }));
+
+    const room = this.store.createRoom(draft, members);
 
     eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
     return this.withRoster(room);
@@ -127,29 +137,41 @@ export class RoomService {
    *
    * @param parentId - The room the thread hangs off.
    * @param rootEntryId - The entry it hangs off.
+   * @param viewerAuthorId - The caller; must be on the parent's roster.
    * @param title - Optional title; defaults to the root entry's opening words.
    * @returns The new thread room with its roster.
    */
-  createThread(parentId: string, rootEntryId: string, title?: string): RoomWithRoster {
-    const parent = this.requireRoom(parentId);
+  createThread(
+    parentId: string,
+    rootEntryId: string,
+    viewerAuthorId: string,
+    title?: string
+  ): RoomWithRoster {
+    const parent = this.requireVisibleRoom(parentId, viewerAuthorId);
     if (parent.kind === 'thread') {
       throw new RoomError('NESTED_THREAD', 'A thread cannot hang off another thread');
     }
     const rootEntry = this.store.getEntryById(parentId, rootEntryId);
     if (!rootEntry) throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
 
-    const thread = this.store.createRoom({
-      id: ulid(),
-      kind: 'thread',
-      parentId: parent.id,
-      slug: null,
-      title: title ?? summarize(rootEntry.body.text),
-      topic: null,
-      workspaceId: parent.workspaceId,
-      rootEntryId,
-      createdAt: new Date().toISOString(),
-    });
-    this.roster.inherit(parent.id, thread.id);
+    const createdAt = new Date().toISOString();
+    // Same atomicity as createRoom: the thread and the roster it inherits land
+    // together or not at all. A thread with no roster is a room nobody — not
+    // even the person who opened it — can post into.
+    const thread = this.store.createRoom(
+      {
+        id: ulid(),
+        kind: 'thread',
+        parentId: parent.id,
+        slug: null,
+        title: title ?? summarize(rootEntry.body.text),
+        topic: null,
+        workspaceId: parent.workspaceId,
+        rootEntryId,
+        createdAt,
+      },
+      this.roster.inheritedFrom(parent.id, createdAt)
+    );
 
     eventFanOut.broadcast('room_created', {
       roomId: thread.id,
@@ -161,9 +183,24 @@ export class RoomService {
   }
 
   /**
-   * Rooms visible to one viewer, each with that viewer's unread count.
+   * The rooms this viewer may list, each with their unread count.
    *
-   * @param viewerAuthorId - Whose unread counts to compute.
+   * Two different answers, on purpose:
+   *
+   * - **A human sees every room.** This is a single-player cockpit and the
+   *   caller is the person running it; hiding rooms from the operator would be
+   *   absurd. "Membership-scoped" in ADR 260726-170125 describes the model, not
+   *   an authorization rule against its owner.
+   * - **An agent sees only rooms it belongs to.** That boundary is real: an
+   *   agent enumerating the operator's DMs with other agents is a leak, and it
+   *   costs one join to prevent.
+   *
+   * `unreadCount` is `null` for a room the viewer is not a member of. Unread is
+   * a property of a read cursor, and a non-member has none — reporting the
+   * room's whole entry count instead would render every room the operator has
+   * not joined as an alarming unread badge.
+   *
+   * @param viewerAuthorId - Whose rooms to list, and whose unread counts to compute.
    * @param filter.kind - Restrict to one room kind.
    * @param filter.includeArchived - Include archived rooms.
    */
@@ -174,32 +211,51 @@ export class RoomService {
     const cursors = new Map(
       this.store.listMembershipsFor(viewerAuthorId).map((m) => [m.roomId, m.lastReadSeq])
     );
-    return this.store.listRooms(filter).map((room) => ({
-      ...room,
-      unreadCount: this.store.countUnread(room.id, cursors.get(room.id) ?? 0),
-    }));
+    const visible = this.seesEveryRoom(viewerAuthorId)
+      ? this.store.listRooms(filter)
+      : this.store.listRoomsForMember(viewerAuthorId, filter);
+    return visible.map((room) => {
+      const cursor = cursors.get(room.id);
+      return {
+        ...room,
+        unreadCount: cursor === undefined ? null : this.store.countUnread(room.id, cursor),
+      };
+    });
   }
 
   /**
-   * One room with its roster.
+   * One room with its roster, as this viewer may see it.
    *
    * @param roomId - The room id.
-   * @returns The room, or `null` when there is none.
+   * @param viewerAuthorId - The caller. A human sees any room; an agent only its own.
+   * @returns The room, or `null` when it does not exist or the viewer may not see it.
    */
-  getRoom(roomId: string): RoomWithRoster | null {
+  getRoom(roomId: string, viewerAuthorId: string): RoomWithRoster | null {
     const room = this.store.getRoom(roomId);
-    return room ? this.withRoster(room) : null;
+    if (!room || !this.canSee(roomId, viewerAuthorId)) return null;
+    return this.withRoster(room);
   }
 
   /**
    * Patch a room's title, topic, or archived flag.
    *
    * @param roomId - The room id.
+   * @param viewerAuthorId - The caller; must be on the roster.
    * @param patch - The validated update request.
    * @returns The updated room with its roster.
    */
-  updateRoom(roomId: string, patch: UpdateRoomRequest): RoomWithRoster {
-    this.requireRoom(roomId);
+  updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    // Un-archiving reclaims a slug the partial unique index released when the
+    // room was archived. Somebody may have taken it since — refuse the same way
+    // creating it would, rather than letting the raw UNIQUE violation surface
+    // as a 500 the caller cannot act on.
+    if (patch.archived === false && room.archived && room.kind === 'channel' && room.slug) {
+      const holder = this.store.findLiveChannelBySlug(room.slug);
+      if (holder && holder.id !== room.id) {
+        throw new RoomError('SLUG_TAKEN', `A channel called #${room.slug} already exists`);
+      }
+    }
     const updated = this.store.updateRoom(roomId, patch);
     if (!updated) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
     eventFanOut.broadcast('room_updated', {
@@ -217,10 +273,11 @@ export class RoomService {
    * been an author before.
    *
    * @param roomId - The room.
+   * @param viewerAuthorId - The caller; must already be on the roster.
    * @param input - Who to add, and optionally how they should behave.
    */
-  addMember(roomId: string, input: AddMemberInput): RoomRosterEntry {
-    const member = this.roster.add(this.requireRoom(roomId), input);
+  addMember(roomId: string, viewerAuthorId: string, input: AddMemberInput): RoomRosterEntry {
+    const member = this.roster.add(this.requireVisibleRoom(roomId, viewerAuthorId), input);
     eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
     return member;
   }
@@ -229,11 +286,17 @@ export class RoomService {
    * Change one membership's per-room response mode.
    *
    * @param roomId - The room.
-   * @param authorId - The member.
+   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param authorId - The member being changed.
    * @param responseMode - The new override.
    */
-  updateMembership(roomId: string, authorId: string, responseMode: ResponseMode): RoomRosterEntry {
-    this.requireRoom(roomId);
+  updateMembership(
+    roomId: string,
+    viewerAuthorId: string,
+    authorId: string,
+    responseMode: ResponseMode
+  ): RoomRosterEntry {
+    this.requireVisibleRoom(roomId, viewerAuthorId);
     return this.roster.setResponseMode(roomId, authorId, responseMode);
   }
 
@@ -241,10 +304,11 @@ export class RoomService {
    * Remove a member, dropping its per-room session binding with it.
    *
    * @param roomId - The room.
-   * @param authorId - The member.
+   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param authorId - The member being removed.
    */
-  removeMember(roomId: string, authorId: string): void {
-    this.requireRoom(roomId);
+  removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
+    this.requireVisibleRoom(roomId, viewerAuthorId);
     this.roster.remove(roomId, authorId);
     eventFanOut.broadcast('room_member_removed', { roomId, authorId });
   }
@@ -257,7 +321,7 @@ export class RoomService {
    * @param lastReadSeq - The seq they have read up to.
    */
   setReadCursor(roomId: string, authorId: string, lastReadSeq: number): RoomMember {
-    this.requireRoom(roomId);
+    this.requireVisibleRoom(roomId, authorId);
     return this.roster.setReadCursor(roomId, authorId, lastReadSeq);
   }
 
@@ -267,11 +331,16 @@ export class RoomService {
    * A page of history, oldest-first.
    *
    * @param roomId - The room.
+   * @param viewerAuthorId - The caller; must be on the roster.
    * @param opts.before - Return entries with `seq` below this.
    * @param opts.limit - Page size.
    */
-  listEntries(roomId: string, opts: { before?: number; limit: number }): RoomEntry[] {
-    this.requireRoom(roomId);
+  listEntries(
+    roomId: string,
+    viewerAuthorId: string,
+    opts: { before?: number; limit: number }
+  ): RoomEntry[] {
+    this.requireVisibleRoom(roomId, viewerAuthorId);
     return this.store.listEntries(roomId, opts);
   }
 
@@ -293,8 +362,11 @@ export class RoomService {
     roomId: string,
     input: { authorId: string; text: string; sessionId?: string; trigger?: PostTrigger }
   ): RoomEntry {
-    const room = this.requireRoom(roomId);
+    const room = this.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    // Seeing a room is not being in it. A human can see every room but still
+    // has to join one before speaking in it; for an agent the visibility check
+    // above already required membership, so this is a no-op.
     if (!this.store.getMember(roomId, input.authorId)) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
@@ -367,19 +439,31 @@ export class RoomService {
    * subscription resumes from.
    *
    * @param roomId - The room.
+   * @param viewerAuthorId - The caller; must be on the roster.
    * @param historyLimit - How many trailing entries to hydrate with.
    */
   snapshot(
     roomId: string,
+    viewerAuthorId: string,
     historyLimit: number
   ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number } {
-    const room = this.requireRoom(roomId);
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const entries = this.store.listEntries(roomId, { limit: historyLimit });
     return {
       room: this.withRoster(room),
       entries,
       cursor: entries.length > 0 ? entries[entries.length - 1].seq : 0,
     };
+  }
+
+  /**
+   * The highest `seq` this room has issued, or 0 when it is empty. The SSE
+   * handler bounds a resume cursor against it.
+   *
+   * @param roomId - The room.
+   */
+  maxSeq(roomId: string): number {
+    return this.store.maxSeq(roomId);
   }
 
   /**
@@ -413,11 +497,52 @@ export class RoomService {
 
   // === Internals ===
 
-  /** Fetch a room or throw the typed not-found the routes map to a 404. */
+  /**
+   * Fetch a room or throw the typed not-found the routes map to a 404.
+   *
+   * Unscoped — for server-internal writes only (`postNotice`, whose author is
+   * the system and is deliberately on no roster). Every request-driven path
+   * uses {@link RoomService.requireVisibleRoom} instead.
+   */
   private requireRoom(roomId: string): Room {
     const room = this.store.getRoom(roomId);
     if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
     return room;
+  }
+
+  /**
+   * Fetch a room the caller is entitled to see, or throw.
+   *
+   * The single visibility rule for every request-driven path. It reports the
+   * same `ROOM_NOT_FOUND` for "no such room" and "not visible to you" on
+   * purpose: distinguishing them would let an agent holding a room id — and the
+   * identity header is attribution, not authorization
+   * (`middleware/agent-identity.ts`) — confirm that the operator's DM with
+   * another agent exists by probing for a different error code.
+   *
+   * @param roomId - The room id.
+   * @param viewerAuthorId - The caller's author id.
+   */
+  private requireVisibleRoom(roomId: string, viewerAuthorId: string): Room {
+    const room = this.store.getRoom(roomId);
+    if (!room || !this.canSee(roomId, viewerAuthorId)) {
+      throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    }
+    return room;
+  }
+
+  /**
+   * Whether this caller may see a room at all: the operator may see every room,
+   * an agent only the ones it belongs to.
+   */
+  private canSee(roomId: string, viewerAuthorId: string): boolean {
+    if (this.seesEveryRoom(viewerAuthorId)) return true;
+    return this.store.getMember(roomId, viewerAuthorId) !== null;
+  }
+
+  /** Human authors are the operator; nothing in a single-player cockpit hides from them. */
+  private seesEveryRoom(viewerAuthorId: string): boolean {
+    return this.authors.getById(viewerAuthorId)?.kind === 'human';
   }
 
   /** Publish a committed entry to the room's readers and bump global activity. */

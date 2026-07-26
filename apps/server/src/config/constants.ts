@@ -166,6 +166,4 @@ export const ROOMS = {
    * `GET /api/rooms/:id/entries?before=<seq>` as the reader scrolls.
    */
   SNAPSHOT_HISTORY_LIMIT: 100,
-  /** Default page size for `GET /api/rooms/:id/entries`. */
-  DEFAULT_ENTRY_PAGE_SIZE: 50,
 } as const;

@@ -104,9 +104,16 @@ export const RoomSchema = z
 
 export type Room = z.infer<typeof RoomSchema>;
 
-/** A room as the sidebar reads it: the room plus this viewer's unread count. */
+/**
+ * A room as the sidebar reads it: the room plus this viewer's unread count.
+ *
+ * `unreadCount` is `null` when the viewer is not a member. Unread is a property
+ * of a read cursor and a non-member has none — so there is no number to give,
+ * and the honest answer is "not applicable" rather than the room's whole entry
+ * count dressed up as an unread badge.
+ */
 export const RoomSummarySchema = RoomSchema.extend({
-  unreadCount: z.number().int().min(0),
+  unreadCount: z.number().int().min(0).nullable(),
 }).openapi('RoomSummary');
 
 export type RoomSummary = z.infer<typeof RoomSummarySchema>;
@@ -218,6 +225,12 @@ export const CreateRoomRequestSchema = z
     message: 'A room needs a title or a slug',
     path: ['title'],
   })
+  // A slug is a channel's `#name`; a DM has no slug, so a DM named only by one
+  // used to render as the bare "#" its title fell back to.
+  .refine((v) => v.kind !== 'dm' || v.title !== undefined, {
+    message: 'A direct message needs a title',
+    path: ['title'],
+  })
   .openapi('CreateRoomRequest');
 
 export type CreateRoomRequest = z.infer<typeof CreateRoomRequestSchema>;
@@ -295,14 +308,58 @@ export const ListRoomsQuerySchema = z
 
 export type ListRoomsQuery = z.infer<typeof ListRoomsQuerySchema>;
 
+/** Page size `GET /api/rooms/:id/entries` uses when the caller names none. */
+export const ROOM_ENTRY_PAGE_SIZE_DEFAULT = 50;
+
+/** Largest page `GET /api/rooms/:id/entries` will serve. Beyond it, 400. */
+export const ROOM_ENTRY_PAGE_SIZE_MAX = 200;
+
 export const ListRoomEntriesQuerySchema = z
   .object({
     before: z.coerce.number().int().min(1).optional().describe('Return entries with seq < this.'),
-    limit: z.coerce.number().int().min(1).max(200).default(50),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(ROOM_ENTRY_PAGE_SIZE_MAX)
+      .default(ROOM_ENTRY_PAGE_SIZE_DEFAULT),
   })
   .openapi('ListRoomEntriesQuery');
 
 export type ListRoomEntriesQuery = z.infer<typeof ListRoomEntriesQuerySchema>;
+
+// === Responses ===
+
+/** The `GET /api/rooms` envelope. */
+export const RoomListResponseSchema = z
+  .object({ rooms: z.array(RoomSummarySchema) })
+  .openapi('RoomListResponse');
+
+export type RoomListResponse = z.infer<typeof RoomListResponseSchema>;
+
+/** The `GET /api/rooms/:id/entries` envelope, oldest-first within the page. */
+export const RoomEntryListResponseSchema = z
+  .object({ entries: z.array(RoomEntrySchema) })
+  .openapi('RoomEntryListResponse');
+
+export type RoomEntryListResponse = z.infer<typeof RoomEntryListResponseSchema>;
+
+/**
+ * What `POST /api/rooms/:id/entries` answers with.
+ *
+ * Identity, not delivery: the entry itself reaches every reader — including the
+ * poster — over `GET /api/rooms/:id/events`, so the 202 carries only enough to
+ * correlate an optimistic echo with the committed entry.
+ */
+export const PostToRoomResponseSchema = z
+  .object({
+    accepted: z.literal(true),
+    entryId: z.string().min(1),
+    seq: z.number().int().min(1),
+  })
+  .openapi('PostToRoomResponse');
+
+export type PostToRoomResponse = z.infer<typeof PostToRoomResponseSchema>;
 
 // === SSE ===
 

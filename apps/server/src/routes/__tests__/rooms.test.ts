@@ -8,7 +8,7 @@
  * proves is the other direction: the room surface stands up inside a fully
  * wired app without reaching for one.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -60,6 +60,10 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { createApp, finalizeApp } from '../../app.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../services/core/agent-identity/agent-identity-service.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -96,9 +100,14 @@ describe('/api/rooms', () => {
   beforeEach(() => {
     fakeRuntime = new FakeAgentRuntime();
     vi.clearAllMocks();
+    resetAgentIdentityService();
     db = createTestDb();
     registerAna(db);
     setRoomService(createRoomSubsystem({ db }).service);
+  });
+
+  afterEach(() => {
+    resetAgentIdentityService();
   });
 
   describe('POST /', () => {
@@ -355,6 +364,96 @@ describe('/api/rooms', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('NESTED_THREAD');
+    });
+  });
+
+  describe('membership scoping', () => {
+    /**
+     * Mint a real identity token for an agent that is on NO room's roster, so
+     * the requests below travel the same path a rogue agent would: the header
+     * resolves (identity is attribution, not authorization) and the room layer
+     * is the only thing standing between it and somebody else's conversation.
+     */
+    async function outsiderToken(): Promise<string> {
+      const identity = initAgentIdentityService(db);
+      return identity.mint({ agentPath: '/agents/outsider', displayName: 'Outsider' });
+    }
+
+    it('does not list a room the caller is not a member of', async () => {
+      await createChannel('Private');
+      const token = await outsiderToken();
+
+      const res = await request(app).get('/api/rooms').set('X-DorkOS-Agent', token);
+      expect(res.status).toBe(200);
+      expect(res.body.rooms).toEqual([]);
+    });
+
+    it('404s GET /:id for a non-member rather than revealing the room', async () => {
+      const room = await createChannel();
+      const token = await outsiderToken();
+
+      const res = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+      expect(res.status).toBe(404);
+      // Same code as a genuinely unknown id: probing cannot confirm existence.
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      const unknown = await request(app).get('/api/rooms/does-not-exist');
+      expect(res.body.code).toBe(unknown.body.code);
+    });
+
+    it('404s the history of a room the caller is not in', async () => {
+      const room = await createChannel();
+      await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'private' });
+      const token = await outsiderToken();
+
+      const res = await request(app)
+        .get(`/api/rooms/${room.id}/entries`)
+        .set('X-DorkOS-Agent', token);
+      expect(res.status).toBe(404);
+      expect(res.text).not.toContain('private');
+    });
+
+    it('refuses a post into a room the caller is not in', async () => {
+      const room = await createChannel();
+      const token = await outsiderToken();
+
+      const res = await request(app)
+        .post(`/api/rooms/${room.id}/entries`)
+        .set('X-DorkOS-Agent', token)
+        .send({ text: 'let me in' });
+      expect(res.status).toBe(404);
+    });
+
+    it('stops an outsider adding itself to a room', async () => {
+      const room = await createChannel();
+      const token = await outsiderToken();
+
+      const res = await request(app)
+        .post(`/api/rooms/${room.id}/members`)
+        .set('X-DorkOS-Agent', token)
+        .send({ agentPath: '/agents/outsider' });
+      expect(res.status).toBe(404);
+
+      const roster = await request(app).get(`/api/rooms/${room.id}`);
+      expect(roster.body.members).toHaveLength(1);
+    });
+
+    it('lets the same agent read once it has actually been added', async () => {
+      const room = await createChannel();
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+
+      const before = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+      expect(before.status).toBe(404);
+
+      // The human, who IS a member, adds her.
+      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+
+      const after = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+      expect(after.status).toBe(200);
+      expect(after.body.id).toBe(room.id);
+
+      const listed = await request(app).get('/api/rooms').set('X-DorkOS-Agent', token);
+      expect(listed.body.rooms.map((r: { id: string }) => r.id)).toEqual([room.id]);
     });
   });
 });

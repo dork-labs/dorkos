@@ -14,8 +14,14 @@
  * permits N-1 wasted model calls before it fires; the ancestry rule kills
  * A→B→A at the first repeat.
  *
- * Pure — the caller supplies the provenance it read. Nothing calls this yet:
- * R1 ships the rule and its tests, R3 wires triggering.
+ * Pure — the caller supplies the provenance it read.
+ *
+ * Wiring status, precisely: {@link deriveCascade} IS live, called by
+ * `RoomService.post` to stamp every entry's provenance, because the columns
+ * have to be right from the first message or the guard has nothing to read
+ * later. {@link evaluateCascade} and {@link buildCascadeNotice} have no
+ * production caller yet — R1 ships the rule and its tests, and R3 calls them
+ * when it wires triggering.
  *
  * @module server/services/rooms/cascade-guard
  */

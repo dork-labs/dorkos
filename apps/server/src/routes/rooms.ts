@@ -26,14 +26,9 @@ import {
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
-import {
-  getRoomService,
-  RoomError,
-  type AuthorRecord,
-  type RoomErrorCode,
-} from '../services/rooms/index.js';
-import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { getRoomService, RoomError, type RoomErrorCode } from '../services/rooms/index.js';
 import { parseBody } from '../lib/route-utils.js';
+import { resolveCaller } from './room-caller.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { logger } from '../lib/logger.js';
 
@@ -69,23 +64,6 @@ function sendRoomError(res: Response, err: unknown, context: string): void {
   res.status(500).json({ error: 'Internal server error' });
 }
 
-/**
- * Who this request is. An agent presenting a valid identity token acts as
- * itself, minted on its `agentPath`; every other caller is the local human.
- * Author identity is never read from the request body — a client that could
- * name its own author could post as anyone in the room.
- *
- * @param res - The response holding the resolved agent identity, if any.
- */
-function resolveCaller(res: Response): AuthorRecord {
-  const service = getRoomService();
-  const identity = getRequestAgentIdentity(res);
-  if (identity) {
-    return service.authorRegistry.resolveAgent(identity.agentPath, identity.displayName);
-  }
-  return service.authorRegistry.localHuman();
-}
-
 /** GET / — rooms visible to the caller, each with their unread count. */
 router.get('/', (req, res) => {
   const query = parseBody(ListRoomsQuerySchema, req.query, res);
@@ -110,10 +88,10 @@ router.post('/', (req, res) => {
   }
 });
 
-/** GET /:id — one room with its roster. */
+/** GET /:id — one room with its roster. 404s unless the caller is a member. */
 router.get('/:id', (req, res) => {
   try {
-    const room = getRoomService().getRoom(req.params.id);
+    const room = getRoomService().getRoom(req.params.id, resolveCaller(res).id);
     if (!room) return res.status(404).json({ error: 'No such room', code: 'ROOM_NOT_FOUND' });
     res.json(room);
   } catch (err) {
@@ -126,7 +104,7 @@ router.patch('/:id', (req, res) => {
   const body = parseBody(UpdateRoomRequestSchema, req.body, res);
   if (!body) return;
   try {
-    res.json(getRoomService().updateRoom(req.params.id, body));
+    res.json(getRoomService().updateRoom(req.params.id, resolveCaller(res).id, body));
   } catch (err) {
     sendRoomError(res, err, 'PATCH /:id');
   }
@@ -137,7 +115,9 @@ router.get('/:id/entries', (req, res) => {
   const query = parseBody(ListRoomEntriesQuerySchema, req.query, res);
   if (!query) return;
   try {
-    res.json({ entries: getRoomService().listEntries(req.params.id, query) });
+    res.json({
+      entries: getRoomService().listEntries(req.params.id, resolveCaller(res).id, query),
+    });
   } catch (err) {
     sendRoomError(res, err, 'GET /:id/entries');
   }
@@ -168,7 +148,7 @@ router.post('/:id/members', (req, res) => {
   const body = parseBody(AddRoomMemberRequestSchema, req.body, res);
   if (!body) return;
   try {
-    res.status(201).json(getRoomService().addMember(req.params.id, body));
+    res.status(201).json(getRoomService().addMember(req.params.id, resolveCaller(res).id, body));
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/members');
   }
@@ -180,7 +160,12 @@ router.patch('/:id/members/:authorId', (req, res) => {
   if (!body) return;
   try {
     res.json(
-      getRoomService().updateMembership(req.params.id, req.params.authorId, body.responseMode)
+      getRoomService().updateMembership(
+        req.params.id,
+        resolveCaller(res).id,
+        req.params.authorId,
+        body.responseMode
+      )
     );
   } catch (err) {
     sendRoomError(res, err, 'PATCH /:id/members/:authorId');
@@ -190,7 +175,7 @@ router.patch('/:id/members/:authorId', (req, res) => {
 /** DELETE /:id/members/:authorId — remove a member. */
 router.delete('/:id/members/:authorId', (req, res) => {
   try {
-    getRoomService().removeMember(req.params.id, req.params.authorId);
+    getRoomService().removeMember(req.params.id, resolveCaller(res).id, req.params.authorId);
     res.status(204).end();
   } catch (err) {
     sendRoomError(res, err, 'DELETE /:id/members/:authorId');
@@ -216,7 +201,14 @@ router.post('/:id/threads', (req, res) => {
   try {
     res
       .status(201)
-      .json(getRoomService().createThread(req.params.id, body.rootEntryId, body.title));
+      .json(
+        getRoomService().createThread(
+          req.params.id,
+          body.rootEntryId,
+          resolveCaller(res).id,
+          body.title
+        )
+      );
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/threads');
   }

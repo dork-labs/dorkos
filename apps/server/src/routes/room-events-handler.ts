@@ -18,6 +18,7 @@ import { once } from 'node:events';
 import type { NextFunction, Request, Response } from 'express';
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import { getRoomService, RoomError } from '../services/rooms/index.js';
+import { resolveCaller } from './room-caller.js';
 import { initSSEStream, endSSEStream } from '../services/core/stream-adapter.js';
 import { sendError } from '../lib/route-utils.js';
 import { STREAM_EPOCH, parseResumeCursor } from '../lib/stream-cursor.js';
@@ -45,11 +46,16 @@ export const roomEventsHandler = async (
   const roomId = req.params.id;
 
   let service: ReturnType<typeof getRoomService>;
+  let viewerAuthorId: string;
   try {
     service = getRoomService();
-    // Fail the unknown room BEFORE headers flush, so it is a plain 404 the
-    // client can read rather than a socket that opens and immediately dies.
-    if (!service.getRoom(roomId)) {
+    viewerAuthorId = resolveCaller(res).id;
+    // Fail BEFORE headers flush, so it is a plain 404 the client can read
+    // rather than a socket that opens and immediately dies. `getRoom` is
+    // membership-scoped, so this refuses an unknown room and a room the caller
+    // is not in identically — subscribing to somebody else's DM by id is the
+    // same leak as reading it.
+    if (!service.getRoom(roomId, viewerAuthorId)) {
       return sendError(res, 404, 'No such room', 'ROOM_NOT_FOUND');
     }
   } catch (err) {
@@ -57,10 +63,21 @@ export const roomEventsHandler = async (
     return next(err);
   }
 
-  const sinceCursor = parseResumeCursor(
+  // The room id is passed so a cursor minted for a DIFFERENT room is refused:
+  // a room's seq space is per-room and durable, so another room's cursor is a
+  // plausible number that would silently skip real entries here.
+  const requested = parseResumeCursor(
     req.headers['last-event-id'] as string | undefined,
-    req.query.after as string | undefined
+    req.query.after as string | undefined,
+    { resourceId: roomId }
   );
+  // Bound it to what the room actually has. An out-of-range cursor (`?after=99999`)
+  // would otherwise set the live-dedupe watermark above every seq this room will
+  // issue for the life of the connection, silently suppressing every entry the
+  // reader is connected to receive. Past the end is not a resume; it is a cold
+  // connect that hydrates from the snapshot.
+  const maxSeq = service.maxSeq(roomId);
+  const sinceCursor = requested !== undefined && requested <= maxSeq ? requested : undefined;
 
   initSSEStream(res);
   // Flush the headers immediately with an SSE comment. A resume connect whose
@@ -125,7 +142,7 @@ export const roomEventsHandler = async (
         highestSent = entry.seq;
       }
     } else {
-      const snapshot = service.snapshot(roomId, ROOMS.SNAPSHOT_HISTORY_LIMIT);
+      const snapshot = service.snapshot(roomId, viewerAuthorId, ROOMS.SNAPSHOT_HISTORY_LIMIT);
       if (closed) return;
       res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
       highestSent = snapshot.cursor;
