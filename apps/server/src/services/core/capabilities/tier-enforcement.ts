@@ -339,7 +339,13 @@ let gate: CapabilityTierGateOptions | undefined;
 
 /**
  * Wire tier enforcement to the approval primitive. Called once at boot, before
- * any router or MCP server is mounted.
+ * the server accepts connections.
+ *
+ * Not before the routers are mounted: `index.ts` mounts `/mcp` and every
+ * `/api/*` router well before it calls this. What matters is that `app.listen`
+ * comes after, so no request can reach an unwired gate. Stating it as "before
+ * anything is mounted" would be false and would invite someone to rely on an
+ * ordering the boot sequence does not provide.
  *
  * The approval service itself stays injected (there is deliberately no singleton
  * in `services/core/approvals`); this seam exists because the two MCP adapters are
