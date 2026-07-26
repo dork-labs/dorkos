@@ -14,6 +14,7 @@ import { SessionPage } from '@/layers/widgets/session';
 import { AgentsPage } from '@/layers/widgets/agents';
 import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
+import { ChannelsPage } from '@/layers/widgets/room-view';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
@@ -204,6 +205,39 @@ const tasksRoute = createRoute({
   component: TasksPage,
 });
 
+// ── Channels, DMs and threads at /channels ───────────────────
+
+/**
+ * Search params for the `/channels` route.
+ *
+ * A room's identity travels as a search param, the same way `/session` carries
+ * `?session=` rather than a path segment (`sessionSearchSchema` above). Discord
+ * addresses a DM the same way, so `/channels?id=<dmId>` is precedented rather
+ * than odd.
+ *
+ * `thread` names a child room of `id`. When both are set the thread is what
+ * renders, and `id` stays in the URL so leaving the thread returns to the room
+ * it hangs off.
+ *
+ * @internal Exported for testing only.
+ */
+export const channelsSearchSchema = mergeDialogSearch(
+  z.object({
+    id: z.string().optional(),
+    thread: z.string().optional(),
+  })
+);
+
+/** Search params available on the `/channels` route. */
+export type ChannelsSearch = z.infer<typeof channelsSearchSchema>;
+
+const channelsRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/channels',
+  validateSearch: zodValidator(channelsSearchSchema),
+  component: ChannelsPage,
+});
+
 // ── Workspaces at /workspaces ────────────────────────────────
 const workspacesRoute = createRoute({
   getParentRoute: () => appShellRoute,
@@ -253,6 +287,7 @@ const routeTree = rootRoute.addChildren([
     sessionRoute,
     agentsRoute,
     tasksRoute,
+    channelsRoute,
     workspacesRoute,
     activityRoute,
     marketplaceRoute,

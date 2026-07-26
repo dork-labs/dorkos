@@ -103,6 +103,8 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         ungroupedSortMode: 'name',
         ungroupedCollapsed: false,
         recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
         groupsHintDismissed: false,
         muted: ['/Users/me/noisy'],
         ungroupedDisplayFilter: 'all',

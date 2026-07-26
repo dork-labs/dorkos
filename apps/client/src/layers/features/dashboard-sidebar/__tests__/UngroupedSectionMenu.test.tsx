@@ -14,6 +14,8 @@ const PREFS = {
   ungroupedSortMode: 'name',
   ungroupedCollapsed: false,
   recentsCollapsed: false,
+  channelsCollapsed: false,
+  dmsCollapsed: false,
   groupsHintDismissed: false,
   muted: [],
   ungroupedDisplayFilter: 'all',

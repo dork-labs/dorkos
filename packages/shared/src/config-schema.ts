@@ -255,6 +255,10 @@ export const SidebarPrefsSchema = z.object({
   ungroupedSortMode: z.enum(['name', 'recent']).default('name'),
   ungroupedCollapsed: z.boolean().default(false),
   recentsCollapsed: z.boolean().default(false),
+  /** Collapse state of the sidebar's "Channels" section (rooms, DOR-525). */
+  channelsCollapsed: z.boolean().default(false),
+  /** Collapse state of the sidebar's "Direct messages" section (rooms, DOR-525). */
+  dmsCollapsed: z.boolean().default(false),
   groupsHintDismissed: z.boolean().default(false),
   /**
    * Muted agent projectPaths (DOR-339). Mute owns ALL attention signals for a
@@ -412,6 +416,8 @@ export const UserConfigSchema = z.object({
         ungroupedSortMode: 'name' as const,
         ungroupedCollapsed: false,
         recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
         groupsHintDismissed: false,
         muted: [],
         ungroupedDisplayFilter: 'all' as const,
@@ -434,6 +440,8 @@ export const UserConfigSchema = z.object({
         ungroupedSortMode: 'name' as const,
         ungroupedCollapsed: false,
         recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
         groupsHintDismissed: false,
         muted: [],
         ungroupedDisplayFilter: 'all' as const,

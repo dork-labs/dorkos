@@ -16,6 +16,7 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),
+  useSearch: () => ({}),
 }));
 
 const mockMeshPaths = vi.fn<() => string[]>(() => [
@@ -39,6 +40,8 @@ function makePrefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
     ungroupedSortMode: 'name',
     ungroupedCollapsed: false,
     recentsCollapsed: false,
+    channelsCollapsed: false,
+    dmsCollapsed: false,
     groupsHintDismissed: false,
     muted: [],
     ungroupedDisplayFilter: 'all',
@@ -72,6 +75,10 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     useTransport: () => mockTransport,
     useNow: () => Date.now(),
     useIsMobile: () => false,
+    // The room list rides the global `/api/events` fan-out, which needs the
+    // app-level EventStreamProvider. Nothing here is about that stream, so it
+    // is stubbed rather than dragging the provider into every sidebar test.
+    useEventSubscription: () => {},
     useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
       selector({
         setGlobalPaletteOpen: mockSetGlobalPaletteOpen,
@@ -416,9 +423,12 @@ describe('DashboardSidebar', () => {
 
   it('shows 3 skeleton rows while Recent is loading', () => {
     mockRecent.mockReturnValue({ data: undefined, isLoading: true });
-    const { container } = renderWithProviders(<DashboardSidebar />);
-    expect(screen.getByText('Recent')).toBeInTheDocument();
-    expect(container.querySelectorAll('[data-slot="sidebar-menu-skeleton"]')).toHaveLength(3);
+    renderWithProviders(<DashboardSidebar />);
+    // Scoped to the Recent group: the Channels and Direct messages sections
+    // render their own skeletons off a different query, so a whole-container
+    // count would be measuring all three at once.
+    const recentGroup = screen.getByText('Recent').closest('[data-slot="sidebar-group"]');
+    expect(recentGroup?.querySelectorAll('[data-slot="sidebar-menu-skeleton"]')).toHaveLength(3);
   });
 
   // --- Add affordance + onboarding ---
