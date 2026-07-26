@@ -348,6 +348,36 @@ describe('legacy budget key tolerance (DOR-265)', () => {
   });
 });
 
+describe('writeManifest cleanup on failure', () => {
+  const tempDirs: string[] = [];
+
+  async function makeTempDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shared-manifest-temp-'));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  afterEach(async () => {
+    for (const dir of tempDirs.splice(0)) {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves no temp file behind when the rename cannot land', async () => {
+    const projectDir = await makeTempDir();
+    const dorkDir = path.join(projectDir, MANIFEST_DIR);
+    await fs.mkdir(dorkDir, { recursive: true });
+    // A directory where agent.json goes makes the rename fail after the temp
+    // file has already been written, which is the shape a full disk produces.
+    await fs.mkdir(path.join(dorkDir, MANIFEST_FILE));
+
+    await expect(writeManifest(projectDir, makeManifest())).rejects.toThrow();
+
+    // No stray `.agent-<uuid>.tmp` left for the user to find.
+    expect(await fs.readdir(dorkDir)).toEqual([MANIFEST_FILE]);
+  });
+});
+
 describe('round-trip with new fields', () => {
   const tempDirs: string[] = [];
 

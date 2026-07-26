@@ -100,8 +100,20 @@ export async function writeManifest(projectPath: string, manifest: AgentManifest
   const tempPath = path.join(dorkDir, `.agent-${randomUUID()}.tmp`);
 
   const content = JSON.stringify(manifest, null, 2) + '\n';
-  await fs.writeFile(tempPath, content, 'utf-8');
-  await fs.rename(tempPath, manifestPath);
+  try {
+    await fs.writeFile(tempPath, content, 'utf-8');
+    await fs.rename(tempPath, manifestPath);
+  } catch (err) {
+    // A write that runs out of disk, or a rename that cannot land, leaves the
+    // temp file behind. Clean it up so a failure never strands a stray
+    // dot-file in the user's `.dork/` for them to find and wonder about.
+    try {
+      await fs.rm(tempPath, { force: true });
+    } catch {
+      /* best-effort cleanup */
+    }
+    throw err;
+  }
 }
 
 /**

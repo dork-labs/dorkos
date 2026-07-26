@@ -4,7 +4,8 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/index.js'
 // ── Mock all dependencies before importing the handler ────────────────────────
 
 const mockWriteManifest = vi.fn();
-vi.mock('@dorkos/shared/manifest', () => ({
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
   readManifest: vi.fn(),
   writeManifest: (...args: unknown[]) => mockWriteManifest(...args),
 }));
@@ -51,14 +52,20 @@ vi.mock('../config-manager.js', () => ({
 
 const mockMkdir = vi.fn();
 const mockStat = vi.fn();
+const mockLstat = vi.fn();
 const mockRm = vi.fn();
+const mockUnlink = vi.fn();
+const mockRmdir = vi.fn();
 const mockWriteFile = vi.fn();
 
 vi.mock('fs/promises', () => ({
   default: {
     mkdir: (...args: unknown[]) => mockMkdir(...args),
     stat: (...args: unknown[]) => mockStat(...args),
+    lstat: (...args: unknown[]) => mockLstat(...args),
     rm: (...args: unknown[]) => mockRm(...args),
+    unlink: (...args: unknown[]) => mockUnlink(...args),
+    rmdir: (...args: unknown[]) => mockRmdir(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
   },
 }));
@@ -80,6 +87,8 @@ describe('create_agent MCP tool', () => {
     vi.clearAllMocks();
     // Default: directory does not exist (ENOENT)
     mockStat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+    // Default: nothing is at any path the scaffold is about to write
+    mockLstat.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
     mockMkdir.mockResolvedValue(undefined);
     mockWriteManifest.mockResolvedValue(undefined);
     mockWriteFile.mockResolvedValue(undefined);

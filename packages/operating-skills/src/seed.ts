@@ -19,7 +19,7 @@
  * @module seed
  */
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { parseSkillFile } from '@dorkos/skills/parser';
@@ -52,6 +52,14 @@ export interface SeedResult {
   skillsDir: string;
   /** Per-skill outcomes, in pack order. */
   outcomes: SeedOutcome[];
+  /**
+   * Absolute paths to the directory trees this run created, each named by its
+   * topmost new directory (for example `<rootDir>/.agents` in a workspace that
+   * had none). Nothing at or below one of these paths existed before the run,
+   * which is what lets a caller undo a failed scaffold without guessing at
+   * directories that were already the user's.
+   */
+  createdDirs: string[];
 }
 
 /** Hash the canonical (trimmed) body — the parser trims on read, so we match it. */
@@ -109,15 +117,22 @@ async function decide(filePath: string): Promise<SeedAction> {
 export async function seedOperatingSkills(rootDir: string): Promise<SeedResult> {
   const skillsDir = path.join(rootDir, '.agents', 'skills');
   const outcomes: SeedOutcome[] = [];
+  const createdDirs: string[] = [];
 
   for (const skill of OPERATING_SKILLS_PACK) {
     const filePath = path.join(skillsDir, skill.name, 'SKILL.md');
     const action = await decide(filePath);
     if (action === 'created' || action === 'upgraded') {
+      // `writeSkillFile` makes this directory itself, but only a recursive
+      // `mkdir` reports the topmost directory it had to create, and that
+      // return value is the only proof available that the directory is this
+      // run's to undo. Making it here first leaves that call a no-op.
+      const firstCreated = await mkdir(path.dirname(filePath), { recursive: true });
+      if (firstCreated) createdDirs.push(firstCreated);
       await writeSkillFile(skillsDir, skill.name, buildFrontmatter(skill), skill.body);
     }
     outcomes.push({ name: skill.name, action });
   }
 
-  return { skillsDir, outcomes };
+  return { skillsDir, outcomes, createdDirs };
 }
