@@ -5,9 +5,11 @@
  *
  * ## Why this effect needed a guard at all
  *
- * Installing a package is gated: `marketplace.install` runs the tier gate, and
- * `marketplace.uninstall` is `destructive` and waits for a person. But the list of
- * SOURCES those installs read from was ungated for every caller, so an agent could
+ * Installing a package is gated: `marketplace.install` runs the tier gate (at tier
+ * `act`, so it passes for every caller today, but the route answers to whatever
+ * tier that capability declares), and `marketplace.uninstall` is `destructive`, so
+ * an untrusted caller gets an approval card instead of an uninstall. But the list
+ * of SOURCES those installs read from was ungated for every caller, so an agent could
  * point this instance at a feed somebody else controls and then install from it
  * through the gate, which sees a legitimate install of a legitimately-listed
  * package. The install gate never asks where the package came from, so the source
@@ -49,11 +51,27 @@
  * no cookie — it authenticates with a personal API key by design
  * (`packages/cli/src/lib/api-client.ts`). A cookie bar here would refuse the person
  * at their own terminal on any login-on instance, which is not a hardening, it is a
- * lockout. The neighbouring marketplace mutation routes already settled this the
- * same way: `POST /packages/:name/install|uninstall` clear their gate on
- * `trustedCaller` alone, so a key-holding caller can already install and uninstall
- * on this router. Requiring MORE proof to add a source than to install from one
- * would protect nothing.
+ * lockout. `marketplace.test.ts` pins that posture, so a later "harden this like
+ * `config.ts`" change turns red instead of silently locking the operator out.
+ *
+ * What separates this from the surface that DOES run the cookie bar is the
+ * OPERATOR SURFACE, not the risk level — and the distinction is worth stating
+ * plainly, because the tempting version of it is wrong. Standing permissions
+ * (DOR-501 phase 2) have no CLI verb at all; they are a cockpit-only affordance, so
+ * demanding a cookie there costs an operator nothing they can currently do. Adding
+ * a package source has a documented terminal workflow that people actually run, and
+ * the only credential that workflow can present is an API key. So the cookie bar is
+ * free on one surface and a lockout on the other, and that — not "a source is less
+ * dangerous than a standing grant" — is why they differ.
+ *
+ * Do NOT reach for the argument that the neighbouring install and uninstall routes
+ * settled this already. They did not settle the same question, and this module's
+ * own opening argues the opposite of it: the install gate never asks WHERE a
+ * package came from, so adding a source is the strictly MORE consequential act —
+ * installing from an attacker's feed requires adding that feed first. "The route
+ * next door asks for less" is how a bar erodes, and it is not why this one is set
+ * where it is. The CLI lockout above is the argument that carries this decision,
+ * and it should be the only one anyone cites from here.
  *
  * **The residual, stated plainly:** with `Require login` off — the default — a
  * program on this machine that omits its agent header is indistinguishable from the

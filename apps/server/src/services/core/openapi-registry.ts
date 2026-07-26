@@ -1636,8 +1636,10 @@ registry.registerPath({
   tags: ['Marketplace'],
   summary: 'Add a marketplace source (operator only)',
   description:
-    'Only the person running DorkOS may add a package source. A caller presenting an agent ' +
-    'identity is refused with 403 and there is no approval that unlocks it.',
+    'Only the person running DorkOS may add a package source. Any caller that could not decide ' +
+    'an approval is refused with 403, which includes one presenting an agent identity, one ' +
+    'presenting an approval token, and (with local login on) one with no signed-in identity. ' +
+    'There is no approval that unlocks it.',
   request: {
     body: {
       content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
@@ -1669,8 +1671,10 @@ registry.registerPath({
   tags: ['Marketplace'],
   summary: 'Remove a marketplace source (operator only)',
   description:
-    'Only the person running DorkOS may remove a package source. A caller presenting an agent ' +
-    'identity is refused with 403 and there is no approval that unlocks it.',
+    'Only the person running DorkOS may remove a package source. Any caller that could not ' +
+    'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
+    'one presenting an approval token, and (with local login on) one with no signed-in ' +
+    'identity. There is no approval that unlocks it.',
   request: {
     params: z.object({ name: z.string() }),
   },

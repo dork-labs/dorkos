@@ -108,6 +108,9 @@ let gateRegistry: CapabilityRegistry;
 /** Set to make a request look like an agent's rather than the cockpit's. */
 let agentHeader: string | undefined;
 
+/** Stands in for what `sessionGate` attaches once local login is on. */
+let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+
 function createFakeUninstallFlow(): FakeUninstallFlow {
   return { uninstall: vi.fn() };
 }
@@ -187,6 +190,7 @@ describe('Marketplace Routes', () => {
     onPluginsChanged = vi.fn();
     agentScopes = [];
     agentHeader = undefined;
+    signedInUser = undefined;
     // The gate asks `auth.enabled` to decide whether proof of a person is even
     // possible, and with no config manager it fails CLOSED (assumes login on).
     // Initialize it so these tests run in the real DEFAULT posture, login off.
@@ -204,6 +208,8 @@ describe('Marketplace Routes', () => {
       // request looks like the cockpit's, which is the caller the mutation routes
       // let through without an approval (DOR-467).
       if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
+      // And for `sessionGate`, which resolves an identity only when login is on.
+      if (signedInUser) res.locals.user = signedInUser;
       next();
     });
     app.use(
@@ -1127,6 +1133,36 @@ describe('Marketplace Routes', () => {
       const removed = await request(app).delete('/api/marketplace/sources/mine');
       expect(removed.status).toBe(204);
       expect(await listSourceNames()).not.toContain('mine');
+    });
+
+    it('still lets the operator add from their terminal with Require login ON', async () => {
+      // The posture this PR's central argument turns on, pinned so it cannot be
+      // "hardened" away by accident. `dorkos marketplace add` is a first-class
+      // operator verb and the CLI has no cookie — it presents a per-user API key.
+      // Copying the `PATCH /api/config` cookie bar onto this route would therefore
+      // refuse the person at their own terminal on every login-on instance, and
+      // nothing but this test would notice. See source-write-policy.ts.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_cli', credential: 'api-key' };
+
+      const added = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'from-cli', source: 'https://example.com/from-cli' });
+      expect(added.status).toBe(201);
+
+      const removed = await request(app).delete('/api/marketplace/sources/from-cli');
+      expect(removed.status).toBe(204);
+
+      // And the agent bar still holds in this posture — the allow above is about
+      // WHICH credential the operator may present, not a hole login-on opens.
+      agentHeader = 'agent-token';
+      const refused = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe('operator_only_marketplace_source');
     });
 
     it('leaves reading, refreshing, and listing open to an agent', async () => {

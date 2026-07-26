@@ -112,6 +112,22 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
+    what: 'disables a package feed, which takes away every package it served just as removing it does — browse aggregates from ENABLED sources only',
+    // Listed with an EMPTY allowlist, which is the only entry here that has one,
+    // so say why. `MarketplaceSourceManager` has three mutators; DOR-502 gated the
+    // two that had routes and left this one with no production caller at all. That
+    // is the moment to list it, not later: the cockpit already RENDERS each
+    // source's enabled state and the CLI already prints it, with nothing anywhere
+    // that can flip it after the source is created, so a `PATCH /sources/:name`
+    // toggle is the obvious next route on this router. Without this entry that
+    // route would arrive ungated AND invisible to this scan — the exact "a scan
+    // cannot fail for an effect nobody added" hole the module TSDoc above warns
+    // about. With it, the route turns this red until its author gates it and
+    // writes down why it is safe.
+    call: 'sourceManager.setEnabled(',
+    allowed: {},
+  },
+  {
     what: 'runs the tier gate for a caller that performs the effect itself, instead of via registry.invoke',
     call: 'authorizeCapability(',
     allowed: {

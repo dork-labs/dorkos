@@ -249,6 +249,30 @@ describe('runMarketplaceRemove', () => {
     const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allErr).toContain("'missing' not found");
   });
+
+  it('prints what to do next when the server refuses an agent (DOR-502)', async () => {
+    // The sibling of the `runMarketplaceAdd` case above, and it needs its own
+    // test rather than inheriting that one's coverage: the two handlers have
+    // separate error ladders, so a 403 branch present in one says nothing about
+    // the other. Without this the `remove` branch could be deleted outright and
+    // the suite would stay green.
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      mockResponse(403, {
+        error: 'Only the person running DorkOS can remove a package source',
+        code: 'operator_only_marketplace_source',
+        message:
+          'DorkOS removed nothing. Ask them to run `dorkos marketplace remove <name>` themselves.',
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const code = await runMarketplaceRemove({ name: 'dorkos-community' });
+
+    expect(code).toBe(1);
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allErr).toContain('Only the person running DorkOS can remove a package source');
+    expect(allErr).toContain('Ask them to run');
+  });
 });
 
 describe('parseMarketplaceListArgs', () => {

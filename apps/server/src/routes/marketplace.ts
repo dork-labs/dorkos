@@ -363,6 +363,16 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.post('/sources', async (req, res) => {
     // Ahead of validation on purpose: a caller that may not do this at all gets
     // one answer whatever it sent, rather than a schema it can probe.
+    //
+    // This deliberately does NOT match the three sibling mutation routes below.
+    // `install`, `uninstall` and `update` all `safeParse` first and answer a bad
+    // body with a 400 carrying `z.flattenError` details, before their gate ever
+    // runs. That order is the older one and it is not changed here, because
+    // reordering three gated routes is a separate change with its own blast
+    // radius. Recording it so the difference reads as a decision rather than as
+    // drift somebody has to rediscover: `uninstall` is the one worth revisiting,
+    // since it is `destructive` and hands its schema to a caller it is then going
+    // to stop with an approval card.
     const refused = refuseUntrustedSourceWrite(req, res, 'add');
     if (refused) return refused;
 

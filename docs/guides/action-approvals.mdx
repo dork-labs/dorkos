@@ -92,8 +92,6 @@ Most settings are preferences, and an agent can change one on your word. A few a
 - The folder DorkOS is allowed to touch, and the programs it is allowed to start
 - Your privacy choices
 
-One more thing works the same way, though it is not a setting: **where your packages come from**. Agents cannot add or remove a marketplace source, because a source is a place DorkOS will download and run code from. That one is explained in [Marketplace sources](/docs/marketplace#marketplace-sources), including the part **Require login** does not fix.
-
 Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself in Settings. Three of these settings can still be reached by another route, which the second note below explains.
 
 <Callout type="warn">
@@ -110,6 +108,8 @@ Settings, and with no password anywhere, DorkOS has nothing left to tell the two
 same gap as the one below, and turning on **Require login** is what closes it.
 
 </Callout>
+
+One more thing works the same way, though it is not a setting: **where your packages come from**. Agents cannot add or remove a marketplace source, because a source is a place DorkOS will download and run code from. The note just above does not describe it, though: this one is guarded the same way whether **Require login** is on or off, so turning login on does not add a second lock here the way it does for settings. [Marketplace sources](/docs/marketplace#marketplace-sources) explains it, including the part **Require login** does not fix.
 
 <Callout type="warn">
   **Not every one of these settings is guarded everywhere yet, and the unguarded paths are wide
