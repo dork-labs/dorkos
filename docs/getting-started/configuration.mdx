@@ -281,28 +281,29 @@ DorkOS runs with no login by default: no login screen, no user concept, instant 
 
 Session cookies are signed by Better Auth. Production deployments should set the `BETTER_AUTH_SECRET` environment variable so sessions survive server restarts.
 
-### Standing permissions (not working yet)
+### Standing permissions
 
-**These two settings do nothing today.** They are listed here because they now show up in your config file, not because you can use them. Changing either one has no effect: DorkOS still asks you every time, exactly as before.
+These settings let you answer one approval once instead of every time, for one agent doing one named thing, for a set number of hours. They are off to start with, and turning them on needs local login to be on too — without a sign-in, DorkOS cannot tell you apart from an agent running on the same machine.
 
-The plan is to let you answer one approval once instead of every time, for one agent doing one named thing, for a set number of hours. When it works, this page will say so plainly. It will need local login to be on, because without a sign-in DorkOS cannot tell you apart from an agent running on the same machine.
+Switching either one off ends every permission you have open, right away. It stays ended: turning the setting back on later never brings an old permission back, however you switch it, and whether or not DorkOS was running at the time. Granting a permission again is always a fresh decision you make.
 
 <TypeTable
   type={{
     'approvals.standingGrants': {
-      description:
-        'Reserved. Will decide whether standing permissions may exist at all. Has no effect yet.',
+      description: 'Whether standing permissions may exist at all.',
       type: 'boolean',
       default: 'false',
     },
     'approvals.trustWindowMinutes': {
       description:
-        'Reserved. Will set how long a new standing permission lasts, in minutes. Has no effect yet. The longest allowed is one day.',
+        'How long a new standing permission lasts, in minutes, counted from the moment you grant it. Using it never extends it. The longest allowed is one day.',
       type: 'number (5-1440)',
       default: '480',
     },
   }}
 />
+
+DorkOS keeps one more value in this section, `approvals.standingGrantsVoidBefore`. It writes that one itself to remember when you last switched standing permissions off, and it is what stops an old permission waking up later. Leave it alone — editing the config file by hand here can bring back a permission you meant to end.
 
 ### Cloud link
 

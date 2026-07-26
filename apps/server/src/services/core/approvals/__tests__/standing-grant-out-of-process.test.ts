@@ -38,6 +38,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
 import { ConfigManager, configManager, initConfigManager } from '../../config-manager.js';
+import { applyConfigPatch } from '../../operator/config-patch.js';
 import { ApprovalGrantService } from '../approval-grant-service.js';
 import { ApprovalService } from '../approval-service.js';
 import { readStandingGrantSettings } from '../standing-grant-settings.js';
@@ -197,6 +198,37 @@ describe('a standing permission and an out-of-process settings round trip', () =
     expect(enforce().outcome).toBe('allowed');
   });
 
+  it('does not honor a permission after a reset performed while the switch is already off', () => {
+    // Review's reproduction, end to end, using only verbs this feature claims to
+    // cover. The floor was stamped correctly by step 2 and then ERASED by step 3,
+    // because `reset` rewrites the whole file from defaults and the stamp only
+    // fired on the licensed -> unlicensed transition, which step 3 is not.
+    permit();
+    expect(enforce().outcome).toBe('allowed');
+
+    const shell = cli();
+    shell.setDot('approvals.standingGrants', false); // narrows, stamps the floor
+    shell.reset(); // performed while ALREADY narrowed — used to wipe the stamp
+    shell.setDot('auth.enabled', true);
+    shell.setDot('approvals.standingGrants', true);
+
+    expect(enforce().outcome).toBe('approval_required');
+  });
+
+  it('does not honor a permission after `config reset approvals` with login already off', () => {
+    // The same hole reached through the other half of the posture.
+    permit();
+    expect(enforce().outcome).toBe('allowed');
+
+    const shell = cli();
+    shell.setDot('auth.enabled', false);
+    shell.reset('approvals');
+    shell.setDot('auth.enabled', true);
+    shell.setDot('approvals.standingGrants', true);
+
+    expect(enforce().outcome).toBe('approval_required');
+  });
+
   it('honors a permission granted AFTER the round trip', () => {
     // The floor voids what came before it and nothing after it. Without this, a
     // fix that simply stopped honoring permissions once the switch had ever been
@@ -212,5 +244,73 @@ describe('a standing permission and an out-of-process settings round trip', () =
     // A person decides again, on the far side of the round trip.
     permit();
     expect(enforce().outcome).toBe('allowed');
+  });
+});
+
+describe('a batched PATCH /api/config cannot erase the floor it just stamped', () => {
+  // Review's PROBE K, at the real seam rather than a simulation of it.
+  // `applyConfigPatch` computes the merged config ONCE from the pre-write
+  // snapshot and then writes each top-level section in turn, so a batch whose
+  // `auth` key is written BEFORE its `approvals` key used to stamp the floor and
+  // then write the snapshot's stale `standingGrantsVoidBefore: null` back over it.
+  // Order-dependent, which is the worst shape a safety marker can have.
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-grant-patch-'));
+    initConfigManager(tmpDir);
+    configManager.setDot('auth.enabled', true);
+    configManager.setDot('approvals.standingGrants', true);
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** The stored floor, or `null` when nothing has narrowed. */
+  function floor(): string | null {
+    return configManager.get('approvals').standingGrantsVoidBefore;
+  }
+
+  it('stamps the floor when `auth` is written BEFORE `approvals` in one patch', () => {
+    // The failing order. `auth` narrows and stamps; `approvals` follows carrying
+    // the snapshot's null.
+    const result = applyConfigPatch({
+      auth: { enabled: false },
+      approvals: { trustWindowMinutes: 60 },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(floor()).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor when `approvals` is written BEFORE `auth` in one patch', () => {
+    // The order that always worked. Both are asserted so the fix cannot be a
+    // coincidence of key ordering.
+    const result = applyConfigPatch({
+      approvals: { trustWindowMinutes: 60 },
+      auth: { enabled: false },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(floor()).toEqual(expect.any(String));
+  });
+
+  it('does not honor a permission afterwards, whichever order the patch used', () => {
+    const db = createTestDb();
+    const grants = new ApprovalGrantService(db);
+    grants.create({
+      agentPath: AGENT_PATH,
+      capabilityId: ACTION.id,
+      grantedBy: 'user_owner',
+      posture: 'signed-in-operator',
+      windowMinutes: 480,
+    });
+    expect(grants.findLive(AGENT_PATH, ACTION.id)).toBeDefined();
+
+    applyConfigPatch({ auth: { enabled: false }, approvals: { trustWindowMinutes: 60 } });
+    applyConfigPatch({ auth: { enabled: true }, approvals: { standingGrants: true } });
+
+    expect(grants.findLive(AGENT_PATH, ACTION.id)).toBeUndefined();
   });
 });

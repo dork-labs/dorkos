@@ -49,12 +49,22 @@
  *
  * ## What is still open, stated plainly
  *
- * The floor rests on every writer going through `ConfigManager`. A person who
- * edits `~/.dork/config.json` in a text editor — including through `dorkos config
- * edit`, which hands them the raw file — narrows the posture without stamping
- * anything, so an off-then-on round trip done that way still wakes permissions up
- * inside one server lifetime. A restart re-establishes the invariant only if the
- * settings are still narrowed when it happens.
+ * The floor rests on every writer going through `ConfigManager`. Two things get
+ * around that, and both are the same shape — config content that DorkOS did not
+ * write:
+ *
+ * - **A hand edit.** A person who edits `~/.dork/config.json` in a text editor,
+ *   including through `dorkos config edit`, which hands them the raw file,
+ *   narrows the posture without stamping anything. An off-then-on round trip done
+ *   that way still wakes permissions up inside one server lifetime.
+ * - **A restored backup.** A config file copied back from a snapshot carries
+ *   whatever floor it had when it was taken, which can be older than the one it
+ *   replaces — or absent. Restoring a file is not a write this seam can see, and
+ *   `config-write-policy.ts` already names the same class of problem for the
+ *   settings themselves.
+ *
+ * In both cases a restart re-establishes the invariant only if the settings are
+ * still narrowed when it happens.
  *
  * Closing that too would need the server to watch the config file, which is a
  * weaker guarantee than it sounds: a watcher only fires while the server is

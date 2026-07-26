@@ -837,8 +837,15 @@ export const UserConfigSchema = z.object({
        * set` runs in a process with no database, so the config file is the ONLY
        * thing every writer of these settings touches. A marker anywhere else
        * would be invisible to exactly the write that motivated it.
+       *
+       * Constrained to a real timestamp, not merely a string. The store treats a
+       * FALSY floor as "no floor", so a bare `z.string()` let the empty string
+       * through as a value that silently disables the filter — the one direction
+       * this field must never fail. Garbage that is not empty already fails
+       * closed (it sorts above every real timestamp, so everything is voided);
+       * `''` was the single value that failed open.
        */
-      standingGrantsVoidBefore: z.string().nullable().default(null),
+      standingGrantsVoidBefore: z.string().datetime().nullable().default(null),
     })
     .default(() => ({
       standingGrants: false,

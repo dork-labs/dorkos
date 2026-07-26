@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Conf, { type Schema } from 'conf';
 import { z } from 'zod';
 import * as semver from 'semver';
@@ -1724,5 +1724,123 @@ describe('the standing-permission posture floor (DOR-520)', () => {
     cli.setDot('approvals.standingGrants', true);
 
     expect(floor(server)).toEqual(expect.any(String));
+  });
+});
+
+describe('the posture floor is monotonic (DOR-520 review)', () => {
+  // The floor is only worth anything if it can never go backwards. The first
+  // version stamped on the licensed -> unlicensed TRANSITION, which meant any
+  // write performed while ALREADY narrowed could put the leaf back to its default
+  // and silently delete the marker. Review reproduced a live resurrection through
+  // `dorkos config reset` using only verbs this feature claims to cover.
+  let dir: string;
+
+  /** Both halves of the posture on. */
+  function licensed() {
+    const manager = initConfigManager(dir);
+    manager.setDot('auth.enabled', true);
+    manager.setDot('approvals.standingGrants', true);
+    return manager;
+  }
+
+  /** The stored floor, or `null` when nothing has narrowed. */
+  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
+    return manager.get('approvals').standingGrantsVoidBefore;
+  }
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-floor-monotonic-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('survives `dorkos config reset` performed while the switch is ALREADY off', () => {
+    // The reproduction. Every step is a verb this feature claims to cover.
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const stamped = floor(manager);
+    expect(stamped).toEqual(expect.any(String));
+
+    manager.reset();
+
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('survives `dorkos config reset approvals` performed while login is ALREADY off', () => {
+    // The same hole reached through the other half of the posture.
+    const manager = licensed();
+    manager.setDot('auth.enabled', false);
+    const stamped = floor(manager);
+    expect(stamped).toEqual(expect.any(String));
+
+    manager.reset('approvals');
+
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('survives a whole-section write that carries a stale null, while already narrowed', () => {
+    // What a batched `PATCH /api/config` does: `applyConfigPatch` computes the
+    // merged value ONCE from the pre-write snapshot, then writes each top-level
+    // section in turn. A section written after `auth` narrowed carries the
+    // snapshot's `standingGrantsVoidBefore: null` and used to erase the stamp.
+    const manager = licensed();
+    manager.setDot('auth.enabled', false);
+    const stamped = floor(manager);
+
+    manager.set('approvals', {
+      standingGrants: true,
+      trustWindowMinutes: 60,
+      standingGrantsVoidBefore: null,
+    });
+
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('advances the floor on a SECOND narrowing rather than leaving the first one', () => {
+    // Defense in depth: the routes refuse to create a permission while the switch
+    // is off, so nothing can be granted between the two narrowings today. A floor
+    // that silently stopped moving would be a trap for whoever changes that.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-26T10:00:00.000Z'));
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const first = floor(manager)!;
+
+    manager.setDot('approvals.standingGrants', true);
+    vi.setSystemTime(new Date('2026-07-26T11:00:00.000Z'));
+    manager.setDot('approvals.standingGrants', false);
+    const second = floor(manager)!;
+    vi.useRealTimers();
+
+    expect(first).toBe('2026-07-26T10:00:00.000Z');
+    expect(second).toBe('2026-07-26T11:00:00.000Z');
+  });
+
+  it('keeps the later floor when the clock goes backwards', () => {
+    // A floor that follows a backwards clock is a floor an NTP correction can
+    // lower. `max` is what makes the marker monotonic rather than merely current.
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const first = floor(manager)!;
+
+    manager.setDot('approvals.standingGrants', true);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(first) - 60_000));
+    manager.setDot('approvals.standingGrants', false);
+    vi.useRealTimers();
+
+    expect(floor(manager)).toBe(first);
+  });
+
+  it('still writes nothing at all when the posture never narrowed', () => {
+    // The churn guard. A rule stated as "stamp whenever the posture is not
+    // licensed after the write" would move the floor on EVERY config write for the
+    // vast majority of installs, which never switch this feature on.
+    const manager = initConfigManager(dir);
+    manager.setDot('logging.level', 'debug');
+    manager.setDot('server.port', 4300);
+    expect(floor(manager)).toBeNull();
   });
 });

@@ -69,6 +69,25 @@ import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 
 /**
+ * The later of two posture-floor instants, treating a missing one as "no floor".
+ *
+ * Both values are `Date.prototype.toISOString()` output — fixed-width UTC — so
+ * ordering them as text orders them as instants, the same property the grant
+ * store's own comparison relies on. The schema pins the format
+ * (`standingGrantsVoidBefore` is `z.string().datetime().nullable()`), so a value that
+ * reaches here through any validated path is comparable this way.
+ *
+ * @param a - One instant, or `null`.
+ * @param b - The other instant, or `null`.
+ * @returns The later of the two, or `null` when both are absent.
+ */
+function latestInstant(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a > b ? a : b;
+}
+
+/**
  * Append-only `conf` migration chain keyed by app version. See
  * `contributing/configuration.md` → Schema Migrations and
  * `.claude/skills/adding-config-fields/SKILL.md` for the full process.
@@ -1122,8 +1141,9 @@ export class ConfigManager {
   /** Set a top-level config section */
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void {
     const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key, value);
-    this.stampStandingGrantVoidFloor(licensedBefore);
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
   }
 
   /** Set a nested value via dot-path. Returns warning if key is sensitive. */
@@ -1133,8 +1153,9 @@ export class ConfigManager {
       result.warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
     }
     const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key as keyof UserConfig, value as UserConfig[keyof UserConfig]);
-    this.stampStandingGrantVoidFloor(licensedBefore);
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     return result;
   }
 
@@ -1146,13 +1167,14 @@ export class ConfigManager {
   /** Reset a specific key or all keys to defaults */
   reset(key?: string): void {
     const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
       this.store.clear();
       this.store.set(USER_CONFIG_DEFAULTS);
     }
-    this.stampStandingGrantVoidFloor(licensedBefore);
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
   }
 
   /**
@@ -1174,10 +1196,14 @@ export class ConfigManager {
     );
   }
 
+  /** The posture floor as stored right now, or `null` when nothing has narrowed. */
+  private standingGrantVoidFloor(): string | null {
+    return this.store.get('approvals')?.standingGrantsVoidBefore ?? null;
+  }
+
   /**
-   * Record the moment this write stopped the settings licensing a standing
-   * permission, so permissions granted before it can never be honored again
-   * (DOR-520).
+   * Hold the posture floor at or above where it was before this write, and move
+   * it to now when this write is what took the license away (DOR-520).
    *
    * ## Why the marker lives in the config file, written here
    *
@@ -1194,20 +1220,50 @@ export class ConfigManager {
    * see at all, and the case the boot sweep misses too, because by the time the
    * server starts the settings look fine again.
    *
-   * Only a NARROWING stamps. Writing an unrelated setting, or switching either
-   * setting back on, moves nothing: turning something on grants nothing, and a
-   * floor that crept forward on every write would end permissions whenever anyone
-   * changed the log level.
+   * ## The floor is MONOTONIC, and that is the whole guarantee
+   *
+   * The first version stamped on the licensed → unlicensed TRANSITION and nothing
+   * else. Review broke it in one line: any write performed while the posture was
+   * ALREADY narrowed is not a transition, so it did not stamp — while
+   * `dorkos config reset` had meanwhile rewritten the whole file from defaults and
+   * put the leaf back to `null`. Switch off, reset, switch on, and the permission
+   * was live again, through nothing but the verbs this feature claims to cover.
+   *
+   * The same shape reached `PATCH /api/config`: `applyConfigPatch` computes the
+   * merged value ONCE from the pre-write snapshot and then writes each top-level
+   * section in turn, so a batch carrying `auth` before `approvals` stamped the
+   * floor and then wrote the snapshot's stale `null` straight back over it.
+   *
+   * So the rule is stated as an invariant on the STORED value rather than as a
+   * reaction to a transition: after any write, the floor is `floorBefore`, except
+   * on a narrowing where it becomes `max(floorBefore, now)`. Never lower, on any
+   * path, whatever the write happened to contain.
+   *
+   * `max` rather than `now` is what makes it monotonic rather than merely current:
+   * a backwards clock (an NTP correction, a container with a bad RTC) would
+   * otherwise lower a floor that had already voided permissions.
+   *
+   * ## It still writes nothing when nothing narrowed
+   *
+   * Stating the rule as "stamp whenever the posture is unlicensed after the write"
+   * would also close the hole, and would move the floor on EVERY config write for
+   * the vast majority of installs, which never switch this feature on — doubling
+   * config write I/O to maintain a marker with nothing to void. Comparing against
+   * the stored value first keeps the common path free.
    *
    * @param licensedBefore - Whether the posture licensed a permission before the
    *   write that just happened.
+   * @param floorBefore - The floor as it stood before the write, which this write
+   *   may raise but must never lower.
    */
-  private stampStandingGrantVoidFloor(licensedBefore: boolean): void {
-    if (!licensedBefore || this.standingGrantsLicensed()) return;
-    this.store.set('approvals', {
-      ...this.store.get('approvals'),
-      standingGrantsVoidBefore: new Date().toISOString(),
-    });
+  private stampStandingGrantVoidFloor(licensedBefore: boolean, floorBefore: string | null): void {
+    const narrowed = licensedBefore && !this.standingGrantsLicensed();
+    const required = narrowed ? latestInstant(floorBefore, new Date().toISOString()) : floorBefore;
+    if (required === null) return;
+
+    const approvals = this.store.get('approvals');
+    if (approvals?.standingGrantsVoidBefore === required) return;
+    this.store.set('approvals', { ...approvals, standingGrantsVoidBefore: required });
   }
 
   /** Validate the current config against the Zod schema */
