@@ -822,10 +822,28 @@ export const UserConfigSchema = z.object({
         .min(MIN_TRUST_WINDOW_MINUTES)
         .max(MAX_TRUST_WINDOW_MINUTES)
         .default(DEFAULT_TRUST_WINDOW_MINUTES),
+      /**
+       * The moment the settings last stopped licensing standing permissions, as
+       * an ISO 8601 UTC string. Every permission granted at or before it is void
+       * and is never honored again (DOR-520). `null` until the posture has
+       * narrowed once.
+       *
+       * Machine-managed, like `onboarding` and `tours`: `ConfigManager` stamps it
+       * on any write that takes `auth.enabled` or `standingGrants` away, and
+       * nothing else should write it by hand.
+       *
+       * It lives in the config file rather than beside the permissions in SQLite
+       * for one reason, and it is the whole point of the field: `dorkos config
+       * set` runs in a process with no database, so the config file is the ONLY
+       * thing every writer of these settings touches. A marker anywhere else
+       * would be invisible to exactly the write that motivated it.
+       */
+      standingGrantsVoidBefore: z.string().nullable().default(null),
     })
     .default(() => ({
       standingGrants: false,
       trustWindowMinutes: DEFAULT_TRUST_WINDOW_MINUTES,
+      standingGrantsVoidBefore: null,
     })),
   cloud: z
     .object({

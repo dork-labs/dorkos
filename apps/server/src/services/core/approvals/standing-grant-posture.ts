@@ -23,31 +23,44 @@
  * with the same fail-quiet behavior: an unwired seam revokes nothing and says so in
  * the log rather than throwing inside a config write.
  *
- * ## `PATCH /api/config` is NOT the only write path, and the gap is real
+ * ## `PATCH /api/config` is NOT the only write path
  *
- * An earlier version of this comment said it was. It is not: `dorkos config set
- * approvals.standingGrants false` and `dorkos config reset` write
- * `~/.dork/config.json` directly through `ConfigStore.setDot`
- * (`packages/cli/src/config-commands.ts`), out of process, and reach nothing here.
- * The capability surface genuinely cannot write these (both leaves are
+ * `dorkos config set approvals.standingGrants false` and `dorkos config reset`
+ * write `~/.dork/config.json` through `ConfigStore.setDot` and `ConfigStore.reset`
+ * (`packages/cli/src/config-commands.ts`), out of process, and reach nothing in
+ * this module. The capability surface genuinely cannot write these (both leaves are
  * `operator-only`); the CLI can, and deliberately, because it has to work with no
  * server running.
  *
- * So a CLI round trip — switch off, switch back on — would leave permissions live
- * and wake them up, which is exactly the failure this module exists to prevent.
- * Two things narrow it, and neither closes it:
+ * So the functions here cover only the writes this process performs. Two more
+ * things cover the rest, and it takes all three:
  *
  * - The gate reads the switch FRESH on every gated call, so nothing is honored
- *   while the switch is off. The window is only the off-then-on round trip.
- * - Boot runs {@link revokeStandingGrantsIfPostureForbids} (`index.ts`), so the
- *   invariant "no permission is live unless BOTH settings license one" holds across
- *   a restart — including a CLI write to `auth.enabled`, which is the half the first
- *   version of that sweep missed.
+ *   while the switch is off. That leaves only the off-then-on round trip.
+ * - Boot runs {@link revokeStandingGrantsIfPostureForbids} (`index.ts`), so
+ *   "no permission is live unless BOTH settings license one" holds across a
+ *   restart — including a CLI write to `auth.enabled`, the half the first version
+ *   of that sweep missed.
+ * - The **posture floor** closes the round trip itself (DOR-520). Any write that
+ *   takes either setting away stamps `approvals.standingGrantsVoidBefore`, and
+ *   `ApprovalGrantService` refuses every permission granted at or before it. The
+ *   stamp is written by `ConfigManager`, which is the one seam BOTH processes
+ *   travel, so the CLI records the narrowing even though it ends nothing itself.
  *
- * What is left is an off-then-on round trip inside one server lifetime with no
- * gated call in between. Closing that needs the server to watch the config file
- * rather than only its own write path, which is a change to how config reaches the
- * server and is not being improvised here.
+ * ## What is still open, stated plainly
+ *
+ * The floor rests on every writer going through `ConfigManager`. A person who
+ * edits `~/.dork/config.json` in a text editor — including through `dorkos config
+ * edit`, which hands them the raw file — narrows the posture without stamping
+ * anything, so an off-then-on round trip done that way still wakes permissions up
+ * inside one server lifetime. A restart re-establishes the invariant only if the
+ * settings are still narrowed when it happens.
+ *
+ * Closing that too would need the server to watch the config file, which is a
+ * weaker guarantee than it sounds: a watcher only fires while the server is
+ * running and only where the platform's file events are reliable, whereas the
+ * floor is durable and survives the server being down for the entire round trip.
+ * A watcher would be an addition to the floor, never a replacement for it.
  *
  * @module services/core/approvals/standing-grant-posture
  */

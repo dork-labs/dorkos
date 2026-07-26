@@ -49,6 +49,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
     expect([...OPERATOR_ONLY_CONFIG_PATHS].sort()).toEqual([
       'agents.defaultDirectory',
       'approvals.standingGrants',
+      'approvals.standingGrantsVoidBefore',
       'approvals.trustWindowMinutes',
       'auth.enabled',
       'cloud.instanceName',
@@ -149,10 +150,12 @@ describe('findLoginRequiredPaths', () => {
     // equality check would wave it through to the merge.
     expect(findLoginRequiredPaths({ approvals: true })).toEqual([
       'approvals.standingGrants',
+      'approvals.standingGrantsVoidBefore',
       'approvals.trustWindowMinutes',
     ]);
     expect(findLoginRequiredPaths({ approvals: {} })).toEqual([
       'approvals.standingGrants',
+      'approvals.standingGrantsVoidBefore',
       'approvals.trustWindowMinutes',
     ]);
   });

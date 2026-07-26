@@ -146,7 +146,11 @@ describe('readStandingGrantPosture reads BOTH settings', () => {
 
   it('reports login off, even with the master switch on', () => {
     configManager.set('auth', { enabled: false });
-    configManager.set('approvals', { standingGrants: true, trustWindowMinutes: 480 });
+    configManager.set('approvals', {
+      standingGrants: true,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
 
     expect(readStandingGrantPosture()).toEqual({ loginEnabled: false, standingGrants: true });
     // …and the narrower reader says the gate may honor one, which is exactly why
@@ -156,7 +160,11 @@ describe('readStandingGrantPosture reads BOTH settings', () => {
 
   it('reports both on when both are on', () => {
     configManager.set('auth', { enabled: true });
-    configManager.set('approvals', { standingGrants: true, trustWindowMinutes: 480 });
+    configManager.set('approvals', {
+      standingGrants: true,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
 
     expect(readStandingGrantPosture()).toEqual({ loginEnabled: true, standingGrants: true });
   });

@@ -167,12 +167,23 @@ These settings are enforced. The tier gate reads both on every gated call (`read
 | ------------------------------ | ----------------- | ------- | ------------------------------------------------------------------------------- |
 | `approvals.standingGrants`     | boolean           | `false` | Whether standing permissions may exist at all                                   |
 | `approvals.trustWindowMinutes` | integer (5--1440) | `480`   | How long a new standing permission lasts, counted from the moment it is granted |
+| `approvals.standingGrantsVoidBefore` | ISO 8601 string \| null | `null` | **Machine-managed.** The moment the settings last stopped licensing standing permissions. Every permission granted at or before it is void |
 
 Both leaves are `operator-only`, so under login-on they need a session cookie like every other operator-only setting (see [Who may write which setting](#who-may-write-which-setting)). On top of that, they **cannot be written at all while login is off** — that extra bar is `REQUIRES_LOGIN_CONFIG_PATHS` in `config-write-policy.ts`. The consequence is that **standing permissions require `auth.enabled`**.
 
 That bar is not redundant with the general cookie rule, which allows any caller while login is off. It was written as a forward-looking guard, before anything enforced a permission, and it is now load-bearing: with the gate reading the switch, a caller that could write it while login is off would be pre-arming real behavior rather than an inert flag. Do not fold it into the general rule.
 
 The window is bounded in the schema in both directions. The maximum of one day is what makes "forever" unrepresentable; the minimum of 5 minutes keeps the window from becoming a deny-all that looks like a broken feature. Expiry is absolute from the moment of the grant and never slides on use, so an agent cannot extend its own trust by acting. Turning either `auth.enabled` or `approvals.standingGrants` off ends every live permission immediately.
+
+### The posture floor (DOR-520)
+
+`approvals.standingGrantsVoidBefore` is written by DorkOS, never by hand. Whenever a write takes either `auth.enabled` or `approvals.standingGrants` away, `ConfigManager` stamps the current moment there, and `ApprovalGrantService` then refuses every permission granted at or before it — on `findLive` and on `list`, evaluated on read the same way expiry is.
+
+It exists because `PATCH /api/config` is not the only write path. `dorkos config set approvals.standingGrants false` and `dorkos config reset` write the same file from another process, with no database and no routes, so they reach none of the revocation seams. Without the floor, switching the setting off and back on again inside one server lifetime left every permission alive and woke it up — nobody had decided that.
+
+The marker lives in the config file rather than beside the permissions in SQLite for exactly that reason: the config file is the only thing every writer of these settings touches. It is also durable, so it still holds when the whole round trip happens while the server is down — the case a config-file watcher cannot see, and the case the boot sweep misses too, because by then the settings look fine again.
+
+**What it does not cover.** The floor rests on every writer going through `ConfigManager`. Editing `~/.dork/config.json` in a text editor — including via `dorkos config edit`, which hands you the raw file — narrows the posture without stamping anything, so an off-then-on round trip done that way can still wake permissions inside one server lifetime. A restart re-establishes the invariant only if the settings are still narrowed when it happens.
 
 The `cloud` section holds the device-link binding between this instance and a DorkOS account (accounts-and-auth P2). It is managed by the `dorkos cloud` CLI commands and the `/api/cloud/*` routes — not edited by hand — and is independent of `auth.enabled`:
 

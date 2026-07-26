@@ -4,6 +4,7 @@ import { z } from 'zod';
 import * as semver from 'semver';
 import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
+  ConfigManager,
   initConfigManager,
   backfillExtensionsDisabled,
   backfillHarnessDefaults,
@@ -1049,7 +1050,11 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
     const store = createMockStore({ ui: { theme: 'dark' } });
     CONFIG_MIGRATIONS['0.57.0'](store);
     expect(store.data.ui).toMatchObject({ statusBar: { pins: [] } });
-    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.data.approvals).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
   });
 });
 
@@ -1528,13 +1533,20 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     expect(USER_CONFIG_DEFAULTS.approvals).toEqual({
       standingGrants: false,
       trustWindowMinutes: 480,
+      // Nothing has been voided yet, which is the only honest starting point: an
+      // upgrade must not retroactively end permissions (DOR-520).
+      standingGrantsVoidBefore: null,
     });
   });
 
   it('upgraded install: seeds the section OFF and leaves other settings alone', () => {
     const store = createMockStore({ auth: { enabled: true }, server: { port: 5000 } });
     backfillApprovalsDefaults(store);
-    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.data.approvals).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
     expect(store.data.auth).toEqual({ enabled: true });
     expect(store.data.server).toEqual({ port: 5000 });
   });
@@ -1547,7 +1559,13 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     });
     backfillApprovalsDefaults(store);
     backfillApprovalsDefaults(store);
-    expect(store.data.approvals).toEqual({ standingGrants: true, trustWindowMinutes: 60 });
+    expect(store.data.approvals).toEqual({
+      standingGrants: true,
+      trustWindowMinutes: 60,
+      // The second seed reaches an `approvals` block an earlier build of the same
+      // unreleased key already wrote, and adds only the missing leaf.
+      standingGrantsVoidBefore: null,
+    });
   });
 
   it('a config written before the section existed upgrades without a wipe (full conf path)', () => {
@@ -1584,7 +1602,11 @@ describe('approvals section — standing permissions (DOR-501)', () => {
       migrations: CONFIG_MIGRATIONS,
     });
 
-    expect(store.get('approvals')).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.get('approvals')).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
     // The upgrade does not disturb what was already there, including the login
     // setting standing permissions depend on.
     expect((store.get('auth') as { enabled: boolean }).enabled).toBe(true);
@@ -1593,5 +1615,114 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // The composite key's other body still ran, so composing did not drop it.
     expect(store.get('ui')).toMatchObject({ statusBar: { pins: [] } });
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('the standing-permission posture floor (DOR-520)', () => {
+  // `ConfigManager` is the one seam every writer of these settings travels,
+  // including `dorkos config set` in a process with no database and no routes. It
+  // records the moment the settings stopped licensing standing permissions so the
+  // store can refuse the ones that moment invalidated. This describes the WRITE
+  // half; the read half is
+  // `services/core/approvals/__tests__/approval-grant-service.test.ts`.
+  let dir: string;
+
+  /** Both halves of the posture on, which is the only state a floor can move from. */
+  function licensed() {
+    const manager = initConfigManager(dir);
+    manager.setDot('auth.enabled', true);
+    manager.setDot('approvals.standingGrants', true);
+    return manager;
+  }
+
+  /** The stored floor, or `null` when nothing has narrowed. */
+  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
+    return manager.get('approvals').standingGrantsVoidBefore;
+  }
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-void-floor-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('starts with no floor, because nothing has been voided', () => {
+    expect(floor(licensed())).toBeNull();
+  });
+
+  it('stamps the floor when the master switch is switched off', () => {
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor when login is switched off, which takes the same license away', () => {
+    const manager = licensed();
+    manager.setDot('auth.enabled', false);
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor on a whole-section write, which is how `PATCH /api/config` lands', () => {
+    const manager = licensed();
+    manager.set('approvals', {
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor on `dorkos config reset`', () => {
+    const manager = licensed();
+    manager.reset();
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor on a reset of the approvals section alone', () => {
+    const manager = licensed();
+    manager.reset('approvals');
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('moves nothing when an unrelated setting is written', () => {
+    // A floor that crept forward on every write would end standing permissions
+    // whenever anyone changed the log level — the same bug wearing better clothes.
+    const manager = licensed();
+    manager.setDot('logging.level', 'debug');
+    manager.set('ui', { ...manager.get('ui'), theme: 'dark' });
+    expect(floor(manager)).toBeNull();
+  });
+
+  it('moves nothing when a setting is switched ON', () => {
+    // Turning something on grants nothing and voids nothing. A permission is
+    // always a fresh human decision.
+    const manager = initConfigManager(dir);
+    manager.setDot('auth.enabled', true);
+    manager.setDot('approvals.standingGrants', true);
+    expect(floor(manager)).toBeNull();
+  });
+
+  it('leaves an existing floor alone when the settings are switched back on', () => {
+    // The stamp is what a later switch-on must NOT erase: erasing it is exactly
+    // how the permissions it voided would come back.
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const stamped = floor(manager);
+    manager.setDot('approvals.standingGrants', true);
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('records the narrowing a SECOND manager performs, which is what the CLI is', () => {
+    // The whole point of putting the marker in the config file: `dorkos config
+    // set` holds its own manager in its own process, so a marker anywhere the
+    // server owns would never be written at all.
+    const server = licensed();
+    const cli = new ConfigManager(dir);
+    cli.setDot('approvals.standingGrants', false);
+    cli.setDot('approvals.standingGrants', true);
+
+    expect(floor(server)).toEqual(expect.any(String));
   });
 });

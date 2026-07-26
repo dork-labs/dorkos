@@ -202,6 +202,12 @@ export function backfillAuthDefaults(store: {
  * Seeds `standingGrants: false`. A safety feature does not get quietly relaxed
  * by an upgrade — nothing changes for an existing user until they ask for it.
  *
+ * Also seeds `standingGrantsVoidBefore: null` (DOR-520) onto an `approvals` block
+ * an earlier build of this same unreleased key already created, which is why the
+ * two seeds are separate `if`s rather than one. `null` means "nothing has been
+ * voided yet", which is the honest starting point: no upgrade should retroactively
+ * end permissions the person still expects to hold.
+ *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
  */
@@ -209,8 +215,18 @@ export function backfillApprovalsDefaults(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
-  if (store.get('approvals') == null) {
-    store.set('approvals', { standingGrants: false, trustWindowMinutes: 480 });
+  const approvals = store.get('approvals');
+  if (approvals == null) {
+    store.set('approvals', {
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
+    return;
+  }
+  const section = approvals as Record<string, unknown>;
+  if (!('standingGrantsVoidBefore' in section)) {
+    store.set('approvals', { ...section, standingGrantsVoidBefore: null });
   }
 }
 
@@ -1032,8 +1048,16 @@ const confSchema = jsonSchemaProperties as unknown as Schema<UserConfig>;
  * Uses `conf` for atomic JSON I/O with Ajv validation via the JSON Schema
  * generated from UserConfigSchema. Handles first-run detection, corrupt
  * config recovery (backup + recreate), and sensitive field warnings.
+ *
+ * The class is exported alongside the {@link configManager} singleton for one
+ * reason: a SECOND manager over the same directory is the faithful stand-in for
+ * `dorkos config set`, which is a different process holding its own manager over
+ * the same file. Tests that need to reproduce an out-of-process write build one
+ * here rather than re-running {@link initConfigManager}, which would replace the
+ * singleton and read like a restart — the very thing those tests must not
+ * simulate. Production code uses the singleton.
  */
-class ConfigManager {
+export class ConfigManager {
   private store: Conf<UserConfig>;
   private _isFirstRun = false;
 
@@ -1097,7 +1121,9 @@ class ConfigManager {
 
   /** Set a top-level config section */
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void {
+    const licensedBefore = this.standingGrantsLicensed();
     this.store.set(key, value);
+    this.stampStandingGrantVoidFloor(licensedBefore);
   }
 
   /** Set a nested value via dot-path. Returns warning if key is sensitive. */
@@ -1106,7 +1132,9 @@ class ConfigManager {
     if (SENSITIVE_CONFIG_KEYS.includes(key as (typeof SENSITIVE_CONFIG_KEYS)[number])) {
       result.warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
     }
+    const licensedBefore = this.standingGrantsLicensed();
     this.store.set(key as keyof UserConfig, value as UserConfig[keyof UserConfig]);
+    this.stampStandingGrantVoidFloor(licensedBefore);
     return result;
   }
 
@@ -1117,12 +1145,69 @@ class ConfigManager {
 
   /** Reset a specific key or all keys to defaults */
   reset(key?: string): void {
+    const licensedBefore = this.standingGrantsLicensed();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
       this.store.clear();
       this.store.set(USER_CONFIG_DEFAULTS);
     }
+    this.stampStandingGrantVoidFloor(licensedBefore);
+  }
+
+  /**
+   * Whether the two settings, as stored RIGHT NOW, license a standing permission
+   * to exist: local login is on (a cookie is the only thing that tells the person
+   * in the cockpit from an agent on the same machine) and the master switch is on.
+   *
+   * Reads the store rather than taking a posture argument, because the callers are
+   * the write methods and the answer has to reflect the file on both sides of the
+   * write. Mirrors `readStandingGrantPosture` in
+   * `services/core/approvals/standing-grant-settings.ts`, which cannot be reused
+   * here: it reads the module singleton, and this may be any manager — including
+   * the one the CLI holds in another process, which is the whole point.
+   */
+  private standingGrantsLicensed(): boolean {
+    return (
+      this.store.get('auth')?.enabled === true &&
+      this.store.get('approvals')?.standingGrants === true
+    );
+  }
+
+  /**
+   * Record the moment this write stopped the settings licensing a standing
+   * permission, so permissions granted before it can never be honored again
+   * (DOR-520).
+   *
+   * ## Why the marker lives in the config file, written here
+   *
+   * `revokeStandingGrantsIfPostureNarrowed` ends live permissions, but it only
+   * fires on a write the SERVER performs. `dorkos config set
+   * approvals.standingGrants false` and `dorkos config reset` are a different
+   * process holding its own manager, with no database and no route — so they end
+   * nothing, and switching the setting back on used to wake every surviving
+   * permission. This method is on the one seam BOTH processes travel: every write
+   * to `~/.dork/config.json` in DorkOS goes through a `ConfigManager`.
+   *
+   * The floor is durable, which the alternatives are not. It survives the server
+   * being down for the whole round trip — the case a config-file watcher cannot
+   * see at all, and the case the boot sweep misses too, because by the time the
+   * server starts the settings look fine again.
+   *
+   * Only a NARROWING stamps. Writing an unrelated setting, or switching either
+   * setting back on, moves nothing: turning something on grants nothing, and a
+   * floor that crept forward on every write would end permissions whenever anyone
+   * changed the log level.
+   *
+   * @param licensedBefore - Whether the posture licensed a permission before the
+   *   write that just happened.
+   */
+  private stampStandingGrantVoidFloor(licensedBefore: boolean): void {
+    if (!licensedBefore || this.standingGrantsLicensed()) return;
+    this.store.set('approvals', {
+      ...this.store.get('approvals'),
+      standingGrantsVoidBefore: new Date().toISOString(),
+    });
   }
 
   /** Validate the current config against the Zod schema */

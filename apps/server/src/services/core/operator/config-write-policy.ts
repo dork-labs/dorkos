@@ -282,6 +282,12 @@ export const CONFIG_WRITE_POLICY = {
   // SUFFICIENT — see REQUIRES_LOGIN_CONFIG_PATHS.
   'approvals.standingGrants': 'operator-only',
   'approvals.trustWindowMinutes': 'operator-only',
+  // Machine-managed: the moment the settings last stopped licensing standing
+  // permissions (DOR-520). Nothing should write it by hand at all, and the reason
+  // it is classified rather than merely undocumented is that moving it BACKWARDS
+  // resurrects every permission a posture change voided — the exact failure the
+  // marker exists to prevent, reachable in one patch.
+  'approvals.standingGrantsVoidBefore': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
@@ -346,6 +352,11 @@ export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
 export const REQUIRES_LOGIN_CONFIG_PATHS: readonly string[] = [
   'approvals.standingGrants',
   'approvals.trustWindowMinutes',
+  // The posture floor decides real behavior for the same reason the master switch
+  // does — the store consults it on every lookup — and moving it backwards is the
+  // one write that can bring voided permissions back. With login off there is no
+  // cookie to ask for, so this bar is the only thing standing in front of it.
+  'approvals.standingGrantsVoidBefore',
 ];
 
 /** The `error` field every login-required refusal on a config write carries. */

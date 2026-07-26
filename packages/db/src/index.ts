@@ -63,6 +63,7 @@ export {
   and,
   gt,
   lt,
+  lte,
   asc,
   desc,
   sql,

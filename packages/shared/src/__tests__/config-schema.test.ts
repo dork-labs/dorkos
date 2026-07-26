@@ -92,7 +92,7 @@ describe('UserConfigSchema', () => {
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480 },
+      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       providers: {},
     });
@@ -361,7 +361,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480 },
+      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       providers: {},
     });
