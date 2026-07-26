@@ -5,7 +5,13 @@ import type { QueueItem } from '../../model/use-message-queue';
 
 interface QueuePanelProps {
   queue: QueueItem[];
-  editingIndex: number | null;
+  /**
+   * Id of the item under edit, or `null`. The id, not its position: the render
+   * path compares it against the row it is already drawing, so the derived
+   * index — which only exists for keyboard navigation — never has to reach the
+   * panel at all.
+   */
+  editingId: string | null;
   /** Called with the item's stable id — positions shift when the queue auto-flushes. */
   onEdit: (id: string) => void;
   /** Called with the item's stable id — positions shift when the queue auto-flushes. */
@@ -17,6 +23,14 @@ interface QueuePanelProps {
    * disabled control's title so the refusal always says why.
    */
   sendBlockedReason: string | null;
+  /**
+   * What happens next once nothing is blocking the queue — the header's answer
+   * to "when do these go out". Two different truths hide behind an unblocked
+   * queue and only the caller can tell them apart: the flush pump normally
+   * drains it on the streaming→idle edge, but a turn that ended in error never
+   * arms that edge, so the queue sits until someone sends it by hand.
+   */
+  whenUnblocked: string;
 }
 
 /**
@@ -36,12 +50,16 @@ interface QueuePanelProps {
  */
 export function QueuePanel({
   queue,
-  editingIndex,
+  editingId,
   onEdit,
   onRemove,
   onSend,
   sendBlockedReason,
+  whenUnblocked,
 }: QueuePanelProps) {
+  // Also guarded at the call site, which is what lets AnimatePresence see this
+  // panel leave and play the exit below. Kept here too so the component never
+  // renders a "Queued (0)" header for any other caller.
   if (queue.length === 0) return null;
 
   return (
@@ -52,7 +70,13 @@ export function QueuePanel({
       transition={{ duration: 0.2 }}
       className="mb-1.5 overflow-hidden"
     >
-      <div className="text-muted-foreground mb-1 text-xs font-medium">Queued ({queue.length})</div>
+      {/* The count alone never said the one thing a person waiting actually
+          wants to know — when these go out. `sendBlockedReason` is exactly that
+          answer, already written for a human, so it says it here too. */}
+      <div className="text-muted-foreground mb-1 flex items-baseline gap-1 text-xs">
+        <span className="font-medium">Queued ({queue.length})</span>
+        <span className="truncate">&mdash; {sendBlockedReason ?? whenUnblocked}</span>
+      </div>
       <div className="space-y-0.5">
         <AnimatePresence mode="popLayout">
           {queue.map((item, i) => (
@@ -69,14 +93,17 @@ export function QueuePanel({
             >
               <div
                 className={cn(
-                  'group flex w-full items-center gap-1 rounded-md pr-2 transition-colors',
-                  editingIndex === i ? 'border-primary bg-muted border-l-2' : 'hover:bg-muted/50'
+                  // The left border is always here, transparent at rest: applying
+                  // it only while editing shifted the whole row 2px sideways the
+                  // moment you clicked into it.
+                  'group flex w-full items-center gap-1 rounded-md border-l-2 border-l-transparent pr-2 transition-colors',
+                  editingId === item.id ? 'border-l-primary bg-muted' : 'hover:bg-muted/50'
                 )}
               >
                 <button
                   type="button"
                   onClick={() => onEdit(item.id)}
-                  aria-current={editingIndex === i ? true : undefined}
+                  aria-current={editingId === item.id ? true : undefined}
                   className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pl-3 text-left"
                 >
                   <span className="text-muted-foreground shrink-0 text-xs font-medium">

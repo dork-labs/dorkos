@@ -34,11 +34,12 @@ function renderPanel(props: Partial<React.ComponentProps<typeof QueuePanel>> = {
   return render(
     <QueuePanel
       queue={[]}
-      editingIndex={null}
+      editingId={null}
       onEdit={vi.fn()}
       onRemove={vi.fn()}
       onSend={vi.fn()}
       sendBlockedReason={null}
+      whenUnblocked="Will send next"
       {...props}
     />
   );
@@ -100,17 +101,71 @@ describe('QueuePanel', () => {
   });
 
   it('editing item shows selected state on its row', () => {
-    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)], editingIndex: 1 });
+    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)], editingId: 'id-1' });
     const editButton = screen.getByRole('button', { name: /Second/ });
     expect(editButton.getAttribute('aria-current')).toBe('true');
-    expect(editButton.parentElement?.className).toContain('border-l-2');
+    expect(editButton.parentElement?.className).toContain('border-l-primary');
   });
 
   it('non-editing items do not have selected state', () => {
-    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)], editingIndex: 0 });
+    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)], editingId: 'id-0' });
     const editButton = screen.getByRole('button', { name: /Second/ });
     expect(editButton.getAttribute('aria-current')).toBeNull();
-    expect(editButton.parentElement?.className).not.toContain('border-l-2');
+    expect(editButton.parentElement?.className).not.toContain('border-l-primary');
+  });
+
+  it('reserves the selected-row border at rest, so entering edit shifts nothing', () => {
+    // The border used to appear only while editing, so the whole row jumped 2px
+    // sideways the moment you clicked into it. jsdom reports every element as
+    // 0×0, so this pins the classes that decide the box; the browser check for
+    // the actual offset lives in the PR evidence.
+    const queue = [makeItem('First', 0), makeItem('Second', 1)];
+    const { container, rerender } = renderPanel({ queue, editingId: null });
+    const rowClasses = () => screen.getByRole('button', { name: /First/ }).parentElement!.className;
+
+    expect(rowClasses()).toContain('border-l-2');
+    expect(rowClasses()).toContain('border-l-transparent');
+
+    rerender(
+      <QueuePanel
+        queue={queue}
+        editingId="id-0"
+        onEdit={vi.fn()}
+        onRemove={vi.fn()}
+        onSend={vi.fn()}
+        sendBlockedReason={null}
+        whenUnblocked="Will send next"
+      />
+    );
+    expect(rowClasses()).toContain('border-l-2');
+    expect(container.querySelectorAll('.border-l-2')).toHaveLength(queue.length);
+  });
+
+  it('says when the queued messages will go out, not just how many', () => {
+    // "Queued (2)" answered the one question nobody was asking. The blocked
+    // reason is the answer to the real one, already written for a person.
+    renderPanel({
+      queue: [makeItem('A', 0), makeItem('B', 1)],
+      sendBlockedReason: 'Waiting for the reply to finish',
+    });
+    expect(screen.getByText('Queued (2)')).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for the reply to finish/)).toBeInTheDocument();
+  });
+
+  it('says what happens next when nothing is holding the queue back', () => {
+    // The caller decides the words: an unblocked queue normally drains itself,
+    // but after a turn that ended in error it genuinely waits for a person.
+    renderPanel({ queue: [makeItem('A', 0)], sendBlockedReason: null });
+    expect(screen.getByText(/Will send next/)).toBeInTheDocument();
+  });
+
+  it('lets the caller say the queue is waiting on a person instead', () => {
+    renderPanel({
+      queue: [makeItem('A', 0)],
+      sendBlockedReason: null,
+      whenUnblocked: 'Ready to send',
+    });
+    expect(screen.getByText(/Ready to send/)).toBeInTheDocument();
   });
 
   it('remove button is always visible (opacity-100 base class, not standalone opacity-0)', () => {

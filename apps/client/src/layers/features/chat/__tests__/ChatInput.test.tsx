@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createRef } from 'react';
+import { createRef, useState } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { ChatInput, type ChatInputHandle } from '../ui/input/ChatInput';
@@ -90,6 +90,101 @@ function stubExecCommand() {
   return exec;
 }
 
+/**
+ * `stubExecCommand`, plus the native `input` event a real browser fires — so a
+ * controlled host's `onChange` runs and the value round-trip is exercised, not
+ * only the call. The write goes through the PROTOTYPE setter on purpose: React
+ * patches the instance's own `value` property to track changes, and writing
+ * through that patch makes React believe nothing changed.
+ *
+ * Every test that asserts the TEXT an edit leaves behind uses this one, paired
+ * with {@link ControlledComposer}. With a frozen `value` prop and no input
+ * event, an implementation that skipped `execCommand` entirely — writing
+ * `textarea.value` directly, destroying the field's undo stack — still left the
+ * right characters in the DOM, and only the three tests that spy on the call
+ * itself noticed. {@link stubExecCommand} remains for the cases that assert
+ * `execCommand` was NOT reached at all, where no round-trip exists to model.
+ */
+function stubExecCommandWithInputEvent() {
+  const exec = vi.fn((command: string, _showUi?: boolean, text?: string) => {
+    if (command !== 'insertText') return false;
+    const el = document.activeElement as HTMLTextAreaElement | null;
+    if (!el) return false;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const inserted = text ?? '';
+    const next = el.value.slice(0, start) + inserted + el.value.slice(end);
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    setter.call(el, next);
+    const caret = start + inserted.length;
+    el.setSelectionRange(caret, caret);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  });
+  Object.defineProperty(document, 'execCommand', {
+    writable: true,
+    configurable: true,
+    value: exec,
+  });
+  return exec;
+}
+
+/** ChatInput wired the way every host wires it: the value prop follows onChange. */
+function ControlledComposer({
+  initialValue,
+  onChange,
+  ...props
+}: Omit<Parameters<typeof ChatInput>[0], 'value' | 'onChange'> & {
+  initialValue: string;
+  onChange?: (value: string) => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  return (
+    <ChatInput
+      {...props}
+      value={value}
+      onChange={(next) => {
+        setValue(next);
+        onChange?.(next);
+      }}
+    />
+  );
+}
+
+/**
+ * Render a controlled composer and place a collapsed caret at `caret`
+ * (default: end of text).
+ */
+function renderControlled(props: Parameters<typeof ControlledComposer>[0], caret?: number) {
+  const seen: string[] = [];
+  const view = render(
+    <ControlledComposer
+      {...props}
+      onChange={(next) => {
+        seen.push(next);
+        props.onChange?.(next);
+      }}
+    />
+  );
+  const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
+  textarea.focus();
+  const pos = caret ?? textarea.value.length;
+  textarea.setSelectionRange(pos, pos);
+  return {
+    ...view,
+    textarea,
+    /**
+     * The text the HOST ended up with — what would actually be sent.
+     *
+     * This, not `textarea.value`, is what proves an edit went through the
+     * browser's editing pipeline. A write straight to `textarea.value` leaves
+     * the right characters in the DOM and fires no `input` event, so the host
+     * never hears about them, and nothing re-renders to expose the mismatch.
+     */
+    hostValue: () => seen.at(-1) ?? props.initialValue,
+  };
+}
+
 /** Render the composer and place a collapsed caret at `caret` (default: end of value). */
 function renderWithCaret(props: Parameters<typeof ChatInput>[0], caret?: number) {
   const view = render(<ChatInput {...props} />);
@@ -115,6 +210,9 @@ describe('ChatInput', () => {
     onSubmit: vi.fn(),
     isStreaming: false,
   };
+
+  /** {@link defaultProps} minus the two props {@link ControlledComposer} owns. */
+  const controlledDefaults = { onSubmit: vi.fn(), isStreaming: false };
 
   it('renders textarea with placeholder', () => {
     render(<ChatInput {...defaultProps} />);
@@ -166,19 +264,25 @@ describe('ChatInput', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('does NOT disable textarea when streaming', () => {
-    render(<ChatInput {...defaultProps} isStreaming={true} />);
-    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
-  });
+  // One test, three states. There used to be three of these — two byte-identical
+  // — and each only checked that `disabled` was still its own default, which the
+  // component never sets either way. Locking the field is the regression that
+  // matters (it drops the caret with no restore), and it has more than one
+  // spelling, so the check is: not disabled, not read-only, and the keystrokes
+  // still arrive.
+  it.each([
+    ['while the agent is streaming', { isStreaming: true }],
+    ['while the session is busy', { sessionBusy: true }],
+    ['while an upload is in flight', { isUploading: true }],
+  ])('stays typeable %s', (_label, state) => {
+    const onChange = vi.fn();
+    render(<ChatInput {...defaultProps} {...state} onChange={onChange} />);
+    const textarea = screen.getByRole('combobox');
 
-  it('textarea is NOT disabled during streaming', () => {
-    render(<ChatInput {...defaultProps} isStreaming={true} />);
-    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
-  });
-
-  it('textarea stays typeable when sessionBusy is true', () => {
-    render(<ChatInput {...defaultProps} sessionBusy={true} />);
-    expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
+    expect(textarea).toBeEnabled();
+    expect(textarea).not.toHaveAttribute('readonly');
+    fireEvent.change(textarea, { target: { value: 'typed anyway' } });
+    expect(onChange).toHaveBeenCalledWith('typed anyway');
   });
 
   it('shows stop button when streaming (no text)', () => {
@@ -413,15 +517,38 @@ describe('ChatInput', () => {
 
     it('has aria-controls pointing to command palette listbox when palette is open', () => {
       render(
-        <ChatInput {...defaultProps} isPaletteOpen={true} activeDescendantId="command-item-0" />
+        <ChatInput
+          {...defaultProps}
+          isPaletteOpen={true}
+          paletteListboxId="command-palette-listbox"
+          activeDescendantId="command-item-0"
+        />
       );
       expect(screen.getByRole('combobox').getAttribute('aria-controls')).toBe(
         'command-palette-listbox'
       );
     });
 
+    it('points aria-controls at the file listbox that rendered, even with no matches', () => {
+      // `@zzz` opens the file palette with zero results, so there is no active
+      // option to infer the listbox from. Guessing off `activeDescendantId`
+      // named `command-palette-listbox` — an element that was never rendered.
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="@zzz"
+          isPaletteOpen={true}
+          paletteListboxId="file-palette-listbox"
+          activeDescendantId={undefined}
+        />
+      );
+      expect(screen.getByRole('combobox').getAttribute('aria-controls')).toBe(
+        'file-palette-listbox'
+      );
+    });
+
     it('has no aria-controls when palette is closed', () => {
-      render(<ChatInput {...defaultProps} />);
+      render(<ChatInput {...defaultProps} paletteListboxId="command-palette-listbox" />);
       expect(screen.getByRole('combobox').getAttribute('aria-controls')).toBeNull();
     });
 
@@ -470,13 +597,14 @@ describe('ChatInput', () => {
     // empty value out whether or not it wired a handler — which is what makes
     // dropping the dead X safe rather than a removal of function.
     it('still clears on Escape-Escape with no onClear wired', () => {
-      stubExecCommand();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'hello' });
+      stubExecCommandWithInputEvent();
+      const { textarea } = renderControlled({
+        initialValue: 'hello',
+        onSubmit: vi.fn(),
+        isStreaming: false,
+      });
       fireEvent.keyDown(textarea, { key: 'Escape' });
       fireEvent.keyDown(textarea, { key: 'Escape' });
-      // jsdom stops here: its `execCommand` stub cannot fire the native `input`
-      // event a real browser would, so the host's `onChange` round-trip is
-      // browser-verified rather than asserted here.
       expect(textarea.value).toBe('');
       expect(screen.queryByLabelText('Clear message')).toBeNull();
     });
@@ -523,8 +651,13 @@ describe('ChatInput', () => {
     // so it has to be recoverable. A `setState` rewrite of the controlled value
     // is invisible to Cmd+Z; only an execCommand edit pushes an undo entry.
     it('empties the field through execCommand so Cmd+Z can bring the draft back', () => {
-      const exec = stubExecCommand();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'hello', onClear: vi.fn() });
+      const exec = stubExecCommandWithInputEvent();
+      const { textarea } = renderControlled({
+        initialValue: 'hello',
+        onSubmit: vi.fn(),
+        isStreaming: false,
+        onClear: vi.fn(),
+      });
       fireEvent.keyDown(textarea, { key: 'Escape' });
       fireEvent.keyDown(textarea, { key: 'Escape' });
       expect(exec).toHaveBeenCalledWith('insertText', false, '');
@@ -532,11 +665,14 @@ describe('ChatInput', () => {
     });
 
     it('selects the whole draft before wiping it, so nothing survives the edit', () => {
-      stubExecCommand();
-      const { textarea } = renderWithCaret(
-        { ...defaultProps, value: 'one\ntwo', onClear: vi.fn() },
-        0
-      );
+      stubExecCommandWithInputEvent();
+      const { textarea } = renderControlled({
+        initialValue: 'one\ntwo',
+        onSubmit: vi.fn(),
+        isStreaming: false,
+        onClear: vi.fn(),
+      });
+      textarea.setSelectionRange(0, 0);
       fireEvent.keyDown(textarea, { key: 'Escape' });
       fireEvent.keyDown(textarea, { key: 'Escape' });
       expect(textarea.value).toBe('');
@@ -557,7 +693,9 @@ describe('ChatInput', () => {
       );
       const combobox = screen.getByRole('combobox');
       fireEvent.keyDown(combobox, { key: 'Escape' });
-      vi.advanceTimersByTime(600);
+      act(() => {
+        vi.advanceTimersByTime(600);
+      });
       fireEvent.keyDown(combobox, { key: 'Escape' });
       expect(onClear).not.toHaveBeenCalled();
       expect(onEscape).toHaveBeenCalledTimes(2);
@@ -618,11 +756,6 @@ describe('ChatInput', () => {
   });
 
   describe('sessionBusy state', () => {
-    it('never disables the textarea — disabling drops the caret with no restore', () => {
-      render(<ChatInput {...defaultProps} sessionBusy={true} />);
-      expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
-    });
-
     it('does not submit on Enter when sessionBusy is true', () => {
       const onSubmit = vi.fn();
       render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} onSubmit={onSubmit} />);
@@ -637,14 +770,16 @@ describe('ChatInput', () => {
       expect(btn.className).toContain('pointer-events-none');
     });
 
-    it('shows busy message when sessionBusy is true', () => {
+    it('names the actor and the wait when sessionBusy is true', () => {
       render(<ChatInput {...defaultProps} sessionBusy={true} />);
-      expect(screen.getByText(/Session is busy/)).toBeDefined();
+      expect(
+        screen.getByText('Your agent is still finishing the last message. Try again in a moment.')
+      ).toBeInTheDocument();
     });
 
     it('hides busy message when sessionBusy is false', () => {
       render(<ChatInput {...defaultProps} sessionBusy={false} />);
-      expect(screen.queryByText(/Session is busy/)).toBeNull();
+      expect(screen.queryByText(/still finishing/)).toBeNull();
     });
 
     it('hides clear button when sessionBusy is true', () => {
@@ -669,7 +804,7 @@ describe('ChatInput', () => {
 
     it('does not show a busy message when canSubmit is false', () => {
       render(<ChatInput {...defaultProps} value="hello" canSubmit={false} />);
-      expect(screen.queryByText(/Session is busy/)).toBeNull();
+      expect(screen.queryByText(/still finishing/)).toBeNull();
     });
 
     it('does not call onSubmit when the disabled send button is clicked', () => {
@@ -731,15 +866,29 @@ describe('ChatInput', () => {
       expect(screen.queryByText('0')).toBeNull();
     });
 
-    it('editing label shows when editingQueueItem is true', () => {
+    it('editing label names which message is being rewritten', () => {
+      render(
+        <ChatInput
+          {...defaultProps}
+          editingQueueItem={true}
+          editingPosition={2}
+          queueDepth={3}
+          value="text"
+        />
+      );
+      expect(screen.getByText('Editing message 2 of 3')).toBeInTheDocument();
+    });
+
+    it('falls back to a bare label when the position is unknown', () => {
       render(<ChatInput {...defaultProps} editingQueueItem={true} value="text" />);
-      expect(screen.getByText(/Editing message/)).toBeDefined();
+      expect(screen.getByText('Editing message')).toBeInTheDocument();
     });
 
     it('editing border applied when editingQueueItem is true', () => {
+      // `.toBeDefined()` passed on a `null` querySelector — deleting the border
+      // left the test green. `null` is defined; only `undefined` is not.
       const { container } = render(<ChatInput {...defaultProps} editingQueueItem={true} />);
-      const wrapper = container.querySelector('.border-primary\\/40');
-      expect(wrapper).toBeDefined();
+      expect(container.querySelector('.border-primary\\/40')).not.toBeNull();
     });
   });
 
@@ -916,150 +1065,181 @@ describe('ChatInput', () => {
 
   describe('backslash line continuation', () => {
     it('turns a trailing backslash into a newline instead of submitting', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onSubmit = vi.fn();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\', onSubmit });
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
+        onSubmit,
+      });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onSubmit).not.toHaveBeenCalled();
       expect(textarea.value).toBe('foo\n');
+      expect(hostValue()).toBe('foo\n');
     });
 
     it('edits through execCommand so the native undo stack survives', () => {
-      const exec = stubExecCommand();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
+      const exec = stubExecCommandWithInputEvent();
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
+      });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(exec).toHaveBeenCalledWith('insertText', false, '\n');
     });
 
     it('submits on an escaped literal backslash (even run)', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onSubmit = vi.fn();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\\\', onSubmit });
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\\\',
+        onSubmit,
+      });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onSubmit).toHaveBeenCalledOnce();
       expect(textarea.value).toBe('foo\\\\');
     });
 
     it('continues on a three-backslash run (odd)', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onSubmit = vi.fn();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\\\\\', onSubmit });
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\\\\\',
+        onSubmit,
+      });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onSubmit).not.toHaveBeenCalled();
       expect(textarea.value).toBe('foo\\\\\n');
+      expect(hostValue()).toBe('foo\\\\\n');
     });
 
     it('submits when the backslash does not touch the caret', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onSubmit = vi.fn();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\ ', onSubmit });
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\ ',
+        onSubmit,
+      });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onSubmit).toHaveBeenCalledOnce();
     });
 
     it('requires a collapsed caret', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onSubmit = vi.fn();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\', onSubmit });
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
+        onSubmit,
+      });
       textarea.setSelectionRange(0, 4);
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onSubmit).toHaveBeenCalledOnce();
     });
 
     it('works mid-prompt, at the caret rather than at the end of the value', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onSubmit = vi.fn();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\bar', onSubmit }, 4);
+      const { textarea, hostValue } = renderControlled(
+        { ...controlledDefaults, initialValue: 'foo\\bar', onSubmit },
+        4
+      );
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onSubmit).not.toHaveBeenCalled();
       expect(textarea.value).toBe('foo\nbar');
+      expect(hostValue()).toBe('foo\nbar');
     });
 
     it('never queues while streaming', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onQueue = vi.fn();
-      const { textarea } = renderWithCaret({
-        ...defaultProps,
-        value: 'foo\\',
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
         isStreaming: true,
         onQueue,
       });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onQueue).not.toHaveBeenCalled();
       expect(textarea.value).toBe('foo\n');
+      expect(hostValue()).toBe('foo\n');
     });
 
     it('never saves a queue-item edit', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onSaveEdit = vi.fn();
-      const { textarea } = renderWithCaret({
-        ...defaultProps,
-        value: 'foo\\',
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
         editingQueueItem: true,
         onSaveEdit,
       });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(onSaveEdit).not.toHaveBeenCalled();
       expect(textarea.value).toBe('foo\n');
+      expect(hostValue()).toBe('foo\n');
     });
 
     it('eats the backslash on mobile too, so the text matches every platform', () => {
       device = PHONE;
-      const exec = stubExecCommand();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
+      const exec = stubExecCommandWithInputEvent();
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
+      });
       fireEvent.keyDown(textarea, { key: 'Enter' });
       expect(exec).toHaveBeenCalledWith('insertText', false, '\n');
       expect(textarea.value).toBe('foo\n');
+      expect(hostValue()).toBe('foo\n');
     });
 
     it('leaves the backslash alone on Shift+Enter (already a newline)', () => {
-      const exec = stubExecCommand();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
+      const exec = stubExecCommandWithInputEvent();
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
+      });
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
       expect(exec).not.toHaveBeenCalled();
       expect(textarea.value).toBe('foo\\');
     });
 
     it('does not fire during an IME composition', () => {
-      const exec = stubExecCommand();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
-      fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true });
-      expect(exec).not.toHaveBeenCalled();
-    });
-
-    it('lets the palette take Enter instead of continuing the line', () => {
-      const exec = stubExecCommand();
-      const onCommandSelect = vi.fn();
-      const { textarea } = renderWithCaret({
-        ...defaultProps,
-        value: '/daily\\',
-        isPaletteOpen: true,
-        paletteHasResults: true,
-        onCommandSelect,
+      const exec = stubExecCommandWithInputEvent();
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'foo\\',
       });
-      fireEvent.keyDown(textarea, { key: 'Enter' });
-      expect(onCommandSelect).toHaveBeenCalledOnce();
+      fireEvent.keyDown(textarea, { key: 'Enter', isComposing: true });
       expect(exec).not.toHaveBeenCalled();
     });
   });
 
   describe('Option+Enter newline', () => {
     it('inserts a newline instead of submitting', () => {
-      const exec = stubExecCommand();
+      const exec = stubExecCommandWithInputEvent();
       const onSubmit = vi.fn();
-      const { textarea } = renderWithCaret({ ...defaultProps, value: 'hello', onSubmit });
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: 'hello',
+        onSubmit,
+      });
       fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
       expect(onSubmit).not.toHaveBeenCalled();
       expect(exec).toHaveBeenCalledWith('insertText', false, '\n');
       expect(textarea.value).toBe('hello\n');
+      expect(hostValue()).toBe('hello\n');
     });
 
     it('does not pick a palette entry', () => {
-      stubExecCommand();
+      stubExecCommandWithInputEvent();
       const onCommandSelect = vi.fn();
-      const { textarea } = renderWithCaret({
-        ...defaultProps,
-        value: '/dai',
+      const { textarea, hostValue } = renderControlled({
+        ...controlledDefaults,
+        initialValue: '/dai',
         isPaletteOpen: true,
         paletteHasResults: true,
         onCommandSelect,
@@ -1067,6 +1247,7 @@ describe('ChatInput', () => {
       fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
       expect(onCommandSelect).not.toHaveBeenCalled();
       expect(textarea.value).toBe('/dai\n');
+      expect(hostValue()).toBe('/dai\n');
     });
   });
 
@@ -1166,6 +1347,159 @@ describe('ChatInput', () => {
       fireEvent.keyDown(combobox, { key: 'Escape' });
       fireEvent.keyDown(combobox, { key: 'Escape' });
       expect(onClear).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('the armed-to-clear signal', () => {
+    /**
+     * ChatInput owns WHEN the double-Escape is armed; ChatInputContainer owns
+     * where that reads out (the overlay lane, clear of the queue rows). So the
+     * state machine is pinned here and the pill itself in the container's test.
+     */
+    let armed: boolean[];
+    const armable = () => ({
+      ...defaultProps,
+      value: 'hello',
+      isPaletteOpen: false,
+      onClear: vi.fn(),
+      onClearArmedChange: (next: boolean) => armed.push(next),
+    });
+    const isArmed = () => armed.at(-1) ?? false;
+
+    beforeEach(() => {
+      armed = [];
+    });
+
+    it('is down until the first Escape raises it', () => {
+      render(<ChatInput {...armable()} />);
+      expect(isArmed()).toBe(false);
+    });
+
+    it('goes up on the first bare Escape, which otherwise shows nothing at all', () => {
+      render(<ChatInput {...armable()} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(isArmed()).toBe(true);
+    });
+
+    it('comes down the moment the window it advertises closes', () => {
+      vi.useFakeTimers();
+      render(<ChatInput {...armable()} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(isArmed()).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(499);
+      });
+      expect(isArmed()).toBe(true);
+
+      act(() => {
+        vi.advanceTimersByTime(2);
+      });
+      expect(isArmed()).toBe(false);
+      vi.useRealTimers();
+    });
+
+    it('comes down when the second Escape does the clearing', () => {
+      const props = armable();
+      render(<ChatInput {...props} />);
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(props.onClear).toHaveBeenCalledOnce();
+      expect(isArmed()).toBe(false);
+    });
+
+    it('stays down on an empty composer, where a second Escape would clear nothing', () => {
+      render(<ChatInput {...armable()} value="" />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(isArmed()).toBe(false);
+    });
+
+    it('stays down when the Escape only dismissed a palette', () => {
+      // That Escape deliberately does not arm the clear, so advertising it would
+      // promise a keystroke that does nothing.
+      render(<ChatInput {...armable()} isPaletteOpen={true} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(isArmed()).toBe(false);
+    });
+
+    it('stays down while streaming, where Escape stops the turn instead', () => {
+      render(<ChatInput {...armable()} isStreaming={true} onStop={vi.fn()} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+      expect(isArmed()).toBe(false);
+    });
+
+    it('stays down on a host that wires no onClear, where no clear button exists', () => {
+      // The dashboard and onboarding composers pass no `onClear`, so the
+      // labelled X is not rendered at all — while Escape-Escape still wipes the
+      // draft. A readout that assistive tech is told to ignore would hand
+      // sighted people a destructive shortcut and nobody else, so the arm is
+      // never raised where the equal alternative is missing.
+      render(<ChatInput {...armable()} onClear={undefined} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+      expect(screen.queryByLabelText('Clear message')).toBeNull();
+      expect(isArmed()).toBe(false);
+    });
+
+    it('stays down while the session is busy, where the clear button is disabled', () => {
+      // `showClear` is false, so the button renders disabled and drops out of
+      // the tab order — unreachable in the same way, for the same reason.
+      render(<ChatInput {...armable()} sessionBusy={true} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+      expect(screen.getByLabelText('Clear message')).toBeDisabled();
+      expect(isArmed()).toBe(false);
+    });
+
+    it('drops a raised arm when the composer changes session', () => {
+      // ChatPanel re-renders rather than remounts on a session switch, so an arm
+      // raised against session A would otherwise still be live against B's
+      // draft — one tap, and text nobody armed is gone.
+      const props = armable();
+      const { rerender } = render(<ChatInput {...props} contextKey="session-a " />);
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(isArmed()).toBe(true);
+
+      rerender(<ChatInput {...props} value="B draft" contextKey="session-b " />);
+      expect(isArmed()).toBe(false);
+
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(props.onClear).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the action-button slot', () => {
+    it('is held open at rest by a spacer with the button’s own box', () => {
+      // The button used to appear with the first keystroke, so the composer's
+      // right edge — and the text you were typing — jumped sideways exactly as
+      // you started. jsdom reports every element as 0×0, so this pins that the
+      // spacer exists and is built from the same padding and icon-size tokens
+      // the button uses; the measured offset is in the PR's browser evidence.
+      const { rerender } = render(<ChatInput {...defaultProps} value="" />);
+
+      const spacer = screen.getByTestId('action-slot-spacer');
+      expect(screen.queryByLabelText('Send message')).toBeNull();
+      expect(spacer.className).toContain('p-1.5');
+      expect(spacer.firstElementChild!.className).toContain('size-(--size-icon-sm)');
+
+      rerender(<ChatInput {...defaultProps} value="h" />);
+
+      expect(screen.queryByTestId('action-slot-spacer')).toBeNull();
+      const button = screen.getByLabelText('Send message');
+      expect(button.className).toContain('p-1.5');
+      // The glyph is an <svg>, whose `className` is an SVGAnimatedString.
+      expect(button.querySelector('svg')!.getAttribute('class')).toContain('size-(--size-icon-sm)');
+    });
+  });
+
+  describe('keyboard focus rings', () => {
+    it('gives every composer control a visible focus ring', () => {
+      render(<ChatInput {...defaultProps} value="hello" onAttach={vi.fn()} onClear={vi.fn()} />);
+      for (const name of ['Attach file', 'Clear message', 'Send message']) {
+        expect(screen.getByLabelText(name).className).toContain('focus-ring');
+      }
     });
   });
 
@@ -1435,7 +1769,7 @@ describe('ChatInput', () => {
           canSubmitReason="Getting your agent ready…"
         />
       );
-      expect(screen.getByText(/Session is busy/)).toBeDefined();
+      expect(screen.getByText(/still finishing the last message/)).toBeInTheDocument();
       expect(screen.queryByText('Getting your agent ready…')).toBeNull();
     });
   });

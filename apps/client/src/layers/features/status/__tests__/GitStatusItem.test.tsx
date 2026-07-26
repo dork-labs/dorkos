@@ -101,20 +101,20 @@ describe('GitStatusItem', () => {
 
   it('sets title attribute with tooltip breakdown', () => {
     const { container } = render(<GitStatusItem data={dirtyStatus} />);
-    const el = container.querySelector('[title]') as HTMLElement;
-    expect(el).toBeDefined();
-    expect(el.title).toContain('feature/my-branch');
-    expect(el.title).toContain('3 modified');
-    expect(el.title).toContain('1 staged');
-    expect(el.title).toContain('2 untracked');
+    const el = container.querySelector('[title]') as HTMLElement | null;
+    expect(el).not.toBeNull();
+    expect(el!.title).toContain('feature/my-branch');
+    expect(el!.title).toContain('3 modified');
+    expect(el!.title).toContain('1 staged');
+    expect(el!.title).toContain('2 untracked');
   });
 
   it('sets title to "clean" for clean repo', () => {
     const { container } = render(<GitStatusItem data={cleanStatus} />);
-    const el = container.querySelector('[title]') as HTMLElement;
-    expect(el).toBeDefined();
-    expect(el.title).toContain('main');
-    expect(el.title).toContain('clean');
+    const el = container.querySelector('[title]') as HTMLElement | null;
+    expect(el).not.toBeNull();
+    expect(el!.title).toContain('main');
+    expect(el!.title).toContain('clean');
   });
 });
 
