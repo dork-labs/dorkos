@@ -64,6 +64,15 @@ import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_PATHS,
 } from '../../services/core/operator/config-write-policy.js';
+import { env } from '../../env.js';
+
+/**
+ * The cockpit's own trusted port. Read from `env` rather than hardcoded 4242:
+ * a worktree checkout runs on an alternate `DORKOS_PORT` to avoid colliding
+ * with other worktrees, and `resolveTrustedOrigins()` (which the route under
+ * test calls for real) trusts whatever port is actually configured, not 4242.
+ */
+const TRUSTED_PORT = env.DORKOS_PORT;
 
 const DORK_HOME = '/tmp/dork-test';
 
@@ -318,12 +327,12 @@ describe('POST /api/extensions/:id/approve', () => {
     });
 
     it('is not fooled by a host that merely starts with a trusted one', async () => {
-      // `http://localhost:4242.evil.example` is a host the attacker owns. Exact
+      // `http://localhost:<port>.evil.example` is a host the attacker owns. Exact
       // `.includes()` membership refuses it; a prefix comparison would not, and a
       // prefix comparison is the natural way to write this wrong.
       const res = await request(app)
         .post('/api/extensions/my-ext/approve')
-        .set('origin', 'http://localhost:4242.evil.example')
+        .set('origin', `http://localhost:${TRUSTED_PORT}.evil.example`)
         .send({});
 
       expect(res.status).toBe(403);
@@ -345,7 +354,7 @@ describe('POST /api/extensions/:id/approve', () => {
     it('lets the cockpit through on its own origin', async () => {
       const res = await request(app)
         .post('/api/extensions/my-ext/approve')
-        .set('origin', 'http://127.0.0.1:4242')
+        .set('origin', `http://127.0.0.1:${TRUSTED_PORT}`)
         .send({});
 
       expect(res.status).toBe(200);

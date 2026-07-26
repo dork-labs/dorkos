@@ -83,7 +83,7 @@ export interface BindingAdvancedSectionProps {
   notifyOnTaskComplete: boolean;
   onNotifyOnTaskCompleteChange: (value: boolean) => void;
   /**
-   * When true, no chat session exists yet for this channel — show the
+   * When true, no chat session exists yet for this integration — show the
    * one-time "message your bot once" activation hint (bots can't text first).
    */
   notifyBootstrapHint?: boolean;

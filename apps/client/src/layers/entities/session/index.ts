@@ -32,8 +32,8 @@ export type { SessionStatusData } from './model/use-session-status';
 // can never look in an entry no writer fills (DOR-482).
 export { sessionKeys } from './api/query-keys';
 // Permission mode — the single client answer to "will this agent ask me first?".
-// `isBypassPermissionMode` is in `shared/lib`, not here: a channel binding is an
-// entity and cannot import a sibling entity, and it is one of the three surfaces
+// `isBypassPermissionMode` is in `shared/lib`, not here: an integration binding is
+// an entity and cannot import a sibling entity, and it is one of the three surfaces
 // that must agree about what a bypass mode covers.
 export { useSessionDetail, useSessionPermissionMode } from './model/use-session-detail';
 // The store itself is published (tests reset it between cases); the per-session

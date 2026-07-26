@@ -93,7 +93,7 @@ vi.mock('@/layers/entities/binding', async (importOriginal) => {
 
 const mockUseRelayEnabled = vi.fn<() => boolean>(() => true);
 const mockUseExternalAdapterCatalog = vi.fn<() => { data: CatalogEntry[] }>(() => ({ data: [] }));
-// BoundChannelRow calls useObservedChats once per binding to resolve chatId → displayName.
+// BoundIntegrationRow calls useObservedChats once per binding to resolve chatId → displayName.
 const mockUseObservedChats = vi.fn<() => { data: ObservedChat[] }>(() => ({ data: [] }));
 
 vi.mock('@/layers/entities/relay', () => ({
@@ -143,7 +143,7 @@ vi.mock('@/layers/features/relay', () => ({
   },
 }));
 
-import { ChannelsTab } from '../ChannelsTab';
+import { IntegrationsTab } from '../IntegrationsTab';
 
 // --- Test fixtures ---
 
@@ -243,13 +243,13 @@ function makeCatalogEntryInternal(): CatalogEntry {
 }
 
 function renderTab(agent: AgentManifest = baseAgent) {
-  const { container } = render(<ChannelsTab agent={agent} />);
+  const { container } = render(<IntegrationsTab agent={agent} />);
   return within(container);
 }
 
 // --- Tests ---
 
-describe('ChannelsTab', () => {
+describe('IntegrationsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseRelayEnabled.mockReturnValue(true);
@@ -278,27 +278,27 @@ describe('ChannelsTab', () => {
     it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
-      expect(view.getByText('No channels available')).toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Configure a channel' })).toBeInTheDocument();
+      expect(view.getByText('No integrations available')).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Add an integration' })).toBeInTheDocument();
     });
 
-    it('State B: CTA calls openSettingsToTab("channels")', () => {
+    it('State B: CTA calls openSettingsToTab("integrations")', () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
-      fireEvent.click(view.getByRole('button', { name: 'Configure a channel' }));
-      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('channels');
+      fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
+      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('integrations');
     });
 
-    it('State C: shows no-bindings message with ChannelPicker CTA when relay is on and adapters exist', () => {
+    it('State C: shows no-bindings message with IntegrationPicker CTA when relay is on and adapters exist', () => {
       // Default beforeEach: relay enabled, one catalog entry, no bindings.
       const view = renderTab();
       expect(view.getByText('Let this agent reach the outside world')).toBeInTheDocument();
-      expect(view.getByText('Connect to Channel')).toBeInTheDocument();
+      expect(view.getByText('Add Integration')).toBeInTheDocument();
     });
   });
 
   describe('binding list', () => {
-    it('renders a ChannelBindingCard for each agent binding', () => {
+    it('renders an IntegrationBindingCard for each agent binding', () => {
       const bindings = [
         makeBinding({ id: 'b-1', adapterId: 'telegram-1' }),
         makeBinding({ id: 'b-2', adapterId: 'slack-1' }),
@@ -350,25 +350,25 @@ describe('ChannelsTab', () => {
     });
   });
 
-  describe('ChannelPicker integration', () => {
-    it('renders the Connect to Channel button in State C (no bindings)', () => {
+  describe('IntegrationPicker integration', () => {
+    it('renders the Add Integration button in State C (no bindings)', () => {
       // Default beforeEach: relay enabled, one catalog entry, no bindings → State C.
       const view = renderTab();
-      expect(view.getByText('Connect to Channel')).toBeInTheDocument();
+      expect(view.getByText('Add Integration')).toBeInTheDocument();
     });
 
-    it('renders the Connect to Channel button in State D (bindings exist)', () => {
+    it('renders the Add Integration button in State D (bindings exist)', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-1', adapterId: 'telegram-1' })],
       });
       const view = renderTab();
-      expect(view.getByText('Connect to Channel')).toBeInTheDocument();
+      expect(view.getByText('Add Integration')).toBeInTheDocument();
     });
 
-    it('does not render ChannelPicker in State A (relay off) — shows relay CTA instead', () => {
+    it('does not render IntegrationPicker in State A (relay off) — shows relay CTA instead', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.queryByText('Connect to Channel')).not.toBeInTheDocument();
+      expect(view.queryByText('Add Integration')).not.toBeInTheDocument();
       expect(view.getByRole('button', { name: 'Open Relay settings' })).toBeInTheDocument();
     });
   });
@@ -516,7 +516,7 @@ describe('ChannelsTab', () => {
       });
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Channel paused');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Integration paused');
       });
     });
 
@@ -542,7 +542,7 @@ describe('ChannelsTab', () => {
       });
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Channel resumed');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Integration resumed');
       });
     });
   });
@@ -689,7 +689,7 @@ describe('ChannelsTab', () => {
       const view = renderTab();
 
       // Open the picker popover
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Integration'));
       // Click the available-to-setup item (renders via portal)
       fireEvent.click(screen.getByText('Webhook'));
 
@@ -701,7 +701,7 @@ describe('ChannelsTab', () => {
      * Verifies that the inline wizard flow does NOT call openSettingsToTab —
      * that action is reserved for the empty-state CTAs (States A and B).
      */
-    it('does not dispatch cross-dialog navigation when setting up a new channel', async () => {
+    it('does not dispatch cross-dialog navigation when setting up a new integration', async () => {
       // Provide a catalog entry with an unconfigured adapter
       mockUseExternalAdapterCatalog.mockReturnValue({
         data: [
@@ -723,7 +723,7 @@ describe('ChannelsTab', () => {
       const view = renderTab();
 
       // Open the picker and trigger setup
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Integration'));
       fireEvent.click(screen.getByText('Webhook'));
 
       // The wizard opens inline; openSettingsToTab was NOT called.

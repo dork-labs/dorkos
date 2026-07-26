@@ -4,12 +4,12 @@ import { Button, Switch } from '@/layers/shared/ui';
 import { AdapterIcon, ADAPTER_STATE_DOT_CLASS } from '@/layers/features/relay';
 import type { AdapterManifest, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
-interface ChannelSettingRowProps {
-  /** The catalog instance representing a configured channel. */
+interface IntegrationSettingRowProps {
+  /** The catalog instance representing a configured integration. */
   instance: CatalogInstance;
   /** The manifest for the adapter type — provides display name and icon. */
   manifest: AdapterManifest;
-  /** Number of agent bindings using this channel instance. */
+  /** Number of agent bindings using this integration instance. */
   bindingCount?: number;
   /** Called when the enabled toggle is changed. */
   onToggle: (enabled: boolean) => void;
@@ -24,16 +24,16 @@ function resolveStatusDotClass(instance: CatalogInstance): string {
 }
 
 /**
- * Compact row for the Settings Channels tab — shows status dot, adapter icon,
- * channel name, enabled toggle, and a configure action.
+ * Compact row for the Settings Integrations tab — shows status dot, adapter icon,
+ * integration name, enabled toggle, and a configure action.
  */
-export function ChannelSettingRow({
+export function IntegrationSettingRow({
   instance,
   manifest,
   bindingCount,
   onToggle,
   onConfigure,
-}: ChannelSettingRowProps) {
+}: IntegrationSettingRowProps) {
   const displayName = instance.label || instance.status.displayName || instance.id;
   const statusDotClass = resolveStatusDotClass(instance);
   const { inbound, outbound } = instance.status.messageCount;

@@ -492,7 +492,9 @@ describe('TopologyGraph', () => {
         expect(screen.getByTestId('react-flow')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('Drag from a channel to an agent to connect it')).toBeInTheDocument();
+      expect(
+        screen.getByText('Drag from an integration to an agent to connect it')
+      ).toBeInTheDocument();
     });
 
     it('does not show hints when bindings exist', async () => {
@@ -507,7 +509,7 @@ describe('TopologyGraph', () => {
         screen.queryByText('Add adapters from the Relay panel to connect them to agents')
       ).not.toBeInTheDocument();
       expect(
-        screen.queryByText('Drag from a channel to an agent to connect it')
+        screen.queryByText('Drag from an integration to an agent to connect it')
       ).not.toBeInTheDocument();
     });
   });
@@ -1094,7 +1096,9 @@ describe('TopologyGraph', () => {
 
       // Confirm dialog is shown; nothing is deleted yet.
       expect(
-        screen.getByText('Remove this channel? The agent will no longer receive messages from it.')
+        screen.getByText(
+          'Remove this integration? The agent will no longer receive messages from it.'
+        )
       ).toBeInTheDocument();
       expect(mockDeleteBindingMutate).not.toHaveBeenCalled();
     });

@@ -9,8 +9,8 @@ import type { PermissionMode } from '@dorkos/shared/types';
  * it identically instead of each re-deriving the precedence.
  *
  * `isBypassPermissionMode` used to live here and now lives in
- * `shared/lib/permission-mode`. A channel binding is an entity and may not import
- * a sibling entity, so a definition parked here was out of reach of one of the
+ * `shared/lib/permission-mode`. An integration binding is an entity and may not
+ * import a sibling entity, so a definition parked here was out of reach of one of the
  * three surfaces that have to agree about what a bypass mode covers.
  *
  * @param pending - Optimistic mode from an in-flight settings change.

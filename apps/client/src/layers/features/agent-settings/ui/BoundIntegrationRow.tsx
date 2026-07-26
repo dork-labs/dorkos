@@ -1,17 +1,17 @@
 import { useMemo } from 'react';
 import { useObservedChats } from '@/layers/entities/relay';
 import type { AdapterBinding, BindingTestResult } from '@dorkos/shared/relay-schemas';
-import { ChannelBindingCard, type CardAdapterState } from './ChannelBindingCard';
+import { IntegrationBindingCard, type CardAdapterState } from './IntegrationBindingCard';
 
-interface BoundChannelRowProps {
+interface BoundIntegrationRowProps {
   /** The binding to display. */
   binding: AdapterBinding;
-  /** Display name of the channel (adapter displayName from catalog). */
-  channelName: string;
+  /** Display name of the integration (adapter displayName from catalog). */
+  integrationName: string;
   /** Icon identifier from the adapter manifest. */
-  channelIconId?: string;
-  /** Adapter type — used as icon fallback when channelIconId is absent. */
-  channelAdapterType: string;
+  integrationIconId?: string;
+  /** Adapter type — used as icon fallback when integrationIconId is absent. */
+  integrationAdapterType: string;
   /** Current adapter connection state. */
   adapterState: CardAdapterState;
   /** Error message to show when adapterState === 'error'. */
@@ -27,7 +27,7 @@ interface BoundChannelRowProps {
 }
 
 /**
- * Thin wrapper around ChannelBindingCard that resolves a binding's raw chatId
+ * Thin wrapper around IntegrationBindingCard that resolves a binding's raw chatId
  * to a human-readable display name and computes `lastMessageAt` from observed
  * chat data via useObservedChats.
  *
@@ -35,18 +35,18 @@ interface BoundChannelRowProps {
  * binding (per adapterId). Calling hooks in a loop violates React rules, so
  * each binding row owns its own hook call.
  */
-export function BoundChannelRow({
+export function BoundIntegrationRow({
   binding,
-  channelName,
-  channelIconId,
-  channelAdapterType,
+  integrationName,
+  integrationIconId,
+  integrationAdapterType,
   adapterState,
   errorMessage,
   onTogglePause,
   onTest,
   onEdit,
   onRemove,
-}: BoundChannelRowProps) {
+}: BoundIntegrationRowProps) {
   const { data: observedChats = [] } = useObservedChats(binding.adapterId);
 
   // Resolve chatId → displayName; fall back to #<last-4-chars> when not found.
@@ -66,11 +66,11 @@ export function BoundChannelRow({
   }, [chat, observedChats]);
 
   return (
-    <ChannelBindingCard
+    <IntegrationBindingCard
       binding={binding}
-      channelName={channelName}
-      channelIconId={channelIconId}
-      channelAdapterType={channelAdapterType}
+      integrationName={integrationName}
+      integrationIconId={integrationIconId}
+      integrationAdapterType={integrationAdapterType}
       adapterState={adapterState}
       errorMessage={errorMessage}
       chatDisplayName={chatDisplayName}

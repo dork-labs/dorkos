@@ -13,11 +13,11 @@ import { requireRelay, type SenderIdentity } from './relay-helpers.js';
 import { resolveNotifyTarget } from '../../../relay/notify-target.js';
 
 /**
- * Send a message to a user on a bound external channel.
+ * Send a message to a user on a bound external integration.
  *
  * @param deps - Tool dependencies
  * @param identity - Server-injected sender identity; its `agentId` selects the
- *   caller's own channel bindings (never taken from tool args)
+ *   caller's own integration bindings (never taken from tool args)
  */
 export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: SenderIdentity) {
   return async (args: { message: string; channel?: string }) => {
@@ -35,14 +35,14 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       return jsonContent(
         {
           error:
-            'This session is not a registered agent, so it has no channel bindings to notify through.',
+            'This session is not a registered agent, so it has no integration bindings to notify through.',
           code: 'NOT_AN_AGENT',
         },
         true
       );
     }
 
-    // Resolve the channel via the shared resolver (also used by the system-level
+    // Resolve the integration via the shared resolver (also used by the system-level
     // TaskCompletionNotifier, DOR-240) so both proactive paths honor identical
     // binding, active-session, and `canInitiate` (DOR-239) rules.
     const target = resolveNotifyTarget(agentId, {
@@ -88,7 +88,7 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
             {
               sent: false,
               error:
-                "This channel doesn't allow the agent to start conversations; reply routing still works.",
+                "This integration doesn't allow the agent to start conversations; reply routing still works.",
               code: 'INITIATE_NOT_ALLOWED',
               bindingId: target.bindingId,
               adapterId: target.adapterId,

@@ -21,8 +21,8 @@ export interface PermissionModeScopeNoteProps {
  * individual screen was accurate.
  *
  * So the sentence appears at the moment of the choice, in all three places a
- * permission mode is actually picked: the session status line, a channel binding,
- * and a scheduled task. One component and one condition
+ * permission mode is actually picked: the session status line, an integration
+ * binding, and a scheduled task. One component and one condition
  * ({@link isBypassPermissionMode}), so the three cannot drift into saying
  * different things.
  *

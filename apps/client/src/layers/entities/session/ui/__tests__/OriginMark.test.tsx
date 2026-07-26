@@ -39,7 +39,7 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 describe('OriginMark', () => {
   it.each([
     ['agent', 'Agent'],
-    ['channel', 'Channel'],
+    ['channel', 'Integration'],
     ['task', 'Scheduled task'],
     ['external', 'External'],
   ] as const)('renders an icon + tooltip for origin=%s with fallback label', (origin, label) => {
@@ -51,7 +51,7 @@ describe('OriginMark', () => {
   it('prefers a passed label over the descriptor fallback', () => {
     render(<OriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
     expect(screen.getByLabelText('Origin: Telegram')).toBeDefined();
-    expect(screen.queryByLabelText('Origin: Channel')).toBeNull();
+    expect(screen.queryByLabelText('Origin: Integration')).toBeNull();
   });
 
   it('renders nothing for origin="user"', () => {

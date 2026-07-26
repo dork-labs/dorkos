@@ -253,24 +253,24 @@ describe('AdapterCardBindings', () => {
   // No-bindings state (connected, not CCA)
   // -------------------------------------------------------------------------
 
-  it('shows "add channel" button when connected with no bindings', () => {
+  it('shows "add integration" button when connected with no bindings', () => {
     render(<AdapterCardBindings {...defaultProps()} />);
-    expect(screen.getByRole('button', { name: /add channel/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add integration/i })).toBeInTheDocument();
   });
 
   it('renders nothing when disconnected with no bindings', () => {
     const { container } = render(<AdapterCardBindings {...defaultProps({ isConnected: false })} />);
-    // Should not show add channel or any binding rows
-    expect(screen.queryByRole('button', { name: /add channel/i })).not.toBeInTheDocument();
+    // Should not show add integration or any binding rows
+    expect(screen.queryByRole('button', { name: /add integration/i })).not.toBeInTheDocument();
     // The container should have the wrapper div but no meaningful children
     expect(container.querySelector('[data-testid="binding-row"]')).toBeNull();
   });
 
   // -------------------------------------------------------------------------
-  // "add channel" button when bindings exist
+  // "add integration" button when bindings exist
   // -------------------------------------------------------------------------
 
-  it('shows "add channel" button even when bindings exist', () => {
+  it('shows "add integration" button even when bindings exist', () => {
     const rows = [makeBoundRow()];
 
     render(
@@ -282,6 +282,6 @@ describe('AdapterCardBindings', () => {
       />
     );
 
-    expect(screen.getByRole('button', { name: /add channel/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add integration/i })).toBeInTheDocument();
   });
 });
