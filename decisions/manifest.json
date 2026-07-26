@@ -2947,6 +2947,24 @@
       "created": "2026-07-26",
       "extractedFrom": null,
       "specSlug": null
+    },
+    {
+      "id": "260726-234120",
+      "slug": "supervised-server-refuses-its-own-lifecycle",
+      "title": "A supervised server refuses the lifecycle operations only its supervisor can perform",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260726-234122",
+      "slug": "one-server-per-data-directory",
+      "title": "One server per data directory, enforced by a corroborated lock file",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
     }
   ]
 }
