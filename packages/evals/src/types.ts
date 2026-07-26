@@ -72,6 +72,58 @@ export const CredentialSourceSchema = z.enum([
 /** Inferred type for {@link CredentialSourceSchema}. */
 export type CredentialSource = z.infer<typeof CredentialSourceSchema>;
 
+/** The environment variable CI dispatches a credentialed run with. */
+export const API_KEY_VAR = 'ANTHROPIC_API_KEY';
+
+/**
+ * The subscription token variable, PINNED to this exact name. Letting a caller
+ * choose which variable to read is a credential-disclosure lever, not a
+ * convenience — see `runner/credentials.ts`. Adding a source means adding a
+ * literal name, never an input.
+ */
+export const OAUTH_TOKEN_VAR = 'CLAUDE_CODE_OAUTH_TOKEN';
+
+/**
+ * Whether a credential source bills a Claude subscription rather than the
+ * Anthropic API. Subscription turns report no per-turn cost, so `$0.0000` on
+ * such a run is expected rather than a missing-signal symptom.
+ *
+ * @param source - The resolved credential source.
+ * @returns True for the two subscription-backed sources.
+ */
+export function isSubscriptionBilled(source: CredentialSource): boolean {
+  return source === 'claude-oauth-token' || source === 'local-claude-login';
+}
+
+/** One human-readable line per source, for run output. */
+const CREDENTIAL_SOURCE_LABELS: Record<CredentialSource, string> = {
+  'anthropic-api-key': `the ${API_KEY_VAR} environment variable (billed to that API account)`,
+  'claude-oauth-token': `the ${OAUTH_TOKEN_VAR} environment variable (billed to that Claude subscription)`,
+  'local-claude-login':
+    'the Claude sign-in on this machine (billed to your own Claude subscription)',
+};
+
+/**
+ * Describe a resolved source in one line, so a run's output says which
+ * credential it used instead of leaving the reader to guess.
+ *
+ * Deliberately TOTAL: an unrecognized value returns a plain fallback rather than
+ * throwing. This is called while rendering the summary table, and a report
+ * printer that can die over a label would take the whole run's output with it —
+ * including the results a reader needs in order to see what went wrong.
+ *
+ * These helpers live here, beside the enum, rather than next to the resolver:
+ * `report/summary.ts` needs them to print two lines, and importing the resolver
+ * would drag the server's `claude` auth probe into the reporting path for
+ * nothing.
+ *
+ * @param source - The resolved credential source.
+ * @returns The human-readable description.
+ */
+export function describeCredentialSource(source: CredentialSource): string {
+  return CREDENTIAL_SOURCE_LABELS[source] ?? `an unrecognized credential source (${source})`;
+}
+
 /** Rough cost envelope, used for budget planning and tier selection. */
 export const CostClassSchema = z.enum(['free', 'cheap', 'standard', 'deep']);
 

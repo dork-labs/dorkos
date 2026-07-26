@@ -10,9 +10,12 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import {
-  resolveModelCredential,
   isSubscriptionBilled,
   describeCredentialSource,
+  type CredentialSource,
+} from '../../types.js';
+import {
+  resolveModelCredential,
   noCredentialMessage,
   dockerNeedsPortableCredentialMessage,
 } from '../credentials.js';
@@ -100,6 +103,15 @@ describe('credential reporting', () => {
       'your own Claude subscription'
     );
     expect(describeCredentialSource('anthropic-api-key')).toContain('ANTHROPIC_API_KEY');
+  });
+
+  it('never throws on an unrecognized source', () => {
+    // This runs while rendering the summary table. A report printer that can die
+    // over a label would take the whole run's output with it, including the
+    // results a reader needs in order to see what went wrong.
+    const bogus = 'something-that-does-not-exist' as CredentialSource;
+    expect(() => describeCredentialSource(bogus)).not.toThrow();
+    expect(describeCredentialSource(bogus)).toContain('unrecognized');
   });
 });
 

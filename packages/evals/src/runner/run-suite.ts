@@ -8,11 +8,17 @@
  * @module evals/runner/run-suite
  */
 import path from 'node:path';
-import type { EvalCase, EvalResult, RunSummary, RuntimeTier } from '../types.js';
+import {
+  describeCredentialSource,
+  type EvalCase,
+  type EvalResult,
+  type RunSummary,
+  type RuntimeTier,
+} from '../types.js';
 import { BudgetTracker, DEFAULT_RUN_BUDGET_USD } from './budget.js';
 import { runEval } from './run-eval.js';
 import { createLauncherResolver, type IsolationTier } from './isolation/resolve-launcher.js';
-import { resolveModelCredential, describeCredentialSource } from './credentials.js';
+import { resolveModelCredential } from './credentials.js';
 import { writeResults } from '../report/summary.js';
 
 /** Options for {@link runSuite}. */

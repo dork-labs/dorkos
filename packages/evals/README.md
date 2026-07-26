@@ -48,17 +48,34 @@ cost, so the harness prints a NOTE rather than a warning. On an API key, `$0.000
 is a real symptom (either no turn ran or the cost signal broke), and there you get
 a WARNING instead.
 
-## Known gap: tool approvals stall a credentialed turn
+## Known gap: nothing answers a tool approval
 
-A credentialed case that asks the agent to do something usually parks. The driven
+A credentialed case that asks the agent to _do_ something parks. The driven
 session runs in the default permission mode, so the first tool call the runtime
-wants confirmed emits `approval_required` and waits ten minutes for an answer that
-never comes, and the harness's 90-second turn timeout ends the eval as a runner
-error. You can see it in the transcript: the agent thinks, picks the right tool,
-calls it with sensible arguments, and then the stream stops.
+wants confirmed emits `approval_required` with a ten-minute window, nothing ever
+answers it, and the harness's 90-second turn timeout ends the eval as a runner
+error. In the transcript the agent thinks, picks a tool, calls it with sensible
+arguments, and then the stream just stops.
 
-That is why every case that drives a real tool is still `quarantined`. The
-credential path and the turn itself work; nothing answers the approval yet.
+That is the only thing standing between these cases and a real result, and it is
+why every case that drives a tool is still `quarantined`. Two things that might
+look like additional blockers are not:
+
+- **The DorkOS MCP tools are present.** A driven session gets the full
+  `mcp__dorkos__*` surface, deferred behind `ToolSearch` the way the CLI defers a
+  large tool set. Verified by driving a turn that asked the model to list them
+  without calling anything: it returned all of them, including `activity_list`
+  and `agents_recent_activity`, and the turn reached a terminal `done`. A
+  credentialed turn that needs no approval completes normally.
+- **A `Bash` call in the transcript is not a missing tool.** Which tool trips the
+  approval gate varies by run, because the model picks it. One run stalled on
+  `mcp__dorkos__update_agent`; another, given the same prompt, improvised a
+  `Bash` + `curl` instead. Both are the same stall.
+
+**Reading transcripts: frames are not calls.** A `tool_call` frame is re-emitted
+as the tool's input streams in, so one call shows up as many frames. Twenty-seven
+`Bash` frames is one `Bash` call. Count distinct `toolCallId` values, not frames,
+or you will conclude the agent is thrashing when it made a single call.
 
 ## Where a credential comes from
 

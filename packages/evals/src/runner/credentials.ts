@@ -41,20 +41,17 @@
  * credential is never a pass. This module reports "nothing resolved" and supplies
  * the message; {@link runEval} is what refuses to run.
  *
+ * ## What is deliberately NOT here
+ *
+ * The pinned variable NAMES and the two label/billing helpers live in `types.ts`.
+ * Resolving a credential means shelling out to the `claude` binary, and
+ * `report/summary.ts` needs those helpers to print two lines. Keeping them here
+ * would drag the auth probe into the reporting path for nothing.
+ *
  * @module evals/runner/credentials
  */
 import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
-import { CredentialSourceSchema, type CredentialSource } from '../types.js';
-
-/** The environment variable CI dispatches a credentialed run with. */
-export const API_KEY_VAR = 'ANTHROPIC_API_KEY';
-
-/**
- * The subscription token variable, PINNED to this exact name. See the module
- * docstring: letting a caller choose the variable is a credential-disclosure
- * lever, not a convenience.
- */
-export const OAUTH_TOKEN_VAR = 'CLAUDE_CODE_OAUTH_TOKEN';
+import { API_KEY_VAR, OAUTH_TOKEN_VAR, type CredentialSource } from '../types.js';
 
 /** A resolved way for a credentialed eval to reach a model. */
 export interface ModelCredential {
@@ -125,37 +122,6 @@ export async function resolveModelCredential(
   }
 
   return undefined;
-}
-
-/**
- * Whether a credential source bills a Claude subscription rather than the
- * Anthropic API. Subscription turns report no per-turn cost, so `$0.0000` on such
- * a run is expected rather than a missing-signal symptom.
- *
- * @param source - The resolved credential source.
- * @returns True for the two subscription-backed sources.
- */
-export function isSubscriptionBilled(source: CredentialSource): boolean {
-  return source === 'claude-oauth-token' || source === 'local-claude-login';
-}
-
-/** One human-readable line per source, for run output. */
-const SOURCE_LABELS: Record<CredentialSource, string> = {
-  'anthropic-api-key': `the ${API_KEY_VAR} environment variable (billed to that API account)`,
-  'claude-oauth-token': `the ${OAUTH_TOKEN_VAR} environment variable (billed to that Claude subscription)`,
-  'local-claude-login':
-    'the Claude sign-in on this machine (billed to your own Claude subscription)',
-};
-
-/**
- * Describe a resolved source in one line, so a run's output says which credential
- * it used instead of leaving the reader to guess.
- *
- * @param source - The resolved credential source.
- * @returns The human-readable description.
- */
-export function describeCredentialSource(source: CredentialSource): string {
-  return SOURCE_LABELS[CredentialSourceSchema.parse(source)];
 }
 
 /**

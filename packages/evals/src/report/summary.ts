@@ -22,8 +22,13 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { RunSummarySchema, type EvalResult, type RunSummary } from '../types.js';
-import { describeCredentialSource, isSubscriptionBilled } from '../runner/credentials.js';
+import {
+  RunSummarySchema,
+  describeCredentialSource,
+  isSubscriptionBilled,
+  type EvalResult,
+  type RunSummary,
+} from '../types.js';
 
 /** The results file name written into a run directory. */
 export const RESULTS_FILE = 'results.json';

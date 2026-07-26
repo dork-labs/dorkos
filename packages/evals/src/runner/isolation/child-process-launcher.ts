@@ -49,19 +49,37 @@ function delay(ms: number): Promise<void> {
 
 /**
  * Build the launched server's environment: inherit the parent (PATH, HOME so the
- * `claude` binary + its config resolve), pin the sandbox `DORK_HOME`/host/port,
- * confine the server's filesystem boundary to the sandbox, layer the spec's
- * credentialed env, and STRIP the harness's own test-mode flags so a credentialed
- * boot never inherits `TestModeRuntime`.
+ * `claude` binary + its config resolve), layer the spec's credential + model env,
+ * then PIN the four placement variables last, and STRIP the harness's own
+ * test-mode flags so a credentialed boot never inherits `TestModeRuntime`.
  *
- * `DORKOS_BOUNDARY` is not optional here. Without it the server falls back to a
- * boundary of the operator's HOME (`lib/boundary.ts`), and every eval sandbox
- * lives in the OS temp directory, which is outside HOME on both macOS
- * (`/var/folders/…`) and Linux (`/tmp`). So every driven turn was refused with
- * `403 OUTSIDE_BOUNDARY` before it started, on every platform. Pointing the
- * boundary at the sandbox root both fixes that and matches what the docker tier
- * already declares: this server may see its own throwaway sandbox and nothing
- * else.
+ * ## The pins are applied LAST, and that ordering is the containment
+ *
+ * `DORK_HOME`, `DORKOS_BOUNDARY`, `DORKOS_HOST`, and `DORKOS_PORT` decide WHERE
+ * this server lives and what it can touch. They are the harness's to set, not a
+ * case's, so they overwrite `spec.env` rather than being overwritten by it —
+ * exactly what `docker-launcher.ts` already does with the same variables.
+ *
+ * The other direction was reachable: `spec.env` carries `evalCase.serverEnv`, so
+ * a case declaring `serverEnv: { DORKOS_BOUNDARY: '/' }` used to win, silently
+ * pointing a real model-driven server at the whole filesystem — including the
+ * developer's actual `~/.dork`. Everything ELSE in `spec.env` (the resolved
+ * credential, `ANTHROPIC_MODEL`, a case's own feature flags) stays overridable,
+ * which is all a case legitimately needs.
+ *
+ * ## Why `DORKOS_BOUNDARY` must be set at all
+ *
+ * Without it the server falls back to a boundary of the operator's HOME
+ * (`lib/boundary.ts`), and every eval sandbox lives in the OS temp directory,
+ * which is outside HOME on both macOS (`/var/folders/…`) and Linux (`/tmp`). So
+ * every driven turn was refused with `403 OUTSIDE_BOUNDARY` before it started, on
+ * every platform.
+ *
+ * Note this REPLACES an operator's own `DORKOS_BOUNDARY`, not just a missing one.
+ * The sandbox path is disjoint from whatever an operator set, so the pin is not
+ * strictly "narrower" than a narrower setting — it points somewhere else
+ * entirely. That is deliberate: an eval server has no business reading the
+ * operator's project tree, however tightly that tree was already scoped.
  *
  * @param spec - The launch spec (dorkHome, host, port, credentialed env).
  * @returns The child process environment.
@@ -73,11 +91,12 @@ function buildEnv(spec: ServerLaunchSpec): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     // eslint-disable-next-line no-restricted-syntax -- the launcher deliberately inherits the parent env so the spawned server finds PATH/HOME and the `claude` binary; this is the launcher's env carve-out (analogous to the app's env.ts).
     ...process.env,
+    ...spec.env,
+    // Placement + containment: the harness's call, so these land last.
     DORK_HOME: spec.dorkHome,
     DORKOS_BOUNDARY: sandboxRoot,
     DORKOS_HOST: spec.host,
     DORKOS_PORT: String(spec.port),
-    ...spec.env,
   };
   // A credentialed run uses the real claude-code runtime — never the harness's
   // in-process test-mode flags, which would otherwise leak from the parent.
