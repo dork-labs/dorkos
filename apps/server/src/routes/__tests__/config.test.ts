@@ -123,6 +123,49 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('ui.theme')).toBe('dark');
   });
 
+  it('lets a person turn login on and off (the cockpit path)', async () => {
+    // DOR-488: the agent-facing `config_patch` capability refuses posture-bearing
+    // settings, but the guard sits at the CAPABILITY HANDLER, not inside the
+    // shared `applyConfigPatch`. This route is what the cockpit's own enable-login
+    // (`OwnerSetupHost.tsx`) and disable-login (`SecurityPanel.tsx`) flows call, so
+    // if it ever starts refusing, a person can no longer turn login on at all.
+    const { configManager } = await import('../../services/core/config-manager.js');
+
+    const enabled = await request(app)
+      .patch('/api/config')
+      .send({ auth: { enabled: true } })
+      .expect(200);
+    expect(enabled.body.success).toBe(true);
+    expect(enabled.body.config.auth.enabled).toBe(true);
+    expect(configManager.getDot('auth.enabled')).toBe(true);
+
+    const disabled = await request(app)
+      .patch('/api/config')
+      .send({ auth: { enabled: false } })
+      .expect(200);
+    expect(disabled.body.success).toBe(true);
+    expect(configManager.getDot('auth.enabled')).toBe(false);
+  });
+
+  it('lets a person change the other operator-only settings too', async () => {
+    // The rest of the write allowlist, proven not to have leaked onto the human
+    // path: exposure, the MCP endpoint's key, telemetry consent, and the boundary.
+    const response = await request(app)
+      .patch('/api/config')
+      .send({
+        tunnel: { enabled: true },
+        mcp: { apiKey: 'chosen-by-a-person' },
+        telemetry: { usage: false },
+        server: { boundary: '/Users/test-user' },
+      })
+      .expect(200);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.config.tunnel.enabled).toBe(true);
+    expect(response.body.config.telemetry.usage).toBe(false);
+    expect(response.body.config.server.boundary).toBe('/Users/test-user');
+  });
+
   it('returns 400 for invalid theme value', async () => {
     const response = await request(app)
       .patch('/api/config')
