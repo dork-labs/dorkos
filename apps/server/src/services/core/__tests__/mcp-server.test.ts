@@ -78,6 +78,11 @@ vi.mock('../../runtimes/claude-code/mcp-tools/task-tools.js', () => ({
   createUpdateScheduleHandler: stubFactory,
   createDeleteScheduleHandler: stubFactory,
   createGetRunHistoryHandler: stubFactory,
+  // Not handlers: the shared argument descriptions for the two operator-only
+  // fields, which both servers import so they cannot drift (DOR-504).
+  // Registration reads them at build time.
+  REFUSED_PERMISSION_MODE_DESCRIPTION: 'Not yours to set.',
+  REFUSED_STATUS_DESCRIPTION: 'Not yours to set.',
 }));
 
 vi.mock('../../runtimes/claude-code/mcp-tools/relay-tools.js', () => ({

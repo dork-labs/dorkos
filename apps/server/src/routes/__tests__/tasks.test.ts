@@ -11,6 +11,26 @@ vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
 }));
 
+/**
+ * Stand in for the config manager, so these tests run in the default posture
+ * (login off) rather than the fail-closed one.
+ *
+ * Without this the singleton is `undefined` here, and `resolveDecisionAuthority`
+ * FAILS CLOSED by design: `if (!manager) return true` reports login as ENABLED,
+ * so no caller is trusted, every created task parks at `pending_approval`, and
+ * every operator-only write is refused (DOR-504).
+ *
+ * That branch is the actual guarantee, and it is worth stating in preference to
+ * the boot order. `index.ts` does call `initConfigManager` before any router
+ * mounts, but nothing here rests on that: if somebody reordered boot, the
+ * failure would be a visibly broken cockpit that refuses its own writes, never a
+ * caller slipping through as trusted. The fail-closed branch is unconditional;
+ * the line numbers are what rot.
+ */
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+}));
+
 vi.mock('@dorkos/skills/writer', () => ({
   writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
   deleteSkillDir: vi.fn().mockResolvedValue(undefined),

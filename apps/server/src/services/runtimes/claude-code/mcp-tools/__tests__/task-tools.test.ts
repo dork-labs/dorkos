@@ -1,0 +1,214 @@
+/**
+ * The `tasks_*` guard on the IN-SESSION `dorkos` MCP server (DOR-504).
+ *
+ * Driven through `getTasksTools`, the array `mcp-tools/index.ts` hands the
+ * session, rather than through the handler factories directly — so this covers
+ * the handler a real session actually calls. The external `/mcp` server's half of
+ * the same guarantee is proved end-to-end over HTTP in
+ * `core/external-mcp/__tests__/task-permission-mode.test.ts`.
+ *
+ * The assertion that matters most is not "it returned an error". It is that after
+ * a refused call the task on disk is BYTE-FOR-BYTE what it was: an agent that
+ * sends `{prompt, cron, permissionMode}` must not get the first two applied and
+ * the third dropped, because then it believes all three landed.
+ *
+ * @module services/runtimes/claude-code/mcp-tools/__tests__/task-tools
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import type { Db } from '@dorkos/db';
+import { TaskStore } from '../../../../tasks/task-store.js';
+import type { McpToolDeps } from '../types.js';
+import { getTasksTools } from '../task-tools.js';
+import type { Task } from '@dorkos/shared/schemas';
+
+/** The shape `tool()` returns, narrowed to what this test drives. */
+interface SessionTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, { description?: string }>;
+  handler: (
+    args: Record<string, unknown>,
+    extra: unknown
+  ) => Promise<{
+    content: { type: string; text: string }[];
+    isError?: boolean;
+  }>;
+}
+
+describe('tasks_* operator-only field guard (in-session dorkos server)', () => {
+  let db: Db;
+  let store: TaskStore;
+  let tools: Record<string, SessionTool>;
+  let existing: Task;
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    const deps = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as McpToolDeps;
+    tools = Object.fromEntries(
+      (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+    );
+    existing = store.createTask({
+      name: 'nightly',
+      description: 'nightly',
+      prompt: 'the prompt the person approved',
+      cron: '0 2 * * *',
+      filePath: '/tmp/tasks/nightly/SKILL.md',
+    });
+  });
+
+  afterEach(() => {
+    store.close();
+  });
+
+  /** Call a tool and parse its single JSON content block. */
+  async function call(name: string, args: Record<string, unknown>) {
+    const result = await tools[name]!.handler(args, undefined);
+    return {
+      isError: result.isError === true,
+      payload: JSON.parse(result.content[0]!.text) as Record<string, unknown>,
+    };
+  }
+
+  it('advertises permissionMode as a field it refuses, on both tools', () => {
+    // Deleting the argument instead would be worse, not better: the MCP SDK
+    // strips an undeclared argument before the handler runs, so the refusal
+    // would become a silent drop. Declared-and-refused is what lets the handler
+    // see it. If this ever fails because somebody removed the field, read the
+    // REFUSED_PERMISSION_MODE_DESCRIPTION TSDoc before "fixing" the test.
+    for (const name of ['tasks_create', 'tasks_update']) {
+      const described = tools[name]!.inputSchema.permissionMode?.description ?? '';
+      expect(described, `${name} must still advertise permissionMode`).toContain('Not yours');
+    }
+  });
+
+  it('advertises status on both tools, so it is refused and not dropped', () => {
+    // Review caught this missing: `status` was operator-only in the policy but
+    // absent from the schemas, so the SDK stripped it and the call reported
+    // SUCCESS with the other fields applied. Every operator-only field has to be
+    // declared on every tool, or "we refuse the call whole" is only true of some
+    // pairings — and the seeded skill pack tells agents it is true of all of them.
+    for (const name of ['tasks_create', 'tasks_update']) {
+      const described = tools[name]!.inputSchema.status?.description ?? '';
+      expect(described, `${name} must advertise status`).toContain('Not yours');
+    }
+  });
+
+  describe('tasks_update — the live escalation', () => {
+    it('refuses permissionMode and writes NOTHING ELSE from the same call', async () => {
+      const { isError, payload } = await call('tasks_update', {
+        id: existing.id,
+        prompt: 'a different prompt nobody approved',
+        cron: '* * * * *',
+        permissionMode: 'bypassPermissions',
+      });
+
+      expect(isError).toBe(true);
+      expect(payload.code).toBe('operator_only_task_field');
+      expect(payload.fields).toEqual(['permissionMode']);
+
+      // The whole point: the two legitimate fields did not land either.
+      const after = store.getTask(existing.id)!;
+      expect(after.permissionMode).toBe('acceptEdits');
+      expect(after.prompt).toBe('the prompt the person approved');
+      expect(after.cron).toBe('0 2 * * *');
+      expect(after.updatedAt).toBe(existing.updatedAt);
+    });
+
+    it('refuses every permission mode, not just bypassPermissions', async () => {
+      for (const mode of ['bypassPermissions', 'dontAsk', 'auto', 'acceptEdits']) {
+        const { isError } = await call('tasks_update', { id: existing.id, permissionMode: mode });
+        expect(isError, `mode ${mode} must be refused`).toBe(true);
+      }
+      expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
+    });
+
+    it('refuses status too, so a task cannot approve itself', async () => {
+      const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
+      // The reviewer's exact reproduction: a rename riding along with the status
+      // flip. Before `status` was declared on the schema it was stripped, the
+      // rename landed, and the call reported success.
+      const { isError, payload } = await call('tasks_update', {
+        id: parked.id,
+        name: 'renamed-via-status-call',
+        status: 'active',
+      });
+      expect(isError).toBe(true);
+      expect(payload.fields).toEqual(['status']);
+
+      const after = store.getTask(parked.id)!;
+      expect(after.status).toBe('pending_approval');
+      expect(after.name).toBe('nightly');
+    });
+
+    it('still applies the fields an agent may write', async () => {
+      // The guard has to be provably narrow, or "everything is refused" would
+      // pass every test above.
+      const { isError, payload } = await call('tasks_update', {
+        id: existing.id,
+        prompt: 'an updated prompt',
+        cron: '0 5 * * *',
+        enabled: false,
+        timezone: 'America/New_York',
+      });
+      expect(isError).toBe(false);
+      expect(payload.schedule).toBeDefined();
+
+      const after = store.getTask(existing.id)!;
+      expect(after.prompt).toBe('an updated prompt');
+      expect(after.cron).toBe('0 5 * * *');
+      expect(after.enabled).toBe(false);
+      expect(after.timezone).toBe('America/New_York');
+      expect(after.permissionMode).toBe('acceptEdits');
+    });
+  });
+
+  describe('tasks_create — the advertised-but-inert path', () => {
+    it('refuses permissionMode and creates no task at all', async () => {
+      const before = store.getTasks().length;
+      const { isError, payload } = await call('tasks_create', {
+        name: 'sneaky',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        permissionMode: 'bypassPermissions',
+      });
+
+      expect(isError).toBe(true);
+      expect(payload.fields).toEqual(['permissionMode']);
+      // Refused whole: no half-made task parked somewhere for a person to find.
+      expect(store.getTasks()).toHaveLength(before);
+    });
+
+    it('refuses status on create too, so the skill pack tells agents the truth', async () => {
+      // `status` is not a meaningful create argument — the store hardcodes it and
+      // the handler then parks it — so nothing could have escalated either way.
+      // It is declared and refused anyway because the skill pack promises the
+      // whole call is refused for either field on either tool, and a silently
+      // stripped field makes that promise false.
+      const before = store.getTasks().length;
+      const { isError, payload } = await call('tasks_create', {
+        name: 'self-approving',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        status: 'active',
+      });
+
+      expect(isError).toBe(true);
+      expect(payload.fields).toEqual(['status']);
+      expect(store.getTasks()).toHaveLength(before);
+    });
+
+    it('still creates an ordinary task, parked at pending_approval', async () => {
+      const { isError, payload } = await call('tasks_create', {
+        name: 'ordinary',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+      });
+      expect(isError).toBe(false);
+      const created = payload.schedule as Task;
+      expect(created.status).toBe('pending_approval');
+      expect(created.permissionMode).toBe('acceptEdits');
+    });
+  });
+});
