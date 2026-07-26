@@ -110,6 +110,27 @@ const UNGATED_CLAIM =
 /** Any mention of approval — the shape a correct sentence about these has. */
 const APPROVAL_LANGUAGE = /approv/i;
 
+/**
+ * Phrases that CLOSE a list: prose asserting the named actions are all of them.
+ *
+ * Deliberately narrow, and narrowed TWICE by prose that already exists:
+ *
+ * - `managing-agents` says `mesh_unregister` "is the only tool you have for removing
+ *   an agent". That is a scoped claim about removing agents, and it is true, so a
+ *   bare "the only" must not match.
+ * - `scheduling-tasks` opens a section with "Both of these are MCP tools with no
+ *   `dorkos task` equivalent", meaning `tasks_update` and `tasks_delete`. A first
+ *   draft of this regex matched `both of these` and failed on that sentence. `both`
+ *   and `these two` are ordinary English that points at whatever was just listed;
+ *   they are not closure claims about the destructive set, and including them buys
+ *   a false positive per section.
+ *
+ * What is left is phrasing that can only be read as closing a counted set. It is
+ * evadable (see the residuals on the assertion), and that is the accepted side of
+ * the tradeoff.
+ */
+const EXHAUSTIVE_CLAIM = /\bare the (?:two|three|only|ones)\b|\bthe only (?:two|three)\b/i;
+
 /** Blank-line-separated blocks of `body` that name any spelling of `action`. */
 function blocksNaming(body: string, action: DestructiveAction): string[] {
   return body.split(/\n\s*\n/).filter((block) => action.names.some((n) => block.includes(n)));
@@ -168,34 +189,62 @@ describe('operating-skills pack vs everything that stops for a person', () => {
   );
 
   /**
-   * A block that lists destructive actions must list all of them.
+   * Prose that CLOSES the destructive set must close it correctly.
    *
-   * This is the assertion that actually catches the DOR-509 review finding, and it
-   * is structural rather than phrase-matching on purpose. The defect was prose
-   * reading "`tasks_delete` and `mesh_unregister` are the two", which no
-   * ungated-claim regex can see: every word of it is about approval being
-   * REQUIRED. What was wrong was the arithmetic, and the damage was that an agent
-   * reading a closed list of two concludes the third thing is not destructive.
+   * This catches the DOR-509 review finding: "`tasks_delete` and `mesh_unregister`
+   * are the two". No ungated-claim regex can see that sentence, because every word
+   * of it is about approval being REQUIRED. What was wrong was the arithmetic, and
+   * the damage was that an agent reading a closed list of two concludes the third
+   * thing is not destructive.
    *
-   * "Naming two or more" is the signal for a list. One mention is a reference and
-   * stays free; the moment prose enumerates, it has made a completeness claim
-   * whether or not it used a counting word, and the count is checkable. Trying to
-   * match the counting words instead is the brittle version: `managing-agents`
-   * legitimately says `mesh_unregister` "is the only tool you have for removing an
-   * agent", which is a scoped claim about removing agents, not a claim about the
-   * destructive set.
+   * Two scoping decisions, both from review reproducing the failure:
+   *
+   * 1. **The window is the `##` section, not the blank-line block.** The original
+   *    defect passes a block-scoped check the moment it is written as a LOOSE
+   *    markdown list, since every block then names at most one action. That is not
+   *    contrived: `scheduling-tasks` already blank-line-separates the bullets in
+   *    the section that owns `tasks_delete`, so the pack's own house style defeats
+   *    block scoping.
+   * 2. **A closure phrase is required.** Firing on "names two or more" alone taxes
+   *    accurate prose: a `scheduling-tasks` sentence contrasting `tasks_delete`
+   *    with `mesh_unregister` ("if the user wants the agent gone, that is
+   *    `mesh_unregister`, which also waits for an approval") asserts no
+   *    completeness and describes both correctly, yet would be rejected, and the
+   *    only way to satisfy the guard would be to bolt a marketplace non-sequitur
+   *    into a tasks skill. Cross-references between skills are good writing.
+   *
+   * ## Residuals, stated rather than implied away
+   *
+   * **A section can name all three and still lie about one.** Review demonstrated
+   * it: "`marketplace.uninstall` completes on the first call like any other verb;
+   * `tasks_delete` and `mesh_unregister` are the ones that wait for an approval"
+   * satisfies both the count and this file's phrase list, and is the DOR-509 bug
+   * verbatim. No lexical guard closes that, because the claim is semantic and its
+   * vocabulary is unbounded ("completes immediately", "returns right away", "needs
+   * nothing"). Do not add a phrase for that one sentence and call the class closed.
+   * The real closure is a human reading the pack diff, which is why pack changes
+   * are worth reviewing as prose and not only as tests.
+   *
+   * **Closure phrases can be evaded.** "There are exactly 2 destructive tools"
+   * carries none of the phrases below. The tradeoff is deliberate: this direction
+   * fails safe (a missed defect) while dropping the phrase requirement fails loud
+   * and often (rejecting correct prose), and a guard that cries wolf gets deleted.
    */
-  it('never enumerates destructive actions incompletely', () => {
+  it('never closes the destructive set incompletely', () => {
     const allNames = DESTRUCTIVE_ACTIONS.map((a) => a.label);
     for (const skill of OPERATING_SKILLS_PACK) {
-      for (const block of skill.body.split(/\n\s*\n/)) {
-        const named = DESTRUCTIVE_ACTIONS.filter((a) => a.names.some((n) => block.includes(n)));
-        if (named.length < 2) continue;
+      // `## `-delimited sections: the unit a reader actually takes a claim from.
+      for (const section of skill.body.split(/\n(?=## )/)) {
+        if (!EXHAUSTIVE_CLAIM.test(section)) continue;
+        const named = DESTRUCTIVE_ACTIONS.filter((a) => a.names.some((n) => section.includes(n)));
+        if (named.length === 0) continue;
         expect(
           named.length,
-          `${skill.name} lists ${named.length} of the ${DESTRUCTIVE_ACTIONS.length} destructive ` +
-            `actions (${named.map((a) => a.label).join(', ')}), which reads as a complete list ` +
-            `and is not one. Name all of ${allNames.join(', ')}, or mention only one.\n\n${block}`
+          `${skill.name} closes the destructive set ("${EXHAUSTIVE_CLAIM.exec(section)?.[0]}") ` +
+            `while naming ${named.length} of ${DESTRUCTIVE_ACTIONS.length} ` +
+            `(${named.map((a) => a.label).join(', ')}). An agent reading a closed list ` +
+            `concludes the missing one is not destructive. Name all of ${allNames.join(', ')}, ` +
+            `or drop the closure phrase.\n\n${section.slice(0, 600)}`
         ).toBe(DESTRUCTIVE_ACTIONS.length);
       }
     }

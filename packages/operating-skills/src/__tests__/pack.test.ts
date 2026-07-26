@@ -91,7 +91,7 @@ describe('the pack teaches the world as it actually is', () => {
     // causes it touches one digit. A local test cannot close this, because "higher
     // than the merge base" is a fact about two commits, not about the working tree,
     // and a test that skips when the base ref is missing is an inert guard wearing
-    // a green check. It belongs in CI with `fetch-depth: 0` (DOR-542).
+    // a green check. It belongs in CI with `fetch-depth: 0` (DOR-546).
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(6);
   });
 
