@@ -6,6 +6,21 @@ event stream. It never grades the agent's prose.
 
 ## Run them on your machine
 
+In a fresh checkout or a new worktree, build the workspace packages first:
+
+```bash
+pnpm install
+pnpm --filter "./packages/*" build
+```
+
+The harness loads its sibling packages from their built output, and `dist/` is
+not committed. Skip this and the run dies on `ERR_MODULE_NOT_FOUND` before it
+does anything, once for `@dorkos/shared` and then again for
+`@dorkos/marketplace`. It costs nothing but a minute of confusion, and it is the
+first thing a new person meets.
+
+Then:
+
 ```bash
 pnpm evals:local
 ```
@@ -43,10 +58,36 @@ Two lines at the bottom of the table matter more than the rows above them:
 - **CREDENTIAL** says which of the three credentials the run used, so nobody has
   to guess.
 
-`$0.0000` on a local run is normal. Subscription turns do not report a per-turn
-cost, so the harness prints a NOTE rather than a warning. On an API key, `$0.0000`
-is a real symptom (either no turn ran or the cost signal broke), and there you get
-a WARNING instead.
+### What the cost column means, and when it is lying
+
+A case that finished a turn reports what that turn cost. On a Claude
+subscription that number is an estimate of what the same tokens would have cost
+through the API, not money billed to you, because a subscription is spent as
+quota. It is still the only spend figure `--budget` has to work with.
+
+A case that reports **`unmetered`** spent something nobody measured. The only
+cost signal the harness can see rides the frame a turn sends when it ends, so a
+turn killed by the 90-second guard reports nothing at all. Ten measured runs
+made the problem concrete: the two runs that timed out each burned about 92
+seconds and 29 tool calls, and both were recorded as `$0.0000`. They were the
+two most expensive runs of the ten and they printed as the cheapest. The budget
+cap could not see them either, which is backwards, since a runaway loop is the
+exact thing a spend ceiling exists to catch.
+
+So the harness now says unknown instead of zero:
+
+- an `unmetered` row means "real turn, no measurement", never "free";
+- a **SPEND** line appears when a run mixes measured and unmetered cases, saying
+  the printed total is a floor rather than a total;
+- a whole run at `$0.0000` gets a WARNING whichever credential it used, and it
+  says which of the two reasons applies: every turn died before reporting, or
+  turns finished and the cost signal is broken.
+
+There is no way to estimate what an unmetered turn spent. Per-message output
+tokens do reach the stream, but input and cache tokens are the bulk of the bill
+on a tool-heavy turn and neither of those arrives before the turn ends. An
+output-only floor would be low by roughly an order of magnitude, and a confident
+wrong number is worse than a blank.
 
 ## Answering an approval mid-run
 
@@ -89,38 +130,144 @@ or you will conclude the agent is thrashing when it made a single call.
 
 ## Why the tool cases are still quarantined, and how they get out
 
-The harness gap is closed, but promotion is a separate question and the answer is
-still no. All three governance cases have been observed passing against a real
-model, and each also failed at least once on the same prompt for reasons that
-belong entirely to the model: one run improvised `echo` narration instead of
-calling the tool, another looped on `ToolSearch` thirty times until the turn timed
-out. That is tool-choice variance, not a product regression, and a gating case
-that goes red on it would train everyone to ignore it.
+### What ten runs actually showed
 
-**The bar is 5 consecutive passing credentialed runs, per case.** Not "a stable
-pass rate" — a number, because an exit criterion nobody can check is how a
-quarantined case decays into permanent ignored noise. Record results here as you
-get them; a failure resets that case's count to zero.
+Ten credentialed runs against a real model on 2026-07-25, in two parts. The
+counting matters, so here it is in full:
 
-| Case                          | Consecutive passes | Last recorded |
-| ----------------------------- | ------------------ | ------------- |
-| `governance-approval-granted` | 2 of 5             | 2026-07-26    |
-| `governance-approval-denied`  | 1 of 5             | 2026-07-26    |
-| `governance-approval-expires` | 1 of 5             | 2026-07-26    |
+- **2 runs were the falsifiability drill** (below): one where the model drifted,
+  one clean. Both reached oracles.
+- **8 runs were the stability sample**: 3 of `granted`, 3 of `denied`, 2 of
+  `expires`. That is the sample the table further down reports, which is why the
+  table totals 8 rather than 10.
 
-Know what you are spending before you start a streak. `pnpm evals:local` runs
-`--suite core`, which now contains three governance cases rather than one, so a
-developer's own-subscription exposure for a full local run went up accordingly —
-roughly $0.06 per governance case per run on the observed Haiku turns. Narrow with
-`--suite <case-id> --budget <usd>` while working on one.
+Of the 8 stability runs, **6 produced verdicts and 2 did not**. Add the 2 drill
+runs and you get **8 runs that reached an oracle, and all 8 oracle verdicts were
+correct**. That is where "8 for 8" comes from, and it is a different 8 from the
+8-run sample. Check the arithmetic rather than taking it: 6 + 2 = 8 verdicts,
+8 + 2 = 10 runs.
+
+The two runs that produced no verdict **never reached an oracle at all**. Both
+times the model resolved the gated tool's schema, said in its own reasoning that
+it would call the tool, and then searched for the schema again instead.
+Twenty-nine tool calls later the 90-second turn guard cut the turn off. The two
+runs stopped at 91,776ms and 91,778ms, two milliseconds apart, which is a state
+the model falls into rather than random bad luck.
+
+So there are two different things wearing one label. The product mechanism under
+test is stable: every oracle that ran was right. The model's route to it is not.
+
+### The bar counts oracle verdicts, not lucky runs
+
+The old bar was five consecutive passing runs per case. At the measured rate of
+about two passes in three, a five-run streak lands roughly 13% of the time, so a
+green streak would have been luck rather than evidence, and it would have to be
+re-earned after every prompt tweak. It was measuring the model's mood.
+
+**The bar is three runs that reach the oracles, per case, with every oracle green
+in all three.** Still a number, because an exit criterion nobody can check is how
+a quarantined case decays into permanent ignored noise. What changed is what gets
+counted.
+
+- an oracle going red **resets that case to zero**. That is the signal the bar
+  exists to catch, and nothing about it is negotiable;
+- a run classified as **infrastructure** (see below) neither counts nor resets.
+  The harness retries it once automatically;
+- **two infrastructure runs in a row for the same case means stop.** That is a
+  harness problem to fix, not a dice roll to keep paying for.
+
+### What counts as infrastructure, exactly
+
+A result is infrastructure only when all three of these hold (`runner/retry.ts`):
+
+1. its status is `error`, not `fail`. A red oracle scores `fail`, so no oracle
+   verdict can reach this rule at all;
+2. **zero oracles ran.** Not "no reds": none executed. One oracle result of any
+   colour disqualifies it, because once the product has been observed, what was
+   observed is the answer;
+3. the error is exactly the turn-timeout message. A locked session, a rejected
+   trigger, a boundary 403 and a launcher fault each stay a plain error, because
+   any of them can be the product breaking.
+
+This buys one more attempt and nothing else. It never overrides something an
+oracle said, because a run that reached an oracle cannot be retried in the first
+place. It does not exempt a case from the run gate, and a second timeout is still
+an error on the record, shown as `retried:error`. A product bug that hangs a turn
+forever costs one extra attempt and then reports itself as what it is.
+
+Be exact about one thing: if the first attempt times out and the second passes,
+the recorded result is a pass where an un-retried run would have reported an
+error. That is what the retry is for. The claim is about verdicts, not about
+statuses.
+
+### Where each case stands
+
+Reset on 2026-07-25 to the 8-run stability sample above. The counts below are
+runs that reached the oracles with everything green, so they exclude the 2 drill
+runs, which tested the oracles rather than the cases.
+
+| Case                          | Green verdicts | Last recorded | Evidence                              |
+| ----------------------------- | -------------- | ------------- | ------------------------------------- |
+| `governance-approval-granted` | 2 of 3         | 2026-07-25    | 3 runs, 1 timed out before any oracle |
+| `governance-approval-denied`  | 2 of 3         | 2026-07-25    | 3 runs, 1 timed out before any oracle |
+| `governance-approval-expires` | 2 of 3         | 2026-07-25    | 2 runs, both green                    |
+
+The earlier seeded counts were dropped rather than carried forward: two of those
+greens came from the same drill session on the same day, which is one
+confirmation looked at twice.
+
+**Record the run directory when you add a row.** `results.json` and the JSONL
+transcripts under `.evals-runs/<run id>/` are what let a later reader check a row
+instead of believing it. The rows above have no directory to point at, which is
+the gap this column exists to close.
+
+### What a streak costs
+
+`pnpm evals:local` runs `--suite core`, which holds three governance cases. On
+the measured Haiku turns a passing case cost **$0.038 to $0.057**. Budget higher
+than that: a run that drifts costs more, not less. The falsifiability drill's
+diverging run cost **$0.1220**, about 3.2 times a clean pass, and a run that times
+out reports nothing at all while still spending. Narrow with
+`--suite <case-id> --budget <usd>` while working on one case.
+
+### Two things worth knowing about the failure mode
+
+**The 90-second turn guard is the only thing that stops the loop.** `ToolSearch`
+is auto-allowed by the runtime, so it is never offered to the approval driver,
+which means the case's allowlist cannot deny it or cap it. Every observed failure
+was a `ToolSearch` loop, and nothing in the policy layer can reach it.
+
+**The loop is reproducible, so it may be fixable rather than only retryable.**
+Two independent runs stopping two milliseconds apart at the same tool-call count
+is an attractor, not jitter. Retrying is the right response to variance the
+harness cannot control, but this one looks addressable in the prompt or in how
+many tools the turn is shown. Worth an attempt before treating the retry as the
+permanent answer.
 
 ## A new oracle ships with a drill
 
 An oracle that cannot be shown to fail is decoration. So when you add or change
 one, **seed a change that should make it red, confirm it does, remove the seed,
-confirm it goes green, and record the recipe and the dated result in the oracle's
-TSDoc.** Keep it to a few lines; the worked example is the always-allow drill in
-`src/suite/governance.ts`.
+confirm it goes green, and record the recipe in the oracle's TSDoc.** The worked
+example is the always-allow drill in `src/suite/governance.ts`.
+
+A recipe that someone else can actually run has five parts. The governance drill
+was missing three of them, and it is standing guidance for every oracle that
+comes after it:
+
+1. **the seed**: the exact edit that should break the oracle;
+2. **the command**, in full. Flags that look like defaults are not. The
+   governance drill needs `--isolation child-process`, because the case prefers
+   docker and a container cannot see your local Claude sign-in;
+3. **what to expect, separated into what always happens and what varies.** Record
+   the outcome that is structural, and say plainly which reds depend on what the
+   model chose to do that run. A recipe that reports one run's exact set of reds
+   as the expected result will look broken the first time someone repeats it;
+4. **how to tell a reproduction from noise**: the detail that says the drill
+   worked, and the symptom that says the run never got far enough to prove
+   anything and should be repeated;
+5. **where to read the answer.** Selecting only quarantined cases always exits
+   non-zero, so the exit code tells you nothing. Read `results.json`.
 
 This is not ceremony, and the governance suite is the argument for it. That drill
 disproved something the code's own comments asserted twice: the intuitive claim

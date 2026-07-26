@@ -30,6 +30,7 @@ import { httpGetAssert } from '../../oracles/api.js';
 import { selfTestCase } from '../../suite/selftest.js';
 import { widgetRoundTripCase } from '../../suite/ui.js';
 import { BudgetTracker } from '../budget.js';
+import { transcriptNameForAttempt } from '../retry.js';
 import { runEval } from '../run-eval.js';
 
 // The local-sign-in probe shells out to the real `claude` binary. Left real, this
@@ -116,10 +117,30 @@ describe('runEval', () => {
 
     expect(result.status).toBe('pass');
     expect(result.costUsd).toBe(0);
+    // `test-mode` is free BY DESIGN, so its $0 is a measurement, not a gap.
+    expect(result.costUnmetered).toBe(false);
     expect(result.oracleResults.every((r) => r.passed)).toBe(true);
     // The transcript captured both the seed turn and the widget-action turn.
     const tx = await stat(path.join(dir, 'widget-round-trip.jsonl'));
     expect(tx.isFile()).toBe(true);
+  });
+
+  it('writes a retry attempt to its own transcript rather than over the first one', async () => {
+    // The first attempt's frames are the only evidence for classifying it as
+    // infrastructure. A retry that overwrote them would make the classification
+    // unverifiable by the person it is asking to trust it.
+    const { runDir: dir, tracker } = await fixture();
+    const result = await runEval(selfTestCase, {
+      tier: 'test-mode',
+      runId: 'run-retry',
+      runDir: dir,
+      tracker,
+      transcriptName: transcriptNameForAttempt(selfTestCase.id, 2),
+    });
+
+    expect(result.transcript).toBe('harness-selftest.retry.jsonl');
+    expect((await stat(path.join(dir, 'harness-selftest.retry.jsonl'))).isFile()).toBe(true);
+    await expect(stat(path.join(dir, 'harness-selftest.jsonl'))).rejects.toThrow();
   });
 
   it('scores `fail` when an oracle does not pass (a broken assertion is caught)', async () => {
@@ -144,6 +165,9 @@ describe('runEval', () => {
       tracker,
     });
     expect(result.status).toBe('error');
+    // It refused before booting anything, so nothing was spent — an error is not
+    // automatically unmetered spend, or the flag would mean nothing.
+    expect(result.costUnmetered).toBe(false);
     // The message names every way to fix it, not only the env var — a developer
     // who is simply signed out should be told to sign in, not sent hunting for a key.
     expect(result.error).toContain('ANTHROPIC_API_KEY');

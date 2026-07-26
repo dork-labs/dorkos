@@ -8,6 +8,7 @@ import type { SseFrame } from '@dorkos/test-utils';
 import {
   BudgetTracker,
   frameCostUsd,
+  evalCostSignal,
   evalCostUsd,
   parseBudgetUsd,
   VALUELESS_FLAG,
@@ -51,6 +52,21 @@ describe('frameCostUsd / evalCostUsd', () => {
       { event: 'turn_end', data: { type: 'turn_end', seq: 1 } },
     ];
     expect(evalCostUsd(frames)).toBe(0);
+  });
+
+  it('tells "the runtime said zero" from "nothing ever said" (evalCostSignal)', () => {
+    // The distinction the timed-out governance runs needed: a turn killed before
+    // its terminal frame carries no cost frame at all, and reporting that as $0
+    // accounted 92 seconds of real tokens as free.
+    const noSignal: SseFrame[] = [
+      { event: 'turn_start', data: { type: 'turn_start', seq: 0 } },
+      { event: 'tool_call', data: { type: 'tool_call', seq: 1 } },
+    ];
+    expect(evalCostSignal(noSignal)).toBeNull();
+    expect(evalCostUsd(noSignal)).toBe(0);
+
+    // A runtime that genuinely reported zero is a different fact, and stays one.
+    expect(evalCostSignal([usageFrame(0, 1)])).toBe(0);
   });
 });
 

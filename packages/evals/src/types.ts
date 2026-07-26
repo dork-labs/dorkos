@@ -59,9 +59,15 @@ export type IsolationRecord = z.infer<typeof IsolationRecordSchema>;
  * - `local-claude-login`: the `claude` CLI signed in on this machine, inherited
  *   by the child-process tier (the developer's own Claude subscription pays).
  *
- * The distinction is not cosmetic. The two subscription-backed sources report no
- * per-turn cost, so `$0.0000` means something different depending on which one
- * answered — see `report/summary.ts`.
+ * The distinction is about WHO PAYS, and only that. It deliberately says nothing
+ * about whether a turn reports a cost: the SDK computes `total_cost_usd` from
+ * token counts with no auth-mode branch, so every source reports one. On the two
+ * subscription sources that number is a list-price ESTIMATE of what the tokens
+ * would have cost through the API rather than money billed — the subscription is
+ * spent as quota — but it is still the only spend figure `--budget` can enforce
+ * on. An earlier version of this comment claimed subscription turns report
+ * nothing, and `report/summary.ts` downgraded a broken cost signal to a
+ * reassuring note on the strength of it.
  */
 export const CredentialSourceSchema = z.enum([
   'anthropic-api-key',
@@ -82,18 +88,6 @@ export const API_KEY_VAR = 'ANTHROPIC_API_KEY';
  * literal name, never an input.
  */
 export const OAUTH_TOKEN_VAR = 'CLAUDE_CODE_OAUTH_TOKEN';
-
-/**
- * Whether a credential source bills a Claude subscription rather than the
- * Anthropic API. Subscription turns report no per-turn cost, so `$0.0000` on
- * such a run is expected rather than a missing-signal symptom.
- *
- * @param source - The resolved credential source.
- * @returns True for the two subscription-backed sources.
- */
-export function isSubscriptionBilled(source: CredentialSource): boolean {
-  return source === 'claude-oauth-token' || source === 'local-claude-login';
-}
 
 /** One human-readable line per source, for run output. */
 const CREDENTIAL_SOURCE_LABELS: Record<CredentialSource, string> = {
@@ -506,8 +500,26 @@ export const EvalResultSchema = z.object({
   isolation: IsolationRecordSchema.optional(),
   /** The eval's cost class. */
   costClass: CostClassSchema,
-  /** Cumulative USD cost the runtime reported for this eval (0 for `test-mode`). */
+  /**
+   * Cumulative USD cost the runtime reported for this eval (0 for `test-mode`).
+   *
+   * Read it together with {@link EvalResultSchema}'s `costUnmetered`: when that
+   * is true this number is a FLOOR, not a measurement.
+   */
   costUsd: z.number().nonnegative(),
+  /**
+   * True when this eval drove a real turn but no cost signal ever arrived, so
+   * `costUsd` under-reports what was actually spent.
+   *
+   * The cost the harness can see rides `status_change` frames, and a turn that
+   * dies on the timeout guard never emits the frame carrying its total. Two
+   * measured runs each burned about 92 seconds and 29 tool calls and were
+   * recorded as `$0.0000` — the two most expensive runs of the ten, accounted as
+   * free, and invisible to `--budget`. A pathological loop is the exact thing a
+   * spend ceiling exists to catch, so the harness now says "unknown" instead of
+   * "zero". An under-reported total is worse than an absent one.
+   */
+  costUnmetered: z.boolean().default(false),
   /** Wall-clock duration in milliseconds. */
   durationMs: z.number().nonnegative(),
   /** Per-oracle results with their evidence. */
@@ -519,7 +531,15 @@ export const EvalResultSchema = z.object({
    * (the landing state for flaky evals and the connector evals until W5).
    */
   quarantined: z.boolean().default(false),
-  /** True when the eval was retried once (flake policy) before this result. */
+  /**
+   * True when this result came from a SECOND attempt, because the first one hit
+   * the infrastructure signature in `runner/retry.ts` (the turn timed out before
+   * any oracle ran).
+   *
+   * The result is always the second attempt's, whatever it says — including a
+   * worse one. A retry buys the case another chance to REACH its oracles; it
+   * never launders an oracle's verdict.
+   */
   retried: z.boolean().default(false),
   /** Runner/infra error message when `status` is `error`. */
   error: z.string().optional(),

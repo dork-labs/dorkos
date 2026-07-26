@@ -9,11 +9,7 @@
  * container, and its absence together with both variables is still a hard no.
  */
 import { describe, it, expect, vi } from 'vitest';
-import {
-  isSubscriptionBilled,
-  describeCredentialSource,
-  type CredentialSource,
-} from '../../types.js';
+import { describeCredentialSource, type CredentialSource } from '../../types.js';
 import {
   resolveModelCredential,
   noCredentialMessage,
@@ -91,13 +87,6 @@ describe('resolveModelCredential', () => {
 });
 
 describe('credential reporting', () => {
-  it('marks both subscription-backed sources, and only those', () => {
-    expect(isSubscriptionBilled('local-claude-login')).toBe(true);
-    expect(isSubscriptionBilled('claude-oauth-token')).toBe(true);
-    // An API key bills an API account, so $0.0000 there is a real symptom.
-    expect(isSubscriptionBilled('anthropic-api-key')).toBe(false);
-  });
-
   it('describes each source in a line that says who pays', () => {
     expect(describeCredentialSource('local-claude-login')).toContain(
       'your own Claude subscription'

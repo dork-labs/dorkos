@@ -29,6 +29,7 @@ function result(over: Partial<EvalResult>): EvalResult {
     runtimeTier: 'test-mode',
     costClass: 'free',
     costUsd: 0,
+    costUnmetered: false,
     durationMs: 12,
     oracleResults: [],
     quarantined: false,
@@ -123,8 +124,8 @@ describe('formatSummaryTable', () => {
     expect(shortRow.indexOf('test-mode')).toBe(tierColumn);
   });
 
-  it('WARNS when an API-KEY run reported no cost at all', () => {
-    // A real turn always reports cumulative cost, so $0.0000 across a whole
+  it('WARNS when a credentialed run completed turns and still reported no cost', () => {
+    // A completed turn reports cumulative cost, so $0.0000 across a whole
     // credentialed run means no turn ran or the signal is missing — either way
     // the spend cap was never exercised. Silence here is the same shape as the
     // cleared-budget defect one layer down: a run that spends nothing looks
@@ -135,24 +136,106 @@ describe('formatSummaryTable', () => {
       credentialSource: 'anthropic-api-key',
       totalCostUsd: 0,
     });
-    expect(table).toMatch(/WARNING: this claude-code-cheap run reported \$0\.0000/);
+    expect(table).toMatch(/WARNING: this claude-code-cheap run reported \$0\.0000 across every/);
     expect(table).toMatch(/not evidence about spend/);
   });
 
-  it('does NOT warn about $0.0000 on a local subscription run, but still says the cap did not gate', () => {
-    // Subscription turns report no per-turn cost, so $0.0000 is the EXPECTED
-    // reading on the ordinary local path. Warning here would be a false alarm on
-    // every developer's run, and a warning that always fires gets ignored — which
-    // is how the real API-key symptom would then slip past.
+  it('WARNS on a $0.0000 LOCAL SIGN-IN run too, and says the turns died before reporting', () => {
+    // The old behaviour printed a reassuring NOTE here, on the belief that
+    // subscription turns report no per-turn cost. They do: ten measured runs on
+    // a local sign-in reported $0.0380-$0.1220 per case. So the one credential
+    // where a broken cost signal is most likely to be seen was the one where the
+    // harness talked the reader out of looking.
     const table = formatSummaryTable({
-      ...summary([result({ id: 'governance-approval-gate', runtimeTier: 'claude-code-cheap' })]),
+      ...summary([
+        result({
+          id: 'governance-approval-granted',
+          runtimeTier: 'claude-code-cheap',
+          status: 'error',
+          costUnmetered: true,
+        }),
+      ]),
       tier: 'claude-code-cheap',
       credentialSource: 'local-claude-login',
       totalCostUsd: 0,
     });
-    expect(table).not.toMatch(/WARNING/);
-    expect(table).toMatch(/NOTE: this run reported \$0\.0000/);
-    expect(table).toMatch(/not evidence about spend/);
+    expect(table).not.toMatch(/NOTE/);
+    expect(table).toMatch(/no turn survived long enough to report a cost/);
+    expect(table).toMatch(/not because nothing was spent/);
+  });
+
+  it('shows a retry on screen, alongside the outcome and the quarantine flag', () => {
+    // The promotion rule says two infrastructure runs in a row means stop and
+    // fix the harness. A flag that lives only in results.json cannot carry a
+    // rule people are meant to act on: nobody opens the JSON to discover a
+    // question they did not know to ask.
+    const table = formatSummaryTable(
+      summary([
+        result({ id: 'plain-retry', status: 'error', retried: true }),
+        result({
+          id: 'governance-approval-granted',
+          status: 'error',
+          retried: true,
+          quarantined: true,
+        }),
+      ])
+    );
+    expect(table).toMatch(/retried:error/);
+    // Both qualifiers survive together; neither replaces the outcome.
+    expect(table).toMatch(/quarantined:retried:error/);
+  });
+
+  it('renders an unmetered eval as `unmetered`, never as $0.0000', () => {
+    // The two priciest runs of a measured ten printed as the cheapest rows in
+    // the table. A cost cell must not state the opposite of what is known.
+    const table = formatSummaryTable({
+      ...summary([
+        result({
+          id: 'governance-approval-granted',
+          runtimeTier: 'claude-code-cheap',
+          status: 'error',
+          costUnmetered: true,
+          durationMs: 91_776,
+        }),
+      ]),
+      tier: 'claude-code-cheap',
+      totalCostUsd: 0,
+    });
+    expect(table).toMatch(/unmetered/);
+    expect(table).not.toMatch(/\$0\.0000\s+91776ms/);
+  });
+
+  it('says the printed total is a FLOOR when metered and unmetered cases are mixed', () => {
+    // The measured shape: eight cases reported cost, two burned ~92 seconds each
+    // and reported nothing. The total at the bottom looks like the run's spend.
+    const table = formatSummaryTable({
+      ...summary([
+        result({ id: 'a', runtimeTier: 'claude-code-cheap', costUsd: 0.038 }),
+        result({
+          id: 'b',
+          runtimeTier: 'claude-code-cheap',
+          status: 'error',
+          costUnmetered: true,
+        }),
+      ]),
+      tier: 'claude-code-cheap',
+      totalCostUsd: 0.038,
+    });
+    expect(table).toMatch(/SPEND: 1 of 2 case\(s\) drove a real turn that never reported a cost/);
+    expect(table).toMatch(/is a floor, not a total/);
+  });
+
+  it('does not repeat the floor line when the total is already $0.0000', () => {
+    // The zero-total warning has said it. A second line saying the same thing is
+    // how a reader learns to skim past the first.
+    const table = formatSummaryTable({
+      ...summary([
+        result({ id: 'a', runtimeTier: 'claude-code-cheap', status: 'error', costUnmetered: true }),
+      ]),
+      tier: 'claude-code-cheap',
+      totalCostUsd: 0,
+    });
+    expect(table).not.toMatch(/SPEND:/);
   });
 
   it('names the credential the run actually used', () => {
