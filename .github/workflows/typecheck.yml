@@ -1,6 +1,8 @@
 name: typecheck
 
-# Type-checks the whole monorepo on every PR and on push to main.
+# Type-checks every package that declares a `typecheck` script, on every PR
+# and on push to main. See the KNOWN GAP note below for what this does not
+# cover.
 #
 # Before this workflow existed, NOTHING in CI ran `pnpm typecheck`. Enforcement
 # was the lefthook pre-commit hook plus a developer choosing to run
@@ -25,8 +27,9 @@ name: typecheck
 # produced by combining both PRs' merges — a per-PR diff can't see an
 # interaction between two PRs it doesn't know about. Only a full run against
 # `main`'s actual tip (which is what a PR's merge commit or a push to main
-# represents) can catch that. Plain `turbo typecheck`, no `--affected`, mirrors
-# what `pnpm typecheck` runs on a developer's own machine.
+# represents) can catch that. Plain `turbo typecheck`, no `--affected`, is the
+# same turbo invocation the root `pnpm typecheck` script runs, minus the local
+# `dotenv` wrapper (there's no `.env` on a runner).
 #
 # NO separate build step: `typecheck` declares `dependsOn: ["^build"]` in
 # turbo.json, so `turbo typecheck` already builds every dependency package
@@ -35,6 +38,11 @@ name: typecheck
 # would make the job either not build shared dists at all (false-red `TS6053`
 # on every downstream import) or need a hand-maintained second build step that
 # duplicates what turbo already does correctly.
+#
+# KNOWN GAP: this only covers packages that declare a `typecheck` script.
+# `dorkos` (packages/cli, the published npm package) does not — it builds
+# with esbuild, which strips types without checking them, and it is
+# currently red under `tsc --noEmit`. Tracked as DOR-530.
 on:
   push:
     branches: [main]
@@ -72,5 +80,5 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Typecheck every package
-        run: pnpm exec turbo typecheck
+      - name: Typecheck every package that declares a typecheck script
+        run: pnpm exec turbo typecheck --continue
