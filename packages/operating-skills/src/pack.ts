@@ -40,8 +40,16 @@ export interface OperatingSkill {
  *   verb was "the person's ungated path" and to stay off it. That was true when
  *   written and is not any more: the route behind it now answers to the same
  *   approval gate, so the sentence had to stop describing a hole that is closed.
+ * - 5: the pack stops calling a `destructive` tool ungated (DOR-509). Version 4
+ *   told every agent that `tasks_delete` "carries no gate of its own". It has been
+ *   `destructive` since DOR-468 and stops for a person, so the pack was teaching
+ *   agents not to warn anybody before an irreversible delete, and to read a refusal
+ *   as a malfunction rather than an answer. Same round: `operating-dorkos` now says
+ *   that hand-registered tools carry tiers too (the catalog not listing one is not
+ *   the same as it being ungated), and `managing-agents` gained the missing
+ *   `mesh_unregister` section, the other `destructive` tool.
  */
-export const OPERATING_SKILLS_VERSION = 4;
+export const OPERATING_SKILLS_VERSION = 5;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
