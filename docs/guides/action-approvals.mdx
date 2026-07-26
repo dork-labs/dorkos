@@ -58,9 +58,11 @@ Three things an agent asks for will wait for you today:
 - **Installing a package**
 - **Creating a new package** in your personal marketplace
 
-Everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a setting: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
+Everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a preference: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
 
 The rule is about the action, not about which agent asked.
+
+One set of settings is neither of those things. Agents are refused them outright, with no card and no way to say yes. See [Settings your agents cannot change](#settings-your-agents-cannot-change).
 
 <Callout type="warn">
   **Some tools are not covered yet.** Agents also get tools for scheduled tasks, agent-to-agent
@@ -77,6 +79,46 @@ Each action DorkOS does cover carries a size label on its card, so you can tell 
 | **Read only**        | Only reads. You will not be asked about these at all.             |
 | **Changes things**   | Changes something you can change back.                            |
 | **Cannot be undone** | There is no undo. Removing an installed package is the one today. |
+
+## Settings your agents cannot change
+
+Most settings are preferences, and an agent can change one on your word. A few are not preferences. They decide who can reach this DorkOS, what it can reach on your computer, where your keys go, and what leaves the machine:
+
+- Whether **Require login** is on
+- Your public web address, and the ngrok account it runs through
+- Whether the tool endpoint answers, and the key that guards it
+- Your provider credentials, and the addresses they get sent to
+- The DorkOS account this instance is linked to
+- The folder DorkOS is allowed to touch, and the programs it is allowed to start
+- Your privacy choices
+
+Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself in Settings. Three of these settings can still be reached by another route, which the second note below explains.
+
+<Callout type="warn">
+  **How well this holds depends on Require login, and it is worth knowing which half you have.**
+
+With **Require login** on, only a person signed in to DorkOS can change these settings **through the
+settings screen**. A program holding one of your API keys is refused there just like an agent,
+because a key proves an account, not a person at the keyboard.
+
+With **Require login** off, which is the default, it holds against any agent that says who it is,
+and that is how agents normally run. It does **not** hold against a program on your computer that
+deliberately hides that it is an agent. That program looks exactly like you clicking a toggle in
+Settings, and with no password anywhere, DorkOS has nothing left to tell the two apart. This is the
+same gap as the one below, and turning on **Require login** is what closes it.
+
+</Callout>
+
+<Callout type="warn">
+  **Not every one of these settings is guarded everywhere yet, and the unguarded paths are wide
+  open.** Three of them have their own separate buttons that write the same setting by another path:
+  connecting a model provider, starting your public web address, and linking this instance to a
+  DorkOS account. Those paths have **no agent check at all**. Not "they accept an API key" — they do
+  not ask who is calling in the first place, so an agent that says plainly who it is can use them,
+  with **Require login** on or off. Reaching them still takes a terminal or the ability to make web
+  requests to DorkOS, which is the same access the gap further down describes. So read this as: the
+  settings screen is guarded, those three buttons are not yet. We are closing them separately.
+</Callout>
 
 ## What about an agent that does not say who it is?
 

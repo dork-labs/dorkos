@@ -279,7 +279,7 @@ export const CONFIG_WRITE_POLICY = {
   // them on removes the card in front of an irreversible action for a whole
   // window, and lengthening the window widens the same hole, so both sit exactly
   // on the line this module states. `operator-only` is NECESSARY here but not
-  // SUFFICIENT — see REQUIRES_COOKIE_CONFIG_PATHS.
+  // SUFFICIENT — see REQUIRES_LOGIN_CONFIG_PATHS.
   'approvals.standingGrants': 'operator-only',
   'approvals.trustWindowMinutes': 'operator-only',
 
@@ -304,46 +304,59 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
 export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
 
 /**
- * Config paths whose write needs a SESSION COOKIE on top of the `operator-only`
- * verdict above (spec `agent-approval-settings` §3.0-3.1).
+ * Config paths that may not be written at all while local login is OFF, on top of
+ * the `operator-only` verdict above (spec `agent-approval-settings` §3.0-3.1,
+ * narrowed by DOR-505).
  *
- * ## Why `operator-only` is not enough on its own
+ * ## What DOR-505 took away from this list, and what it could not
  *
- * That verdict is enforced unconditionally on the capability surface
- * (`operator-tool-handlers.ts`), but on `PATCH /api/config` it sits inside
- * `if (!trustedCaller(...))`, and a caller that omits its agent header and its
- * approval token clears `trustedCaller` under the default `local-trust` posture.
- * So for these paths the route checks a cookie as well, BEFORE that block and
- * regardless of its outcome.
+ * This started life as `REQUIRES_COOKIE_CONFIG_PATHS`: `approvals.*` needed a
+ * session cookie, while every other `operator-only` path made do with the
+ * `trustedCaller` escape on `PATCH /api/config`. DOR-505 gave the cookie
+ * requirement to EVERY `operator-only` path under login-on, so the cookie half of
+ * this list is now the general rule and has been deleted rather than kept as a
+ * second check on the same writes.
  *
- * ## Deliberately just this one subtree
+ * What survives is the half the general rule does not reach. That rule allows any
+ * caller while login is off, because with no accounts there is no cookie to ask
+ * for. For an ordinary setting that is the accepted residual. For these paths it
+ * would be wrong, but be precise about WHY, because the imprecise version gets
+ * this list deleted:
  *
- * The same divergence is real for `auth.enabled`, `tunnel.*`, `mcp.*` and the
- * rest, and it is not closed here: extending the cookie requirement to those
- * would change behavior for flows this change has not examined. That work is
- * DOR-505.
+ * **This is a forward-looking guard, not a fix for a live escalation.** Writing
+ * `approvals.standingGrants` today changes no behavior whatsoever. Nothing
+ * enforces a standing permission yet: the tier gate has no grant lookup,
+ * `ApprovalGrantService.findLive` has no production caller, and
+ * `POST /api/approvals/:id/grant` refuses `standing: true` for EVERY caller with
+ * `STANDING_GRANTS_NOT_YET_ENFORCED`. So a pre-armed switch buys an attacker
+ * nothing until the gate lookup ships.
  *
- * ## This list is meant to be temporary
+ * What makes it worth guarding anyway is that the write PERSISTS and nothing
+ * sweeps it: `revokeStandingGrantsIfPostureNarrowed` only fires on a narrowing,
+ * never on a widening. So an agent can set the switch now and it is still set on
+ * the day enforcement lands and the person turns login on, with the setting
+ * reading as something they chose. Guarding a field before it becomes load-bearing
+ * is the cheap moment to do it; the expensive moment is after.
  *
- * When DOR-505 closes the header-stripping residual for operator-only config
- * writes generally, this list becomes a second overlapping check on the same
- * writes and should be DELETED, not left in place. Whoever implements DOR-505
- * owns removing it and folding `approvals.*` into the general rule. Written down
- * because the way parallel mechanisms survive forever is that nobody ever
- * recorded that one supersedes the other.
+ * Stated this plainly on purpose. A reader who tests the "attack" today finds it
+ * inert, and if the only justification on offer had been "this is live", they
+ * would rightly conclude the guard is theatre and delete it. Which is exactly the
+ * failure the note this replaced was written to prevent.
+ *
+ * So the two mechanisms no longer overlap: this one asks "is login on", the
+ * general rule asks "with login on, is this a person". They compose.
  *
  * It does NOT cover the cookie requirement on creating a standing permission
  * itself. That one is a property of the approvals routes, not of the config write
  * path, and it stands on its own.
  */
-export const REQUIRES_COOKIE_CONFIG_PATHS: readonly string[] = [
+export const REQUIRES_LOGIN_CONFIG_PATHS: readonly string[] = [
   'approvals.standingGrants',
   'approvals.trustWindowMinutes',
 ];
 
-/** The `error` field every cookie-required refusal on a config write carries. */
-export const REQUIRES_COOKIE_CONFIG_ERROR =
-  'Only a person signed in to DorkOS can change standing permissions';
+/** The `error` field every login-required refusal on a config write carries. */
+export const REQUIRES_LOGIN_CONFIG_ERROR = 'Standing permissions need Require login turned on';
 
 /**
  * Every dot-path a patch object touches, including a path that ends at an empty
@@ -406,8 +419,8 @@ export function findOperatorOnlyPaths(patch: unknown): string[] {
 }
 
 /**
- * Find the settings a patch tries to write that additionally need a session
- * cookie ({@link REQUIRES_COOKIE_CONFIG_PATHS}).
+ * Find the settings a patch tries to write that additionally need local login to
+ * be on ({@link REQUIRES_LOGIN_CONFIG_PATHS}).
  *
  * Matches the same way {@link findOperatorOnlyPaths} does, so `{ approvals: {} }`
  * and `{ approvals: true }` are caught as ancestors rather than sliding past a
@@ -418,8 +431,8 @@ export function findOperatorOnlyPaths(patch: unknown): string[] {
  * @returns The offending policy paths, sorted, each named once. Empty when the
  *   patch touches none of them.
  */
-export function findCookieRequiredPaths(patch: unknown): string[] {
-  return findGuardedPaths(patch, REQUIRES_COOKIE_CONFIG_PATHS);
+export function findLoginRequiredPaths(patch: unknown): string[] {
+  return findGuardedPaths(patch, REQUIRES_LOGIN_CONFIG_PATHS);
 }
 
 /**
