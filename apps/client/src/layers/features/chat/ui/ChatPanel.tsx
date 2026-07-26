@@ -13,7 +13,12 @@ import { useRuntimeChip } from '@/layers/features/status';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
-import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
+import {
+  useSessionId,
+  useSessionStatus,
+  useDirectoryState,
+  sessionKeys,
+} from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
@@ -117,7 +122,7 @@ export function ChatPanel({
       setSessionId(newId);
       // Invalidate stale session metadata so the new key fetches immediately
       // instead of waiting for TanStack Query's staleTime to expire.
-      queryClient.invalidateQueries({ queryKey: ['session', newId] });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.bySession(newId) });
     },
     [setSessionId, queryClient]
   );
@@ -130,7 +135,7 @@ export function ChatPanel({
   const handleSessionIdChangeReplace = useCallback(
     (canonicalId: string) => {
       setSessionId(canonicalId, { replace: true });
-      queryClient.invalidateQueries({ queryKey: ['session', canonicalId] });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.bySession(canonicalId) });
     },
     [setSessionId, queryClient]
   );

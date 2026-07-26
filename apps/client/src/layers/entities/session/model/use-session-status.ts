@@ -1,15 +1,18 @@
 import { useCallback, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { useModels } from './use-models';
+import { useSessionDetail } from './use-session-detail';
 import {
   useSessionSettingsOverride,
   useSessionSettingsOverridesStore,
   type SessionSettingsOverride,
 } from './session-settings-overrides';
-// Same-slice import via the sibling module (not the entities/session barrel) to
+// Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
+import { sessionKeys } from '../api/query-keys';
 import { deriveContextPercent } from '../lib/context-health';
+import { resolvePermissionMode } from '../lib/permission-mode';
 import type {
   Session,
   SessionStatusEvent,
@@ -70,12 +73,7 @@ export function useSessionStatus(
   const applyOverrides = useSessionSettingsOverridesStore((s) => s.apply);
   const clearOverrides = useSessionSettingsOverridesStore((s) => s.clear);
 
-  const { data: session } = useQuery({
-    queryKey: ['session', sessionId, selectedCwd],
-    queryFn: () => transport.getSession(sessionId!, selectedCwd ?? undefined),
-    staleTime: 30_000,
-    enabled: !!sessionId,
-  });
+  const { data: session } = useSessionDetail(sessionId);
 
   // Derive default model from useModels() data — no hardcoded fallback
   const defaultModel =
@@ -101,7 +99,7 @@ export function useSessionStatus(
   const fastMode = overrides.fastMode ?? session?.fastMode ?? false;
 
   const statusData: SessionStatusData = {
-    permissionMode: overrides.permissionMode ?? session?.permissionMode ?? 'default',
+    permissionMode: resolvePermissionMode(overrides.permissionMode, session?.permissionMode),
     model,
     effort,
     fastMode,
@@ -130,7 +128,7 @@ export function useSessionStatus(
       try {
         const updated = await transport.updateSession(sessionId, opts, selectedCwd ?? undefined);
         queryClient.setQueryData(
-          ['session', sessionId, selectedCwd],
+          sessionKeys.detail(sessionId, selectedCwd),
           (old: Session | undefined) => ({
             ...old,
             ...updated,

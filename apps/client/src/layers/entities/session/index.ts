@@ -28,6 +28,12 @@ export { useSessionId } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
 export { useSessionStatus } from './model/use-session-status';
 export type { SessionStatusData } from './model/use-session-status';
+// Query-key factory — the one place a session cache key is built, so a reader
+// can never look in an entry no writer fills (DOR-482).
+export { sessionKeys } from './api/query-keys';
+// Permission mode — the single client answer to "will this agent ask me first?".
+export { useSessionDetail, useSessionPermissionMode } from './model/use-session-detail';
+export { isBypassPermissionMode } from './lib/permission-mode';
 // The store itself is published (tests reset it between cases); the per-session
 // selector and its types stay slice-private — `useSessionStatus` is the only
 // legitimate reader of a pending change.
