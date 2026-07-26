@@ -70,8 +70,9 @@ first. Changing another agent's identity is a bigger action than tuning your own
 
 ## Remove an agent (tier: destructive)
 
-\`mesh_unregister\` is the only way to remove an agent, and it takes more than its
-name suggests: it deletes the agent's \`.dork/agent.json\` from disk, tears down its
+\`mesh_unregister\` is the only tool you have for removing an agent (a person can
+also do it from the cockpit), and it takes more than its name suggests: it
+deletes the agent's \`.dork/agent.json\` from disk, tears down its
 message endpoint (undelivered messages included), and turns off its scheduled
 tasks. It is \`destructive\` tier, so it does NOT run until a person approves it. The
 first call returns the \`approval_required\` payload described in operating-dorkos;
