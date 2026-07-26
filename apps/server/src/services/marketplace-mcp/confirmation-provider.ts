@@ -9,8 +9,10 @@
  *    (Claude Code, Cursor, Codex). Issues short-lived single-use tokens; the
  *    user approves out-of-band in the DorkOS UI; the agent re-calls the tool
  *    with the token.
- * 2. {@link InAppConfirmationProvider} — for in-process callers that wire a
- *    callback to the existing `InstallConfirmationDialog` from spec 03.
+ * 2. {@link InAppConfirmationProvider} — wires a callback to the existing
+ *    `InstallConfirmationDialog` from spec 03, for an in-process caller that
+ *    wants one. No boot path constructs it today; it is exercised only by
+ *    this module's own tests and `tool-install.test.ts`.
  *
  * ## There is no third one, and that is deliberate
  *

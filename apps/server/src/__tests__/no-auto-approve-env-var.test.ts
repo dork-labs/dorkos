@@ -21,15 +21,18 @@
  *
  * ## Scope, and what is deliberately outside it
  *
- * `apps/server/src` (where it was read) and `packages/` (where every one of its
- * eight remaining references lived, in the eval harness). Both, not either: a
- * guard covering only one of them would look identical from the outside and
- * would miss half the surface it exists to protect.
+ * `apps/server/src` (where it was read), `packages/` (where every one of its
+ * eight remaining references lived, in the eval harness), `.github` (the one
+ * place this kind of variable historically wanted to live, as a workflow env
+ * entry), and `contributing/` and `docs/` (where the retirement itself needs
+ * documenting, not re-introducing). All five, not any one: a guard covering
+ * only some of them would look identical from the outside and would miss the
+ * rest of the surface it exists to protect.
  *
- * `specs/` is deliberately NOT covered. Those mentions are a record of what was
- * true when they were written, and rewriting history to make a guard pass is
- * how a repo loses the ability to explain itself. `decisions/`, `research/`, and
- * `changelog/` are out for the same reason.
+ * `specs/`, `decisions/`, `research/`, and `changelog/` are deliberately NOT
+ * covered. Those mentions are a record of what was true when they were
+ * written, and rewriting history to make a guard pass is how a repo loses the
+ * ability to explain itself.
  *
  * ## This file does not exempt itself
  *
@@ -51,19 +54,24 @@ import { fileURLToPath } from 'node:url';
  */
 const RETIRED_ENV_VAR = ['MARKETPLACE', 'AUTO', 'APPROVE'].join('_');
 
-/** The two trees the guard covers, relative to the repository root. */
-const SCOPES = ['apps/server/src', 'packages'];
+/** The trees the guard covers, relative to the repository root. */
+const SCOPES = ['apps/server/src', 'packages', '.github', 'contributing', 'docs'];
 
 /** Repository root, resolved from this file rather than from the cwd. */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 /**
- * Tracked files under `scopes` whose working-tree contents mention `needle`.
+ * Tracked AND untracked files under `scopes` whose working-tree contents
+ * mention `needle`.
  *
- * `git grep` searches TRACKED files in the working tree, which is what makes the
- * result both correct and cheap: build output (`dist/`) and `node_modules/` are
- * gitignored and therefore invisible, so no hand-maintained skip list can rot,
- * and an uncommitted reintroduction is still caught.
+ * `git grep --untracked` searches tracked files in the working tree plus
+ * untracked-but-not-ignored ones, which is what makes the result both correct
+ * and cheap: build output (`dist/`) and `node_modules/` are gitignored and
+ * therefore still invisible, so no hand-maintained skip list can rot, but a
+ * brand-new file nobody has `git add`ed yet is no longer invisible too — a
+ * plain (untracked-blind) `git grep` catches an uncommitted edit to a tracked
+ * file but misses an uncommitted new file with the same string, which is a
+ * gap `--untracked` closes.
  *
  * A `git` failure THROWS rather than returning an empty list. A guard that
  * quietly reports "nothing found" when it could not look is worse than no guard,
@@ -74,11 +82,11 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
  * @param scopes - Pathspecs to search within, relative to the repository root.
  * @returns Repository-relative paths of every file that mentions it.
  */
-function trackedFilesMentioning(needle: string, scopes: string[]): string[] {
+function filesMentioning(needle: string, scopes: string[]): string[] {
   try {
     const stdout = execFileSync(
       'git',
-      ['grep', '--files-with-matches', '-F', needle, '--', ...scopes],
+      ['grep', '--untracked', '--files-with-matches', '-F', needle, '--', ...scopes],
       {
         cwd: REPO_ROOT,
         encoding: 'utf-8',
@@ -94,9 +102,9 @@ function trackedFilesMentioning(needle: string, scopes: string[]): string[] {
 }
 
 describe('the marketplace auto-approve environment variable stays retired', () => {
-  it('is mentioned nowhere under apps/server/src or packages/', () => {
+  it('is mentioned nowhere under any covered tree', () => {
     expect(
-      trackedFilesMentioning(RETIRED_ENV_VAR, SCOPES),
+      filesMentioning(RETIRED_ENV_VAR, SCOPES),
       `The retired ${RETIRED_ENV_VAR} environment variable came back. It selected a ` +
         'confirmation provider that approved every marketplace install, uninstall, and ' +
         'package creation without asking anyone — a shipped way to switch a consent gate ' +
@@ -107,15 +115,15 @@ describe('the marketplace auto-approve environment variable stays retired', () =
     ).toEqual([]);
   });
 
-  it('would report a reintroduction in EITHER covered tree, not just one', () => {
+  it('would report a reintroduction in EVERY covered tree, not just one', () => {
     // The guard above is a green that proves nothing on its own: an empty list is
-    // also what a broken search returns. So prove the search works, in both
-    // scopes independently — a guard scoped to only one of them would pass the
+    // also what a broken search returns. So prove the search works, in each
+    // scope independently — a guard scoped to only some of them would pass the
     // test above identically.
     //
-    // `import` is chosen because it is guaranteed to be everywhere in both trees.
+    // `import` is chosen because it is guaranteed to be everywhere in every tree.
     for (const scope of SCOPES) {
-      expect(trackedFilesMentioning('import', [scope]).length).toBeGreaterThan(0);
+      expect(filesMentioning('import', [scope]).length).toBeGreaterThan(0);
     }
   });
 });

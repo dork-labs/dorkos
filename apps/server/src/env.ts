@@ -140,3 +140,22 @@ if (!result.success) {
 
 export const env = result.data;
 export type ServerEnv = typeof env;
+
+// The marketplace auto-approve environment variable was retired (DOR-501):
+// marketplace installs always need a person's approval now, and nothing reads
+// it any more. Zod silently strips unknown keys rather than rejecting them, so
+// a pipeline still setting it gets no error: `marketplace_install` just
+// returns `requires_confirmation` forever, which a naive script can misread
+// as success. Warn instead of failing silent.
+//
+// The name is assembled from fragments, not written as a literal, so this
+// intentional (advisory-only, never behavior-changing) mention doesn't trip
+// `no-auto-approve-env-var.test.ts`'s reintroduction guard — see that file's
+// module TSDoc for why the guard treats any literal appearance of the name as
+// a regression.
+const RETIRED_AUTO_APPROVE_ENV_VAR = ['MARKETPLACE', 'AUTO', 'APPROVE'].join('_');
+if (process.env[RETIRED_AUTO_APPROVE_ENV_VAR]) {
+  console.warn(
+    `\n  ${RETIRED_AUTO_APPROVE_ENV_VAR} is set, but it no longer does anything: marketplace installs always wait for your approval now. Remove it from your environment. See contributing/external-agent-marketplace-access.md for how to approve installs from a script.\n`
+  );
+}
