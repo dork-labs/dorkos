@@ -75,7 +75,11 @@ The chain, all of it on the default posture:
 
 **The consequence, stated rather than hidden: standing permissions require `auth.enabled`.** With login off there is no cookie, so there is no way to tell the operator from an agent on the same machine, and "trust this agent" is not a statement the system can evaluate. Better to say that plainly than to ship a control that appears to distinguish callers it cannot distinguish.
 
-**One piece of plumbing this needs.** `RequestUser` carries only `userId` today (`session-gate.ts:40-43`), so which credential produced it is not recoverable downstream. `verifyRequestAuth` already has the two branches separated: the cookie returns at `session-gate.ts:98`, the API key at `session-gate.ts:114`. Each gains a `credential: 'cookie' | 'api-key'` field. This also closes the login-on residual `decision-authority.ts:25-32` names, where a program holding a per-user API key and shedding its agent header satisfies every existing check.
+**One piece of plumbing this needs: three edits.** `RequestUser` carries only `userId` today (`session-gate.ts:40-43`), so which credential produced it is not recoverable downstream. The change is the interface field plus both value-returning sites, which `verifyRequestAuth` already has separated: the cookie returns at `session-gate.ts:98`, the API key at `session-gate.ts:114`. Each return gains a `credential: 'cookie' | 'api-key'` value.
+
+Nothing else in the repository constructs a `RequestUser` object literal, so adding a required field breaks no call site and no test. That is what makes it safe to make the field required rather than optional, and required is what matters: an optional field defaults to `undefined`, and a cookie check that reads `undefined` as "not a cookie" would be correct by accident rather than by type.
+
+This also closes the login-on residual `decision-authority.ts:25-32` names, where a program holding a per-user API key and shedding its agent header satisfies every existing check.
 
 **Behavior with login off**, specified so it cannot be quietly softened into something that looks like it works:
 
@@ -84,7 +88,7 @@ The chain, all of it on the default posture:
 - Server-side, both paths refuse independently of the UI, with code `standing_grants_require_login`. The UI state is a courtesy; the refusal is the guarantee. A guard that lived only in the client would be the same "true because a field is absent" pattern §3.8 exists to eliminate.
 - **Turning login off revokes every live grant**, exactly as turning the master switch off does, and the disable-login confirmation says so. Leaving grants dormant across a posture change would let them wake up later under a posture that can no longer justify them.
 
-**Scope note.** This spec makes `approvals.*` cookie-only. It does **not** fix the general `trustedCaller` divergence at `routes/config.ts:231` for the other operator-only paths (`auth.enabled`, `tunnel.*`, `mcp.*` and the rest), which is real, is already reproduced, and belongs to DOR-467/DOR-474 rather than here. Filed separately; named here so it is not mistaken for something this spec closed.
+**Scope note.** This spec makes `approvals.*` cookie-only. It does **not** fix the general `trustedCaller` divergence at `routes/config.ts:231` for the other operator-only paths (`auth.enabled`, `tunnel.*`, `mcp.*` and the rest), which is real, is already reproduced, and belongs to DOR-505 rather than here. Filed separately; named here so it is not mistaken for something this spec closed.
 
 ### 3.1 The setting, in user config
 
@@ -114,7 +118,11 @@ Both tables carry drift guards that fail the build when a new leaf has no verdic
 
 **`operator-only` is necessary here but not sufficient**, which is the whole of §3.0. That verdict is enforced unconditionally on the capability surface (`operator-tool-handlers.ts:211`) but only conditionally on the HTTP route (`routes/config.ts:231-232`), where a caller that clears `trustedCaller` skips it. So `approvals.*` carries a second requirement on top: a patch touching it needs a **session cookie**, checked in `routes/config.ts` before the existing `trustedCaller` block and regardless of its outcome.
 
-This is expressed as a small named list, `REQUIRES_COOKIE_CONFIG_PATHS`, covering the `approvals` subtree, with a drift guard asserting every leaf under `approvals` in `UserConfigSchema` appears in it. Deliberately scoped to this one subtree rather than generalized: extending the cookie requirement to the other `operator-only` paths would change behavior for flows this spec has not examined, and it belongs to DOR-467/DOR-474.
+This is expressed as a small named list, `REQUIRES_COOKIE_CONFIG_PATHS`, covering the `approvals` subtree, with a drift guard asserting every leaf under `approvals` in `UserConfigSchema` appears in it. Deliberately scoped to this one subtree rather than generalized: extending the cookie requirement to the other `operator-only` paths would change behavior for flows this spec has not examined, and it belongs to DOR-505.
+
+**`REQUIRES_COOKIE_CONFIG_PATHS` is meant to be temporary, and this is the note that says so.** DOR-505 closes the header-stripping residual for operator-only config writes generally. When it lands, this list becomes redundant for every path it covers, and it should be **deleted**, not left in place as a second overlapping check on the same writes. Whoever implements DOR-505 owns removing it and folding `approvals.*` into the general rule. Recorded here because the way parallel mechanisms survive forever is that nobody ever wrote down that one supersedes the other, and this repo does not tolerate that.
+
+One thing DOR-505 does **not** remove: the requirement that grant creation itself needs a cookie (§3.5). That is a property of the approvals routes, not of the config write path, and it stands on its own.
 
 **What is deliberately NOT in config:** the grants themselves. They are operational state with a creation time, an expiry, and a revocation, and spec `agent-trust` already resolved this exact shape: "Approval persistence? **(RESOLVED)** SQLite table (derived data, not user-owned files)" (`specs/agent-trust/02-specification.md:97`). Keeping them out of config has a second benefit: nothing about _which_ agents are trusted can ever leak through `config_get`.
 
@@ -161,7 +169,7 @@ Expiry is **absolute from the moment of the grant and never slides on use**. A s
 The grant check goes inside `enforceCapabilityTier` (`apps/server/src/services/core/capabilities/tier-enforcement.ts:479`), positioned deliberately:
 
 1. `observe` returns allowed, unchanged (`:491`).
-2. The `tierCeiling` check runs, unchanged (`:496-498` and the refusal it builds). **The grant check goes after it, so a grant can never lift a ceiling.** A ceiling refusal is already `approvable: false`, meaning no human decision can unlock it; a standing permission must not be able to either. (Honest note: nothing sets a ceiling below `destructive` today, so this invariant is structural, not currently active. See §What this does not cover.)
+2. The `tierCeiling` check runs, unchanged (`:493-498` and the refusal it builds). **The grant check goes after it, so a grant can never lift a ceiling.** A ceiling refusal is already `approvable: false`, meaning no human decision can unlock it; a standing permission must not be able to either. (Honest note: nothing sets a ceiling below `destructive` today, so this invariant is structural, not currently active. See §What this does not cover.)
 3. **New:** resolve a live grant, when and only when all three hold: the caller presented an identity, `approvals.standingGrants` is on, and `findLive(identity.agentPath, capability.id)` returns a row.
 4. `act` returns allowed as before (`:518`), but now carries the resolved grant on the decision.
 5. `destructive` with a live grant returns allowed, audited as auto-approved.
@@ -185,7 +193,10 @@ export type GrantedApproval =
 
 Its two consumers both survive the change, but neither is quite "unaffected", so state each:
 
-- `callerContext` (`marketplace-capabilities.ts:83-95`) already tests **two** proofs, not one: `context.approval || context.trusted` (`:93`). It tests for presence, not shape, so the union passes through it unchanged. The thing to be careful about in implementation is not breaking the `context.trusted` arm while editing the `context.approval` arm: they are different proofs of the same fact and the trusted one has nothing to do with grants.
+- `callerContext` (`marketplace-capabilities.ts:83-95`) already tests **two** proofs, not one: `context.approval || context.trusted` (`:93`). It tests for presence, not shape, so the union passes through it unchanged. The `context.trusted` arm is a different proof of the same fact and has nothing to do with grants, so editing the `context.approval` arm must not disturb it.
+
+  **Care is not a guarantee, so this gets an assertion.** Saying "be careful" here would be the exact pattern §3.8 exists to eliminate: an invariant that holds because nobody has broken it yet. A test pins `context.trusted` yielding `preApproved: true`, and it must land **before** the union change so that it is red if the change breaks the arm. A test written after the change it protects has never been red and proves nothing. See Testing Strategy and phase 2.
+
 - The attribution observer's metadata (`apps/server/src/services/core/agent-identity/capability-attribution.ts:72-76`) reads `approvalId` directly, so it is updated to record which of the two allowed the call.
 
 ### 3.4 The marketplace confirmation step honors the same grant
@@ -295,6 +306,10 @@ Also assert the negative that keeps the feature usable: with login on and a cook
 
 **The two firewall guards in §3.8**, which are the tests that keep the settled decisions true rather than merely currently true.
 
+**The `context.trusted` arm, pinned before it is touched.** `callerContext` must yield `preApproved: true` for a trusted caller. Assert it directly, and **land the assertion before the `GrantedApproval` union change**, so it is capable of going red on the change it exists to protect. Written afterwards it would only ever have been green, which is not evidence of anything.
+
+Note for whoever implements it: this arm may currently be **unreachable in production**. Markers are minted at only two routes, and those routes call the marketplace flows directly rather than through `registry.invoke`, which is what populates a handler context. That is reasoned, not traced, so treat it as a lead rather than a fact, and do not use it as a reason to skip the test. A dead arm is still worth preserving (the trusted path is how the cockpit avoids asking a person twice) and an unreachable arm is exactly the kind that rots silently. If implementation confirms it is unreachable, say so in the PR rather than deleting the arm on a hunch.
+
 **Integration.** A destructive call with a live grant proceeds with no card and produces exactly one Activity record. An `act` call covered by a grant clears the marketplace confirmation step too, which is the §3.4 claim and the one most likely to be quietly wrong. Turning the master switch off mid-flight makes the very next call ask again.
 
 **Drift guards.** The two config classification tables (which already fail on an unclassified leaf), plus the `MARKETPLACE_AUTO_APPROVE` absence guard.
@@ -321,7 +336,7 @@ Stated plainly, in the manner of `docs/guides/action-approvals.mdx:91-108`.
 
 1. **With login off, standing permissions do not exist at all.** That is the §3.0 resolution, and it is the honest one: in that posture DorkOS cannot tell the person in the cockpit from anything else running as the same user (`decision-authority.ts:34-58`), so it cannot evaluate "trust this agent". The control is visible and disabled, not silently absent.
 2. **With login on, this still does not stop code that already runs as you.** Requiring a cookie stops a header-stripping HTTP caller, which is the specific hole §3.0 closes. It does not stop something with filesystem access from editing `~/.dork/config.json` or writing a grant row into the database directly. Nothing on the same machine can stop that, and this spec does not claim to.
-3. **The general `trustedCaller` divergence is untouched.** `routes/config.ts:231` still lets a header-stripping caller skip the operator-only check for every path that is not `approvals.*`, including `auth.enabled`, `tunnel.*`, and `mcp.*`. This spec narrows the hole for its own setting; it does not close it. That work is DOR-467/DOR-474.
+3. **The general `trustedCaller` divergence is untouched.** `routes/config.ts:231` still lets a header-stripping caller skip the operator-only check for every path that is not `approvals.*`, including `auth.enabled`, `tunnel.*`, and `mcp.*`. This spec narrows the hole for its own setting; it does not close it. That work is DOR-505.
 4. **A standing permission really does reduce safety.** That is the point of it. It is a deliberate trade, bounded by one agent, one action, and a clock.
 5. **It does nothing about tools inside a session.** Writing files and running commands are governed by permission mode, which this spec deliberately keeps separate.
 6. **Most agent tools are not gated at all, so this cannot loosen or tighten them.** Scheduled tasks, agent-to-agent messages, agent discovery, and extensions still do not ask, exactly as the guide already warns (`docs/guides/action-approvals.mdx:65-71`).
@@ -338,7 +353,7 @@ Stated plainly, in the manner of `docs/guides/action-approvals.mdx:91-108`.
 
 0. **The cookie bar (§3.0)**: the `credential` field on `RequestUser` and its two assignments, the cookie requirement on grant creation and on `approvals.*` writes, `REQUIRES_COOKIE_CONFIG_PATHS` and its drift guard, and the FM1 chain reproduced as a test. **First, and on its own.** It is the smallest piece, it is the one a reviewer most needs to see in isolation, and everything after it is unsafe to merge without it.
 1. **Config and store**: the two config leaves with both classifications and the migration, the `approval_grants` table, `ApprovalGrantService`, the `requestedByPath` column.
-2. **Enforcement and audit**: the gate lookup, the `GrantedApproval` union (minding the `context.trusted` arm), the marketplace context threading, the audit extension, the routes, and both firewall guards from §3.8.
+2. **Enforcement and audit**, in this order within the phase: **first** the assertion that a trusted caller yields `preApproved: true`, green against the code as it stands; **then** the `GrantedApproval` union, so that assertion is what catches a broken `context.trusted` arm. After those: the gate lookup, the marketplace context threading, the audit extension, the routes, and both firewall guards from §3.8.
 3. **Surfaces**: the third card button, the login-off disabled state, the header indicator section, the Security panel, the three permission-mode clarifiers, the SSE event and its allowlist entry.
 4. **Retirement**: migrate all eight `MARKETPLACE_AUTO_APPROVE` references, delete the variable, then add the absence guard, and update the docs.
 
