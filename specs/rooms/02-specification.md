@@ -198,7 +198,18 @@ Real per-account scoping arrives with accounts.
 
 `GET /api/rooms/:id/events` — same three-part contract as the session stream (`apps/server/src/routes/session-events-handler.ts:94-254` is the reference): snapshot on cold connect, gap-free replay from `Last-Event-ID`, then live. Cursor format `<roomId>-<epoch>-<seq>`, validated against the process `STREAM_EPOCH` exactly as `parseResumeCursor` does (`:64-83`), so a cursor minted by a dead process is rejected rather than silently mis-replayed.
 
-Room lifecycle events (created, archived, member added/removed, `lastActivityAt` bumped) fan out on the existing global `GET /api/events`.
+Room lifecycle events fan out on the existing global `GET /api/events` under five names: `room_created`, `room_updated`, `room_member_added`, `room_member_removed`, `room_activity`.
+
+**Two streams, two jobs — and broadcasting is only half of each.** A name the server broadcasts but the client does not list in `GENERIC_EVENTS` (`apps/client/src/layers/shared/lib/transport/stream-manager.ts`) is dispatched nowhere and dropped with no error. R1 shipped the broadcasts without the allowlist entries and the events went nowhere until `6516c0234` (#509) fixed it. **A new global event name is not done until it appears in both places**, and `sse-event-allowlist.test.ts` is the guard that proves it. Keep the names string literals — that guard reads raw source and cannot see a name built at runtime.
+
+The division of labour, which is easy to get backwards:
+
+| Stream                      | Carries                                                                                 | Consumer                                       |
+| --------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `GET /api/rooms/:id/events` | a room's **entries** — snapshot, `Last-Event-ID` replay, live, per-room monotonic `seq` | the open room's message list (`useRoomStream`) |
+| `GET /api/events`           | the five **signals** above                                                              | the sidebar's room list                        |
+
+The global names exist for a reader **not** currently connected to a room: the list changing, and an activity bump that reorders it and marks it unread. Do not drive an open room's message list from global events, and do not drive the sidebar from a per-room subscription. The precedent to mirror is the global session-stream bridge that keeps `['sessions','recent']` fresh (ADR-0265).
 
 **Ephemeral signals never enter the room log.** Typing, presence, read receipts, delivery receipts, progress and backpressure are delivered live and dropped on replay. They reuse `SignalTypeSchema` (`packages/shared/src/relay-envelope-schemas.ts:21`) rather than declaring new names.
 
