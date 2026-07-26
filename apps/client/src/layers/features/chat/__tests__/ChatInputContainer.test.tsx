@@ -126,6 +126,7 @@ const baseProps = {
   handleSubmit: vi.fn(),
   submitContent: vi.fn(),
   tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
+  commandPending: false,
   status: 'idle' as const,
   sessionBusy: false,
   stop: vi.fn(),
@@ -309,5 +310,50 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
 
     const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
     expect(panelProps.sendBlockedReason).toBe('An attachment did not upload');
+  });
+});
+
+describe('ChatInputContainer — sending takes the palette down with it (DOR-479)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // An open palette used to swallow Enter, and `onCommandSelect` closed the
+  // panel on its way out after finding no row. Now that Enter falls through and
+  // sends when there is nothing to pick, nothing else would take the "No
+  // commands found." card down — `detectTrigger` only runs on typing or a caret
+  // move — so it floated over the agent's reply until the next keystroke.
+  it('dismisses the palettes when the composer submits', () => {
+    const dismissPalettes = vi.fn();
+    const handleSubmit = vi.fn();
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
+        handleSubmit={handleSubmit}
+        input="/zzz"
+      />
+    );
+
+    lastChatInputProps().onSubmit!();
+
+    expect(dismissPalettes).toHaveBeenCalledOnce();
+    expect(handleSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('dismisses the palettes when the composer queues mid-stream', () => {
+    const dismissPalettes = vi.fn();
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
+        status="streaming"
+        input="/zzz"
+      />
+    );
+
+    lastChatInputProps().onQueue!();
+
+    expect(dismissPalettes).toHaveBeenCalledOnce();
   });
 });

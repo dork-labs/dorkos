@@ -6,7 +6,7 @@ import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model'
 
 // Mock useIsMobile — default to mobile
 const mockUseIsMobile = vi.fn(() => true);
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }));
 
@@ -132,9 +132,19 @@ vi.mock('@/layers/shared/model/app-store', () => ({
   },
 }));
 
-// Mock child components
+// Mock child components. The composer forwards a real handle so the tests can
+// see WHICH focus entry point the panel reaches for.
+const chatInputFocus = vi.fn();
+const chatInputFocusIfDesktop = vi.fn();
 vi.mock('../ui/input/ChatInput', () => ({
-  ChatInput: vi.fn(() => <div data-testid="chat-input">ChatInput</div>),
+  ChatInput: React.forwardRef<unknown, Record<string, unknown>>(function MockChatInput(_p, ref) {
+    React.useImperativeHandle(ref, () => ({
+      focus: chatInputFocus,
+      focusUnlessTouch: chatInputFocusIfDesktop,
+      focusAt: vi.fn(),
+    }));
+    return <div data-testid="chat-input">ChatInput</div>;
+  }),
 }));
 
 vi.mock('../ui/MessageList', () => ({
@@ -236,5 +246,35 @@ describe('ChatPanel suggestion-chip slot', () => {
     mockChatStatus = 'idle';
     rerender(<ChatPanel sessionId="test" />);
     expect(screen.getByTestId('suggestion-chip')).toBeTruthy();
+  });
+});
+
+describe('ChatPanel composer focus', () => {
+  // The composer's own mount autofocus has always been guarded (touch devices
+  // pop the software keyboard and scroll the view). ChatPanel then focused it
+  // through the handle on mount, on every session switch, and again on
+  // `?prompt=` seeding — with no mobile check — so the guard only ever
+  // protected the dashboard and onboarding composers.
+  it('reaches for the guarded focus, never the unguarded one, on mount', () => {
+    render(<ChatPanel sessionId="test" />);
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
+  });
+
+  it('reaches for the guarded focus on a session switch', () => {
+    const { rerender } = render(<ChatPanel sessionId="test" />);
+    chatInputFocusIfDesktop.mockClear();
+    chatInputFocus.mockClear();
+
+    rerender(<ChatPanel sessionId="other" />);
+
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
+  });
+
+  it('reaches for the guarded focus when a launch prompt seeds the composer', () => {
+    render(<ChatPanel sessionId="test" launchPrompt="re-run this" />);
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
   });
 });

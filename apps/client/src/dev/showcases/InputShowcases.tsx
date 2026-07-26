@@ -106,6 +106,9 @@ function ChatInputDemo({
             queueDepth={queueDepth}
             onStop={() => {}}
             onQueue={() => {}}
+            // The composer only renders its clear affordance when a host wires
+            // one; without this every showcase silently lost the X.
+            onClear={() => setValue('')}
           />
         </div>
       </ShowcaseDemo>

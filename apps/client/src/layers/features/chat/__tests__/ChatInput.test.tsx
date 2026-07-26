@@ -1,16 +1,57 @@
 // @vitest-environment jsdom
+import { createRef } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { ChatInput } from '../ui/input/ChatInput';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { ChatInput, type ChatInputHandle } from '../ui/input/ChatInput';
 
-/** Flipped by the mobile tests; read by the `matchMedia` mock below. */
-let isMobileViewport = false;
+/**
+ * The emulated device, read per query by the `matchMedia` mock below.
+ *
+ * Deliberately three independent facts rather than one "is mobile" boolean.
+ * Width and pointer are different questions — that separation is the whole
+ * point of `useIsTouchOnly` — and a stub returning one blanket answer for every
+ * query cannot fail on the case this exists for: a narrow desktop window, which
+ * is coarse-pointer FALSE and max-width-767 TRUE at the same time.
+ */
+interface EmulatedDevice {
+  width: number;
+  /** `(pointer: coarse)` — the PRIMARY pointer is a finger. */
+  primaryPointerCoarse: boolean;
+  /** `(any-pointer: fine)` — some mouse, trackpad, or stylus is attached. */
+  hasFinePointer: boolean;
+}
+
+const DESKTOP: EmulatedDevice = { width: 1280, primaryPointerCoarse: false, hasFinePointer: true };
+/** A desktop window dragged beside an editor: narrow, but still a real mouse. */
+const NARROW_DESKTOP: EmulatedDevice = {
+  width: 700,
+  primaryPointerCoarse: false,
+  hasFinePointer: true,
+};
+const PHONE: EmulatedDevice = { width: 390, primaryPointerCoarse: true, hasFinePointer: false };
+/** iPad + Magic Keyboard: coarse primary pointer, but a trackpad is attached. */
+const TABLET_WITH_TRACKPAD: EmulatedDevice = {
+  width: 1024,
+  primaryPointerCoarse: true,
+  hasFinePointer: true,
+};
+
+let device: EmulatedDevice = DESKTOP;
+
+/** Answer one media query against {@link device}. */
+function evaluateMediaQuery(query: string): boolean {
+  if (query.includes('(pointer: coarse)')) return device.primaryPointerCoarse;
+  if (query.includes('(any-pointer: fine)')) return device.hasFinePointer;
+  const maxWidth = /max-width:\s*(\d+)px/.exec(query);
+  if (maxWidth) return device.width <= Number(maxWidth[1]);
+  return false;
+}
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: isMobileViewport,
+      matches: evaluateMediaQuery(query),
       media: query,
       onchange: null,
       addListener: vi.fn(),
@@ -60,7 +101,7 @@ function renderWithCaret(props: Parameters<typeof ChatInput>[0], caret?: number)
 }
 
 beforeEach(() => {
-  isMobileViewport = false;
+  device = DESKTOP;
 });
 
 afterEach(() => {
@@ -186,22 +227,25 @@ describe('ChatInput', () => {
   });
 
   it('clear button works during streaming', () => {
-    render(<ChatInput {...defaultProps} value="hello" isStreaming={true} />);
+    render(<ChatInput {...defaultProps} value="hello" isStreaming={true} onClear={vi.fn()} />);
     const btn = screen.getByLabelText('Clear message');
     expect(btn.className).not.toContain('pointer-events-none');
   });
 
   describe('palette-open keyboard handling', () => {
+    /** An open palette that actually has rows to pick from. */
+    const openPalette = { isPaletteOpen: true, paletteHasResults: true };
+
     it('calls onArrowDown when ArrowDown pressed and palette open', () => {
       const onArrowDown = vi.fn();
-      render(<ChatInput {...defaultProps} isPaletteOpen={true} onArrowDown={onArrowDown} />);
+      render(<ChatInput {...defaultProps} {...openPalette} onArrowDown={onArrowDown} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
       expect(onArrowDown).toHaveBeenCalledOnce();
     });
 
     it('calls onArrowUp when ArrowUp pressed and palette open', () => {
       const onArrowUp = vi.fn();
-      render(<ChatInput {...defaultProps} isPaletteOpen={true} onArrowUp={onArrowUp} />);
+      render(<ChatInput {...defaultProps} {...openPalette} onArrowUp={onArrowUp} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
       expect(onArrowUp).toHaveBeenCalledOnce();
     });
@@ -213,7 +257,7 @@ describe('ChatInput', () => {
         <ChatInput
           {...defaultProps}
           value="/daily"
-          isPaletteOpen={true}
+          {...openPalette}
           onCommandSelect={onCommandSelect}
           onSubmit={onSubmit}
         />
@@ -225,27 +269,82 @@ describe('ChatInput', () => {
 
     it('calls onCommandSelect on Tab when palette open', () => {
       const onCommandSelect = vi.fn();
-      render(
-        <ChatInput {...defaultProps} isPaletteOpen={true} onCommandSelect={onCommandSelect} />
-      );
+      render(<ChatInput {...defaultProps} {...openPalette} onCommandSelect={onCommandSelect} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Tab' });
       expect(onCommandSelect).toHaveBeenCalledOnce();
     });
 
     it('calls onEscape on Escape when palette open', () => {
       const onEscape = vi.fn();
-      render(<ChatInput {...defaultProps} isPaletteOpen={true} onEscape={onEscape} />);
+      render(<ChatInput {...defaultProps} {...openPalette} onEscape={onEscape} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(onEscape).toHaveBeenCalledOnce();
     });
 
     it('does not call onCommandSelect on Shift+Enter when palette open', () => {
       const onCommandSelect = vi.fn();
-      render(
-        <ChatInput {...defaultProps} isPaletteOpen={true} onCommandSelect={onCommandSelect} />
-      );
+      render(<ChatInput {...defaultProps} {...openPalette} onCommandSelect={onCommandSelect} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', shiftKey: true });
       expect(onCommandSelect).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('palette open with no matches', () => {
+    // Typing `/zzz` (or `@zzz`) leaves the panel on screen reading "No commands
+    // found." — an open palette with nothing to select. Enter used to be
+    // intercepted anyway, find no row, close the palette and send nothing.
+    it('sends on Enter instead of swallowing it', () => {
+      const onSubmit = vi.fn();
+      const onCommandSelect = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="/zzz"
+          isPaletteOpen={true}
+          paletteHasResults={false}
+          onSubmit={onSubmit}
+          onCommandSelect={onCommandSelect}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSubmit).toHaveBeenCalledOnce();
+      expect(onCommandSelect).not.toHaveBeenCalled();
+    });
+
+    it('queues on Enter mid-stream instead of swallowing it', () => {
+      const onQueue = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="@zzz"
+          isStreaming={true}
+          isPaletteOpen={true}
+          paletteHasResults={false}
+          onQueue={onQueue}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onQueue).toHaveBeenCalledOnce();
+    });
+
+    it('still lets Escape dismiss the empty panel without arming the draft wipe', () => {
+      const onEscape = vi.fn();
+      const onClear = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="/zzz"
+          isPaletteOpen={true}
+          paletteHasResults={false}
+          onEscape={onEscape}
+          onClear={onClear}
+        />
+      );
+      const combobox = screen.getByRole('combobox');
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      fireEvent.keyDown(combobox, { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledTimes(2);
+      expect(onClear).not.toHaveBeenCalled();
     });
   });
 
@@ -334,20 +433,20 @@ describe('ChatInput', () => {
 
   describe('clear button', () => {
     it('is visible when text exists', () => {
-      render(<ChatInput {...defaultProps} value="hello" />);
+      render(<ChatInput {...defaultProps} value="hello" onClear={vi.fn()} />);
       expect(screen.getByLabelText('Clear message')).toBeDefined();
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).not.toContain('pointer-events-none');
     });
 
     it('is hidden when empty', () => {
-      render(<ChatInput {...defaultProps} value="" />);
+      render(<ChatInput {...defaultProps} value="" onClear={vi.fn()} />);
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).toContain('pointer-events-none');
     });
 
     it('is visible during streaming (clear works while agent responds)', () => {
-      render(<ChatInput {...defaultProps} value="hello" isStreaming={true} />);
+      render(<ChatInput {...defaultProps} value="hello" isStreaming={true} onClear={vi.fn()} />);
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).not.toContain('pointer-events-none');
     });
@@ -357,6 +456,29 @@ describe('ChatInput', () => {
       render(<ChatInput {...defaultProps} value="hello" onClear={onClear} />);
       fireEvent.click(screen.getByLabelText('Clear message'));
       expect(onClear).toHaveBeenCalledOnce();
+    });
+
+    // The dashboard and onboarding composers wire no onClear. The X rendered
+    // anyway — half opacity, enabled, tab-reachable, onClick undefined.
+    it('is not rendered at all when no onClear is wired', () => {
+      render(<ChatInput {...defaultProps} value="hello" />);
+      expect(screen.queryByLabelText('Clear message')).toBeNull();
+    });
+
+    // Losing the button must not mean losing the ability to clear. The wipe
+    // edits this component's own textarea, so the host's onChange carries the
+    // empty value out whether or not it wired a handler — which is what makes
+    // dropping the dead X safe rather than a removal of function.
+    it('still clears on Escape-Escape with no onClear wired', () => {
+      stubExecCommand();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'hello' });
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+      // jsdom stops here: its `execCommand` stub cannot fire the native `input`
+      // event a real browser would, so the host's `onChange` round-trip is
+      // browser-verified rather than asserted here.
+      expect(textarea.value).toBe('');
+      expect(screen.queryByLabelText('Clear message')).toBeNull();
     });
   });
 
@@ -379,6 +501,7 @@ describe('ChatInput', () => {
     });
 
     it('second Escape within 500ms calls onClear when text exists', () => {
+      stubExecCommand();
       const onClear = vi.fn();
       const onEscape = vi.fn();
       render(
@@ -394,6 +517,29 @@ describe('ChatInput', () => {
       fireEvent.keyDown(combobox, { key: 'Escape' });
       fireEvent.keyDown(combobox, { key: 'Escape' });
       expect(onClear).toHaveBeenCalledOnce();
+    });
+
+    // The wipe is two taps behind a key someone hammers to stop a runaway turn,
+    // so it has to be recoverable. A `setState` rewrite of the controlled value
+    // is invisible to Cmd+Z; only an execCommand edit pushes an undo entry.
+    it('empties the field through execCommand so Cmd+Z can bring the draft back', () => {
+      const exec = stubExecCommand();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'hello', onClear: vi.fn() });
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+      expect(exec).toHaveBeenCalledWith('insertText', false, '');
+      expect(textarea.value).toBe('');
+    });
+
+    it('selects the whole draft before wiping it, so nothing survives the edit', () => {
+      stubExecCommand();
+      const { textarea } = renderWithCaret(
+        { ...defaultProps, value: 'one\ntwo', onClear: vi.fn() },
+        0
+      );
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+      fireEvent.keyDown(textarea, { key: 'Escape' });
+      expect(textarea.value).toBe('');
     });
 
     it('second Escape after 500ms does not call onClear', () => {
@@ -502,7 +648,7 @@ describe('ChatInput', () => {
     });
 
     it('hides clear button when sessionBusy is true', () => {
-      render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} />);
+      render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} onClear={vi.fn()} />);
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).toContain('pointer-events-none');
     });
@@ -858,7 +1004,7 @@ describe('ChatInput', () => {
     });
 
     it('eats the backslash on mobile too, so the text matches every platform', () => {
-      isMobileViewport = true;
+      device = PHONE;
       const exec = stubExecCommand();
       const { textarea } = renderWithCaret({ ...defaultProps, value: 'foo\\' });
       fireEvent.keyDown(textarea, { key: 'Enter' });
@@ -888,6 +1034,7 @@ describe('ChatInput', () => {
         ...defaultProps,
         value: '/daily\\',
         isPaletteOpen: true,
+        paletteHasResults: true,
         onCommandSelect,
       });
       fireEvent.keyDown(textarea, { key: 'Enter' });
@@ -914,6 +1061,7 @@ describe('ChatInput', () => {
         ...defaultProps,
         value: '/dai',
         isPaletteOpen: true,
+        paletteHasResults: true,
         onCommandSelect,
       });
       fireEvent.keyDown(textarea, { key: 'Enter', altKey: true });
@@ -932,6 +1080,7 @@ describe('ChatInput', () => {
           value="hello"
           isStreaming={true}
           isPaletteOpen={true}
+          paletteHasResults={true}
           onEscape={onEscape}
           onStop={onStop}
         />
@@ -1004,6 +1153,7 @@ describe('ChatInput', () => {
     });
 
     it('still clears on two bare escapes after a palette dismiss', () => {
+      stubExecCommand();
       const onClear = vi.fn();
       const { rerender } = render(
         <ChatInput {...defaultProps} value="hello" isPaletteOpen={true} onClear={onClear} />
@@ -1026,9 +1176,267 @@ describe('ChatInput', () => {
     });
 
     it('does not focus on a touch viewport (no surprise keyboard)', () => {
-      isMobileViewport = true;
+      device = PHONE;
       render(<ChatInput {...defaultProps} />);
       expect(document.activeElement).not.toBe(screen.getByRole('combobox'));
+    });
+  });
+
+  describe('focusUnlessTouch handle', () => {
+    // The mount guard only ever protected the composer's own autofocus. Every
+    // host that focused THROUGH the handle — ChatPanel on session switch, on
+    // `?prompt=` seeding — re-opened the same hole, so the rule lives here now.
+    it('focuses on desktop', () => {
+      const ref = createRef<ChatInputHandle>();
+      render(<ChatInput {...defaultProps} ref={ref} />);
+      screen.getByRole('combobox').blur();
+      act(() => ref.current!.focusUnlessTouch());
+      expect(document.activeElement).toBe(screen.getByRole('combobox'));
+    });
+
+    it('is a no-op on a phone', () => {
+      device = PHONE;
+      const ref = createRef<ChatInputHandle>();
+      render(<ChatInput {...defaultProps} ref={ref} />);
+      act(() => ref.current!.focusUnlessTouch());
+      expect(document.activeElement).not.toBe(screen.getByRole('combobox'));
+    });
+
+    it('still focuses on touch through the unguarded focus() — a deliberate tap', () => {
+      device = PHONE;
+      const ref = createRef<ChatInputHandle>();
+      render(<ChatInput {...defaultProps} ref={ref} />);
+      act(() => ref.current!.focus());
+      expect(document.activeElement).toBe(screen.getByRole('combobox'));
+    });
+
+    // Gating this on viewport width instead would take focus away from a
+    // desktop window dragged narrow — no software keyboard, nothing to guard
+    // against, and the same mistake the Enter rule is being fixed for.
+    it('focuses a narrow desktop window, which has no software keyboard', () => {
+      device = NARROW_DESKTOP;
+      const ref = createRef<ChatInputHandle>();
+      render(<ChatInput {...defaultProps} ref={ref} />);
+      screen.getByRole('combobox').blur();
+      act(() => ref.current!.focusUnlessTouch());
+      expect(document.activeElement).toBe(screen.getByRole('combobox'));
+    });
+
+    it('focuses a tablet with a trackpad', () => {
+      device = TABLET_WITH_TRACKPAD;
+      const ref = createRef<ChatInputHandle>();
+      render(<ChatInput {...defaultProps} ref={ref} />);
+      screen.getByRole('combobox').blur();
+      act(() => ref.current!.focusUnlessTouch());
+      expect(document.activeElement).toBe(screen.getByRole('combobox'));
+    });
+  });
+
+  describe('what Enter means on each device', () => {
+    /** Press Enter with text in the box and report whether it submitted. */
+    function pressEnter() {
+      const onSubmit = vi.fn();
+      const { textarea } = renderWithCaret({ ...defaultProps, value: 'send me', onSubmit });
+      fireEvent.keyDown(textarea, { key: 'Enter' });
+      return { submitted: onSubmit.mock.calls.length > 0, textarea };
+    }
+
+    it('sends on a desktop', () => {
+      expect(pressEnter().submitted).toBe(true);
+    });
+
+    // THE regression this rule exists for: a window dragged beside an editor is
+    // under the old 768px breakpoint but still has a keyboard and a mouse.
+    it('still sends in a desktop window dragged under 768px', () => {
+      device = NARROW_DESKTOP;
+      expect(pressEnter().submitted).toBe(true);
+    });
+
+    // iPadOS reports a coarse primary pointer with a Magic Keyboard attached.
+    // A bare `(pointer: coarse)` rule took Enter-to-send away from it, with no
+    // setting to get it back.
+    it('sends on a tablet with a trackpad attached', () => {
+      device = TABLET_WITH_TRACKPAD;
+      expect(pressEnter().submitted).toBe(true);
+    });
+
+    it('inserts a newline on a phone rather than sending', () => {
+      device = PHONE;
+      const { submitted } = pressEnter();
+      expect(submitted).toBe(false);
+    });
+  });
+
+  describe('editing a queued item with an emptied field', () => {
+    // Select-all + delete used to leave NO button rendered while the banner
+    // still read "Editing message". Desktop Escape rescued it; a phone has no
+    // Escape key, so the only exit was the row's X, which deletes the message.
+    it('offers an explicit cancel instead of no button at all', () => {
+      render(<ChatInput {...defaultProps} editingQueueItem={true} value="" />);
+      expect(screen.getByLabelText('Cancel edit')).toBeDefined();
+    });
+
+    it('calls onCancelEdit when the cancel button is clicked', () => {
+      const onCancelEdit = vi.fn();
+      render(
+        <ChatInput {...defaultProps} editingQueueItem={true} value="" onCancelEdit={onCancelEdit} />
+      );
+      fireEvent.click(screen.getByLabelText('Cancel edit'));
+      expect(onCancelEdit).toHaveBeenCalledOnce();
+    });
+
+    it('is reachable on a touch device, where there is no Escape key', () => {
+      device = PHONE;
+      const onCancelEdit = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          editingQueueItem={true}
+          value="   "
+          onCancelEdit={onCancelEdit}
+        />
+      );
+      fireEvent.click(screen.getByLabelText('Cancel edit'));
+      expect(onCancelEdit).toHaveBeenCalledOnce();
+    });
+
+    it('goes back to Save edit as soon as there is text again', () => {
+      render(<ChatInput {...defaultProps} editingQueueItem={true} value="rewritten" />);
+      expect(screen.getByLabelText('Save edit')).toBeDefined();
+      expect(screen.queryByLabelText('Cancel edit')).toBeNull();
+    });
+  });
+
+  describe('attachment upload in flight', () => {
+    it('shows the upload rather than a Stop with no turn to stop', () => {
+      render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
+      expect(screen.getByRole('status')).toBeDefined();
+      expect(screen.queryByLabelText('Stop generating')).toBeNull();
+      expect(screen.queryByLabelText('Send message')).toBeNull();
+    });
+
+    // Not a disabled button: several screen readers skip disabled controls, and
+    // this is the only thing on screen saying the send is under way.
+    it('announces the upload through a live region, not a disabled button', () => {
+      render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
+      const status = screen.getByRole('status');
+      expect(status.tagName).not.toBe('BUTTON');
+      expect(status).toHaveTextContent('Uploading attachment');
+      expect(screen.queryByRole('button', { name: /upload/i })).toBeNull();
+    });
+
+    it('does not submit on Enter — the send is already happening', () => {
+      const onSubmit = vi.fn();
+      render(
+        <ChatInput {...defaultProps} value="here you go" isUploading={true} onSubmit={onSubmit} />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('still lets a real streaming turn be stopped', () => {
+      render(
+        <ChatInput
+          {...defaultProps}
+          value=""
+          isStreaming={true}
+          isUploading={true}
+          onStop={vi.fn()}
+        />
+      );
+      expect(screen.getByLabelText('Stop generating')).toBeDefined();
+    });
+  });
+
+  describe('a dispatched command still settling', () => {
+    // The composer keeps `/compact focus on the API changes` until the trigger
+    // confirms, so a refusal cannot eat the instructions. That window left both
+    // submit paths live: one intent, two compact triggers.
+    it('does not submit again on Enter', () => {
+      const onSubmit = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="/compact the api bits"
+          commandPending
+          onSubmit={onSubmit}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
+
+    it('does not queue again on Enter mid-stream', () => {
+      const onQueue = vi.fn();
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="/compact the api bits"
+          isStreaming
+          commandPending
+          onQueue={onQueue}
+        />
+      );
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onQueue).not.toHaveBeenCalled();
+    });
+
+    it('shows the dispatch instead of a control that would re-fire it', () => {
+      render(
+        <ChatInput {...defaultProps} value="/compact the api bits" isStreaming commandPending />
+      );
+      const status = screen.getByRole('status');
+      expect(status).toHaveTextContent('Running command');
+      expect(screen.queryByLabelText('Queue message')).toBeNull();
+      expect(screen.queryByLabelText('Send message')).toBeNull();
+    });
+
+    it('leaves the dedicated Stop reachable — a running turn is still stoppable', () => {
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="/compact the api bits"
+          isStreaming
+          commandPending
+          onStop={vi.fn()}
+        />
+      );
+      expect(screen.getByLabelText('Stop generating')).toBeDefined();
+    });
+  });
+
+  describe('canSubmitReason', () => {
+    it('says why the send is unavailable instead of failing silently', () => {
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="build me a blog"
+          canSubmit={false}
+          canSubmitReason="Getting your agent ready…"
+        />
+      );
+      expect(screen.getByText('Getting your agent ready…')).toBeDefined();
+    });
+
+    it('says nothing once the send target is ready', () => {
+      render(
+        <ChatInput {...defaultProps} value="hello" canSubmitReason="Getting your agent ready…" />
+      );
+      expect(screen.queryByText('Getting your agent ready…')).toBeNull();
+    });
+
+    it('defers to the busy banner rather than stacking two explanations', () => {
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="hello"
+          sessionBusy={true}
+          canSubmit={false}
+          canSubmitReason="Getting your agent ready…"
+        />
+      );
+      expect(screen.getByText(/Session is busy/)).toBeDefined();
+      expect(screen.queryByText('Getting your agent ready…')).toBeNull();
     });
   });
 });

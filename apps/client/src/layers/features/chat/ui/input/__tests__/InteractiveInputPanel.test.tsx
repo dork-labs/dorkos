@@ -81,4 +81,38 @@ describe('InteractiveInputPanel', () => {
 
     expect(onToolDecided).toHaveBeenCalledWith('tc-2', undefined);
   });
+
+  describe('queued messages behind the card', () => {
+    // This panel replaces the ENTIRE composer, queue panel included, for as
+    // long as an approval card is up. The messages survive, but the only mark
+    // that said so vanished at exactly the moment it reassures.
+    function renderWithQueue(queueDepth: number) {
+      render(
+        <InteractiveInputPanel
+          sessionId="session-1"
+          activeInteraction={approvalInteraction}
+          pendingApprovals={[]}
+          focusedOptionIndex={-1}
+          onToolRef={() => {}}
+          onToolDecided={vi.fn()}
+          queueDepth={queueDepth}
+        />
+      );
+    }
+
+    it('says how many messages are waiting', () => {
+      renderWithQueue(3);
+      expect(screen.getByText('3 messages are waiting — they send once you answer.')).toBeDefined();
+    });
+
+    it('reads naturally for a single message', () => {
+      renderWithQueue(1);
+      expect(screen.getByText('1 message is waiting — it sends once you answer.')).toBeDefined();
+    });
+
+    it('says nothing when the queue is empty', () => {
+      renderWithQueue(0);
+      expect(screen.queryByText(/waiting/)).toBeNull();
+    });
+  });
 });

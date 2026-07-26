@@ -538,4 +538,80 @@ describe('useChatQueue — a native command cannot reach the queue by the edit d
     expect(ranWith).toContain('/compact');
     expect(queuedIn(SESSION_ID)).toEqual(['run the tests', 'second']);
   });
+
+  /**
+   * A store-backed composer plus a funnel whose command settles ASYNCHRONOUSLY
+   * — the shape of the runtime-fulfilled `/compact` intent, which is a
+   * trigger-only 202 that can still come back `SESSION_LOCKED`.
+   */
+  function useAsyncCommandHarness(confirmed: Promise<boolean>) {
+    const { input } = useSessionChatState(SESSION_ID);
+    const setInput = useCallback(
+      (value: string) => useSessionChatStore.getState().updateSession(SESSION_ID, { input: value }),
+      []
+    );
+    const chatInputRef = useRef<ChatInputHandle | null>(null);
+    const queue = useChatQueue({
+      input,
+      setInput,
+      status: 'streaming',
+      sessionBusy: false,
+      sessionId: SESSION_ID,
+      selectedCwd: '/dir',
+      onFlush: vi.fn(),
+      tryNativeCommand: (content: string) =>
+        content.startsWith('/') ? { handled: true, ran: true, confirmed } : { handled: false },
+      chatInputRef,
+    });
+    return { input, setInput, ...queue };
+  }
+
+  describe('a command whose dispatch has not landed yet', () => {
+    it('keeps the /compact instructions when the trigger is refused', async () => {
+      // `ran: true` only means the dispatch started. Clearing on that alone
+      // deleted `/compact focus on the API changes` and then toasted "the agent
+      // is busy — try compacting again in a moment", with nothing to try.
+      const { result } = renderHook(() => useAsyncCommandHarness(Promise.resolve(false)));
+
+      act(() => result.current.setInput('/compact focus on the API changes'));
+      act(() => result.current.handleQueue());
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.input).toBe('/compact focus on the API changes');
+      expect(queuedIn(SESSION_ID)).toEqual([]);
+    });
+
+    it('clears the composer once the dispatch is confirmed', async () => {
+      const { result } = renderHook(() => useAsyncCommandHarness(Promise.resolve(true)));
+
+      act(() => result.current.setInput('/compact focus on the API changes'));
+      act(() => result.current.handleQueue());
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.input).toBe('');
+    });
+
+    it('does not wipe something typed while the dispatch was still in flight', async () => {
+      let settle: (accepted: boolean) => void = () => {};
+      const confirmed = new Promise<boolean>((resolve) => {
+        settle = resolve;
+      });
+      const { result } = renderHook(() => useAsyncCommandHarness(confirmed));
+
+      act(() => result.current.setInput('/compact'));
+      act(() => result.current.handleQueue());
+      act(() => result.current.setInput('a whole new thought'));
+
+      await act(async () => {
+        settle(true);
+        await confirmed;
+      });
+
+      expect(result.current.input).toBe('a whole new thought');
+    });
+  });
 });

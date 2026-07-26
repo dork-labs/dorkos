@@ -11,7 +11,7 @@ import type { ContextUsage } from '@dorkos/shared/types';
 // what's compared.
 // ──────────────────────────────────────────────────────────────────────────────
 
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({ useIsMobile: () => false }));
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),

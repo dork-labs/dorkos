@@ -9,7 +9,7 @@ import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 // Mocks (hoisted before the component import)
 // ──────────────────────────────────────────────────────────────────────────────
 
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({ useIsMobile: () => false }));
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),

@@ -311,5 +311,9 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     // Exposed so the queue path (useChatQueue) can intercept native commands at
     // the queue decision — they must run instantly, never sit in the queue.
     tryNativeCommand: native.tryRun,
+    // True while a dispatched command is still settling. The composer keeps its
+    // text across that window on purpose, so both submit paths must close or a
+    // second Enter turns one intent into two triggers.
+    commandPending: native.commandPending,
   };
 }

@@ -36,6 +36,7 @@ import {
   useSessionStreamStore,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
@@ -207,13 +208,75 @@ export function useSessionSubmit({
               () => restoreQueued()
             );
           }
-          if (clearInput && native.ran) setInput('');
+          // The composer's clear settles on `confirmed` for the same reason the
+          // queue's undo does: emptying it on "the dispatch started" deleted
+          // `/compact focus on the API changes` and then toasted that the agent
+          // was busy, with the instructions already gone.
+          if (clearInput && native.ran) {
+            if (native.confirmed) {
+              clearComposerOnConfirmed(sessionId, content, native.confirmed);
+            } else {
+              setInput('');
+            }
+          }
           return;
         }
       }
 
       const targetSessionId = sessionId!;
       const cwd = selectedCwdRef.current;
+      setError(null);
+
+      // Subscribe-first, and BEFORE the upload await. `attachSession` re-targets
+      // the single active-session connection, and the only other caller is an
+      // effect keyed on (sessionId, cwd) that fires once per switch — so calling
+      // it after an await means a switch made DURING the upload gets undone:
+      // session B attaches, the upload resolves, and this line drags the
+      // connection back to A, leaving B on screen with no live stream and
+      // nothing to re-fire until the session or cwd changes again. Here it is a
+      // no-op against the effect that already attached this same session.
+      streamManager.attachSession(targetSessionId, cwd);
+
+      // Attachments upload next — before the optimistic bubble, before the
+      // trigger latch, before the composer is cleared.
+      //
+      // Latching first made the session read `streaming` for the whole upload:
+      // the button turned into a red Stop that called `interruptSession` on a
+      // session with no turn, the `.catch()` swallowed the refusal, and the
+      // click did nothing at all — there was no way to cancel an upload. Worse,
+      // a hung upload never cleared the latch, because the watchdog that
+      // releases it is only armed after the POST, so the composer stayed wedged
+      // in queue mode indefinitely. While this runs the composer shows the
+      // upload in place of Stop and both submit paths are closed (`isUploading`).
+      let finalContent: string;
+      try {
+        // The kickoff content is already the exact message to deliver — never
+        // run it through the file/content transform (there are no pending files
+        // on a brand-new session, and it must reach the model verbatim so the
+        // fence stays intact for suppression).
+        finalContent =
+          !opts.kickoff && transformContentRef.current
+            ? await transformContentRef.current(content)
+            : content;
+      } catch (err) {
+        // Nothing was sent. A queued message goes back to its row; a typed one
+        // is still in the composer, because `clearInput` has not run yet — the
+        // clear used to happen before the upload and only `SESSION_LOCKED`
+        // restored it, so an upload failure on an ordinary send destroyed the
+        // message outright.
+        opts.restoreQueued?.();
+        if (opts.kickoff) throw err;
+        setError({
+          heading: 'Could not send message',
+          message: (err as Error).message || 'The attachment did not upload. Please try again.',
+          // The words are still in the composer (or back in the queue row), so
+          // the retry is a keystroke away. A Retry button here would re-send the
+          // PREVIOUS user message, which is not what anyone asked for.
+          retryable: false,
+        });
+        return;
+      }
+
       const streamStore = useSessionStreamStore.getState();
 
       // A session absent from the list cache is being CREATED by this send —
@@ -255,23 +318,8 @@ export function useSessionSubmit({
       streamStore.setTriggerPending(targetSessionId, true);
 
       if (clearInput) setInput('');
-      setError(null);
-
-      // Subscribe-first: ensure the durable stream is attached BEFORE the POST so
-      // the turn's first frames (turn_start, deltas) are never missed. Idempotent
-      // on the already-attached session+cwd.
-      streamManager.attachSession(targetSessionId, cwd);
 
       try {
-        // The kickoff content is already the exact message to deliver — never
-        // run it through the file/content transform (there are no pending files
-        // on a brand-new session, and it must reach the model verbatim so the
-        // fence stays intact for suppression).
-        const finalContent =
-          !opts.kickoff && transformContentRef.current
-            ? await transformContentRef.current(content)
-            : content;
-
         // Client UI-state snapshot for agent situational awareness (ADR-0273),
         // omitted when unchanged since the last successful send for this session
         // so identical snapshots don't accumulate in the transcript.

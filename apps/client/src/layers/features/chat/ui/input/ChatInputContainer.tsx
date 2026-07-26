@@ -51,6 +51,12 @@ interface ChatInputContainerProps {
    * queued (a queued native command never starts a turn and would stall the pump).
    */
   tryNativeCommand: (content: string) => NativeCommandResult;
+  /**
+   * A dispatched native command has not settled yet. Closes both submit paths
+   * for that window — the composer keeps the command's text until it confirms,
+   * so nothing else stops a second Enter re-dispatching it.
+   */
+  commandPending: boolean;
   status: 'idle' | 'streaming' | 'error';
   sessionBusy: boolean;
   stop: () => void;
@@ -82,6 +88,7 @@ export function ChatInputContainer({
   handleSubmit,
   submitContent,
   tryNativeCommand,
+  commandPending,
   status,
   sessionBusy,
   stop,
@@ -156,6 +163,22 @@ export function ChatInputContainer({
     onFilesSelected,
   });
 
+  // Sending closes the palettes. It used to happen by accident: an open palette
+  // swallowed Enter, and `onCommandSelect` found no row and closed the panel on
+  // its way out. Now that Enter falls through to the send when there is nothing
+  // to pick, nothing else would take the "No commands found." card down —
+  // `detectTrigger` only runs on typing or a caret move — so it would float
+  // over the agent's reply until the next keystroke.
+  const submitAndDismiss = useCallback(() => {
+    autocomplete.dismissPalettes();
+    handleSubmit();
+  }, [autocomplete, handleSubmit]);
+
+  const queueAndDismiss = useCallback(() => {
+    autocomplete.dismissPalettes();
+    chatQueue.handleQueue();
+  }, [autocomplete, chatQueue]);
+
   return (
     <div
       {...getRootProps()}
@@ -200,6 +223,11 @@ export function ChatInputContainer({
               focusedOptionIndex={focusedOptionIndex}
               onToolRef={onToolRef}
               onToolDecided={onToolDecided}
+              // The queue panel is unmounted for the whole time a card is up
+              // (this branch replaces the entire composer), so the only mark
+              // that queued messages still exist would vanish at exactly the
+              // moment it reassures. The messages survive — say so.
+              queueDepth={chatQueue.queue.length}
             />
           </motion.div>
         ) : (
@@ -253,9 +281,10 @@ export function ChatInputContainer({
               ref={chatInputRef}
               value={input}
               onChange={autocomplete.handleInputChange}
-              onSubmit={handleSubmit}
+              onSubmit={submitAndDismiss}
               isStreaming={isStreaming}
               isUploading={isUploading}
+              commandPending={commandPending}
               sessionBusy={sessionBusy}
               onStop={stop}
               onEscape={autocomplete.dismissPalettes}
@@ -264,6 +293,7 @@ export function ChatInputContainer({
                 autocomplete.dismissPalettes();
               }}
               isPaletteOpen={autocomplete.isPaletteOpen}
+              paletteHasResults={autocomplete.paletteHasResults}
               onArrowUp={autocomplete.handleArrowUp}
               onArrowDown={autocomplete.handleArrowDown}
               onCommandSelect={autocomplete.handleKeyboardSelect}
@@ -278,7 +308,7 @@ export function ChatInputContainer({
               canSubmit={!hasFailedUpload}
               editingQueueItem={chatQueue.editingIndex !== null}
               queueDepth={chatQueue.queue.length}
-              onQueue={chatQueue.handleQueue}
+              onQueue={queueAndDismiss}
               onSaveEdit={chatQueue.handleQueueSaveEdit}
               onCancelEdit={chatQueue.handleQueueCancelEdit}
               onQueueNavigateUp={chatQueue.handleQueueNavigateUp}

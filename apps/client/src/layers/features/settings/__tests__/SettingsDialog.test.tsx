@@ -8,7 +8,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { SettingsDialog } from '../ui/SettingsDialog';
 
 // Mock useIsMobile to always return false (desktop dialog)
-vi.mock('../../../hooks/use-is-mobile', () => ({
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
 

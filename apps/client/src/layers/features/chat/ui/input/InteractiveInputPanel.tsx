@@ -12,6 +12,13 @@ interface InteractiveInputPanelProps {
   focusedOptionIndex: number;
   onToolRef: (handle: InteractiveToolHandle | null) => void;
   onToolDecided: (toolCallId: string, answers?: Record<string, string>) => void;
+  /**
+   * How many messages are still queued behind this card. This panel replaces
+   * the whole composer, queue panel included, so without a mark here the person
+   * sees their queued messages disappear at the one moment that looks like
+   * loss. They are safe; this says so and nothing more.
+   */
+  queueDepth?: number;
 }
 
 /** Renders the interactive input zone (tool approval or question prompt). */
@@ -22,6 +29,7 @@ export function InteractiveInputPanel({
   focusedOptionIndex,
   onToolRef,
   onToolDecided,
+  queueDepth = 0,
 }: InteractiveInputPanelProps) {
   // Forward submitted question answers so they're persisted onto the tool-call
   // part immediately — otherwise the inline answered row briefly shows the
@@ -62,6 +70,13 @@ export function InteractiveInputPanel({
           onDecided={handleDecided}
         />
       ) : null}
+      {queueDepth > 0 && (
+        <p className="text-muted-foreground px-1 pt-2 text-xs">
+          {queueDepth === 1
+            ? '1 message is waiting — it sends once you answer.'
+            : `${queueDepth} messages are waiting — they send once you answer.`}
+        </p>
+      )}
     </>
   );
 }

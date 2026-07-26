@@ -54,16 +54,52 @@ function consumeEscapeIntoNewline(textarea: HTMLTextAreaElement): void {
   insertTextAtCaret(textarea, '\n');
 }
 
+/**
+ * Empty the field through the browser's own editing pipeline, so the wipe lands
+ * as ONE undo entry and Cmd+Z brings the draft back.
+ *
+ * Same reasoning as {@link insertTextAtCaret}, and the same seam: rewriting the
+ * controlled value with `setState` is invisible to the field's native undo
+ * stack. That matters more here than anywhere else in this file — this clear
+ * sits two taps behind a key someone is already hammering to stop a turn that
+ * will not stop.
+ */
+function clearThroughUndoStack(textarea: HTMLTextAreaElement): void {
+  textarea.focus();
+  textarea.setSelectionRange(0, textarea.value.length);
+  document.execCommand('insertText', false, '');
+}
+
 interface UseInputKeyboardOptions {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   value: string;
   isStreaming: boolean;
-  isMobile: boolean;
+  /**
+   * Whether touch is the ONLY pointer — a coarse primary pointer and no fine
+   * pointer anywhere. Decides what Enter means: a newline where the send button
+   * is the only sane target, and a send everywhere else.
+   *
+   * Not "the primary pointer is coarse": a tablet with a trackpad reports a
+   * coarse primary pointer and still deserves Enter-to-send. Not viewport width
+   * either, so dragging a desktop window narrow cannot rewrite the contract.
+   * See {@link import('@/layers/shared/model').useIsTouchOnly}.
+   */
+  isTouchOnly: boolean;
   sessionBusy: boolean;
+  /** An attachment upload is in flight — this send is already happening. */
+  isUploading?: boolean;
+  /** A dispatched native command has not settled — its text is still in the box. */
+  commandPending?: boolean;
   /** When false, the Enter key does not submit (the send target is not ready). Defaults to true. */
   canSubmit?: boolean;
   editingQueueItem: boolean;
   isPaletteOpen?: boolean;
+  /**
+   * Whether the open palette has at least one row. An open palette showing "No
+   * commands found." has nothing for Enter to pick, so Enter must fall through
+   * and send instead of being swallowed. Defaults to `false`.
+   */
+  paletteHasResults?: boolean;
   queueHasItems: boolean;
   onSubmit: () => void;
   onStop?: () => void;
@@ -84,11 +120,14 @@ export function useInputKeyboard({
   textareaRef,
   value,
   isStreaming,
-  isMobile,
+  isTouchOnly,
   sessionBusy,
+  isUploading = false,
+  commandPending = false,
   canSubmit = true,
   editingQueueItem,
   isPaletteOpen,
+  paletteHasResults = false,
   queueHasItems,
   onSubmit,
   onStop,
@@ -131,6 +170,12 @@ export function useInputKeyboard({
         }
         const now = Date.now();
         if (value.trim() && now - lastEscapeRef.current < DOUBLE_ESCAPE_THRESHOLD_MS) {
+          // Wipe through the field's own editing pipeline first, so the draft is
+          // one Cmd+Z away. `onClear` still runs for whatever the host hangs off
+          // it (dismissing a palette); the state write it performs is the same
+          // empty string the native `input` event already produced.
+          const textarea = textareaRef.current;
+          if (textarea) clearThroughUndoStack(textarea);
           onClear?.();
           lastEscapeRef.current = 0;
         } else {
@@ -184,7 +229,11 @@ export function useInputKeyboard({
           onArrowUp?.();
           return;
         }
-        if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+        // Only intercept the pick keys when there is something to pick. A
+        // palette showing "No commands found." (type `/zzz`, or `@zzz`) used to
+        // eat the Enter, close itself, and send nothing — so the message needed
+        // two presses of the same key.
+        if (paletteHasResults && ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab')) {
           e.preventDefault();
           onCommandSelect?.();
           return;
@@ -205,28 +254,38 @@ export function useInputKeyboard({
       }
 
       // --- Default Enter behavior (palette closed) ---
-      // Desktop: Enter submits/queues/saves; Shift+Enter for newline
-      // Mobile: Enter inserts newline, submit via button only
-      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
+      // Fine pointer: Enter submits/queues/saves; Shift+Enter for a newline.
+      // Coarse pointer: Enter inserts a newline, submit via the button only.
+      if (e.key === 'Enter' && !e.shiftKey && !isTouchOnly) {
         e.preventDefault();
+        // A dispatched command is still settling, and its text is still in the
+        // box precisely so a refusal does not eat it. Without this, pressing
+        // Enter again fires the same `/compact` a second time.
+        if (commandPending) return;
         if (editingQueueItem && value.trim()) {
           onSaveEdit?.();
         } else if (isStreaming && value.trim()) {
           onQueue?.();
-        } else if (!isStreaming && !sessionBusy && canSubmit && value.trim()) {
+        } else if (!isStreaming && !sessionBusy && !isUploading && canSubmit && value.trim()) {
+          // `!isUploading` is the second half of the trigger latch: the send's
+          // attachment upload runs BEFORE the session reads as streaming, so
+          // without this a second Enter mid-upload starts a whole second send.
           onSubmit();
         }
       }
     },
     [
       isStreaming,
-      isMobile,
+      isTouchOnly,
+      isUploading,
+      commandPending,
       value,
       onSubmit,
       onStop,
       onEscape,
       onClear,
       isPaletteOpen,
+      paletteHasResults,
       onArrowUp,
       onArrowDown,
       onCommandSelect,
