@@ -6,7 +6,7 @@
  *
  * @module features/shapes/ui/ShapeSwitcherDialog
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   Shapes,
@@ -33,6 +33,7 @@ import { cn } from '@/layers/shared/lib';
 import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { useShapes } from '@/layers/entities/shapes';
 import { useApplyShape } from '../model/use-apply-shape';
+import { useForkShape } from '../model/use-fork-shape';
 import { useSwitchAgentCwd } from '../model/use-switch-agent-cwd';
 import { ShapeForkForm } from './ShapeForkForm';
 
@@ -70,6 +71,18 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const [appliedLabel, setAppliedLabel] = useState<string | null>(null);
   // Whether the footer is showing the "make your own version" form.
   const [forkOpen, setForkOpen] = useState(false);
+  // Whether the fork form's name field is on screen to render a refusal itself.
+  // Read at failure time, so it lives in a ref rather than a closure.
+  const inlineForkErrorRef = useRef(false);
+  // The fork mutation lives HERE, not in the form (DOR-453): a copy can still be
+  // in flight after the form is dismissed, and TanStack drops a per-call
+  // callback the moment its observer unmounts. Owning it one level up keeps the
+  // request — and its report — alive across every way out of the form.
+  const forkShape = useForkShape({
+    isInlineErrorVisible: () => inlineForkErrorRef.current,
+  });
+
+  const closeForkForm = useCallback(() => setForkOpen(false), []);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -123,6 +136,27 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
 
   const pendingName = applyShape.isPending ? applyShape.variables?.name : undefined;
   const activeShape = shapes?.find((s) => s.active);
+
+  // The name field is on screen exactly when the dialog is open and the footer is
+  // showing the form — closing either one unmounts it.
+  //
+  // Written during render rather than from an effect: a copy can fail in the
+  // microtask right after it was sent, long before effects flush, and answering
+  // one render too late means a failure nobody hears about. The write is pure —
+  // same inputs, same value — so a StrictMode double render is a no-op, and
+  // nothing renders from the ref.
+  // eslint-disable-next-line react-hooks/refs -- deliberate latest-value mirror
+  inlineForkErrorRef.current = open && forkOpen;
+  useEffect(
+    () => () => {
+      // Defensive. `DialogHost` renders the switcher unconditionally for the app's
+      // whole lifetime, so this is near-unreachable — it just costs two lines to
+      // hold the invariant without depending on that.
+      inlineForkErrorRef.current = false;
+    },
+    []
+  );
+
   const arrival = result?.offeredAgents.find((a) => a.arrival);
   // Show "Open" when the arrival agent exists. No auto-follow guard is needed
   // here: the `onSuccess` early-return skips `setResult` on the auto-follow
@@ -134,7 +168,18 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="gap-0 p-0 sm:max-w-md">
+      <DialogContent
+        className="gap-0 p-0 sm:max-w-md"
+        onEscapeKeyDown={(event) => {
+          // Escape backs out one layer. With the name form open it folds the
+          // form away and leaves you where you were in the list; a second
+          // Escape leaves the switcher. Mid-copy is no exception — nothing here
+          // is ever allowed to hold you in.
+          if (!forkOpen) return;
+          event.preventDefault();
+          closeForkForm();
+        }}
+      >
         <DialogHeader className="space-y-1 px-5 pt-5">
           <DialogTitle className="flex items-center gap-2">
             <Shapes className="text-muted-foreground size-[--size-icon-sm]" />
@@ -323,7 +368,33 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
               <ShapeForkForm
                 key={activeShape.name}
                 shapeName={activeShape.name}
-                onDone={() => setForkOpen(false)}
+                // A refusal names a Shape, so it may only be shown against the
+                // Shape it was about. The `key` below re-seeds the field when the
+                // active Shape moves under us; the mutation lives above that
+                // remount now, so without this gate a refusal about one Shape
+                // would sit under a field aimed at another.
+                serverError={
+                  forkShape.variables?.name === activeShape.name
+                    ? (forkShape.error?.message ?? null)
+                    : null
+                }
+                // Deliberately NOT gated by Shape identity the way `serverError`
+                // is, though the asymmetry looks like an oversight. `pending` is
+                // what serializes forks through this one shared mutation: a
+                // second `mutate()` while the first is in flight detaches the
+                // observer from it (`mutationObserver.js` `mutate()` calls
+                // `removeObserver` on the previous mutation), so the first
+                // request's failure would reach neither the field nor a toast —
+                // the DOR-453 silent failure, reintroduced. Blocking Create
+                // while ANY fork is in flight is the cost of one mutation.
+                pending={forkShape.isPending}
+                onCreate={(as) =>
+                  forkShape.mutate({ name: activeShape.name, as }, { onSuccess: closeForkForm })
+                }
+                onDone={closeForkForm}
+                onNameEdited={() => {
+                  if (forkShape.error) forkShape.reset();
+                }}
               />
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -340,7 +411,16 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                   variant="ghost"
                   size="sm"
                   disabled={applyShape.isPending}
-                  onClick={() => setForkOpen(true)}
+                  onClick={() => {
+                    // The mutation now outlives the form, so a settled refusal
+                    // would still be sitting under the field. Clear it — but only
+                    // if it HAS settled. Resetting a copy that is still in flight
+                    // detaches the observer, which drops the error state the field
+                    // renders from while the form's return tells the toast path
+                    // that a field exists. The failure would land nowhere at all.
+                    if (!forkShape.isPending) forkShape.reset();
+                    setForkOpen(true);
+                  }}
                   className="text-muted-foreground"
                 >
                   <Copy className="size-[--size-icon-xs]" />

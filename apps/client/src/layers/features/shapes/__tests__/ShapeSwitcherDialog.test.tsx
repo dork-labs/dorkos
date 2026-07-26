@@ -2,14 +2,16 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type {
   ApplyShapeResult,
   ForkShapeResult,
   InstalledShapeSummary,
 } from '@dorkos/shared/marketplace-schemas';
 import { TransportProvider, useAgentCreationStore, useAppStore } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { createMockTransport } from '@dorkos/test-utils';
 import { ShapeSwitcherDialog } from '../ui/ShapeSwitcherDialog';
 
@@ -17,6 +19,26 @@ const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
+
+// Every toast the switcher can raise has to be observable, or "reported exactly
+// once" is unprovable. The real module is spread back in so a call this file did
+// not anticipate still works: an unmocked `toast.*` would throw inside a mutation
+// callback, and query-core swallows that — the exact silent failure DOR-453 is about.
+vi.mock('sonner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('sonner')>();
+  return {
+    ...actual,
+    toast: Object.assign(vi.fn(), actual.toast, {
+      error: vi.fn(),
+      success: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    }),
+  };
+});
+
+/** The app-wide fallback the fork must never fall back to (DOR-402/DOR-453). */
+const GENERIC_MUTATION_TOAST = 'Action failed. Please try again.';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -120,22 +142,52 @@ function autoFollowResult(): ApplyShapeResult {
   };
 }
 
+/**
+ * A throwaway client carrying the app's *real* cache policy — borrowed whole
+ * rather than re-declared, so "a fork failure never arrives as the generic
+ * toast" asserts production behaviour. Only query retries are overridden, so a
+ * failing query fails the test instead of backing off.
+ */
+function testQueryClient(): QueryClient {
+  const config = createQueryClientConfig();
+  return new QueryClient({
+    ...config,
+    defaultOptions: {
+      ...config.defaultOptions,
+      queries: { ...config.defaultOptions?.queries, retry: false },
+    },
+  });
+}
+
 function renderDialog(transport = createMockTransport()) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = testQueryClient();
   const onOpenChange = vi.fn();
-  render(
+  const tree = (open: boolean) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <ShapeSwitcherDialog open onOpenChange={onOpenChange} />
+        <ShapeSwitcherDialog open={open} onOpenChange={onOpenChange} />
       </TransportProvider>
     </QueryClientProvider>
   );
-  return { transport, onOpenChange };
+  const { rerender } = render(tree(true));
+  return {
+    transport,
+    onOpenChange,
+    queryClient,
+    /**
+     * Flip the `open` prop the way an outside actor does — the command palette or
+     * an agent's `control_ui` setting `shapeSwitcherOpen` straight on the store,
+     * which never routes through the dialog's own `onOpenChange`.
+     */
+    setOpen: (open: boolean) => rerender(tree(open)),
+  };
 }
 
 describe('ShapeSwitcherDialog', () => {
   beforeEach(() => {
     mockNavigate.mockClear();
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.success).mockClear();
     useAgentCreationStore.setState({ isOpen: false, initialMode: 'new', seed: null });
     // Reset the chrome the fork capture reads, so one test's arrangement never
     // leaks into the next one's expectations.
@@ -353,6 +405,46 @@ describe('ShapeSwitcherDialog', () => {
     return { ...rendered, input: await screen.findByLabelText(/name your version/i) };
   }
 
+  /**
+   * A `forkShape` the test keeps in flight until it settles it by hand — the only
+   * way to be inside the window where the request is out and the form can leave.
+   */
+  function deferredFork() {
+    let settleResolve: ((result: ForkShapeResult) => void) | undefined;
+    let settleReject: ((error: Error) => void) | undefined;
+    const forkShape = vi.fn(
+      () =>
+        new Promise<ForkShapeResult>((resolve, reject) => {
+          settleResolve = resolve;
+          settleReject = reject;
+        })
+    );
+    return {
+      forkShape,
+      resolve: (result: ForkShapeResult) => settleResolve!(result),
+      reject: (error: Error) => settleReject!(error),
+    };
+  }
+
+  /** Fill in the fork name and submit, then wait for the request to be out. */
+  async function submitFork(forkShape: ReturnType<typeof deferredFork>['forkShape'], as: string) {
+    fireEvent.change(await screen.findByLabelText(/name your version/i), { target: { value: as } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+    await waitFor(() => expect(forkShape).toHaveBeenCalled());
+  }
+
+  /** Press Escape inside the dialog, the way a person leaning on the key would. */
+  function pressEscape() {
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  }
+
+  /** Wait for the inline name field to leave the screen. */
+  async function waitForFormGone() {
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/name your version/i)).not.toBeInTheDocument()
+    );
+  }
+
   it('opens an inline form pre-filled with the default name, scoped to the active Shape', async () => {
     // Only the ACTIVE Shape gets the affordance — capture only means anything
     // there — and the default matches the API's own `<active>-fork`.
@@ -417,7 +509,7 @@ describe('ShapeSwitcherDialog', () => {
     expect(applyShape).not.toHaveBeenCalled();
   });
 
-  it("surfaces the server's 409 message inline and keeps the form open", async () => {
+  it("surfaces the server's 409 message inline — and only there — keeping the form open", async () => {
     const forkShape = vi
       .fn()
       .mockRejectedValue(new Error("A Shape named 'my-board' already exists"));
@@ -430,6 +522,173 @@ describe('ShapeSwitcherDialog', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
     expect(screen.getByLabelText(/name your version/i)).toBeInTheDocument();
+    // Reported exactly once: the field says which name is taken, and no toast
+    // talks over it — least of all the app-wide "Action failed" fallback.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('reports the failure as a toast when the name field left before the answer landed', async () => {
+    const { forkShape, reject } = deferredFork();
+    await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+    await submitFork(forkShape, 'my-board');
+
+    // Walk away mid-flight: the field that would have shown the refusal is gone.
+    pressEscape();
+    await waitForFormGone();
+    reject(new Error("A Shape named 'my-board' already exists"));
+
+    // Still exactly one report, and it still names the actual problem.
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Couldn't save your version", {
+        description: "A Shape named 'my-board' already exists",
+      })
+    );
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).not.toHaveBeenCalledWith(GENERIC_MUTATION_TOAST);
+  });
+
+  it('still confirms a copy that lands after the form is gone', async () => {
+    const { forkShape, resolve } = deferredFork();
+    await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+    await submitFork(forkShape, 'my-board');
+
+    pressEscape();
+    await waitForFormGone();
+    resolve(forkResult('my-board'));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Saved your version as my-board')
+    );
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('backs out one layer at a time: Escape closes the form, then the switcher', async () => {
+    const { onOpenChange } = await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES) })
+    );
+
+    pressEscape();
+
+    // The form folds away and you keep your place in the list.
+    await waitForFormGone();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: /reset flow board to defaults/i })
+    ).toBeInTheDocument();
+
+    // A second Escape leaves the switcher itself.
+    pressEscape();
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it('lets Escape out of a pending form without wedging the switcher shut', async () => {
+    const { forkShape } = deferredFork();
+    const { onOpenChange } = await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+    await submitFork(forkShape, 'my-board');
+
+    // A copy in flight never traps anyone: Escape still backs out of the form…
+    pressEscape();
+    await waitForFormGone();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    // …and the next Escape still leaves the switcher.
+    pressEscape();
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it('holds Cancel back while the copy is in flight, since it cannot cancel it', async () => {
+    const { forkShape } = deferredFork();
+    await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+    await submitFork(forkShape, 'my-board');
+
+    // A local write cannot be called back, so a live "Cancel" would promise
+    // something it cannot do — and the copy would land after you abandoned it.
+    // Escape and the ✕ are the honest exits; they say nothing about the request.
+    expect(screen.getByRole('button', { name: /^cancel$/i })).toBeDisabled();
+  });
+
+  it('reports a failure exactly once when the form is reopened mid-copy', async () => {
+    const { forkShape, reject } = deferredFork();
+    await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+    await submitFork(forkShape, 'my-board');
+    pressEscape();
+    await waitForFormGone();
+
+    // Come back to the form while the first copy is still out. Wiping the
+    // mutation here would take the inline surface away while still claiming it
+    // exists — the failure would land nowhere at all.
+    fireEvent.click(screen.getByRole('button', { name: /make your own version/i }));
+    await screen.findByLabelText(/name your version/i);
+    // The copy is still yours to wait on, so Create cannot start a second one.
+    expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
+
+    reject(new Error("A Shape named 'my-board' already exists"));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('never attributes a refusal to a Shape it was not about', async () => {
+    const forkShape = vi
+      .fn()
+      .mockRejectedValue(new Error("A Shape named 'my-board' already exists"));
+    const listShapes = vi
+      .fn()
+      .mockResolvedValueOnce(SHAPES)
+      .mockResolvedValue([
+        { name: 'linear-ops', displayName: 'Linear Ops', active: true },
+        { name: 'flow-board', displayName: 'Flow Board', active: false },
+      ] satisfies InstalledShapeSummary[]);
+    const { input, queryClient } = await openForkForm(
+      createMockTransport({ listShapes, forkShape })
+    );
+
+    fireEvent.change(input, { target: { value: 'my-board' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already exists/i);
+
+    // An agent's `control_ui apply_layout` moved the active Shape; this client
+    // refetches and the form re-seeds for the Shape it now targets.
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText(/name your version/i)).toHaveValue('linear-ops-fork')
+    );
+
+    // The refusal was about flow-board. It must not follow the form across.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('reports a failure as a toast when the switcher is closed from outside mid-copy', async () => {
+    const { forkShape, reject } = deferredFork();
+    const { setOpen } = await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+    await submitFork(forkShape, 'my-board');
+
+    // Nothing here routes through the dialog's own dismissal, so the footer still
+    // believes the form is open — only `open` itself knows the field is gone.
+    setOpen(false);
+    await waitForFormGone();
+    reject(new Error("A Shape named 'my-board' already exists"));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Couldn't save your version", {
+        description: "A Shape named 'my-board' already exists",
+      })
+    );
+    expect(toast.error).toHaveBeenCalledTimes(1);
   });
 
   it('closes the form when another Shape is applied, rather than re-aiming at it', async () => {

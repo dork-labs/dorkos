@@ -19,35 +19,57 @@
  *
  * @module shared/lib/query-client
  */
-import { QueryClient, QueryCache, MutationCache } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryCache,
+  MutationCache,
+  type QueryClientConfig,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { QUERY_TIMING } from './constants';
 
+/**
+ * Build the app's QueryClient configuration.
+ *
+ * A factory rather than a shared object because a QueryCache and a MutationCache
+ * are stateful — handing the same instances to two clients would let one leak
+ * into the other.
+ *
+ * Exported so a test can stand up a throwaway client carrying the *real* error
+ * policy instead of re-declaring it. Re-declaring it is how a test that asserts
+ * "this surface never shows the generic toast" quietly stops asserting anything.
+ *
+ * @returns A fresh configuration, caches included.
+ */
+export function createQueryClientConfig(): QueryClientConfig {
+  return {
+    queryCache: new QueryCache({
+      onError: (error, query) => {
+        console.error('[dorkos:query-error]', {
+          queryKey: query.queryKey,
+          error: error.message,
+        });
+        if (query.meta?.showToastOnError) {
+          toast.error((query.meta.errorLabel as string) ?? 'Failed to load data');
+        }
+      },
+    }),
+    mutationCache: new MutationCache({
+      onError: (error, _variables, _onMutateResult, mutation) => {
+        console.error('[dorkos:mutation-error]', { error: error.message });
+        if (mutation.meta?.suppressErrorToast) return;
+        toast.error('Action failed. Please try again.');
+      },
+    }),
+    defaultOptions: {
+      queries: {
+        staleTime: QUERY_TIMING.DEFAULT_STALE_TIME_MS,
+        retry: QUERY_TIMING.DEFAULT_RETRY,
+      },
+    },
+  };
+}
+
 /** Application-wide QueryClient singleton. */
-export const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error, query) => {
-      console.error('[dorkos:query-error]', {
-        queryKey: query.queryKey,
-        error: error.message,
-      });
-      if (query.meta?.showToastOnError) {
-        toast.error((query.meta.errorLabel as string) ?? 'Failed to load data');
-      }
-    },
-  }),
-  mutationCache: new MutationCache({
-    onError: (error, _variables, _onMutateResult, mutation) => {
-      console.error('[dorkos:mutation-error]', { error: error.message });
-      if (mutation.meta?.suppressErrorToast) return;
-      toast.error('Action failed. Please try again.');
-    },
-  }),
-  defaultOptions: {
-    queries: {
-      staleTime: QUERY_TIMING.DEFAULT_STALE_TIME_MS,
-      retry: QUERY_TIMING.DEFAULT_RETRY,
-    },
-  },
-});
+export const queryClient = new QueryClient(createQueryClientConfig());
