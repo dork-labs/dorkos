@@ -15,22 +15,29 @@ name: Desktop Smoke
 # apps/desktop/scripts/build-server.ts catch the static half (esbuild warnings,
 # unresolvable externals); this catches the half only a real launch can.
 #
-# TRIGGERS — deliberately asymmetric, because macOS runners are the scarcest
-# GitHub-hosted resource (public repos get a hard cap on concurrent macOS jobs,
-# and this job is ~25 min: install + turbo build + native rebuild + package +
-# launch):
+# TRIGGERS — deliberately asymmetric. The job is ~6 minutes (measured), but it
+# holds a macOS runner, which is the scarcest GitHub-hosted resource: public
+# repos get a hard cap on concurrent macOS jobs, and desktop-release.yml needs
+# those same runners when a release is cut.
 #
 #   - Pull requests: only when apps/desktop/**, the lockfile, or this workflow
 #     changes. That is where packaging regressions are actually authored, and
 #     it is where a red is immediately actionable by the person who caused it.
 #   - Push to main: the wider net (server, client, workspace packages), because
 #     a change to any of them can break the packaged bundle without touching
-#     apps/desktop at all. Running that net on every PR would put a 25-minute
-#     macOS job on nearly every PR in the repo; running it on main still catches
-#     the break before a release tag is cut from main, which is the only moment
-#     that matters for users. Path-filtered so the docs/spec/research merges
-#     that make up a large share of this repo's history cost nothing.
+#     apps/desktop at all. Path-filtered, so the docs/spec/research merges that
+#     make up a large share of this repo's history cost nothing.
 #   - workflow_dispatch: on demand, e.g. before cutting a release.
+#
+# Why the wide net is NOT on pull requests: the server-bundle half of that risk
+# is already covered on PRs, cheaply and on ubuntu. cli-smoke-test.yml filters
+# on apps/server/** + apps/client/** and builds the CLI, whose esbuild server
+# bundle has the same external list and the same module graph as this app's —
+# so a server change that breaks bundling goes red there first. What is left
+# for main to catch is the genuinely desktop-only half (asar layout, Electron
+# ABI, packaged boot), where a same-day red on main still lands well before a
+# release tag is cut from main. If that ever stops holding, widening the PR
+# filter to match the push filter is a two-line change.
 #
 # NOT run here: the signed/notarized path (that needs Apple credentials and ~30+
 # minutes of notarization — desktop-release.yml owns it) and the Windows
@@ -61,7 +68,7 @@ env:
 
 # Cancel superseded runs on the same ref for PRs only — every push to main keeps
 # its own completed run. Matters more here than elsewhere: this job holds a
-# scarce macOS runner for ~25 minutes.
+# scarce macOS runner.
 concurrency:
   group: desktop-smoke-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -79,9 +86,12 @@ jobs:
   # move the rebuild into `pnpm build`.
   packaged-runtime:
     runs-on: macos-latest
-    # Baseline ~20-25 minutes: pnpm install, a cold turbo build of the desktop
-    # dependency graph, @electron/rebuild, electron-builder, then the launch.
-    timeout-minutes: 45
+    # Baseline ~6 minutes end to end (measured): pnpm install, a cold turbo
+    # build of the desktop dependency graph, @electron/rebuild,
+    # electron-builder, then the launch — of which the launch-and-probe itself
+    # is ~8 seconds. Generous headroom for a cold pnpm cache; the point of the
+    # timeout is to bound a hung launch, not to police the happy path.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

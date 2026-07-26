@@ -123,7 +123,9 @@ pnpm --filter @dorkos/desktop exec tsx scripts/smoke-packaged.ts
 pnpm rebuild better-sqlite3 node-pty   # ← from the repo root. Not optional. See §2.
 ```
 
-In CI this is `.github/workflows/desktop-smoke.yml` — a single macOS job (unsigned `--dir` pack, so it needs no Apple credentials), running on PRs that touch `apps/desktop/**` and on pushes to `main` that touch the server, client or workspace packages. That asymmetry is deliberate: macOS runners are the scarcest GitHub-hosted resource and the job is ~25 minutes, while a main-branch red still lands well before a release tag is cut. The job runs **no tests** on purpose — it rebuilds the native modules for Electron's ABI, and that must never share a runner with vitest (§2).
+In CI this is `.github/workflows/desktop-smoke.yml` — a single macOS job (unsigned `--dir` pack, so it needs no Apple credentials), ~6 minutes end to end, running on PRs that touch `apps/desktop/**` and on pushes to `main` that touch the server, client or workspace packages. That asymmetry is deliberate — macOS runners are capped, and the server-bundle half of the risk is already covered on PRs by the ubuntu CLI smoke test; the workflow header explains it in full. The job runs **no tests** on purpose — it rebuilds the native modules for Electron's ABI, and that must never share a runner with vitest (§2).
+
+One thing that surprises people: an **unsigned** build cannot launch as packaged. `hardenedRuntime: true` turns on library validation, and electron-builder ad-hoc-signs each binary separately, so the loader rejects the app's own Electron Framework with _"…different Team IDs"_. The smoke re-signs ad-hoc in one pass when (and only when) it finds an ad-hoc signature — a real Developer ID signature is never touched.
 
 ## 6. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
 
