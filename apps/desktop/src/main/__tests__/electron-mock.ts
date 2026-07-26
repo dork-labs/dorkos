@@ -1,5 +1,13 @@
 import { vi } from 'vitest';
-import type { Display, HandlerDetails, Rectangle, WindowOpenHandlerResponse } from 'electron';
+import type {
+  Display,
+  HandlerDetails,
+  MessageBoxOptions,
+  MessageBoxReturnValue,
+  Rectangle,
+  WindowOpenHandlerResponse,
+} from 'electron';
+import { MockServerProcess, type SpawnOptions } from './server-child-mock';
 
 /**
  * Test double for Electron's main-process module surface.
@@ -10,8 +18,9 @@ import type { Display, HandlerDetails, Rectangle, WindowOpenHandlerResponse } fr
  * (including `webContents` with `send`, a unique `id`, and an `on`/`emit`
  * event bus), `ipcMain` (`on`/`handle` as inspectable `vi.fn()`s — tests
  * invoke a registered handler directly from its mock call args), `screen`,
- * `dialog`, `Menu`, and `shell` to drive the main-process code under test
- * without a real Electron runtime.
+ * `dialog`, `Menu`, `shell`, and `utilityProcess` (the production server-spawn
+ * path) to drive the main-process code under test without a real Electron
+ * runtime.
  */
 
 const DEFAULT_USER_DATA_PATH = '/tmp/dorkos-desktop-test/userData';
@@ -151,6 +160,7 @@ class MockBrowserWindowImpl {
   });
   loadURL = vi.fn<(url: string) => Promise<void>>();
   loadFile = vi.fn<(filePath: string) => Promise<void>>();
+  reload = vi.fn<() => void>();
 }
 
 export const BrowserWindow = MockBrowserWindowImpl;
@@ -164,7 +174,7 @@ export const app = {
   name: 'DorkOS',
   requestSingleInstanceLock: vi.fn((): boolean => true),
   quit: vi.fn<() => void>(),
-  getPath: vi.fn((): string => DEFAULT_USER_DATA_PATH),
+  getPath: vi.fn((_name?: string): string => DEFAULT_USER_DATA_PATH),
   getVersion: vi.fn((): string => '0.1.0'),
   setAboutPanelOptions: vi.fn<(options: unknown) => void>(),
   setAsDefaultProtocolClient: vi.fn((): boolean => true),
@@ -192,8 +202,20 @@ export const screen = {
   getPrimaryDisplay: vi.fn((): Display => PRIMARY_DISPLAY),
 };
 
+/**
+ * Electron's `dialog.showMessageBox` is overloaded: anchored to a window, or
+ * not. Modelling both arms keeps the arguments in `.mock.calls`, which is how
+ * tests assert *which* window a dialog was anchored to — a zero-argument stub
+ * types those calls as empty tuples and loses that.
+ */
+export type ShowMessageBox = (
+  ...args: [options: MessageBoxOptions] | [window: unknown, options: MessageBoxOptions]
+) => Promise<MessageBoxReturnValue>;
+
 export const dialog = {
-  showMessageBox: vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false })),
+  showMessageBox: vi.fn<ShowMessageBox>(() =>
+    Promise.resolve({ response: 0, checkboxChecked: false })
+  ),
   showErrorBox: vi.fn<(title: string, content: string) => void>(),
 };
 
@@ -204,17 +226,34 @@ export const Menu = {
 
 export const shell = {
   openExternal: vi.fn<(url: string) => Promise<void>>(),
+  showItemInFolder: vi.fn<(fullPath: string) => void>(),
+};
+
+/**
+ * Every child `utilityProcess.fork()` has returned, in spawn order — the
+ * production counterpart to `child-process-mock`'s `forkedChildren`.
+ */
+export const utilityProcessChildren: MockServerProcess[] = [];
+
+export const utilityProcess = {
+  fork: vi.fn((entry: string, _args: string[], options: SpawnOptions) => {
+    const child = new MockServerProcess(entry, options);
+    utilityProcessChildren.push(child);
+    return child;
+  }),
 };
 
 /** Reset all mock state between tests — call from `beforeEach`. */
 export function resetElectronMock(): void {
   MockBrowserWindowImpl.instances.length = 0;
   appBus.clear();
+  utilityProcessChildren.length = 0;
+  utilityProcess.fork.mockClear();
 
   app.isPackaged = false;
   app.requestSingleInstanceLock = vi.fn(() => true);
   app.quit = vi.fn();
-  app.getPath = vi.fn(() => DEFAULT_USER_DATA_PATH);
+  app.getPath = vi.fn((_name?: string) => DEFAULT_USER_DATA_PATH);
   app.getVersion = vi.fn(() => '0.1.0');
   app.setAboutPanelOptions = vi.fn();
   app.setAsDefaultProtocolClient = vi.fn(() => true);
@@ -226,11 +265,14 @@ export function resetElectronMock(): void {
   screen.getAllDisplays = vi.fn(() => [PRIMARY_DISPLAY]);
   screen.getPrimaryDisplay = vi.fn(() => PRIMARY_DISPLAY);
 
-  dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+  dialog.showMessageBox = vi.fn<ShowMessageBox>(() =>
+    Promise.resolve({ response: 0, checkboxChecked: false })
+  );
   dialog.showErrorBox = vi.fn();
 
   Menu.buildFromTemplate = vi.fn((template: unknown) => ({ template }));
   Menu.setApplicationMenu = vi.fn();
 
   shell.openExternal = vi.fn();
+  shell.showItemInFolder = vi.fn();
 }

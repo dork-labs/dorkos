@@ -12,7 +12,7 @@ Build tooling: `electron-vite` (main/preload/renderer) + `electron-builder` (pac
 
 ```
 apps/desktop/
-├── src/main/            # main process: window-manager, server-process, menu, navigation, auto-updater
+├── src/main/            # main process: window-manager, server-spawn, server-process, menu, navigation, auto-updater
 ├── src/preload/         # contextBridge → window.electronAPI
 ├── src/server-entry.ts  # the server child's entry (imports @dorkos/server for its side effect)
 ├── scripts/
@@ -33,7 +33,29 @@ The main process spawns the Express server, not in-process:
 - **Production**: Electron `UtilityProcess.fork` of the bundled `dist/server/server-entry.mjs`.
 - **Development**: `child_process.fork` via `tsx` of the original `src/server-entry.ts` (system Node, so the shared `better-sqlite3` stays compiled for system Node and `pnpm dev` keeps working).
 
-`src/main/server-process.ts` owns this: free-port allocation, env wiring, readiness handshake (`{type:'ready'}`), crash monitoring, and forwarding the child's stdout/stderr into `electron-log`.
+Four small modules own this, split by job:
+
+| Module                              | Job                                                                                                                                                                                                            |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/main/server-spawn.ts`          | **How** to start a child: free-port allocation, entry resolution, env wiring, the `tsx` shim (`tsx.cmd` on Windows), stdout/stderr into `electron-log`.                                                        |
+| `src/main/server-process.ts`        | **Supervises** the child: readiness handshake (`{type:'ready'}`), one `exit` listener, and an explicit `starting \| ready \| stopping \| dead` state with a single `expectedExit` flag only `stopServer` sets. |
+| `src/main/server-crash-recovery.ts` | The **conversation with the user** after an unexpected death: what to say, whether to offer a restart, when to stop offering.                                                                                  |
+| `src/main/server-output.ts`         | The child's stderr, **made safe to show** — bounded ring buffer, secret redaction, line truncation.                                                                                                            |
+
+**Any exit nobody asked for is a crash** — including exit 0 (what `POST /api/admin/restart` and "Reset All Data" produce) and a `null` code from a signal. The supervisor logs it _before_ looking for a window (`BrowserWindow.getFocusedWindow()` is `null` whenever the app isn't frontmost, which used to skip the whole handler), offers restart-or-quit anchored to the tracked main window, and nulls the port so `getServerPort()` never hands the renderer a dead one. Read the port through that accessor; never keep a copy, because a restart gives the server a new one.
+
+**Say what the server said.** A server that refuses to boot writes the actionable sentence to stderr and exits — a data directory another process already holds (the server-side instance lock, DOR-532), a failed migration, a port it could not bind. `server-output.ts` keeps a bounded, redacted tail of that stream, and both the startup-failure error and the crash dialog carry it. Pass it through verbatim: never parse it, match on it, or reword it. **The desktop side owns delivery only** — the server owns the wording, and nothing here knows or cares which failure it is.
+
+Two things shape that tail, and both were chosen against real output rather than a guess:
+
+- **A head as well as a tail.** A real failure is one reason line followed by a stack, and Node's default `Error.stackTraceLimit` is 10 — so a pure tail keeps frames and evicts the only sentence worth reading. Frames (`^\s*at `) are dropped outright too; `electron-log` still gets the whole trace.
+- **Chunk boundaries do not respect lines.** The trailing partial is carried until its newline arrives, because splitting each `data` event independently would cut a token in half and neither piece would look secret-shaped any more.
+
+Redaction goes through `scrubMessage` from `@dorkos/shared/error-report` — the repo's shared, maintained redactor — not a local regex. It also rewrites `/Users/<name>/…` to `~/…`, which matters for a dialog someone may screenshot. The audit behind this found no server module that logs a credential _value_ today; the reason to redact anyway is that `apps/server/src/index.ts` hands raw SDK errors from credentialed calls to `logger.warn`, and nobody owns that text.
+
+**A retry that keeps failing stops being offered.** After `MAX_RESTART_FAILURES` failures the crash dialog drops "Restart Server" and offers "Open Logs" plus "Quit". Some failures cannot be retried out of, and an unlimited retry button against a locked data directory is a button that can never succeed. **A failure is not just a restart that would not start** — a server that starts and then dies inside `MIN_HEALTHY_UPTIME_MS` counts too, because the loop this cap exists to stop is usually a server that boots fine and is killed again by whatever killed it the first time. Only a server that stays up that long clears the counter; do not "simplify" this back to resetting whenever a server starts, which is the bug (DOR-533).
+
+Two env facts worth knowing. The child gets `DORKOS_MANAGED_BY=desktop`, and `apps/server` answers `POST /api/admin/restart` and `/api/admin/reset` with 409 when it sees that — those endpoints re-exec the server process, which cannot work inside a UtilityProcess whose lifecycle the shell owns (this module only sets the variable; the gate lives server-side). And `DORK_HOME` is pinned to `~/.dork` **only** when `app.isPackaged`: in dev the child resolves its own project-local `.temp/.dork`, so `pnpm --filter @dorkos/desktop dev` never migrates production data.
 
 ### The server bundle is a separate build step
 
@@ -73,7 +95,7 @@ The default (and only bundled) runtime is claude-code. The Agent SDK ships the a
 
 1. `apps/desktop/package.json` declares `@anthropic-ai/claude-agent-sdk-darwin-arm64` as an os/cpu-guarded `optionalDependency` (so pnpm links it at the desktop top-level and electron-builder collects it). **Keep it version-locked to `@anthropic-ai/claude-agent-sdk`** — a lone SDK bump silently ships a skewed binary.
 2. `electron-builder.yml` `asarUnpack`s it (native binary → real file on disk).
-3. `src/main/server-process.ts` resolves the unpacked path in packaged mode and passes it to the server via `DORKOS_CLAUDE_CLI_PATH`; `sdk-utils.ts` honors that env override first, then falls back to the SDK's own bundled→PATH resolution (dev + npm CLI are unchanged — the env var is unset there).
+3. `src/main/server-spawn.ts` resolves the unpacked path in packaged mode and passes it to the server via `DORKOS_CLAUDE_CLI_PATH`; `sdk-utils.ts` honors that env override first, then falls back to the SDK's own bundled→PATH resolution (dev + npm CLI are unchanged — the env var is unset there).
 
 This adds ~213 MB to the DMG (the binary itself). That is inherent to "runs Claude Code out of the box"; the arch-guard keeps it to the one target arch.
 

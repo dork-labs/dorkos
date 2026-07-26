@@ -39,6 +39,13 @@ describe('redactTokens', () => {
     expect(redactTokens('Authorization: Bearer abc.def-ghi')).toContain('[redacted]');
     expect(redactTokens('ref env:OPENAI_API_KEY here')).toBe('ref [redacted] here');
     expect(redactTokens('token=supersecretvalue')).toBe('[redacted]');
+    // The real per-instance MCP token: `dork_mcp_local_` + 64 hex
+    // (services/core/auth/mcp-local-token.ts). The named segments between
+    // the prefix and the hex are why a `dork_[0-9a-f]+` rule misses it.
+    expect(redactTokens(`bare dork_mcp_local_${'a1b2c3d4'.repeat(8)} end`)).toBe(
+      'bare [redacted] end'
+    );
+    expect(redactTokens(`key dork_${'0123abcd'.repeat(6)} end`)).toBe('key [redacted] end');
   });
 });
 

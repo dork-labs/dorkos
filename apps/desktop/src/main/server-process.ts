@@ -1,331 +1,367 @@
-import { utilityProcess, BrowserWindow, dialog, app } from 'electron';
-import { fork, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import net from 'node:net';
-import path from 'node:path';
+import { app, BrowserWindow, dialog } from 'electron';
 import log from 'electron-log';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
+import { getFreePort, spawnServer, type ServerChild } from './server-spawn';
+import { formatServerOutput } from './server-output';
+import { recoverFromCrash } from './server-crash-recovery';
 
 /**
- * Location of the Claude Code native binary inside a packaged build,
- * relative to `process.resourcesPath` (`.../Contents/Resources` on macOS,
- * `.../resources` on Windows), for the platform/arch this build runs on.
+ * Supervisor for the Express server the desktop shell runs as a child process.
  *
- * The SDK ships its executable as a per-platform optional dependency named
- * `@anthropic-ai/claude-agent-sdk-<platform>-<arch>`, matching Node's
- * `process.platform`/`process.arch` (e.g. `…-darwin-arm64`, `…-win32-x64`).
- * The executable inside is `claude` everywhere except Windows, where it's
- * `claude.exe`. electron-builder collects the package from the SDK's
- * dependency tree; electron-builder.yml's `asarUnpack` keeps it as a real
- * file on disk (a native executable cannot run from inside app.asar), landing
- * here. Only the target's own binary is packaged — a macOS build has no
- * win32-x64 sibling and vice versa — so this resolves exactly one path.
+ * Everything about the child's liveness lives in one place here, because the
+ * previous arrangement inferred it three different ways — a `child` reference,
+ * a `serverPort` copy, and an exit-code heuristic — and the three disagreed.
+ * A server that exited 0 (which is exactly what `POST /api/admin/restart` and
+ * "Reset All Data" do) was silently ignored: no dialog, no log, and
+ * `getServerPort()` kept handing the renderer a dead port.
+ *
+ * The replacement is a small state machine. {@link ServerState} says what the
+ * child is doing, {@link expectedExit} says whether we asked for the exit that
+ * is happening, and a single `exit` listener routes every death through
+ * {@link handleExit}. Every unexpected exit is a crash, whatever its code.
  */
-const PACKAGED_CLAUDE_BINARY_SUBPATH = path.join(
-  'app.asar.unpacked',
-  'node_modules',
-  '@anthropic-ai',
-  `claude-agent-sdk-${process.platform}-${process.arch}`,
-  process.platform === 'win32' ? 'claude.exe' : 'claude'
-);
+
+/** How long a graceful shutdown gets before the child is killed outright. */
+const SHUTDOWN_GRACE_MS = 5_000;
 
 /**
- * Resolve the packaged Claude Code binary the bundled server should spawn.
+ * What the supervised child is doing.
  *
- * Only meaningful in a packaged build: there, the server bundle's own
- * `require.resolve` cannot reach the SDK's per-platform optional dependency
- * (pnpm links that sibling only inside the SDK's store `node_modules`, and an
- * `app.asar/…` path is not spawnable anyway), so the main process hands the
- * server the real unpacked path via `DORKOS_CLAUDE_CLI_PATH`. Returns `null`
- * in dev or if the expected file is absent, leaving the server's own PATH-based
- * resolution untouched.
- *
- * @returns Absolute path to the unpacked `claude` binary, or `null`.
+ * - `starting` — spawned, waiting for its `ready` message.
+ * - `ready` — serving on {@link serverPort}.
+ * - `stopping` — sent `shutdown`, waiting for it to exit.
+ * - `dead` — no child. The only state {@link startServer} may be called from.
  */
-function resolvePackagedClaudeBinary(): string | null {
-  if (!app.isPackaged) return null;
-  const candidate = path.join(process.resourcesPath, PACKAGED_CLAUDE_BINARY_SUBPATH);
-  return existsSync(candidate) ? candidate : null;
-}
+type ServerState = 'starting' | 'ready' | 'stopping' | 'dead';
 
-/**
- * Unified interface for server child process, abstracting the difference
- * between Electron UtilityProcess (production) and child_process.fork (dev).
- */
-interface ServerChild {
-  on(event: 'message', handler: (msg: unknown) => void): void;
-  on(event: 'exit', handler: (code: number | null) => void): void;
-  off(event: 'exit', handler: (code: number | null) => void): void;
-  send(msg: unknown): void;
-  kill(): void;
-}
-
+let state: ServerState = 'dead';
 let child: ServerChild | null = null;
 let serverPort: number | null = null;
 
-/** Find a free port by binding to port 0 and immediately releasing it. */
-async function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, () => {
-      const { port } = server.address() as net.AddressInfo;
-      server.close(() => resolve(port));
-    });
-    server.on('error', reject);
-  });
-}
-
 /**
- * Wrap an Electron UtilityProcess to conform to the ServerChild interface.
- * UtilityProcess uses postMessage/on('message') with MessageEvent.
+ * When the current server reported itself ready, or `null` if none has.
  *
- * `ServerChild`'s `on`/`off` are overloaded per event name so callers get a
- * precisely-typed handler; a single-signature object literal can't satisfy
- * an overloaded interface member structurally, so the whole object is cast
- * once at the boundary instead of per-call.
+ * How long a server actually served is the difference between "it crashed" and
+ * "it never worked" — see MIN_HEALTHY_UPTIME_MS in server-crash-recovery.
  */
-function wrapUtilityProcess(proc: Electron.UtilityProcess): ServerChild {
-  return {
-    on(event: string, handler: (...args: unknown[]) => void) {
-      proc.on(event as 'exit', handler as (code: number) => void);
-    },
-    off(event: string, handler: (...args: unknown[]) => void) {
-      proc.off(event as 'exit', handler as (code: number) => void);
-    },
-    send(msg: unknown) {
-      proc.postMessage(msg);
-    },
-    kill() {
-      proc.kill();
-    },
-  } as ServerChild;
-}
+let readySince: number | null = null;
 
 /**
- * Wrap a Node.js ChildProcess to conform to the ServerChild interface.
- * ChildProcess uses send/on('message') with direct message objects.
+ * Whether the exit we are about to see is one we asked for. Set *only* by
+ * {@link stopServer} and cleared by {@link handleExit}, so "did the user quit,
+ * or did the server die?" is a recorded fact rather than something each
+ * consumer re-derives from an exit code.
  */
-function wrapChildProcess(proc: ChildProcess): ServerChild {
-  return {
-    on(event: string, handler: (...args: unknown[]) => void) {
-      proc.on(event, handler as (...args: unknown[]) => void);
-    },
-    off(event: string, handler: (...args: unknown[]) => void) {
-      proc.off(event, handler as (...args: unknown[]) => void);
-    },
-    send(msg: unknown) {
-      proc.send!(msg as import('node:child_process').Serializable);
-    },
-    kill() {
-      proc.kill();
-    },
-  } as ServerChild;
-}
+let expectedExit = false;
+
+/** Point-in-time accessor for the main window, stored the way `setupAutoUpdater` stores its own. */
+let getMainWindow: (() => BrowserWindow | null) | null = null;
+
+/** The in-flight `startServer` readiness wait, or `null` when not starting. */
+let pendingStart: {
+  resolve: () => void;
+  reject: (err: Error) => void;
+  timeout: NodeJS.Timeout;
+} | null = null;
+
+/** Callbacks waiting on the current child's exit (see {@link stopServer}). */
+const exitWaiters = new Set<() => void>();
+
+/** Guard so repeated `startServer` calls don't stack process-level listeners. */
+let safetyNetInstalled = false;
 
 /**
- * Resolve the server entry script for the current mode. Computed
- * independently per mode rather than derived by string substitution — dev's
- * `src/server-entry.ts` and prod's bundled `dist/server/server-entry.mjs`
- * don't mirror each other's directory depth, so a naive dist→src swap would
- * silently point at the wrong file.
+ * Log promise rejections nothing else handled.
  *
- * `__dirname` here is always `dist/main` — electron-vite compiles the main
- * process to that fixed location in both dev and packaged builds.
- */
-function resolveServerEntry(): string {
-  if (app.isPackaged) {
-    // Bundled by scripts/build-server.ts as ESM (`.mjs` — apps/server's
-    // source relies on `import.meta.url`, which esbuild can't polyfill for
-    // CJS output; see that script for why). Nested under dist/server/ (not
-    // flat dist/) so the bundle's own `__dirname`-relative reads — Drizzle
-    // migrations, core-extension source — land inside the desktop package
-    // instead of escaping it. See that script for the full layout rationale.
-    return path.join(__dirname, '../server/server-entry.mjs');
-  }
-  // Dev: run the original TypeScript source directly via tsx (system Node),
-  // not Electron's UtilityProcess — see spawnServer for why.
-  return path.resolve(__dirname, '../../src/server-entry.ts');
-}
-
-/**
- * Forward a child's stdout/stderr to electron-log, line by line, so a crash
- * is diagnosable from `~/Library/Logs` even when nothing is attached to the
- * process (a packaged app has no terminal). Requires the child to have been
- * spawned with `stdio: 'pipe'` for stdout/stderr — a `null` stream (any
- * other stdio mode) is a silent no-op.
- */
-function forwardOutputToLog(
-  stdout: NodeJS.ReadableStream | null,
-  stderr: NodeJS.ReadableStream | null
-): void {
-  const logLines = (level: 'info' | 'error') => (chunk: Buffer | string) => {
-    for (const line of chunk.toString().split('\n')) {
-      if (line.trim()) log[level]('[server]', line);
-    }
-  };
-  stdout?.on('data', logLines('info'));
-  stderr?.on('data', logLines('error'));
-}
-
-/**
- * Spawn the server process.
+ * Electron's main process has no default handler for these, so before this a
+ * rejection had nowhere to land: no dialog, no log line, nothing in
+ * `~/Library/Logs`. The crash-restart path below was the concrete case — but
+ * the net is deliberately process-wide, because the whole main process is
+ * event handlers whose promises nobody awaits.
  *
- * In production (packaged app): uses Electron UtilityProcess (Electron's Node runtime).
- * electron-builder rebuilds native modules for Electron's ABI during packaging.
- *
- * In development: uses child_process.fork (system Node runtime).
- * This avoids ABI mismatch — the shared better-sqlite3 binary stays compiled
- * for system Node, so both `pnpm dev` (server) and `pnpm dev:desktop` work.
+ * Know what registering this changes, because it is not local to this module.
+ * Node's default for an unhandled rejection is to raise it as an uncaught
+ * exception and terminate; **any** listener replaces that with "call the
+ * listener and keep going". So from here on, every unawaited rejection
+ * anywhere in the main process is survivable and shows up only as a log line.
+ * That is the right trade for a desktop shell — a stray rejection in one
+ * handler should not take the user's windows and running agents down with it —
+ * but it does mean the log is now the only place such a bug surfaces.
  */
-function spawnServer(entryPath: string, env: Record<string, string>): ServerChild {
-  if (app.isPackaged) {
-    const proc = utilityProcess.fork(entryPath, [], {
-      env: { ...process.env, ...env },
-      stdio: 'pipe',
-    });
-    forwardOutputToLog(proc.stdout, proc.stderr);
-    return wrapUtilityProcess(proc);
-  }
-
-  // Dev mode: use system Node via child_process.fork. The entry file is
-  // TypeScript — use tsx to run it.
-  const tsxBin = path.resolve(__dirname, '../../../../node_modules/.bin/tsx');
-  const cp = fork(entryPath, [], {
-    execPath: tsxBin,
-    env: { ...process.env, ...env },
-    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
-  });
-  forwardOutputToLog(cp.stdout, cp.stderr);
-  return wrapChildProcess(cp);
-}
-
-/**
- * Start the Express server in an isolated process.
- *
- * @returns The port number the server is listening on.
- * @throws If the server child does not signal readiness within
- *   {@link SERVER_READY_PARENT_TIMEOUT_MS}.
- */
-export async function startServer(): Promise<number> {
-  const port = await getFreePort();
-  const dorkHome = path.join(app.getPath('home'), '.dork');
-
-  const serverEntry = resolveServerEntry();
-  // In dev, electron-vite serves the renderer over HTTP (ELECTRON_RENDERER_URL,
-  // e.g. http://localhost:5173). That cross-origin request is rejected by the
-  // server's CORS allowlist, so whitelist the renderer origin explicitly. In a
-  // packaged build the renderer loads from the server's own localhost origin
-  // (see window-manager.ts's `createWindow`), which is same-origin — no CORS
-  // override needed there.
-  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
-  // In production, point the server's SPA-serving fallback (app.ts's
-  // `finalizeApp`) at the packaged renderer assets. Those must be real files
-  // on disk, not virtual asar entries (electron-builder.yml unpacks
-  // dist/renderer/** for exactly this), hence `app.asar.unpacked`. Left
-  // unset in dev — the server isn't the one serving the renderer there.
-  const clientDistPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'renderer')
-    : undefined;
-  // In a packaged build, point the server at the unpacked, signed Claude Code
-  // binary — the bundled server can't `require.resolve` it itself (see
-  // resolvePackagedClaudeBinary). Unset in dev, where the server resolves
-  // `claude` from PATH or the SDK's optional dependency as usual.
-  const claudeCliPath = resolvePackagedClaudeBinary();
-  if (app.isPackaged && !claudeCliPath) {
+function installSafetyNet(): void {
+  if (safetyNetInstalled) return;
+  safetyNetInstalled = true;
+  process.on('unhandledRejection', (reason: unknown) => {
     log.error(
-      '[server] Packaged Claude Code binary missing at',
-      path.join(process.resourcesPath, PACKAGED_CLAUDE_BINARY_SUBPATH)
+      'Unhandled promise rejection in the main process:',
+      reason instanceof Error ? reason : new Error(String(reason))
+    );
+  });
+}
+
+/**
+ * Attach the child's own account of what went wrong to an error a person will
+ * read.
+ *
+ * Without this the shell could only report an exit code, while the server's
+ * actionable sentence — a data directory another process already holds, a
+ * failed migration, a port it could not bind — sat in a log file nobody opens.
+ * Verbatim, never parsed: the server owns the words, this side owns delivery.
+ *
+ * @param message - What the supervisor observed.
+ * @param output - The child's stderr tail.
+ */
+function withServerOutput(message: string, output: string[]): Error {
+  const reported = formatServerOutput(output);
+  return new Error(reported ? `${message}\n\n${reported}` : message);
+}
+
+/**
+ * Settle the in-flight readiness wait exactly once, whichever way it went, and
+ * drop its timeout. A no-op after the first call, so a child that reports
+ * ready and then dies during the same turn doesn't settle twice.
+ *
+ * @param err - The failure to reject with, or `null` for a successful start.
+ */
+function settleStart(err: Error | null): void {
+  const pending = pendingStart;
+  if (!pending) return;
+  pendingStart = null;
+  clearTimeout(pending.timeout);
+  if (err) pending.reject(err);
+  else pending.resolve();
+}
+
+/**
+ * Clear every trace of the current child. Idempotent.
+ *
+ * Settling any outstanding startup wait is part of "every trace": once there
+ * is no child, nothing will ever arrive to settle it. This is the backstop for
+ * the path {@link stopServer} takes when it gives up and kills a child that
+ * never exited — the identity guard on the `exit` listener means that child's
+ * eventual exit is ignored, so {@link handleExit} is not coming.
+ */
+function clearChild(): void {
+  child = null;
+  serverPort = null;
+  readySince = null;
+  state = 'dead';
+  expectedExit = false;
+  settleStart(new Error('The DorkOS server was stopped before it finished starting.'));
+  for (const waiter of [...exitWaiters]) waiter();
+  exitWaiters.clear();
+}
+
+/**
+ * The single `exit` listener. Routes by what the supervisor was doing, so the
+ * same event means "startup failed", "we asked for this", or "it crashed"
+ * without anyone re-reading the exit code to guess which.
+ *
+ * @param code - Exit code, or `null` when the process died from a signal
+ *   (a segfaulting native module, `kill -9`) — just as unexpected as any
+ *   non-zero code, and previously ignored alongside it.
+ */
+function handleExit(code: number | null): void {
+  const wasExpected = expectedExit;
+  const wasStarting = pendingStart !== null;
+  // Read the child's last words before clearing it — clearChild drops the
+  // reference that owns them.
+  const output = child?.recentErrors() ?? [];
+  const uptimeMs = readySince === null ? 0 : Date.now() - readySince;
+
+  // Settle before clearing, so the specific reason wins over clearChild's
+  // generic backstop. Always settle: clearing the timeout without rejecting
+  // left `await startServer()` pending forever inside app.on('ready') — no
+  // window, no error, nothing to do but force-quit. Asking about the
+  // outstanding wait rather than the state also covers a quit that lands
+  // mid-boot, where stopServer has already moved the state on to 'stopping'.
+  if (wasStarting) {
+    settleStart(
+      withServerOutput(`The server exited with code ${code} before it was ready.`, output)
     );
   }
-  child = spawnServer(serverEntry, {
-    DORKOS_PORT: String(port),
-    DORK_HOME: dorkHome,
-    NODE_ENV: app.isPackaged ? 'production' : 'development',
-    ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),
-    ...(clientDistPath ? { CLIENT_DIST_PATH: clientDistPath } : {}),
-    ...(claudeCliPath ? { DORKOS_CLAUDE_CLI_PATH: claudeCliPath } : {}),
+  clearChild();
+
+  if (wasStarting || wasExpected) return;
+  reportCrash(code, output, uptimeMs);
+}
+
+/**
+ * Surface an unexpected server death and hand off to the recovery
+ * conversation.
+ *
+ * @param code - The child's exit code, or `null` if it died from a signal.
+ * @param output - The child's stderr tail, for the dialog to show.
+ * @param uptimeMs - How long the dead server had been serving.
+ */
+function reportCrash(code: number | null, output: string[], uptimeMs: number): void {
+  // Log first and unconditionally: this line is the only record that survives
+  // when there is no window to show a dialog in.
+  log.error(`[server] The server stopped unexpectedly (exit code ${code ?? 'none — signalled'}).`);
+  void recoverFromCrash({
+    code,
+    output,
+    uptimeMs,
+    getWindow: () => getMainWindow?.() ?? null,
+    restart: () => startServer(),
+  }).catch((err: unknown) => {
+    // The recovery conversation itself fell over — a rejected dialog, a
+    // destroyed window mid-prompt. Without this it would be an unhandled
+    // rejection: no message, no log, and an app pointing at a dead port.
+    log.error('[server] Could not run crash recovery.', err);
+    dialog.showErrorBox(
+      "DorkOS couldn't recover its server",
+      "DorkOS lost its background server and couldn't offer to start it again, so it can't " +
+        'continue. Try opening DorkOS again. If this keeps happening, check ' +
+        `~/Library/Logs/DorkOS for details.\n\n${err instanceof Error ? err.message : String(err)}`
+    );
+    app.quit();
   });
+}
 
-  // Wait for the server to signal readiness
-  const onEarlyExit = (code: number | null) => {
-    clearTimeout(timeout);
-    if (code !== 0) reject(new Error(`Server exited with code ${code}`));
-  };
-  let reject: (reason: Error) => void;
-  let timeout: NodeJS.Timeout;
+/**
+ * Start the Express server in an isolated process and wait for it to report
+ * itself ready.
+ *
+ * Once ready, the child is supervised: any exit that {@link stopServer} did
+ * not ask for is treated as a crash, whatever its exit code.
+ *
+ * @param mainWindowAccessor - Point-in-time accessor for the current main
+ *   window, used to anchor the crash dialog. Stored for the lifetime of the
+ *   process, so a restart from that dialog keeps using it.
+ * @returns The port number the server is listening on.
+ * @throws If a server is already running, if the child cannot be spawned, or
+ *   if it exits or stays silent before signalling readiness (within
+ *   {@link SERVER_READY_PARENT_TIMEOUT_MS}).
+ */
+export async function startServer(
+  mainWindowAccessor?: () => BrowserWindow | null
+): Promise<number> {
+  installSafetyNet();
+  if (mainWindowAccessor) getMainWindow = mainWindowAccessor;
+  if (state !== 'dead') {
+    throw new Error(`Cannot start a second DorkOS server: the current one is ${state}.`);
+  }
 
-  await new Promise<void>((res, rej) => {
-    reject = rej;
-    timeout = setTimeout(
-      () => rej(new Error('Server start timeout')),
+  // Claim the supervisor before the first await, so two overlapping calls
+  // can't both get past the guard while a port is being probed.
+  state = 'starting';
+  expectedExit = false;
+  let port: number;
+  try {
+    port = await getFreePort();
+    child = spawnServer(port);
+  } catch (err) {
+    state = 'dead';
+    throw err;
+  }
+
+  const started = child;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () =>
+        settleStart(
+          withServerOutput('The DorkOS server did not start in time.', started.recentErrors())
+        ),
       SERVER_READY_PARENT_TIMEOUT_MS
     );
-    child!.on('message', (msg: unknown) => {
-      if (
-        msg &&
-        typeof msg === 'object' &&
-        'type' in msg &&
-        (msg as { type: string }).type === 'ready'
-      ) {
-        clearTimeout(timeout);
-        res();
-      }
+    pendingStart = { resolve, reject, timeout };
+
+    started.on('message', (msg: unknown) => {
+      if (isReadyMessage(msg)) settleStart(null);
     });
-    child!.on('exit', onEarlyExit);
-  });
-
-  // Remove startup listener before attaching crash monitor
-  child.off('exit', onEarlyExit);
-  serverPort = port;
-
-  // Monitor for unexpected crashes after successful startup
-  child.on('exit', (code: number | null) => {
-    if (code !== 0 && code !== null) {
-      const win = BrowserWindow.getFocusedWindow();
-      if (win) {
-        dialog
-          .showMessageBox(win, {
-            type: 'error',
-            title: 'Server Error',
-            message: 'The DorkOS server stopped unexpectedly.',
-            detail: `Exit code: ${code}. Your data is safe.`,
-            buttons: ['Restart Server', 'Quit'],
-          })
-          .then(async ({ response }) => {
-            if (response === 0) {
-              const newPort = await startServer();
-              win.loadURL(`http://localhost:${newPort}`);
-            } else {
-              app.quit();
-            }
-          });
-      }
+    // A spawn that never got off the ground (missing or unspawnable
+    // executable) reports itself here, not through `exit`.
+    started.on('error', (err: Error) => {
+      settleStart(
+        withServerOutput(
+          `The DorkOS server could not be started: ${err.message}`,
+          started.recentErrors()
+        )
+      );
+    });
+    // The one exit listener, for this child's whole life: it settles startup
+    // now and reports crashes later (see handleExit). Guarded on identity so
+    // a child we already gave up on and killed cannot, on its way out, be
+    // mistaken for a crash of its replacement.
+    started.on('exit', (code: number | null) => {
+      if (child === started) handleExit(code);
+    });
+  }).catch((err: unknown) => {
+    // Leave nothing behind: a half-started child would keep the port, the
+    // SQLite lock, and any agent sessions it already opened.
+    if (child === started) {
+      started.kill();
+      clearChild();
     }
+    throw err;
   });
 
+  state = 'ready';
+  serverPort = port;
+  readySince = Date.now();
   return port;
 }
 
-/** Gracefully stop the server process. Forcibly kills after 5 seconds. */
-export async function stopServer(): Promise<void> {
-  if (child) {
-    child.send({ type: 'shutdown' });
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        child?.kill();
-        resolve();
-      }, 5_000);
-      child!.on('exit', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
-    child = null;
-    serverPort = null;
-  }
+/** Is this the child's "I'm serving" handshake message? */
+function isReadyMessage(msg: unknown): boolean {
+  return (
+    typeof msg === 'object' &&
+    msg !== null &&
+    'type' in msg &&
+    (msg as { type: unknown }).type === 'ready'
+  );
 }
 
-/** Get the current server port, or null if server is not running. */
+/**
+ * Stop the server process, gracefully if it cooperates.
+ *
+ * Returns as soon as the child is gone. When it has already exited — after a
+ * crash, or a previous call — there is nothing to wait for and this resolves
+ * immediately; it used to sit out the full grace period listening for an
+ * `exit` event from a process that had already exited, which made Cmd+Q
+ * visibly hang after any server death.
+ *
+ * Safe to call twice: `index.ts`'s `before-quit` handler and
+ * `autoUpdater.quitAndInstall()` can both reach it.
+ */
+export async function stopServer(): Promise<void> {
+  const stopping = child;
+  if (!stopping) return;
+
+  if (state !== 'stopping') {
+    expectedExit = true;
+    state = 'stopping';
+    try {
+      stopping.send({ type: 'shutdown' });
+    } catch (err) {
+      // Sending to a child that already died emits an `error` event, which
+      // throws with no listener attached. Nothing left to ask nicely.
+      log.warn('[server] Could not deliver the shutdown message; killing the server.', err);
+      stopping.kill();
+    }
+  }
+
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      log.warn(`[server] The server ignored shutdown for ${SHUTDOWN_GRACE_MS}ms; killing it.`);
+      stopping.kill();
+      exitWaiters.delete(onExit);
+      resolve();
+    }, SHUTDOWN_GRACE_MS);
+    const onExit = (): void => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    exitWaiters.add(onExit);
+  });
+
+  // A killed child that never emitted `exit` still has to stop being the
+  // current one, or the next startServer would refuse to run.
+  if (child === stopping) clearChild();
+}
+
+/** The port the server is listening on, or `null` when no server is running. */
 export function getServerPort(): number | null {
   return serverPort;
 }

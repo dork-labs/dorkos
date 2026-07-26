@@ -14,7 +14,7 @@ export default defineConfig([
   // composes the child server's env, and server-entry runs inside that child
   // where env vars ARE the IPC contract with the main process.
   {
-    files: ['src/main/server-process.ts', 'src/main/window-manager.ts', 'src/server-entry.ts'],
+    files: ['src/main/server-spawn.ts', 'src/main/window-manager.ts', 'src/server-entry.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 

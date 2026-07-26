@@ -16,7 +16,6 @@ import {
 const DEEP_LINK_PROTOCOL = 'dorkos';
 
 let mainWindow: BrowserWindow | null = null;
-let serverPort: number | null = null;
 
 /**
  * Create the main window and track its lifecycle. On macOS the app keeps
@@ -27,7 +26,10 @@ let serverPort: number | null = null;
 function createTrackedWindow(): void {
   // The renderer only loads via the server's localhost origin in a packaged
   // build — dev keeps loading through electron-vite's ELECTRON_RENDERER_URL
-  // (createWindow checks that first regardless of this argument).
+  // (createWindow checks that first regardless of this argument). The port
+  // comes from the supervisor every time rather than a local copy: a crash
+  // and restart gives the server a new port.
+  const serverPort = getServerPort();
   const rendererUrl = app.isPackaged && serverPort ? `http://localhost:${serverPort}` : undefined;
   mainWindow = createWindow(rendererUrl);
   mainWindow.on('closed', () => {
@@ -67,7 +69,7 @@ function isTrackedRenderer(event: Electron.IpcMainInvokeEvent): boolean {
  */
 function showMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    if (serverPort) createTrackedWindow();
+    if (getServerPort()) createTrackedWindow();
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -190,7 +192,9 @@ if (!gotTheLock) {
     // windows and no way for the user to know why. showErrorBox is
     // synchronous/blocking, so it's guaranteed to be seen before the app quits.
     try {
-      serverPort = await startServer();
+      // The accessor lets the supervisor anchor its crash dialog to whichever
+      // window is current, the same way setupAutoUpdater does.
+      await startServer(getMainWindow);
     } catch (err) {
       dialog.showErrorBox(
         "DorkOS couldn't start",
@@ -246,7 +250,7 @@ if (!gotTheLock) {
   // macOS convention: clicking the dock icon re-creates the window
   // if all windows have been closed.
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0 && serverPort) {
+    if (BrowserWindow.getAllWindows().length === 0 && getServerPort()) {
       createTrackedWindow();
     }
   });
