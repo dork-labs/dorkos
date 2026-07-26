@@ -18,6 +18,7 @@ vi.mock('../auto-updater', () => ({
   restartToUpdate: vi.fn(async () => undefined),
   getLastUpdateStatus: vi.fn(() => null),
   isRestartingToUpdate: vi.fn(() => false),
+  consumeUpdateRestart: vi.fn(() => false),
 }));
 vi.mock('../tray', () => ({
   setupTray: vi.fn(),
@@ -557,14 +558,31 @@ describe('keeping DorkOS running in the background (DOR-538)', () => {
     vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(false);
   });
 
-  it('tells the quit guard when a quit is an update restart', async () => {
+  it('still quits with no tray, even mid-update — that state must be unreachable', async () => {
+    // The severe half of the update-restart bug: gating this branch on a flag
+    // another module owns meant a stuck flag could leave the app running with
+    // no window AND no tray. The flag may silence the notice; it may never
+    // stop the quit.
+    const autoUpdater = await import('../auto-updater');
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(true);
+    const tray = await import('../tray');
+    vi.mocked(tray.hasTray).mockReturnValue(false);
+    const { app } = await boot();
+
+    await app.emit('window-all-closed');
+
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(false);
+  });
+
+  it('hands the quit guard a token it can spend, not a flag it can only read', async () => {
     const autoUpdater = await import('../auto-updater');
     const quitGuard = await import('../quit-guard');
     const armSpy = vi.spyOn(quitGuard, 'armQuitGuard');
     await boot();
 
     const [options] = armSpy.mock.calls[0];
-    expect(options.isRestartingToUpdate).toBe(autoUpdater.isRestartingToUpdate);
+    expect(options.consumeUpdateRestart).toBe(autoUpdater.consumeUpdateRestart);
     armSpy.mockRestore();
   });
 

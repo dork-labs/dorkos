@@ -44,6 +44,9 @@ export function resetQuitGuard(): void {
   guardOptions = null;
 }
 
+/** What the person is about to do to the agents that are running. */
+export type QuitIntent = 'quit' | 'restart';
+
 /** Options for {@link armQuitGuard}. */
 export interface QuitGuardOptions {
   /** How many agents are mid-run right now. */
@@ -53,12 +56,15 @@ export interface QuitGuardOptions {
   /** Stop the server; resolves once it is gone. */
   shutdown: () => Promise<void>;
   /**
-   * Whether this quit is an update restart, which asked its own question
-   * already (see `auto-updater.ts`). Passed in rather than imported so this
-   * module stays a leaf — `auto-updater.ts` imports
-   * {@link confirmInterruptingAgents} from here.
+   * Take the update-restart token, if there is one: `true` means this quit is
+   * an update restart that already asked its own question (see
+   * `auto-updater.ts`). **Reading it clears it** — a token is good for exactly
+   * one quit, so a restart that never happens cannot silence the next one.
+   *
+   * Passed in rather than imported so this module stays a leaf;
+   * `auto-updater.ts` imports {@link confirmInterruptingAgents} from here.
    */
-  isRestartingToUpdate: () => boolean;
+  consumeUpdateRestart: () => boolean;
 }
 
 /** The options {@link armQuitGuard} was given, for {@link confirmInterruptingAgents} to reuse. */
@@ -69,17 +75,21 @@ let guardOptions: QuitGuardOptions | null = null;
  * is nothing to interrupt, or when the person said to go ahead.
  *
  * Exported so the updater can ask **before** it arms the installer.
- * `autoUpdater.quitAndInstall()` closes every window and only then calls
- * `app.quit()`, so a question asked from `before-quit` on that path would
- * arrive with the windows already gone — and answering "Keep Working" would
- * leave a windowless app with a half-armed updater. Asking first costs nothing
- * to cancel.
+ * `quitAndInstall()` is not cancellable in any useful sense once called: on
+ * Windows it has already run the installer by the time it quits, and on macOS
+ * it may hand off to Squirrel and take the windows with it. A question asked
+ * from `before-quit` on that path would arrive too late to act on. Asking
+ * first costs nothing to cancel.
+ *
+ * @param intent - What is about to happen, which decides the wording. A restart
+ *   is not a quit, and telling someone who clicked "Restart to install" to
+ *   "close the window instead" is advice that does not install their update.
  */
-export async function confirmInterruptingAgents(): Promise<boolean> {
+export async function confirmInterruptingAgents(intent: QuitIntent = 'quit'): Promise<boolean> {
   if (!guardOptions) return true;
   const activeAgents = guardOptions.countActiveAgents();
   if (activeAgents === 0) return true;
-  return confirmQuit(guardOptions.getWindow, activeAgents);
+  return confirmQuit(guardOptions.getWindow, activeAgents, intent);
 }
 
 /**
@@ -119,9 +129,16 @@ export function armQuitGuard(options: QuitGuardOptions): void {
  * @param options - See {@link QuitGuardOptions}.
  */
 async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
-  // An update restart already asked, back when there was still a window to ask
-  // in front of. Asking again here would be a second dialog for one decision.
-  if (!options.isRestartingToUpdate() && !(await confirmInterruptingAgents())) return;
+  // An update restart already asked, back when the answer could still change
+  // anything. Asking again here would be a second dialog for one decision.
+  //
+  // Taken (and cleared) before the first `await`, and on this branch `quitting`
+  // below is reached synchronously — `beginUpdateRestart` reads `isQuitting()`
+  // the moment `quitAndInstall()` returns, to tell a real restart from one that
+  // silently declined to happen. If that ordering ever breaks, the cost is one
+  // extra confirmation during an update, never a missing one.
+  const preConfirmed = options.consumeUpdateRestart();
+  if (!preConfirmed && !(await confirmInterruptingAgents())) return;
 
   quitting = true;
   try {
@@ -134,6 +151,34 @@ async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
   app.quit();
 }
 
+/** What to say for each way of interrupting agents. The verb has to match the button. */
+const INTENT_COPY: Record<
+  QuitIntent,
+  { title: string; verb: string; confirm: string; detail: string }
+> = {
+  quit: {
+    title: 'Quit DorkOS?',
+    verb: 'Quit',
+    confirm: 'Quit Anyway',
+    detail:
+      'Quitting stops them where they are. To leave them running, close the window instead: ' +
+      'DorkOS keeps going in the background and your agents carry on.',
+  },
+  restart: {
+    title: 'Restart to Update?',
+    verb: 'Restart',
+    confirm: 'Restart Anyway',
+    // No "close the window instead" here: on the native branch this dialog
+    // only ever runs when there is no window, and closing one would not
+    // install the update they just asked for. What is true is that declining
+    // costs them nothing, because the update lands on the next quit anyway
+    // (`autoInstallOnAppQuit`, set in auto-updater.ts).
+    detail:
+      'Restarting installs the update and stops them where they are. To let them finish, ' +
+      'choose Keep Working: the update is applied the next time you quit DorkOS.',
+  },
+};
+
 /**
  * Ask before cutting agents off mid-run.
  *
@@ -143,21 +188,22 @@ async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
  *
  * @param getWindow - Point-in-time accessor for the window to anchor to.
  * @param activeAgents - How many agents are mid-run.
- * @returns Whether the person confirmed the quit.
+ * @param intent - What is about to happen; see {@link INTENT_COPY}.
+ * @returns Whether the person confirmed.
  */
 async function confirmQuit(
   getWindow: () => BrowserWindow | null,
-  activeAgents: number
+  activeAgents: number,
+  intent: QuitIntent
 ): Promise<boolean> {
   const subject = activeAgents === 1 ? '1 agent is' : `${activeAgents} agents are`;
+  const copy = INTENT_COPY[intent];
   const options: Electron.MessageBoxOptions = {
     type: 'question',
-    title: 'Quit DorkOS?',
-    message: `${subject} still working. Quit anyway?`,
-    detail:
-      'Quitting stops them where they are. To leave them running, close the window instead: ' +
-      'DorkOS keeps going in the background and your agents carry on.',
-    buttons: ['Keep Working', 'Quit Anyway'],
+    title: copy.title,
+    message: `${subject} still working. ${copy.verb} anyway?`,
+    detail: copy.detail,
+    buttons: ['Keep Working', copy.confirm],
     defaultId: PRIMARY_BUTTON,
     cancelId: PRIMARY_BUTTON,
   };

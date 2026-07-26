@@ -484,7 +484,7 @@ describe('restarting to install an update (DOR-538)', () => {
       countActiveAgents: () => activeAgents,
       getWindow: () => null,
       shutdown,
-      isRestartingToUpdate: autoUpdaterModule.isRestartingToUpdate,
+      consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
     });
     return { app, autoUpdater, autoUpdaterModule, quitGuard, shutdown };
   }
@@ -512,10 +512,17 @@ describe('restarting to install an update (DOR-538)', () => {
     const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
       Electron.MessageBoxOptions,
     ];
-    expect(options.message).toBe('3 agents are still working. Quit anyway?');
-    // "Keep Working" here costs nothing: no window has been destroyed and the
-    // installer was never armed. Asked from before-quit it would have left a
-    // windowless app with a half-armed updater.
+    // A restart is not a quit. Telling someone who clicked "Restart to install"
+    // to close the window instead is advice that does not install their update,
+    // and on the native branch there is no window to close.
+    expect(options).toMatchObject({
+      title: 'Restart to Update?',
+      message: '3 agents are still working. Restart anyway?',
+      buttons: ['Keep Working', 'Restart Anyway'],
+    });
+    expect(options.detail).not.toContain('close the window');
+    // "Keep Working" here costs nothing: the installer was never armed, and the
+    // update still lands on the next ordinary quit.
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
     expect(autoUpdaterModule.isRestartingToUpdate()).toBe(false);
   });
@@ -547,6 +554,50 @@ describe('restarting to install an update (DOR-538)', () => {
     expect(app.quit).toHaveBeenCalledTimes(1);
   });
 
+  it('does not silence the next quit when quitAndInstall returns without quitting', async () => {
+    const { app, dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(2);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+
+    // This is not a hypothetical. `MacUpdater.quitAndInstall()` quits only
+    // `if (this.squirrelDownloadedUpdate)` — otherwise it registers a deferred
+    // listener and returns with the app fully alive, and that flag is set long
+    // after the `update-downloaded` that raised the card. `BaseUpdater`
+    // (Windows) skips `app.quit()` when `install()` returns false. A mock that
+    // simply returns is exactly that behaviour.
+    await autoUpdaterModule.restartToUpdate();
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // No quit started, so the token comes back down. Latched instead, it would
+    // disable the confirmation below for the rest of the session.
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(false);
+
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
+      Electron.MessageBoxOptions,
+    ];
+    expect(options.message).toBe('2 agents are still working. Quit anyway?');
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('drops the token when the updater errors, as a rejected Squirrel update does', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(1);
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+    await autoUpdaterModule.restartToUpdate();
+
+    // The macOS shape: quitAndInstall took its deferred branch, then Squirrel
+    // rejected the update it had been waiting for.
+    autoUpdater.emit('error', new Error('Could not get code signature for running application'));
+
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(false);
+  });
+
   it('routes the native "Restart Now" dialog through the same path', async () => {
     const { dialog } = await getElectronMock();
     const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(1);
@@ -564,7 +615,7 @@ describe('restarting to install an update (DOR-538)', () => {
     const [agentPrompt] = vi.mocked(dialog.showMessageBox).mock.calls[1] as [
       Electron.MessageBoxOptions,
     ];
-    expect(agentPrompt.message).toBe('1 agent is still working. Quit anyway?');
+    expect(agentPrompt.message).toBe('1 agent is still working. Restart anyway?');
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 });

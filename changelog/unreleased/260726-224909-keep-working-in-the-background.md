@@ -2,6 +2,7 @@
 covers:
   - 'feat(desktop): keep working in the background, with a tray to get back (DOR-538)'
   - 'fix(desktop): keep the update restart out of the background notice (DOR-538)'
+  - 'fix(desktop): make the update-restart flag a token, not a one-way latch (DOR-538)'
 ---
 
 ### Added

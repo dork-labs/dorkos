@@ -9,6 +9,7 @@ import {
   restartToUpdate,
   getLastUpdateStatus,
   isRestartingToUpdate,
+  consumeUpdateRestart,
 } from './auto-updater';
 import { hasTray, setTrayActivity, setupTray } from './tray';
 import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
@@ -174,7 +175,7 @@ if (!gotTheLock) {
     countActiveAgents: getActiveAgentCount,
     getWindow: getMainWindow,
     shutdown: stopServer,
-    isRestartingToUpdate,
+    consumeUpdateRestart,
   });
 
   // Register IPC handlers for the preload bridge.
@@ -280,17 +281,23 @@ if (!gotTheLock) {
   // quitting is the only honest thing left. An app running with no window and
   // no icon is one nobody can reach.
   app.on('window-all-closed', () => {
-    // `autoUpdater.quitAndInstall()` closes every window and only *then* calls
-    // `app.quit()`, so this fires on the update-restart path exactly as if a
-    // person had closed the last window by hand. Without this line they get
-    // "DorkOS is still running" — with a Quit button — in the middle of an
-    // update, and the one-time notice is burnt for good. `isQuitting()` cannot
-    // catch it: on that path `before-quit` has not happened yet.
-    if (isRestartingToUpdate()) return;
+    // This stays unconditional. An app with no window and no way back is the
+    // one state this whole design exists to prevent, so nothing may return
+    // above it — least of all a flag owned by another module, which is what
+    // an earlier version of this handler did. Quitting during an update
+    // restart is harmless anyway: it is what `quitAndInstall()` was about to
+    // do, and the quit guard keeps it silent.
     if (!hasTray()) {
       app.quit();
       return;
     }
+    // `autoUpdater.quitAndInstall()` closes every window and only *then* calls
+    // `app.quit()`, so this fires on the update-restart path exactly as if a
+    // person had closed the last window by hand. Left ungated they get "DorkOS
+    // is still running" — with a Quit button — in the middle of an update, and
+    // the one-time notice is burnt for good. `isQuitting()` cannot catch it: on
+    // that path `before-quit` has not happened yet.
+    if (isRestartingToUpdate()) return;
     // Someone who thinks they quit and didn't files a bug report. Say it once.
     void announceBackgroundRunning();
   });

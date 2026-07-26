@@ -50,11 +50,18 @@ function buildCheckForUpdatesItem(): Electron.MenuItemConstructorOptions {
  * window only if the renderer has nothing to close or does not answer (see
  * `close-tab.ts`). `CmdOrCtrl+Shift+W` keeps the old, unconditional behaviour,
  * so there is always a keystroke that closes the window itself.
+ *
+ * **The label is "Close", not "Close Tab", on purpose.** Nothing in the client
+ * subscribes to `onCloseTab` yet, so today this closes the window — and a menu
+ * item that names something the product does not do is a promise it breaks the
+ * moment someone reads it. "Close" is honest either way. Rename it to
+ * "Close Tab" in the same change that ships the renderer's tab handling, not
+ * before.
  */
 function buildWindowClosingItems(): Electron.MenuItemConstructorOptions[] {
   return [
     {
-      label: 'Close Tab',
+      label: 'Close',
       accelerator: 'CmdOrCtrl+W',
       // Looked up here rather than taken from the click handler's second
       // argument, which Electron types as the broader `BaseWindow`.

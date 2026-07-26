@@ -33,7 +33,7 @@ function arm(overrides: Partial<QuitGuardOptions> = {}): {
     countActiveAgents,
     getWindow: () => null,
     shutdown,
-    isRestartingToUpdate: () => false,
+    consumeUpdateRestart: () => false,
     ...overrides,
   });
   return { shutdown, countActiveAgents };
@@ -143,10 +143,8 @@ describe('confirming a quit while agents are working', () => {
 
   it('does not ask when the quit is an update restart that already asked', async () => {
     answerWith(0);
-    const { shutdown } = arm({
-      countActiveAgents: () => 3,
-      isRestartingToUpdate: () => true,
-    });
+    const consumeUpdateRestart = vi.fn(() => true);
+    const { shutdown } = arm({ countActiveAgents: () => 3, consumeUpdateRestart });
 
     await emitBeforeQuit();
 
@@ -155,6 +153,9 @@ describe('confirming a quit while agents are working', () => {
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
     expect(shutdown).toHaveBeenCalledTimes(1);
     expect(app.quit).toHaveBeenCalledTimes(1);
+    // Spent, not merely read: `quitAndInstall()` does not always quit, and a
+    // token left standing would silence every quit after it.
+    expect(consumeUpdateRestart).toHaveBeenCalledTimes(1);
   });
 
   it('anchors the confirmation to the window when there is one', async () => {

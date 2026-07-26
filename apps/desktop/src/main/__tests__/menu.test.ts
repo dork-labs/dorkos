@@ -91,7 +91,7 @@ describe('setupMenu (B1)', () => {
       'minimize',
       'zoom',
       undefined,
-      'Close Tab',
+      'Close',
       'Close Window',
       undefined,
       'front',
@@ -329,7 +329,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
 
     expect(windowMenu.map((item) => item.label ?? item.role)).toEqual([
       'minimize',
-      'Close Tab',
+      'Close',
       'Close Window',
     ]);
   });
@@ -379,7 +379,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
   });
 });
 
-describe('Cmd/Ctrl+W — Close Tab (DOR-538)', () => {
+describe('Cmd/Ctrl+W — closing (DOR-538)', () => {
   const originalPlatform = process.platform;
 
   beforeEach(() => {
@@ -392,7 +392,7 @@ describe('Cmd/Ctrl+W — Close Tab (DOR-538)', () => {
   });
 
   it.each(['darwin', 'win32'] as const)(
-    'asks the focused renderer to close a tab on %s, and keeps a way to close the window',
+    "routes %s's Cmd+W through the renderer, and keeps a way to close the window",
     async (platform) => {
       Object.defineProperty(process, 'platform', { value: platform });
       const { BrowserWindow, Menu, resetElectronMock } = await getElectronMock();
@@ -408,11 +408,15 @@ describe('Cmd/Ctrl+W — Close Tab (DOR-538)', () => {
         | Electron.MenuItemConstructorOptions[]
         | undefined;
 
-      const closeTab = findItem(template!, 'Close Tab')!;
-      expect(closeTab.accelerator).toBe('CmdOrCtrl+W');
+      // Labelled "Close", not "Close Tab": nothing subscribes to onCloseTab
+      // yet, so today this closes the window, and a menu item that names
+      // something the product does not do breaks its promise on sight.
+      const closeItem = findItem(template!, 'Close')!;
+      expect(findItem(template!, 'Close Tab')).toBeUndefined();
+      expect(closeItem.accelerator).toBe('CmdOrCtrl+W');
       // Not a role: the renderer decides whether the window survives.
-      expect(closeTab.role).toBeUndefined();
-      closeTab.click!({} as never, undefined, {} as never);
+      expect(closeItem.role).toBeUndefined();
+      closeItem.click!({} as never, undefined, {} as never);
       expect(requestCloseTab).toHaveBeenCalledWith(focused);
 
       const closeWindow = findItem(template!, 'Close Window')!;

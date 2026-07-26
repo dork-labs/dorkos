@@ -220,9 +220,11 @@ Three things are scoped to the **primary** window on purpose, and a second windo
 
 A server crash-and-restart **does** move every window to the new port (`pointWindowsAtServer`), because a second window left on a dead port has no way to recover but being closed.
 
-### `Cmd/Ctrl+W` is Close Tab
+### `Cmd/Ctrl+W` delegates to the renderer
 
-The cockpit has in-renderer tabs, so the accelerator asks the focused renderer first (`close-tab.ts`). `CmdOrCtrl+Shift+W` ("Close Window") stays unconditional.
+The cockpit is growing in-renderer tabs, so the accelerator asks the focused renderer first (`close-tab.ts`). `CmdOrCtrl+Shift+W` ("Close Window") stays unconditional.
+
+The menu item is labelled **"Close"**, not "Close Tab". Nothing in `apps/client` subscribes yet, so today it closes the window, and a menu item naming something the product does not do breaks its promise the moment someone reads it. Rename it in the change that ships the renderer's tab handling.
 
 **Subscribing is what claims the keystroke.** A renderer announces itself on `close-tab:subscribe` when it first calls `onCloseTab`; with no subscriber the window closes immediately, no message and no wait — exactly what Cmd+W did before tabs. Only a subscribed renderer gets asked, and only then does the 3-second timeout apply.
 
@@ -232,9 +234,18 @@ The timeout is still the design, not a safety net: a person pressing Cmd+W must 
 
 ### Quitting to install an update is not a normal quit
 
-`autoUpdater.quitAndInstall()` **closes every window and only then calls `app.quit()`**. So `window-all-closed` fires first, and on that path it must stay silent — otherwise clicking "Restart to install" produces "DorkOS is still running, so your agents keep working", complete with a Quit button, and burns the one-time notice for good. `isQuitting()` cannot catch it, because `before-quit` has not happened yet.
+`autoUpdater.quitAndInstall()` **closes every window and only then calls `app.quit()`**. So `window-all-closed` fires first, and on that path the background notice must stay silent — otherwise clicking "Restart to install" produces "DorkOS is still running, so your agents keep working", complete with a Quit button, and burns the one-time notice for good. `isQuitting()` cannot catch it, because `before-quit` has not happened yet.
 
-`auto-updater.ts` owns the flag (`isRestartingToUpdate()`), and it asks about mid-run agents **before** arming the installer rather than from `before-quit` — by then the windows are gone, and "Keep Working" would leave a windowless app with a half-armed updater. `quit-guard.ts` takes the flag as an option rather than importing it, so it stays a leaf module.
+`auto-updater.ts` owns that state, and it asks about mid-run agents **before** arming the installer rather than from `before-quit` — by then the answer cannot change anything, because Windows has already run the installer and macOS may have handed off to Squirrel. `quit-guard.ts` takes it as an option rather than importing it, so it stays a leaf module. The wording differs from an ordinary quit ("Restart anyway?", not "Quit anyway?"), because telling someone who asked to install an update to close the window instead is advice that does not install their update.
+
+**It is a one-shot token, not a latch, because `quitAndInstall()` does not always quit.** Read `node_modules/electron-updater` before changing this:
+
+- `MacUpdater.quitAndInstall()` quits only `if (this.squirrelDownloadedUpdate)`. Otherwise it registers a deferred listener and **returns with the app alive** — and that flag is set only once _Squirrel_ has fetched and validated the update, long after the `update-downloaded` that raised the in-app card. The gap between the card appearing and Squirrel finishing is exactly when someone clicks the button.
+- `BaseUpdater.quitAndInstall()` (Windows) skips `app.quit()` entirely when `install()` returns false.
+
+So it comes down three ways: spent by the quit it was set for (`consumeUpdateRestart()`), dropped when `quitAndInstall()` returns without a quit under way, and dropped on any updater `error`. Left latched, a restart that silently declined to happen would disable the "agents are still working" confirmation for the rest of the session.
+
+**Two rules for anything that reads it.** Peek (`isRestartingToUpdate()`) if the quit still needs the token afterwards; spend it exactly once, in the quit sequence. And **never let it skip a quit** — `window-all-closed`'s `if (!hasTray()) app.quit()` is unconditional, because "running with no window and no tray" is the one state this design exists to prevent, and a stuck flag must not be able to produce it. The flag may silence the notice; it may not stop the quit.
 
 ### First paint
 

@@ -3,7 +3,7 @@ import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-u
 import { app, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
-import { confirmInterruptingAgents } from './quit-guard';
+import { confirmInterruptingAgents, isQuitting } from './quit-guard';
 
 /** The IPC channel the main process pushes {@link UpdateStatus} events to the renderer on. */
 export const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -160,6 +160,12 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   });
 
   autoUpdater.on('error', (err: Error) => {
+    // Whatever else this error is, it means no restart is happening. On macOS
+    // this is the realistic way an armed restart dies: `quitAndInstall()` took
+    // its deferred branch and returned, and Squirrel then rejected the update.
+    // The token must not outlive the attempt.
+    restartingToUpdate = false;
+
     // A not-yet-ready release (metadata file 404) means "nothing to install
     // right now", not a failure. Surface it like `update-not-available` so the
     // sidebar card never turns red and an interactive check gets a calm notice
@@ -255,26 +261,56 @@ export function checkForUpdatesInteractive(): void {
 }
 
 /**
- * True from the moment `quitAndInstall()` is armed until the process goes.
+ * A one-shot token saying "the quit about to happen is an update restart, and
+ * it has already asked its own question".
  *
- * This exists because of one documented behaviour: `quitAndInstall()` "will
- * close all application windows first, and automatically call `app.quit()`
- * after all windows have been closed". The windows therefore close **before**
- * anything quit-shaped has happened, so `window-all-closed` fires exactly as if
- * a person had closed the last window by hand — and without this flag it did:
- * "DorkOS is still running, so your agents keep working", complete with a Quit
- * button, in the middle of an update restart, burning the one-time notice for
- * good. `isQuitting()` cannot cover it; on this path `before-quit` comes after.
+ * It exists because `quitAndInstall()` closes every window and only *then*
+ * calls `app.quit()`. The windows go **before** anything quit-shaped has
+ * happened, so `window-all-closed` fires exactly as if a person had closed the
+ * last window by hand — and without this it did: "DorkOS is still running, so
+ * your agents keep working", complete with a Quit button, in the middle of an
+ * update restart, burning the one-time notice for good. `isQuitting()` cannot
+ * cover that; on this path `before-quit` comes afterwards.
+ *
+ * **A token, not a latch, because `quitAndInstall()` does not always quit.**
+ * Read the version in `node_modules/electron-updater` before changing this:
+ * `MacUpdater.quitAndInstall()` quits only `if (this.squirrelDownloadedUpdate)`
+ * — otherwise it registers a deferred listener and returns with the app fully
+ * alive, and that flag is set only once *Squirrel* has fetched and validated
+ * the update, long after the `update-downloaded` that raised the in-app card.
+ * `BaseUpdater.quitAndInstall()` (Windows) skips `app.quit()` entirely when
+ * `install()` returns false. Left latched through either of those, this would
+ * silently disable the "agents are still working" confirmation for the rest of
+ * the session.
+ *
+ * So it comes down three ways: taken by the quit it was set for
+ * ({@link consumeUpdateRestart}), dropped when `quitAndInstall()` returns
+ * without a quit under way (see {@link beginUpdateRestart}), and dropped again
+ * on any updater `error` — the realistic macOS failure, where Squirrel rejects
+ * the downloaded update.
  */
 let restartingToUpdate = false;
 
-/** Is an update restart in flight? Read by `window-all-closed` and the quit guard. */
+/**
+ * Is an update restart in flight? A peek, for `window-all-closed`, which fires
+ * *during* the restart and must not spend the token the quit still needs.
+ */
 export function isRestartingToUpdate(): boolean {
   return restartingToUpdate;
 }
 
 /**
- * Clear the in-flight update-restart flag.
+ * Take the token: `true` when this quit is the update restart. Clears it, so a
+ * restart that never happened cannot silence the next quit.
+ */
+export function consumeUpdateRestart(): boolean {
+  const wasRestarting = restartingToUpdate;
+  restartingToUpdate = false;
+  return wasRestarting;
+}
+
+/**
+ * Clear the update-restart token.
  *
  * @internal Exported for testing only.
  */
@@ -285,16 +321,31 @@ export function resetUpdateRestartState(): void {
 /**
  * Arm the installer and restart, once anything mid-run has been accounted for.
  *
- * The question is asked **here**, not from `before-quit`: by the time that
- * fires, `quitAndInstall()` has already destroyed every window, so "Keep
- * Working" would cancel the quit and leave a windowless app with a half-armed
- * updater. Asked from here it is answered in front of the window the person
- * clicked in, and cancelling costs nothing.
+ * The question is asked **here**, not from `before-quit`, because by then the
+ * answer cannot change anything: on Windows `quitAndInstall()` has already run
+ * the installer before it quits, and on macOS it may have handed off to
+ * Squirrel and taken the windows with it. Asked from here, "Keep Working"
+ * genuinely costs nothing — the installer was never armed, and the update still
+ * lands on the next ordinary quit.
  */
 async function beginUpdateRestart(): Promise<void> {
-  if (!(await confirmInterruptingAgents())) return;
+  if (!(await confirmInterruptingAgents('restart'))) return;
+
   restartingToUpdate = true;
   autoUpdater.quitAndInstall();
+
+  // `quitAndInstall()` can return with the app still running (see
+  // `restartingToUpdate`). A real restart has already begun a quit by now — the
+  // quit guard commits to it synchronously — so anything else means the restart
+  // did not take, and the token has to come back down. If that ordering ever
+  // changes, this errs towards clearing, which costs one extra confirmation
+  // rather than losing one.
+  setImmediate(() => {
+    if (!isQuitting()) {
+      log.info('Update restart did not start a quit; the app is still running.');
+      restartingToUpdate = false;
+    }
+  });
 }
 
 /**
