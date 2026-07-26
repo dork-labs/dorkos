@@ -2,6 +2,21 @@
   "version": 1,
   "specs": [
     {
+      "id": "260726-162747",
+      "slug": "channel-workspace",
+      "title": "Channel workspaces — a room's shared working context, distributed by git, layered by harness sync",
+      "created": "2026-07-26",
+      "status": "specified"
+    },
+    {
+      "id": "260726-162520",
+      "slug": "agent-workspace-binding",
+      "title": "Agent workspace binding — every agent knows where it works",
+      "created": "2026-07-26",
+      "status": "specified",
+      "project": "Agents as First-Class Operators"
+    },
+    {
       "id": "260726-015631",
       "slug": "agent-approval-settings",
       "title": "Agent approval settings: a supported way to say stop asking",
