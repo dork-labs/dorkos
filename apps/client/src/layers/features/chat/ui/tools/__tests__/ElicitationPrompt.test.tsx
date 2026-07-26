@@ -75,11 +75,27 @@ describe('ElicitationPrompt — URL mode', () => {
     expect(screen.getByText(/Could not open myapp:\/\/authorize/)).toBeInTheDocument();
   });
 
+  it('refuses a file: URL from the http cockpit, where it could not open anyway', () => {
+    // Browsers block file: from an http: page and the desktop shell forwards
+    // only http(s), so a local authorization page is a guaranteed no-op — and
+    // must not be reported as opened.
+    renderPrompt({ url: 'file:///Users/kai/authorize.html' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Done/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/Could not open/)).toBeInTheDocument();
+  });
+
   it('never submits an acceptance for a link that never opened', () => {
     renderPrompt({ url: 'javascript:alert(1)' });
     fireEvent.click(screen.getByRole('button', { name: 'Open authorization page' }));
 
-    expect(screen.queryByRole('button', { name: /Done/ })).not.toBeInTheDocument();
+    // Click any confirm affordance that exists rather than asserting none does:
+    // if the gate regresses, a Done button appears here, gets clicked, and the
+    // assertion below fails. Asserting absence alone would hold either way.
+    screen.queryAllByRole('button', { name: /Done/ }).forEach((btn) => fireEvent.click(btn));
+
     expect(submitElicitation).not.toHaveBeenCalled();
   });
 

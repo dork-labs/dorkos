@@ -70,7 +70,8 @@ export const APP_ROUTE_PATHS = [
 const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
 
 /**
- * The only schemes the seam will dispatch. Everything else is refused.
+ * Schemes the seam will dispatch from any surface. Everything else is refused
+ * unless {@link isDispatchableProtocol} makes a surface-specific exception.
  *
  * An allowlist, not a denylist — and a strict tightening of what came before,
  * which permitted everything except `javascript:`, `data:` and `vbscript:`
@@ -80,18 +81,15 @@ const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
  * nobody has thought of yet, not just the famous three.
  *
  * - `http:` / `https:` — nearly every link in the app.
- * - `mailto:` — inert, and a link type people expect to work.
- * - `file:` — **retained, not added**, and only a dev-path needs it: the
- *   `electron-vite preview` fallback loads the renderer straight off disk
- *   (`window-manager.ts`), and there every relative in-app link inherits
- *   `file:`, so dropping it would break internal links in that mode. The
- *   packaged app serves the renderer over `http://localhost:<port>` instead.
- *   The canvas browser can also hold a `file://` target
- *   (`classifyBrowserTarget` accepts one), but opening it is already a no-op on
- *   every shipped surface — the desktop shell forwards only `http(s)` and
- *   exposes no `openExternal` bridge, and browsers refuse `file:` from an
- *   `http:` page. Dropping `file:` would turn that silent no-op into a warning,
- *   nothing more; the preview path is the real reason it stays.
+ * - `mailto:` — kept dispatchable **on purpose**, reporting success. The line
+ *   this list draws is "refuse what the current page's browser will refuse,
+ *   allow what only the desktop shell currently declines". A browser hands
+ *   `mailto:` to the OS mail client from any page, so on the web cockpit —
+ *   the launch-critical surface — it genuinely goes somewhere. The desktop
+ *   shell denies it today, but that is the shell's policy and it is being
+ *   revised alongside this work; encoding a downstream gap here would be
+ *   wrong, and nothing in the app links `mailto:` yet, so no reported outcome
+ *   hangs on it.
  *
  * Add a scheme only when something in the app actually opens one — and note
  * that this list is defense in depth, not the only defense: the desktop shell's
@@ -104,12 +102,31 @@ const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
  * `blob:`, `irc:` and `xmpp:` — schemes this list refuses. The two policies are
  * knowingly divergent; reconciling them is filed separately.
  */
-const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set([
-  'http:',
-  'https:',
-  'mailto:',
-  'file:',
-]);
+const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
+
+/**
+ * Whether this scheme can be dispatched from a page at `base`.
+ *
+ * `file:` is the one surface-dependent case. It is retained for a single
+ * reason: the `electron-vite preview` fallback loads the renderer straight off
+ * disk (`window-manager.ts`), and there every relative in-app link inherits
+ * `file:` — refusing it would break internal navigation in that mode. That
+ * reason only applies *on* a `file:` page, so that is exactly where it is
+ * allowed.
+ *
+ * From the `http:` cockpit a `file:` target is refused, because opening one is
+ * a guaranteed no-op: browsers block `file:` from an `http:` page, and the
+ * desktop shell forwards only `http(s)` and exposes no `openExternal` bridge.
+ * Reporting success for a guaranteed no-op is how "nothing opened" becomes
+ * "you're authorized" — see the return contract on {@link openExternalLink}.
+ *
+ * @param protocol - The target's scheme, including the colon.
+ * @param base - The page the link is being opened from.
+ */
+function isDispatchableProtocol(protocol: string, base: URL): boolean {
+  if (DISPATCHABLE_PROTOCOLS.has(protocol)) return true;
+  return protocol === 'file:' && base.protocol === 'file:';
+}
 
 /** Why the seam refused a link. */
 export type BlockedLinkReason = 'unparsable' | 'unsupported-scheme';
@@ -175,7 +192,7 @@ export function classifyLink(href: string, from: string = currentHref()): Classi
     return { kind: 'blocked', reason: 'unparsable' };
   }
 
-  if (!DISPATCHABLE_PROTOCOLS.has(url.protocol)) {
+  if (!isDispatchableProtocol(url.protocol, base)) {
     return { kind: 'blocked', reason: 'unsupported-scheme' };
   }
   // Covers protocol-relative hrefs (`//evil.com`) and opaque schemes alike:

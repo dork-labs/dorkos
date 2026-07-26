@@ -92,15 +92,30 @@ describe('classifyLink', () => {
     });
   });
 
-  it('treats mailto: as external', () => {
+  it('treats mailto: as dispatchable — a browser hands it to the OS from any page', () => {
+    // Deliberately reports success even though the desktop shell denies it
+    // today: the line this allowlist draws is what the *browser* will refuse,
+    // not what one shell currently declines.
     expect(classifyLink('mailto:hi@dorkos.ai', FROM)).toEqual({
       kind: 'external',
       url: 'mailto:hi@dorkos.ai',
     });
   });
 
-  it('treats file: as external — the canvas browser and the packaged renderer both use it', () => {
-    expect(classifyLink('file:///Users/kai/notes.md', FROM)).toMatchObject({ kind: 'external' });
+  it('blocks a file: target from the http cockpit — opening one is a guaranteed no-op', () => {
+    // Browsers block file: from an http: page and the desktop shell forwards
+    // only http(s), so reporting success here would be a lie. An MCP server
+    // naming `file:///…/authorize.html` must not produce a confirm button.
+    expect(classifyLink('file:///Users/kai/notes.md', FROM)).toEqual({
+      kind: 'blocked',
+      reason: 'unsupported-scheme',
+    });
+  });
+
+  it('allows a file: target from a file: page — the only surface where it works', () => {
+    expect(
+      classifyLink('file:///Users/kai/notes.md', 'file:///Applications/DorkOS/index.html')
+    ).toMatchObject({ kind: 'external' });
   });
 
   it('blocks a scheme nothing in the app opens', () => {
@@ -354,6 +369,8 @@ describe('link dispatch', () => {
       expect(openExternalLink('myapp://authorize')).toBe(false);
       expect(openExternalLink('javascript:alert(1)')).toBe(false);
       expect(openExternalLink('http://')).toBe(false);
+      // A file: target from the http cockpit cannot open, so it must not claim to.
+      expect(openExternalLink('file:///Users/kai/authorize.html')).toBe(false);
     });
   });
 

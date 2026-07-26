@@ -118,7 +118,7 @@ export function ElicitationPrompt({
     // OAuth deep link, say), and offering to confirm an authorization that
     // never opened would let someone accept a flow that never ran.
     if (!openExternalLink(url)) {
-      setError(`Could not open ${url} — DorkOS only opens web, mail, and file links.`);
+      setError(`Could not open ${url} — DorkOS only opens web and mail links.`);
       return;
     }
     setError(null);
@@ -156,7 +156,9 @@ export function ElicitationPrompt({
       {/* Message */}
       <p className="mb-3 text-sm">{message}</p>
 
-      {error && <p className="text-destructive mb-2 text-xs">{error}</p>}
+      {/* break-words: the message can carry a server-supplied URL, and browsers
+          do not break long URLs at `/` or `?` on their own. */}
+      {error && <p className="text-destructive mb-2 text-xs break-words">{error}</p>}
 
       {/* URL mode */}
       {mode === 'url' && url && (
