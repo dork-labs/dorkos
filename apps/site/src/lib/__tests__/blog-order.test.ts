@@ -4,7 +4,8 @@ import { releaseVersion, sortBlogPagesNewestFirst } from '../blog-order';
 type BlogPage = Parameters<typeof sortBlogPagesNewestFirst>[0][number];
 
 function page(title: string, date: string): BlogPage {
-  return { data: { title, date } } as BlogPage;
+  // Only `data.title`/`data.date` are read; the rest of Page is irrelevant here.
+  return { data: { title, date } } as unknown as BlogPage;
 }
 
 describe('sortBlogPagesNewestFirst', () => {

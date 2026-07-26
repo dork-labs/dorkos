@@ -4,7 +4,7 @@
  * every result so a scoring change is attributable.
  */
 import { describe, it, expect } from 'vitest';
-import type { OracleContext } from '../../types.js';
+import { emptyApprovalLog, type OracleContext } from '../../types.js';
 import { createRubricJudge } from '../judge.js';
 
 /** A minimal OracleContext (the stub scorer ignores it). */
@@ -14,6 +14,7 @@ function ctx(): OracleContext {
     baseUrl: 'http://unused',
     sessionId: 's',
     frames: [],
+    approvals: emptyApprovalLog(),
   };
 }
 

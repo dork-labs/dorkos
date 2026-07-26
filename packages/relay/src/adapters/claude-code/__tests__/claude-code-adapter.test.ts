@@ -286,6 +286,7 @@ describe('ClaudeCodeAdapter', () => {
       ensureSession: vi.fn(),
       sendMessage: vi.fn().mockReturnValue(hangingStream),
       getSdkSessionId: vi.fn().mockReturnValue(undefined),
+      approveTool: vi.fn(),
     };
     const cappedAdapter = new ClaudeCodeAdapter(
       'capped',
@@ -814,6 +815,7 @@ describe('ClaudeCodeAdapter', () => {
         ensureSession: vi.fn(),
         sendMessage: vi.fn().mockReturnValueOnce(hangingStream).mockReturnValueOnce(quickStream),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
+      approveTool: vi.fn(),
       };
 
       const serializedAdapter = new ClaudeCodeAdapter(
@@ -874,6 +876,7 @@ describe('ClaudeCodeAdapter', () => {
         ensureSession: vi.fn(),
         sendMessage: vi.fn().mockReturnValueOnce(streamForA).mockReturnValueOnce(streamForB),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
+      approveTool: vi.fn(),
       };
 
       const parallelAdapter = new ClaudeCodeAdapter(
@@ -1145,8 +1148,8 @@ describe('ClaudeCodeAdapter', () => {
       await adapterWithLogger.deliver(envelope.subject, envelope);
 
       // No warning for done events
-      const warnCalls = mockLogger.warn.mock.calls.filter(([msg]: [string]) =>
-        msg.includes('delivered to 0')
+      const warnCalls = mockLogger.warn.mock.calls.filter((args: unknown[]) =>
+        String(args[0]).includes('delivered to 0')
       );
       expect(warnCalls).toHaveLength(0);
     });

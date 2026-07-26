@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { Display, Rectangle } from 'electron';
+import type { Display, HandlerDetails, Rectangle, WindowOpenHandlerResponse } from 'electron';
 
 /**
  * Test double for Electron's main-process module surface.
@@ -94,7 +94,7 @@ class MockBrowserWindowImpl {
   bounds: Rectangle;
   webContents = {
     id: nextWebContentsId++,
-    send: vi.fn(),
+    send: vi.fn<(channel: string, ...args: unknown[]) => void>(),
     on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
       this.webContentsBus.on(event, listener);
       return this.webContents;
@@ -104,7 +104,8 @@ class MockBrowserWindowImpl {
      * invoke it directly with a `HandlerDetails`-shaped object and assert on
      * the returned `WindowOpenHandlerResponse`.
      */
-    setWindowOpenHandler: vi.fn(),
+    setWindowOpenHandler:
+      vi.fn<(handler: (details: HandlerDetails) => WindowOpenHandlerResponse) => void>(),
     /** Test helper — not part of the real WebContents API. */
     emit: (event: string, ...args: unknown[]): Promise<void> =>
       this.webContentsBus.emit(event, ...args),
@@ -131,7 +132,7 @@ class MockBrowserWindowImpl {
   /** Test helper — not part of the real BrowserWindow API. */
   emit = (event: string, ...args: unknown[]): Promise<void> => this.bus.emit(event, ...args);
 
-  focus = vi.fn();
+  focus = vi.fn<() => void>();
   isDestroyed = vi.fn((): boolean => false);
   restore = vi.fn(() => {
     this.minimized = false;
@@ -148,8 +149,8 @@ class MockBrowserWindowImpl {
   setBounds = vi.fn((bounds: Partial<Rectangle>) => {
     this.bounds = { ...this.bounds, ...bounds };
   });
-  loadURL = vi.fn();
-  loadFile = vi.fn();
+  loadURL = vi.fn<(url: string) => Promise<void>>();
+  loadFile = vi.fn<(filePath: string) => Promise<void>>();
 }
 
 export const BrowserWindow = MockBrowserWindowImpl;
@@ -162,12 +163,12 @@ export const app = {
   isPackaged: false,
   name: 'DorkOS',
   requestSingleInstanceLock: vi.fn((): boolean => true),
-  quit: vi.fn(),
+  quit: vi.fn<() => void>(),
   getPath: vi.fn((): string => DEFAULT_USER_DATA_PATH),
   getVersion: vi.fn((): string => '0.1.0'),
-  setAboutPanelOptions: vi.fn(),
+  setAboutPanelOptions: vi.fn<(options: unknown) => void>(),
   setAsDefaultProtocolClient: vi.fn((): boolean => true),
-  dock: { setMenu: vi.fn() },
+  dock: { setMenu: vi.fn<(menu: unknown) => void>() },
   on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
     appBus.on(event, listener);
     return app;
@@ -182,8 +183,8 @@ export const app = {
 };
 
 export const ipcMain = {
-  on: vi.fn(),
-  handle: vi.fn(),
+  on: vi.fn<(channel: string, listener: (...args: unknown[]) => unknown) => void>(),
+  handle: vi.fn<(channel: string, listener: (...args: unknown[]) => unknown) => void>(),
 };
 
 export const screen = {
@@ -193,16 +194,16 @@ export const screen = {
 
 export const dialog = {
   showMessageBox: vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false })),
-  showErrorBox: vi.fn(),
+  showErrorBox: vi.fn<(title: string, content: string) => void>(),
 };
 
 export const Menu = {
   buildFromTemplate: vi.fn((template: unknown) => ({ template })),
-  setApplicationMenu: vi.fn(),
+  setApplicationMenu: vi.fn<(menu: unknown) => void>(),
 };
 
 export const shell = {
-  openExternal: vi.fn(),
+  openExternal: vi.fn<(url: string) => Promise<void>>(),
 };
 
 /** Reset all mock state between tests — call from `beforeEach`. */

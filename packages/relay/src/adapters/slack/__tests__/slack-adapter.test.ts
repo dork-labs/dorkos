@@ -1,6 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SlackAdapter, SLACK_MANIFEST } from '../index.js';
+import { createMockRelay } from '../../../__tests__/fixtures.js';
 import type { RelayPublisher } from '../../../types.js';
+import type { z } from 'zod';
+import { SlackAdapterConfigSchema } from '@dorkos/shared/relay-schemas';
+import type { SlackAdapterConfig } from '../../../types.js';
+
+/**
+ * A Slack adapter config with schema defaults filled in.
+ *
+ * Built through `SlackAdapterConfigSchema` rather than as an object literal so
+ * the fixture inherits every default the real config path applies (`streaming`,
+ * `respondMode`, `dmPolicy`, …). A new field with a default lands here for free
+ * instead of breaking every call site.
+ */
+function slackConfig(overrides: z.input<typeof SlackAdapterConfigSchema>): SlackAdapterConfig {
+  return SlackAdapterConfigSchema.parse(overrides);
+}
 
 // Mock @slack/bolt
 const mockAppStart = vi.fn().mockResolvedValue(undefined);
@@ -52,14 +68,6 @@ vi.mock('@slack/web-api', () => {
   return { WebClient: MockWebClient };
 });
 
-function createMockRelay(): RelayPublisher {
-  return {
-    publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
-    onSignal: vi.fn().mockReturnValue(() => {}),
-    subscribe: vi.fn().mockReturnValue(() => {}),
-  };
-}
-
 describe('SlackAdapter', () => {
   let adapter: SlackAdapter;
   let mockRelay: RelayPublisher;
@@ -69,11 +77,14 @@ describe('SlackAdapter', () => {
     capturedMessageHandler = null;
     capturedMentionHandler = null;
     capturedErrorHandler = null;
-    adapter = new SlackAdapter('slack-1', {
-      botToken: 'xoxb-test-token',
-      appToken: 'xapp-test-token',
-      signingSecret: 'test-signing-secret',
-    });
+    adapter = new SlackAdapter(
+      'slack-1',
+      slackConfig({
+        botToken: 'xoxb-test-token',
+        appToken: 'xapp-test-token',
+        signingSecret: 'test-signing-secret',
+      })
+    );
     mockRelay = createMockRelay();
   });
 
@@ -97,7 +108,7 @@ describe('SlackAdapter', () => {
   it('accepts custom displayName', () => {
     const custom = new SlackAdapter(
       's2',
-      { botToken: 'xoxb-x', appToken: 'xapp-x', signingSecret: 's' },
+      slackConfig({ botToken: 'xoxb-x', appToken: 'xapp-x', signingSecret: 's' }),
       'Work Slack'
     );
     expect(custom.displayName).toBe('Work Slack');
@@ -273,7 +284,12 @@ describe('SlackAdapter', () => {
         channel: 'C123',
         ts: '1717171717.000100',
       };
-      const client = { users: {}, conversations: {}, reactions: {} };
+      // `typingIndicator` defaults to 'reaction', so the adapter adds one.
+      const client = {
+        users: {},
+        conversations: {},
+        reactions: { add: vi.fn().mockResolvedValue({ ok: true }) },
+      };
 
       await capturedMessageHandler!({ event, client, body: { event_id: 'Ev-AAA' } });
       await capturedMentionHandler!({

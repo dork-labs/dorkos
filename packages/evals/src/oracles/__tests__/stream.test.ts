@@ -11,7 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { SseFrame } from '@dorkos/test-utils';
-import type { OracleContext } from '../../types.js';
+import { emptyApprovalLog, type OracleContext } from '../../types.js';
 import {
   toolInvokedInStream,
   toolNameMatches,
@@ -33,6 +33,7 @@ function ctx(frames: SseFrame[]): OracleContext {
     baseUrl: 'http://unused',
     sessionId: 's',
     frames,
+    approvals: emptyApprovalLog(),
   };
 }
 
