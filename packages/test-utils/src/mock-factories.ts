@@ -533,6 +533,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((approvalId: string) =>
         Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
       ),
+    // Standing permissions (spec `agent-approval-settings` §3.7)
+    listStandingPermissions: vi.fn().mockResolvedValue({ grants: [] }),
+    revokeStandingPermission: vi
+      .fn()
+      .mockImplementation((grantId: string) => Promise.resolve({ ok: true, grantId })),
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),

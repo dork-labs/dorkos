@@ -159,6 +159,35 @@ you would give out your password.
 
 Either way, every yes and every no lands in your activity feed. With login required, it says which account answered. Without it, the feed says the answer came from this machine and that DorkOS could not check who gave it, so an approval you never clicked is something you can find.
 
+## Telling DorkOS to stop asking about one thing
+
+Answering the same question five times a day is not safety, it is noise. So you can answer it once, for one agent and one action, for a set stretch of time.
+
+Turn it on in Settings, under Security. After that, an approval card carries a third button that names exactly what it does: **Allow, and stop asking about this for 8 hours**. Press it and that one agent does that one thing without stopping, until the time runs out.
+
+Some things about it are worth knowing before you use it:
+
+- **It covers one agent doing one action.** The same agent doing something else still asks, and so does a different agent doing the same thing. There is no "trust this agent with everything" button, on purpose.
+- **The clock does not reset.** Eight hours means eight hours from when you pressed the button, no matter how often the agent uses it.
+- **A day is the longest you can pick.** "Forever" is not on the list.
+- **You can find it and end it in two places.** Settings under Security lists everything that is live, and the approvals marker in the header shows it too. Either one has a **Stop trusting** button next to it.
+- **Every use is still recorded.** Your activity feed says so each time the agent goes ahead without asking. Ending a permission stops the next action; it does not undo one that already ran.
+- **Turning the feature off ends everything that is live.** Nothing sits dormant waiting to wake up later.
+
+<Callout type="warn">
+  **This needs Require login on, and there is no lighter version.** Opening a permission means
+  DorkOS has to know it is you asking and not an agent on the same computer. With no login, there is
+  no password anywhere and nothing to tell the two apart, so the control is shown but switched off,
+  with Require login sitting right above it. Any weaker check would be one an agent could pass
+  exactly as easily as you, which would be worse than not offering it.
+</Callout>
+
+<Callout type="warn">
+  **A standing permission really does lower the gate.** That is what it is for. It is a trade you
+  make on purpose, bounded by one agent, one action, and a clock. If you would not be comfortable
+  coming back to find that action had run three times while you were at lunch, do not grant it.
+</Callout>
+
 ## Approvals are used once, and they expire
 
 - **One approval, one action.** Saying yes to removing one package does not say yes to removing another, or to the same one with different options. If a detail changes, DorkOS asks again.
