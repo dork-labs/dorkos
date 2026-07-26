@@ -52,9 +52,10 @@ Moving a task to \`active\` is that approval, so it is not something you can do.
 \`tasks_update\` refuses \`status\` and changes nothing else in the same call. Use
 \`enabled\` to turn an already-approved task on or off.
 
-This is the tasks scheduler's own gate. It is not the capability approval flow in
-operating-dorkos: there is no \`approvalToken\` to retry with, and nothing for you
-to do except tell the user and wait.
+This is the tasks scheduler's own gate, and it covers approving a NEW task only. It
+is not the capability approval flow in operating-dorkos: there is no
+\`approvalToken\` to retry with, and nothing for you to do except tell the user and
+wait. Deleting a task runs the other kind of gate; see below.
 
 ## Edit or disable a task (tools only, no CLI)
 
@@ -65,8 +66,12 @@ Both of these are MCP tools with no \`dorkos task\` equivalent. Without the
   \`enabled\` (true/false to turn it on or off), \`timezone\`, \`maxRuntime\`
   (e.g. \`"5m"\`, \`"1h"\`).
 
-- \`tasks_delete\` removes a task permanently. Confirm with the user first: this
-  tool carries no gate of its own.
+- \`tasks_delete\` removes a task permanently, and it is \`destructive\` tier. It does
+  NOT run until a person approves it: the first call comes back with the
+  \`approval_required\` payload described in operating-dorkos, and you retry the same
+  call with an \`approvalToken\` argument once they say yes. Tell the user what you
+  are about to delete and that a card is waiting for them, then wait. A refusal is
+  the answer, not an obstacle to work around.
 
 ### Two fields you cannot set
 

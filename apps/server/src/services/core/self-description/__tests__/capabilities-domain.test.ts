@@ -6,6 +6,9 @@
  *
  * @vitest-environment node
  */
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -17,6 +20,7 @@ import {
 } from '../../capabilities/index.js';
 import { unwrapMcpEnvelope, CapabilityToolError } from '../../capabilities/mcp-envelope.js';
 import { invokeCapabilityAsMcpResult } from '../../capabilities/mcp-projection.js';
+import { MCP_TOOL_TIERS } from '../../mcp-tool-tiers.js';
 import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
@@ -183,11 +187,73 @@ describe('list_capabilities surface', () => {
       expect(description()).toContain('dorkos call');
     });
 
+    /**
+     * The description said those families "carry no permission tier" (DOR-509).
+     *
+     * True when written; false from DOR-468, which gave all 47 hand-registered
+     * tools a tier behind the choke point in `core/mcp-tool-gate.ts`. Absent from
+     * the CATALOG and carrying no TIER are two different facts, and conflating them
+     * told every model that calls `list_capabilities` that half the product runs
+     * without asking anyone. The destructive names are read out of the tier table
+     * rather than typed here, so promoting a tool puts it under this assertion on
+     * the same commit.
+     */
+    it('does not tell the model that hand-registered tools are untiered', () => {
+      const text = description();
+      expect(text.toLowerCase()).not.toContain('carry no permission tier');
+      expect(text.toLowerCase()).not.toContain('carries no permission tier');
+
+      const destructiveTools = Object.entries(MCP_TOOL_TIERS)
+        .filter(([, declared]) => declared.tier === 'destructive')
+        .map(([name]) => name);
+      expect(destructiveTools.length).toBeGreaterThan(0);
+      for (const tool of destructiveTools) expect(text).toContain(tool);
+    });
+
     it('is written without em-dashes (repo-wide ban on model-facing prose)', () => {
       for (const cap of capabilitiesDomain.capabilities) {
         expect(cap.description).not.toContain('—');
       }
     });
+  });
+});
+
+/**
+ * The committed, generated API artifacts must carry the corrected description.
+ *
+ * `capabilities.list` projects onto `GET /api/capabilities/catalog`, so its
+ * description is copied verbatim into `docs/api/openapi.json` and rendered into
+ * `docs/api/api/capabilities/catalog/get.mdx`. Those files are committed, so a
+ * corrected source with an unregenerated artifact still publishes the false
+ * sentence. `docs-openapi-check` catches that in CI; this catches it in the
+ * targeted local loop, and states the specific claim that must never come back
+ * rather than only "something differs".
+ *
+ * The verbatim assertion is the load-bearing one: a check for the absence of a
+ * phrase is satisfied by an artifact that dropped the whole description, so the
+ * pair asserts the artifact tracks the source AND that the source is right.
+ */
+describe('committed API artifacts (DOR-509)', () => {
+  const repoRoot = new URL('../../../../../../../', import.meta.url);
+  const read = async (rel: string) => readFile(fileURLToPath(new URL(rel, repoRoot)), 'utf-8');
+  const liveDescription = capabilitiesDomain.capabilities.find(
+    (c) => c.id === 'capabilities.list'
+  )!.description;
+
+  it('openapi.json carries the live description verbatim, false claim gone', async () => {
+    const spec = await read('docs/api/openapi.json');
+    expect(spec.length).toBeGreaterThan(0);
+    expect(spec).not.toContain('carry no permission tier');
+    // JSON-encode so the comparison survives any quoting in the description.
+    expect(spec).toContain(JSON.stringify(liveDescription).slice(1, -1));
+  });
+
+  it('the rendered catalog MDX no longer says the tools are untiered', async () => {
+    // The generator hard-wraps prose, so compare on collapsed whitespace.
+    const mdx = (await read('docs/api/api/capabilities/catalog/get.mdx')).replace(/\s+/g, ' ');
+    expect(mdx.length).toBeGreaterThan(0);
+    expect(mdx).not.toContain('carry no permission tier');
+    expect(mdx).toContain('carry a permission tier all the same');
   });
 });
 
