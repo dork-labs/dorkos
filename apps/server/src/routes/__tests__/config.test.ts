@@ -278,6 +278,9 @@ describe('PATCH /api/config', () => {
       expect(ok.body.config.approvals).toEqual({
         standingGrants: true,
         trustWindowMinutes: 120,
+        // Untouched by a widening write: switching the feature ON voids nothing
+        // (DOR-520).
+        standingGrantsVoidBefore: null,
       });
     });
 

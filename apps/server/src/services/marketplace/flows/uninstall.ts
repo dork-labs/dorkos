@@ -74,6 +74,11 @@ export interface UninstallResult {
  */
 export interface UninstallExtensionManager {
   disable(id: string): Promise<unknown>;
+  /**
+   * Drop the person's standing approval for this extension to run code inside
+   * DorkOS (DOR-516), because the code it was given to is going away.
+   */
+  forgetRunApproval(id: string): Promise<void>;
 }
 
 /**
@@ -258,6 +263,21 @@ export class UninstallFlow {
     req: UninstallRequest
   ): Promise<void> {
     const type = located.inferredType;
+    // Only these two types walk `.dork/extensions/`. `shape` and `adapter` packages
+    // may carry that directory too, and the asymmetry looks like an oversight, so:
+    // a bundled extension under either of those types never becomes a discovery
+    // record today, and therefore has nothing to turn off and no approval to forget
+    // (DOR-516). `ExtensionDiscovery` scans exactly two roots, one level deep —
+    // `{dorkHome}/extensions` and `{cwd}/.dork/extensions` — and neither
+    // `{dorkHome}/shapes/**` nor an adapter's install root is among them.
+    // `applyShape` does not close the gap either: it iterates `manifest.activates`,
+    // a list of ids, and skips any id `extensionManager.get()` does not already
+    // know, so a Shape's own bundled tree is never registered.
+    //
+    // Two changes would make this live, and whoever makes one has to add the walk
+    // here as part of it: discovery gaining a third root, or `applyShape` learning
+    // to read `manifest.extensions` instead of only `activates`. Adding the call
+    // now would be dead code that reads like coverage.
     if (type === 'plugin' || type === 'skill-pack') {
       await this.disableBundledExtensions(stagingPath);
     }
@@ -333,8 +353,22 @@ export class UninstallFlow {
   }
 
   /**
-   * Walk the staged `.dork/extensions/` directory and call
-   * `extensionManager.disable()` for each extension ID found.
+   * Walk the staged `.dork/extensions/` directory and, for each extension ID
+   * found, turn it off and forget the person's approval for it to run code inside
+   * DorkOS.
+   *
+   * Forgetting the approval is the load-bearing half (DOR-516). An approval is
+   * keyed to the extension id, and an update is an uninstall followed by a fresh
+   * install ({@link MarketplaceInstaller.update}), so leaving the approval behind
+   * meant `foo` v2 — or a package that merely reuses the name `foo` — inherited a
+   * decision the person made about entirely different code, with nothing to click
+   * and nothing shown. `marketplace_install` is tier `act`, so an agent reaches
+   * that path unaided.
+   *
+   * A person who updates an extension they had approved is asked once more. That
+   * is the intended cost: new code, new decision. Editing an installed
+   * extension's files never comes through here, so the edit → test → reload loop
+   * stays free.
    *
    * @internal
    */
@@ -345,6 +379,7 @@ export class UninstallFlow {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         await this.deps.extensionManager.disable(entry.name);
+        await this.deps.extensionManager.forgetRunApproval(entry.name);
       }
     }
   }

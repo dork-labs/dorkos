@@ -76,6 +76,25 @@ import {
   UpdateAgentRequestSchema,
   AgentListQuerySchema,
 } from '@dorkos/shared/mesh-schemas';
+import {
+  AddRoomMemberRequestSchema,
+  CreateRoomRequestSchema,
+  CreateThreadRequestSchema,
+  ListRoomEntriesQuerySchema,
+  ListRoomsQuerySchema,
+  PostToRoomRequestSchema,
+  PostToRoomResponseSchema,
+  RoomEntryListResponseSchema,
+  RoomEventSchema,
+  RoomListResponseSchema,
+  RoomMemberSchema,
+  RoomRosterEntrySchema,
+  RoomSnapshotSchema,
+  RoomWithRosterSchema,
+  SetReadCursorRequestSchema,
+  UpdateMembershipRequestSchema,
+  UpdateRoomRequestSchema,
+} from '@dorkos/shared/room-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
   PendingApprovalsResponseSchema,
@@ -1620,11 +1639,26 @@ registry.registerPath({
   },
 });
 
+/**
+ * The refusal both package-source WRITE routes answer with when the caller is not
+ * the operator (DOR-502). Not an approval gate: there is no token that unlocks it.
+ */
+const MarketplaceSourceRefusalSchema = z.object({
+  error: z.string(),
+  code: z.literal('operator_only_marketplace_source'),
+  message: z.string(),
+});
+
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources',
   tags: ['Marketplace'],
-  summary: 'Add a marketplace source',
+  summary: 'Add a marketplace source (operator only)',
+  description:
+    'Only the person running DorkOS may add a package source. Any caller that could not decide ' +
+    'an approval is refused with 403, which includes one presenting an agent identity, one ' +
+    'presenting an approval token, and (with local login on) one with no signed-in identity. ' +
+    'There is no approval that unlocks it.',
   request: {
     body: {
       content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
@@ -1639,6 +1673,10 @@ registry.registerPath({
       description: 'Validation error',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    403: {
+      description: 'Caller is not the operator',
+      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+    },
     409: {
       description: 'Duplicate source name',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -1650,12 +1688,21 @@ registry.registerPath({
   method: 'delete',
   path: '/api/marketplace/sources/{name}',
   tags: ['Marketplace'],
-  summary: 'Remove a marketplace source',
+  summary: 'Remove a marketplace source (operator only)',
+  description:
+    'Only the person running DorkOS may remove a package source. Any caller that could not ' +
+    'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
+    'one presenting an approval token, and (with local login on) one with no signed-in ' +
+    'identity. There is no approval that unlocks it.',
   request: {
     params: z.object({ name: z.string() }),
   },
   responses: {
     204: { description: 'Source removed' },
+    403: {
+      description: 'Caller is not the operator',
+      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+    },
   },
 });
 
@@ -2693,6 +2740,283 @@ registry.registerPath({
       description: 'No permission is live under that id (`UNKNOWN_STANDING_PERMISSION`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+// --- Rooms (spec `rooms` §4) ---
+
+/** `:id` on every room path. A ULID, not a UUID — rooms are minted by `ulidx`. */
+const RoomIdParams = z.object({ id: z.string().min(1) });
+/** `:id` plus the `:authorId` the membership routes address. */
+const RoomMemberParams = RoomIdParams.extend({ authorId: z.string().min(1) });
+
+/** 404 body shared by every room path: an unknown room and one the caller may not see. */
+const roomNotFound = {
+  description: 'No such room, or the caller may not see it (an agent sees only its own rooms)',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+const roomValidationError = {
+  description: 'Validation error',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms',
+  tags: ['Rooms'],
+  summary: 'List rooms visible to the caller',
+  description:
+    'A human sees every room; an agent presenting `X-DorkOS-Agent` sees only rooms it belongs to. `unreadCount` is null for a room the caller is not a member of.',
+  request: { query: ListRoomsQuerySchema },
+  responses: {
+    200: {
+      description: 'Rooms, newest activity first',
+      content: { 'application/json': { schema: RoomListResponseSchema } },
+    },
+    400: roomValidationError,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms',
+  tags: ['Rooms'],
+  summary: 'Create a channel or a DM',
+  description:
+    'The room and its seeded roster are written in one transaction. Threads are created via `POST /api/rooms/{id}/threads`.',
+  request: { body: { content: { 'application/json': { schema: CreateRoomRequestSchema } } } },
+  responses: {
+    201: {
+      description: 'The new room with its roster',
+      content: { 'application/json': { schema: RoomWithRosterSchema } },
+    },
+    400: roomValidationError,
+    409: {
+      description: 'A live channel already holds that slug',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}',
+  tags: ['Rooms'],
+  summary: 'Get one room with its roster',
+  request: { params: RoomIdParams },
+  responses: {
+    200: {
+      description: 'The room and its members',
+      content: { 'application/json': { schema: RoomWithRosterSchema } },
+    },
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/rooms/{id}',
+  tags: ['Rooms'],
+  summary: 'Update a room title, topic, or archived flag',
+  description:
+    'Archiving a channel releases its slug. Un-archiving reclaims it, and is refused with 409 when another channel took it meanwhile.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: UpdateRoomRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The updated room with its roster',
+      content: { 'application/json': { schema: RoomWithRosterSchema } },
+    },
+    400: roomValidationError,
+    404: roomNotFound,
+    409: {
+      description: 'Un-archiving would collide with a live channel holding the slug',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/entries',
+  tags: ['Rooms'],
+  summary: 'Read a page of room history',
+  description:
+    'Oldest-first within the page. Page backwards with `before=<seq>`. The room log is never trimmed, so any page remains readable.',
+  request: { params: RoomIdParams, query: ListRoomEntriesQuerySchema },
+  responses: {
+    200: {
+      description: 'A page of entries',
+      content: { 'application/json': { schema: RoomEntryListResponseSchema } },
+    },
+    400: roomValidationError,
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/entries',
+  tags: ['Rooms'],
+  summary: 'Post to a room (trigger-only)',
+  description:
+    'Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: PostToRoomRequestSchema } } },
+  },
+  responses: {
+    202: {
+      description: 'Accepted; delivery rides the room SSE stream',
+      content: { 'application/json': { schema: PostToRoomResponseSchema } },
+    },
+    400: roomValidationError,
+    404: roomNotFound,
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/members',
+  tags: ['Rooms'],
+  summary: 'Add a member to a room',
+  description:
+    'Add by `authorId`, or by `agentPath` to mint an agent author on first use. `responseMode` is seeded from the room kind when omitted.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: AddRoomMemberRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The stored membership with its author resolved',
+      content: { 'application/json': { schema: RoomRosterEntrySchema } },
+    },
+    400: roomValidationError,
+    404: {
+      description: 'No such room, no such author, or no agent registered at that path',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/rooms/{id}/members/{authorId}',
+  tags: ['Rooms'],
+  summary: "Change a member's per-room response mode",
+  request: {
+    params: RoomMemberParams,
+    body: { content: { 'application/json': { schema: UpdateMembershipRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The updated membership',
+      content: { 'application/json': { schema: RoomRosterEntrySchema } },
+    },
+    400: roomValidationError,
+    404: {
+      description: 'No such room, or not a member of it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/rooms/{id}/members/{authorId}',
+  tags: ['Rooms'],
+  summary: 'Remove a member from a room',
+  description: "Also drops that member's per-room session binding.",
+  request: { params: RoomMemberParams },
+  responses: {
+    204: { description: 'Member removed' },
+    404: {
+      description: 'No such room, or not a member of it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/rooms/{id}/read-cursor',
+  tags: ['Rooms'],
+  summary: "Advance the caller's read cursor",
+  description:
+    'The `(member, room)` cursor the unread divider reads. Monotonic — a lower value is ignored, so a stale client cannot un-read a room for another client.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: SetReadCursorRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The updated membership',
+      content: { 'application/json': { schema: RoomMemberSchema } },
+    },
+    400: roomValidationError,
+    404: {
+      description: 'No such room, or not a member of it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/threads',
+  tags: ['Rooms'],
+  summary: 'Open a thread off an entry',
+  description:
+    'One level only: a thread whose parent is itself a thread is refused with 400. The thread inherits the parent roster and each member keeps their parent response mode.',
+  request: {
+    params: RoomIdParams,
+    body: { content: { 'application/json': { schema: CreateThreadRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The new thread room with its roster',
+      content: { 'application/json': { schema: RoomWithRosterSchema } },
+    },
+    400: {
+      description: 'Validation error, or the parent is already a thread',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/events',
+  tags: ['Rooms'],
+  summary: 'Durable room event stream (SSE)',
+  description:
+    'Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` (a durable `entry`, or an ephemeral `signal` that is never replayed).',
+  request: {
+    params: RoomIdParams,
+    query: z.object({
+      after: z.coerce
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe('Resume cursor; ignored past the end of the log.'),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'SSE stream: a RoomSnapshot frame on a cold connect, then RoomEvent frames',
+      content: {
+        'text/event-stream': { schema: z.union([RoomSnapshotSchema, RoomEventSchema]) },
+      },
+    },
+    404: roomNotFound,
   },
 });
 

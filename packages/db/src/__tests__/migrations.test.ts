@@ -51,6 +51,9 @@ describe('Database Migrations', () => {
       // consent; the token lives here only as a hash (agent-trust spec §3.3,
       // migration 0031).
       'approvals',
+      // Opaque author identities keyed on (kind, natural_key) — an agent's
+      // agentPath, never its manifest ULID (ADR 260726-170126, migration 0034).
+      'authors',
       'codex_threads',
       // Derived cache binding a ConnectedAccountId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
@@ -64,6 +67,13 @@ describe('Database Migrations', () => {
       'pulse_schedules',
       'relay_index',
       'relay_traces',
+      // The room primitive: a membership-scoped durable stream, its roster, its
+      // never-trimmed log, and the per-(room, agent) session bindings
+      // (ADR 260726-170125, migration 0034).
+      'room_entries',
+      'room_members',
+      'room_sessions',
+      'rooms',
       'session',
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).

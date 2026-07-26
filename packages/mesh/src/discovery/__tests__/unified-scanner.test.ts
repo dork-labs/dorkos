@@ -40,6 +40,7 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     registeredAt: '2026-02-24T00:00:00.000Z',
     registeredBy: 'test',
     personaEnabled: true,
+    enabledToolGroups: {},
     ...overrides,
   };
 }
@@ -58,9 +59,9 @@ function makeClaudeMdStrategy(): DiscoveryStrategy {
       }
     },
     extractHints: async (_dir: string): Promise<AgentHints> => ({
-      name: 'claude-agent',
-      runtime: 'claude-code',
-      capabilities: [],
+      suggestedName: 'claude-agent',
+      detectedRuntime: 'claude-code',
+      inferredCapabilities: [],
       description: 'Claude Code agent',
     }),
   };
@@ -403,9 +404,10 @@ describe('unifiedScan', () => {
           const err = Object.assign(new Error('EACCES'), { code: 'EACCES' });
           throw err;
         }
-        return realReaddir(dirPath as string, opts as { withFileTypes: true }) as ReturnType<
-          typeof fs.readdir
-        >;
+        return realReaddir(
+          dirPath as string,
+          opts as { withFileTypes: true }
+        ) as unknown as ReturnType<typeof fs.readdir>;
       });
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);

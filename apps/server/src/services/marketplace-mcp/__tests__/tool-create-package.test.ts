@@ -9,13 +9,33 @@ import {
   personalMarketplaceRoot,
   PERSONAL_MARKETPLACE_NAME,
 } from '../personal-marketplace.js';
-import {
-  AutoApproveConfirmationProvider,
-  TokenConfirmationProvider,
-} from '../confirmation-provider.js';
+import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import type { ConfirmationProvider, ConfirmationResult } from '../confirmation-provider.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalService } from '../../core/approvals/index.js';
+
+/**
+ * A confirmation provider that says yes without asking anyone — a LOCAL TEST
+ * DOUBLE, not a product path.
+ *
+ * The production tree deliberately has no such implementation: both real
+ * providers put the decision in front of a person, and the environment variable
+ * that used to swap in an always-approve one was deleted (DOR-501) precisely so
+ * that no shipped code could turn the consent gate off. These tests are about
+ * what the handler does AFTER consent — scaffolding, registry writes, error
+ * paths — so they supply consent here, where it reaches nothing but this file.
+ */
+class AlwaysApprovesConfirmationProvider implements ConfirmationProvider {
+  /** Approves without asking. */
+  async requestInstallConfirmation(): Promise<ConfirmationResult> {
+    return { status: 'approved' };
+  }
+
+  /** Approves any token without checking it. */
+  async resolveToken(): Promise<ConfirmationResult> {
+    return { status: 'approved' };
+  }
+}
 
 /**
  * A token provider over a fresh approval store, plus the two things the cockpit
@@ -220,7 +240,11 @@ describe('createCreatePackageHandler', () => {
 
   it('appends the new package to personal marketplace.json on success', async () => {
     const handler = createCreatePackageHandler(
-      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
     );
 
     const result = await handler({
@@ -258,7 +282,11 @@ describe('createCreatePackageHandler', () => {
 
   it('forwards categories to the scaffolder, deriving the primary category', async () => {
     const handler = createCreatePackageHandler(
-      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
     );
 
     const result = await handler({
@@ -281,7 +309,11 @@ describe('createCreatePackageHandler', () => {
 
   it('writes an empty categories[] when categories is not passed', async () => {
     const handler = createCreatePackageHandler(
-      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
     );
 
     const result = await handler({
@@ -303,7 +335,11 @@ describe('createCreatePackageHandler', () => {
 
   it('is idempotent when the same package name is registered twice', async () => {
     const handler = createCreatePackageHandler(
-      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
     );
 
     // First call: scaffolds and registers.
@@ -353,7 +389,11 @@ describe('createCreatePackageHandler', () => {
     await writeFile(manifestPath, JSON.stringify(seeded, null, 2) + '\n', 'utf-8');
 
     const handler = createCreatePackageHandler(
-      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
     );
 
     const result = await handler({
@@ -374,7 +414,11 @@ describe('createCreatePackageHandler', () => {
 
   it('returns CREATE_FAILED when the scaffolder throws (e.g., directory exists)', async () => {
     const handler = createCreatePackageHandler(
-      buildDeps({ dorkHome, confirmationProvider: new AutoApproveConfirmationProvider(), logger })
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
     );
 
     await handler({
@@ -396,24 +440,25 @@ describe('createCreatePackageHandler', () => {
     expect(payload.error).toContain('Directory already exists');
   });
 
-  it('skips the confirmation gate entirely when AutoApproveConfirmationProvider is used', async () => {
-    const provider = new AutoApproveConfirmationProvider();
+  it('asks the confirmation gate even when the answer comes back approved', async () => {
+    const provider = new AlwaysApprovesConfirmationProvider();
     const requestSpy = vi.spyOn(provider, 'requestInstallConfirmation');
     const handler = createCreatePackageHandler(
       buildDeps({ dorkHome, confirmationProvider: provider, logger })
     );
 
     const result = await handler({
-      name: 'auto-approved',
+      name: 'gate-was-asked',
       type: 'plugin',
-      description: 'Auto-approved package.',
+      description: 'Package created after the gate said yes.',
     });
     const { payload } = parseResult(result);
     expect(payload.status).toBe('created');
-    // The handler still calls requestInstallConfirmation; auto-approve simply
-    // returns approved synchronously rather than issuing a token.
+    // The point of the assertion: the handler asks UNCONDITIONALLY. The double
+    // answering yes synchronously is what makes that observable — it never
+    // changes whether the question was put.
     expect(requestSpy).toHaveBeenCalledWith({
-      packageName: 'auto-approved',
+      packageName: 'gate-was-asked',
       marketplace: PERSONAL_MARKETPLACE_NAME,
       operation: 'create-package',
       packageType: 'plugin',
@@ -463,7 +508,7 @@ describe('createCreatePackageHandler', () => {
     const handler = createCreatePackageHandler(
       buildDeps({
         dorkHome,
-        confirmationProvider: new AutoApproveConfirmationProvider(),
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
         logger: customLogger,
       })
     );

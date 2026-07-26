@@ -159,6 +159,18 @@ export const GENERIC_EVENTS = [
   'mesh_liveness_changed',
   'approval_pending',
   'approval_resolved',
+  'approval_grant_changed',
+  // Rooms (spec `rooms`, ADR 260726-170125). The ENTRIES of a room ride that
+  // room on its own durable stream (`/api/rooms/:id/events`); these five are the
+  // global signals for a reader NOT connected to it — the room list changing,
+  // and an activity bump that reorders the list and marks a room unread.
+  // (No apostrophes here on purpose: the guard test parses this block with a
+  // single-quote regex, so a contraction would read as an event name.)
+  'room_created',
+  'room_updated',
+  'room_member_added',
+  'room_member_removed',
+  'room_activity',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */

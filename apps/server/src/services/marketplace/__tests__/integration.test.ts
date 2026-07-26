@@ -146,6 +146,7 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
   const extensionManager = {
     enable: extensionEnable,
     disable: vi.fn().mockResolvedValue(undefined),
+    forgetRunApproval: vi.fn().mockResolvedValue(undefined),
   };
 
   // Agent creator stub — the real implementation pulls in configManager,

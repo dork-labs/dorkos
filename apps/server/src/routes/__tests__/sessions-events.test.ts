@@ -69,7 +69,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 import http from 'node:http';
 import { createApp, finalizeApp } from '../../app.js';
-import { STREAM_EPOCH } from '../session-events-handler.js';
+import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../../lib/boundary.js';
 
 const app = createApp();

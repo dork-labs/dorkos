@@ -439,7 +439,7 @@ Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-l
 | `agent-types.ts`                     | `AgentSession` and `ToolState` interfaces (shared across subdirs)                 |
 | `runtime-constants.ts`               | Shared constants used across ClaudeCodeRuntime modules                            |
 | `index.ts`                           | Barrel export for `ClaudeCodeRuntime`                                             |
-| `messaging/message-sender.ts`        | Extracted send-message logic (streaming, tool filtering, context building)        |
+| `messaging/message-sender.ts`        | Extracted send-message logic (streaming, tool-group resolution, context building) |
 | `messaging/context-builder.ts`       | Runtime context injection for system prompt                                       |
 | `messaging/interactive-handlers.ts`  | Tool approval, question flows, and MCP elicitation                                |
 | `messaging/permission-mode-guard.ts` | Resolves the effective permission mode (incl. auto-mode fallback)                 |
@@ -455,7 +455,7 @@ Each adapter is self-contained in its directory (see [Adapter Lineup](#adapter-l
 | `sessions/session-store.ts`          | `SessionStore` — in-memory store for active `AgentSession` objects                |
 | `sessions/session-list-watcher.ts`   | Fleet-wide session-list watcher backing `subscribeSessionList` (file watching)    |
 | `sessions/question-answers.ts`       | Structured-question answer mapping                                                |
-| `tooling/tool-filter.ts`             | Per-agent MCP tool filtering                                                      |
+| `tooling/tool-filter.ts`             | Per-agent MCP tool-group resolution (`resolveToolConfig`)                         |
 | `tooling/command-registry.ts`        | Slash command discovery                                                           |
 | `mcp-tools/`                         | MCP tool server (core, tasks, relay, mesh, adapter, binding, UI, extension tools) |
 
@@ -493,9 +493,9 @@ Tools are implemented in `apps/server/src/services/runtimes/claude-code/mcp-tool
 
 The agent iteration loop: `create_extension` -> `test_extension` (smoke) -> `reload_extensions` (visual) -> iterate.
 
-## Per-Session Tool Filtering
+## Per-Session Tool Groups
 
-Each agent session can have a tailored MCP tool palette. The filtering pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:
+Each agent can be told about a different subset of the DorkOS MCP tools. The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:
 
 ```
 ClaudeCodeRuntime.sendMessage(sessionId, content, cwd)
@@ -504,8 +504,7 @@ ClaudeCodeRuntime.sendMessage(sessionId, content, cwd)
        { relayEnabled, tasksEnabled, globalConfig })
   -> buildSystemPromptAppend(cwd, meshCore,        // Context blocks gated by toolConfig
        toolConfig)
-  -> buildAllowedTools(toolConfig)                 // Produce SDK allowedTools array
-  -> query({ allowedTools, systemPrompt })         // SDK call with filtered tools
+  -> query({ systemPrompt })                       // SDK call — no tool list is passed
 ```
 
 ### Resolution Order
@@ -520,25 +519,31 @@ Four top-level toggles control six tool groups:
 
 | Toggle    | Controls                                                                                          |
 | --------- | ------------------------------------------------------------------------------------------------- |
-| `pulse`   | Tasks tools (list/create/update/delete schedules, run history)                                    |
+| `tasks`   | Tasks tools (list/create/update/delete schedules, run history)                                    |
 | `relay`   | Relay tools (send, inbox, endpoints) + Trace tools (get_trace, get_metrics)                       |
 | `mesh`    | Mesh tools (discover, register, list, deny, status, inspect, topology)                            |
 | `adapter` | Adapter tools (list/enable/disable/reload adapters) + Binding tools (list/create/delete bindings) |
 
 Core tools (ping, get_server_info, get_session_count, get_agent) are always included.
 
-### Defense in Depth
+### What a Disabled Group Actually Does
 
-When a domain is disabled, both the MCP `allowedTools` filter and the context block are omitted. The `allowedTools` filter prevents the SDK from offering the tools; the context block omission removes usage instructions from the system prompt. This is defense-in-depth, not a security boundary.
+Exactly one thing: `buildSystemPromptAppend` leaves that group's tool block out of the agent's context, so the agent is never told those tools exist. The tools stay registered on the session's MCP server, and an agent that names one anyway can still call it through the normal approval prompt. This steers the agent; it is not a security boundary.
+
+Until DOR-519 this section described a second, stronger mechanism: the resolved config also produced an SDK `allowedTools` array. That was a misreading of the option. `allowedTools` auto-approves the names in it rather than restricting them, and the array was only non-empty once a group had been turned OFF. So turning one group off made 31 to 35 tools skip the approval prompt (the count depends which group), while leaving every group on auto-approved only the 13 names in `DORKOS_AGENT_TOOLS`. `binding_delete` and `relay_disable_adapter` are representative of what that exposed. The toggle ran backwards, and because `enabledToolGroups` is agent-writable through `config_patch`, an agent could widen its own auto-approval. The wiring and `buildAllowedTools` are gone, nothing sets `allowedTools`, and a test in `claude-code-runtime.test.ts` fails if anything sets it again. ADR-0070 carries the full history.
+
+The two `destructive` tools, `tasks_delete` and `mesh_unregister`, appeared in those lists but were never actually exposed: they are gated in the handler by `gateHandRegisteredMcpTools` (DOR-468), a layer `allowedTools` cannot reach. That left 29 to 34 `act` and `observe` tools in the list, of which 7 to 13 already auto-approved through `canUseTool` regardless of any toggle. The prompts the toggle actually silenced numbered 16 to 24. That split is the argument for where enforcement lives: consequence is gated by tier in `services/core/mcp-tool-gate.ts`, below every caller, and never by a list of names a config toggle can rewrite.
+
+Taking real access away means leaving a disabled group's tools out at MCP registration time. That work is still open. ADR-260726-171347 records the current, deliberate position: these toggles gate context, not access.
 
 ### Files
 
-| File                                                                         | Purpose                                       |
-| ---------------------------------------------------------------------------- | --------------------------------------------- |
-| `apps/server/src/services/runtimes/claude-code/tooling/tool-filter.ts`       | `resolveToolConfig()` + `buildAllowedTools()` |
-| `apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts` | Agent-aware block gating, peer agents block   |
-| `packages/shared/src/mesh-schemas.ts`                                        | `EnabledToolGroupsSchema` on `AgentManifest`  |
-| `packages/shared/src/config-schema.ts`                                       | `agentContext.tasksTools` global default      |
+| File                                                                         | Purpose                                      |
+| ---------------------------------------------------------------------------- | -------------------------------------------- |
+| `apps/server/src/services/runtimes/claude-code/tooling/tool-filter.ts`       | `resolveToolConfig()`                        |
+| `apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts` | Agent-aware block gating, peer agents block  |
+| `packages/shared/src/mesh-schemas.ts`                                        | `EnabledToolGroupsSchema` on `AgentManifest` |
+| `packages/shared/src/config-schema.ts`                                       | `agentContext.tasksTools` global default     |
 
 ## Module Layout
 
@@ -687,7 +692,7 @@ apps/
             session-list-watcher.ts -- Fleet-wide session-list watcher (chokidar) backing subscribeSessionList
             question-answers.ts -- Structured-question answer mapping
           tooling/            -- Tool/command/dependency configuration
-            tool-filter.ts    -- Per-agent MCP tool filtering (resolveToolConfig, buildAllowedTools)
+            tool-filter.ts    -- Per-agent MCP tool-group resolution (resolveToolConfig)
             command-registry.ts -- Slash command discovery
             check-dependency.ts -- Verifies the Claude CLI dependency
           mcp-tools/          -- In-process MCP tool server for Claude Agent SDK

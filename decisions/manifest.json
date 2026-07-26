@@ -1069,9 +1069,10 @@
       "slug": "channels-vocabulary-over-relay-adapters",
       "title": "User-Facing \"Channels\" Vocabulary Over \"Relay Adapters\"",
       "created": "2026-04-04",
-      "status": "accepted",
+      "status": "superseded",
       "extractedFrom": "channels-and-agent-adapters",
-      "specSlug": "channels-and-agent-adapters"
+      "specSlug": "channels-and-agent-adapters",
+      "supersededBy": "260726-193526"
     },
     {
       "number": 221,
@@ -2010,10 +2011,11 @@
       "number": 70,
       "slug": "per-agent-tool-filtering-via-allowedtools",
       "title": "Per-Agent Tool Filtering via Domain-Level allowedTools",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
-      "specSlug": "agent-tools-elevation"
+      "specSlug": "agent-tools-elevation",
+      "supersededBy": "260726-171347"
     },
     {
       "number": 69,
@@ -2911,6 +2913,22 @@
       "status": "accepted",
       "created": "2026-07-26",
       "specSlug": "rooms"
+    },
+    {
+      "id": "260726-193526",
+      "slug": "channel-is-a-conversation-relay-is-an-integration",
+      "title": "\"Channel\" means a conversation; Relay's integrations are called \"Integrations\"",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "specSlug": "rooms"
+    },
+    {
+      "id": "260726-171347",
+      "slug": "tool-group-toggles-gate-context-not-access",
+      "title": "Tool-group toggles gate context, not access",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "supersedes": 70
     }
   ]
 }

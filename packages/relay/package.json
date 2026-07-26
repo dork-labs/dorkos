@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && node scripts/copy-adapter-docs.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-adapter-docs.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint ."

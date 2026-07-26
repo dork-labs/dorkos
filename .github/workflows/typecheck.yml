@@ -1,0 +1,84 @@
+name: typecheck
+
+# Type-checks every package that declares a `typecheck` script, on every PR
+# and on push to main. See the KNOWN GAP note below for what this does not
+# cover.
+#
+# Before this workflow existed, NOTHING in CI ran `pnpm typecheck`. Enforcement
+# was the lefthook pre-commit hook plus a developer choosing to run
+# `pnpm verify` before opening a PR. Both are bypassable — `--no-verify` is a
+# documented, routinely-used escape in this repo (AGENTS.md and several
+# contributing notes prescribe it, because the pre-push hook hangs from
+# worktrees) — and nothing downstream ever re-checked.
+#
+# This is not theoretical. PR #489 (DOR-508) tightened `apps/server/tsconfig.json`
+# to typecheck server test files for the first time. PR #488 (DOR-501 phase 2)
+# landed ~40 minutes later with new/modified test files written on a branch that
+# predated #489, so its own CI run never typechecked them under the new,
+# stricter config. Each PR was green alone; the moment they combined on `main`,
+# typecheck went red with four errors (fixed by PR #491). No CI job noticed — a
+# human found it by running `pnpm typecheck` locally. That gap is this ticket,
+# DOR-517.
+#
+# FULL MONOREPO, not affected-only (the mode `pnpm verify` uses via
+# `turbo run typecheck --affected`). Affected-only is faster, but it would have
+# MISSED the #488/#489 failure above: each PR's own diff was affected-only clean
+# against the base it branched from. The break only existed in the state
+# produced by combining both PRs' merges — a per-PR diff can't see an
+# interaction between two PRs it doesn't know about. Only a full run against
+# `main`'s actual tip (which is what a PR's merge commit or a push to main
+# represents) can catch that. Plain `turbo typecheck`, no `--affected`, is the
+# same turbo invocation the root `pnpm typecheck` script runs, minus the local
+# `dotenv` wrapper (there's no `.env` on a runner).
+#
+# NO separate build step: `typecheck` declares `dependsOn: ["^build"]` in
+# turbo.json, so `turbo typecheck` already builds every dependency package
+# (e.g. `@dorkos/shared`) before typechecking anything that imports its dist —
+# turbo computes and runs that from the task graph on its own. Skipping this
+# would make the job either not build shared dists at all (false-red `TS6053`
+# on every downstream import) or need a hand-maintained second build step that
+# duplicates what turbo already does correctly.
+#
+# KNOWN GAP: this only covers packages that declare a `typecheck` script.
+# `dorkos` (packages/cli, the published npm package) does not — it builds
+# with esbuild, which strips types without checking them, and it is
+# currently red under `tsc --noEmit`. Tracked as DOR-530.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs on the same ref for PRs only — every push to main
+# keeps its own completed run.
+concurrency:
+  group: typecheck-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    # A full cold run (no turbo cache) is ~35-40s on a warm developer machine;
+    # generous headroom for a colder/slower CI runner.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck every package that declares a typecheck script
+        run: pnpm exec turbo typecheck --continue

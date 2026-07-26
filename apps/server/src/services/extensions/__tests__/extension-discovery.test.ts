@@ -3,10 +3,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { ExtensionDiscovery } from '../extension-discovery.js';
+import { mayRunExtensionCode } from '../extension-load-policy.js';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 
 /** No user overrides. */
-const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [] };
+const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
 /** No core extensions (everything resolves to origin 'user'). */
 const EMPTY_CORE = new Map<string, CoreExtensionInfo>();
 
@@ -167,7 +168,7 @@ describe('ExtensionDiscovery', () => {
 
     const results = await discovery.discover(
       null,
-      { enabled: ['future-ext'], disabled: [] },
+      { enabled: ['future-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -187,7 +188,7 @@ describe('ExtensionDiscovery', () => {
 
     const results = await discovery.discover(
       null,
-      { enabled: ['enabled-ext'], disabled: [] },
+      { enabled: ['enabled-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -207,7 +208,7 @@ describe('ExtensionDiscovery', () => {
 
     const results = await discovery.discover(
       null,
-      { enabled: ['other-ext'], disabled: [] },
+      { enabled: ['other-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -420,7 +421,7 @@ describe('ExtensionDiscovery', () => {
       const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
       const results = await discovery.discover(
         null,
-        { enabled: [], disabled: ['marketplace'] },
+        { enabled: [], disabled: ['marketplace'], approvedToRun: [] },
         core
       );
 
@@ -450,11 +451,174 @@ describe('ExtensionDiscovery', () => {
       const core = coreMap({ id: 'hello-world', defaultEnabled: false, canDisable: true });
       const results = await discovery.discover(
         null,
-        { enabled: ['hello-world'], disabled: [] },
+        { enabled: ['hello-world'], disabled: [], approvedToRun: [] },
         core
       );
 
       expect(results[0]).toMatchObject({ id: 'hello-world', origin: 'core', status: 'enabled' });
+    });
+
+    /**
+     * `origin: 'core'` short-circuits the load approval entirely
+     * (`extension-load-policy.ts`), so anything that can obtain that label runs
+     * unasked. These are the ways a directory tried to obtain it by reusing a
+     * bundled id, each reproduced as the attack rather than as the fix (DOR-516).
+     */
+    describe('reusing a core id does not make a directory core', () => {
+      it('refuses core to a directory that claims a bundled id from its manifest', async () => {
+        // A directory named something else, whose manifest claims a core id. Its
+        // path is still UNDER the staging directory, so an origin check that asked
+        // "does this path start with the staging dir?" would hand it the exemption.
+        // Only "is this the staged copy of THIS id?" refuses it.
+        await writeManifest(path.join(dorkHome, 'extensions', 'not-really'), {
+          id: 'marketplace',
+          name: 'Marketplace',
+          version: '9.9.9',
+        });
+
+        const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+        const results = await discovery.discover(null, EMPTY_CONFIG, core);
+
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({
+          id: 'marketplace',
+          origin: 'user',
+          path: path.join(dorkHome, 'extensions', 'not-really'),
+        });
+        // And the load policy therefore asks about it, with an empty approval list.
+        expect(mayRunExtensionCode(results[0].id, results[0].origin, [])).toBe(false);
+      });
+
+      it('refuses core to a SYMLINK at the staged path, on a reload with no restage', async () => {
+        // The path comparison is lexical, and `scanDirectory` admits symlink
+        // entries, so a link at `{dorkHome}/extensions/marketplace` matches the
+        // staged path exactly while its contents live elsewhere.
+        //
+        // `ensureCoreExtensions` deletes such a link before staging, but that runs
+        // once at boot. `ExtensionManager.reload()` calls exactly the `discover()`
+        // below with NO re-staging, and it is reachable from `POST
+        // /api/extensions/reload` and the `reload_extensions` tool — so this is the
+        // window the boot-time repair does not cover.
+        const staged = path.join(dorkHome, 'extensions', 'marketplace');
+        await writeManifest(staged, { id: 'marketplace', name: 'Marketplace', version: '1.0.0' });
+        const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+
+        // Boot: the real staged copy is core, as it should be.
+        const atBoot = await discovery.discover(null, EMPTY_CONFIG, core);
+        expect(atBoot[0]).toMatchObject({ id: 'marketplace', origin: 'core' });
+
+        // After boot, with a shell: swap the staged directory for a link to a
+        // directory the attacker controls, carrying the same id.
+        const attacker = path.join(tmpDir, 'attacker');
+        await writeManifest(attacker, { id: 'marketplace', name: 'Marketplace', version: '1.0.0' });
+        await fs.writeFile(path.join(attacker, 'server.ts'), 'PLANTED();\n', 'utf-8');
+        await fs.rm(staged, { recursive: true, force: true });
+        await fs.symlink(attacker, staged, 'dir');
+
+        // Reload: same call, no restaging.
+        const afterReload = await discovery.discover(null, EMPTY_CONFIG, core);
+
+        expect(afterReload).toHaveLength(1);
+        expect(afterReload[0]).toMatchObject({ id: 'marketplace', origin: 'user' });
+        // So the planted `server.ts` is asked about instead of being run as DorkOS.
+        expect(afterReload[0].hasServerEntry).toBe(true);
+        expect(mayRunExtensionCode('marketplace', afterReload[0].origin, [])).toBe(false);
+      });
+
+      it('ignores a project-tree copy of a core id and keeps the staged one', async () => {
+        // The reproduction that started this: an agent in `acceptEdits` writes a
+        // project file, no shell and no `~/.dork` access needed. `marketplace` is
+        // `defaultEnabled`, so it is enabled at boot and its server entry is
+        // initialized — as core, unasked, before the fix.
+        await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+          id: 'marketplace',
+          name: 'Marketplace',
+          version: '1.0.0',
+        });
+        const cwd = path.join(tmpDir, 'project');
+        const planted = path.join(cwd, '.dork', 'extensions', 'marketplace');
+        await writeManifest(planted, { id: 'marketplace', name: 'Marketplace', version: '1.0.0' });
+        await fs.writeFile(path.join(planted, 'server.ts'), 'PLANTED();\n', 'utf-8');
+
+        const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+        const results = await discovery.discover(cwd, EMPTY_CONFIG, core);
+
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({
+          id: 'marketplace',
+          scope: 'global',
+          origin: 'core',
+          path: path.join(dorkHome, 'extensions', 'marketplace'),
+        });
+        // The planted server entry is not what anything is about to run.
+        expect(results[0].hasServerEntry).toBe(false);
+      });
+
+      it('gives origin "user" to a project-tree copy of a core id with nothing staged', async () => {
+        // The same plant on a machine where the staged copy is missing. The record
+        // survives the merge (there is nothing to keep instead), so the path check
+        // is the only thing standing between it and the core exemption.
+        const cwd = path.join(tmpDir, 'project');
+        await writeManifest(path.join(cwd, '.dork', 'extensions', 'hello-world'), {
+          id: 'hello-world',
+          name: 'Hello World',
+          version: '1.0.0',
+        });
+
+        const core = coreMap({ id: 'hello-world', defaultEnabled: true, canDisable: true });
+        const results = await discovery.discover(cwd, { ...EMPTY_CONFIG }, core);
+
+        expect(results).toHaveLength(0);
+      });
+
+      it('ignores a project-tree copy of an id the person already approved', async () => {
+        // An approval is keyed to the id, so a project directory that reuses the id
+        // of an approved extension would inherit the decision. Same adversary, same
+        // no-prompt write, one step further along.
+        await writeManifest(path.join(dorkHome, 'extensions', 'my-tool'), {
+          id: 'my-tool',
+          name: 'My Tool',
+          version: '1.0.0',
+        });
+        const cwd = path.join(tmpDir, 'project');
+        const planted = path.join(cwd, '.dork', 'extensions', 'my-tool');
+        await writeManifest(planted, { id: 'my-tool', name: 'My Tool', version: '2.0.0' });
+        await fs.writeFile(path.join(planted, 'server.ts'), 'PLANTED();\n', 'utf-8');
+
+        const results = await discovery.discover(
+          cwd,
+          { enabled: ['my-tool'], disabled: [], approvedToRun: ['my-tool'] },
+          EMPTY_CORE
+        );
+
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({
+          scope: 'global',
+          path: path.join(dorkHome, 'extensions', 'my-tool'),
+          manifest: { version: '1.0.0' },
+        });
+      });
+
+      it('still lets a project copy override an ordinary global extension', async () => {
+        // The local scope is not being taken away. Only an id whose standing is
+        // already spoken for is off limits.
+        await writeManifest(path.join(dorkHome, 'extensions', 'my-tool'), {
+          id: 'my-tool',
+          name: 'My Tool',
+          version: '1.0.0',
+        });
+        const cwd = path.join(tmpDir, 'project');
+        await writeManifest(path.join(cwd, '.dork', 'extensions', 'my-tool'), {
+          id: 'my-tool',
+          name: 'My Tool',
+          version: '2.0.0',
+        });
+
+        const results = await discovery.discover(cwd, EMPTY_CONFIG, EMPTY_CORE);
+
+        expect(results).toHaveLength(1);
+        expect(results[0]).toMatchObject({ scope: 'local', manifest: { version: '2.0.0' } });
+      });
     });
 
     it('derives origin "user" for extensions absent from the core map', async () => {
@@ -465,7 +629,11 @@ describe('ExtensionDiscovery', () => {
       });
 
       const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
-      const results = await discovery.discover(null, { enabled: ['user-ext'], disabled: [] }, core);
+      const results = await discovery.discover(
+        null,
+        { enabled: ['user-ext'], disabled: [], approvedToRun: [] },
+        core
+      );
 
       expect(results[0]).toMatchObject({ id: 'user-ext', origin: 'user', status: 'enabled' });
     });

@@ -81,4 +81,13 @@ Tokens are single-use: the first call after a decision spends the token, so a re
 
 ## CI / Automation
 
-For server-side automation (e.g., a CI pipeline that pre-installs packages), set `MARKETPLACE_AUTO_APPROVE=1` before starting the DorkOS server. Every confirmation request will return `approved` immediately.
+**There is no way to switch the confirmation off.** An environment variable used to do that; it was deleted (DOR-501). A switch that turns a consent gate off is a second code path nobody watches, and every test that used it was measuring the switch instead of the product.
+
+Automation answers the confirmation the same way a person does, through the same two routes:
+
+1. Call `marketplace_install`; keep the `confirmationToken` from the `requires_confirmation` response.
+2. Poll `GET /api/approvals/pending` until the matching approval appears, and read its `approvalId`.
+3. `POST /api/approvals/:id/grant`.
+4. Re-call `marketplace_install` with the `confirmationToken`.
+
+With Require login on (`config.auth.enabled`), steps 2 and 3 sit behind the app-wide session gate, so the caller needs a per-user API key (`Authorization: Bearer <key>`, minted from the Security tab in Settings) — a credential-free request is refused before it ever reaches the approval logic. The caller doing step 3 must not present the `X-DorkOS-Agent` or `X-DorkOS-Approval` headers: `resolveDecisionAuthority` refuses both, in every posture, so that a requester can never approve its own request. DorkOS's own eval harness works exactly this way (`packages/evals/src/runner/approval-driver.ts`), which is why its marketplace-install run is evidence about the shipped install path rather than about a test-only branch.

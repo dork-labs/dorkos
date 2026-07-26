@@ -27,60 +27,12 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveSettingsKey } from '../services/session/index.js';
 import { initSSEStream, endSSEStream } from '../services/core/stream-adapter.js';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
+import { STREAM_EPOCH, parseResumeCursor } from '../lib/stream-cursor.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import { SSE } from '../config/constants.js';
 
 const vaultRoot = DEFAULT_CWD;
-
-/**
- * Identifies this server process's seq space in every `id:` frame
- * (`<sid>-<epoch>-<seq>`). Per-session `seq` counters live in in-process
- * projectors and restart from 0 with the process, so a cursor minted by a
- * PREVIOUS process is meaningless in this one — comparing bare integers across
- * a restart can silently validate (client cursor ≤ new counter) and then
- * replay the wrong events. The browser/`SSEConnection` echoes the whole id
- * back as `Last-Event-ID`, so a mismatched epoch routes the reconnect to the
- * cold snapshot path instead of a bogus resume.
- */
-export const STREAM_EPOCH = Date.now();
-
-/**
- * Parse the resume cursor from an `/events` request.
- *
- * Precedence: `Last-Event-ID` header (auto-sent by the browser EventSource and
- * the fetch-based `SSEConnection` on reconnect) wins over the `?after=` query.
- * The id frame format is `<sessionId>-<epoch>-<seq>`; the header resumes only
- * when its epoch matches this process's {@link STREAM_EPOCH} — an id minted by
- * a previous server process (or the legacy `<sid>-<seq>` format) falls through
- * to a cold connect. `?after=` is the integer cursor directly (no epoch; it is
- * still validated against the projector's replay window on subscribe).
- * Returns `undefined` for a cold connect.
- *
- * @param lastEventId - The `Last-Event-ID` request header, if any.
- * @param after - The `?after=` query param, if any.
- * @param epoch - This process's stream epoch (injectable for tests).
- */
-export function parseResumeCursor(
-  lastEventId: string | undefined,
-  after: string | undefined,
-  epoch: number = STREAM_EPOCH
-): number | undefined {
-  if (lastEventId) {
-    // Take the trailing `-<epoch>-<seq>` so session UUIDs (which contain
-    // hyphens) don't break the split — only the final two segments are ours.
-    const match = /-(\d+)-(\d+)$/.exec(lastEventId);
-    if (match && Number(match[1]) === epoch) return Number(match[2]);
-    // Mismatched or absent epoch: the cursor belongs to another seq space —
-    // treat as cold rather than resuming into the wrong stream.
-    return undefined;
-  }
-  if (after !== undefined && after !== '') {
-    const cursor = Number(after);
-    if (Number.isInteger(cursor) && cursor >= 0) return cursor;
-  }
-  return undefined;
-}
 
 /**
  * Express handler for `GET /api/sessions/:id/events`.

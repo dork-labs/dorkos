@@ -298,9 +298,8 @@ describe('createWindow — external links and navigation guard (P2a)', () => {
   describe('setWindowOpenHandler', () => {
     it('opens an http(s) URL in the system browser and denies the in-app window', () => {
       const win = createWindow();
-      const handler = win.webContents.setWindowOpenHandler.mock.calls[0][0] as (details: {
-        url: string;
-      }) => { action: string };
+      const handler = vi.mocked(win.webContents.setWindowOpenHandler).mock
+        .calls[0][0] as (details: { url: string }) => { action: string };
 
       const result = handler({ url: 'https://example.com/docs' });
 
@@ -310,9 +309,8 @@ describe('createWindow — external links and navigation guard (P2a)', () => {
 
     it('denies a non-http(s) scheme without opening it externally', () => {
       const win = createWindow();
-      const handler = win.webContents.setWindowOpenHandler.mock.calls[0][0] as (details: {
-        url: string;
-      }) => { action: string };
+      const handler = vi.mocked(win.webContents.setWindowOpenHandler).mock
+        .calls[0][0] as (details: { url: string }) => { action: string };
 
       const result = handler({ url: 'mailto:someone@example.com' });
 

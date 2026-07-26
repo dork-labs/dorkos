@@ -82,6 +82,47 @@ export function useDisableExtension() {
   });
 }
 
+/** Response shape from the approve/revoke endpoints. */
+interface ExtensionApprovalResponse {
+  extension: ExtensionRecordPublic;
+}
+
+/**
+ * Let an extension run its code inside DorkOS, or stop it from doing so
+ * (DOR-516).
+ *
+ * The person does this once per extension. The server records it in
+ * `~/.dork/config.json`, where an agent cannot write it, and starts or stops the
+ * extension straight away so no restart is needed.
+ *
+ * The server refuses this call for anything that identifies itself as an agent,
+ * and under Require login it needs a real session cookie. This hook is the
+ * cockpit's path to it; hiding a button is a courtesy, the server bar is the
+ * guarantee.
+ *
+ * @param approve - `true` to allow the extension to run, `false` to stop it.
+ */
+export function useSetExtensionRunApproval(approve: boolean) {
+  const queryClient = useQueryClient();
+
+  return useMutation<ExtensionApprovalResponse, Error, string>({
+    mutationFn: async (id: string) => {
+      const res = await fetch(
+        extensionApiUrl(`/extensions/${id}/${approve ? 'approve' : 'revoke'}`),
+        { method: 'POST' }
+      );
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Failed to update '${id}': ${res.status}`);
+      }
+      return res.json() as Promise<ExtensionApprovalResponse>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
+    },
+  });
+}
+
 /**
  * Trigger a filesystem re-scan and recompile of all extensions.
  *

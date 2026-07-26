@@ -29,7 +29,6 @@ const { contextBuilderFactory, toolFilterFactory } = vi.hoisted(() => ({
     resolveToolConfig: vi
       .fn()
       .mockReturnValue({ tasks: true, relay: true, mesh: true, adapter: true }),
-    buildAllowedTools: vi.fn().mockReturnValue(undefined),
   }),
 }));
 vi.mock('../messaging/context-builder.js', contextBuilderFactory);

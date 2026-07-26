@@ -28,6 +28,8 @@ function auth(name: string, status: DependencyCheck['status']): DependencyCheck 
 describe('RuntimeCapabilities shape', () => {
   it('accepts a Claude-like declaration with four permission-mode descriptors and a features entry', () => {
     const claudeLike: RuntimeCapabilities = {
+      type: 'claude-code',
+      commandIntents: { compact: { supported: true } },
       supportsResume: true,
       supportsMcp: true,
       supportsCostTracking: true,
@@ -56,6 +58,8 @@ describe('RuntimeCapabilities shape', () => {
 
   it('accepts a runtime that declares no permission-mode support via { supported: false, values: [] }', () => {
     const minimal: RuntimeCapabilities = {
+      type: 'minimal-runtime',
+      commandIntents: { compact: { supported: false } },
       supportsResume: false,
       supportsMcp: false,
       supportsCostTracking: false,
@@ -73,6 +77,9 @@ describe('RuntimeCapabilities shape', () => {
 
   it('treats features as Record<string, unknown> — heterogeneous values are allowed', () => {
     const caps: RuntimeCapabilities = {
+      type: 'heterogeneous-runtime',
+      commandIntents: { compact: { supported: false } },
+      nativeContext: [],
       supportsResume: true,
       supportsMcp: false,
       supportsCostTracking: false,

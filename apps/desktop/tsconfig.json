@@ -8,5 +8,10 @@
     "types": ["electron"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "src/**/__tests__/**"]
+  // Test files are IN this program on purpose (DOR-518), so a type error in one
+  // fails `pnpm --filter @dorkos/desktop typecheck`. There is no sibling emit
+  // program here and none is needed: `build` is `electron-vite build`, which
+  // bundles with Rollup/esbuild and never runs tsc, so this config is check-only
+  // and including tests cannot leak *.test.js into dist/.
+  "exclude": ["node_modules", "dist"]
 }

@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
   CollapsibleFieldCard,
+  PermissionModeScopeNote,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -174,6 +175,7 @@ export function BindingAdvancedSection({
           {selectedPermissionMode && (
             <p className="text-muted-foreground text-xs">{selectedPermissionMode.description}</p>
           )}
+          <PermissionModeScopeNote mode={permissionMode} />
         </div>
 
         {/* Message direction toggles */}

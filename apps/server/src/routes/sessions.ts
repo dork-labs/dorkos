@@ -686,9 +686,10 @@ router.post('/:id/interrupt', async (req, res) => {
 //
 // The single delivery path for session state (spec chat-stream-reconnection,
 // Design B.3, ADR-0264/ADR-0266). Always on — NO `enableCrossClientSync` gate,
-// no feature flag. The handler (and `parseResumeCursor`) live in
-// `session-events-handler.ts` so this route file stays under the file-size rule
-// (`.claude/rules/file-size.md`); behavior is identical. Express 5 forwards
+// no feature flag. The handler lives in `session-events-handler.ts` so this
+// route file stays under the file-size rule (`.claude/rules/file-size.md`), and
+// the cursor contract it shares with the room stream lives in
+// `lib/stream-cursor.ts`; behavior is identical. Express 5 forwards
 // rejections that escape the handler's own pre-flush guard (e.g. an
 // assertBoundary fs error) to the error middleware natively: pre-flush they
 // get a JSON error response, post-flush Express destroys the socket — the

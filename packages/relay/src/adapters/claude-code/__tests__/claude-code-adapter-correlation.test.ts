@@ -25,6 +25,7 @@ function createMockAgentManager(events?: StreamEvent[]): AgentRuntimeLike {
       })()
     ),
     getSdkSessionId: vi.fn().mockReturnValue(undefined),
+    approveTool: vi.fn(),
   };
 }
 

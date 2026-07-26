@@ -4,5 +4,8 @@
     "outDir": "./dist"
   },
   "include": ["src/**/*", "bin/**/*"],
-  "exclude": ["dist", "src/**/__tests__/**"]
+  // The CHECK program: it covers src/ AND its test files, so a type error in a
+  // test fails this package's `typecheck` (DOR-518). Emit runs from
+  // tsconfig.build.json instead, which drops the tests so they stay out of dist/.
+  "exclude": ["node_modules", "dist"]
 }

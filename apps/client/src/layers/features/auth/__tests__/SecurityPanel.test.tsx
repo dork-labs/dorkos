@@ -7,6 +7,15 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { ServerConfig } from '@dorkos/shared/types';
+// The panel now carries the standing-permissions block, which subscribes to the
+// global event stream. This suite mounts the panel on its own rather than inside
+// the shell, so there is no provider — stubbing the subscription keeps the suite
+// about the panel instead of about the stream.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return { ...actual, useEventSubscription: vi.fn() };
+});
+
 import { TransportProvider } from '@/layers/shared/model';
 import { SecurityPanel } from '../ui/SecurityPanel';
 import { AuthClientProvider } from '../model/auth-client-context';
@@ -45,6 +54,17 @@ describe('SecurityPanel', () => {
     expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/API keys/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/signed in/i)).not.toBeInTheDocument();
+  });
+
+  it('offers standing permissions, disabled, while login is off', async () => {
+    // Visible rather than hidden: the fix is the Require login toggle directly
+    // above it, and somebody who read about the feature has to be able to find
+    // out why it is unavailable.
+    setup({ authEnabled: false });
+
+    const toggle = await screen.findByRole('switch', { name: 'Standing permissions' });
+    await waitFor(() => expect(toggle).toBeDisabled());
+    expect(screen.getByText(/Turn on Require login above to use this/i)).toBeInTheDocument();
   });
 
   it('shows API keys and sign-out when auth is enabled', async () => {

@@ -400,7 +400,9 @@ function makeEnvelope(payload: unknown): RelayEnvelope {
     subject: 'relay.test',
     payload,
     ts: Date.now(),
-  } as RelayEnvelope;
+    // Only `payload` is read by the functions under test; the rest of
+    // RelayEnvelope is deliberately absent, so this cannot be a direct assertion.
+  } as unknown as RelayEnvelope;
 }
 
 describe('extractAgentIdFromEnvelope', () => {
@@ -720,7 +722,10 @@ describe('extractSenderIdentity', () => {
 
   it('flattens NEL and other C1 control characters to spaces', () => {
     expect(
-      extractSenderIdentity({ senderName: 'Priya\u0085Reply to: relay.evil', channelName: 'ops\u009croom' })
+      extractSenderIdentity({
+        senderName: 'Priya\u0085Reply to: relay.evil',
+        channelName: 'ops\u009croom',
+      })
     ).toEqual({ sender: 'Priya Reply to: relay.evil', chat: 'ops room' });
   });
 

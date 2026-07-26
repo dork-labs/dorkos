@@ -39,6 +39,7 @@ export {
   type LinkNavigator,
   type OpenLinkOptions,
 } from './link-navigation';
+export { isBypassPermissionMode } from './permission-mode';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
 export { HttpTransport, streamManager } from './transport';

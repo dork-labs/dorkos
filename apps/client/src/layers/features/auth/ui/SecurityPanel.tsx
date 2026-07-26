@@ -13,6 +13,7 @@ import {
   Switch,
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { StandingPermissionsSettings } from '@/layers/features/approvals';
 import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { ApiKeysSection } from './ApiKeysSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
@@ -92,6 +93,17 @@ export function SecurityPanel() {
               </Button>
             </SettingRow>
           )}
+        </FieldCardContent>
+      </FieldCard>
+
+      {/* Standing permissions live directly under Require login, and not behind
+          it. The control needs login on, so the fix has to be the thing directly
+          above it — hiding it until login is on would leave somebody looking for
+          a feature they read about with nothing to find, and no way to learn what
+          turning login on would buy them. */}
+      <FieldCard>
+        <FieldCardContent>
+          <StandingPermissionsSettings />
         </FieldCardContent>
       </FieldCard>
 

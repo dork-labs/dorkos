@@ -1,8 +1,23 @@
 {
   "extends": "@dorkos/typescript-config/node.json",
   "compilerOptions": {
-    "outDir": "./dist"
+    "outDir": "./dist",
+    // Pinned because this program's root is otherwise AMBIGUOUS, which is a hard
+    // error (TS2209), not a preference. `src/__tests__/check-categories.test.ts`
+    // imports `../../scripts/check-categories.js`, so once the tests join the
+    // program it spans both `src/` and `scripts/`, and tsc infers the package root
+    // as the common source directory. That makes the `.` entry in this package's
+    // `exports` map — which points INTO `./src` — impossible to resolve, and tsc
+    // refuses to guess.
+    //
+    // Pinning it to `.` is only correct because this program never emits. The emit
+    // program (tsconfig.build.json) drops the tests, so `scripts/` leaves the
+    // program there and it re-pins rootDir to `./src` to keep dist/ flat.
+    "rootDir": "."
   },
   "include": ["src/**/*"],
-  "exclude": ["src/__tests__/**"]
+  // The CHECK program: it covers src/ AND its test files, so a type error in a
+  // test fails this package's `typecheck` (DOR-518). Emit runs from
+  // tsconfig.build.json instead, which drops the tests so they stay out of dist/.
+  "exclude": ["node_modules", "dist"]
 }

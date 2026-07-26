@@ -179,6 +179,12 @@ export const CONFIG_DISCLOSURE = {
 
   'extensions.enabled': 'expose',
   'extensions.disabled': 'expose',
+  // Which extensions a person approved to run code in the server (DOR-516).
+  // Exposed on purpose even though it is `operator-only` to WRITE: an agent that
+  // can read the list can tell the person exactly which id to approve, instead of
+  // retrying a load that will keep being refused. It names extension ids the
+  // caller can already see in `list_extensions`, so it discloses nothing new.
+  'extensions.approvedToRun': 'expose',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',
@@ -229,6 +235,11 @@ export const CONFIG_DISCLOSURE = {
   // an agent to learn about anyone's trust but its own instance's settings.
   'approvals.standingGrants': 'expose',
   'approvals.trustWindowMinutes': 'expose',
+  // Same reasoning one step further: a timestamp saying when this install last
+  // switched standing permissions off names no agent and no person. Exposing it
+  // also lets an agent understand why a permission it used to have stopped
+  // working, which is better than silently finding out.
+  'approvals.standingGrantsVoidBefore': 'expose',
 
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',

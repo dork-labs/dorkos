@@ -60,7 +60,7 @@ describe('UserConfigSchema', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
-      extensions: { enabled: [], disabled: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -92,7 +92,7 @@ describe('UserConfigSchema', () => {
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480 },
+      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       providers: {},
     });
@@ -283,6 +283,34 @@ describe('SENSITIVE_CONFIG_KEYS', () => {
   });
 });
 
+describe('approvals.standingGrantsVoidBefore', () => {
+  // The posture floor (DOR-520). The grant store treats a FALSY floor as "no
+  // floor", so the empty string is the one value that would silently disable the
+  // filter instead of tightening it. Every other malformed value already fails
+  // closed — it sorts above every real timestamp, so every permission is voided —
+  // which is why this asserts the direction, not just "invalid is rejected".
+  /** Parse a config carrying one candidate floor value. */
+  function parseFloor(value: unknown) {
+    return UserConfigSchema.safeParse({
+      version: 1,
+      approvals: { standingGrantsVoidBefore: value },
+    });
+  }
+
+  it('accepts a real timestamp and the absence of one', () => {
+    expect(parseFloor('2026-07-26T10:00:00.000Z').success).toBe(true);
+    expect(parseFloor(null).success).toBe(true);
+  });
+
+  it('rejects the empty string, which would disable the filter rather than tighten it', () => {
+    expect(parseFloor('').success).toBe(false);
+  });
+
+  it('rejects a string that is not a timestamp at all', () => {
+    expect(parseFloor('not-a-date').success).toBe(false);
+  });
+});
+
 describe('USER_CONFIG_DEFAULTS', () => {
   it('matches schema defaults', () => {
     expect(USER_CONFIG_DEFAULTS).toEqual({
@@ -329,7 +357,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
-      extensions: { enabled: [], disabled: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -361,7 +389,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
-      approvals: { standingGrants: false, trustWindowMinutes: 480 },
+      approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       providers: {},
     });
@@ -926,7 +954,7 @@ describe('SmartGroupRulesSchema + SidebarGroupSchema kind/rules (smart-agent-gro
 describe('UserConfigSchema extensions (deviation lists)', () => {
   it('defaults to empty enabled and disabled when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
-    expect(result.extensions).toEqual({ enabled: [], disabled: [] });
+    expect(result.extensions).toEqual({ enabled: [], disabled: [], approvedToRun: [] });
   });
 
   it('defaults disabled to [] when only enabled is provided', () => {
@@ -934,7 +962,11 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       version: 1,
       extensions: { enabled: ['linear-issues'] },
     });
-    expect(result.extensions).toEqual({ enabled: ['linear-issues'], disabled: [] });
+    expect(result.extensions).toEqual({
+      enabled: ['linear-issues'],
+      disabled: [],
+      approvedToRun: [],
+    });
   });
 
   it('defaults enabled to [] when only disabled is provided', () => {
@@ -942,7 +974,11 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       version: 1,
       extensions: { disabled: ['marketplace'] },
     });
-    expect(result.extensions).toEqual({ enabled: [], disabled: ['marketplace'] });
+    expect(result.extensions).toEqual({
+      enabled: [],
+      disabled: ['marketplace'],
+      approvedToRun: [],
+    });
   });
 
   it('round-trips both lists when populated', () => {
@@ -953,12 +989,45 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
     expect(result.extensions).toEqual({
       enabled: ['hello-world'],
       disabled: ['marketplace'],
+      approvedToRun: [],
     });
   });
 
   it('rejects a non-array disabled', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, extensions: { disabled: 'marketplace' } })
+    ).toThrow();
+  });
+
+  it('defaults approvedToRun to [] — nothing is approved unless a person said so', () => {
+    // A stored config written before DOR-516 has no `approvedToRun` key at all, and
+    // it must read as "nothing approved", never as "everything already enabled is
+    // fine to run". The migration writes the key through; this default is what
+    // covers the read that happens first.
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { enabled: ['hello-world'], disabled: [] },
+    });
+    expect(result.extensions.approvedToRun).toEqual([]);
+  });
+
+  it('round-trips approvedToRun independently of the two deviation lists', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { enabled: [], disabled: [], approvedToRun: ['my-ext'] },
+    });
+    // Approved but turned OFF is a legitimate, reachable state: the person allowed
+    // the code and then disabled the extension.
+    expect(result.extensions).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+    });
+  });
+
+  it('rejects a non-array approvedToRun', () => {
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, extensions: { approvedToRun: 'my-ext' } })
     ).toThrow();
   });
 });
