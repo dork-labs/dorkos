@@ -206,6 +206,7 @@ export const Menu = {
 
 export const shell = {
   openExternal: vi.fn(),
+  showItemInFolder: vi.fn(),
 };
 
 /**
@@ -251,4 +252,5 @@ export function resetElectronMock(): void {
   Menu.setApplicationMenu = vi.fn();
 
   shell.openExternal = vi.fn();
+  shell.showItemInFolder = vi.fn();
 }

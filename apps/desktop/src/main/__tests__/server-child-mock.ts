@@ -22,13 +22,30 @@ export interface SpawnOptions {
   stdio?: unknown;
 }
 
-/** A stream stand-in: enough surface for `forwardOutputToLog` to subscribe to. */
-function createStream(): NodeJS.ReadableStream {
-  return {
-    on(): NodeJS.ReadableStream {
-      return this as NodeJS.ReadableStream;
-    },
-  } as unknown as NodeJS.ReadableStream;
+/**
+ * A stream stand-in that actually delivers.
+ *
+ * `forwardOutputToLog` subscribes to `data` and feeds stderr into the tail the
+ * supervisor shows the user, so a test needs to be able to push a line through
+ * that same path rather than fake the tail from outside it.
+ */
+class MockStream {
+  private readonly handlers: Array<(chunk: Buffer | string) => void> = [];
+
+  on(event: string, handler: (chunk: Buffer | string) => void): this {
+    if (event === 'data') this.handlers.push(handler);
+    return this;
+  }
+
+  /** Test helper — deliver `text` to every `data` subscriber. */
+  write(text: string): void {
+    for (const handler of [...this.handlers]) handler(text);
+  }
+
+  /** The shape `forwardOutputToLog` expects. */
+  asReadable(): NodeJS.ReadableStream {
+    return this as unknown as NodeJS.ReadableStream;
+  }
 }
 
 /**
@@ -49,8 +66,9 @@ export class MockServerProcess {
    */
   sendError: Error | null = null;
 
-  readonly stdout = createStream();
-  readonly stderr = createStream();
+  readonly stdout = new MockStream().asReadable();
+  private readonly stderrStream = new MockStream();
+  readonly stderr = this.stderrStream.asReadable();
 
   constructor(
     /** The entry script this child was forked with. */
@@ -104,6 +122,14 @@ export class MockServerProcess {
   /** Test helper — deliver an arbitrary message from the child. */
   emitMessage(msg: unknown): void {
     this.emit('message', msg);
+  }
+
+  /**
+   * Test helper — the child wrote to stderr. A newline is appended so the
+   * supervisor's line splitting sees a complete line, as it would in reality.
+   */
+  emitStderr(text: string): void {
+    this.stderrStream.write(`${text}\n`);
   }
 
   /** Test helper — the child exited. `null` models death by signal. */

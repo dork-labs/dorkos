@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog } from 'electron';
-import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
 import { getFreePort, spawnServer, type ServerChild } from './server-spawn';
+import { formatServerOutput } from './server-output';
+import { recoverFromCrash, resetRestartFailures } from './server-crash-recovery';
 
 /**
  * Supervisor for the Express server the desktop shell runs as a child process.
@@ -22,9 +23,6 @@ import { getFreePort, spawnServer, type ServerChild } from './server-spawn';
 
 /** How long a graceful shutdown gets before the child is killed outright. */
 const SHUTDOWN_GRACE_MS = 5_000;
-
-/** Index of "Restart Server" in the crash dialog's `buttons` array. */
-const RESTART_BUTTON = 0;
 
 /**
  * What the supervised child is doing.
@@ -94,25 +92,20 @@ function installSafetyNet(): void {
 }
 
 /**
- * The window to anchor a dialog to: the tracked main window when there is a
- * live one, else whatever happens to be focused, else `null`.
+ * Attach the child's own account of what went wrong to an error a person will
+ * read.
  *
- * `null` is a normal outcome, not a failure — Electron shows an unanchored
- * message box just fine. The old code looked up `getFocusedWindow()` and
- * skipped the *entire* crash handler when it came back `null`, which is what
- * happens whenever the app isn't frontmost: the single most likely moment for
- * a server crash to go unnoticed.
+ * Without this the shell could only report an exit code, while the server's
+ * actionable sentence — "another DorkOS server is already using this data
+ * directory", a failed migration, a port it could not bind — sat in a log file
+ * nobody opens. Verbatim, never parsed: the server owns the words.
+ *
+ * @param message - What the supervisor observed.
+ * @param output - The child's stderr tail.
  */
-function resolveDialogWindow(): BrowserWindow | null {
-  const tracked = getMainWindow?.() ?? null;
-  if (tracked && !tracked.isDestroyed()) return tracked;
-  return BrowserWindow.getFocusedWindow();
-}
-
-/** Show a message box anchored to the current main window, unanchored if there is none. */
-function showMessageBox(options: MessageBoxOptions): Promise<MessageBoxReturnValue> {
-  const win = resolveDialogWindow();
-  return win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options);
+function withServerOutput(message: string, output: string[]): Error {
+  const reported = formatServerOutput(output);
+  return new Error(reported ? `${message}\n\n${reported}` : message);
 }
 
 /**
@@ -162,6 +155,9 @@ function clearChild(): void {
 function handleExit(code: number | null): void {
   const wasExpected = expectedExit;
   const wasStarting = pendingStart !== null;
+  // Read the child's last words before clearing it — clearChild drops the
+  // reference that owns them.
+  const output = child?.recentErrors() ?? [];
 
   // Settle before clearing, so the specific reason wins over clearChild's
   // generic backstop. Always settle: clearing the timeout without rejecting
@@ -170,79 +166,45 @@ function handleExit(code: number | null): void {
   // outstanding wait rather than the state also covers a quit that lands
   // mid-boot, where stopServer has already moved the state on to 'stopping'.
   if (wasStarting) {
-    settleStart(new Error(`The server exited with code ${code} before it was ready.`));
+    settleStart(
+      withServerOutput(`The server exited with code ${code} before it was ready.`, output)
+    );
   }
   clearChild();
 
   if (wasStarting || wasExpected) return;
-  reportCrash(code);
+  reportCrash(code, output);
 }
 
 /**
- * Surface an unexpected server death and offer to restart.
+ * Surface an unexpected server death and hand off to the recovery
+ * conversation.
  *
  * @param code - The child's exit code, or `null` if it died from a signal.
+ * @param output - The child's stderr tail, for the dialog to show.
  */
-function reportCrash(code: number | null): void {
+function reportCrash(code: number | null, output: string[]): void {
   // Log first and unconditionally: this line is the only record that survives
   // when there is no window to show a dialog in.
   log.error(`[server] The server stopped unexpectedly (exit code ${code ?? 'none — signalled'}).`);
-  void offerRestart(code);
-}
-
-/**
- * Ask the user whether to restart the server or quit, and carry out the answer.
- *
- * @param code - The child's exit code, for the dialog's detail line.
- */
-async function offerRestart(code: number | null): Promise<void> {
-  try {
-    const { response } = await showMessageBox({
-      type: 'error',
-      title: 'Server Error',
-      message: 'The DorkOS server stopped unexpectedly.',
-      detail:
-        'Your work is saved. Start the server again to pick up where you left off, or quit ' +
-        `DorkOS.\n\nExit code: ${code ?? 'none (the server was stopped by a signal)'}`,
-      buttons: ['Restart Server', 'Quit'],
-    });
-    if (response !== RESTART_BUTTON) {
-      app.quit();
-      return;
-    }
-    const newPort = await startServer();
-    pointWindowAtServer(newPort);
-  } catch (err) {
-    // A failed restart used to become an unhandled rejection: no second
-    // dialog, no log line, and an app still pointing at a dead port.
-    log.error('[server] Restarting the server failed.', err);
+  void recoverFromCrash({
+    code,
+    output,
+    getWindow: () => getMainWindow?.() ?? null,
+    restart: () => startServer(),
+  }).catch((err: unknown) => {
+    // The recovery conversation itself fell over — a rejected dialog, a
+    // destroyed window mid-prompt. Without this it would be an unhandled
+    // rejection: no message, no log, and an app pointing at a dead port.
+    log.error('[server] Could not run crash recovery.', err);
     dialog.showErrorBox(
-      "DorkOS couldn't restart its server",
-      "DorkOS tried to start its background server again and couldn't, so it can't continue. " +
-        'Try opening DorkOS again. If this keeps happening, check ~/Library/Logs/DorkOS for ' +
-        `details.\n\n${err instanceof Error ? err.message : String(err)}`
+      "DorkOS couldn't recover its server",
+      "DorkOS lost its background server and couldn't offer to start it again, so it can't " +
+        'continue. Try opening DorkOS again. If this keeps happening, check ' +
+        `~/Library/Logs/DorkOS for details.\n\n${err instanceof Error ? err.message : String(err)}`
     );
     app.quit();
-  }
-}
-
-/**
- * Point the main window at a freshly restarted server, whose port is new.
- *
- * @param port - The port the replacement server is listening on.
- */
-function pointWindowAtServer(port: number): void {
-  const win = resolveDialogWindow();
-  if (!win || win.isDestroyed()) return;
-  // A packaged build loads the renderer *from* the server, so it has to move
-  // to the new origin. In dev the renderer comes from electron-vite and only
-  // needs a reload, which re-reads the port over IPC — navigating it to the
-  // server would strand it away from the dev server.
-  if (app.isPackaged) {
-    win.loadURL(`http://localhost:${port}`);
-  } else {
-    win.reload();
-  }
+  });
 }
 
 /**
@@ -285,7 +247,10 @@ export async function startServer(
   const started = child;
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(
-      () => settleStart(new Error('The DorkOS server did not start in time.')),
+      () =>
+        settleStart(
+          withServerOutput('The DorkOS server did not start in time.', started.recentErrors())
+        ),
       SERVER_READY_PARENT_TIMEOUT_MS
     );
     pendingStart = { resolve, reject, timeout };
@@ -296,7 +261,12 @@ export async function startServer(
     // A spawn that never got off the ground (missing or unspawnable
     // executable) reports itself here, not through `exit`.
     started.on('error', (err: Error) => {
-      settleStart(new Error(`The DorkOS server could not be started: ${err.message}`));
+      settleStart(
+        withServerOutput(
+          `The DorkOS server could not be started: ${err.message}`,
+          started.recentErrors()
+        )
+      );
     });
     // The one exit listener, for this child's whole life: it settles startup
     // now and reports crashes later (see handleExit). Guarded on identity so
@@ -317,6 +287,9 @@ export async function startServer(
 
   state = 'ready';
   serverPort = port;
+  // A server that started is a clean slate: "consecutive failures" only counts
+  // restarts that never got one running.
+  resetRestartFailures();
   return port;
 }
 

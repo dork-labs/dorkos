@@ -13,18 +13,30 @@ import { MockServerProcess, type SpawnOptions } from './server-child-mock';
 /** Every child `fork()` has returned, in spawn order. */
 export const forkedChildren: MockServerProcess[] = [];
 
-/** When set, the next `fork()` throws it — models a synchronous spawn failure. */
-let nextForkError: Error | null = null;
+/** When set, `fork()` throws it — models a spawn failure. */
+let forkError: Error | null = null;
+/** Whether {@link forkError} keeps applying after the first throw. */
+let forkErrorIsPersistent = false;
 
 /** Make the next `fork()` call throw. */
 export function failNextFork(err: Error): void {
-  nextForkError = err;
+  forkError = err;
+  forkErrorIsPersistent = false;
+}
+
+/**
+ * Make every `fork()` call throw — models a failure no retry can get past,
+ * such as another server already holding the data directory.
+ */
+export function failEveryFork(err: Error): void {
+  forkError = err;
+  forkErrorIsPersistent = true;
 }
 
 export const fork = vi.fn((entry: string, _args: string[], options: SpawnOptions) => {
-  if (nextForkError) {
-    const err = nextForkError;
-    nextForkError = null;
+  if (forkError) {
+    const err = forkError;
+    if (!forkErrorIsPersistent) forkError = null;
     throw err;
   }
   const child = new MockServerProcess(entry, options);
@@ -35,6 +47,7 @@ export const fork = vi.fn((entry: string, _args: string[], options: SpawnOptions
 /** Reset all mock state between tests — call from `beforeEach`. */
 export function resetChildProcessMock(): void {
   forkedChildren.length = 0;
-  nextForkError = null;
+  forkError = null;
+  forkErrorIsPersistent = false;
   fork.mockClear();
 }

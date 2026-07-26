@@ -106,6 +106,39 @@ function pendingDialog(): () => Promise<Electron.MessageBoxReturnValue> {
 }
 
 /**
+ * Poll until `predicate` holds, on `setImmediate` so real socket I/O (the
+ * free-port probe each restart makes) can complete between turns.
+ */
+async function until(label: string, predicate: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 2000 && !predicate(); turn++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  if (!predicate()) throw new Error(`timed out waiting for ${label}`);
+}
+
+type ElectronMock = Awaited<ReturnType<typeof getElectronMock>>;
+
+/** Every `dialog.showMessageBox` call so far. */
+function dialogCalls(dialog: ElectronMock['dialog']): unknown[][] {
+  return vi.mocked(dialog.showMessageBox).mock.calls as unknown[][];
+}
+
+/**
+ * The options of the `index`-th message box, whether it was shown anchored to
+ * a window (two arguments) or unanchored (one).
+ */
+function dialogOptions(dialog: ElectronMock['dialog'], index: number): Electron.MessageBoxOptions {
+  const call = dialogCalls(dialog)[index];
+  if (!call) throw new Error(`no message box was shown at index ${index}`);
+  return (call.length > 1 ? call[1] : call[0]) as Electron.MessageBoxOptions;
+}
+
+/** The `detail` of the `index`-th message box. */
+function dialogDetail(dialog: ElectronMock['dialog'], index: number): string {
+  return dialogOptions(dialog, index).detail ?? '';
+}
+
+/**
  * The supervisor installs a process-wide `unhandledRejection` logger, and
  * every test re-imports it through `vi.resetModules()`. Snapshot the listener
  * list so those copies never accumulate into a MaxListeners warning — and so a
@@ -161,6 +194,51 @@ describe('startServer — the readiness handshake', () => {
     child.emitExit(1);
 
     await expect(started).rejects.toThrow(/exited with code 1/i);
+  });
+
+  it("surfaces the server's own reason for refusing to boot, not just a code", async () => {
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+    // What the server prints when a `dorkos` CLI server already holds the data
+    // directory: the actionable sentence, which used to reach only the log file.
+    child.emitStderr('Another DorkOS server is already using ~/.dork (pid 8123, port 4242).');
+    child.emitStderr('Quit that server, or start DorkOS with a different data directory.');
+    child.emitExit(1);
+
+    // index.ts renders this message into its "DorkOS couldn't start" box.
+    const err = await started.catch((e: unknown) => e as Error);
+    expect(err.message).toContain('The server reported:');
+    expect(err.message).toContain('already using ~/.dork (pid 8123, port 4242)');
+    expect(err.message).toContain('Quit that server');
+  });
+
+  it('keeps only the last few stderr lines, truncated, and redacts secrets', async () => {
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+    for (let n = 0; n < 20; n++) child.emitStderr(`noise line ${n}`);
+    child.emitStderr(`token dork_${'a'.repeat(48)} issued`);
+    child.emitStderr(`bearer ${'A1b2C3d4'.repeat(6)} accepted`);
+    // Long, but real prose: redaction must leave it alone, so this is what
+    // exercises the length cap.
+    child.emitStderr(`stack ${'frame '.repeat(80)}`);
+    child.emitExit(1);
+
+    const err = await started.catch((e: unknown) => e as Error);
+    // Bounded: the earliest noise is dropped rather than filling the dialog.
+    expect(err.message).not.toContain('noise line 0');
+    expect(err.message).toContain('noise line 19');
+    // Nothing secret-shaped rides along — neither a DorkOS key nor a bare
+    // opaque token.
+    expect(err.message).not.toContain('dork_aaaa');
+    expect(err.message).not.toContain('A1b2C3d4A1b2C3d4');
+    expect(err.message).toContain('[redacted]');
+    // …and no single line runs away with the dialog.
+    expect(err.message).toContain('…');
+    for (const line of err.message.split('\n')) expect(line.length).toBeLessThanOrEqual(210);
   });
 
   it('rejects and kills the child when it never signals ready', async () => {
@@ -464,8 +542,8 @@ describe('the crash monitor', () => {
     }
   });
 
-  it('catches a restart that fails: logs it, tells the user, and quits (H1)', async () => {
-    const { app, dialog } = await getElectronMock();
+  it('catches a restart that fails, logs it, and asks again (H1)', async () => {
+    const { dialog } = await getElectronMock();
     const { default: log } = await getLogMock();
     const { failNextFork } = await getChildProcessMock();
     dialog.showMessageBox = vi.fn(async () => ({ response: 0, checkboxChecked: false }));
@@ -481,14 +559,44 @@ describe('the crash monitor', () => {
 
     failNextFork(new Error('spawn EACCES'));
     child.emitExit(1);
-    await flush();
+    await until('the failed restart to be reported', () => dialogCalls(dialog).length >= 2);
 
     expect(log.error).toHaveBeenCalled();
-    expect(dialog.showErrorBox).toHaveBeenCalledTimes(1);
-    expect(app.quit).toHaveBeenCalledTimes(1);
+    // The failure is shown in the next prompt rather than swallowed.
+    expect(dialogDetail(dialog, 1)).toContain('spawn EACCES');
     // The old `.then()` had no `.catch`, so this became an unhandled rejection
     // with no dialog and no log.
     expect(rejections).toEqual([]);
+  });
+
+  it('stops offering a restart that keeps failing, and points at the logs instead', async () => {
+    const { app, dialog, shell } = await getElectronMock();
+    const { failEveryFork } = await getChildProcessMock();
+    // The user takes the leftmost button every time: Restart, Restart,
+    // Restart… and finally Open Logs.
+    dialog.showMessageBox = vi.fn(async () => ({ response: 0, checkboxChecked: false }));
+    const { startServer } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+
+    // A failure no retry can get past — the shape of a `dorkos` CLI server
+    // already holding the data directory.
+    failEveryFork(new Error('Another DorkOS server is already using ~/.dork (pid 8123)'));
+    child.emitExit(1);
+
+    await until('the retry offer to be withdrawn', () => app.quit.mock.calls.length > 0);
+
+    // Three offers to restart, then one final prompt that no longer offers it.
+    const calls = dialogCalls(dialog);
+    expect(calls).toHaveLength(4);
+    for (const index of [0, 1, 2]) {
+      expect(dialogOptions(dialog, index).buttons).toEqual(['Restart Server', 'Quit']);
+    }
+    expect(dialogOptions(dialog, 3).buttons).toEqual(['Open Logs', 'Quit']);
+    // The server's own explanation rides along to the end.
+    expect(dialogDetail(dialog, 3)).toContain('already using ~/.dork');
+    expect(shell.showItemInFolder).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
   });
 
   it('quits when the user declines the restart', async () => {

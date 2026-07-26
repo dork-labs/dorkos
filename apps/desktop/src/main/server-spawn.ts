@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import log from 'electron-log';
+import { createStderrTail, type StderrTail } from './server-output';
 
 /**
  * Spawning the desktop app's Express server as a child process.
@@ -64,6 +65,15 @@ export interface ServerChild {
   on(event: 'error', handler: (err: Error) => void): void;
   send(msg: unknown): void;
   kill(): void;
+  /**
+   * The child's most recent stderr lines, redacted and truncated.
+   *
+   * A server that refuses to start explains itself here — a data directory
+   * already locked by a `dorkos` CLI server, a failed migration, a port it
+   * could not bind — and then exits. Without this the shell could only report
+   * the exit code, while the reason sat in a log file nobody opens.
+   */
+  recentErrors(): string[];
 }
 
 /**
@@ -129,7 +139,7 @@ export async function getFreePort(): Promise<number> {
  * an overloaded interface member structurally, so the whole object is cast
  * once at the boundary instead of per-call.
  */
-function wrapUtilityProcess(proc: Electron.UtilityProcess): ServerChild {
+function wrapUtilityProcess(proc: Electron.UtilityProcess, tail: StderrTail): ServerChild {
   return {
     on(event: string, handler: (...args: unknown[]) => void) {
       proc.on(event as 'exit', handler as (code: number) => void);
@@ -140,6 +150,7 @@ function wrapUtilityProcess(proc: Electron.UtilityProcess): ServerChild {
     kill() {
       proc.kill();
     },
+    recentErrors: () => tail.lines(),
   } as ServerChild;
 }
 
@@ -147,7 +158,7 @@ function wrapUtilityProcess(proc: Electron.UtilityProcess): ServerChild {
  * Wrap a Node.js ChildProcess to conform to the ServerChild interface.
  * ChildProcess uses send/on('message') with direct message objects.
  */
-function wrapChildProcess(proc: ChildProcess): ServerChild {
+function wrapChildProcess(proc: ChildProcess, tail: StderrTail): ServerChild {
   return {
     on(event: string, handler: (...args: unknown[]) => void) {
       proc.on(event, handler as (...args: unknown[]) => void);
@@ -158,6 +169,7 @@ function wrapChildProcess(proc: ChildProcess): ServerChild {
     kill() {
       proc.kill();
     },
+    recentErrors: () => tail.lines(),
   } as ServerChild;
 }
 
@@ -219,15 +231,22 @@ function resolveTsxBin(): string {
  */
 function forwardOutputToLog(
   stdout: NodeJS.ReadableStream | null,
-  stderr: NodeJS.ReadableStream | null
+  stderr: NodeJS.ReadableStream | null,
+  tail: StderrTail
 ): void {
   const logLines = (level: 'info' | 'error') => (chunk: Buffer | string) => {
     for (const line of chunk.toString().split('\n')) {
       if (line.trim()) log[level]('[server]', line);
     }
   };
+  const logErrors = logLines('error');
   stdout?.on('data', logLines('info'));
-  stderr?.on('data', logLines('error'));
+  // One stream, two consumers: the log file, for diagnosing after the fact,
+  // and a bounded tail the supervisor can put in front of the user right now.
+  stderr?.on('data', (chunk: Buffer | string) => {
+    tail.record(chunk.toString());
+    logErrors(chunk);
+  });
 }
 
 /**
@@ -308,11 +327,12 @@ function buildServerEnv(port: number): Record<string, string> {
 export function spawnServer(port: number): ServerChild {
   const entryPath = resolveServerEntry();
   const env = { ...process.env, ...buildServerEnv(port) };
+  const tail = createStderrTail();
 
   if (app.isPackaged) {
     const proc = utilityProcess.fork(entryPath, [], { env, stdio: 'pipe' });
-    forwardOutputToLog(proc.stdout, proc.stderr);
-    return wrapUtilityProcess(proc);
+    forwardOutputToLog(proc.stdout, proc.stderr, tail);
+    return wrapUtilityProcess(proc, tail);
   }
 
   // Dev mode: system Node via child_process.fork. The entry file is
@@ -322,6 +342,6 @@ export function spawnServer(port: number): ServerChild {
     env,
     stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   });
-  forwardOutputToLog(cp.stdout, cp.stderr);
-  return wrapChildProcess(cp);
+  forwardOutputToLog(cp.stdout, cp.stderr, tail);
+  return wrapChildProcess(cp, tail);
 }

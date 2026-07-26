@@ -13,7 +13,7 @@ import { vi } from 'vitest';
  * `electron-log` is consumed as a default import, so the double is exported
  * as `default`.
  */
-const log = {
+const levels = {
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
@@ -21,9 +21,18 @@ const log = {
   verbose: vi.fn(),
 };
 
+/**
+ * `transports.file.getFile()` is how the real module reports where it is
+ * writing; the crash-recovery module uses it for its "Open Logs" affordance.
+ */
+const log = {
+  ...levels,
+  transports: { file: { getFile: () => ({ path: '/tmp/dorkos-desktop-test/logs/main.log' }) } },
+};
+
 export default log;
 
 /** Reset recorded log calls between tests — call from `beforeEach`. */
 export function resetLogMock(): void {
-  for (const fn of Object.values(log)) fn.mockClear();
+  for (const fn of Object.values(levels)) fn.mockClear();
 }
