@@ -60,6 +60,17 @@ export const approvals = sqliteTable(
     /** Opaque label for who asked — an agent path, a display name, or null. */
     requestedBy: text('requested_by'),
 
+    /**
+     * The stable agent path of whoever asked, or null for an unidentified caller.
+     *
+     * Separate from `requestedBy` because that column is a display LABEL, built
+     * from `displayName || agentPath` and swept for secrets, which makes it
+     * unusable as a key. A standing permission keys on the agent path, so the
+     * card it was created from has to carry the real one. Never rendered: the
+     * card keeps showing the label.
+     */
+    requestedByPath: text('requested_by_path'),
+
     /** Where the request stands before it is spent. */
     state: text('state', {
       enum: ['pending', 'granted', 'denied'],

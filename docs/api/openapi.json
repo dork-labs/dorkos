@@ -4772,6 +4772,14 @@
           "outcome"
         ]
       },
+      "GrantApprovalBody": {
+        "type": "object",
+        "properties": {
+          "standing": {
+            "type": "boolean"
+          }
+        }
+      },
       "DenyApprovalBody": {
         "type": "object",
         "properties": {
@@ -11145,7 +11153,7 @@
           "Approvals"
         ],
         "summary": "Allow the requested action",
-        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\nThe body accepts a `standing` flag, which asks DorkOS to stop asking about this agent doing this thing. It is currently REFUSED for every caller with `STANDING_GRANTS_NOT_YET_ENFORCED`, because nothing enforces a standing permission yet. It is accepted and refused rather than ignored so a caller is never told it got something it did not: when the standing part is refused, the one-time grant does not happen either. The stricter bar that will guard it is already live and is checked first, so a caller with no session cookie is refused before reaching this.",
         "parameters": [
           {
             "schema": {
@@ -11156,6 +11164,15 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantApprovalBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Approval granted",
@@ -11178,7 +11195,7 @@
             }
           },
           "403": {
-            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`). For `standing: true`, also when login is off (`standing_grants_require_login`) or the caller has no session cookie (`operator_cookie_required`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -11198,7 +11215,7 @@
             }
           },
           "409": {
-            "description": "Already decided",
+            "description": "Already decided; or `standing: true` was asked for, which nothing enforces yet (`STANDING_GRANTS_NOT_YET_ENFORCED`). Nothing is granted in the second case",
             "content": {
               "application/json": {
                 "schema": {

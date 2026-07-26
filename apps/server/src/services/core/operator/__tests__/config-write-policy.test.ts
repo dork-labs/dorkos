@@ -19,6 +19,8 @@ import { configSchemaLeafPaths } from '../config-disclosure.js';
 import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
+  REQUIRES_COOKIE_CONFIG_PATHS,
+  findCookieRequiredPaths,
   findOperatorOnlyPaths,
   describeOperatorOnlyRefusal,
 } from '../config-write-policy.js';
@@ -46,6 +48,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
     // security decision and has to break a test.
     expect([...OPERATOR_ONLY_CONFIG_PATHS].sort()).toEqual([
       'agents.defaultDirectory',
+      'approvals.standingGrants',
+      'approvals.trustWindowMinutes',
       'auth.enabled',
       'cloud.instanceName',
       'cloud.instanceToken',
@@ -100,6 +104,72 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
         'operator-only'
       );
     }
+  });
+});
+
+describe('REQUIRES_COOKIE_CONFIG_PATHS drift guard', () => {
+  it('covers every leaf of the approvals subtree', () => {
+    // A third `approvals.*` setting added later must not get the weaker bar just
+    // by existing. `operator-only` alone does not cover it: that check sits
+    // behind `trustedCaller` on `PATCH /api/config`, which a header-stripping
+    // caller clears under `local-trust`.
+    const approvalsLeaves = configSchemaLeafPaths().filter(
+      (p) => p === 'approvals' || p.startsWith('approvals.')
+    );
+    expect(approvalsLeaves.length).toBeGreaterThan(0);
+    expect(approvalsLeaves.filter((p) => !REQUIRES_COOKIE_CONFIG_PATHS.includes(p))).toEqual([]);
+  });
+
+  it('lists nothing that is not a leaf of UserConfigSchema', () => {
+    const schemaLeaves = new Set(configSchemaLeafPaths());
+    expect(REQUIRES_COOKIE_CONFIG_PATHS.filter((p) => !schemaLeaves.has(p))).toEqual([]);
+  });
+
+  it('requires the stricter bar only on top of the operator-only one', () => {
+    // The cookie requirement is an ADDITION, never a substitution. A path that
+    // needed a cookie but was agent-writable would be reachable from the
+    // capability surface with no cookie at all.
+    for (const dotPath of REQUIRES_COOKIE_CONFIG_PATHS) {
+      expect(CONFIG_WRITE_POLICY[dotPath as keyof typeof CONFIG_WRITE_POLICY]).toBe(
+        'operator-only'
+      );
+    }
+  });
+});
+
+describe('findCookieRequiredPaths', () => {
+  it('catches the exact leaf', () => {
+    expect(findCookieRequiredPaths({ approvals: { standingGrants: true } })).toEqual([
+      'approvals.standingGrants',
+    ]);
+  });
+
+  it('catches a patch that stops SHORT of the guarded leaf', () => {
+    // `{ approvals: true }` never reaches a leaf as a dot-path, so a plain
+    // equality check would wave it through to the merge.
+    expect(findCookieRequiredPaths({ approvals: true })).toEqual([
+      'approvals.standingGrants',
+      'approvals.trustWindowMinutes',
+    ]);
+    expect(findCookieRequiredPaths({ approvals: {} })).toEqual([
+      'approvals.standingGrants',
+      'approvals.trustWindowMinutes',
+    ]);
+  });
+
+  it('catches the window as well as the switch', () => {
+    // Lengthening the window widens the same hole the switch opens.
+    expect(findCookieRequiredPaths({ approvals: { trustWindowMinutes: 1440 } })).toEqual([
+      'approvals.trustWindowMinutes',
+    ]);
+  });
+
+  it('leaves every other setting to the ordinary bar', () => {
+    expect(findCookieRequiredPaths({ auth: { enabled: false }, ui: { theme: 'dark' } })).toEqual(
+      []
+    );
+    expect(findCookieRequiredPaths(undefined)).toEqual([]);
+    expect(findCookieRequiredPaths([{ approvals: { standingGrants: true } }])).toEqual([]);
   });
 });
 

@@ -2325,6 +2325,19 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Local login (Better Auth) state' }),
+    approvals: z
+      .object({
+        standingGrants: z.boolean().openapi({
+          description:
+            'Whether standing permissions may exist at all. Requires `auth.enabled` (DOR-501)',
+        }),
+        trustWindowMinutes: z.number().int().openapi({
+          description:
+            'How long a new standing permission lasts, in minutes, counted from the moment it is granted and never extended by use',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'Standing-permission policy (DOR-501)' }),
     workbench: z
       .object({
         defaultViewers: z.record(z.string(), z.string()).openapi({

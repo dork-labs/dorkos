@@ -39,6 +39,20 @@ const { field } = parsed.data;
 ```
 
 4. Export the inferred type from `packages/shared/src/types.ts` if needed by client code
+5. **Regenerate the published docs** with BOTH commands below, and commit the result
+
+## Regenerating the published API docs (two steps, not one)
+
+Anything that changes `openapi-registry.ts`, including a description or a response code, has to be regenerated and committed:
+
+```bash
+pnpm docs:export-api                          # 1. registry  -> docs/api/openapi.json
+pnpm --filter=@dorkos/site generate:api-docs  # 2. that JSON -> docs/api/api/**/*.mdx
+```
+
+**Running only the first one is the trap, and it is a quiet one.** They are two generators in a chain: `docs:export-api` writes the spec, and `generate:api-docs` writes the Fumadocs MDX pages the site actually publishes from it. If you run step 1 alone and `git status` is clean, the natural read is "no drift, nothing to commit" — but a description change lands entirely in step 2's output, so the JSON can be byte-identical while the published page still shows the old text. That is a page telling users something untrue, and it is not visible in the diff you just looked at.
+
+The `docs-openapi-check` workflow runs both and fails on any difference, so CI catches it. Catching it locally costs one extra command.
 
 ## Marketplace (`/api/marketplace/*`)
 

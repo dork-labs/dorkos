@@ -43,6 +43,10 @@ describe('Database Migrations', () => {
       'agent_identity_tokens',
       'agents',
       'apikey',
+      // Standing permissions: one operator's "stop asking about this agent doing
+      // this thing", keyed on the stable agentPath and bounded by an absolute
+      // expiry (agent-approval-settings spec §3.2, migration 0033).
+      'approval_grants',
       // Approval records for capability invocations that need a person's
       // consent; the token lives here only as a hash (agent-trust spec §3.3,
       // migration 0031).

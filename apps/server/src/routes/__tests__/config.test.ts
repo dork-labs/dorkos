@@ -31,14 +31,14 @@ function createTempDir(): string {
  * with login ON that requires an authenticated user on `res.locals` — which the
  * real cockpit carries and a bare test app otherwise would not (DOR-467).
  */
-let signedInUser: { userId: string } | undefined;
+let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 
 /** Stands in for the `X-DorkOS-Agent` header an agent's CLI attaches. */
 let agentHeader: string | undefined;
 
 /** Mount the request-shaping middleware every config-route app needs. */
 function mountCallerFixture(app: express.Express): void {
-  signedInUser = { userId: 'user_cockpit' };
+  signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
   agentHeader = undefined;
   app.use((req, res, next) => {
     if (signedInUser) res.locals.user = signedInUser;
@@ -199,6 +199,111 @@ describe('PATCH /api/config', () => {
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
+  });
+
+  describe('approvals.* — the settings that need a session cookie (DOR-501)', () => {
+    /** Turn local login on, which is what makes a cookie possible at all. */
+    async function enableLogin(): Promise<void> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+    }
+
+    it('refuses a header-stripping caller, which the operator-only check alone lets through', async () => {
+      // This is step 1 of the reproduced chain. `trustedCaller` is satisfied by a
+      // caller presenting neither an agent header nor an approval token, so the
+      // operator-only block below is SKIPPED for it. That was an accepted trade
+      // when the worst case was one config write; a standing permission is a
+      // renewable window of silent auto-approval, so this path gets a second bar.
+      await enableLogin();
+      agentHeader = undefined;
+      signedInUser = undefined;
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_cookie_required');
+      expect(refused.body.paths).toEqual(['approvals.standingGrants']);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('approvals.standingGrants')).toBe(false);
+    });
+
+    it('refuses a caller holding a per-user API key rather than a session', async () => {
+      // Login being ON is not enough. A key satisfies `sessionGate` exactly as a
+      // browser session does, so a program handed one would otherwise qualify.
+      await enableLogin();
+      signedInUser = { userId: 'user_program', credential: 'api-key' };
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_cookie_required');
+    });
+
+    it('refuses everyone while login is off, and says why', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: false });
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true } })
+        .expect(403);
+      expect(refused.body.code).toBe('standing_grants_require_login');
+      expect(refused.body.message).toMatch(/Require login/);
+    });
+
+    it('catches a patch that stops short of the leaf', async () => {
+      await enableLogin();
+      signedInUser = undefined;
+
+      const refused = await request(app).patch('/api/config').send({ approvals: {} }).expect(403);
+      expect(refused.body.code).toBe('operator_cookie_required');
+    });
+
+    it('lets a person signed in to the cockpit change them', async () => {
+      await enableLogin();
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      const ok = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true, trustWindowMinutes: 120 } })
+        .expect(200);
+      expect(ok.body.config.approvals).toEqual({
+        standingGrants: true,
+        trustWindowMinutes: 120,
+      });
+    });
+
+    it('refuses an array-shaped body, which the path matcher deliberately ignores', async () => {
+      // `findCookieRequiredPaths` walks objects and returns nothing for an array,
+      // so the cookie bar never sees this body. It is safe only because the config
+      // schema is an object and `applyConfigPatch` rejects the shape outright.
+      // Pinned so that stays true: if config ever accepted an array anywhere, this
+      // goes red instead of quietly becoming a way around the bar.
+      await enableLogin();
+      signedInUser = undefined;
+
+      await request(app)
+        .patch('/api/config')
+        .send([{ approvals: { standingGrants: true } }])
+        .expect(400);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('approvals.standingGrants')).toBe(false);
+    });
+
+    it('refuses a window longer than a day, so "forever" stays unrepresentable', async () => {
+      await enableLogin();
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      await request(app)
+        .patch('/api/config')
+        .send({ approvals: { trustWindowMinutes: 10080 } })
+        .expect(400);
+    });
   });
 
   it('still lets an agent change ordinary settings', async () => {

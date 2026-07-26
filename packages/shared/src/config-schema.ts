@@ -760,6 +760,41 @@ export const UserConfigSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default(() => ({ enabled: false })),
+  /**
+   * Standing permissions: whether an operator may say "stop asking about this
+   * agent doing this thing", and for how long one of those answers lasts
+   * (spec `agent-approval-settings` §3.1).
+   *
+   * The policy lives here; the permissions themselves do not. A granted
+   * permission has a creation time, an expiry, and a revocation, which is
+   * operational state and belongs in SQLite (`approval_grants`), not in a file a
+   * person edits. Keeping them out also means nothing about WHICH agents are
+   * trusted can ever leave through `config_get`.
+   *
+   * Both leaves are `operator-only`, and writing either also requires a session
+   * cookie — see `REQUIRES_COOKIE_CONFIG_PATHS`.
+   */
+  approvals: z
+    .object({
+      /**
+       * Whether standing permissions may exist at all. Off by default: a safety
+       * feature does not get quietly relaxed by an upgrade, so nothing changes
+       * for an existing user until they ask for it.
+       */
+      standingGrants: z.boolean().default(false),
+      /**
+       * How long a new standing permission lasts, in minutes, counted from the
+       * moment it is granted and never extended by use.
+       *
+       * Bounded in the schema, in both directions and on purpose. The maximum of
+       * 1440 (one day) is what makes "forever" unrepresentable. The minimum of 5
+       * keeps the window from becoming a deny-all that looks like a broken
+       * feature, which is the reasoning already applied to the approval window in
+       * `approval-service.ts`.
+       */
+      trustWindowMinutes: z.number().int().min(5).max(1440).default(480),
+    })
+    .default(() => ({ standingGrants: false, trustWindowMinutes: 480 })),
   cloud: z
     .object({
       /**

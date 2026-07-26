@@ -124,6 +124,15 @@ export interface ApprovalRequestInput {
    * caller has. Never interpreted here, only shown on the card.
    */
   requestedBy?: string;
+  /**
+   * The stable agent path of whoever asked, when the caller identified itself.
+   *
+   * Recorded alongside `requestedBy` rather than instead of it, because the two
+   * are different things: `requestedBy` is a display label built from a name and
+   * swept for secrets, and a label is not a key. A standing permission keys on
+   * the agent path, so the card has to carry the real one. Never rendered.
+   */
+  requestedByPath?: string;
 }
 
 /**
@@ -291,6 +300,9 @@ export class ApprovalService {
       summary: storableSummary(input.summary),
       // Caller-supplied, so capped and swept for secrets exactly like the summary.
       requestedBy: input.requestedBy ? renderRequesterLabel(input.requestedBy) : null,
+      // Stored raw and never rendered: this is the key a standing permission is
+      // built on, so sweeping or shortening it would break the match.
+      requestedByPath: input.requestedByPath ?? null,
       state: 'pending' as const,
       denyReason: null,
       createdAt: new Date(now).toISOString(),

@@ -281,6 +281,29 @@ DorkOS runs with no login by default: no login screen, no user concept, instant 
 
 Session cookies are signed by Better Auth. Production deployments should set the `BETTER_AUTH_SECRET` environment variable so sessions survive server restarts.
 
+### Standing permissions (not working yet)
+
+**These two settings do nothing today.** They are listed here because they now show up in your config file, not because you can use them. Changing either one has no effect: DorkOS still asks you every time, exactly as before.
+
+The plan is to let you answer one approval once instead of every time, for one agent doing one named thing, for a set number of hours. When it works, this page will say so plainly. It will need local login to be on, because without a sign-in DorkOS cannot tell you apart from an agent running on the same machine.
+
+<TypeTable
+  type={{
+    'approvals.standingGrants': {
+      description:
+        'Reserved. Will decide whether standing permissions may exist at all. Has no effect yet.',
+      type: 'boolean',
+      default: 'false',
+    },
+    'approvals.trustWindowMinutes': {
+      description:
+        'Reserved. Will set how long a new standing permission lasts, in minutes. Has no effect yet. The longest allowed is one day.',
+      type: 'number (5-1440)',
+      default: '480',
+    },
+  }}
+/>
+
 ### Cloud link
 
 Linking this instance to a DorkOS account lets the account see and manage it. Run `dorkos cloud login` to link (it prints a code to approve in your browser, and works even with no browser on the same machine), `dorkos cloud status` to check the link, and `dorkos cloud logout` to unlink. Local login and the cloud link are independent: either can exist without the other.

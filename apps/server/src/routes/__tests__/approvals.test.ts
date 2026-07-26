@@ -16,6 +16,7 @@ import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
+  ApprovalGrantService,
   ApprovalService,
   APPROVAL_TTL_MS,
   hashApprovalInput,
@@ -42,6 +43,7 @@ const AGENT_IDENTITY = {
 
 describe('approvals routes', () => {
   let approvals: ApprovalService;
+  let grants: ApprovalGrantService;
   let app: express.Express;
   let emitted: { eventType: string; metadata?: Record<string, unknown> | null }[];
 
@@ -55,7 +57,7 @@ describe('approvals routes', () => {
     options: {
       loginEnabled?: boolean;
       agentIdentity?: boolean;
-      user?: { userId: string };
+      user?: { userId: string; credential: 'cookie' | 'api-key' };
     } = {}
   ): express.Express {
     const built = express();
@@ -83,12 +85,14 @@ describe('approvals routes', () => {
   beforeEach(() => {
     // A stand-in for the capability registry the real boot injects — the card's
     // title and tier are derived, never stated by the requester.
-    approvals = new ApprovalService(createTestDb(), {
+    const db = createTestDb();
+    approvals = new ApprovalService(db, {
       describeCapability: (id) =>
         id === 'marketplace.uninstall'
           ? { title: 'Uninstall a marketplace package', tier: 'destructive' }
           : undefined,
     });
+    grants = new ApprovalGrantService(db);
     emitted = [];
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     app = buildApp();
@@ -359,6 +363,139 @@ describe('approvals routes', () => {
 
         expect(emitted).toEqual([]);
       });
+    });
+  });
+
+  describe('POST /:id/grant { standing: true } — accepted, and refused (DOR-501)', () => {
+    /** A person signed in to the cockpit, which is the only caller that qualifies. */
+    const COOKIE_USER = { userId: 'user_owner', credential: 'cookie' as const };
+
+    /** Ask for approval WITH an identity, so the card records an agent path. */
+    function requestIdentified() {
+      return approvals.request({
+        ...BINDING,
+        summary: 'Uninstall "sentry-monitor"',
+        requestedBy: 'dorkbot',
+        requestedByPath: AGENT_IDENTITY.agentPath,
+      });
+    }
+
+    it('refuses a header-stripping caller, even though it may DECIDE the approval', async () => {
+      // The whole point of the second bar. This caller clears
+      // `resolveDecisionAuthority` — it presents no agent header and no approval
+      // token — and it is exactly the caller the reproduced chain used. Deciding
+      // once is a bounded effect; a standing permission would not be.
+      const ticket = requestIdentified();
+      const res = await request(buildApp({ loginEnabled: false }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('standing_grants_require_login');
+      expect(grants.list()).toEqual([]);
+    });
+
+    it('refuses a caller holding a per-user API key rather than a session', async () => {
+      const ticket = requestIdentified();
+      const res = await request(
+        buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+      )
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_cookie_required');
+      expect(grants.list()).toEqual([]);
+    });
+
+    it('checks the cookie bar BEFORE the not-yet-enforced refusal', async () => {
+      // Ordering matters: the bar has to be live and observable NOW, so the phase
+      // that adds enforcement replaces the refusal beneath it and nothing else.
+      // If the not-yet-enforced answer came first it would mask the bar, and the
+      // bar would ship untested under a refusal that is going away.
+      const withLoginOff = await request(buildApp({ loginEnabled: false }))
+        .post(`/api/approvals/${requestIdentified().approvalId}/grant`)
+        .send({ standing: true });
+      expect(withLoginOff.body.code).toBe('standing_grants_require_login');
+
+      const withApiKey = await request(
+        buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+      )
+        .post(`/api/approvals/${requestIdentified().approvalId}/grant`)
+        .send({ standing: true });
+      expect(withApiKey.body.code).toBe('operator_cookie_required');
+
+      // Neither caller ever saw the refusal that is scheduled for deletion.
+      for (const res of [withLoginOff, withApiKey]) {
+        expect(res.body.code).not.toBe('STANDING_GRANTS_NOT_YET_ENFORCED');
+      }
+    });
+
+    it('refuses a signed-in person too, because nothing enforces one yet', async () => {
+      // Honest rather than encouraging. A recorded permission would report a
+      // success that changes nothing: the agent would keep asking every time.
+      const ticket = requestIdentified();
+      const res = await request(buildApp({ loginEnabled: true, user: COOKIE_USER }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('STANDING_GRANTS_NOT_YET_ENFORCED');
+      expect(grants.list()).toEqual([]);
+    });
+
+    it('does not quietly fall back to a plain grant', async () => {
+      // Refusing is not ignoring, and this is the assertion that tells them
+      // apart. An ignored flag would leave the approval GRANTED and the caller
+      // believing it also got a permission.
+      const ticket = requestIdentified();
+      await request(buildApp({ loginEnabled: true, user: COOKIE_USER }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true })
+        .expect(409);
+
+      expect(
+        approvals.consume(ticket.token, BINDING).outcome,
+        'the approval must still be pending, not quietly granted'
+      ).toBe('pending');
+      expect(emitted).toEqual([]);
+    });
+
+    it('leaves an ordinary grant untouched', async () => {
+      // Nothing changes for anyone who does not send the flag: a body without it,
+      // and an absent body, are both a plain one-time yes.
+      const ticket = requestIdentified();
+      const res = await request(buildApp({ loginEnabled: true, user: COOKIE_USER }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        ok: true,
+        approvalId: ticket.approvalId,
+        outcome: 'granted',
+      });
+      expect(approvals.consume(ticket.token, BINDING).outcome).toBe('granted');
+    });
+
+    it('treats standing: false as an ordinary grant', async () => {
+      const ticket = requestIdentified();
+      const res = await request(buildApp({ loginEnabled: true, user: COOKIE_USER }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: false });
+
+      expect(res.status).toBe(200);
+      expect(res.body.outcome).toBe('granted');
+    });
+
+    it('rejects a malformed standing field rather than guessing', async () => {
+      const ticket = requestIdentified();
+      const res = await request(buildApp({ loginEnabled: true, user: COOKIE_USER }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: 'yes please' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('INVALID_GRANT_BODY');
     });
   });
 

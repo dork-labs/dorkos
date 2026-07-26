@@ -626,6 +626,11 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         ...binding,
         summary: describeGatedAttempt(action, input, identity),
         ...(requestedBy ? { requestedBy } : {}),
+        // The raw path alongside the display label, because a standing
+        // permission keys on the agent and a label is not a key. An anonymous
+        // caller records none, which is what makes its approval ineligible to be
+        // made standing.
+        ...(identity ? { requestedByPath: identity.agentPath } : {}),
       });
     } catch (err) {
       auditStoreFailure();

@@ -159,6 +159,19 @@ The `auth` section controls the local login gate (Better Auth):
 
 When `auth.enabled` is `false` (the default), no auth gate runs and DorkOS shows no user concept anywhere. The Better Auth handler is always mounted at `/api/auth/*`, so the enable-login flow can create the owner account before flipping this flag to `true`. Registration is owner-only: the first registered user becomes the owner, and further sign-ups are rejected until a future invites spec reopens registration. Session cookies are signed by Better Auth; production deployments should set `BETTER_AUTH_SECRET` so sessions survive restarts. See the accounts-and-auth spec.
 
+The `approvals` section holds the policy for standing permissions: an operator's "stop asking about this agent doing this thing" (DOR-501). It is the policy only: the permissions themselves are rows in the `approval_grants` SQLite table, so nothing about which agents are trusted can ever leave through `config_get`.
+
+**Nothing enforces a standing permission yet.** The tier gate has no grant lookup, `ApprovalGrantService.findLive` has no production caller, and `POST /api/approvals/:id/grant` refuses `standing: true` with `STANDING_GRANTS_NOT_YET_ENFORCED`. Both settings are therefore inert: flipping them changes no behavior. What IS live is everything below about who may write them, which had to land first so the rest can be built on a guard that is already tested.
+
+| Key                            | Type              | Default | Description                                                                     |
+| ------------------------------ | ----------------- | ------- | ------------------------------------------------------------------------------- |
+| `approvals.standingGrants`     | boolean           | `false` | Whether standing permissions may exist at all                                   |
+| `approvals.trustWindowMinutes` | integer (5--1440) | `480`   | How long a new standing permission lasts, counted from the moment it is granted |
+
+Both leaves are `operator-only`, and writing either **also requires a session cookie**, not just a caller that clears `trustedCaller`. That extra bar is `REQUIRES_COOKIE_CONFIG_PATHS` in `config-write-policy.ts`, and it exists because the operator-only check on `PATCH /api/config` sits behind `trustedCaller`, which a caller that omits its agent header and its approval token clears under the default `local-trust` posture. The consequence is that **standing permissions require `auth.enabled`**: with login off, no caller can present a cookie, so `approvals.*` writes and standing-permission creation are both refused. `REQUIRES_COOKIE_CONFIG_PATHS` is meant to be deleted when DOR-505 closes that residual generally.
+
+The window is bounded in the schema in both directions. The maximum of one day is what makes "forever" unrepresentable; the minimum of 5 minutes keeps the window from becoming a deny-all that looks like a broken feature. Expiry is absolute from the moment of the grant and never slides on use, so an agent cannot extend its own trust by acting. Turning either `auth.enabled` or `approvals.standingGrants` off ends every live permission immediately.
+
 The `cloud` section holds the device-link binding between this instance and a DorkOS account (accounts-and-auth P2). It is managed by the `dorkos cloud` CLI commands and the `/api/cloud/*` routes — not edited by hand — and is independent of `auth.enabled`:
 
 | Key                        | Type           | Default | Description                                                                                 |

@@ -223,6 +223,13 @@ export const CONFIG_DISCLOSURE = {
 
   'auth.enabled': 'expose',
 
+  // A posture, not a roster. These two say whether standing permissions may
+  // exist here and for how long one lasts; WHICH agents are trusted lives in
+  // SQLite and never passes through config at all, so there is nothing here for
+  // an agent to learn about anyone's trust but its own instance's settings.
+  'approvals.standingGrants': 'expose',
+  'approvals.trustWindowMinutes': 'expose',
+
   'cloud.instanceToken': 'withhold',
   'cloud.instanceName': 'expose',
   // Names the DorkOS account this install is linked to, often an email address.

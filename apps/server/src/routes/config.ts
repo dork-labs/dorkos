@@ -11,12 +11,18 @@ import {
 import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
 import {
   describeOperatorOnlyRefusal,
+  findCookieRequiredPaths,
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
+  REQUIRES_COOKIE_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
+import { readCallerAuthority, requireOperatorCookie } from '../lib/caller-authority.js';
+import {
+  revokeStandingGrantsIfPostureNarrowed,
+  type StandingGrantPosture,
+} from '../services/core/approvals/index.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isTasksEnabled, getTasksInitError } from '../services/tasks/task-state.js';
 import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
@@ -47,6 +53,14 @@ function configuredRuntimes(): string[] {
   if (config?.codex?.enabled !== false) runtimes.push('codex');
   if (config?.opencode?.enabled !== false) runtimes.push('opencode');
   return runtimes;
+}
+
+/** The two settings that license a standing permission to exist, as stored now. */
+function readStandingGrantPosture(): StandingGrantPosture {
+  return {
+    loginEnabled: configManager.get('auth')?.enabled === true,
+    standingGrants: configManager.get('approvals')?.standingGrants === true,
+  };
 }
 
 router.get('/', async (_req, res) => {
@@ -178,6 +192,10 @@ router.get('/', async (_req, res) => {
       aiMetadata: false,
     },
     auth: configManager.get('auth') ?? { enabled: false },
+    approvals: configManager.get('approvals') ?? {
+      standingGrants: false,
+      trustWindowMinutes: 480,
+    },
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },
     // Surface the sidebar organization + Shape + status-bar prefs so the client
     // can read them via useConfig() (DOR-329, DOR-355, DOR-431). Schema defaults
@@ -193,6 +211,29 @@ router.get('/', async (_req, res) => {
 
 router.patch('/', (req, res) => {
   try {
+    // A few settings need MORE than the block below can ask for, and they are
+    // checked FIRST, outside it, so the outcome of `trustedCaller` cannot change
+    // the answer (spec `agent-approval-settings` §3.0-3.1).
+    //
+    // The reason is written out at REQUIRES_COOKIE_CONFIG_PATHS: the operator-only
+    // check underneath is skipped for a caller that omits its agent header and
+    // its approval token, which an agent with a shell can do. For most settings
+    // that is an accepted trade. For "may standing permissions exist, and for how
+    // long" it is not, because a standing permission keeps saying yes for hours,
+    // and this exact chain was reproduced before the feature shipped.
+    const cookieRequired = findCookieRequiredPaths(req.body);
+    if (cookieRequired.length > 0) {
+      const refusal = requireOperatorCookie(res);
+      if (refusal) {
+        return res.status(refusal.status).json({
+          error: REQUIRES_COOKIE_CONFIG_ERROR,
+          code: refusal.code,
+          paths: cookieRequired,
+          message: refusal.error,
+        });
+      }
+    }
+
     // The REST twin of the guard on `operator.config_patch` (DOR-467). PR #469
     // put the operator-only write policy on the capability surface, but this
     // route reaches the SAME `applyConfigPatch` and had no policy check at all —
@@ -240,6 +281,7 @@ router.patch('/', (req, res) => {
       }
     }
 
+    const postureBefore = readStandingGrantPosture();
     const result = applyConfigPatch(req.body);
     if (!result.ok) {
       return res.status(400).json({
@@ -247,6 +289,10 @@ router.patch('/', (req, res) => {
         ...(result.details && { details: result.details }),
       });
     }
+    // Turning login off, or the master switch off, ends every live standing
+    // permission. Leaving them dormant would let them wake up later under a
+    // posture that can no longer justify them.
+    revokeStandingGrantsIfPostureNarrowed(postureBefore, readStandingGrantPosture());
 
     if (req.body && typeof req.body === 'object') {
       logger.debug(`[Config] Patched: ${Object.keys(req.body).join(', ')}`);

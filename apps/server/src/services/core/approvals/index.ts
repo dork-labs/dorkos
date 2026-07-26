@@ -21,6 +21,18 @@ export {
   type ApprovalDecisionFailure,
   type ApprovalTicket,
 } from './approval-service.js';
+export {
+  ApprovalGrantService,
+  type ApprovalGrantInput,
+  type ApprovalGrantPosture,
+  type ApprovalGrantRow,
+} from './approval-grant-service.js';
+export {
+  initStandingGrantPosture,
+  resetStandingGrantPosture,
+  revokeStandingGrantsIfPostureNarrowed,
+  type StandingGrantPosture,
+} from './standing-grant-posture.js';
 export { hashApprovalInput, ApprovalInputNotBindableError } from './approval-input-hash.js';
 export {
   quoteSummaryValue,
