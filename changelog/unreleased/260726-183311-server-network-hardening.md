@@ -5,6 +5,7 @@ covers:
   - 'fix(server): require a loopback socket for local-only actions, and close an admin path bypass (DOR-532)'
   - 'fix(server): let DORKOS_ALLOW_INSECURE_BIND relax the local-only gate too (DOR-532)'
   - 'fix(server): stop two test-state leaks that could hide a real 403 (DOR-532)'
+  - "fix(server): cover the credential routes' locality gate, and correct a wrong diagnosis (DOR-532)"
 ---
 
 ### Security

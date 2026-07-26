@@ -259,10 +259,15 @@ describe('TCP peer is required to be loopback', () => {
   );
 
   // The `DORKOS_ALLOW_INSECURE_BIND` branch is covered in
-  // `lib/__tests__/trusted-origins.test.ts` against the pure `isLocalRequest`.
-  // It deliberately is NOT exercised here: reaching it through the route means
-  // mutating the shared `env` singleton, and doing that from this file leaked
-  // into `tunnel-cors.test.ts` and turned its real 403 assertion green.
+  // `lib/__tests__/trusted-origins.test.ts`, against the pure `isLocalRequest`.
+  //
+  // Reaching it through the route would mean mutating the shared `env`
+  // singleton for the duration of a test. Vitest isolates module state per file
+  // (`isolate` is left at its default `true`), so that could not reach another
+  // test file — but it still leaves a window inside THIS file where an
+  // assertion that a request is refused would pass for the wrong reason, and it
+  // relies on a config default staying put to be safe at all. Passing the flag
+  // in as a fact costs nothing and removes the question.
 });
 
 describe('POST /api/runtimes/codex/provision', () => {

@@ -141,9 +141,9 @@ export interface LocalRequestFacts {
  * than loopback.
  *
  * Pure, and takes resolved facts rather than a request, following the predicates
- * in `services/core/auth/exposure-guard.ts`. That keeps the flag testable
- * without mutating the shared `env` singleton — which, done from one test file,
- * leaked into another and turned a real 403 assertion green.
+ * in `services/core/auth/exposure-guard.ts`. That keeps the flag branch testable
+ * without mutating the shared `env` singleton for the length of a test, which is
+ * the pattern worth having whatever the runner's isolation settings happen to be.
  *
  * @param facts - The resolved {@link LocalRequestFacts}.
  */
