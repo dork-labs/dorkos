@@ -4,6 +4,7 @@ covers:
   - 'fix(server): judge caller locality by the real Host header, not a forwarded one (DOR-532)'
   - 'fix(server): require a loopback socket for local-only actions, and close an admin path bypass (DOR-532)'
   - 'fix(server): let DORKOS_ALLOW_INSECURE_BIND relax the local-only gate too (DOR-532)'
+  - 'fix(server): stop two test-state leaks that could hide a real 403 (DOR-532)'
 ---
 
 ### Security

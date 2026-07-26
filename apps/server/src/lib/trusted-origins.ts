@@ -115,6 +115,43 @@ export function isLoopbackPeer(address: string | undefined): boolean {
   return addr === '::1' || addr === '0:0:0:0:0:0:0:1';
 }
 
+/** The facts {@link isLocalRequest} decides on, all resolved by the caller. */
+export interface LocalRequestFacts {
+  /** `req.socket.remoteAddress` — the TCP peer, the part a caller cannot write. */
+  peer: string | undefined;
+  /** `req.headers.host` — the raw header, the part a browser cannot lie about. */
+  hostHeader: string | undefined;
+  /** `env.DORKOS_ALLOW_INSECURE_BIND`, read by the caller so this stays pure. */
+  allowInsecureBind: boolean;
+}
+
+/**
+ * Whether a request may reach an action reserved for a person at this machine.
+ *
+ * Both signals are required, because each alone admits a different attacker:
+ * the peer stops a remote caller forging `Host: localhost`, and the `Host`
+ * header stops a DNS-rebound browser whose peer genuinely is `127.0.0.1`. See
+ * {@link isLoopbackPeer} and {@link isLoopbackHostHeader} for each half, and the
+ * residual neither closes.
+ *
+ * `allowInsecureBind` short-circuits both, matching what that flag already does
+ * to the `/api` host guard: it declares that the surrounding environment owns
+ * the network boundary. It is also the only way these actions can work inside a
+ * container, where the browser's request arrives from the bridge gateway rather
+ * than loopback.
+ *
+ * Pure, and takes resolved facts rather than a request, following the predicates
+ * in `services/core/auth/exposure-guard.ts`. That keeps the flag testable
+ * without mutating the shared `env` singleton — which, done from one test file,
+ * leaked into another and turned a real 403 assertion green.
+ *
+ * @param facts - The resolved {@link LocalRequestFacts}.
+ */
+export function isLocalRequest(facts: LocalRequestFacts): boolean {
+  if (facts.allowInsecureBind) return true;
+  return isLoopbackPeer(facts.peer) && isLoopbackHostHeader(facts.hostHeader);
+}
+
 /**
  * Static loopback dev origins the server always trusts: `localhost` and
  * `127.0.0.1` on both the API port (`DORKOS_PORT`) and the Vite dev port

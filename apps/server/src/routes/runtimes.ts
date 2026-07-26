@@ -45,7 +45,7 @@ import {
 } from '../services/runtimes/opencode/ollama-catalog.js';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
-import { isLoopbackHostHeader, isLoopbackPeer } from '../lib/trusted-origins.js';
+import { isLocalRequest } from '../lib/trusted-origins.js';
 
 const router = Router();
 
@@ -88,13 +88,16 @@ const router = Router();
  *
  * One residual remains and is inherent: a reverse proxy on this same host
  * connects from `127.0.0.1`, so it is indistinguishable from a local caller at
- * the socket layer (see {@link isLoopbackPeer}). Its forwarded `Host` normally
+ * the socket layer (see `isLoopbackPeer` in `lib/trusted-origins.ts`). Its forwarded `Host` normally
  * carries the public name and is refused, but an operator who rewrites `Host` to
  * `localhost` re-opens it.
  */
 function isLocalCaller(req: Request): boolean {
-  if (env.DORKOS_ALLOW_INSECURE_BIND) return true;
-  return isLoopbackPeer(req.socket.remoteAddress) && isLoopbackHostHeader(req.headers.host);
+  return isLocalRequest({
+    peer: req.socket.remoteAddress,
+    hostHeader: req.headers.host,
+    allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
+  });
 }
 
 /** Reject non-local requests with 403; returns `true` when the request was rejected. */

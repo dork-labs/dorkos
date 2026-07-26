@@ -6,6 +6,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 }));
 
 import {
+  isLocalRequest,
   isLoopbackHost,
   isLoopbackHostHeader,
   isLoopbackPeer,
@@ -105,5 +106,53 @@ describe('isLoopbackPeer', () => {
     expect(isLoopbackPeer('192.168.86.200') && isLoopbackHostHeader('localhost')).toBe(false);
     expect(isLoopbackPeer('127.0.0.1') && isLoopbackHostHeader('evil.com')).toBe(false);
     expect(isLoopbackPeer('127.0.0.1') && isLoopbackHostHeader('localhost:4242')).toBe(true);
+  });
+});
+
+describe('isLocalRequest', () => {
+  const unflagged = { allowInsecureBind: false };
+
+  it.each<[string | undefined, string | undefined, boolean, string]>([
+    ['127.0.0.1', 'localhost:4242', true, 'a person at this machine'],
+    ['::1', 'localhost', true, 'the same over IPv6'],
+    ['::ffff:127.0.0.1', '127.0.0.1:4242', true, 'the v4-mapped peer form'],
+    ['192.168.86.200', 'localhost', false, 'a LAN caller forging a loopback Host'],
+    ['172.17.0.1', 'localhost:4242', false, "Docker's bridge gateway, unflagged"],
+    ['127.0.0.1', 'evil.example.com', false, 'a DNS-rebound browser'],
+    [undefined, 'localhost', false, 'a socket with no address'],
+    ['127.0.0.1', undefined, false, 'a request with no Host header'],
+  ])('peer=%s host=%s -> %s (%s)', (peer, hostHeader, expected) => {
+    expect(isLocalRequest({ ...unflagged, peer, hostHeader })).toBe(expected);
+  });
+
+  /**
+   * The flag says the surrounding environment owns the network boundary. It is
+   * also the only way these actions work inside a container, where the browser's
+   * request arrives from the bridge gateway rather than loopback — requiring a
+   * loopback peer there would break provisioning for every Docker operator
+   * without shrinking a blast radius that image already accepts.
+   */
+  describe('DORKOS_ALLOW_INSECURE_BIND', () => {
+    it.each<[string | undefined, string | undefined, string]>([
+      ['172.17.0.1', 'localhost:4242', "Docker's bridge gateway"],
+      ['192.168.86.200', 'localhost', 'a LAN peer'],
+      ['127.0.0.1', 'evil.example.com', 'a hostile Host'],
+      [undefined, undefined, 'nothing identifiable at all'],
+    ])('admits peer=%s host=%s (%s) when set', (peer, hostHeader) => {
+      expect(isLocalRequest({ peer, hostHeader, allowInsecureBind: true })).toBe(true);
+    });
+
+    it.each([
+      ['172.17.0.1', 'localhost:4242'],
+      ['192.168.86.200', 'localhost'],
+    ])('refuses the same request (peer=%s) when not set', (peer, hostHeader) => {
+      expect(isLocalRequest({ peer, hostHeader, allowInsecureBind: false })).toBe(false);
+    });
+
+    it('does not weaken the genuine-local case either way', () => {
+      const local = { peer: '127.0.0.1', hostHeader: 'localhost:4242' };
+      expect(isLocalRequest({ ...local, allowInsecureBind: false })).toBe(true);
+      expect(isLocalRequest({ ...local, allowInsecureBind: true })).toBe(true);
+    });
   });
 });

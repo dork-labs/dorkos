@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -191,6 +191,14 @@ describe('Host guard on /api (DNS rebinding)', () => {
       tokenConfigured: false,
       domain: null,
     };
+  });
+
+  afterEach(() => {
+    // `clearAllMocks` clears calls, NOT implementations. The login-on test below
+    // makes `configManager.get` report `auth.enabled: true`, which switches the
+    // guard off; left in place it followed the test around and turned the two
+    // 403 assertions above green whenever the order put them afterwards.
+    vi.mocked(configManager.get).mockReset();
   });
 
   it('rejects a rebound request whose Origin matches its own Host', async () => {
