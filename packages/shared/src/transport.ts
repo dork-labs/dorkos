@@ -95,7 +95,12 @@ import type {
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
-import type { ApprovalDecisionResponse, PendingApprovalsResponse } from './approval-schemas.js';
+import type {
+  ApprovalDecisionResponse,
+  PendingApprovalsResponse,
+  RevokeStandingPermissionResponse,
+  StandingPermissionsResponse,
+} from './approval-schemas.js';
 import type {
   AggregatedPackage,
   PackageFilter,
@@ -1431,9 +1436,20 @@ export interface Transport {
    * Allow a pending approval, letting the requester spend its token once on
    * exactly the action it was granted for.
    *
+   * With `standing: true` it also opens a standing permission, so DorkOS stops
+   * asking about that agent doing that thing until the window closes. The two
+   * travel together on purpose: a caller that asked for both and can only have
+   * one is refused outright rather than quietly given the one-time yes, because
+   * a silent fallback would leave a person believing they created a permission
+   * that does not exist (spec `agent-approval-settings` §3.5).
+   *
    * @param approvalId - The approval's id, from {@link listPendingApprovals}.
+   * @param options - Set `standing` to also stop being asked about this pair.
    */
-  grantApproval(approvalId: string): Promise<ApprovalDecisionResponse>;
+  grantApproval(
+    approvalId: string,
+    options?: { standing?: boolean }
+  ): Promise<ApprovalDecisionResponse>;
 
   /**
    * Refuse a pending approval.
@@ -1442,6 +1458,24 @@ export interface Transport {
    * @param reason - Optional note the requester sees instead of a bare refusal.
    */
   denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse>;
+
+  /**
+   * The standing permissions that are live right now, soonest to expire first.
+   *
+   * A permission a person cannot find is a dark pattern, so this is what both
+   * places that list one read (spec `agent-approval-settings` §3.7).
+   */
+  listStandingPermissions(): Promise<StandingPermissionsResponse>;
+
+  /**
+   * End one standing permission, so DorkOS asks again next time.
+   *
+   * Ending one stops the next action; it does not reverse anything that already
+   * ran.
+   *
+   * @param grantId - The permission's id, from {@link listStandingPermissions}.
+   */
+  revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
 
   // --- Shapes (DOR-355) ---
 

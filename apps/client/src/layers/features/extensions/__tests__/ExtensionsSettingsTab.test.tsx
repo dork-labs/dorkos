@@ -68,6 +68,7 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
     bundleReady: true,
     hasServerEntry: false,
     hasDataProxy: false,
+    approvedToRun: true,
     ...overrides,
   };
 }
@@ -455,5 +456,180 @@ describe('ExtensionsSettingsTab — Core / Installed partition', () => {
     // Health badge AND toggle are both present (not conflated).
     expect(screen.getByTestId('extension-health-broken')).toBeInTheDocument();
     expect(screen.getByRole('switch')).toBeInTheDocument();
+  });
+});
+
+describe('permission to run code inside DorkOS (DOR-516)', () => {
+  it('asks the person about an unapproved extension that carries server code', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'full-stack',
+          origin: 'user',
+          hasServerEntry: true,
+          approvedToRun: false,
+        }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-needs-approval-full-stack')).toBeInTheDocument();
+    });
+    // The copy has to say what the person is deciding, in their terms — not
+    // "unapproved extension" and not a status code.
+    expect(screen.getByText(/waiting for you/i)).toBeInTheDocument();
+    expect(screen.getByText(/anything DorkOS can/i)).toBeInTheDocument();
+    // And it has to be TRUE. Nothing of an unapproved extension has run, in the
+    // server or on this page, so the card says exactly that.
+    expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
+  });
+
+  it('tells the truth about a client-only extension, which also has not run', async () => {
+    // This card used to read "DorkOS has not run this extension here" and describe
+    // the risk in the conditional. Both were false: the bundle was served and
+    // activated in the browser the moment the page loaded, on the very screen the
+    // person opens to decide. The server now withholds the bundle until they do.
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'client-only',
+          origin: 'user',
+          hasServerEntry: false,
+          hasDataProxy: false,
+          approvedToRun: false,
+        }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-needs-approval-client-only')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/signed in as you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/has not run this extension here/i)).not.toBeInTheDocument();
+  });
+
+  it('sends the approval and confirms it, so one click is the whole job', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'full-stack',
+          origin: 'user',
+          hasServerEntry: true,
+          approvedToRun: false,
+        }),
+      ],
+      '/api/extensions/full-stack/approve': {
+        extension: makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: true }),
+      },
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-approve-run-full-stack')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId('extension-approve-run-full-stack'));
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+        expect.stringContaining('can now run inside DorkOS')
+      );
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining('/api/extensions/full-stack/approve'),
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('shows an approved extension as allowed, with a way to stop it', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'full-stack',
+          origin: 'user',
+          hasServerEntry: true,
+          approvedToRun: true,
+        }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-run-allowed-full-stack')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('extension-needs-approval-full-stack')).not.toBeInTheDocument();
+    expect(screen.getByText('Stop it')).toBeInTheDocument();
+  });
+
+  it('never asks about a core extension, which ships inside DorkOS', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'linear-issues',
+          origin: 'core',
+          hasServerEntry: true,
+          // Even if the server said false, origin decides — DorkOS must not ask a
+          // person for permission to run itself.
+          approvedToRun: false,
+        }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-card-linear-issues')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('extension-needs-approval-linear-issues')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('extension-run-allowed-linear-issues')).not.toBeInTheDocument();
+  });
+
+  it('surfaces the server refusal verbatim when the caller is not allowed to approve', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.includes('/approve')) {
+          return Promise.resolve({
+            ok: false,
+            status: 403,
+            json: () =>
+              Promise.resolve({
+                error: 'Only a person can approve an extension to run inside DorkOS',
+              }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve([
+              makeExtension({
+                id: 'full-stack',
+                origin: 'user',
+                hasServerEntry: true,
+                approvedToRun: false,
+              }),
+            ]),
+        });
+      })
+    );
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-approve-run-full-stack')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId('extension-approve-run-full-stack'));
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        'Only a person can approve an extension to run inside DorkOS'
+      );
+    });
   });
 });

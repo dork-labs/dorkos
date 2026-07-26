@@ -35,16 +35,12 @@
  * touched an effect that is listed — but a scan cannot fail for an effect nobody
  * added, which is the same shape of hole `GATED_ADAPTER_PATHS` had one level up.
  *
- * A live counterexample, named here so the next reader inherits it rather than
- * rediscovering it: `POST /api/marketplace/sources` and
- * `DELETE /api/marketplace/sources/:name` reach `sourceManager.add` /
- * `sourceManager.remove` and are ungated for every caller, so an agent can point
- * this instance at a package feed somebody else controls. It is NOT covered below.
- * Gating it needs a tier decision that is deliberately not being made in passing:
- * there is no `marketplace.*` source capability to authorize against, adding one
- * moves the registry count that four documented surfaces assert, and refusing
- * agents outright would break `dorkos marketplace add`, which the seeded skill
- * pack teaches. Tracked separately (DOR-467 review, M2).
+ * That is not a theoretical worry: this file used to carry a live counterexample,
+ * the ungated marketplace SOURCE routes, sitting in the prose because nobody had
+ * decided what to do about them. They are gated now and listed below (DOR-502), so
+ * the honest general statement is what remains — an effect is covered from the day
+ * somebody adds it here, and not before. When you find the next one, add it rather
+ * than describe it.
  *
  * ## What it does not catch
  *
@@ -98,6 +94,40 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
+    what: 'points this install at a package feed it will fetch and run code from',
+    call: 'sourceManager.add(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller, with no approval that could unlock it (DOR-502)',
+      'services/marketplace-mcp/personal-marketplace.ts':
+        'the boot-time bootstrap of the local personal marketplace; no request reaches it and the source it registers is always a file:// URL under this dork home',
+    },
+  },
+  {
+    what: 'drops a package feed, silently taking away every package it served',
+    call: 'sourceManager.remove(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller (DOR-502)',
+    },
+  },
+  {
+    what: 'disables a package feed, which takes away every package it served just as removing it does — browse aggregates from ENABLED sources only',
+    // Listed with an EMPTY allowlist, which is the only entry here that has one,
+    // so say why. `MarketplaceSourceManager` has three mutators; DOR-502 gated the
+    // two that had routes and left this one with no production caller at all. That
+    // is the moment to list it, not later: the cockpit already RENDERS each
+    // source's enabled state and the CLI already prints it, with nothing anywhere
+    // that can flip it after the source is created, so a `PATCH /sources/:name`
+    // toggle is the obvious next route on this router. Without this entry that
+    // route would arrive ungated AND invisible to this scan — the exact "a scan
+    // cannot fail for an effect nobody added" hole the module TSDoc above warns
+    // about. With it, the route turns this red until its author gates it and
+    // writes down why it is safe.
+    call: 'sourceManager.setEnabled(',
+    allowed: {},
+  },
+  {
     what: 'runs the tier gate for a caller that performs the effect itself, instead of via registry.invoke',
     call: 'authorizeCapability(',
     allowed: {
@@ -126,6 +156,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/tasks.ts':
         'a person approving a scheduled task, or setting how it runs, in their own cockpit (DOR-504)',
+      'routes/extensions-approval.ts':
+        'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },

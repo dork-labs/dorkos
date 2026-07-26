@@ -96,6 +96,11 @@ vi.mock('@/layers/features/approvals', () => ({
     isError: mockApprovalsError,
     retry: vi.fn(),
   }),
+  StandingPermissionList: () => <div data-testid="standing-permission-list" />,
+  // This suite is about WHERE the marker sits, not about standing permissions.
+  // An empty list keeps the marker's appearance driven solely by the pending
+  // queue, which is what every assertion below is written against.
+  useStandingPermissions: () => ({ permissions: [], isLoading: false, isError: false }),
 }));
 
 vi.mock('@/layers/features/command-palette', () => ({

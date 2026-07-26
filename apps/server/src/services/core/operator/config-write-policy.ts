@@ -218,6 +218,13 @@ export const CONFIG_WRITE_POLICY = {
   // cockpit toggles these through `/api/extensions`, not through a config patch.
   'extensions.enabled': 'operator-only',
   'extensions.disabled': 'operator-only',
+  // The standing consent that lets one extension's code execute INSIDE the server
+  // process, with the server's privileges and outside the tier gate (DOR-516).
+  // This is the record of a human decision, so a caller that can write it can
+  // manufacture that decision — the textbook case of "changing it removes a
+  // security control", and the reason the whole gate hangs off a config field
+  // instead of anything under the project tree an agent edits freely.
+  'extensions.approvedToRun': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -282,6 +289,12 @@ export const CONFIG_WRITE_POLICY = {
   // SUFFICIENT — see REQUIRES_LOGIN_CONFIG_PATHS.
   'approvals.standingGrants': 'operator-only',
   'approvals.trustWindowMinutes': 'operator-only',
+  // Machine-managed: the moment the settings last stopped licensing standing
+  // permissions (DOR-520). Nothing should write it by hand at all, and the reason
+  // it is classified rather than merely undocumented is that moving it BACKWARDS
+  // resurrects every permission a posture change voided — the exact failure the
+  // marker exists to prevent, reachable in one patch.
+  'approvals.standingGrantsVoidBefore': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
@@ -346,6 +359,11 @@ export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
 export const REQUIRES_LOGIN_CONFIG_PATHS: readonly string[] = [
   'approvals.standingGrants',
   'approvals.trustWindowMinutes',
+  // The posture floor decides real behavior for the same reason the master switch
+  // does — the store consults it on every lookup — and moving it backwards is the
+  // one write that can bring voided permissions back. With login off there is no
+  // cookie to ask for, so this bar is the only thing standing in front of it.
+  'approvals.standingGrantsVoidBefore',
 ];
 
 /** The `error` field every login-required refusal on a config write carries. */

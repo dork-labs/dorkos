@@ -89,14 +89,16 @@ describe('ChildProcessLauncher environment', () => {
     const env = await envSeenByChild({
       ANTHROPIC_MODEL: 'claude-haiku-4-5',
       ANTHROPIC_API_KEY: 'sk-test',
-      MARKETPLACE_AUTO_APPROVE: '1',
+      // A real case knob: the approval-expiry governance case shortens the
+      // decision window this way.
+      DORKOS_APPROVAL_TTL_MS: '5000',
     });
 
     // Only the four placement variables are the harness's; everything else is
     // exactly what a case needs `serverEnv` for.
     expect(env.ANTHROPIC_MODEL).toBe('claude-haiku-4-5');
     expect(env.ANTHROPIC_API_KEY).toBe('sk-test');
-    expect(env.MARKETPLACE_AUTO_APPROVE).toBe('1');
+    expect(env.DORKOS_APPROVAL_TTL_MS).toBe('5000');
   });
 
   it('strips the harness`s own test-mode flags so a credentialed boot never inherits them', async () => {

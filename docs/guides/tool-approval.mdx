@@ -157,6 +157,14 @@ Each session has a permission mode that sets how Claude handles tool approvals. 
   trust the agent completely.
 </Callout>
 
+<Callout type="info">
+  **This covers tools inside the session, and nothing else.** Actions on DorkOS itself, like
+  removing an installed package, still ask you first even in bypass permissions mode. Those are a
+  separate question with its own setting: see [Action approvals](/docs/guides/action-approvals). You
+  will see the same reminder next to the permission picker whenever you choose a mode that skips
+  prompts.
+</Callout>
+
 ### Auto mode
 
 <Callout type="info">

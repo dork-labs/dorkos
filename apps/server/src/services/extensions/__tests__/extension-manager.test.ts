@@ -86,7 +86,7 @@ describe('ExtensionManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: [] });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');
   });
@@ -95,7 +95,7 @@ describe('ExtensionManager', () => {
 
   it('initializes by cleaning cache, discovering, and compiling enabled extensions', async () => {
     const enabledRecord = makeRecord('ext-a', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-a'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-a'], disabled: [], approvedToRun: ['ext-a'] });
     mockDiscover.mockResolvedValue([enabledRecord]);
     mockCompile.mockResolvedValue({ code: 'compiled code', sourceHash: 'abc123' });
 
@@ -104,7 +104,7 @@ describe('ExtensionManager', () => {
     expect(mockCleanStaleCache).toHaveBeenCalledOnce();
     expect(mockDiscover).toHaveBeenCalledWith(
       '/my/project',
-      { enabled: ['ext-a'], disabled: [] },
+      { enabled: ['ext-a'], disabled: [], approvedToRun: ['ext-a'] },
       expect.any(Map)
     );
     expect(mockCompile).toHaveBeenCalledWith(enabledRecord);
@@ -125,7 +125,11 @@ describe('ExtensionManager', () => {
     expect(result!.extension.status).toBe('compiled');
     expect(result!.extension.bundleReady).toBe(true);
     expect(result!.reloadRequired).toBe(true);
-    expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: ['ext-a'], disabled: [] });
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+      enabled: ['ext-a'],
+      disabled: [],
+      approvedToRun: [],
+    });
   });
 
   // === 3. Enable with compile error ===
@@ -160,7 +164,7 @@ describe('ExtensionManager', () => {
 
   it('disables an extension: removes from config and resets status', async () => {
     const record = makeRecord('ext-c', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-c'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-c'], disabled: [], approvedToRun: ['ext-c'] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -173,7 +177,14 @@ describe('ExtensionManager', () => {
     expect(result!.extension.bundleReady).toBe(false);
     expect(result!.extension.error).toBeUndefined();
     expect(result!.reloadRequired).toBe(true);
-    expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: [], disabled: [] });
+    // `approvedToRun` survives the toggle. Turning an extension off is not
+    // withdrawing consent to run its code, and re-enabling it must not re-ask a
+    // person for something they already decided (DOR-516).
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+      enabled: [],
+      disabled: [],
+      approvedToRun: ['ext-c'],
+    });
   });
 
   // === 5. Reject enable incompatible ===
@@ -227,7 +238,7 @@ describe('ExtensionManager', () => {
 
   it('reads bundle for compiled extensions', async () => {
     const record = makeRecord('ext-d', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-d'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-d'], disabled: [], approvedToRun: ['ext-d'] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hash456' });
     mockReadBundle.mockResolvedValue('bundle-code');
@@ -260,11 +271,161 @@ describe('ExtensionManager', () => {
     expect(bundle).toBeNull();
   });
 
+  /**
+   * The client bundle is the OTHER way extension code runs (DOR-516), and it was
+   * ungated. The chain, every link of it real: `create_extension` (tier `act`,
+   * always allowed) scaffolds and enables, `enable` compiles and sets
+   * `bundleReady`, the tool broadcasts a hot reload, the cockpit picks it up with
+   * no page refresh, and the browser `import()`s and `activate()`s the bundle. That
+   * code is same-origin JavaScript on the cockpit page, so a plain
+   * `fetch('/api/extensions/<id>/approve')` carries the person's session and no
+   * agent header — meaning the agent's unapproved client code could approve the
+   * agent's server code, with Require login ON.
+   */
+  describe('the client bundle is gated too (DOR-516)', () => {
+    it('withholds the bundle of a compiled extension nobody approved', async () => {
+      const record = makeRecord('unapproved', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['unapproved'],
+        disabled: [],
+        approvedToRun: [],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hash789' });
+      mockReadBundle.mockResolvedValue('bundle-code');
+
+      await manager.initialize(null);
+      // It compiled, and it is ready to serve — the two things the old check asked.
+      expect(manager.get('unapproved')).toMatchObject({ status: 'compiled', bundleReady: true });
+
+      const bundle = await manager.readBundle('unapproved');
+
+      expect(bundle).toBeNull();
+      // Not merely "the caller got null": the compiler was never asked, so there is
+      // no path where the bytes leave this process.
+      expect(mockReadBundle).not.toHaveBeenCalled();
+    });
+
+    it('serves it the moment the person approves, with no recompile', async () => {
+      const record = makeRecord('waiting', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({ enabled: ['waiting'], disabled: [], approvedToRun: [] });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hashabc' });
+      mockReadBundle.mockResolvedValue('bundle-code');
+
+      await manager.initialize(null);
+      expect(await manager.readBundle('waiting')).toBeNull();
+
+      mockConfigGet.mockReturnValue({
+        enabled: ['waiting'],
+        disabled: [],
+        approvedToRun: ['waiting'],
+      });
+
+      expect(await manager.readBundle('waiting')).toBe('bundle-code');
+      expect(mockReadBundle).toHaveBeenCalledWith('waiting', 'hashabc');
+    });
+
+    it('never withholds a core extension, which DorkOS ships and never asks about', async () => {
+      const record = makeRecord('linear-issues', { status: 'enabled', origin: 'core' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['linear-issues'],
+        disabled: [],
+        approvedToRun: [],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'core-code', sourceHash: 'hashcore' });
+      mockReadBundle.mockResolvedValue('core-code');
+
+      await manager.initialize(null);
+
+      expect(await manager.readBundle('linear-issues')).toBe('core-code');
+    });
+
+    it('reads the approval list, not some other list that happens to hold the id', async () => {
+      // A gate that consulted `enabled` instead of `approvedToRun` would pass every
+      // extension an agent turned on — which is every extension an agent creates,
+      // since `create_extension` enables what it scaffolds.
+      const record = makeRecord('enabled-not-approved', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['enabled-not-approved'],
+        disabled: ['something-else'],
+        approvedToRun: ['a-different-extension'],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hashdef' });
+      mockReadBundle.mockResolvedValue('bundle-code');
+
+      await manager.initialize(null);
+
+      expect(await manager.readBundle('enabled-not-approved')).toBeNull();
+    });
+  });
+
+  /**
+   * Approval is keyed to the extension id and survives the edit → test → reload
+   * loop, deliberately. What it must NOT survive is the artifact being swapped for
+   * different code under the same name: `marketplace_install` is tier `act`, and
+   * `MarketplaceInstaller.update()` is an uninstall followed by a fresh install, so
+   * without this the second `foo` inherits the decision made about the first.
+   */
+  describe('forgetRunApproval, for code that is being replaced (DOR-516)', () => {
+    it('drops the id from the stored list and stops the extension', async () => {
+      const record = makeRecord('foo', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['foo'],
+        disabled: [],
+        approvedToRun: ['foo', 'bar'],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'c', sourceHash: 'h' });
+
+      await manager.initialize(null);
+      mockConfigSet.mockClear();
+
+      await manager.forgetRunApproval('foo');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: ['foo'],
+        disabled: [],
+        approvedToRun: ['bar'],
+      });
+    });
+
+    it('works for an id whose files are already gone, because uninstall stages them away', async () => {
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: ['gone'] });
+      mockDiscover.mockResolvedValue([]);
+
+      await manager.initialize(null);
+      mockConfigSet.mockClear();
+
+      await manager.forgetRunApproval('gone');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: [],
+        disabled: [],
+        approvedToRun: [],
+      });
+    });
+
+    it('writes nothing when there was no approval to forget', async () => {
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: ['other'] });
+      mockDiscover.mockResolvedValue([]);
+
+      await manager.initialize(null);
+      mockConfigSet.mockClear();
+
+      await manager.forgetRunApproval('never-approved');
+
+      expect(mockConfigSet).not.toHaveBeenCalled();
+    });
+  });
+
   // === 9. Report activated ===
 
   it('transitions status from compiled to active on reportActivated', async () => {
     const record = makeRecord('ext-f', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-f'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-f'], disabled: [], approvedToRun: ['ext-f'] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -291,7 +452,7 @@ describe('ExtensionManager', () => {
 
   it('transitions to activate_error with error message on reportActivateError', async () => {
     const record = makeRecord('ext-h', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-h'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-h'], disabled: [], approvedToRun: ['ext-h'] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -346,7 +507,7 @@ describe('ExtensionManager', () => {
       path: '/secret/path/to/ext',
       sourceHash: 'internalhash',
     });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-i'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-i'], disabled: [], approvedToRun: ['ext-i'] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'internalhash' });
 
@@ -399,7 +560,7 @@ describe('ExtensionManager', () => {
 
   it('does not duplicate ID in enabled list when enabling already-enabled extension', async () => {
     const record = makeRecord('ext-j', { status: 'disabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-j'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-j'], disabled: [], approvedToRun: ['ext-j'] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'hash' });
 
@@ -409,14 +570,18 @@ describe('ExtensionManager', () => {
 
     // setEnabled() strips the id from both lists before re-adding, so the
     // already-enabled id is written through exactly once (no duplicate).
-    expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: ['ext-j'], disabled: [] });
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+      enabled: ['ext-j'],
+      disabled: [],
+      approvedToRun: ['ext-j'],
+    });
     const lastEnabled = mockConfigSet.mock.calls.at(-1)![1].enabled as string[];
     expect(lastEnabled.filter((id) => id === 'ext-j')).toHaveLength(1);
   });
 
   it('reads bundle for active extensions', async () => {
     const record = makeRecord('ext-k', { status: 'enabled' });
-    mockConfigGet.mockReturnValue({ enabled: ['ext-k'], disabled: [] });
+    mockConfigGet.mockReturnValue({ enabled: ['ext-k'], disabled: [], approvedToRun: ['ext-k'] });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'activehash' });
     mockReadBundle.mockResolvedValue('active-bundle');
@@ -572,6 +737,10 @@ describe('ExtensionManager', () => {
       expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
         enabled: ['auto-enable'],
         disabled: [],
+        // Scaffolding never approves. `create_extension` writes files the agent is
+        // about to rewrite, so approving at scaffold time would approve whatever
+        // arrives next — which is the whole thing the gate exists to stop.
+        approvedToRun: [],
       });
     });
   });
@@ -579,6 +748,17 @@ describe('ExtensionManager', () => {
   // === reloadExtension (single) ===
 
   describe('reloadExtension', () => {
+    beforeEach(() => {
+      // These tests each seed a record with `status: 'disabled'` purely so
+      // `compileEnabled()` skips it during `initialize()` — a fixture convenience,
+      // not a claim that the user turned the extension off. `reloadExtension` asks
+      // stored CONFIG whether the extension is on, not `record.status`, precisely
+      // because status is the field the disabled-reload bug corrupts. So config has
+      // to say these are on, and approved to run.
+      const ids = ['my-ext', 'broken-ext', 'ext-reload', 'ext-fail'];
+      mockConfigGet.mockReturnValue({ enabled: ids, disabled: [], approvedToRun: ids });
+    });
+
     it('recompiles a single extension and returns compiled result', async () => {
       // Use 'disabled' status so compileEnabled() skips it during initialize
       const record = makeRecord('my-ext', { status: 'disabled' });
@@ -691,7 +871,7 @@ describe('ExtensionManager', () => {
 
     it('disabling a default-on core ext adds its id to disabled (not removed from enabled)', async () => {
       const manager = new ExtensionManager('/fake/dork-home', [onCore]);
-      mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: [] });
       mockDiscover.mockResolvedValue([
         makeRecord('marketplace', { status: 'enabled', origin: 'core' }),
       ]);
@@ -703,12 +883,13 @@ describe('ExtensionManager', () => {
       expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
         enabled: [],
         disabled: ['marketplace'],
+        approvedToRun: [],
       });
     });
 
     it('enabling a disabled default-on core ext removes its id from disabled', async () => {
       const manager = new ExtensionManager('/fake/dork-home', [onCore]);
-      mockConfigGet.mockReturnValue({ enabled: [], disabled: ['marketplace'] });
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: ['marketplace'], approvedToRun: [] });
       mockDiscover.mockResolvedValue([
         makeRecord('marketplace', { status: 'disabled', origin: 'core' }),
       ]);
@@ -717,12 +898,16 @@ describe('ExtensionManager', () => {
 
       await manager.enable('marketplace');
 
-      expect(mockConfigSet).toHaveBeenCalledWith('extensions', { enabled: [], disabled: [] });
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: [],
+        disabled: [],
+        approvedToRun: [],
+      });
     });
 
     it('enabling a default-off core ext adds its id to enabled', async () => {
       const manager = new ExtensionManager('/fake/dork-home', [offCore]);
-      mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: [] });
       mockDiscover.mockResolvedValue([
         makeRecord('hello-world', { status: 'disabled', origin: 'core' }),
       ]);
@@ -734,12 +919,13 @@ describe('ExtensionManager', () => {
       expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
         enabled: ['hello-world'],
         disabled: [],
+        approvedToRun: [],
       });
     });
 
     it('refuses to disable a canDisable:false core ext (returns null, no config write)', async () => {
       const manager = new ExtensionManager('/fake/dork-home', [lockedCore]);
-      mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: [] });
       mockDiscover.mockResolvedValue([makeRecord('locked', { status: 'enabled', origin: 'core' })]);
       mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'h' });
       await manager.initialize(null);

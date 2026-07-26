@@ -17,7 +17,14 @@ import { createDb, activityEvents } from '@dorkos/db';
 import { buildSoulContent } from '@dorkos/shared/convention-files';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
-import type { EvalCase, EvalSandbox, OracleContext, OracleResult } from '../../types.js';
+import type {
+  ApprovalDriverLog,
+  EvalCase,
+  EvalSandbox,
+  OracleContext,
+  OracleResult,
+} from '../../types.js';
+import { emptyApprovalLog } from '../../types.js';
 import { selectSuite } from '../index.js';
 import {
   agentSelfEditCase,
@@ -30,9 +37,38 @@ import {
 let sandbox: EvalSandbox;
 let root: string;
 
-/** An OracleContext over the seeded sandbox with an optional transcript. */
-function ctx(frames: SseFrame[] = []): OracleContext {
-  return { sandbox, baseUrl: 'http://unused', sessionId: 's', frames };
+/**
+ * An OracleContext over the seeded sandbox with an optional transcript and
+ * approval log.
+ *
+ * `approvals` is REQUIRED on the real contract and the runner always supplies it
+ * (`emptyApprovalLog()` when a case carries no policy), so this helper does the
+ * same. Defaulting it to an empty log rather than leaving it out is what lets an
+ * oracle that reads it fail with a verdict instead of a TypeError.
+ */
+function ctx(
+  frames: SseFrame[] = [],
+  approvals: ApprovalDriverLog = emptyApprovalLog()
+): OracleContext {
+  return { sandbox, baseUrl: 'http://unused', sessionId: 's', frames, approvals };
+}
+
+/** An approval log in which a person granted `capabilityId` before anything had happened. */
+function grantedBeforeAnything(capabilityId: string): ApprovalDriverLog {
+  return {
+    ...emptyApprovalLog(),
+    decisions: [
+      {
+        approvalId: 'a1',
+        capabilityId,
+        tier: 'act',
+        decision: 'granted',
+        decidedAt: new Date().toISOString(),
+        status: 200,
+        probe: { installed: false },
+      },
+    ],
+  };
 }
 
 /** A single `tool_call` frame for `toolName` (the shape `toolInvokedInStream` reads). */
@@ -90,8 +126,23 @@ describe('operate-DorkOS case metadata', () => {
     }
   });
 
-  it('the marketplace case auto-approves installs on the credentialed server', () => {
-    expect(marketplaceInstallCase.serverEnv).toEqual({ MARKETPLACE_AUTO_APPROVE: '1' });
+  it('the marketplace case answers its own install approval instead of switching the gate off', () => {
+    // The approval is answered through the real routes, so the case exercises
+    // production code. Nothing is turned off for it: no `serverEnv` at all.
+    expect(marketplaceInstallCase.approvalPolicy?.capability).toEqual({
+      capabilityId: 'marketplace.install',
+      decision: 'grant',
+    });
+    expect(marketplaceInstallCase.serverEnv).toBeUndefined();
+  });
+
+  it('the marketplace case allows only the two tools its task needs', () => {
+    // Deny-by-default is what stops an agent that gave up on the MCP tool and
+    // hand-built the package tree from making the filesystem oracle green.
+    expect(marketplaceInstallCase.approvalPolicy?.allowTools).toEqual([
+      'marketplace_search',
+      'marketplace_install',
+    ]);
   });
 });
 
@@ -262,9 +313,54 @@ describe('marketplace-search-and-install', () => {
     await writeFile(installedManifest, JSON.stringify({ name: 'eval-hello-plugin' }));
     const results = await runOracles(
       marketplaceInstallCase,
-      ctx([toolCallFrame('marketplace_install')])
+      ctx([toolCallFrame('marketplace_install')], grantedBeforeAnything('marketplace.install'))
     );
     expect(results.every((r) => r.passed)).toBe(true);
+  });
+
+  it('FAILS when nobody answered the install approval, even though it installed', async () => {
+    // The oracle that closed DOR-435's tracked gap: a materialized install tree
+    // is no longer enough on its own. Same filesystem state as the passing case,
+    // an empty approval log, and the case must go red.
+    const installedManifest = path.join(
+      sandbox.dorkHome,
+      'plugins',
+      'eval-hello-plugin',
+      '.dork',
+      'manifest.json'
+    );
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(path.dirname(installedManifest), { recursive: true });
+    await writeFile(installedManifest, JSON.stringify({ name: 'eval-hello-plugin' }));
+    const results = await runOracles(
+      marketplaceInstallCase,
+      ctx([toolCallFrame('marketplace_install')])
+    );
+    expect(byLabel(results, 'who approved it').passed).toBe(false);
+  });
+
+  it('FAILS when the install had ALREADY happened at the moment consent was given', async () => {
+    // The probe assertion, exercised on its own: an approval granted after the
+    // fact proves nothing about the gate holding.
+    const decidedTooLate: ApprovalDriverLog = {
+      ...emptyApprovalLog(),
+      decisions: [
+        {
+          approvalId: 'a1',
+          capabilityId: 'marketplace.install',
+          tier: 'act',
+          decision: 'granted',
+          decidedAt: new Date().toISOString(),
+          status: 200,
+          probe: { installed: true },
+        },
+      ],
+    };
+    const results = await runOracles(
+      marketplaceInstallCase,
+      ctx([toolCallFrame('marketplace_install')], decidedTooLate)
+    );
+    expect(byLabel(results, 'who approved it').passed).toBe(false);
   });
 
   it('FAILS when nothing was installed', async () => {

@@ -17,6 +17,7 @@ export default defineConfig({
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
     './src/schema/connected-accounts.ts',
+    './src/schema/rooms.ts',
   ],
   out: './drizzle',
   dialect: 'sqlite',

@@ -84,7 +84,7 @@ Edit the agent's description, runtime, and tags, and manage two collapsible sect
 
 Two sections here:
 
-- **Tools**: turn MCP (the protocol that lets Claude call DorkOS tools) tool groups on or off per agent: Tasks, Relay, Mesh, and Adapter. Each toggle has three states: inherited (follows global config), enabled, or disabled. Changes take effect on the next session. Disabling a group for one agent doesn't affect any other agent.
+- **Tools**: choose which tool groups this agent is told about: Tasks, Relay, Mesh, and Adapter. (These are MCP tools, the protocol that lets Claude call into DorkOS.) Each toggle has three states: inherited (follows global config), on, or off. Turning a group off leaves it out of the agent's instructions, so the agent stops reaching for those tools. It is guidance, not a lock: if the agent asks for one of them anyway, you still get an approval prompt before it runs. Changes take effect on the next session, and one agent's toggles never affect another agent.
 - **Skill Packs**: marketplace skill packs installed for this agent's directory, with a link to browse more.
 
 <Callout type="info">

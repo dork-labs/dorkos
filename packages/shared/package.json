@@ -176,10 +176,14 @@
     "./smart-groups": {
       "types": "./src/smart-groups.ts",
       "default": "./dist/smart-groups.js"
+    },
+    "./room-schemas": {
+      "types": "./src/room-schemas.ts",
+      "default": "./dist/room-schemas.js"
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"

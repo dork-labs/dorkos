@@ -140,7 +140,7 @@ function ToolGroupRow({
 }
 
 // ---------------------------------------------------------------------------
-// ToolsTab — per-agent tool access and safety limits.
+// ToolsTab — per-agent tool groups and safety limits.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -241,8 +241,10 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
       {supportsDorkTools ? (
         <>
           <p className="text-muted-foreground text-sm">
-            Control which tool groups are available to this agent. Leave unset to inherit global
-            defaults.
+            Choose which tool groups this agent is told about. Turn a group off and the agent stops
+            being told those tools exist, so it stops reaching for them. This is guidance, not a
+            lock: if the agent asks for one anyway, you still get an approval prompt. Leave a group
+            unset to inherit the global default.
           </p>
 
           <FieldCard>

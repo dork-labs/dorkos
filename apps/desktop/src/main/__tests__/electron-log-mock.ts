@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 
 /**
  * Test double for `electron-log`, mounted via
@@ -13,26 +13,38 @@ import { vi } from 'vitest';
  * `electron-log` is consumed as a default import, so the double is exported
  * as `default`.
  */
-const levels = {
+
+/** Where the double claims to be writing, for the "Open Logs" affordance. */
+const LOG_FILE_PATH = '/tmp/dorkos-desktop-test/logs/main.log';
+
+/** A level method. `electron-log` takes anything, like `console`. */
+type LogFn = Mock<(...args: unknown[]) => void>;
+
+/** Level names this app logs at. */
+const LEVELS = ['info', 'warn', 'error', 'debug', 'verbose'] as const;
+
+/**
+ * The slice of `electron-log` the main process actually uses. Written out
+ * rather than inferred: an inferred type here names `@vitest/spy` through a
+ * pnpm-internal path, which `tsc` rightly refuses to emit as portable.
+ */
+type ElectronLogMock = Record<(typeof LEVELS)[number], LogFn> & {
+  /** How the real module reports where it is writing. */
+  transports: { file: { getFile: () => { path: string } } };
+};
+
+const log: ElectronLogMock = {
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
   debug: vi.fn(),
   verbose: vi.fn(),
-};
-
-/**
- * `transports.file.getFile()` is how the real module reports where it is
- * writing; the crash-recovery module uses it for its "Open Logs" affordance.
- */
-const log = {
-  ...levels,
-  transports: { file: { getFile: () => ({ path: '/tmp/dorkos-desktop-test/logs/main.log' }) } },
+  transports: { file: { getFile: () => ({ path: LOG_FILE_PATH }) } },
 };
 
 export default log;
 
 /** Reset recorded log calls between tests — call from `beforeEach`. */
 export function resetLogMock(): void {
-  for (const fn of Object.values(levels)) fn.mockClear();
+  for (const level of LEVELS) log[level].mockClear();
 }

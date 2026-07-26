@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createMockRelay } from './fixtures.js';
 import { BaseRelayAdapter } from '../base-adapter.js';
 import type { RelayPublisher, DeliveryResult } from '../types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -61,12 +62,6 @@ class TestAdapter extends BaseRelayAdapter {
   }
 }
 
-function createMockRelay(): RelayPublisher {
-  return {
-    publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
-    onSignal: vi.fn().mockReturnValue(() => {}),
-  };
-}
 
 // === Tests ===
 

@@ -1,0 +1,105 @@
+/**
+ * Rooms subsystem barrel + factory (spec `rooms`, ADR 260726-170125).
+ *
+ * `createRoomSubsystem` wires the store, author registry, live broadcaster and
+ * service from the DB handle; `set/getRoomService` provide the module singleton
+ * the routes read, mirroring the `workspace` domain and the `runtimeRegistry`
+ * access idiom.
+ *
+ * @module server/services/rooms
+ */
+import { agents, eq, type Db } from '@dorkos/db';
+import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
+import { AuthorRegistry } from './author-registry.js';
+import type { RoomAgentLookup } from './room-errors.js';
+import { RoomService } from './room-service.js';
+import { RoomStore } from './room-store.js';
+import { RoomBroadcaster } from './room-stream.js';
+
+/** The wired rooms subsystem. */
+export interface RoomSubsystem {
+  service: RoomService;
+  store: RoomStore;
+  authors: AuthorRegistry;
+  broadcaster: RoomBroadcaster;
+}
+
+/**
+ * Read an agent's handle, display name and manifest `responseMode` out of the
+ * mesh cache, keyed on its directory. The default {@link RoomAgentLookup}.
+ *
+ * Keyed on `agents.project_path` (`NOT NULL UNIQUE`) rather than the manifest
+ * ULID, so a reconciler rebuild that re-registers every agent under a fresh
+ * ULID changes nothing here (ADR 260726-170126).
+ *
+ * @param db - The consolidated DB handle.
+ */
+function createAgentLookup(db: Db): RoomAgentLookup {
+  return {
+    byPath(agentPath) {
+      const row = db.select().from(agents).where(eq(agents.projectPath, agentPath)).get();
+      if (!row) return null;
+      const behavior = AgentBehaviorSchema.safeParse(safeJson(row.behaviorJson));
+      return {
+        name: row.name,
+        displayName: row.displayName ?? row.name,
+        responseMode: behavior.success ? behavior.data.responseMode : 'always',
+      };
+    },
+  };
+}
+
+/** Parse a JSON column, degrading to an empty object rather than throwing. */
+function safeJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Wire the rooms subsystem from the DB handle.
+ *
+ * @param opts.db - The consolidated DB handle.
+ * @param opts.agents - Agent lookup override; defaults to the mesh-cache reader.
+ */
+export function createRoomSubsystem(opts: { db: Db; agents?: RoomAgentLookup }): RoomSubsystem {
+  const store = new RoomStore(opts.db);
+  const authors = new AuthorRegistry(opts.db);
+  const broadcaster = new RoomBroadcaster();
+  const service = new RoomService({
+    store,
+    authors,
+    broadcaster,
+    agents: opts.agents ?? createAgentLookup(opts.db),
+  });
+  return { service, store, authors, broadcaster };
+}
+
+let active: RoomService | null = null;
+
+/**
+ * Register the active RoomService at bootstrap.
+ *
+ * @param service - The wired service.
+ */
+export function setRoomService(service: RoomService): void {
+  active = service;
+}
+
+/** Read the active RoomService (throws if bootstrap has not run). */
+export function getRoomService(): RoomService {
+  if (!active) throw new Error('RoomService not initialized');
+  return active;
+}
+
+// The barrel carries only what leaves this domain: the service the routes call,
+// the typed refusals they map onto status codes, and the author shape the
+// caller-resolution helper returns. Everything else — the store, the roster,
+// the broadcaster, and the pure addressing/cascade/mention rules — is imported
+// from its own module by the code that uses it, so this file does not accrue a
+// re-export for every symbol the domain happens to have.
+export { RoomService } from './room-service.js';
+export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
+export type { AuthorRecord } from './author-registry.js';

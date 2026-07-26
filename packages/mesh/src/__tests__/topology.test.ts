@@ -15,6 +15,8 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     runtime: 'claude-code',
     capabilities: [],
     behavior: { responseMode: 'always' },
+    personaEnabled: true,
+    enabledToolGroups: {},
     registeredAt: '2026-02-24T00:00:00.000Z',
     registeredBy: 'test',
     projectPath: '/projects/agent-a',

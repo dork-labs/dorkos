@@ -715,8 +715,9 @@ function stillInstalled(probe: unknown): boolean {
  * 6. no `*.dorkos-bak-*` sibling was left behind, so no uninstall transaction got
  *    half-way in.
  *
- * No `MARKETPLACE_AUTO_APPROVE`: the marketplace install case's auto-approve
- * would defeat the entire point of this one.
+ * Its `approvalPolicy` deliberately names NO capability, so the driver answers
+ * no approval at all. That is the whole case: the silence is the input, and a
+ * policy that decided anything here would defeat it.
  */
 export const approvalExpiresCase: EvalCase = {
   id: 'governance-approval-expires',

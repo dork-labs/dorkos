@@ -52,7 +52,7 @@ function makeEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope {
 }
 
 function makeAdapter(overrides: Partial<TestModeRelayAdapterOptions> = {}): TestModeRelayAdapter {
-  const scenarios: RuntimeOutboundEvent[] = overrides.scenarios ?? [
+  const scenarios: readonly RuntimeOutboundEvent[] = overrides.scenarios ?? [
     { type: 'session_status', data: { sessionId: 'session-1' } },
     { type: 'text_delta', data: { text: 'Echo: hi' } },
     { type: 'done', data: { sessionId: 'session-1' } },

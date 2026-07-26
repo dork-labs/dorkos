@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
 import type { MockServerProcess } from './server-child-mock';
+import type { ShowMessageBox } from './electron-mock';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../../shared/boot-timeouts';
 
 /**
@@ -125,7 +126,7 @@ function stubPackagedPaths(): () => void {
 }
 
 /** A dialog that never settles — for tests that only care that it was shown. */
-function pendingDialog(): () => Promise<Electron.MessageBoxReturnValue> {
+function pendingDialog(): ShowMessageBox {
   return () => new Promise<Electron.MessageBoxReturnValue>(() => {});
 }
 
@@ -166,10 +167,25 @@ function dialogOptions(dialog: ElectronMock['dialog'], index: number): Electron.
  * be driven to an end, not abandoned.
  */
 function userClicksRestart(dialog: ElectronMock['dialog'], times: number): void {
-  dialog.showMessageBox = vi.fn(async () => ({
+  dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
     response: dialogCalls(dialog).length > times ? 1 : 0,
     checkboxChecked: false,
   }));
+}
+
+/**
+ * Await a `startServer()` call expected to reject, and hand back its error.
+ *
+ * Replaces `started.catch((e) => e as Error)`, which typed as `number | Error`
+ * and — worse — resolved silently if the call unexpectedly *succeeded*.
+ */
+async function startupError(started: Promise<number>): Promise<Error> {
+  try {
+    await started;
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error('expected startServer() to reject, but it resolved');
 }
 
 /** The `detail` of the `index`-th message box. */
@@ -249,7 +265,7 @@ describe('startServer — the readiness handshake', () => {
     child.emitExit(1);
 
     // index.ts renders this message into its "DorkOS couldn't start" box.
-    const err = await started.catch((e: unknown) => e as Error);
+    const err = await startupError(started);
     expect(err.message).toContain('The server reported:');
     expect(err.message).toContain('already using ~/.dork (pid 8123, port 4242)');
     expect(err.message).toContain('Quit that server');
@@ -272,7 +288,7 @@ describe('startServer — the readiness handshake', () => {
     }
     child.emitExit(1);
 
-    const err = await started.catch((e: unknown) => e as Error);
+    const err = await startupError(started);
     expect(err.message).toContain('already using ~/.dork (pid 8123)');
     // Frames are the bulk of a dump and the least useful thing in a dialog;
     // electron-log still has the whole trace.
@@ -291,7 +307,7 @@ describe('startServer — the readiness handshake', () => {
     child.emitStderr(`trailing ${'detail '.repeat(80)}`);
     child.emitExit(1);
 
-    const err = await started.catch((e: unknown) => e as Error);
+    const err = await startupError(started);
     // Both ends survive; the middle is elided rather than silently dropped.
     expect(err.message).toContain('first line: the reason');
     expect(err.message).toContain('noise line 39');
@@ -316,7 +332,7 @@ describe('startServer — the readiness handshake', () => {
     child.emitStderrChunk(`${token.slice(22)} from disk\n`);
     child.emitExit(1);
 
-    const err = await started.catch((e: unknown) => e as Error);
+    const err = await startupError(started);
     expect(err.message).toContain('[redacted]');
     expect(err.message).not.toContain('dork_mcp_local_');
     expect(err.message).not.toContain(token.slice(22, 40));
@@ -343,7 +359,7 @@ describe('startServer — the readiness handshake', () => {
     child.emitStderrChunk(marker);
     child.emitExit(1);
 
-    const err = await started.catch((e: unknown) => e as Error);
+    const err = await startupError(started);
     expect(err.message).toContain('[redacted]');
     expect(err.message).not.toContain(marker);
     for (const line of err.message.split('\n')) expect(line.length).toBeLessThanOrEqual(210);
@@ -358,7 +374,7 @@ describe('startServer — the readiness handshake', () => {
     child.emitStderrChunk('FATAL: the data directory is locked by pid 8123');
     child.emitExit(1);
 
-    const err = await started.catch((e: unknown) => e as Error);
+    const err = await startupError(started);
     expect(err.message).toContain('locked by pid 8123');
   });
 
@@ -451,7 +467,7 @@ describe('startServer — the readiness handshake', () => {
 
   it('ignores a late exit from a child it already gave up on', async () => {
     const { dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn(pendingDialog());
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer } = await import('../server-process');
 
     const failing = startServer();
@@ -549,7 +565,7 @@ describe('the crash monitor', () => {
   it('treats a clean exit after startup as a crash and stops reporting a port (C1)', async () => {
     const { dialog } = await getElectronMock();
     const { default: log } = await getLogMock();
-    dialog.showMessageBox = vi.fn(pendingDialog());
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer, getServerPort } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -564,7 +580,7 @@ describe('the crash monitor', () => {
 
   it('treats death by signal (exit code null) as a crash (C1)', async () => {
     const { dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn(pendingDialog());
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer, getServerPort } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -579,7 +595,7 @@ describe('the crash monitor', () => {
     const { default: log } = await getLogMock();
     // The app is in the background — the single most likely real crash.
     BrowserWindow.getFocusedWindow = vi.fn(() => null);
-    dialog.showMessageBox = vi.fn(pendingDialog());
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -597,7 +613,7 @@ describe('the crash monitor', () => {
     const tracked = new BrowserWindow({ width: 1200, height: 800 });
     const somethingElse = new BrowserWindow({ width: 400, height: 300 });
     BrowserWindow.getFocusedWindow = vi.fn(() => somethingElse);
-    dialog.showMessageBox = vi.fn(pendingDialog());
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer } = await import('../server-process');
 
     const { child } = await startReadyServer(
@@ -612,7 +628,10 @@ describe('the crash monitor', () => {
   it('restarts on request, reloads the window, and never reports a stale port', async () => {
     const { BrowserWindow, dialog } = await getElectronMock();
     const tracked = new BrowserWindow({ width: 1200, height: 800 });
-    dialog.showMessageBox = vi.fn(async () => ({ response: 0, checkboxChecked: false }));
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
+      response: 0,
+      checkboxChecked: false,
+    }));
     const { startServer, getServerPort } = await import('../server-process');
 
     const { port, child } = await startReadyServer(
@@ -639,7 +658,10 @@ describe('the crash monitor', () => {
       const { app, BrowserWindow, dialog } = await getElectronMock();
       app.isPackaged = true;
       const tracked = new BrowserWindow({ width: 1200, height: 800 });
-      dialog.showMessageBox = vi.fn(async () => ({ response: 0, checkboxChecked: false }));
+      dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
+      response: 0,
+      checkboxChecked: false,
+    }));
       const { startServer, getServerPort } = await import('../server-process');
 
       const started = startServer(() => tracked as unknown as Electron.BrowserWindow);
@@ -696,7 +718,7 @@ describe('the crash monitor', () => {
     // The user takes the leftmost button — but only so many times. Bounding
     // the fake user means an implementation with no cap terminates too, and
     // fails on the assertions below rather than by killing the test worker.
-    dialog.showMessageBox = vi.fn(async () => ({
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
       response: dialogCalls(dialog).length > IMPATIENT_USER_CLICKS ? 1 : 0,
       checkboxChecked: false,
     }));
@@ -726,7 +748,7 @@ describe('the crash monitor', () => {
 
   it('caps a server that keeps booting and dying, not just one that fails to spawn', async () => {
     const { app, dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn(async () => ({
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
       response: dialogCalls(dialog).length > IMPATIENT_USER_CLICKS ? 1 : 0,
       checkboxChecked: false,
     }));
@@ -790,7 +812,10 @@ describe('the crash monitor', () => {
 
   it('quits when the user declines the restart', async () => {
     const { app, dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn(async () => ({ response: 1, checkboxChecked: false }));
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
+      response: 1,
+      checkboxChecked: false,
+    }));
     const { startServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -817,7 +842,7 @@ describe('the crash monitor', () => {
 describe('stopServer', () => {
   it('returns promptly when the child has already exited (M1)', async () => {
     const { dialog } = await getElectronMock();
-    dialog.showMessageBox = vi.fn(pendingDialog());
+    dialog.showMessageBox = vi.fn<ShowMessageBox>(pendingDialog());
     const { startServer, stopServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);

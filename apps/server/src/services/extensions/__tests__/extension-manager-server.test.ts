@@ -153,7 +153,31 @@ describe('ExtensionManager — server lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     lastWrittenCodeRef.value = '';
-    mockConfigGet.mockReturnValue({ enabled: [], disabled: [] });
+    // Every extension this file uses is pre-approved to run in the server, because
+    // these tests are about what happens AFTER a person said yes: compiling,
+    // requiring the entry, mounting the router, tearing it down. The gate that
+    // decides whether they get that far (DOR-516) is covered in
+    // `extension-load-policy.test.ts` and `extension-load-gate.test.ts`; leaving it
+    // unapproved here would silently turn every assertion below into a re-test of
+    // the gate.
+    mockConfigGet.mockReturnValue({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [
+        'srv-ext',
+        'no-srv',
+        'disabled-srv',
+        'bad-srv',
+        'throw-srv',
+        'obj-srv',
+        'reinit-ext',
+        'shutdown-ext',
+        'router-ext',
+        'auto-srv',
+        'fail-srv',
+        'dis-srv',
+      ],
+    });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');
   });
@@ -465,7 +489,11 @@ describe('ExtensionManager — server lifecycle', () => {
         hasServerEntry: true,
         serverEntryPath: '/fake/extensions/reload-srv/server.ts',
       });
-      mockConfigGet.mockReturnValue({ enabled: ['reload-srv'], disabled: [] });
+      mockConfigGet.mockReturnValue({
+        enabled: ['reload-srv'],
+        disabled: [],
+        approvedToRun: ['reload-srv'],
+      });
       mockDiscover.mockResolvedValue([record]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
       mockCompileServer.mockResolvedValue({
@@ -498,7 +526,11 @@ describe('ExtensionManager — server lifecycle', () => {
         status: 'enabled',
         hasServerEntry: false,
       });
-      mockConfigGet.mockReturnValue({ enabled: ['startup-srv', 'startup-client'], disabled: [] });
+      mockConfigGet.mockReturnValue({
+        enabled: ['startup-srv', 'startup-client'],
+        disabled: [],
+        approvedToRun: ['startup-srv', 'startup-client'],
+      });
       mockDiscover.mockResolvedValue([srvRecord, clientRecord]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
       mockCompileServer.mockResolvedValue({

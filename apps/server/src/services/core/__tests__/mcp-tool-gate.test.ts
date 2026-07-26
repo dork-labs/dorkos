@@ -354,15 +354,19 @@ describe('hand-registered MCP tools carry a permission tier', () => {
     });
 
     it('never lets a destructive tool into the always-on session set', () => {
-      // `SESSION_CORE_TOOL_NAMES` is the set `buildAllowedTools` puts in EVERY
-      // session's list regardless of the person's toggles, and that list is handed
-      // to the SDK's `allowedTools` — an approval bypass, not an availability
-      // filter (see `tooling/tool-filter.ts`). So a destructive tool landing in one
-      // of those groups is not a cosmetic miscategorization: it is an irreversible
-      // action that stops asking, for every agent, permanently.
+      // `SESSION_CORE_TOOL_NAMES` is the set no toggle gates, so it applies to every
+      // agent regardless of the person's toggles, and the cockpit presents it as
+      // always enabled. A destructive tool landing in one of those groups is not a
+      // cosmetic miscategorization: it is an irreversible action nobody can turn off.
+      //
+      // This assertion used to guard something sharper. Until DOR-519 the same set was
+      // handed to the SDK's `allowedTools`, an approval bypass rather than an
+      // availability filter, so a destructive tool in here stopped asking for approval
+      // for every agent, permanently. Nothing feeds `allowedTools` now, so the stakes
+      // are lower, but the pin stays: this is still the set a person cannot opt out of.
       //
       // Pinned by NAME rather than left to the count assertions in
-      // `tool-filter.test.ts`, which catch this only incidentally and say nothing
+      // `tool-filter.test.ts`, which caught this only incidentally and said nothing
       // about why it matters. Review demonstrated the gap: moving `tasks_delete`
       // from `tasks` to `core` passed `tsc` (the type-level guards compare key
       // SETS, and the keys do not change) and passed the whole targeted suite
@@ -370,7 +374,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // module to source.
       expect(
         DESTRUCTIVE.filter((name) => (SESSION_CORE_TOOL_NAMES as readonly string[]).includes(name)),
-        'a destructive tool is always-on and therefore permanently auto-approved'
+        'a destructive tool is always-on and therefore cannot be turned off'
       ).toEqual([]);
     });
 

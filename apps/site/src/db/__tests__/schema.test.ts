@@ -124,7 +124,7 @@ describe('marketplaceInstallEvents schema', () => {
   it('select type carries the receivedAt Date and bigint id', () => {
     // Smoke check on $inferSelect — confirms the table is correctly typed.
     const sample: MarketplaceInstallEvent = {
-      id: 1n,
+      id: BigInt(1),
       packageName: 'code-reviewer',
       marketplace: 'dorkos-community',
       type: 'agent',
@@ -136,7 +136,7 @@ describe('marketplaceInstallEvents schema', () => {
       sourceType: 'github',
       receivedAt: new Date('2026-04-07T00:00:00.000Z'),
     };
-    expect(sample.id).toBe(1n);
+    expect(sample.id).toBe(BigInt(1));
     expect(sample.receivedAt).toBeInstanceOf(Date);
   });
 });
@@ -235,7 +235,7 @@ describe('instanceHeartbeats schema', () => {
     expect(row.instanceId).toBe('00000000-0000-0000-0000-000000000000');
 
     const sample: InstanceHeartbeat = {
-      id: 1n,
+      id: BigInt(1),
       ...row,
       receivedAt: new Date('2026-07-11T00:00:00.000Z'),
     };
@@ -317,7 +317,7 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
   });
 
   it('account cluster foreign keys stay within the account cluster (session/account/deviceCode/instance → user)', () => {
-    const accountTableNames = new Set(
+    const accountTableNames = new Set<string>(
       [user, session, account, verification, apikey, deviceCode, instance].map((t) =>
         getTableName(t)
       )

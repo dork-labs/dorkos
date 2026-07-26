@@ -181,7 +181,23 @@ describe('ExtensionManager.testExtension', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockConfigGet.mockReturnValue({ enabled: [] });
+    // Every extension this block uses is pre-approved to run, because these tests
+    // are about the compile-and-activate mechanics AFTER a person said yes. The
+    // gate itself (DOR-516) is covered separately in `extension-load-policy.test.ts`
+    // and by the refusal test at the bottom of this block — approving here would
+    // otherwise make the gate the only thing any of these assert.
+    mockConfigGet.mockReturnValue({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [
+        'broken-ext',
+        'cache-miss',
+        'throw-ext',
+        'no-activate',
+        'good-ext',
+        'empty-ext',
+      ],
+    });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');
   });

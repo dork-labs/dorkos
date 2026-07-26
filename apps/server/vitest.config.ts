@@ -21,13 +21,24 @@ export default defineConfig({
     //   leaves of `UserConfigSchema` to prove every config field has been
     //   classified for the tokenless `config_get` surface. Against a stale dist a
     //   newly added field reads as "already classified".
-    // - `mcp-tool-groups` backs the tool-group guards, and it decides
-    //   `buildAllowedTools`, which is an APPROVAL BYPASS list (see
-    //   `services/runtimes/claude-code/tooling/tool-filter.ts`). Measured against
-    //   a stale dist: moving `tasks_delete` into an always-on group, making a
-    //   destructive tool permanently auto-approved, passed all 85 targeted tests
-    //   AND `tsc`, because the type-level assertions only compare key SETS and the
-    //   keys had not changed. With the alias the same edit fails immediately.
+    // - `mcp-tool-groups` backs the tool-group guards, which decide what the cockpit
+    //   shows for each toggle and which groups no toggle gates. Measured against a
+    //   stale dist, back when this table also fed the SDK's `allowedTools`: moving
+    //   `tasks_delete` into an always-on group, making a destructive tool permanently
+    //   auto-approved, passed all 85 targeted tests AND `tsc`, because the type-level
+    //   assertions only compare key SETS and the keys had not changed. Nothing feeds
+    //   `allowedTools` anymore (DOR-519), so that exact edit no longer bypasses a
+    //   prompt, but the guard is still the only thing that notices the table moved,
+    //   and a stale dist still turns it into decoration. With the alias the same edit
+    //   fails immediately.
+    // - `@dorkos/operating-skills` backs the tier-consistency guard
+    //   (`services/core/__tests__/operating-skills-tier-consistency.test.ts`),
+    //   which reads the SKILL PROSE agents are seeded with and checks it against
+    //   everything that declares a `destructive` tier. Its whole subject is the text
+    //   of that package, so a dist copy is the wrong text by construction:
+    //   reintroducing "carries no gate of its own" in `src/` would pass against a
+    //   dist built before the edit. That is the DOR-509 bug itself, checked by a test
+    //   that cannot see it.
     //
     // Scoped to these modules on purpose. Aliasing all 43 subpaths made every
     // worker re-transform the whole package and took the suite from ~51s to
@@ -54,6 +65,19 @@ export default defineConfig({
         find: '@dorkos/shared/mcp-tool-groups',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/mcp-tool-groups.ts', import.meta.url)
+        ),
+      },
+      {
+        // Anchored, unlike the two above. A bare string `find` is a PREFIX match
+        // in Vite, and the two entries above happen to be safe because they are
+        // already full subpaths with nothing beneath them. This one is a package
+        // ROOT: as a bare string it would also swallow a future
+        // `@dorkos/operating-skills/seed` and rewrite it to `.../src/index.ts/seed`,
+        // which resolves to nothing. The package exports only `.` today, so the
+        // regex is what keeps that a build error instead of a silent one later.
+        find: /^@dorkos\/operating-skills$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/operating-skills/src/index.ts', import.meta.url)
         ),
       },
     ],

@@ -21,6 +21,7 @@ import {
   ResponsiveDropdownMenuLabel,
   ResponsiveDropdownMenuRadioGroup,
   ResponsiveDropdownMenuRadioItem,
+  PermissionModeScopeNote,
   Tooltip,
   TooltipTrigger,
   TooltipContent,
@@ -194,6 +195,9 @@ export function PermissionModeItem({
             );
           })}
         </ResponsiveDropdownMenuRadioGroup>
+        {/* Sits under the list, so it reads as a note about the choice just made
+            rather than as part of any one option. */}
+        <PermissionModeScopeNote mode={mode} className="px-2 py-1.5" />
         {autoFiltered && (
           <Tooltip>
             <TooltipTrigger asChild>

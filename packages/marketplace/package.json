@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit && tsc -p scripts",
     "test": "vitest",
     "check-categories": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/run-check-categories.ts",

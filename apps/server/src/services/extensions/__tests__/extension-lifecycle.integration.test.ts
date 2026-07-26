@@ -15,7 +15,7 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 
 /** No user overrides; no core extensions (everything resolves to origin 'user'). */
-const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [] };
+const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
 const EMPTY_CORE = new Map<string, CoreExtensionInfo>();
 
 // Suppress noisy log output during integration tests
@@ -227,7 +227,7 @@ describe('Extension Lifecycle Integration', () => {
   it('marks extension as enabled when its ID is in the enabled list', async () => {
     const records = await discovery.discover(
       null,
-      { enabled: ['hello-world'], disabled: [] },
+      { enabled: ['hello-world'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -239,7 +239,7 @@ describe('Extension Lifecycle Integration', () => {
   it('marks extension as disabled when its ID is not in the enabled list', async () => {
     const records = await discovery.discover(
       null,
-      { enabled: ['some-other-ext'], disabled: [] },
+      { enabled: ['some-other-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -480,7 +480,7 @@ describe('Extension Lifecycle Integration', () => {
 
     const records = await discovery.discover(
       null,
-      { enabled: ['future-ext'], disabled: [] },
+      { enabled: ['future-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
     const future = records.find((r) => r.id === 'future-ext');
@@ -662,7 +662,7 @@ describe('Extension Lifecycle Integration', () => {
     // Step 1: Discover
     const records1 = await discovery.discover(
       null,
-      { enabled: ['roundtrip-ext'], disabled: [] },
+      { enabled: ['roundtrip-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
     const ext1 = records1.find((r) => r.id === 'roundtrip-ext');
@@ -693,7 +693,7 @@ describe('Extension Lifecycle Integration', () => {
     // Step 5: Rediscover — extension should still be there
     const records2 = await discovery.discover(
       null,
-      { enabled: ['roundtrip-ext'], disabled: [] },
+      { enabled: ['roundtrip-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
     const ext2 = records2.find((r) => r.id === 'roundtrip-ext');

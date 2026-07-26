@@ -22,3 +22,4 @@ export * from './session-events.js';
 export * from './workspace.js';
 export * from './auth.js';
 export * from './connected-accounts.js';
+export * from './rooms.js';

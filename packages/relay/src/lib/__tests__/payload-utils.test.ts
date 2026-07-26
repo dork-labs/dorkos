@@ -400,7 +400,9 @@ function makeEnvelope(payload: unknown): RelayEnvelope {
     subject: 'relay.test',
     payload,
     ts: Date.now(),
-  } as RelayEnvelope;
+    // Only `payload` is read by the functions under test; the rest of
+    // RelayEnvelope is deliberately absent, so this cannot be a direct assertion.
+  } as unknown as RelayEnvelope;
 }
 
 describe('extractAgentIdFromEnvelope', () => {
