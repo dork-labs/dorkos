@@ -6,6 +6,7 @@ covers:
   - 'fix(ui): close the gaps review found in the channel-to-integration rename (DOR-523)'
   - 'fix(client): dispatch the room SSE events the rooms PR forgot to allowlist'
   - 'fix(server): stop hardcoding port 4242 in the extension-approval origin test'
+  - "fix(relay): wire VITEST_RETRY into the relay package's vitest config"
 ---
 
 ### Changed
