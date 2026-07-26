@@ -20,6 +20,8 @@ import { getDevtoolsTools } from './devtools-tools.js';
 import { getExtensionTools } from './extension-tools.js';
 import { capabilityMcpTools } from './capability-mcp-tools.js';
 import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
+import type { AgentIdentity } from '../../../core/agent-identity/index.js';
+import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../../../core/mcp-tool-gate.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 import type { CapabilityRegistry } from '../../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/dorkos-registry.js';
@@ -95,6 +97,67 @@ export {
   createTestExtensionHandler,
 } from './extension-tools.js';
 /**
+ * Every hand-registered in-session tool, behind the tier gate.
+ *
+ * This is the whole hand-registered surface in one place, and the tier gate wraps
+ * all of it (DOR-468): the wrap resolves each tool's tier eagerly, so a tool added
+ * without one throws here rather than running ungated. The registry-generated tools
+ * are deliberately NOT in this list — `registry.invoke` gates those from the
+ * inside, and wrapping them twice would ask a person to approve one action twice.
+ *
+ * Exported so the gate's tests drive the SAME list the server builds. A test that
+ * restated the domains would go green while a real domain quietly stopped being
+ * gated, which is the exact failure this whole feature exists to stop.
+ *
+ * @param deps - Shared tool dependencies (relay, tasks, mesh, etc.).
+ * @param options - Per-query session context; every field is absent on the
+ *   introspection and unit-test paths, which then gate as an unidentified caller.
+ * @returns The gated tool definitions.
+ * @throws If any tool declares no tier in `MCP_TOOL_TIERS`.
+ */
+export function handRegisteredInSessionTools(
+  deps: McpToolDeps,
+  options: {
+    /** Per-query session for UI tool event emission and state access. */
+    session?: import('./ui-tools.js').UiToolSession;
+    /** Per-query trigger session id (DevTools read fallback). */
+    sessionId?: string;
+    /** Resolves the calling agent for this session; see `mcp-tool-gate.ts`. */
+    resolveContext?: () => Promise<{ identity?: AgentIdentity } | undefined>;
+  } = {}
+): SdkMcpTool[] {
+  const { session, sessionId, resolveContext } = options;
+  // Resolve the caller's trusted Relay identity from the session's working
+  // directory (its agent manifest), not from tool arguments — this is what
+  // relay `from`/namespace access rules key on.
+  const relayIdentity = resolveSenderIdentity(deps, session?.cwd);
+  // Read-time id resolution for the DevTools tools: prefer the live session's
+  // sdkSessionId (updated to the canonical id by the SDK init mid-first-turn,
+  // tracking the store's rekeySession) over the static trigger id. Absent both
+  // (external MCP surface / introspection stub), register the session-less
+  // error variants.
+  const resolveDevtoolsSessionId =
+    session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
+
+  return gateHandRegisteredMcpTools(
+    [
+      ...getCoreTools(deps),
+      ...getTasksTools(deps),
+      ...getRelayTools(deps, relayIdentity),
+      ...getAdapterTools(deps),
+      ...getBindingTools(deps),
+      ...getTraceTools(deps),
+      ...getMeshTools(deps),
+      ...getAgentTools(deps),
+      ...getUiTools(deps, session),
+      ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
+      ...getExtensionTools(deps),
+    ],
+    resolveContext
+  );
+}
+
+/**
  * Create the DorkOS MCP tool server with all registered tools.
  *
  * Called per SDK query (via `mcpServerFactory`) so each query gets a fresh
@@ -136,17 +199,6 @@ export function createDorkOsToolServer(
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry
 ) {
-  // Resolve the caller's trusted Relay identity from the session's working
-  // directory (its agent manifest), not from tool arguments — this is what
-  // relay `from`/namespace access rules key on.
-  const relayIdentity = resolveSenderIdentity(deps, session?.cwd);
-  // Read-time id resolution for the DevTools tools: prefer the live session's
-  // sdkSessionId (updated to the canonical id by the SDK init mid-first-turn,
-  // tracking the store's rekeySession) over the static trigger id. Absent both
-  // (external MCP surface / introspection stub), register the session-less
-  // error variants.
-  const resolveDevtoolsSessionId =
-    session || sessionId ? () => session?.sdkSessionId || sessionId || undefined : undefined;
   // Operator + marketplace + self-description tools, all generated from the
   // Capability Registry (shared boot instance, or composed on the spot).
   const capabilityRegistry =
@@ -156,26 +208,19 @@ export function createDorkOsToolServer(
       operatorDeps: deps,
       ...(marketplaceDeps && { marketplaceDeps }),
     });
+  // One resolver for both halves of the tool surface, so the session's identity is
+  // looked up once and the two paths cannot disagree about who is calling.
+  const resolveContext = createInSessionContextResolver(session?.cwd);
   const server = createSdkMcpServer({
     name: 'dorkos',
     version: '1.0.0',
     tools: [
-      ...getCoreTools(deps),
-      ...getTasksTools(deps),
-      ...getRelayTools(deps, relayIdentity),
-      ...getAdapterTools(deps),
-      ...getBindingTools(deps),
-      ...getTraceTools(deps),
-      ...getMeshTools(deps),
-      ...getAgentTools(deps),
-      ...getUiTools(deps, session),
-      ...getDevtoolsTools(deps, resolveDevtoolsSessionId, undefined, session),
-      ...getExtensionTools(deps),
-      ...capabilityMcpTools(
-        capabilityRegistry,
-        'in-session',
-        createInSessionContextResolver(session?.cwd)
-      ),
+      ...handRegisteredInSessionTools(deps, {
+        ...(session ? { session } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        resolveContext,
+      }),
+      ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveContext),
     ],
   });
 

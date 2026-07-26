@@ -71,8 +71,26 @@ export function capabilitiesForMcpServer(
 export function capabilityInputShape(capability: CapabilityDefinition): z.ZodRawShape {
   const shape = (capability.input as z.ZodObject<z.ZodRawShape>).shape;
   if (capability.tier !== 'destructive') return shape;
+  return { ...shape, ...approvalTokenArgument() };
+}
+
+/**
+ * The one extra MCP argument every `destructive` tool advertises, as a one-key
+ * field map ready to spread into an input shape.
+ *
+ * Both the registry projection ({@link capabilityInputShape}) and the
+ * hand-registered tool gate (`services/core/mcp-tool-gate.ts`) build their
+ * destructive input shapes from this, because the failure it prevents is the same
+ * on both paths and it is silent: an MCP argument that is not advertised is
+ * stripped by the SDK before the handler sees it, so a destructive tool that
+ * forgets this field tells the model to retry with a token the model has no way to
+ * deliver. The gate then asks again, forever. One definition, so a surface cannot
+ * advertise a token field the choke point does not read, or the reverse.
+ *
+ * @returns A one-key field map declaring the `approvalToken` argument.
+ */
+export function approvalTokenArgument(): z.ZodRawShape {
   return {
-    ...shape,
     [APPROVAL_TOKEN_ARGUMENT]: z
       .string()
       .optional()

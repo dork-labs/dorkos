@@ -15,6 +15,7 @@ import type { CapabilityRegistry } from './capabilities/index.js';
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { logger } from '../../lib/logger.js';
 import { SERVER_ICONS } from './mcp-tool-metadata.js';
+import { gatedToolRegistrar } from './mcp-tool-gate.js';
 
 /**
  * Create the external MCP server instance with all DorkOS tools registered.
@@ -82,12 +83,17 @@ export function createExternalMcpServer(
   // asserts its own `from`.
   const relayIdentity = resolveSenderIdentity(deps, undefined);
 
-  registerCoreTools(server, deps);
-  registerTaskTools(server, deps);
-  registerRelayTools(server, deps, relayIdentity);
-  registerBindingTools(server, deps);
-  registerMeshTools(server, deps);
-  registerAgentAndExtensionTools(server, deps);
+  // Every hand-registered tool goes on through the gated registrar, never onto
+  // `server` directly: that is what puts the permission tier in front of each one
+  // (DOR-468). The per-domain functions take a `ToolRegistrar`, so a new domain
+  // file has nothing ungated to register against.
+  const registrar = gatedToolRegistrar(server, identity);
+  registerCoreTools(registrar, deps);
+  registerTaskTools(registrar, deps);
+  registerRelayTools(registrar, deps, relayIdentity);
+  registerBindingTools(registrar, deps);
+  registerMeshTools(registrar, deps);
+  registerAgentAndExtensionTools(registrar, deps);
 
   // ── Registry-backed tools (operator + marketplace + self-description) ─────
   const capabilityRegistry =

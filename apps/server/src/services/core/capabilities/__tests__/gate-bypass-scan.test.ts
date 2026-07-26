@@ -107,6 +107,18 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
+    what: 'decides a permission tier, and is therefore the whole gate',
+    call: 'enforceCapabilityTier(',
+    allowed: {
+      'services/core/capabilities/registry.ts':
+        'the registry choke point — every capability inherits the gate from inside invoke (DOR-467)',
+      'services/core/mcp-tool-gate.ts':
+        'the hand-registered MCP tools, which are not registry capabilities and so cannot inherit it (DOR-468)',
+      'services/core/capabilities/tier-enforcement.ts':
+        'the definition itself, plus authorizeCapability next to it',
+    },
+  },
+  {
     what: 'mints the marker that skips the tier gate entirely',
     call: 'trustedCaller(',
     allowed: {
