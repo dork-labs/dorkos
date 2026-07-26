@@ -24,11 +24,45 @@ import { formatServerOutput } from './server-output';
  */
 const MAX_RESTART_FAILURES = 3;
 
+/**
+ * How long a server must stay up before it counts as having actually worked.
+ *
+ * Spawning successfully is not the same thing as staying up, and the difference
+ * is the whole point of this counter. A server that boots and dies seconds
+ * later — the renderer reloads onto the new port and re-issues the request that
+ * killed it, an OOM, a faulting native module — would otherwise reset the
+ * counter on every cycle and loop forever, which is the exact behaviour the cap
+ * exists to stop. A minute of service is a working server; anything shorter is
+ * another failure.
+ */
+const MIN_HEALTHY_UPTIME_MS = 60_000;
+
 /** Index of the leftmost (default) button in a `buttons` array. */
 const PRIMARY_BUTTON = 0;
 
-/** Restarts that have failed since the last time a server successfully started. */
+/** Restarts that have not produced a server that stayed up. */
 let consecutiveFailures = 0;
+
+/**
+ * True once the app is on its way out.
+ *
+ * Cmd+Q during a still-booting restart tears the child down, which surfaces as
+ * a failed restart — without this the shell would flash a dialog on the way
+ * out, over an `app.quit()` that is already winning.
+ */
+let quitting = false;
+
+/** Whether the `before-quit` listener has been attached (once per process). */
+let quitGuardArmed = false;
+
+/** Notice when the app starts quitting, so recovery can stand down. */
+function armQuitGuard(): void {
+  if (quitGuardArmed) return;
+  quitGuardArmed = true;
+  app.on('before-quit', () => {
+    quitting = true;
+  });
+}
 
 /** Options for {@link recoverFromCrash}. */
 export interface CrashRecoveryOptions {
@@ -36,20 +70,12 @@ export interface CrashRecoveryOptions {
   code: number | null;
   /** The child's last stderr lines — its own account of why it died. */
   output: string[];
+  /** How long the dead server had been serving, in ms. */
+  uptimeMs: number;
   /** Point-in-time accessor for the main window, to anchor dialogs to. */
   getWindow: () => BrowserWindow | null;
   /** Start a replacement server; resolves with the port it listens on. */
   restart: () => Promise<number>;
-}
-
-/**
- * Forget the failure history.
- *
- * Called by `startServer` on every successful start, so "consecutive" means
- * what it says: a restart that works clears the slate for the next incident.
- */
-export function resetRestartFailures(): void {
-  consecutiveFailures = 0;
 }
 
 /**
@@ -63,10 +89,23 @@ export function resetRestartFailures(): void {
  * @param options - See {@link CrashRecoveryOptions}.
  */
 export async function recoverFromCrash(options: CrashRecoveryOptions): Promise<void> {
-  const { code, output, getWindow, restart } = options;
+  const { code, output, uptimeMs, getWindow, restart } = options;
+  armQuitGuard();
+
+  // Account for the server that just died before deciding anything. One that
+  // served for a while was genuinely working, so this is a fresh incident; one
+  // that died almost immediately is another failure, whether or not it managed
+  // to start.
+  if (uptimeMs >= MIN_HEALTHY_UPTIME_MS) {
+    consecutiveFailures = 0;
+  } else {
+    consecutiveFailures += 1;
+  }
+
   let detail = crashDetail(code, output);
 
   for (;;) {
+    if (quitting) return;
     if (consecutiveFailures >= MAX_RESTART_FAILURES) {
       await giveUp(getWindow, detail);
       return;
@@ -107,7 +146,7 @@ async function giveUp(getWindow: () => BrowserWindow | null, detail: string): Pr
   const { response } = await ask(getWindow, {
     type: 'error',
     title: 'Server Error',
-    message: `DorkOS tried ${MAX_RESTART_FAILURES} times to start its server, and it did not come back.`,
+    message: `DorkOS tried ${MAX_RESTART_FAILURES} times to get its server running, and it did not stay up.`,
     detail: [detail, 'The full story is in the logs.'].filter(Boolean).join('\n\n'),
     buttons: ['Open Logs', 'Quit'],
   });

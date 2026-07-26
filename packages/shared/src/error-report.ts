@@ -103,6 +103,7 @@ const TOKEN_PATTERNS: RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._-]+/gi, // bearer tokens
   /\b(?:authorization|api[_-]?key|token|secret|password)\s*[:=]\s*\S+/gi, // key: value secrets
   /\b(?:keychain|env|file):[^\s"']+/g, // DorkOS credential references
+  /\bdork_[A-Za-z0-9_]*[0-9a-f]{32,}\b/g, // DorkOS API + per-instance MCP tokens
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+/g, // JWTs
 ];
 

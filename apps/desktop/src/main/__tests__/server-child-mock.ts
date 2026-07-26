@@ -125,11 +125,19 @@ export class MockServerProcess {
   }
 
   /**
-   * Test helper — the child wrote to stderr. A newline is appended so the
-   * supervisor's line splitting sees a complete line, as it would in reality.
+   * Test helper — the child wrote a complete stderr line, newline included.
+   *
+   * Convenient, but it is also a lie about real streams: it guarantees every
+   * line arrives whole. Use {@link emitStderrChunk} to reproduce a chunk that
+   * begins or ends mid-line, which is what actually happens on a pipe.
    */
   emitStderr(text: string): void {
     this.stderrStream.write(`${text}\n`);
+  }
+
+  /** Test helper — the child wrote a raw chunk, exactly as given. */
+  emitStderrChunk(chunk: string): void {
+    this.stderrStream.write(chunk);
   }
 
   /** Test helper — the child exited. `null` models death by signal. */

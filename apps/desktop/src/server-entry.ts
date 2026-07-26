@@ -78,6 +78,15 @@ function onParentMessage(handler: (msg: unknown) => void): void {
  * Signal 0 runs the kernel's existence and permission checks without
  * delivering anything. `EPERM` means the process is there but owned by someone
  * else — alive is alive; only `ESRCH` means it is gone.
+ *
+ * Known limit: a pid is not a durable identity. If the shell's pid is recycled
+ * by an unrelated process before the next poll, this reads "alive" and the
+ * orphan keeps running — and a recycled *root-owned* pid answers `EPERM`
+ * forever. Narrowing that needs the pid corroborated against its start time
+ * (`ps -o lstart=`), which is the approach the server's instance lock takes;
+ * this should adopt that helper rather than grow a second copy of it. Until
+ * then the window is small and dev-only, and the failure mode is the one that
+ * existed before this watchdog rather than a new one.
  */
 function isProcessAlive(pid: number): boolean {
   try {
@@ -110,6 +119,9 @@ function isProcessAlive(pid: number): boolean {
  * down from the shell sees straight through the wrapper.
  */
 function exitWhenOrphaned(): void {
+  // Unset, empty and malformed all land here: `Number(undefined)` is NaN and
+  // `Number('')` is 0, and neither survives the guard. A packaged build also
+  // deletes any inherited value (see server-spawn), so production never arms.
   const parentPid = Number(process.env.DORKOS_PARENT_PID);
   if (!Number.isInteger(parentPid) || parentPid <= 0) return;
 

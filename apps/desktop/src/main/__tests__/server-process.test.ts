@@ -10,6 +10,16 @@ import { SERVER_READY_PARENT_TIMEOUT_MS } from '../../shared/boot-timeouts';
  */
 const SHUTDOWN_GRACE_MS = 5_000;
 
+/**
+ * How many times the fake user will click the leftmost button before giving up
+ * and quitting.
+ *
+ * Bounds every retry-loop test: an implementation whose cap has been removed
+ * still terminates, so the test fails on a clean assertion instead of running
+ * until the worker dies.
+ */
+const IMPATIENT_USER_CLICKS = 8;
+
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('electron-log', () => import('./electron-log-mock'));
 vi.mock('node:child_process', () => import('./child-process-mock'));
@@ -52,6 +62,20 @@ function flush(): Promise<void> {
 async function devChildAt(index: number): Promise<MockServerProcess> {
   const { forkedChildren } = await getChildProcessMock();
   return spawnedChildAt(forkedChildren, index, 'dev');
+}
+
+/**
+ * The live `forkedChildren` array from the mocked `node:child_process`.
+ *
+ * Captured once per test because `until()` predicates have to be synchronous;
+ * the mock clears the array in place rather than replacing it, so the
+ * reference stays valid.
+ */
+let forkedChildren: MockServerProcess[] = [];
+
+/** How many dev children have been spawned so far. */
+function forkCount(): number {
+  return forkedChildren.length;
 }
 
 /** {@link devChildAt}'s packaged counterpart — the `utilityProcess.fork` path. */
@@ -133,6 +157,21 @@ function dialogOptions(dialog: ElectronMock['dialog'], index: number): Electron.
   return (call.length > 1 ? call[1] : call[0]) as Electron.MessageBoxOptions;
 }
 
+/**
+ * A fake user who clicks "Restart Server" `times` times and then quits.
+ *
+ * Always finite on purpose. A recovery loop still running when a test ends
+ * keeps spawning children into the shared `forkedChildren` array and calling
+ * the shared dialog mock, which breaks whatever test runs next — the loop must
+ * be driven to an end, not abandoned.
+ */
+function userClicksRestart(dialog: ElectronMock['dialog'], times: number): void {
+  dialog.showMessageBox = vi.fn(async () => ({
+    response: dialogCalls(dialog).length > times ? 1 : 0,
+    checkboxChecked: false,
+  }));
+}
+
 /** The `detail` of the `index`-th message box. */
 function dialogDetail(dialog: ElectronMock['dialog'], index: number): string {
   return dialogOptions(dialog, index).detail ?? '';
@@ -152,7 +191,9 @@ beforeEach(async () => {
     (...args: unknown[]) => void
   >;
   (await getElectronMock()).resetElectronMock();
-  (await getChildProcessMock()).resetChildProcessMock();
+  const childProcess = await getChildProcessMock();
+  childProcess.resetChildProcessMock();
+  forkedChildren = childProcess.forkedChildren;
   (await getLogMock()).resetLogMock();
 });
 
@@ -214,31 +255,84 @@ describe('startServer — the readiness handshake', () => {
     expect(err.message).toContain('Quit that server');
   });
 
-  it('keeps only the last few stderr lines, truncated, and redacts secrets', async () => {
+  it('keeps the reason when a real failure buries it under a stack trace', async () => {
     const { startServer } = await import('../server-process');
 
     const started = startServer();
     const child = await devChildAt(0);
-    for (let n = 0; n < 20; n++) child.emitStderr(`noise line ${n}`);
-    child.emitStderr(`token dork_${'a'.repeat(48)} issued`);
-    child.emitStderr(`bearer ${'A1b2C3d4'.repeat(6)} accepted`);
-    // Long, but real prose: redaction must leave it alone, so this is what
-    // exercises the length cap.
-    child.emitStderr(`stack ${'frame '.repeat(80)}`);
+    // The shape every real boot failure has: server-entry's `console.error`
+    // prints the reason and then a full trace. Node's default
+    // Error.stackTraceLimit is 10, so a pure tail keeps frames and throws the
+    // only useful sentence away.
+    child.emitStderr(
+      'Server failed to start: Error: Another DorkOS server is already using ~/.dork (pid 8123)'
+    );
+    for (let frame = 0; frame < 10; frame++) {
+      child.emitStderr(`    at frame${frame} (/Users/x/app/node_modules/pkg/index.js:${frame}:12)`);
+    }
     child.emitExit(1);
 
     const err = await started.catch((e: unknown) => e as Error);
-    // Bounded: the earliest noise is dropped rather than filling the dialog.
-    expect(err.message).not.toContain('noise line 0');
-    expect(err.message).toContain('noise line 19');
-    // Nothing secret-shaped rides along — neither a DorkOS key nor a bare
-    // opaque token.
-    expect(err.message).not.toContain('dork_aaaa');
-    expect(err.message).not.toContain('A1b2C3d4A1b2C3d4');
-    expect(err.message).toContain('[redacted]');
-    // …and no single line runs away with the dialog.
-    expect(err.message).toContain('…');
+    expect(err.message).toContain('already using ~/.dork (pid 8123)');
+    // Frames are the bulk of a dump and the least useful thing in a dialog;
+    // electron-log still has the whole trace.
+    expect(err.message).not.toContain('at frame');
+  });
+
+  it('bounds and truncates a noisy stream, keeping both ends', async () => {
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+    child.emitStderr('first line: the reason');
+    for (let n = 0; n < 40; n++) child.emitStderr(`noise line ${n}`);
+    // Long, but real prose: redaction leaves it alone, so this is what
+    // exercises the length cap.
+    child.emitStderr(`trailing ${'detail '.repeat(80)}`);
+    child.emitExit(1);
+
+    const err = await started.catch((e: unknown) => e as Error);
+    // Both ends survive; the middle is elided rather than silently dropped.
+    expect(err.message).toContain('first line: the reason');
+    expect(err.message).toContain('noise line 39');
+    expect(err.message).toMatch(/… \d+ more lines …/);
+    expect(err.message).not.toContain('noise line 20');
+    // No single line runs away with the dialog.
     for (const line of err.message.split('\n')) expect(line.length).toBeLessThanOrEqual(210);
+  });
+
+  it('redacts a real DorkOS token even when it straddles a chunk boundary', async () => {
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+    // The real per-instance token shape: `dork_mcp_local_` + 64 hex
+    // (services/core/auth/mcp-local-token.ts). A `dork_[0-9a-f]+` rule cannot
+    // match it, which is why this asserts against the true format.
+    const token = `dork_mcp_local_${'a1b2c3d4'.repeat(8)}`;
+    // Chunks do not respect line boundaries. Split the token across two `data`
+    // events: each half alone looks like nothing.
+    child.emitStderrChunk(`could not read token ${token.slice(0, 22)}`);
+    child.emitStderrChunk(`${token.slice(22)} from disk\n`);
+    child.emitExit(1);
+
+    const err = await started.catch((e: unknown) => e as Error);
+    expect(err.message).toContain('[redacted]');
+    expect(err.message).not.toContain('dork_mcp_local_');
+    expect(err.message).not.toContain(token.slice(22, 40));
+  });
+
+  it('takes a final line the dying child never terminated', async () => {
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+    // No trailing newline — a crashing process rarely obliges.
+    child.emitStderrChunk('FATAL: the data directory is locked by pid 8123');
+    child.emitExit(1);
+
+    const err = await started.catch((e: unknown) => e as Error);
+    expect(err.message).toContain('locked by pid 8123');
   });
 
   it('rejects and kills the child when it never signals ready', async () => {
@@ -546,7 +640,7 @@ describe('the crash monitor', () => {
     const { dialog } = await getElectronMock();
     const { default: log } = await getLogMock();
     const { failNextFork } = await getChildProcessMock();
-    dialog.showMessageBox = vi.fn(async () => ({ response: 0, checkboxChecked: false }));
+    userClicksRestart(dialog, 1);
     const { startServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -572,9 +666,13 @@ describe('the crash monitor', () => {
   it('stops offering a restart that keeps failing, and points at the logs instead', async () => {
     const { app, dialog, shell } = await getElectronMock();
     const { failEveryFork } = await getChildProcessMock();
-    // The user takes the leftmost button every time: Restart, Restart,
-    // Restart… and finally Open Logs.
-    dialog.showMessageBox = vi.fn(async () => ({ response: 0, checkboxChecked: false }));
+    // The user takes the leftmost button — but only so many times. Bounding
+    // the fake user means an implementation with no cap terminates too, and
+    // fails on the assertions below rather than by killing the test worker.
+    dialog.showMessageBox = vi.fn(async () => ({
+      response: dialogCalls(dialog).length > IMPATIENT_USER_CLICKS ? 1 : 0,
+      checkboxChecked: false,
+    }));
     const { startServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
@@ -586,17 +684,81 @@ describe('the crash monitor', () => {
 
     await until('the retry offer to be withdrawn', () => app.quit.mock.calls.length > 0);
 
-    // Three offers to restart, then one final prompt that no longer offers it.
-    const calls = dialogCalls(dialog);
-    expect(calls).toHaveLength(4);
-    for (const index of [0, 1, 2]) {
+    // Two offers to restart, then one final prompt that no longer offers it:
+    // the crash itself is the first failure, since the server never stayed up.
+    expect(dialogCalls(dialog)).toHaveLength(3);
+    for (const index of [0, 1]) {
       expect(dialogOptions(dialog, index).buttons).toEqual(['Restart Server', 'Quit']);
     }
-    expect(dialogOptions(dialog, 3).buttons).toEqual(['Open Logs', 'Quit']);
+    expect(dialogOptions(dialog, 2).buttons).toEqual(['Open Logs', 'Quit']);
     // The server's own explanation rides along to the end.
-    expect(dialogDetail(dialog, 3)).toContain('already using ~/.dork');
+    expect(dialogDetail(dialog, 2)).toContain('already using ~/.dork');
     expect(shell.showItemInFolder).toHaveBeenCalledTimes(1);
     expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('caps a server that keeps booting and dying, not just one that fails to spawn', async () => {
+    const { app, dialog } = await getElectronMock();
+    dialog.showMessageBox = vi.fn(async () => ({
+      response: dialogCalls(dialog).length > IMPATIENT_USER_CLICKS ? 1 : 0,
+      checkboxChecked: false,
+    }));
+    const { startServer } = await import('../server-process');
+
+    const { getServerPort } = await import('../server-process');
+    let { child } = await startReadyServer(startServer);
+
+    // Every restart *succeeds* and then dies seconds later: the renderer
+    // reloads onto the new port and re-issues whatever killed it. Counting
+    // only failed spawns never caps this, so the dialog loops forever.
+    for (let cycle = 0; cycle < IMPATIENT_USER_CLICKS; cycle++) {
+      child.emitExit(1);
+      // The shell either spawns a replacement or gives up; wait for whichever.
+      await until(
+        `the shell to answer crash #${cycle + 1}`,
+        () => forkCount() > cycle + 1 || app.quit.mock.calls.length > 0
+      );
+      if (app.quit.mock.calls.length > 0) break;
+      child = await devChildAt(cycle + 1);
+      child.emitReady();
+      await until(`restart #${cycle + 1} to be serving`, () => getServerPort() !== null);
+    }
+
+    await until('the app to give up', () => app.quit.mock.calls.length > 0);
+
+    const last = dialogOptions(dialog, dialogCalls(dialog).length - 1);
+    expect(last.buttons).toEqual(['Open Logs', 'Quit']);
+    // Bounded, and well short of the impatient user's limit.
+    expect(dialogCalls(dialog).length).toBeLessThanOrEqual(4);
+  });
+
+  it('starts a fresh incident when a server that had been up for a while dies', async () => {
+    const { dialog } = await getElectronMock();
+    // Two restarts, then quit at the prompt this test is about.
+    userClicksRestart(dialog, 2);
+    const { startServer, getServerPort } = await import('../server-process');
+
+    let { child } = await startReadyServer(startServer);
+
+    // Two quick crashes put two failures on the counter.
+    for (let cycle = 0; cycle < 2; cycle++) {
+      child.emitExit(1);
+      await until(`restart #${cycle + 1}`, () => forkCount() > cycle + 1);
+      child = await devChildAt(cycle + 1);
+      child.emitReady();
+      await until(`restart #${cycle + 1} to be serving`, () => getServerPort() !== null);
+    }
+    expect(dialogCalls(dialog)).toHaveLength(2);
+
+    // This one served for an hour before dying. That is a working server, so
+    // its death opens a fresh incident rather than tripping the cap — a
+    // counter that only ever climbed would strand this user at 'Open Logs'.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+    child.emitExit(1);
+    await until('the third prompt', () => dialogCalls(dialog).length > 2);
+
+    expect(dialogOptions(dialog, 2).buttons).toEqual(['Restart Server', 'Quit']);
   });
 
   it('quits when the user declines the restart', async () => {

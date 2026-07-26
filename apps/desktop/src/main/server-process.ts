@@ -3,7 +3,7 @@ import log from 'electron-log';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
 import { getFreePort, spawnServer, type ServerChild } from './server-spawn';
 import { formatServerOutput } from './server-output';
-import { recoverFromCrash, resetRestartFailures } from './server-crash-recovery';
+import { recoverFromCrash } from './server-crash-recovery';
 
 /**
  * Supervisor for the Express server the desktop shell runs as a child process.
@@ -37,6 +37,14 @@ type ServerState = 'starting' | 'ready' | 'stopping' | 'dead';
 let state: ServerState = 'dead';
 let child: ServerChild | null = null;
 let serverPort: number | null = null;
+
+/**
+ * When the current server reported itself ready, or `null` if none has.
+ *
+ * How long a server actually served is the difference between "it crashed" and
+ * "it never worked" — see MIN_HEALTHY_UPTIME_MS in server-crash-recovery.
+ */
+let readySince: number | null = null;
 
 /**
  * Whether the exit we are about to see is one we asked for. Set *only* by
@@ -96,9 +104,9 @@ function installSafetyNet(): void {
  * read.
  *
  * Without this the shell could only report an exit code, while the server's
- * actionable sentence — "another DorkOS server is already using this data
- * directory", a failed migration, a port it could not bind — sat in a log file
- * nobody opens. Verbatim, never parsed: the server owns the words.
+ * actionable sentence — a data directory another process already holds, a
+ * failed migration, a port it could not bind — sat in a log file nobody opens.
+ * Verbatim, never parsed: the server owns the words, this side owns delivery.
  *
  * @param message - What the supervisor observed.
  * @param output - The child's stderr tail.
@@ -136,6 +144,7 @@ function settleStart(err: Error | null): void {
 function clearChild(): void {
   child = null;
   serverPort = null;
+  readySince = null;
   state = 'dead';
   expectedExit = false;
   settleStart(new Error('The DorkOS server was stopped before it finished starting.'));
@@ -158,6 +167,7 @@ function handleExit(code: number | null): void {
   // Read the child's last words before clearing it — clearChild drops the
   // reference that owns them.
   const output = child?.recentErrors() ?? [];
+  const uptimeMs = readySince === null ? 0 : Date.now() - readySince;
 
   // Settle before clearing, so the specific reason wins over clearChild's
   // generic backstop. Always settle: clearing the timeout without rejecting
@@ -173,7 +183,7 @@ function handleExit(code: number | null): void {
   clearChild();
 
   if (wasStarting || wasExpected) return;
-  reportCrash(code, output);
+  reportCrash(code, output, uptimeMs);
 }
 
 /**
@@ -182,14 +192,16 @@ function handleExit(code: number | null): void {
  *
  * @param code - The child's exit code, or `null` if it died from a signal.
  * @param output - The child's stderr tail, for the dialog to show.
+ * @param uptimeMs - How long the dead server had been serving.
  */
-function reportCrash(code: number | null, output: string[]): void {
+function reportCrash(code: number | null, output: string[], uptimeMs: number): void {
   // Log first and unconditionally: this line is the only record that survives
   // when there is no window to show a dialog in.
   log.error(`[server] The server stopped unexpectedly (exit code ${code ?? 'none — signalled'}).`);
   void recoverFromCrash({
     code,
     output,
+    uptimeMs,
     getWindow: () => getMainWindow?.() ?? null,
     restart: () => startServer(),
   }).catch((err: unknown) => {
@@ -287,9 +299,7 @@ export async function startServer(
 
   state = 'ready';
   serverPort = port;
-  // A server that started is a clean slate: "consecutive failures" only counts
-  // restarts that never got one running.
-  resetRestartFailures();
+  readySince = Date.now();
   return port;
 }
 

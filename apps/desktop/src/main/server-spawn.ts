@@ -69,9 +69,9 @@ export interface ServerChild {
    * The child's most recent stderr lines, redacted and truncated.
    *
    * A server that refuses to start explains itself here — a data directory
-   * already locked by a `dorkos` CLI server, a failed migration, a port it
-   * could not bind — and then exits. Without this the shell could only report
-   * the exit code, while the reason sat in a log file nobody opens.
+   * another process already holds, a failed migration, a port it could not
+   * bind — and then exits. Without this the shell could only report the exit
+   * code, while the reason sat in a log file nobody opens.
    */
   recentErrors(): string[];
 }
@@ -326,7 +326,15 @@ function buildServerEnv(port: number): Record<string, string> {
  */
 export function spawnServer(port: number): ServerChild {
   const entryPath = resolveServerEntry();
-  const env = { ...process.env, ...buildServerEnv(port) };
+  const env: NodeJS.ProcessEnv = { ...process.env, ...buildServerEnv(port) };
+  if (app.isPackaged) {
+    // A packaged app inherits whatever the launching environment exported, and
+    // spreading an object that simply omits this key cannot unset an inherited
+    // one. An inherited DORKOS_PARENT_PID would arm the child's orphan watchdog
+    // against a stale pid; it would exit 0 a poll later and the shell would
+    // report a crash it caused itself. Production never wants that watchdog.
+    delete env.DORKOS_PARENT_PID;
+  }
   const tail = createStderrTail();
 
   if (app.isPackaged) {
