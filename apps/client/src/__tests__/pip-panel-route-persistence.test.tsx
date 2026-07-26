@@ -16,8 +16,11 @@ import { TooltipProvider } from '@/layers/shared/ui';
 let mockPathname = '/';
 
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => string }) =>
-    select({ location: { pathname: mockPathname } }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (s: { location: { pathname: string; href: string } }) => string;
+  }) => select({ location: { pathname: mockPathname, href: mockPathname } }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
@@ -92,6 +95,14 @@ vi.mock('@/layers/entities/session', () => ({
   // (session-origin-legibility): no active session in this shell-level
   // isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
+  // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
+  // a shell-level isolation test, so every tab reads idle.
+  useSessionBorderState: () => ({
+    kind: 'idle',
+    color: 'transparent',
+    pulse: false,
+    label: 'Idle',
+  }),
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {

@@ -11,6 +11,8 @@ import {
   Plug2,
 } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
+import { AppTabStrip } from '@/layers/features/app-tabs';
+import type { AppTab } from '@/layers/shared/model';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
@@ -46,7 +48,73 @@ export function NavigationShowcases() {
           <MinimalDemo />
         </ShowcaseDemo>
       </PlaygroundSection>
+
+      <PlaygroundSection
+        title="AppTabStrip"
+        description="The cockpit window's tab strip. Each tab is one location; the name, icon and live dot are all derived from its href. The last tab has no close control, and the whole strip is a single Tab stop with arrow-key traversal."
+      >
+        <ShowcaseLabel>One tab (nothing to close)</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <AppTabStripDemo tabs={TAB_SAMPLES.slice(0, 1)} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>A few tabs</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <AppTabStripDemo tabs={TAB_SAMPLES.slice(0, 4)} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>More tabs than fit (scrolls)</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <AppTabStripDemo tabs={TAB_SAMPLES} />
+        </ShowcaseDemo>
+      </PlaygroundSection>
     </>
+  );
+}
+
+/** One tab per route the strip can name, plus chat tabs named after projects. */
+const TAB_SAMPLES: AppTab[] = [
+  { id: 'tab-dashboard', href: '/' },
+  { id: 'tab-api', href: '/session?session=s-api&dir=%2FUsers%2Fkai%2Fcode%2Fapi' },
+  { id: 'tab-web', href: '/session?session=s-web&dir=%2FUsers%2Fkai%2Fcode%2Fweb-cockpit' },
+  { id: 'tab-agents', href: '/agents?view=topology' },
+  { id: 'tab-activity', href: '/activity' },
+  { id: 'tab-tasks', href: '/tasks' },
+  { id: 'tab-workspaces', href: '/workspaces' },
+  { id: 'tab-marketplace', href: '/marketplace' },
+];
+
+/** Live strip with local state — the real component, not a lookalike. */
+function AppTabStripDemo({ tabs: initial }: { tabs: AppTab[] }) {
+  const [tabs, setTabs] = useState(initial);
+  const [activeId, setActiveId] = useState(initial[0].id);
+  const [spawned, setSpawned] = useState(0);
+
+  return (
+    <div className="border-border overflow-hidden rounded-lg border">
+      <AppTabStrip
+        tabs={tabs}
+        activeId={activeId}
+        onActivate={setActiveId}
+        onClose={(id) => {
+          setTabs((current) => {
+            const index = current.findIndex((tab) => tab.id === id);
+            const next = current.filter((tab) => tab.id !== id);
+            if (id === activeId) setActiveId((next[index] ?? next[index - 1]).id);
+            return next;
+          });
+        }}
+        onCreate={() => {
+          const tab = { id: `tab-new-${spawned}`, href: '/' };
+          setSpawned((count) => count + 1);
+          setTabs((current) => [...current, tab]);
+          setActiveId(tab.id);
+        }}
+      />
+      <div className="text-muted-foreground bg-background p-6 text-center text-xs">
+        Content of the active tab
+      </div>
+    </div>
   );
 }
 

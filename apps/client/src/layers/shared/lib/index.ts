@@ -29,6 +29,7 @@ export {
   openLink,
   openExternalLink,
   registerLinkNavigator,
+  registerTabOpener,
   supportsNewTab,
   type BlockedLink,
   type BlockedLinkReason,
@@ -37,7 +38,9 @@ export {
   type InternalLink,
   type LinkNavigation,
   type LinkNavigator,
+  type LinkTarget,
   type OpenLinkOptions,
+  type TabOpener,
 } from './link-navigation';
 export { isBypassPermissionMode } from './permission-mode';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';

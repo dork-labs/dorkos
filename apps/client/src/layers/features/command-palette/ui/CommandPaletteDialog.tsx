@@ -70,18 +70,22 @@ export function CommandPaletteDialog() {
     selectedCwd,
   } = usePaletteActions(closePalette);
 
-  // "Open in New Tab" — a second cockpit window aimed at this agent's project.
-  // The href is query-only on purpose: the link seam merges it into the current
-  // search, so the new window lands on the same route in the same state, just
-  // pointed at another agent. Where there is no second window to open (the
-  // Obsidian embed), open the agent here rather than dropping the action.
+  // "Open in New Tab" — this agent's project in a new tab of this window
+  // (DOR-540). Deliberately carries only `dir`: the `/session` loader then picks
+  // that project's most recent session, or mints a fresh one, and the new tab
+  // adopts whichever it lands on. Carrying the CURRENT `?session=` across would
+  // point the new tab at the session you were already reading, under someone
+  // else's project. Where there is no second view to open (the Obsidian embed),
+  // open the agent here rather than dropping the action.
   const openAgentInNewTab = useCallback(
     (agent: AgentPathEntry) => {
       if (!supportsNewTab()) {
         handleAgentSelect(agent);
         return;
       }
-      openLink(`?${new URLSearchParams({ dir: agent.projectPath }).toString()}`, { newTab: true });
+      openLink(`/session?${new URLSearchParams({ dir: agent.projectPath }).toString()}`, {
+        target: 'tab',
+      });
       recordUsage(agent.id);
       closePalette();
     },

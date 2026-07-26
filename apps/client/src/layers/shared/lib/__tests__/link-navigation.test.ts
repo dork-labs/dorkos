@@ -8,6 +8,7 @@ import {
   openExternalLink,
   openLink,
   registerLinkNavigator,
+  registerTabOpener,
   supportsNewTab,
   type LinkNavigation,
 } from '../link-navigation';
@@ -246,7 +247,7 @@ describe('link dispatch', () => {
     });
 
     it('opens an internal link in a second cockpit window on request', () => {
-      openLink('/session?dir=%2Ftmp', { newTab: true });
+      openLink('/session?dir=%2Ftmp', { target: 'window' });
       expect(openSpy).toHaveBeenCalledWith(
         `${window.location.origin}/session?dir=%2Ftmp`,
         '_blank'
@@ -265,7 +266,7 @@ describe('link dispatch', () => {
     });
 
     it('hands a same-origin non-route path to the browser', () => {
-      openLink('/dev', { newTab: true });
+      openLink('/dev', { target: 'window' });
       expect(openSpy).toHaveBeenCalledWith(
         `${window.location.origin}/dev`,
         '_blank',
@@ -284,13 +285,13 @@ describe('link dispatch', () => {
       // The desktop shell's window-open handler has to be able to tell our own
       // cockpit from someone else's site; a `noopener` third argument here
       // would forfeit that. Asserting the whole call pins the arity.
-      openLink('/tasks', { newTab: true });
+      openLink('/tasks', { target: 'window' });
       expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
     });
 
     it('navigates in place instead of opening a window in the embed', () => {
       setPlatformAdapter(embeddedPlatform);
-      openLink('/tasks', { newTab: true });
+      openLink('/tasks', { target: 'window' });
       expect(openSpy).not.toHaveBeenCalled();
       expect(navigated).toEqual([{ href: '/tasks', replace: undefined }]);
     });
@@ -308,9 +309,42 @@ describe('link dispatch', () => {
       expect(openSpy).toHaveBeenCalled();
     });
 
+    it('opens an internal link in an in-window tab on request', () => {
+      const opened: string[] = [];
+      const unregisterTabs = registerTabOpener((href) => opened.push(href));
+      openLink('/session?dir=%2Ftmp', { target: 'tab' });
+      expect(opened).toEqual(['/session?dir=%2Ftmp']);
+      // A tab is not a window and not an in-place navigation.
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(navigated).toEqual([]);
+      unregisterTabs();
+    });
+
+    it('sends an external link to the browser even when a tab is asked for', () => {
+      const opened: string[] = [];
+      const unregisterTabs = registerTabOpener((href) => opened.push(href));
+      openLink('https://dorkos.ai/docs', { target: 'tab' });
+      expect(opened).toEqual([]);
+      expect(openSpy).toHaveBeenCalledWith(
+        'https://dorkos.ai/docs',
+        '_blank',
+        'noopener,noreferrer'
+      );
+      unregisterTabs();
+    });
+
+    it('falls back to navigating in place when no tab strip is registered', () => {
+      // The Obsidian embed mounts no strip. A tab request must still go
+      // somewhere rather than silently vanish.
+      openLink('/tasks', { target: 'tab' });
+      expect(openSpy).not.toHaveBeenCalled();
+      expect(navigated).toEqual([{ href: '/tasks', replace: undefined }]);
+    });
+
     it('reports whether the link was actually dispatched', () => {
       expect(openLink('/tasks')).toBe(true);
-      expect(openLink('/tasks', { newTab: true })).toBe(true);
+      expect(openLink('/tasks', { target: 'window' })).toBe(true);
+      expect(openLink('/tasks', { target: 'tab' })).toBe(true);
       expect(openLink('https://dorkos.ai')).toBe(true);
       expect(openLink('myapp://authorize')).toBe(false);
       expect(openLink('javascript:alert(1)')).toBe(false);

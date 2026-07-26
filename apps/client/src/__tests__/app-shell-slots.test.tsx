@@ -13,8 +13,11 @@ import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-ban
 let mockPathname = '/';
 
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => string }) =>
-    select({ location: { pathname: mockPathname } }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (s: { location: { pathname: string; href: string } }) => string;
+  }) => select({ location: { pathname: mockPathname, href: mockPathname } }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
@@ -138,6 +141,14 @@ vi.mock('@/layers/entities/session', () => ({
   // (session-origin-legibility): no active session in this shell-level
   // isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
+  // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
+  // a shell-level isolation test, so every tab reads idle.
+  useSessionBorderState: () => ({
+    kind: 'idle',
+    color: 'transparent',
+    pulse: false,
+    label: 'Idle',
+  }),
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {
@@ -499,6 +510,45 @@ describe('AppShell slot integration', () => {
       const sidebar = document.querySelector('[data-slot="sidebar"]');
       expect(sidebar).not.toBeNull();
       expect(sidebar).not.toContainElement(banner);
+    });
+  });
+
+  describe('window tabs (DOR-540)', () => {
+    it('mounts the tab strip at the top of the content inset, above the header', () => {
+      // The strip is the inset's top band on macOS: it carries the drag region
+      // and the traffic-light clearance the header used to need, so it has to
+      // come FIRST inside the inset, not after the header.
+      mockPathname = '/';
+      renderAppShell();
+
+      const strip = screen.getByRole('tablist', { name: 'Open tabs' });
+      const inset = document.querySelector('[data-slot="sidebar-inset"]');
+      expect(inset).toContainElement(strip);
+
+      const header = inset?.querySelector('header');
+      expect(header).not.toBeNull();
+      expect(header).not.toContainElement(strip);
+      expect(
+        header && header.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_PRECEDING
+      ).toBeTruthy();
+    });
+
+    it('names the active tab after the route the router is on', () => {
+      // Proves the shell feeds the strip the real location, not a placeholder.
+      mockPathname = '/agents';
+      renderAppShell();
+
+      expect(screen.getByRole('tab', { selected: true })).toHaveAccessibleName(/Agents/);
+    });
+
+    it('points the active tab at the routed content region', () => {
+      mockPathname = '/';
+      renderAppShell();
+
+      const active = screen.getByRole('tab', { selected: true });
+      const panelId = active.getAttribute('aria-controls');
+      expect(panelId).toBeTruthy();
+      expect(document.getElementById(panelId!)).not.toBeNull();
     });
   });
 

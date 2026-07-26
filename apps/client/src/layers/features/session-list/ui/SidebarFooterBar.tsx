@@ -119,9 +119,11 @@ export function SidebarFooterBar() {
     navigator.clipboard.writeText(info);
   }, [version]);
 
-  // Cmd/Ctrl+Shift+D opens Dev Playground in a new tab. `/dev` mounts outside
-  // the router (see `Root` in main.tsx), so the seam gives it its own window.
-  const openDevPlayground = useCallback(() => openLink('/dev', { newTab: true }), []);
+  // Cmd/Ctrl+Shift+D opens Dev Playground. `/dev` mounts outside the router
+  // (see `Root` in main.tsx), so the seam classifies it as external and gives
+  // it its own window — no `target` to pass, and an in-window tab could not
+  // hold it anyway.
+  const openDevPlayground = useCallback(() => openLink('/dev'), []);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;

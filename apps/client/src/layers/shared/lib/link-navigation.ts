@@ -11,12 +11,12 @@
  * it. **Markdown links do not**: Streamdown renders and dispatches those under
  * its own policy (see {@link DISPATCHABLE_PROTOCOLS}).
  *
- * What that fixes today is the in-place half: internal links move the router
- * instead of reloading the document. The new-tab half is not fixed yet — the
- * shell's handler (`apps/desktop/src/main/window-manager.ts`) reads only the
- * URL and still forwards any `http(s)` target to the system browser. Teaching
- * it to adopt our own origin as a DorkOS window is separate work; this module
- * keeps the call shape that lets it.
+ * An internal link can land in three places, chosen by
+ * {@link OpenLinkOptions.target}: in place (the default), in a new in-window
+ * tab (DOR-540), or in a second cockpit window. `tab` and `window` stay
+ * separate on purpose — "another tab" and "another window" are different
+ * requests, and the tab strip must not quietly eat the only way to ask for the
+ * second one.
  *
  * - **Internal** — relative, hash-only, query-only, or absolute at the app's own
  *   origin *and* landing on a route the cockpit actually serves
@@ -222,7 +222,11 @@ export interface LinkNavigation {
 /** The router adapter the seam drives for internal links. */
 export type LinkNavigator = (navigation: LinkNavigation) => void;
 
+/** The tab adapter the seam drives for `target: 'tab'` (DOR-540). */
+export type TabOpener = (href: string) => void;
+
 let linkNavigator: LinkNavigator | null = null;
+let tabOpener: TabOpener | null = null;
 
 /**
  * Register the router that internal links navigate through. Called once from
@@ -239,10 +243,29 @@ export function registerLinkNavigator(navigate: LinkNavigator): () => void {
 }
 
 /**
- * Whether this surface can open a second window onto the cockpit.
+ * Register the in-window tab strip that `target: 'tab'` links open into. Called
+ * once from the app entry, alongside {@link registerLinkNavigator}.
  *
- * False in the Obsidian embed, which is one pane inside someone else's app —
- * there is no second tab to open.
+ * Registered only where a tab strip actually exists — the standalone cockpit.
+ * The Obsidian embed is one pane inside someone else's app and mounts no strip,
+ * so nothing registers there and {@link openLink} degrades a tab request to
+ * an in-place navigation.
+ *
+ * @param open - Adapter that adds a tab for `href` and focuses it.
+ * @returns An unregister function (idempotent; only clears its own adapter).
+ */
+export function registerTabOpener(open: TabOpener): () => void {
+  tabOpener = open;
+  return () => {
+    if (tabOpener === open) tabOpener = null;
+  };
+}
+
+/**
+ * Whether this surface can show the cockpit somewhere other than in place —
+ * an in-window tab, or a second window.
+ *
+ * False in the Obsidian embed, which is one pane inside someone else's app.
  */
 export function supportsNewTab(): boolean {
   return typeof window !== 'undefined' && !getPlatform().isEmbedded;
@@ -253,27 +276,37 @@ function openInBrowser(url: string): void {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+/**
+ * Where an internal link should land.
+ *
+ * - `here` (default) — navigate the current view through the router.
+ * - `tab` — a new tab in this window ({@link registerTabOpener}). Falls back to
+ *   `here` where no tab strip exists (the Obsidian embed).
+ * - `window` — a second cockpit window. Deliberately kept distinct from `tab`:
+ *   "put this on my other monitor" is a different request from "give me another
+ *   tab", and collapsing the two would delete the only way to ask for it.
+ */
+export type LinkTarget = 'here' | 'tab' | 'window';
+
 /** How to open a link. */
 export interface OpenLinkOptions {
-  /**
-   * Open an internal target in a second cockpit window instead of navigating in
-   * place. Ignored where no second window exists (see {@link supportsNewTab}).
-   */
-  newTab?: boolean;
-  /** Replace the current history entry instead of pushing one. Internal, same-window only. */
+  /** Where an internal target should land. Defaults to `here`. */
+  target?: LinkTarget;
+  /** Replace the current history entry instead of pushing one. Internal, `here` only. */
   replace?: boolean;
 }
 
 /**
  * Open a link the right way for wherever it points.
  *
- * Internal links navigate in place through the router (or into a second cockpit
- * window with `newTab`); external links go to the browser; blocked links go
- * nowhere. This is the default entry point — reach for it unless the action's
- * whole point is to leave the app, which is {@link openExternalLink}.
+ * Internal links navigate in place through the router, into a new in-window tab,
+ * or into a second cockpit window, per {@link OpenLinkOptions.target}; external
+ * links go to the browser; blocked links go nowhere. This is the default entry
+ * point — reach for it unless the action's whole point is to leave the app,
+ * which is {@link openExternalLink}.
  *
  * @param href - The link to open.
- * @param options - New-window and history intent.
+ * @param options - Target and history intent.
  * @returns `true` if the link was dispatched, `false` if it was refused or
  * there was no router to route it through. **Check this before telling the user
  * anything happened** — a refusal is silent otherwise, and a UI that reports
@@ -292,14 +325,18 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
     return true;
   }
 
-  if (options.newTab && supportsNewTab()) {
+  if (options.target === 'tab' && tabOpener) {
+    tabOpener(link.path);
+    return true;
+  }
+
+  if (options.target === 'window' && supportsNewTab()) {
     // Plain `_blank`, no `noopener` — forward wiring. In the browser this is
-    // already a real second cockpit tab. In the desktop shell it is still
-    // forwarded to the system browser today: the window-open handler
-    // (`apps/desktop/src/main/window-manager.ts`) reads only the URL and
-    // ignores `features`/`disposition`. Keeping the shape unpolluted is what
-    // lets that handler tell "our own cockpit" from "someone else's site" when
-    // it grows the check; adding `noopener` here would foreclose it.
+    // already a real second cockpit window. In the desktop shell the
+    // window-open handler (`apps/desktop/src/main/window-manager.ts`) adopts
+    // our own origin as a second DorkOS window. Keeping the shape unpolluted is
+    // what lets that handler tell "our own cockpit" from "someone else's site";
+    // adding `noopener` here would foreclose it.
     window.open(link.url, '_blank');
     return true;
   }

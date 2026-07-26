@@ -1,4 +1,4 @@
-import { FolderOpen, ExternalLink, Plus, Settings, MessageSquare } from 'lucide-react';
+import { FolderOpen, AppWindow, Plus, Settings, MessageSquare } from 'lucide-react';
 import { CommandGroup, CommandItem, CommandShortcut } from '@/layers/shared/ui';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { getAgentDisplayName, isMac } from '@/layers/shared/lib';
@@ -15,7 +15,7 @@ interface AgentSubMenuProps {
   agent: AgentPathEntry;
   /** Switch CWD to this agent's project path */
   onOpenHere: () => void;
-  /** Open agent's project in a new browser tab */
+  /** Open agent's project in a new tab of this window */
   onOpenNewTab: () => void;
   /** Start a new session in this agent's CWD */
   onNewSession: () => void;
@@ -51,7 +51,7 @@ export function AgentSubMenu({
           <CommandShortcut>Enter</CommandShortcut>
         </CommandItem>
         <CommandItem value="open-new-tab" onSelect={onOpenNewTab}>
-          <ExternalLink className="size-4" />
+          <AppWindow className="size-4" />
           <span>Open in New Tab</span>
           <CommandShortcut>{modKey}Enter</CommandShortcut>
         </CommandItem>

@@ -127,8 +127,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           return;
         case 'openDevPlayground':
           // `/dev` mounts outside the router (see `Root` in main.tsx), so the
-          // seam classifies it as external and gives it its own window.
-          openLink('/dev', { newTab: true });
+          // seam classifies it as external and gives it its own window — an
+          // in-window tab could not hold it.
+          openLink('/dev');
           return;
         case 'toggleDevtools':
           useAppStore.getState().toggleDevtools();
