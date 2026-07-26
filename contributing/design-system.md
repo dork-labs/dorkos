@@ -607,7 +607,7 @@ The CapabilitiesTab uses a 3-state display for per-agent tool group toggles:
 | State                 | Visual                                        | Meaning                                               |
 | --------------------- | --------------------------------------------- | ----------------------------------------------------- |
 | Inherited (enabled)   | Switch ON, "Inherited" badge                  | Agent inherits the global default (enabled)           |
-| Overridden (disabled) | Switch OFF, "Overridden" badge                | Agent explicitly disables this tool group             |
+| Overridden (disabled) | Switch OFF, "Overridden" badge                | Agent opts out of this tool group's documentation     |
 | Inherited (disabled)  | Switch OFF, disabled, "Server disabled" badge | Server feature flag is off; toggle is non-interactive |
 
 The toggle writes to the agent manifest's `enabledToolGroups` field. When a toggle is flipped, it sets an explicit value; when reset, the field is removed (returning to inherited behavior).

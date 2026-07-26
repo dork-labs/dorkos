@@ -68,10 +68,13 @@ tools (DOR-468), which is to say below every caller rather than beside one of th
 See `contributing/agent-operator-surface.md`.
 
 The two layers are independent by construction, and DOR-519 is the evidence. The
-`allowedTools` lists contained both `destructive` tools, `tasks_delete` and
-`mesh_unregister`, for three months. Neither was ever exposed, because
-`allowedTools` only decides whether the SDK asks before invoking a tool and cannot
-reach inside the handler where the tier gate sits.
+`allowedTools` lists contained both of the `destructive` tools that a tool group can
+carry, `tasks_delete` and `mesh_unregister`, for three months. Neither was ever
+exposed, because `allowedTools` only decides whether the SDK asks before invoking a
+tool and cannot reach inside the handler where the tier gate sits. (The third
+destructive action, the `marketplace.uninstall` capability, is not in any tool group
+and was never in those lists. Three in total, declared across two tables:
+`mcp-tool-tiers.ts` and `defineCapability`.)
 
 **A toggle must never be load-bearing for safety.** `enabledToolGroups` and
 `agentContext.*Tools` are agent-writable through `config_patch`. That is acceptable

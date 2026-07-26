@@ -61,7 +61,7 @@ See [Securing your instance](/docs/self-hosting/securing-your-instance) for the 
 DorkOS ships a tool endpoint at `/mcp` so external agents and scripts can drive it. What it exposes depends entirely on whether you have exposed the server:
 
 - **On localhost with no key set** (the default), the endpoint is open to your own machine, the same as the rest of the local app. That includes tools that install packages, create agents, and run extension code. In the local trust model this is fine, because those callers already run as you.
-- **The instant you expose the server, that endpoint is gated** by the same login the rest of the API uses, plus per-user API keys and optional rate limits. The exposure guard means the open-on-localhost surface can never be reached from the network, because the server refuses to bind publicly without login.
+- **The instant you expose the server, that endpoint is gated** by the same login the rest of the API uses, plus per-user API keys and optional rate limits. The exposure guard is what keeps the open-on-localhost surface off the network: the server refuses to bind to a public address without a login. Two things get past that, and both are worth knowing: the official Docker image opts out of the guard on purpose (the callout above), and a reverse proxy in front of a loopback bind is a path the guard never sees, because it only inspects the address DorkOS itself binds to.
 
 <Callout type="warn">
   Because localhost MCP tools include package installs and extension code, treat any local software
@@ -78,6 +78,38 @@ Agents can talk to each other and to you through the relay. Two controls keep th
 - **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
 - **Identity cannot be spoofed.** An agent's "from" address is resolved by the server from the session, not taken from the tool call, so one agent cannot impersonate another.
 - **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on an integration like Telegram is a per-integration setting you control.
+
+## What stops an agent operating DorkOS itself
+
+Agents do not only write code here. They can create agents, schedule work, change settings, and add or remove packages. Every one of those actions carries one of three labels, and the label decides what happens:
+
+| Label            | What happens                                                                             |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| Read only        | Runs. Nothing to undo.                                                                   |
+| Changes things   | Runs, and lands in your activity feed, named to the agent when DorkOS knows which asked. |
+| Cannot be undone | Does not run. It returns a pending approval, and waits for somebody to answer.           |
+
+Three actions carry the last label today: removing an installed package, deleting a scheduled task, and removing an agent. Installing a package and creating one also wait, through the marketplace's own confirmation, because both bring new code onto your machine.
+
+The gate is not advice. It sits at the composition root of the two tool servers that carry these actions, and inside the capability registry, below every caller, so a session's permission mode cannot reach it: an agent in bypass-permissions mode still stops at these three. A new tool with no declared label fails the server build rather than running unlabelled.
+
+There is a third, much smaller tool server, for Codex sessions, and it is outside that gate. It carries exactly one tool, for changing what the cockpit is showing you, which is in the middle group above and would not stop to ask in any case. Nothing that changes your files or your setup is reachable through it.
+
+<Callout type="warn">
+  **How much that gate is worth depends on whether login is on, and the two answers are genuinely
+  different.**
+
+With **login off**, the default, DorkOS refuses the requester: a caller presenting an agent identity
+or the retry token it was handed cannot decide its own request, which stops an honest agent and a
+prompt-injected one. Every decision is recorded with the posture it was made under. What it cannot do
+is tell you apart from a bare, credential-free request from other software running as you. That is
+the same boundary as everything else on this page.
+
+With **login on**, deciding requires a verified account. A caller with no credential cannot decide,
+whatever it sends or omits. Note the honest limit even here: a valid per-user API key satisfies the
+check, so "a signed-in account decided this" is what the record says, not "a person did".
+
+</Callout>
 
 ## Marketplace package trust
 

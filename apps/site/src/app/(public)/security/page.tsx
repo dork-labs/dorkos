@@ -25,7 +25,7 @@ export default function SecurityPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Security</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 11, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 26, 2026</p>
           <p className="text-warm-gray leading-relaxed">
             DorkOS is made by Blaze Ventures, LLC. It is an early open-source alpha, and we would
             rather tell you exactly how it works than make it sound safer than it is.
@@ -92,6 +92,30 @@ export default function SecurityPage() {
             We fetch packages over safe channels and roll back a failed install cleanly, but we do
             not yet verify a package signature for you. Install packages the way you would run any
             script from the internet: only from authors you trust.
+          </p>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-charcoal font-mono text-xl font-semibold">
+            Three things an agent cannot do without asking you
+          </h2>
+          <p className="text-warm-gray leading-relaxed">
+            Your agents can operate DorkOS itself, not just write code. Most of what they do is easy
+            to take back, so it just happens and lands in your activity feed. Three things are not
+            easy to take back, and DorkOS stops and asks first: removing an installed package,
+            deleting a scheduled task, and removing an agent. Installing a package or creating one
+            asks too, because both bring new code onto your machine. You get a card describing
+            exactly what would run, written by DorkOS rather than by the agent, and an agent that
+            identifies itself is refused when it tries to answer its own card.
+          </p>
+          <p className="text-warm-gray leading-relaxed">
+            Here is the limit, because it matters more than the feature. With no login, which is how
+            DorkOS starts, DorkOS cannot tell you apart from other software running as you on the
+            same computer. It refuses the agent that asked, and it records who answered, so nothing
+            happens quietly. But a program on your machine that deliberately hides what it is looks
+            like you. Turning on login is what closes that, and then only your signed-in account can
+            answer a card. We would rather write that down than let the word &quot;approval&quot; do
+            work it cannot do.
           </p>
         </section>
 

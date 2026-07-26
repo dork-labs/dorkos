@@ -67,7 +67,7 @@ The **platform** — Engine and Console — is the foundation: a runtime for AI 
 
 ### Engine — The Runtime
 
-Engine is the foundation. It connects your AI agents via the `AgentRuntime` interface, exposes a secure REST + SSE API, manages sessions, and composes the modules (Pulse, Relay, Mesh) into a unified server.
+Engine is the foundation. It connects your AI agents via the `AgentRuntime` interface, exposes a REST + SSE API that binds to localhost by default, manages sessions, and composes the modules (Pulse, Relay, Mesh) into a unified server.
 
 Engine runs locally on your machine. Sessions are stored as JSONL transcript files — the same format Claude Code uses natively. This means every session is visible regardless of how it was started: from DorkOS, from the CLI, from an Obsidian plugin. One source of truth.
 
@@ -89,13 +89,13 @@ Console is a browser-based command center built with React 19, Tailwind CSS 4, a
 
 Console connects to Engine via a Transport interface that decouples the UI from its backend. Two adapters exist: `HttpTransport` for standalone web use, and `DirectTransport` for embedded use in Obsidian. This means Console works as a standalone web app, as a plugin inside your knowledge management tool, or as a bundled CLI — same interface, different delivery mechanisms.
 
-Each agent is a first-class citizen in Console. Agents have names, colors, icons, and personas. The sidebar shows every agent across your projects. Agent settings expose identity, persona, capabilities, and connections — all configurable per-agent.
+Each agent is a first-class citizen in Console. Agents have names, colors, icons, and personas. The sidebar shows every agent across your projects. Agent settings expose identity, persona, and connections, all configurable per-agent. Permission tiers are not: a tier belongs to the action, so the same action is gated the same way whichever agent asks. The one per-agent lever is a standing permission, which a person grants from an approval card for one agent doing one named action, on a clock. That grant is keyed to that agent's path, so two agents can hit the same gate and get different answers.
 
 - Chat with agents in rich markdown with syntax highlighting
-- Approve or deny every tool call before it executes
+- Approve or deny tool calls before they execute, in the session permission modes that prompt
 - Browse, resume, and sync sessions across devices
 - Command Palette (Cmd+K) for agent navigation with fuzzy search and preview panel
-- Agent settings — identity, persona, per-agent tool group controls
+- Agent settings: identity, persona, per-agent tool group preferences (which decide the tool documentation an agent receives, not what it may call)
 - Slash command palette for custom workflows
 - Real-time session sync across multiple clients
 

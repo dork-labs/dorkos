@@ -20,10 +20,11 @@
  *
  * `operator.update_agent` does not expose `permissionMode`, so the obvious door is
  * shut. But it is not the only door: an agent can already set `bypassPermissions` on
- * a scheduled task through the `tasks_update` MCP tool, and the task tools are not
- * registry capabilities, so they carry no tier and pass through no gate. If the gate
- * ever honored permission mode, that would be an ungated path for an agent to switch
- * off its own destructive gate.
+ * a scheduled task through the `tasks_update` MCP tool, which is `act` tier, so the
+ * gate lets it through without asking anybody (DOR-468 gave every hand-registered
+ * tool a tier; it did not make every tool ask). If the gate ever honored permission
+ * mode, that would be a no-approval path for an agent to switch off its own
+ * destructive gate.
  *
  * The one supported way to stop being asked is a standing permission, which needs a
  * signed-in person and a clock. Permission mode governs tools INSIDE a session and
@@ -160,7 +161,7 @@ describe('the gate does not know what a permission mode is', () => {
       'A module that decides approvals started reading permission mode. That is an ' +
         'ungated path for an agent to switch off its own destructive gate: an agent ' +
         'can already set bypassPermissions on a scheduled task through tasks_update, ' +
-        'which carries no tier. The supported way to stop being asked is a standing ' +
+        'which is act tier and needs no approval. The supported way to stop being asked is a standing ' +
         'permission, which needs a signed-in person and a clock.'
     ).toEqual([]);
   });
