@@ -1,12 +1,21 @@
 /**
- * The overlap proof for the Q3 contention harness (DOR-500).
+ * The two validity proofs for the Q3 contention harness (DOR-500). A run that
+ * fails either is discarded, not interpreted.
  *
- * Without it a clean result is indistinguishable from six agents politely
- * taking turns, and the whole measurement is worthless. Every agent reports the
- * wall-clock instant its turn started and ended; this module answers one
- * question: was there an instant at which ALL of them were mid-turn?
+ *  1. **Concurrency** ({@link computeOverlap}, {@link assertOverlap}). Without
+ *     it a clean result is indistinguishable from six agents politely taking
+ *     turns. Every agent reports the wall-clock instant its turn started and
+ *     ended; this answers: was there an instant at which ALL were mid-turn?
+ *  2. **Work** ({@link assertTurnsDidWork}). Overlap alone is not enough — six
+ *     agents can overlap and do nothing. This is not hypothetical: arm 3 drives
+ *     a real model that can ignore its instructions, and six agents streaming
+ *     prose while skipping the canary would PASS the overlap proof and report
+ *     "no contention" from a run that measured nothing. That confident-wrong
+ *     answer is the exact failure this harness exists to prevent.
  *
- * Pure by design — no clocks, no I/O — so the assertion itself is testable.
+ * Pure by design — no clocks, no I/O — so both assertions are testable.
+ *
+ * Design of record: `research/20260725_q3-contention-preregistration.md`.
  *
  * @module scripts/q3-contention/overlap
  */
@@ -121,6 +130,68 @@ export function assertOverlap(report: OverlapReport, minWidthMs: number): void {
     throw new Error(
       `[q3] OVERLAP PROOF FAILED — every agent was mid-turn for only ${report.commonWidthMs}ms, ` +
         `below the ${minWidthMs}ms floor. Raise --duration or reduce startup skew.`
+    );
+  }
+}
+
+/** What {@link assertTurnsDidWork} needs from one agent's turn. */
+export interface TurnWorkEvidence {
+  /** Agent label, e.g. `cats`. */
+  readonly label: string;
+  /** Terminal reason from the durable stream; `ok` is the only clean value. */
+  readonly terminalReason: string;
+  /** Stream ticks the agent completed, or -1 when it reported none. */
+  readonly ticks: number;
+  /** Canary lines the agent reported writing, or -1 when it reported none. */
+  readonly appends: number;
+}
+
+/**
+ * Fail the run loudly when the turns overlapped but produced nothing to measure.
+ *
+ * Four independent ways a run can be hollow, each checked separately so the
+ * failure message names the actual one:
+ *
+ *  - an agent that was planned never reported at all;
+ *  - a turn that did not end cleanly (`terminalReason !== 'ok'`);
+ *  - a turn that streamed no ticks;
+ *  - a turn that wrote no canary lines, which is the arm 3 failure mode — a
+ *    real model can stream a perfectly good essay and never touch the file.
+ *
+ * @param evidence - One entry per turn that reported back.
+ * @param expectedLabels - Every agent the plan intended to run.
+ * @throws If any agent is missing, failed, streamed nothing, or wrote nothing.
+ */
+export function assertTurnsDidWork(
+  evidence: readonly TurnWorkEvidence[],
+  expectedLabels: readonly string[]
+): void {
+  const seen = new Set(evidence.map((e) => e.label));
+  const missing = expectedLabels.filter((label) => !seen.has(label));
+  if (missing.length > 0) {
+    throw new Error(
+      `[q3] WORK PROOF FAILED — planned agents never reported: ${missing.join(', ')}. ` +
+        `The run is incomplete and its contention numbers understate the load.`
+    );
+  }
+
+  const failures: string[] = [];
+  for (const turn of evidence) {
+    if (turn.terminalReason !== 'ok') {
+      failures.push(`${turn.label} ended as "${turn.terminalReason}"`);
+    }
+    if (turn.ticks <= 0) {
+      failures.push(`${turn.label} streamed no work (ticks=${turn.ticks})`);
+    }
+    if (turn.appends <= 0) {
+      failures.push(`${turn.label} wrote no canary lines (appends=${turn.appends})`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `[q3] WORK PROOF FAILED — the turns overlapped but did not do the work: ` +
+        `${failures.join('; ')}. A "no contention" reading from this run would be ` +
+        `measuring nothing, not measuring an absence.`
     );
   }
 }

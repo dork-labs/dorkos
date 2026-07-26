@@ -62,12 +62,34 @@ describe('buildCanaryReport', () => {
   it('counts duplicated sequence numbers without inflating survivors', () => {
     const report = buildCanaryReport('/tmp/c.log', 'cats 0 t\ncats 0 t\ncats 1 t\n', { cats: 2 });
     expect(report.totalLines).toBe(3);
+    expect(report.survivedTotal).toBe(2);
     expect(report.byVocab.cats?.survived).toBe(2);
     expect(report.byVocab.cats?.duplicates).toBe(1);
-    // Reported vs distinct survivors is the lost-update measure; the raw line
-    // count going the other way is reported separately, not netted out.
     expect(report.byVocab.cats?.missing).toBe(0);
-    expect(report.missingTotal).toBe(-1);
+  });
+
+  it('keeps missingTotal on the same basis as every per-vocab missing', () => {
+    // A duplicate inflates totalLines but not survivors. Deriving missingTotal
+    // from the raw line count would report -1 here while the breakdown reports
+    // 0, which is the disagreement this asserts against.
+    const report = buildCanaryReport('/tmp/c.log', 'cats 0 t\ncats 0 t\ncats 1 t\ndogs 0 t\n', {
+      cats: 2,
+      dogs: 3,
+    });
+    const sumOfParts = Object.values(report.byVocab).reduce((sum, v) => sum + v.missing, 0);
+    expect(report.missingTotal).toBe(sumOfParts);
+    expect(report.missingTotal).toBe(2);
+    expect(report.totalLines).toBe(4);
+    expect(report.survivedTotal).toBe(3);
+  });
+
+  it('carries the method and the interpretation caveat into every report', () => {
+    // These strings are what stop a canary shortfall escaping into a doc as a
+    // corruption rate for real agents; they must ride with the number.
+    const report = buildCanaryReport('/tmp/c.log', '', { cats: 1 });
+    expect(report.method).toMatch(/no lock, no atomic rename/);
+    expect(report.caveat).toMatch(/NOT a corruption rate/);
+    expect(report.caveat).toMatch(/preregistration/);
   });
 
   it('surfaces lines from a vocabulary that reported nothing', () => {

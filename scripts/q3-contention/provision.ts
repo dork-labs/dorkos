@@ -2,14 +2,24 @@
  * Throwaway state for the Q3 contention harness (DOR-500), and the safety
  * assertions that make it impossible to aim the run at anything real.
  *
- * Everything the run mutates lives under one `runRoot` inside the OS temp
- * directory: the server's `DORK_HOME`, the throwaway git repository, its
- * worktrees, and the canary files. Nothing outside `runRoot` is created,
- * written, or deleted — in particular the harness never runs `git worktree add`
- * against a real checkout, because that would mutate its `.git`.
+ * Everything the run mutates lives under one `runRoot` inside a temp directory:
+ * the server's `DORK_HOME`, the throwaway git repository, its worktrees, and
+ * the canary files. Nothing outside `runRoot` is created, written, or deleted —
+ * in particular the harness never runs `git worktree add` against a real
+ * checkout, because that would mutate its `.git`.
  *
- * {@link assertSafeRunRoot} runs BEFORE anything is created and again before
- * anything is deleted. It is deliberately loud and deliberately paranoid.
+ * WHAT {@link assertSafeRunRoot} ACTUALLY ENFORCES, stated exactly, because an
+ * overclaimed guard is worse than a modest one. It requires the root to sit
+ * inside a temp directory it trusts, and refuses the home directory, the real
+ * `~/.dork`, the repo checkout, the temp root itself, and the filesystem root.
+ * The temp directory is `/tmp` or `/private/tmp` unless `TMPDIR` names a path
+ * that is itself outside home and outside the repo — `TMPDIR` is an ordinary
+ * environment variable and pointing it at `$HOME` must not widen what this
+ * harness may delete.
+ *
+ * It runs BEFORE anything is created and again immediately before anything is
+ * deleted, the second time against the fully realpath-resolved root, so a
+ * symlink planted at the final path component cannot redirect the delete.
  *
  * @module scripts/q3-contention/provision
  */
@@ -62,30 +72,60 @@ function isInside(child: string, parent: string): boolean {
 }
 
 /**
+ * Resolve the temp directory this harness is willing to delete inside.
+ *
+ * `os.tmpdir()` honours `TMPDIR`, which is an ordinary environment variable a
+ * user or a wrapper script can set to anything — including `$HOME`. Trusting it
+ * blindly would let `TMPDIR=$HOME` turn "inside the temp directory" into "inside
+ * your home directory" and quietly widen what the destructive path accepts. So
+ * a `TMPDIR` that resolves inside home or inside the repo is discarded in
+ * favour of the system temp directory.
+ *
+ * @param home - Realpath-resolved home directory.
+ * @param repo - Realpath-resolved repo checkout.
+ * @returns Realpath-resolved directory the run root must sit inside.
+ */
+async function trustedTempRoot(home: string, repo: string): Promise<string> {
+  const advertised = await realpathOrResolve(os.tmpdir());
+  if (!isInside(advertised, home) && !isInside(advertised, repo)) return advertised;
+  return realpathOrResolve('/tmp');
+}
+
+/**
  * Refuse to proceed unless the run root is unmistakably throwaway.
  *
  * Called before provisioning AND before deletion, so neither path can be aimed
  * at the operator's real state by a bad flag, a stale variable, or a symlink.
+ * See the module TSDoc for exactly what is and is not enforced.
  *
  * @param runRoot - Candidate root for the run's throwaway state.
  * @param repoRoot - The checkout the harness is running from, which must stay untouched.
- * @returns The realpath-resolved run root, safe to create and later delete.
- * @throws With a loud explanation if the root is not inside the OS temp dir, or
- *   sits inside the home directory, the real `~/.dork`, or the repo checkout.
+ * @param opts - `fullyResolve` realpaths the whole root rather than only its
+ *   parent. Off during provisioning (the root does not exist yet); ON before
+ *   deletion, so a symlink planted at the final component cannot redirect it.
+ * @returns The resolved run root, safe to create and later delete.
+ * @throws With a loud explanation naming every rule the path broke.
  */
-export async function assertSafeRunRoot(runRoot: string, repoRoot: string): Promise<string> {
+export async function assertSafeRunRoot(
+  runRoot: string,
+  repoRoot: string,
+  opts: { fullyResolve?: boolean } = {}
+): Promise<string> {
   const resolved = path.resolve(runRoot);
-  const tmpRoot = await realpathOrResolve(os.tmpdir());
   const home = await realpathOrResolve(os.homedir());
   const repo = await realpathOrResolve(repoRoot);
-  // The run root usually does not exist yet; resolve its nearest existing
-  // ancestor instead so a symlinked temp dir still compares correctly.
-  const anchor = await realpathOrResolve(path.dirname(resolved));
-  const candidate = path.join(anchor, path.basename(resolved));
+  const tmpRoot = await trustedTempRoot(home, repo);
+  // During provisioning the root does not exist yet, so only its nearest
+  // existing ancestor can be realpath'd. Before deletion the root DOES exist
+  // and is resolved whole — otherwise a symlink at the last component would be
+  // checked as a name while the delete followed it somewhere else.
+  const candidate = opts.fullyResolve
+    ? await realpathOrResolve(resolved)
+    : path.join(await realpathOrResolve(path.dirname(resolved)), path.basename(resolved));
 
   const failures: string[] = [];
   if (!isInside(candidate, tmpRoot)) {
-    failures.push(`not inside the OS temp directory (${tmpRoot})`);
+    failures.push(`not inside the trusted temp directory (${tmpRoot})`);
   }
   if (isInside(candidate, path.join(home, '.dork'))) {
     failures.push(`inside the real DorkOS home (${path.join(home, '.dork')})`);
@@ -100,7 +140,7 @@ export async function assertSafeRunRoot(runRoot: string, repoRoot: string): Prom
   if (failures.length > 0) {
     throw new Error(
       `[q3] REFUSING TO RUN — the run root "${candidate}" is ${failures.join('; ')}. ` +
-        `This harness only ever creates and deletes state inside the OS temp directory.`
+        `This harness only ever creates and deletes state inside the trusted temp directory.`
     );
   }
   return candidate;
@@ -189,9 +229,12 @@ export async function teardownRunRoot(
     return;
   }
   // Re-assert immediately before the destructive call: the guard is cheap and
-  // the alternative is an rm -rf aimed by a variable nobody re-checked.
-  await assertSafeRunRoot(paths.runRoot, repoRoot);
-  await fs.rm(paths.runRoot, { recursive: true, force: true });
+  // the alternative is an rm -rf aimed by a variable nobody re-checked. This
+  // time the WHOLE path is realpath-resolved and the resolved form is what gets
+  // deleted, so a symlink planted at the last component cannot point the delete
+  // outside the containment the check just verified.
+  const target = await assertSafeRunRoot(paths.runRoot, repoRoot, { fullyResolve: true });
+  await fs.rm(target, { recursive: true, force: true });
 }
 
 /**

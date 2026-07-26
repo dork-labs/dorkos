@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { assertOverlap, computeOverlap } from '../overlap.js';
+import { assertOverlap, assertTurnsDidWork, computeOverlap } from '../overlap.js';
 
 describe('computeOverlap', () => {
   it('finds the common window when every interval intersects', () => {
@@ -93,5 +93,72 @@ describe('assertOverlap', () => {
       { label: 'dogs', startMs: 900, endMs: 2000 },
     ]);
     expect(() => assertOverlap(report, 2000)).toThrow(/only 100ms/);
+  });
+});
+
+/** A turn that did everything it was asked to. */
+function goodTurn(label: string) {
+  return { label, terminalReason: 'ok', ticks: 60, appends: 58 };
+}
+
+describe('assertTurnsDidWork', () => {
+  it('passes when every planned agent streamed and wrote', () => {
+    expect(() =>
+      assertTurnsDidWork([goodTurn('cats'), goodTurn('dogs')], ['cats', 'dogs'])
+    ).not.toThrow();
+  });
+
+  it('catches the arm 3 failure: overlapping turns that never touched the canary', () => {
+    // A real model can stream a perfectly good essay and ignore the canary
+    // instructions entirely. That run would pass the overlap proof and report
+    // "no contention" while having measured nothing.
+    expect(() =>
+      assertTurnsDidWork(
+        [goodTurn('cats'), { label: 'dogs', terminalReason: 'ok', ticks: 40, appends: 0 }],
+        ['cats', 'dogs']
+      )
+    ).toThrow(/dogs wrote no canary lines/);
+  });
+
+  it('rejects a turn that did not end cleanly', () => {
+    expect(() =>
+      assertTurnsDidWork(
+        [goodTurn('cats'), { label: 'dogs', terminalReason: 'error', ticks: 5, appends: 5 }],
+        ['cats', 'dogs']
+      )
+    ).toThrow(/dogs ended as "error"/);
+  });
+
+  it('rejects a turn that streamed nothing', () => {
+    expect(() =>
+      assertTurnsDidWork([{ label: 'cats', terminalReason: 'ok', ticks: 0, appends: 3 }], ['cats'])
+    ).toThrow(/streamed no work/);
+  });
+
+  it('rejects a run where a planned agent never reported', () => {
+    expect(() => assertTurnsDidWork([goodTurn('cats')], ['cats', 'dogs', 'birds'])).toThrow(
+      /never reported: dogs, birds/
+    );
+  });
+
+  it('treats an unreported count (-1) as no work, not as unknown', () => {
+    expect(() =>
+      assertTurnsDidWork(
+        [{ label: 'cats', terminalReason: 'ok', ticks: -1, appends: -1 }],
+        ['cats']
+      )
+    ).toThrow(/WORK PROOF FAILED/);
+  });
+
+  it('names every distinct failure rather than only the first', () => {
+    expect(() =>
+      assertTurnsDidWork(
+        [
+          { label: 'cats', terminalReason: 'error', ticks: 10, appends: 10 },
+          { label: 'dogs', terminalReason: 'ok', ticks: 10, appends: 0 },
+        ],
+        ['cats', 'dogs']
+      )
+    ).toThrow(/cats ended as "error".*dogs wrote no canary lines/s);
   });
 });

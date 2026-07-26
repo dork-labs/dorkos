@@ -3,6 +3,25 @@
  * (DOR-500), and tails its output for the two error classes the experiment is
  * watching for: `SQLITE_BUSY` on `~/.dork` and `EMFILE` on descriptors.
  *
+ * ONE SERVER PROCESS, N SESSIONS — and what that bounds.
+ *
+ * The harness boots exactly one server and drives every agent as a session
+ * inside it. That is deliberate and matches the realistic configuration:
+ * `.claude/scripts/worktree-setup.sh` patches ports only and never `DORK_HOME`,
+ * so parallel worktrees on one machine already share one DorkOS home and one
+ * server. Two humans and six agents is one process with eight sessions, not
+ * eight processes.
+ *
+ * The consequence is a hard limit on what the SQLite numbers can say. All
+ * `~/.dork` access flows through ONE process's connection pool, so this arm
+ * measures INTRA-PROCESS contention only. A `sqliteBusy` count of zero means
+ * "that one pool did not self-contend" — it is NOT evidence that SQLite
+ * survives MULTI-PROCESS access to a shared `~/.dork`, which is a different
+ * experiment with a different setup. {@link SQLITE_SCOPE} carries this into
+ * `summary.json` beside the counter, so a bare `sqliteBusy: 0` can never be
+ * read as the broader claim. See
+ * `research/20260725_q3-contention-preregistration.md` (Limitations, item 1).
+ *
  * Process handling mirrors the proven capture harness (`apps/e2e/capture/boot.ts`):
  * the child runs in its own process group so a group kill reaps `sh` and the
  * server together, and every exit path — clean, thrown, or signalled — reaps it.
@@ -15,9 +34,20 @@ import type { RunPlan } from './plan.js';
 import type { RunPaths } from './provision.js';
 import { buildCanaryMap } from './provision.js';
 
+/** What a `sqliteBusy` count does and does not cover. Emitted with every run. */
+export const SQLITE_SCOPE =
+  'One server process, N sessions: all ~/.dork access flows through a single connection pool, so this counts INTRA-PROCESS contention only. Zero means that one pool did not self-contend; it is NOT evidence that SQLite survives multi-process access to a shared ~/.dork.';
+
+/** How `sqliteBusy` and `emfile` were detected, and what that detection misses. */
+export const ERROR_DETECTION_SCOPE =
+  'Both counters are scraped from the server process output. An error the database driver or runtime swallows without logging is not counted — absence of evidence, not evidence of absence.';
+
 /** Counts of the error classes scraped from the server's output. */
 export interface ErrorCounters {
-  /** Occurrences of `SQLITE_BUSY` / "database is locked" in server output. */
+  /**
+   * Occurrences of `SQLITE_BUSY` / "database is locked" in server output.
+   * Read only alongside {@link SQLITE_SCOPE}.
+   */
   sqliteBusy: number;
   /** Occurrences of `EMFILE` in server output. */
   emfile: number;

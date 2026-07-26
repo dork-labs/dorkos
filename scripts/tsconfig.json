@@ -14,6 +14,5 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true
   },
-  "include": ["q3-contention/**/*.ts"],
-  "exclude": ["q3-contention/__tests__/**"]
+  "include": ["q3-contention/**/*.ts", "vitest.config.ts"]
 }

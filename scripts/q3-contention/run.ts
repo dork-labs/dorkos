@@ -24,11 +24,22 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { buildCanaryReport, type CanaryReport } from './canary.js';
-import { assertOverlap, computeOverlap, type OverlapReport } from './overlap.js';
+import {
+  assertOverlap,
+  assertTurnsDidWork,
+  computeOverlap,
+  type OverlapReport,
+} from './overlap.js';
 import { parseArgs, USAGE, type RunPlan } from './plan.js';
 import { provision, teardownRunRoot, type RunPaths } from './provision.js';
 import { Sampler, type Sample } from './sampler.js';
-import { bootServer, buildServerDeps, type ServerHandle } from './server-process.js';
+import {
+  bootServer,
+  buildServerDeps,
+  ERROR_DETECTION_SCOPE,
+  SQLITE_SCOPE,
+  type ServerHandle,
+} from './server-process.js';
 import { fireConcurrentTurns, MutableTurnTracker, type TurnResult } from './turns.js';
 
 const REPO_ROOT = path.resolve(fileURLToPath(import.meta.url), '..', '..', '..');
@@ -132,16 +143,56 @@ function printSummary(
   for (const canary of canaries) {
     console.log(
       `[q3] canary ${path.basename(path.dirname(canary.path))}: reported=${canary.reportedTotal} ` +
-        `survived=${canary.totalLines} missing=${canary.missingTotal} ` +
+        `survived=${canary.survivedTotal} missing=${canary.missingTotal} ` +
         `malformed=${canary.malformedLines}`
     );
+  }
+  if (canaries.length > 0) {
+    console.log('[q3] canary numbers are an INTERLEAVE count, not a corruption rate — see');
+    console.log('[q3]   research/20260725_q3-contention-preregistration.md before quoting them.');
   }
   console.log(
     `[q3] machine: peakLoad1=${peakLoad.toFixed(2)} peakTreeRss=${Math.round(peakRss / 1024)}MB ` +
       `peakOpenFiles=${peakFds} sqliteBusy=${server.counters.sqliteBusy} emfile=${server.counters.emfile}`
   );
+  console.log('[q3]   sqliteBusy covers ONE process’s pool (intra-process contention only).');
   console.log(`[q3] samples=${samples.length}  artifacts=${outDir}`);
   console.log('');
+}
+
+/** Verdicts from the two validity proofs, recorded whether or not they passed. */
+interface Validity {
+  readonly overlap: OverlapReport | undefined;
+  /** Why the run is invalid, or undefined when both proofs passed. */
+  readonly invalidReason: string | undefined;
+}
+
+/**
+ * Run both validity proofs without throwing, so the verdict can be written into
+ * `summary.json` before the run is failed. `computeOverlap` itself throws on a
+ * degenerate interval — reachable whenever an SSE stream drops and `endedAtMs`
+ * stays 0 — so it is guarded here rather than left to strand the teardown.
+ */
+function checkValidity(plan: RunPlan, turns: readonly TurnResult[]): Validity {
+  let overlap: OverlapReport | undefined;
+  try {
+    overlap = computeOverlap(
+      turns.map((t) => ({ label: t.vocab, startMs: t.startedAtMs, endMs: t.endedAtMs }))
+    );
+    assertOverlap(overlap, plan.minOverlapMs);
+    assertTurnsDidWork(
+      turns.map((t) => ({
+        label: t.vocab,
+        terminalReason: t.terminalReason,
+        ticks: t.ticks,
+        appends: t.appends,
+      })),
+      plan.agents.map((a) => a.vocab)
+    );
+  } catch (err) {
+    return { overlap, invalidReason: err instanceof Error ? err.message : String(err) };
+  }
+  return { overlap, invalidReason: undefined };
 }
 
 /** Provision, run, measure, and tear down one arm. */
@@ -162,62 +213,90 @@ async function runArm(plan: RunPlan): Promise<void> {
   let sampler: Sampler | undefined;
   let turns: TurnResult[] = [];
   let failure: unknown;
+  let validity: Validity = { overlap: undefined, invalidReason: undefined };
+  let canaries: CanaryReport[] = [];
+  let samples: readonly Sample[] = [];
 
+  // Everything from the first spawn onward sits inside try/finally: a throw
+  // between here and teardown would otherwise strand a live server holding the
+  // port and leave an undeleted run root behind, which on a shared machine is a
+  // real nuisance rather than a theoretical one.
   try {
-    server = await bootServer(plan, paths, REPO_ROOT, path.join(paths.outDir, 'server.log'));
-    console.log(`[q3] server up on ${server.baseUrl} (pid ${server.pid})`);
+    try {
+      server = await bootServer(plan, paths, REPO_ROOT, path.join(paths.outDir, 'server.log'));
+      console.log(`[q3] server up on ${server.baseUrl} (pid ${server.pid})`);
 
-    sampler = new Sampler(server.pid, server.counters, tracker);
-    sampler.start();
+      sampler = new Sampler(server.pid, server.counters, tracker);
+      sampler.start();
 
-    turns = await fireConcurrentTurns(plan, paths, server.baseUrl, tracker);
-  } catch (err) {
-    failure = err;
+      turns = await fireConcurrentTurns(plan, paths, server.baseUrl, tracker);
+    } catch (err) {
+      failure = err;
+    }
+
+    await sampler?.stop();
+    samples = sampler?.rows() ?? [];
+
+    // Artifacts are written BEFORE the run is failed, so a discarded run still
+    // leaves its evidence — including WHY it was discarded.
+    await fs.writeFile(path.join(paths.outDir, 'samples.csv'), toCsv(samples, SAMPLE_COLUMNS));
+    await fs.writeFile(path.join(paths.outDir, 'turns.csv'), toCsv(turns, TURN_COLUMNS));
+
+    canaries = turns.length > 0 ? await collectCanaries(plan, paths, turns) : [];
+    validity =
+      turns.length >= 2
+        ? checkValidity(plan, turns)
+        : { overlap: undefined, invalidReason: '[q3] run produced fewer than two turns' };
+
+    await fs.writeFile(
+      path.join(paths.outDir, 'summary.json'),
+      `${JSON.stringify(
+        {
+          preRegistration: 'research/20260725_q3-contention-preregistration.md',
+          plan,
+          runRoot: paths.runRoot,
+          valid: failure === undefined && validity.invalidReason === undefined,
+          invalidReason: validity.invalidReason,
+          overlap: validity.overlap,
+          turns,
+          canaries,
+          errorCounters: server?.counters ?? { sqliteBusy: 0, emfile: 0 },
+          // The counters above are meaningless without these two. They travel
+          // in the same object so a bare `sqliteBusy: 0` cannot be lifted out
+          // and read as "SQLite is fine under multi-agent load".
+          errorCounterScope: {
+            sqliteBusy: SQLITE_SCOPE,
+            detection: ERROR_DETECTION_SCOPE,
+          },
+          sampleCount: samples.length,
+          skippedSamples: sampler?.skippedTicks() ?? 0,
+        },
+        null,
+        2
+      )}\n`
+    );
+  } finally {
+    // Neither teardown may mask the failure that brought us here, and a failure
+    // in one must not skip the other.
+    try {
+      await server?.stop();
+    } catch (err) {
+      console.error(`[q3] server teardown failed: ${err instanceof Error ? err.message : err}`);
+    }
+    try {
+      await teardownRunRoot(paths, REPO_ROOT, plan.keepRunRoot);
+    } catch (err) {
+      console.error(`[q3] run-root teardown failed: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
-  await sampler?.stop();
-  const samples = sampler?.rows() ?? [];
-
-  // Artifacts are written BEFORE any assertion throws, so a failed run still
-  // leaves its evidence behind.
-  await fs.writeFile(path.join(paths.outDir, 'samples.csv'), toCsv(samples, SAMPLE_COLUMNS));
-  await fs.writeFile(path.join(paths.outDir, 'turns.csv'), toCsv(turns, TURN_COLUMNS));
-
-  const canaries = turns.length > 0 ? await collectCanaries(plan, paths, turns) : [];
-  const overlap =
-    turns.length >= 2
-      ? computeOverlap(
-          turns.map((t) => ({ label: t.vocab, startMs: t.startedAtMs, endMs: t.endedAtMs }))
-        )
-      : undefined;
-
-  await fs.writeFile(
-    path.join(paths.outDir, 'summary.json'),
-    `${JSON.stringify(
-      {
-        plan,
-        runRoot: paths.runRoot,
-        overlap,
-        turns,
-        canaries,
-        errorCounters: server?.counters ?? { sqliteBusy: 0, emfile: 0 },
-        sampleCount: samples.length,
-        skippedSamples: sampler?.skippedTicks() ?? 0,
-      },
-      null,
-      2
-    )}\n`
-  );
-
-  await server?.stop();
-  await teardownRunRoot(paths, REPO_ROOT, plan.keepRunRoot);
-
   if (failure) throw failure;
-  if (!overlap || !server) throw new Error('[q3] run produced no turns');
-
-  printSummary(plan, overlap, turns, canaries, samples, server, paths.outDir);
-  // Last, so every artifact is on disk before a failed proof aborts the run.
-  assertOverlap(overlap, plan.minOverlapMs);
+  if (validity.overlap && server) {
+    printSummary(plan, validity.overlap, turns, canaries, samples, server, paths.outDir);
+  }
+  // Last, so every artifact is on disk and everything is reaped before a failed
+  // proof aborts the run.
+  if (validity.invalidReason) throw new Error(validity.invalidReason);
 }
 
 /** Parse argv, run the selected arm, and set a non-zero exit code on failure. */

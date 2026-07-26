@@ -3,9 +3,9 @@
  *
  * Turns flags into the three PRE-REGISTERED arms and the per-agent assignment
  * (vocabulary → worktree → canary file) that the rest of the harness executes.
- * The arms are fixed by the experimental design in
- * `research/20260724_multi-user-communities.md` (ledger row Q3); this module
- * selects between them, it does not invent new ones.
+ * The arms are fixed by `research/20260725_q3-contention-preregistration.md`,
+ * written before any data existed; this module selects between them, it does
+ * not invent new ones. A new arm is a new pre-registration, not an edit here.
  *
  * @module scripts/q3-contention/plan
  */

@@ -9,9 +9,9 @@ import { resolveDorkHome } from '../../../lib/dork-home.js';
 
 /**
  * The `q3-*` scenario family: long-running, filesystem-contending test-mode
- * turns built for ONE measurement — the Q3 question from the multi-user review
- * (`research/20260724_multi-user-communities.md`, ledger row Q3): at 2 humans
- * and 6 agents on one machine, WHICH resource class collides first?
+ * turns built for ONE measurement — the Q3 question, pre-registered in
+ * `research/20260725_q3-contention-preregistration.md`: at 2 humans and 6
+ * agents on one machine, WHICH resource class collides first?
  *
  * Three properties the built-in and `demo-*` scenarios deliberately lack:
  *
@@ -22,11 +22,13 @@ import { resolveDorkHome } from '../../../lib/dork-home.js';
  *  2. **Configurable wall-clock duration.** A zero-latency scenario cannot
  *     produce overlapping turns, and non-overlapping turns measure nothing.
  *     `DORKOS_Q3_DURATION_MS` holds the turn open for tens of seconds.
- *  3. **Real filesystem contention.** Between yields each scenario performs a
- *     genuine read-modify-write against a shared canary file: read the whole
- *     file, append one tagged line, write it back. That is a deliberate
- *     lost-update surface — concurrent agents WILL clobber each other's lines,
- *     and counting the survivors is the measurement.
+ *  3. **An interleave detector.** Between yields each scenario performs a
+ *     deliberately non-atomic read-modify-write against a shared canary file:
+ *     read the whole file, append one tagged line, write it back. Concurrent
+ *     agents WILL clobber each other's lines, and counting the survivors is the
+ *     measurement. Read the caveat in {@link readModifyWriteCanary} before
+ *     quoting any number this produces: it detects INTERLEAVING, not the data
+ *     loss a real agent would suffer.
  *
  * Purely additive: nothing here changes the behavior of the built-in or
  * `demo-*` scenarios the marketing product-capture pipeline depends on. The
@@ -170,8 +172,17 @@ function resolveQ3Config(): Q3Config {
 /**
  * Append one line to the canary the slow way, on purpose: read the WHOLE file,
  * concatenate, write the whole thing back. There is no append mode, no lock,
- * and no atomic rename — two agents interleaving here lose each other's lines,
- * which is exactly the working-tree corruption surface Q3 is measuring.
+ * and no atomic rename — two agents interleaving here lose each other's lines.
+ *
+ * WHAT THIS MEASURES, PRECISELY. This is an **interleave detector**, not a
+ * corruption meter. A shortfall proves concurrent whole-file rewrites
+ * interleaved and clobbered each other. It is NOT the data loss real agent
+ * tooling would suffer: a writer using temp-file-plus-atomic-rename (the
+ * pattern DorkOS's own marketplace install transaction uses, ADR-0304) loses
+ * NOTHING on this exact workload. Quoting a canary shortfall as a corruption
+ * rate for real agents misuses it. The caveat rides into `summary.json` on
+ * every run (`CanaryReport.method` / `.caveat`) so it cannot be separated from
+ * the number it qualifies.
  */
 async function readModifyWriteCanary(file: string, line: string): Promise<void> {
   let existing = '';

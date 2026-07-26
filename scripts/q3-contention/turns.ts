@@ -50,35 +50,80 @@ export interface TurnResult {
   readonly crossedTokens: number;
 }
 
-/** Prompt for arm 3, where a real agent must be told to do the canary work. */
-function realRuntimePrompt(agent: AgentPlan, canaryPath: string, iterations: number): string {
+/**
+ * Prompt for arm 3, where a real agent must be told to do the canary work.
+ *
+ * It asks for `startedAt`/`endedAt` explicitly. Without them the turn's
+ * interval collapses to the harness's request window — which includes model
+ * latency and tool round-trips, and so overlaps trivially — rather than the
+ * window in which the agent was actually writing. That would let the overlap
+ * proof pass on work that never happened.
+ *
+ * @internal Exported for testing.
+ */
+export function realRuntimePrompt(
+  agent: AgentPlan,
+  canaryPath: string,
+  iterations: number
+): string {
   return [
     `You are agent "${agent.vocab}" in a filesystem contention measurement. Do exactly this and nothing else.`,
-    `Repeat ${iterations} times, with i counting from 0:`,
+    `First, record the current time in epoch milliseconds. Call it START.`,
+    `Then repeat ${iterations} times, with i counting from 0:`,
     `  1. Read the ENTIRE file ${canaryPath}.`,
     `  2. Append one line: "${agent.vocab} <i> <current ISO timestamp>".`,
     `  3. Write the entire file back, replacing it.`,
     `Do not use append mode, a lock, or an atomic rename. Read the whole file and rewrite the whole file each time.`,
     `Do not read, write, or modify any other file. Do not run git.`,
-    `When finished, reply with exactly one line: "[q3-summary] vocab=${agent.vocab} ticks=${iterations} appends=<lines you wrote> canaryErrors=<writes that failed>".`,
+    `Then record the current time in epoch milliseconds again. Call it END.`,
+    `Reply with exactly one line and nothing else:`,
+    `[q3-summary] vocab=${agent.vocab} startedAt=<START> endedAt=<END> ticks=<loops you completed> appends=<lines you wrote> canaryErrors=<writes that failed>`,
+    `Every value must be a plain integer. Report what actually happened, not what was requested.`,
   ].join('\n');
 }
 
-/** Parsed `key=value` pairs from a scenario marker line. */
-function parseMarker(text: string, marker: string): Record<string, string> | null {
+/**
+ * Parsed `key=value` pairs from a marker line.
+ *
+ * Empty values are DROPPED rather than stored. This is load-bearing: a
+ * truncated `startedAt=` would otherwise store `''`, and `Number('')` is `0`
+ * with `Number.isFinite(0) === true` — so the turn's interval would silently
+ * begin at the epoch, wide enough to overlap everything and pass the
+ * concurrency proof on a broken stream. Same trap the sampler's fd probe
+ * guards against.
+ *
+ * @internal Exported for testing.
+ */
+export function parseMarker(text: string, marker: string): Record<string, string> | null {
   const index = text.lastIndexOf(marker);
   if (index === -1) return null;
   const line = text.slice(index + marker.length).split('\n')[0] ?? '';
   const out: Record<string, string> = {};
   for (const pair of line.trim().split(/\s+/)) {
     const [key, value] = pair.split('=');
-    if (key && value !== undefined) out[key] = value;
+    if (key && value !== undefined && value !== '') out[key] = value;
   }
   return out;
 }
 
-/** Count tagged tokens (`vocab:WORD#00001`) that belong to another vocabulary. */
-function countCrossedTokens(text: string, expectedVocab: string): number {
+/**
+ * Parse a marker value that must be a whole number of milliseconds.
+ *
+ * Returns `undefined` for anything that is not — missing, empty, `NaN`, or a
+ * non-integer — so a malformed marker can never masquerade as a real timestamp.
+ */
+function parseIntegerField(raw: string | undefined): number | undefined {
+  if (raw === undefined || !/^\d+$/.test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
+/**
+ * Count tagged tokens (`vocab:WORD#00001`) that belong to another vocabulary.
+ *
+ * @internal Exported for testing.
+ */
+export function countCrossedTokens(text: string, expectedVocab: string): number {
   let crossed = 0;
   for (const match of text.matchAll(/\b([a-z]+):[A-Z]+#\d+\b/g)) {
     if (match[1] !== expectedVocab) crossed++;
@@ -87,13 +132,20 @@ function countCrossedTokens(text: string, expectedVocab: string): number {
 }
 
 /** One SSE frame off the durable session stream. */
-interface Frame {
+export interface Frame {
   readonly event: string;
   readonly data: Record<string, unknown>;
 }
 
-/** Split an SSE buffer into complete frames, returning the unconsumed tail. */
-function drainFrames(buffer: string): { frames: Frame[]; rest: string } {
+/**
+ * Split an SSE buffer into complete frames, returning the unconsumed tail.
+ *
+ * Frames split across chunk boundaries, so the caller must feed the returned
+ * `rest` back in with the next chunk rather than discarding it.
+ *
+ * @internal Exported for testing.
+ */
+export function drainFrames(buffer: string): { frames: Frame[]; rest: string } {
   const frames: Frame[] = [];
   const blocks = buffer.split('\n\n');
   const rest = blocks.pop() ?? '';
@@ -115,11 +167,16 @@ function drainFrames(buffer: string): { frames: Frame[]; rest: string } {
 }
 
 /** Mutable accumulator for one in-flight turn. */
-interface TurnState {
+export interface TurnState {
+  /** Every `text_delta` seen so far, concatenated. */
   text: string;
+  /** Harness clock at the first `text_delta`, or 0 when none arrived. */
   firstDeltaAtMs: number;
+  /** Harness clock at `turn_end`, or 0 when the turn never closed. */
   observedEndMs: number;
+  /** `turn_end.terminalReason`, or a diagnostic string when the stream failed. */
   terminalReason: string;
+  /** True once `turn_end` was observed. */
   ended: boolean;
 }
 
@@ -160,8 +217,18 @@ async function consumeTurnStream(
   }
 }
 
-/** Assemble the final {@link TurnResult} from the accumulated stream state. */
-function summarize(
+/**
+ * Assemble the final {@link TurnResult} from the accumulated stream state.
+ *
+ * The agent clock is used ONLY when both endpoints parse as whole numbers and
+ * the interval is positive. Anything else falls back to the harness clock and
+ * is labelled `harness` — a half-parsed marker must never produce a plausible
+ * looking interval, because a bogus interval that happens to be wide would pass
+ * the concurrency proof.
+ *
+ * @internal Exported for testing.
+ */
+export function summarize(
   agent: AgentPlan,
   sessionId: string,
   firedAtMs: number,
@@ -169,9 +236,10 @@ function summarize(
 ): TurnResult {
   const start = parseMarker(state.text, '[q3-start]');
   const summary = parseMarker(state.text, '[q3-summary]');
-  const agentStart = Number(start?.startedAt ?? summary?.startedAt ?? NaN);
-  const agentEnd = Number(summary?.endedAt ?? NaN);
-  const haveAgentClock = Number.isFinite(agentStart) && Number.isFinite(agentEnd);
+  const agentStart = parseIntegerField(start?.startedAt ?? summary?.startedAt);
+  const agentEnd = parseIntegerField(summary?.endedAt);
+  const haveAgentClock =
+    agentStart !== undefined && agentEnd !== undefined && agentEnd > agentStart;
 
   return {
     index: agent.index,
@@ -185,9 +253,9 @@ function summarize(
     endedAtMs: haveAgentClock ? agentEnd : state.observedEndMs,
     timestampSource: haveAgentClock ? 'agent' : 'harness',
     terminalReason: state.terminalReason,
-    ticks: Number(summary?.ticks ?? -1),
-    appends: Number(summary?.appends ?? -1),
-    canaryErrors: Number(summary?.canaryErrors ?? -1),
+    ticks: parseIntegerField(summary?.ticks) ?? -1,
+    appends: parseIntegerField(summary?.appends) ?? -1,
+    canaryErrors: parseIntegerField(summary?.canaryErrors) ?? -1,
     crossedTokens: countCrossedTokens(state.text, agent.vocab),
   };
 }
