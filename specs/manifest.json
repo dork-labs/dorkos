@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260726-015631",
+      "slug": "agent-approval-settings",
+      "title": "Agent approval settings: a supported way to say stop asking",
+      "created": "2026-07-25",
+      "status": "specified",
+      "project": "Agents as First-Class Operators"
+    },
+    {
       "id": "260725-112204",
       "slug": "agents-list-attention-order",
       "title": "Agents list, ordered by attention",
