@@ -18,13 +18,13 @@ DorkOS asks a person before an agent does something that cannot be undone. That 
 
 ### What is actually in the tree
 
-Verified on this branch, based on `origin/main` at `0b7e8477d`.
+Verified on this branch, based on `origin/main` at `817e4b832`.
 
-**One capability in the whole server is `destructive`.** `marketplace.uninstall`, at `apps/server/src/services/marketplace-mcp/marketplace-capabilities.ts:234`. A grep for `tier: 'destructive'` across `apps/server/src` (excluding tests) returns that single line. `marketplace.install` is tier `act` (`marketplace-capabilities.ts:212`) and `marketplace.create_package` is tier `act` (`marketplace-capabilities.ts:261`).
+**One capability in the whole server is `destructive`.** `marketplace.uninstall`, at `apps/server/src/services/marketplace-mcp/marketplace-capabilities.ts:238`. A grep for `tier: 'destructive'` across `apps/server/src` (excluding tests) returns two lines, and only that one is a capability declaring its tier: the other (`apps/server/src/routes/marketplace.ts:285`) is a synthetic refusal payload a route builds when the gate cannot be reached, so it reports a tier rather than setting one. `marketplace.install` is tier `act` (`marketplace-capabilities.ts:216`) and `marketplace.create_package` is tier `act` (`marketplace-capabilities.ts:265`).
 
 **So the thing users experience as "the approval gate" is really two mechanisms, not one.**
 
-1. The **capability tier gate**, `enforceCapabilityTier` (`apps/server/src/services/core/capabilities/tier-enforcement.ts:461`), called at exactly two production sites: the invoke route (`apps/server/src/routes/capabilities-invoke.ts:93`) and the shared MCP projection used by both MCP adapters (`apps/server/src/services/core/capabilities/mcp-projection.ts:196`). It gates `destructive` only: `observe` returns allowed at `tier-enforcement.ts:473`, `act` returns allowed at `tier-enforcement.ts:500`.
+1. The **capability tier gate**, `enforceCapabilityTier` (`apps/server/src/services/core/capabilities/tier-enforcement.ts:479`). Since DOR-467 it is called from inside `registry.invoke` (`apps/server/src/services/core/capabilities/registry.ts:387`), so every surface reaching a capability through the registry is gated by construction rather than by each adapter remembering to call it. The invoke route and the MCP projection now just call `registry.invoke` (`apps/server/src/routes/capabilities-invoke.ts:96`, `apps/server/src/services/core/capabilities/mcp-projection.ts:191`) and translate a refusal into their own envelope. It gates `destructive` only: `observe` returns allowed at `tier-enforcement.ts:491`, `act` returns allowed at `tier-enforcement.ts:518`.
 2. The **marketplace's own confirmation step**, a separate and older flow. It is what actually stops an install or a package creation, because those are tier `act` and the tier gate waves them straight through.
 
 The user-facing guide describes all three actions as things that wait for you (`docs/guides/action-approvals.mdx:55-59`), and that is accurate about behavior. It just is not one mechanism underneath.
@@ -36,7 +36,7 @@ The user-facing guide describes all three actions as things that wait for you (`
 // confirmation request without prompting the user. Used by CI and tests.
 ```
 
-It is read in exactly one place, `apps/server/src/index.ts:1588`, to choose `AutoApproveConfirmationProvider` over `TokenConfirmationProvider`. Three facts about it matter:
+It is read in exactly one place, `apps/server/src/index.ts:1592`, to choose `AutoApproveConfirmationProvider` over `TokenConfirmationProvider`. Three facts about it matter:
 
 - It only short-circuits the **marketplace confirmation step**. It has no connection to the tier gate. A grep of `apps/server/src/services/core/capabilities/` and `apps/server/src/services/core/approvals/` for `AUTO_APPROVE`, `autoApprove`, and `permissionMode` returns zero hits in both directories. Confirmed by running it.
 - The docstring's "CI" claim does not hold. There are zero hits for the variable anywhere under `.github/`. Its only setter in the whole repository is one eval case, `packages/evals/src/suite/operate.ts:495`.
@@ -48,7 +48,7 @@ So an operator who wants an agent to act without being asked has nothing. Not a 
 
 Kai runs ten agents across five projects. Every package install, every uninstall, every scaffolded package stops and waits for him. A gate that interrupts constantly is a gate people learn to clear without reading. **A user who has been trained to click through is worse protected than one who is asked rarely and means it.** The gate stops being a decision and becomes a speed bump.
 
-This is not hypothetical for this codebase. The whole point of the card's careful wording (`tier-enforcement.ts:329-357`, which describes how a requester cannot forge the sentence a person reads) is that the person actually reads it. Volume is the thing that quietly destroys that.
+This is not hypothetical for this codebase. The whole point of the card's careful wording (`tier-enforcement.ts:346-374`, which describes how a requester cannot forge the sentence a person reads) is that the person actually reads it. Volume is the thing that quietly destroys that.
 
 ### The second problem: it is disconnected from the setting users will assume governs it
 
@@ -115,7 +115,7 @@ What this buys, concretely: a capability that becomes destructive next month has
 
 **C1. Forever, until revoked.** Rejected. A standing grant with no end is a permanent hole that the person who opened it will not be thinking about in a month.
 
-**C2. Time-boxed, sliding on use (the `sudo` model).** Rejected, and this is the interesting one. `sudo` refreshes its window every time you use it. Copying that here would mean **the agent controls its own expiry**: an agent that keeps acting keeps its trust alive indefinitely, so a busy or looping agent is exactly the one that never has to ask again. That inverts the property we want. It is the same class of mistake as keying a gate on whether the caller presented a credential, which `tier-enforcement.ts:27-49` was rewritten to remove.
+**C2. Time-boxed, sliding on use (the `sudo` model).** Rejected, and this is the interesting one. `sudo` refreshes its window every time you use it. Copying that here would mean **the agent controls its own expiry**: an agent that keeps acting keeps its trust alive indefinitely, so a busy or looping agent is exactly the one that never has to ask again. That inverts the property we want. It is the same class of mistake as keying a gate on whether the caller presented a credential, which `tier-enforcement.ts:40-62` was rewritten to remove.
 
 **C3. Time-boxed, absolute from the moment it was granted.** Chosen. The window does not move, whatever the agent does. Default eight hours: one working session, long enough that Kai's afternoon is not forty cards, short enough that it cannot survive into a day the person never thought about.
 
@@ -139,7 +139,7 @@ It is deleted. AGENTS.md is explicit that superseded things get removed rather t
 
 The migration cost turns out to be one eval case, not a fleet of CI jobs, because the "used by CI" claim in its docstring is not true (zero hits under `.github/`). Its sole setter is `packages/evals/src/suite/operate.ts:495`.
 
-And the replacement already exists. The governance suite added for DOR-498 drives real approvals through the real API with an `approvalPolicy`, including a granting case (`packages/evals/src/suite/governance.ts:831`) and a denying one (`governance.ts:760`). The harness can already answer an approval, which is precisely what the most recent commit on this branch's base records (`0b7e8477d`, "the harness can answer an approval, so the governance eval proves both halves"). So the install eval moves onto the mechanism that exercises production code instead of a test-only branch. That is a strictly better test, not a workaround.
+And the replacement already exists. The governance suite added for DOR-498 drives real approvals through the real API with an `approvalPolicy`, including a granting case (`packages/evals/src/suite/governance.ts:831`) and a denying one (`governance.ts:760`). The harness can already answer an approval, which is precisely what the most recent commit on this branch's base records (`817e4b832`, "the harness can answer an approval, so the governance eval proves both halves"). So the install eval moves onto the mechanism that exercises production code instead of a test-only branch. That is a strictly better test, not a workaround.
 
 One thing the deletion must not do is quietly break installs. Because `marketplace.install` and `marketplace.create_package` are tier `act`, the tier gate never gates them and `MARKETPLACE_AUTO_APPROVE` is currently the _only_ thing that can make them proceed unattended. So the new setting has to satisfy the marketplace confirmation step too, or "stop asking" will stop the uninstall card and leave the install card, which is the exact "don't ask did not mean don't ask" failure one level down.
 
@@ -153,13 +153,23 @@ One setting, off by default, that an agent cannot reach:
 
 Three properties make it safe, and each is a consequence of the design rather than a rule someone has to follow:
 
-1. **Only an identified agent can be trusted.** Grants key on agent path. A caller that presents no identity can never match one, so dropping a credential can only ever get you the gate, never past it. This is the mirror image of the reasoning at `tier-enforcement.ts:51-66`, where the ceiling was made universal so that shedding a credential could not widen reach.
-2. **A grant can never exceed the ceiling.** The `tierCeiling` check runs before the approval path (`tier-enforcement.ts:478-496`) and returns a refusal that is explicitly not approvable. An agent capped at `act` stays capped whatever grants exist, and we get that for free by putting the grant check after the ceiling check. Stated honestly: this is structural, not currently active. The only production caller of `mint()` passes just the agent path and display name (`apps/server/src/services/core/agent-identity/agent-token-env.ts:52-55`), so every agent sits at the default `destructive` ceiling and nothing is capped today.
+1. **Only an identified agent can be trusted.** Grants key on agent path. A caller that presents no identity can never match one, so dropping a credential can only ever get you the gate, never past it. This is the mirror image of the reasoning at `tier-enforcement.ts:64-79`, where the ceiling was made universal so that shedding a credential could not widen reach.
+2. **A grant can never exceed the ceiling.** The `tierCeiling` check runs before the approval path (`tier-enforcement.ts:496-514`) and returns a refusal that is explicitly not approvable. An agent capped at `act` stays capped whatever grants exist, and we get that for free by putting the grant check after the ceiling check. Stated honestly: this is structural, not currently active. The only production caller of `mint()` passes just the agent path and display name (`apps/server/src/services/core/agent-identity/agent-token-env.ts:52-55`), so every agent sits at the default `destructive` ceiling and nothing is capped today.
 3. **The agent that asked cannot create the grant.** Grant creation travels the same authority check as deciding an approval, `resolveDecisionAuthority` (`apps/server/src/services/core/approvals/decision-authority.ts:146`), which refuses any caller presenting an agent identity (`decision-authority.ts:152-159`) or holding an approval token (`decision-authority.ts:163-170`).
+
+### The correction that property 3 needed
+
+Property 3 as written above is **not sufficient**, and review caught it by running the attack rather than reading the code. `resolveDecisionAuthority` refuses an agent that _names itself_. It does not refuse an agent that simply omits its headers, and under the default `local-trust` posture nothing can: the resolver returns allowed for a caller presenting neither an agent header nor an approval token (`decision-authority.ts:172-174`). The same omission also skips the operator-only check on `PATCH /api/config`, because that check sits inside `if (!trustedCaller(...))` (`apps/server/src/routes/config.ts:231-232`). Two omitted headers walk the whole chain.
+
+So a fourth property is required, and it costs something real:
+
+4. **Creating a standing permission requires a session cookie, which means standing permissions require login to be on.** A cookie is the only signal that separates the cockpit from a header-stripping caller on loopback. With login off there is none, and "trust this agent" is not a statement DorkOS can evaluate, so the feature is disabled rather than approximated.
+
+The option of shipping it anyway under `local-trust` was considered and rejected. It would mean a control that claims to distinguish callers it demonstrably cannot, which is the exact failure `decision-authority.ts:40-42` refuses: inventing a check the agent could trivially satisfy "would be worse than the gap, because it would be a lie." Full reasoning and the reproduced chain are in §3.0 of the specification.
 
 ## Open questions carried into the specification
 
-- Exactly how the trust check is threaded into the marketplace confirmation provider, given that provider is constructed at boot (`index.ts:1587-1590`) while the grant lookup is per call.
+- Exactly how the trust check is threaded into the marketplace confirmation provider, given that provider is constructed at boot (`index.ts:1591-1594`) while the grant lookup is per call.
 - Whether the grants roster is exposed to agents through `config_get`, or withheld.
 - Where the setting is surfaced, given the finding that permission mode has no per-agent home to sit next to.
 
