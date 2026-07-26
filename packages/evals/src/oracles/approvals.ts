@@ -10,21 +10,43 @@
  * package would be just as gone, only sooner. It would prove the agent can delete
  * things, which nobody doubted, while claiming to prove the gate works.
  *
- * {@link approvalDecided}'s `probeShows` option is the fix. The runner captures
- * state at the instant BEFORE the decision is POSTed
+ * {@link approvalDecided}'s `probeShows` option is what rules that out. The runner
+ * captures state at the instant BEFORE the decision is POSTed
  * (`EvalCase.probeBeforeDecision`), and this oracle asserts on it. So the claim
  * becomes: an approval for this capability existed, it was still undecided, and
- * the action had NOT happened yet. Remove the gate and there is no approval to
- * decide, no probe, no record — and this oracle goes red rather than quietly
- * agreeing.
+ * the action had NOT happened yet.
+ *
+ * ## WHAT THIS ORACLE DOES NOT PROVE, MEASURED RATHER THAN ASSUMED
+ *
+ * It is NOT a mechanism discriminator, and the obvious intuition about it is
+ * wrong. "Remove the tier gate and there is no approval to decide, so this goes
+ * red" reads well and is false — the always-allow drill run on 2026-07-26 (recipe
+ * in `suite/governance.ts`) short-circuited the gate and **this oracle still
+ * passed**.
+ *
+ * It passes because `marketplace.uninstall` is gated twice. With the tier gate
+ * gone, the marketplace handler's own confirmation flow — itself a wrapper over
+ * the same `ApprovalService` since spec `agent-trust` §3.3
+ * (`services/marketplace-mcp/confirmation-provider.ts`) — still records a
+ * `marketplace.uninstall` approval, still publishes it on
+ * `GET /api/approvals/pending` for the driver to find, and still stamps
+ * `consumedAt` when the agent retries. Every input this oracle reads is present
+ * and correct; what changed is WHO asked, and that is a question this oracle never
+ * asks.
+ *
+ * So: this establishes TIMING (nothing happened until a decision existed).
+ * `tierGateStoppedTheUninstall` in `suite/governance.ts` establishes MECHANISM,
+ * and under a torn-out gate it is the ONE oracle that reds structurally rather
+ * than incidentally. Do not reason about this file's reds as if they were
+ * independent evidence of the gate.
  *
  * ## These read the driver's log, not the model's behavior
  *
  * Everything here is an assertion about the HARNESS's side of the conversation.
  * The oracles that assert what the AGENT and the SERVER did live in
  * `oracles/stream.ts` (the gate's payload on the wire) and `suite/governance.ts`
- * (the approval row in the sandbox database). All three are needed: alone, each
- * one has a green it should not have.
+ * (the approval row in the sandbox database). All are needed: alone, each one has
+ * a green it should not have.
  *
  * @module evals/oracles/approvals
  */

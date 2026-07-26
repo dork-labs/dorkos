@@ -75,6 +75,7 @@
  */
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { toolNameMatches } from '../oracles/stream.js';
 import { emptyApprovalLog, type ApprovalDriverLog, type ApprovalPolicy } from '../types.js';
 
@@ -82,11 +83,34 @@ import { emptyApprovalLog, type ApprovalDriverLog, type ApprovalPolicy } from '.
 const DEFAULT_POLL_INTERVAL_MS = 300;
 
 /**
- * The subset of a `PendingApproval` the driver reads.
+ * The three fields the driver reads off a pending approval, PINNED to the real
+ * cockpit-facing shape (`@dorkos/shared/approval-schemas`).
  *
- * A structural shape rather than an import of `@dorkos/shared/approval-schemas`:
- * the driver only needs to route a decision, and a stricter parse here would turn
- * an unrelated field addition into a harness failure during a live turn.
+ * Same reasoning as {@link FRAME_K}, and the same stakes. A rename of
+ * `approvalId` or `capabilityId` would not make the driver fail loudly — it would
+ * make it match nothing, decide nothing, and produce a red that reads
+ * "the harness never decided a … approval, so the gate did not ask". That
+ * sentence points a reader straight at the tier gate, which would be working
+ * perfectly. Misdiagnosable reds are worse than crashes, and this harness has
+ * already paid for one round of them.
+ *
+ * The `satisfies` costs nothing at runtime and still tolerates FIELD ADDITIONS
+ * upstream, which is what a lenient structural read was really buying; only a
+ * rename or removal breaks the build.
+ */
+const PENDING_K = {
+  approvalId: 'approvalId',
+  capabilityId: 'capabilityId',
+  tier: 'tier',
+} satisfies Record<string, keyof PendingApproval>;
+
+/**
+ * A pending approval as the driver probes it off the JSON body.
+ *
+ * Deliberately `unknown`-valued rather than `PendingApproval` itself: the body is
+ * parsed JSON from a live server, so every field is genuinely unverified at
+ * runtime. The names are what {@link PENDING_K} pins; the types are what the
+ * narrowing below establishes.
  */
 interface PendingApprovalShape {
   approvalId?: unknown;
@@ -162,7 +186,15 @@ export class ApprovalDriver {
   /** The pending-approvals poll timer, while the driver is running. */
   private pollTimer?: ReturnType<typeof setTimeout>;
 
-  /** False once {@link stop} has been called; blocks any further POST. */
+  /**
+   * False before {@link start} and once {@link stop} has been called.
+   *
+   * It gates {@link observe} and the poll loop — the two places new work is
+   * DISCOVERED — and deliberately not the POSTs themselves. A decision already
+   * chosen must complete and be recorded even if the turn ends underneath it;
+   * that is why {@link stop} awaits rather than cancels. So this stops the driver
+   * taking on anything new; it does not abort a request in flight.
+   */
   private running = false;
 
   /**
@@ -310,16 +342,18 @@ export class ApprovalDriver {
     }
 
     for (const approval of pending) {
-      const approvalId = typeof approval.approvalId === 'string' ? approval.approvalId : undefined;
-      const capabilityId =
-        typeof approval.capabilityId === 'string' ? approval.capabilityId : undefined;
+      const rawId = approval[PENDING_K.approvalId];
+      const approvalId = typeof rawId === 'string' && rawId !== '' ? rawId : undefined;
+      const rawCapabilityId = approval[PENDING_K.capabilityId];
+      const capabilityId = typeof rawCapabilityId === 'string' ? rawCapabilityId : undefined;
       if (!approvalId || this.seenApprovals.has(approvalId)) continue;
       this.seenApprovals.add(approvalId);
       if (capabilityId !== target.capabilityId) {
         this.entries.ignored.push({ approvalId, capabilityId: capabilityId ?? '' });
         continue;
       }
-      await this.decide(approvalId, capabilityId, String(approval.tier ?? ''), target.decision);
+      const tier = approval[PENDING_K.tier];
+      await this.decide(approvalId, capabilityId, String(tier ?? ''), target.decision);
     }
   }
 

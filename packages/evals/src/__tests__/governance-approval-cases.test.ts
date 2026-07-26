@@ -33,7 +33,13 @@ import {
   uninstallApprovalGrantedAndSpent,
 } from '../suite/governance.js';
 import { ALL_CASES, selectSuite } from '../suite/index.js';
-import { emptyApprovalLog, type ApprovalDriverLog, type EvalCase, type EvalSandbox, type OracleContext } from '../types.js';
+import {
+  emptyApprovalLog,
+  type ApprovalDriverLog,
+  type EvalCase,
+  type EvalSandbox,
+  type OracleContext,
+} from '../types.js';
 
 /** The tool the gate intercepts in this case, as the eval names it. */
 const UNINSTALL_TOOL = 'marketplace_uninstall';
@@ -158,7 +164,7 @@ describe('the governance cases — registration', () => {
     expect(prompts.size).toBe(1);
   });
 
-  it("the granted case grants, the denied case denies, and the expiry case decides nothing", () => {
+  it('the granted case grants, the denied case denies, and the expiry case decides nothing', () => {
     expect(approvalGrantedCase.approvalPolicy?.capability).toEqual({
       capabilityId: 'marketplace.uninstall',
       decision: 'grant',
@@ -183,6 +189,13 @@ describe('the governance cases — registration', () => {
   });
 
   it('shortens the decision window ONLY for the case whose subject is expiry', () => {
+    // DECLARED, not exercised. `serverEnv` reaches a server only on the
+    // credentialed tiers: `bootServerForTier` routes `test-mode` to
+    // `startInProcessServer({ dorkHome })` and drops `env` entirely, so the
+    // five-second window exists on the child-process and docker tiers and nowhere
+    // else. That is why the expiry case fails structurally on `--tier test-mode`
+    // like its siblings, and why its real verdict only ever comes from a
+    // credentialed run.
     expect(approvalExpiresCase.serverEnv).toEqual({ DORKOS_APPROVAL_TTL_MS: '5000' });
     expect(approvalGrantedCase.serverEnv).toBeUndefined();
     expect(approvalDeniedCase.serverEnv).toBeUndefined();

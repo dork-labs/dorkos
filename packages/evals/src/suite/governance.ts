@@ -26,8 +26,25 @@
  * built so it CANNOT pass on a torn-out gate: it asserts the gate's own payload
  * reached the wire, and that the package was still fully installed at the instant
  * consent was given ({@link EvalCase.probeBeforeDecision} →
- * {@link approvalDecided}'s `probeShows`). Rip the gate out and there is no
- * approval to decide, no probe, and no decision record — three reds, not a green.
+ * {@link approvalDecided}'s `probeShows`).
+ *
+ * ## EXACTLY ONE ORACLE REDS ON A TORN-OUT GATE. IT IS NOT THE OBVIOUS ONE.
+ *
+ * Be precise about WHY the granted case cannot pass without the gate, because the
+ * plausible version of this sentence is wrong and the always-allow drill below
+ * measured it. Short-circuiting the tier gate did NOT leave the case with several
+ * independent reds. It left {@link approvalDecided} PASSING — an approval still
+ * existed, the harness still granted it, the probe still showed the package intact
+ * — because the marketplace handler's own confirmation flow wraps the same
+ * `ApprovalService` and writes an indistinguishable row.
+ *
+ * {@link tierGateStoppedTheUninstall} is the ONLY oracle here that reds
+ * STRUCTURALLY when the gate is gone; the other reds in that run followed from the
+ * uninstall completing, which is downstream behavior, not evidence about the
+ * mechanism. Treat it as the single load-bearing oracle of this suite. If a future
+ * cleanup trims "redundant" oracles and takes that one, these three cases keep
+ * reporting green about a mechanism that no longer runs — which is the precise
+ * failure this suite exists to make impossible.
  *
  * ## WHY THE OBVIOUS ORACLE WOULD BE A LIE
  *
@@ -343,9 +360,23 @@ function isMarketplaceConfirmation(payload: unknown): boolean {
  * Oracle: the uninstall came back with the TIER GATE's `approval_required`
  * payload.
  *
- * Fails — with a pointed detail — when the only gating observed was the
- * marketplace handler's own `requires_confirmation`, which is what a torn-out
- * tier gate looks like from the stream. See the module TSDoc.
+ * ## LOAD-BEARING — DO NOT REMOVE AS REDUNDANT
+ *
+ * This is the ONE oracle in the governance suite that reds structurally when the
+ * tier gate is gone. Measured, not assumed: the always-allow drill (module TSDoc)
+ * short-circuited the gate and every OTHER oracle either passed or reddened only
+ * because the uninstall then completed. The marketplace handler's own confirmation
+ * flow wraps the same `ApprovalService`, so it produces an approval row, a pending
+ * listing, and a spent token that no other oracle here can tell apart from the
+ * gate's.
+ *
+ * So the usual argument for trimming an assertion — "three other oracles cover
+ * this" — is exactly backwards for this one. Delete it and the suite keeps
+ * reporting green about a mechanism that no longer runs.
+ *
+ * Fails with a pointed detail when the only gating observed was the marketplace
+ * handler's own `requires_confirmation`, which is what a torn-out tier gate looks
+ * like from the stream.
  */
 export const tierGateStoppedTheUninstall: Oracle = async (ctx): Promise<OracleResult> => {
   const { payloads, unparsed, observedToolNames } = toolResultPayloads(
@@ -658,6 +689,13 @@ function stillInstalled(probe: unknown): boolean {
  * runner error — an infra failure standing in for a governance outcome. Now the
  * window genuinely closes while the turn is still running, and the closure is
  * asserted on the row.
+ *
+ * That `serverEnv` only reaches a server on the CREDENTIALED tiers:
+ * `bootServerForTier` hands `test-mode` to `startInProcessServer({ dorkHome })`
+ * and drops `env`. So the short window — and therefore this case's real verdict —
+ * exists on the child-process and docker tiers only, which is consistent with the
+ * case failing structurally on `--tier test-mode` for the same reason its siblings
+ * do.
  *
  * What its oracles claim, each one load-bearing:
  *

@@ -64,27 +64,48 @@ import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js
 export const APPROVAL_TTL_MS = 2 * 60 * 60 * 1000;
 
 /**
- * Resolve a configured decision window, allowing it to be SHORTENED and never
- * lengthened.
+ * Shortest decision window this service will run with.
+ *
+ * Below about a second nobody could answer in time, so a smaller window is not a
+ * stricter gate — it is a gate that refuses everything, which looks identical to
+ * a broken approval system and teaches an operator to distrust the mechanism.
+ * `env.ts` rejects anything under this on the way in; {@link resolveApprovalTtlMs}
+ * enforces it again for callers that do not come through the env schema.
+ */
+export const MIN_APPROVAL_TTL_MS = 1_000;
+
+/**
+ * Resolve a configured decision window into a usable one: SHORTENABLE, never
+ * lengthenable, never nonsensical.
  *
  * `DORKOS_APPROVAL_TTL_MS` exists so the eval harness can watch an unanswered
  * approval actually run out of time, which is otherwise unobservable: waiting two
  * hours is impossible, and a harness that gave up early would be reporting its own
  * timeout as a governance outcome (DOR-498).
  *
- * The clamp is what makes that knob safe to have at all. Shortening the window
- * makes the gate STRICTER — consent that has run out is refused rather than
- * honored — while lengthening it would let a "yes" stay spendable long after the
- * moment a person actually meant it, which is the one property
- * {@link APPROVAL_TTL_MS} is written to prevent. So the direction is enforced here
- * rather than trusted to whoever sets the variable.
+ * The UPPER bound is the security property. Shortening the window makes the gate
+ * stricter — consent that has run out is refused rather than honored — while
+ * lengthening it would let a "yes" stay spendable long after the moment a person
+ * actually meant it, which is the one thing {@link APPROVAL_TTL_MS} is written to
+ * prevent. That direction is enforced here rather than trusted to whoever sets the
+ * variable.
+ *
+ * The LOWER bound and the finiteness check are here because this function is
+ * exported API, not only a boot-time helper for one env var. `env.ts` already
+ * refuses a value below {@link MIN_APPROVAL_TTL_MS}, so today nothing can reach
+ * this with `0` or `NaN` — but relying on a validator one layer away would mean a
+ * future caller could hand over `0` and get a deny-all gate, or `NaN` and get a
+ * `RangeError` out of `new Date(...)` on every destructive capability. A
+ * non-finite value takes the safe default rather than throwing, because a
+ * malformed setting must not be able to break the gate open OR shut.
  *
  * @param requested - The configured window in ms, or undefined when unset.
- * @returns The window to use, or undefined to take the default.
+ * @returns The window to use, clamped to
+ *   `[MIN_APPROVAL_TTL_MS, APPROVAL_TTL_MS]`, or undefined to take the default.
  */
 export function resolveApprovalTtlMs(requested: number | undefined): number | undefined {
-  if (requested === undefined) return undefined;
-  return Math.min(requested, APPROVAL_TTL_MS);
+  if (requested === undefined || !Number.isFinite(requested)) return undefined;
+  return Math.min(Math.max(requested, MIN_APPROVAL_TTL_MS), APPROVAL_TTL_MS);
 }
 
 /** Bytes of CSPRNG randomness behind an approval token (128 bits). */

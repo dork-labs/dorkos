@@ -87,7 +87,7 @@ as the tool's input streams in, so one call shows up as many frames. Twenty-seve
 `Bash` frames is one `Bash` call. Count distinct `toolCallId` values, not frames,
 or you will conclude the agent is thrashing when it made a single call.
 
-## Why the tool cases are still quarantined
+## Why the tool cases are still quarantined, and how they get out
 
 The harness gap is closed, but promotion is a separate question and the answer is
 still no. All three governance cases have been observed passing against a real
@@ -97,9 +97,41 @@ calling the tool, another looped on `ToolSearch` thirty times until the turn tim
 out. That is tool-choice variance, not a product regression, and a gating case
 that goes red on it would train everyone to ignore it.
 
-Promotion needs a stable pass rate across repeated runs, which is a human decision
-made on evidence — see "Reading the output" for why a run gating on zero cases is
-itself reported as a failure.
+**The bar is 5 consecutive passing credentialed runs, per case.** Not "a stable
+pass rate" — a number, because an exit criterion nobody can check is how a
+quarantined case decays into permanent ignored noise. Record results here as you
+get them; a failure resets that case's count to zero.
+
+| Case                          | Consecutive passes | Last recorded |
+| ----------------------------- | ------------------ | ------------- |
+| `governance-approval-granted` | 2 of 5             | 2026-07-26    |
+| `governance-approval-denied`  | 1 of 5             | 2026-07-26    |
+| `governance-approval-expires` | 1 of 5             | 2026-07-26    |
+
+Know what you are spending before you start a streak. `pnpm evals:local` runs
+`--suite core`, which now contains three governance cases rather than one, so a
+developer's own-subscription exposure for a full local run went up accordingly —
+roughly $0.06 per governance case per run on the observed Haiku turns. Narrow with
+`--suite <case-id> --budget <usd>` while working on one.
+
+## A new oracle ships with a drill
+
+An oracle that cannot be shown to fail is decoration. So when you add or change
+one, **seed a change that should make it red, confirm it does, remove the seed,
+confirm it goes green, and record the recipe and the dated result in the oracle's
+TSDoc.** Keep it to a few lines; the worked example is the always-allow drill in
+`src/suite/governance.ts`.
+
+This is not ceremony, and the governance suite is the argument for it. That drill
+disproved something the code's own comments asserted twice: the intuitive claim
+was "remove the tier gate and several oracles go red", and the run showed only ONE
+does. Everything else stayed green, because a second mechanism writes an
+indistinguishable approval row. Nobody would have found that by reading, and
+without it a future cleanup would have had a persuasive case for deleting the one
+oracle holding the suite up.
+
+Reasoning about what an assertion would catch is not evidence about what it does
+catch. Run the drill.
 
 ## Where a credential comes from
 
@@ -155,4 +187,6 @@ human decision made on the evidence it uploads.
 
 Cases live in `src/suite/`. Register a new one in `src/suite/index.ts`. Give it
 oracles that read the API, the filesystem, or the collected stream, and start it
-`quarantined: true` until a credentialed run shows it is stable.
+`quarantined: true` until credentialed runs show it is stable — see the bar above.
+A case that drives a tool also needs an `approvalPolicy`, or its turn will park on
+the first permission prompt. Each new oracle owes a drill.
