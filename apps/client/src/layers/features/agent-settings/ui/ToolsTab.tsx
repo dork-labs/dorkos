@@ -172,7 +172,7 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
   const { config: globalConfig } = useAgentContextConfig();
   const { data: mcpConfig } = useMcpConfig(projectPath, agent.runtime);
 
-  // DorkOS's own tool groups (Scheduling/Messaging/Discovery/Channels) are
+  // DorkOS's own tool groups (Scheduling/Messaging/Discovery/Connections) are
   // injected as an MCP server. A runtime that can't consume MCP (e.g. Codex,
   // `supportsMcp: false`) never receives them, so the toggles would be
   // dishonest. Default to available while capabilities load so Claude never
@@ -226,7 +226,7 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
     {
       key: 'adapter',
       configKey: 'adapterTools',
-      label: 'External Channels',
+      label: 'External Connections',
       description: 'Manage connections to Slack, Telegram, and other platforms',
       tools: toolNamesForDomain('adapter'),
       serverDisabled: !relayEnabled,
@@ -269,8 +269,8 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
               This agent&rsquo;s runtime does not support DorkOS tool groups (Scheduling, Messaging,
-              Agent Discovery, External Channels). These are delivered over MCP, which this runtime
-              cannot consume.
+              Agent Discovery, External Connections). These are delivered over MCP, which this
+              runtime cannot consume.
             </p>
           </FieldCardContent>
         </FieldCard>

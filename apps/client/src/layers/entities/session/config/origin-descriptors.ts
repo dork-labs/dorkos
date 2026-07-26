@@ -25,7 +25,7 @@ export interface OriginDescriptor {
  */
 export const ORIGIN_DESCRIPTORS: Partial<Record<SessionOrigin, OriginDescriptor>> = {
   agent: { origin: 'agent', label: 'Agent', icon: Bot },
-  channel: { origin: 'channel', label: 'Channel', icon: MessagesSquare },
+  channel: { origin: 'channel', label: 'Connection', icon: MessagesSquare },
   task: { origin: 'task', label: 'Scheduled task', icon: CalendarClock },
   external: { origin: 'external', label: 'External', icon: Globe },
 };

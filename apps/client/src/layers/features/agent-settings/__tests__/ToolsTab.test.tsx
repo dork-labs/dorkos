@@ -85,7 +85,7 @@ describe('ToolsTab', () => {
       expect(view.getByText('Scheduling')).toBeInTheDocument();
       expect(view.getByText('Messaging')).toBeInTheDocument();
       expect(view.getByText('Agent Discovery')).toBeInTheDocument();
-      expect(view.getByText('External Channels')).toBeInTheDocument();
+      expect(view.getByText('External Connections')).toBeInTheDocument();
     });
 
     it('shows core tools footnote instead of row', () => {
@@ -156,7 +156,7 @@ describe('ToolsTab', () => {
       expect(view.queryByText('Scheduling')).not.toBeInTheDocument();
       expect(view.queryByText('Messaging')).not.toBeInTheDocument();
       expect(view.queryByText('Agent Discovery')).not.toBeInTheDocument();
-      expect(view.queryByText('External Channels')).not.toBeInTheDocument();
+      expect(view.queryByText('External Connections')).not.toBeInTheDocument();
       expect(view.queryAllByRole('switch')).toHaveLength(0);
       // ...and an explanatory note takes their place.
       expect(view.getByText(/does not support DorkOS tool groups/i)).toBeInTheDocument();

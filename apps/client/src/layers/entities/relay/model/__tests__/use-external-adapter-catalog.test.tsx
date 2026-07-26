@@ -109,7 +109,7 @@ describe('useExternalAdapterCatalog', () => {
     /**
      * Verifies that when the Relay feature is disabled, the hook returns an
      * empty catalog and does not trigger a network request. This guards the
-     * "Relay off" code path that ChannelsTab relies on for its empty state.
+     * "Relay off" code path that ConnectionsTab relies on for its empty state.
      */
     mockTransport.getAdapterCatalog = vi.fn();
 

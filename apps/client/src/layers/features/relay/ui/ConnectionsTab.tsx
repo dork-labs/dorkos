@@ -43,7 +43,7 @@ interface ConnectionsTabProps {
   enabled: boolean;
 }
 
-/** Renders active channel instances and available channel types from the catalog. */
+/** Renders active connection instances and available connection types from the catalog. */
 export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
   const { data: catalog = [], isLoading } = useAdapterCatalog(enabled);
   const { data: agentsData } = useRegisteredAgents();
@@ -78,24 +78,24 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
           id: target.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Channel updated');
+        toast.success('Connection updated');
       } else {
         await createBinding.mutateAsync(toCreateBindingRequest(values));
-        toast.success('Channel connected');
+        toast.success('Connection connected');
       }
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save channel');
+      toast.error(err instanceof Error ? err.message : 'Failed to save connection');
     }
   }
 
   async function handleBindingDelete(bindingId: string) {
     try {
       await deleteBinding.mutateAsync(bindingId);
-      toast.success('Channel removed');
+      toast.success('Connection removed');
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove channel');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
     }
   }
 
@@ -174,18 +174,18 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
 
   return (
     <div className="space-y-6 p-4">
-      {/* Active Channels */}
+      {/* Active Connections */}
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-            Active Channels
+            Active Connections
           </h3>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleRefresh}
             className="size-7 p-0"
-            aria-label="Refresh channel catalog"
+            aria-label="Refresh connection catalog"
           >
             <RefreshCw className="size-3.5" />
           </Button>
@@ -194,9 +194,9 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-8">
             <Plug2 className="text-muted-foreground/40 size-8" />
             <div className="text-center">
-              <p className="text-muted-foreground text-sm">No channels active</p>
+              <p className="text-muted-foreground text-sm">No connections active</p>
               <p className="text-muted-foreground/60 text-xs">
-                Add a channel below to connect agents to external services
+                Add a connection below to connect agents to external services
               </p>
             </div>
           </div>
@@ -219,15 +219,15 @@ export function ConnectionsTab({ enabled }: ConnectionsTabProps) {
         )}
       </section>
 
-      {/* Add Channel */}
+      {/* Add Connection */}
       <section>
         <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-          Add Channel
+          Add Connection
         </h3>
         {availableEntries.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            All channel types are active. Multi-instance channels like Webhook can be added again
-            from the active list.
+            All connection types are active. Multi-instance connections like Webhook can be added
+            again from the active list.
           </p>
         ) : (
           <div

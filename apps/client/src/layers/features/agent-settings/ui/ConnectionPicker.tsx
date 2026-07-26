@@ -5,20 +5,20 @@ import { cn } from '@/layers/shared/lib';
 import { AdapterIcon, ADAPTER_STATE_DOT_CLASS, ADAPTER_STATE_LABEL } from '@/layers/features/relay';
 import type { AdapterManifest, AdapterStatus, CatalogEntry } from '@dorkos/shared/relay-schemas';
 
-interface ChannelPickerProps {
+interface ConnectionPickerProps {
   /** Pre-filtered external adapter catalog (no `category: 'internal'` entries). */
   catalog: CatalogEntry[];
   /** Adapter IDs already bound to this agent (shown as "connected" in the picker). */
   boundAdapterIds: Set<string>;
   /** Called when the user selects an existing adapter instance to bind. */
-  onSelectChannel: (adapterId: string) => void;
+  onSelectConnection: (adapterId: string) => void;
   /** Called when the user picks an adapter type to configure from scratch. */
   onRequestSetup: (manifest: AdapterManifest) => void;
   /** Whether the popover trigger button is disabled. */
   disabled?: boolean;
 }
 
-interface ChannelItem {
+interface ConnectionItem {
   id: string;
   displayName: string;
   label: string | undefined;
@@ -32,23 +32,23 @@ interface ChannelItem {
 }
 
 /**
- * Popover listing all configured relay channel instances for binding to an agent,
+ * Popover listing all configured relay connection instances for binding to an agent,
  * plus unconfigured adapter types available to set up.
  *
  * Receives a pre-filtered catalog as a prop (no internal data fetching).
  * Shows a status dot, adapter name, optional label, and connection state for each
- * configured channel. A second section lists adapter types available for fresh setup.
+ * configured connection. A second section lists adapter types available for fresh setup.
  */
-export function ChannelPicker({
+export function ConnectionPicker({
   catalog,
   boundAdapterIds,
-  onSelectChannel,
+  onSelectConnection,
   onRequestSetup,
   disabled,
-}: ChannelPickerProps) {
+}: ConnectionPickerProps) {
   const [open, setOpen] = useState(false);
 
-  const configuredChannels: ChannelItem[] = useMemo(
+  const configuredConnections: ConnectionItem[] = useMemo(
     () =>
       catalog.flatMap((entry) =>
         entry.instances.map((inst) => ({
@@ -76,7 +76,7 @@ export function ChannelPicker({
   );
 
   function handleSelect(adapterId: string) {
-    onSelectChannel(adapterId);
+    onSelectConnection(adapterId);
     setOpen(false);
   }
 
@@ -85,32 +85,32 @@ export function ChannelPicker({
     onRequestSetup(manifest);
   }
 
-  const isEmpty = configuredChannels.length === 0 && availableToSetup.length === 0;
+  const isEmpty = configuredConnections.length === 0 && availableToSetup.length === 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled}>
           <Plus className="mr-1.5 size-3.5" />
-          Connect to Channel
+          Add Connection
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">
         <div className="max-h-64 overflow-y-auto">
           {isEmpty ? (
             <div className="px-3 py-4 text-center">
-              <p className="text-muted-foreground text-sm">No channels available</p>
+              <p className="text-muted-foreground text-sm">No connections available</p>
             </div>
           ) : (
             <>
               {/* Configured instances */}
-              {configuredChannels.length > 0 && (
+              {configuredConnections.length > 0 && (
                 <div className="py-1">
-                  {configuredChannels.map((channel) => (
+                  {configuredConnections.map((connection) => (
                     <button
-                      key={channel.id}
-                      disabled={channel.isDisabled || channel.alreadyBound}
-                      onClick={() => handleSelect(channel.id)}
+                      key={connection.id}
+                      disabled={connection.isDisabled || connection.alreadyBound}
+                      onClick={() => handleSelect(connection.id)}
                       className={cn(
                         'flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors',
                         'hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50'
@@ -118,26 +118,30 @@ export function ChannelPicker({
                     >
                       <div className="relative shrink-0">
                         <AdapterIcon
-                          iconId={channel.iconId}
-                          adapterType={channel.adapterType}
+                          iconId={connection.iconId}
+                          adapterType={connection.adapterType}
                           size={20}
                           className="text-muted-foreground"
                         />
                         <span
                           className={cn(
                             'ring-background absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-[1.5px]',
-                            ADAPTER_STATE_DOT_CLASS[channel.state]
+                            ADAPTER_STATE_DOT_CLASS[connection.state]
                           )}
                         />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{channel.displayName}</p>
-                        {channel.label && (
-                          <p className="text-muted-foreground truncate text-xs">{channel.label}</p>
+                        <p className="truncate font-medium">{connection.displayName}</p>
+                        {connection.label && (
+                          <p className="text-muted-foreground truncate text-xs">
+                            {connection.label}
+                          </p>
                         )}
                       </div>
                       <span className="text-muted-foreground/60 text-xs">
-                        {channel.alreadyBound ? 'Connected' : ADAPTER_STATE_LABEL[channel.state]}
+                        {connection.alreadyBound
+                          ? 'Connected'
+                          : ADAPTER_STATE_LABEL[connection.state]}
                       </span>
                     </button>
                   ))}

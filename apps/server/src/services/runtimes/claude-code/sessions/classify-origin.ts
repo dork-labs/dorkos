@@ -69,7 +69,7 @@ function classifyRelayFrom(from: string): { origin?: SessionOrigin; originLabel?
     return { origin: 'channel', originLabel: 'Webhook' };
   }
   if (from.startsWith('relay.human.')) {
-    return { origin: 'channel', originLabel: 'Channel' };
+    return { origin: 'channel', originLabel: 'Connection' };
   }
   if (from.startsWith('relay.agent.') || from.startsWith('relay.session.')) {
     const segment = from.slice(from.lastIndexOf('.') + 1).slice(0, AGENT_LABEL_MAX_LENGTH);
@@ -89,7 +89,7 @@ function classifyRelayFrom(from: string): { origin?: SessionOrigin; originLabel?
  * is a UX affordance, never a security boundary (the raw relay publish route
  * lets callers assert `from`).
  *
- * For channel-origin sessions (Telegram/Slack/Webhook/Channel), when the
+ * For channel-origin sessions (Telegram/Slack/Webhook/Connection), when the
  * block also carries `Sender:`/`Chat:` lines (DOR-411 producer), the origin
  * label is enriched to `"<Platform> · <chat-or-sender>"`; legacy transcripts
  * without those lines keep today's plain platform label. Agent/task/external

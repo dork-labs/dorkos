@@ -24,7 +24,7 @@ import { AppearanceTab } from '@/layers/features/settings/ui/tabs/AppearanceTab'
 import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
-import { ChannelsTab } from '@/layers/features/settings/ui/ChannelsTab';
+import { ConnectionsTab } from '@/layers/features/settings/ui/ConnectionsTab';
 import { AgentsTab } from '@/layers/features/settings/ui/AgentsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
 import { MockedQueryProvider, TabShell } from './settings-showcase-helpers';
@@ -48,7 +48,7 @@ function FullSettingsDialogSection() {
   return (
     <PlaygroundSection
       title="Full Settings Dialog"
-      description="The complete Settings dialog with all tabs. Server/Tools/Channels tabs render in their empty state because the playground transport returns null for all queries — see Loading & Empty States for richer demos."
+      description="The complete Settings dialog with all tabs. Server/Tools/Connections tabs render in their empty state because the playground transport returns null for all queries — see Loading & Empty States for richer demos."
     >
       <ShowcaseDemo responsive>
         <Button onClick={() => setOpen(true)}>Open Settings</Button>
@@ -97,11 +97,11 @@ function IndividualTabsSection() {
         </MockedQueryProvider>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Channels Tab</ShowcaseLabel>
+      <ShowcaseLabel>Connections Tab</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <TabShell value="channels">
-            <ChannelsTab />
+          <TabShell value="connections">
+            <ConnectionsTab />
           </TabShell>
         </MockedQueryProvider>
       </ShowcaseDemo>
@@ -204,10 +204,10 @@ function LoadingEmptyStatesSection() {
         </TabShell>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Channels Tab — Empty Catalog</ShowcaseLabel>
+      <ShowcaseLabel>Connections Tab — Empty Catalog</ShowcaseLabel>
       <ShowcaseDemo>
-        <TabShell value="channels">
-          <ChannelsTab />
+        <TabShell value="connections">
+          <ConnectionsTab />
         </TabShell>
       </ShowcaseDemo>
 

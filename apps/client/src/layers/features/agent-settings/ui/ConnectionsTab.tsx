@@ -18,11 +18,11 @@ import { getAgentDisplayName } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { BoundChannelRow } from './BoundChannelRow';
-import { ChannelPicker } from './ChannelPicker';
+import { BoundConnectionRow } from './BoundConnectionRow';
+import { ConnectionPicker } from './ConnectionPicker';
 
-interface ChannelsTabProps {
-  /** The agent whose channel bindings are displayed and managed. */
+interface ConnectionsTabProps {
+  /** The agent whose connection bindings are displayed and managed. */
   agent: AgentManifest;
 }
 
@@ -50,13 +50,13 @@ const CLOSED_EDIT_DIALOG: EditDialogState = { open: false, binding: null, adapte
 const CLOSED_WIZARD: WizardState = { open: false };
 
 /**
- * Channels tab in the Agent dialog.
+ * Connections tab in the Agent dialog.
  *
  * Lists all relay bindings for the agent, lets the user add new bindings via
- * the ChannelPicker, opens the BindingDialog for editing existing bindings,
+ * the ConnectionPicker, opens the BindingDialog for editing existing bindings,
  * and renders AdapterSetupWizard inline for configuring new adapter types.
  */
-export function ChannelsTab({ agent }: ChannelsTabProps) {
+export function ConnectionsTab({ agent }: ConnectionsTabProps) {
   const relayEnabled = useRelayEnabled();
   const { data: allBindings = [] } = useBindings();
   const { data: externalCatalog = [] } = useExternalAdapterCatalog(relayEnabled);
@@ -109,7 +109,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
     [agentBindings]
   );
 
-  const handleSelectChannel = useCallback(
+  const handleSelectConnection = useCallback(
     async (adapterId: string) => {
       try {
         await createBinding.mutateAsync({
@@ -121,9 +121,9 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
           canReply: true,
           canReceive: true,
         });
-        toast.success('Channel connected');
+        toast.success('Connection connected');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to connect channel');
+        toast.error(err instanceof Error ? err.message : 'Failed to add connection');
       }
     },
     [agent.id, createBinding]
@@ -148,9 +148,9 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
     async (bindingId: string) => {
       try {
         await deleteBinding.mutateAsync(bindingId);
-        toast.success('Channel removed');
+        toast.success('Connection removed');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove channel');
+        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
       }
     },
     [deleteBinding]
@@ -160,9 +160,9 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
     async (bindingId: string, enabled: boolean) => {
       try {
         await updateBinding.mutateAsync({ id: bindingId, updates: { enabled } });
-        toast.success(enabled ? 'Channel resumed' : 'Channel paused');
+        toast.success(enabled ? 'Connection resumed' : 'Connection paused');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update channel');
+        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
       }
     },
     [updateBinding]
@@ -194,10 +194,10 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
           id: editDialog.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Channel updated');
+        toast.success('Connection updated');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update channel');
+        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
       }
     },
     [editDialog.binding, updateBinding]
@@ -207,10 +207,10 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
     async (bindingId: string) => {
       try {
         await deleteBinding.mutateAsync(bindingId);
-        toast.success('Channel removed');
+        toast.success('Connection removed');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove channel');
+        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
       }
     },
     [deleteBinding]
@@ -270,7 +270,7 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
           <div className="space-y-1 text-center">
             <p className="text-sm font-medium">The Relay message bus is off</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              Channels connect this agent to external messaging platforms. Enable Relay in Settings
+              Connections link this agent to external messaging platforms. Enable Relay in Settings
               to get started.
             </p>
           </div>
@@ -290,14 +290,14 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
           <Radio className="text-muted-foreground/40 size-8" />
           <div className="space-y-1 text-center">
-            <p className="text-sm font-medium">No channels available</p>
+            <p className="text-sm font-medium">No connections available</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              To connect this agent to Telegram, Slack, or a webhook, first configure a channel in
+              To connect this agent to Telegram, Slack, or a webhook, first add a connection in
               Settings. It will appear here as soon as it&apos;s ready.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openSettingsToTab('channels')}>
-            Configure a channel
+          <Button variant="outline" size="sm" onClick={() => openSettingsToTab('connections')}>
+            Add a connection
           </Button>
         </div>
         {dialogs}
@@ -318,10 +318,10 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
               while you are away.
             </p>
           </div>
-          <ChannelPicker
+          <ConnectionPicker
             catalog={externalCatalog}
             boundAdapterIds={boundAdapterIds}
-            onSelectChannel={handleSelectChannel}
+            onSelectConnection={handleSelectConnection}
             onRequestSetup={handleRequestSetup}
             disabled={createBinding.isPending}
           />
@@ -339,12 +339,12 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
         {agentBindings.map((binding) => {
           const display = resolveAdapterDisplay(binding.adapterId);
           return (
-            <BoundChannelRow
+            <BoundConnectionRow
               key={binding.id}
               binding={binding}
-              channelName={display.name}
-              channelIconId={display.iconId}
-              channelAdapterType={display.adapterType}
+              connectionName={display.name}
+              connectionIconId={display.iconId}
+              connectionAdapterType={display.adapterType}
               adapterState={display.state}
               errorMessage={display.errorMessage}
               onTogglePause={(enabled) => handleTogglePause(binding.id, enabled)}
@@ -356,11 +356,11 @@ export function ChannelsTab({ agent }: ChannelsTabProps) {
         })}
       </div>
 
-      {/* Add channel picker */}
-      <ChannelPicker
+      {/* Add connection picker */}
+      <ConnectionPicker
         catalog={externalCatalog}
         boundAdapterIds={boundAdapterIds}
-        onSelectChannel={handleSelectChannel}
+        onSelectConnection={handleSelectConnection}
         onRequestSetup={handleRequestSetup}
         disabled={createBinding.isPending}
       />

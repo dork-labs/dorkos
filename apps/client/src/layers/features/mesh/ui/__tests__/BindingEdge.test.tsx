@@ -164,35 +164,35 @@ describe('BindingEdge', () => {
 
     it('falls back to "Binding" when neither label nor sessionStrategy and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
-      expect(screen.getByText('Channel')).toBeInTheDocument();
+      expect(screen.getByText('Connection')).toBeInTheDocument();
     });
 
     it('shows "Binding" when data is undefined and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected />);
-      expect(screen.getByText('Channel')).toBeInTheDocument();
+      expect(screen.getByText('Connection')).toBeInTheDocument();
     });
   });
 
   describe('delete button', () => {
     it('renders delete button when selected and onDelete is provided', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete: vi.fn() }} />);
-      expect(screen.getByRole('button', { name: /remove channel/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /remove connection/i })).toBeInTheDocument();
     });
 
     it('does not render delete button when not selected even with onDelete', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} data={{ onDelete: vi.fn() }} />);
-      expect(screen.queryByRole('button', { name: /remove channel/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove connection/i })).not.toBeInTheDocument();
     });
 
     it('does not render delete button when onDelete is absent', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
-      expect(screen.queryByRole('button', { name: /remove channel/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove connection/i })).not.toBeInTheDocument();
     });
 
     it('calls onDelete with the edge id when delete button is clicked', () => {
       const onDelete = vi.fn();
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete }} />);
-      fireEvent.click(screen.getByRole('button', { name: /remove channel/i }));
+      fireEvent.click(screen.getByRole('button', { name: /remove connection/i }));
       expect(onDelete).toHaveBeenCalledWith('binding-edge-1');
       expect(onDelete).toHaveBeenCalledTimes(1);
     });

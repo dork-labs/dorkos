@@ -206,7 +206,7 @@ describe('ConnectionsTab binding dialog', () => {
           canReceive: true,
         });
       });
-      expect(mockToastSuccess).toHaveBeenCalledWith('Channel connected');
+      expect(mockToastSuccess).toHaveBeenCalledWith('Connection connected');
       expect(mockToastError).not.toHaveBeenCalled();
       // Dialog closes after a successful create.
       await waitFor(() => {
@@ -244,7 +244,7 @@ describe('ConnectionsTab binding dialog', () => {
           },
         });
       });
-      expect(mockToastSuccess).toHaveBeenCalledWith('Channel updated');
+      expect(mockToastSuccess).toHaveBeenCalledWith('Connection updated');
     });
   });
 });

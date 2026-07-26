@@ -20,7 +20,7 @@ import { useBindings } from '@/layers/entities/binding';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { AdapterSetupWizard, CatalogCard } from '@/layers/features/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
-import { ChannelSettingRow } from './ChannelSettingRow';
+import { ConnectionSettingRow } from './ConnectionSettingRow';
 
 interface WizardState {
   open: boolean;
@@ -44,14 +44,14 @@ const DELIVERY_CONFIG_BOUNDS: Record<DeliveryConfigKey, { min: number; max: numb
 };
 
 /**
- * Channels tab for the Settings dialog.
+ * Connections tab for the Settings dialog.
  *
- * Shows Active Channels (configured adapter instances with toggles and configure actions),
- * Available Channels (catalog of unconfigured adapter types to add), and Session Delivery
+ * Shows Active Connections (configured adapter instances with toggles and configure actions),
+ * Available Connections (catalog of unconfigured adapter types to add), and Session Delivery
  * (the relay's internal claude-code adapter, which starts agent sessions from incoming
  * relay messages rather than bridging to an external platform).
  */
-export function ChannelsTab() {
+export function ConnectionsTab() {
   const relayEnabled = useRelayEnabled();
   const { data: externalCatalog = [], isLoading } = useExternalAdapterCatalog(relayEnabled);
   const { mutate: toggleAdapter } = useToggleAdapter();
@@ -59,7 +59,7 @@ export function ChannelsTab() {
   const [wizardState, setWizardState] = useState<WizardState>({ open: false });
 
   // Session delivery: the relay's internal claude-code adapter (not an external
-  // channel: it starts DorkOS agent sessions from incoming relay messages).
+  // connection: it starts DorkOS agent sessions from incoming relay messages).
   const { data: fullCatalog = [] } = useAdapterCatalog(relayEnabled);
   const { mutate: updateConfig } = useUpdateAdapterConfig();
   const claudeCodeEntry = useMemo(
@@ -120,7 +120,7 @@ export function ChannelsTab() {
         <div className="text-center">
           <p className="text-muted-foreground text-sm">Relay is disabled</p>
           <p className="text-muted-foreground/60 text-xs">
-            Enable the Relay message bus to manage channels here
+            Enable the Relay message bus to manage connections here
           </p>
         </div>
       </div>
@@ -138,7 +138,7 @@ export function ChannelsTab() {
   }
 
   // Configured: entries with at least one instance — flatten to individual rows.
-  const configuredChannels = externalCatalog.flatMap((entry) =>
+  const configuredConnections = externalCatalog.flatMap((entry) =>
     entry.instances.map((instance) => ({ instance, manifest: entry.manifest }))
   );
 
@@ -163,12 +163,12 @@ export function ChannelsTab() {
 
   return (
     <>
-      {/* Active Channels */}
-      {configuredChannels.length > 0 ? (
-        <FieldCard data-testid={TOUR_ANCHORS.relayChannels}>
+      {/* Active Connections */}
+      {configuredConnections.length > 0 ? (
+        <FieldCard data-testid={TOUR_ANCHORS.relayConnections}>
           <FieldCardContent>
-            {configuredChannels.map(({ instance, manifest }) => (
-              <ChannelSettingRow
+            {configuredConnections.map(({ instance, manifest }) => (
+              <ConnectionSettingRow
                 key={instance.id}
                 instance={instance}
                 manifest={manifest}
@@ -183,19 +183,19 @@ export function ChannelsTab() {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-8">
           <Plug2 className="text-muted-foreground/40 size-8" />
           <div className="text-center">
-            <p className="text-muted-foreground text-sm">No channels configured</p>
+            <p className="text-muted-foreground text-sm">No connections configured</p>
             <p className="text-muted-foreground/60 text-xs">
-              Add a channel below to connect agents to external platforms
+              Add a connection below to connect agents to external platforms
             </p>
           </div>
         </div>
       )}
 
-      {/* Available Channels */}
+      {/* Available Connections */}
       {availableEntries.length > 0 && (
         <section>
           <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-            Available Channels
+            Available Connections
           </h3>
           <div
             className="grid gap-2"

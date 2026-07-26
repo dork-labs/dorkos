@@ -77,7 +77,7 @@ describe('SystemStatusRow', () => {
     mockActivity = [0, 0, 0, 0, 0, 0, 0];
     render(<SystemStatusRow />);
     expect(screen.getByText('Nothing scheduled yet')).toBeInTheDocument();
-    expect(screen.getByText('No channels connected yet')).toBeInTheDocument();
+    expect(screen.getByText('No connections yet')).toBeInTheDocument();
     expect(screen.getByText('1 agent ready')).toBeInTheDocument();
     expect(screen.getByText('Quiet this week')).toBeInTheDocument();
   });

@@ -1,19 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
-  formatChannelName,
+  formatConnectionName,
   tasksOutcome,
   relayOutcome,
   meshOutcome,
   activityOutcome,
 } from '../lib/subsystem-copy';
 
-describe('formatChannelName', () => {
+describe('formatConnectionName', () => {
   it('title-cases a single word', () => {
-    expect(formatChannelName('telegram')).toBe('Telegram');
+    expect(formatConnectionName('telegram')).toBe('Telegram');
   });
 
   it('title-cases a kebab-case type', () => {
-    expect(formatChannelName('claude-code')).toBe('Claude Code');
+    expect(formatConnectionName('claude-code')).toBe('Claude Code');
   });
 });
 
@@ -33,14 +33,14 @@ describe('tasksOutcome', () => {
 
 describe('relayOutcome', () => {
   it('says nothing is connected at zero', () => {
-    expect(relayOutcome([])).toBe('No channels connected yet');
+    expect(relayOutcome([])).toBe('No connections yet');
   });
 
-  it('names a single connected channel', () => {
+  it('names a single connected connection', () => {
     expect(relayOutcome(['telegram'])).toBe('Connected to Telegram');
   });
 
-  it('names several connected channels', () => {
+  it('names several connected connections', () => {
     expect(relayOutcome(['telegram', 'slack'])).toBe('Connected to Telegram, Slack');
   });
 });

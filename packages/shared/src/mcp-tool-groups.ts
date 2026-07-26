@@ -5,7 +5,7 @@
  * ## Why this table exists
  *
  * A person can turn four groups of DorkOS tools on or off per agent —
- * Scheduling, Messaging, Agent Discovery, External Channels
+ * Scheduling, Messaging, Agent Discovery, External Connections
  * (`EnabledToolGroups` in `mesh-schemas.ts`). Answering "which tools does that
  * toggle actually cover?" used to require three hand-copied lists that all
  * claimed to be the same fact:
@@ -38,7 +38,7 @@
  * - "What does turning off Messaging remove?" — answered by the toggle a group
  *   maps to in {@link TOOL_GATE_GROUP_DOMAIN}. Two groups are gated by a toggle
  *   that is not named after them: `trace` follows Messaging and `binding`
- *   follows External Channels (ADR-0071). That implicit parenting is recorded
+ *   follows External Connections (ADR-0071). That implicit parenting is recorded
  *   once here rather than re-explained at each list.
  * - "What is always on, no matter what?" — answered by the groups that map to
  *   `null`. Those are kept apart (`core`, `ui`, `devtools`, `agents`,
@@ -110,8 +110,8 @@ const TOOL_GATE_GROUP_DOMAIN: Readonly<Record<ToolGateGroup, ToolDomainKey | nul
   trace: 'relay',
   mesh: 'mesh',
   adapter: 'adapter',
-  // Chat routes follow the External Channels toggle: a route with no channel to
-  // route to has nothing to do.
+  // Chat routes follow the External Connections toggle: a route with no
+  // connection to route to has nothing to do.
   binding: 'adapter',
 };
 
@@ -172,7 +172,7 @@ export const MCP_TOOL_GATE_GROUPS = {
   mesh_inspect: 'mesh',
   mesh_query_topology: 'mesh',
 
-  // ── External Channels ───────────────────────────────────────────────────
+  // ── External Connections ────────────────────────────────────────────────
   relay_list_adapters: 'adapter',
   relay_enable_adapter: 'adapter',
   relay_disable_adapter: 'adapter',

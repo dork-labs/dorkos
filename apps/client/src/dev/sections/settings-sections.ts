@@ -27,7 +27,7 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'status bar',
       'server',
       'tools',
-      'channels',
+      'connections',
       'agents',
       'advanced',
       'tab',

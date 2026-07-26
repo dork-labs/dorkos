@@ -4,7 +4,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { CatalogEntry } from '@dorkos/shared/relay-schemas';
 
-import { ChannelPicker } from '../ChannelPicker';
+import { ConnectionPicker } from '../ConnectionPicker';
 
 // --- Test helpers ---
 
@@ -56,7 +56,7 @@ function makeCatalogEntry(overrides: {
 
 interface RenderPickerOptions {
   catalog?: CatalogEntry[];
-  onSelectChannel?: ReturnType<typeof vi.fn<(adapterId: string) => void>>;
+  onSelectConnection?: ReturnType<typeof vi.fn<(adapterId: string) => void>>;
   onRequestSetup?: ReturnType<typeof vi.fn<(manifest: CatalogEntry['manifest']) => void>>;
   boundAdapterIds?: Set<string>;
   disabled?: boolean;
@@ -65,43 +65,43 @@ interface RenderPickerOptions {
 function renderPicker(options: RenderPickerOptions = {}) {
   const props = {
     catalog: options.catalog ?? [],
-    onSelectChannel: options.onSelectChannel ?? vi.fn<(adapterId: string) => void>(),
+    onSelectConnection: options.onSelectConnection ?? vi.fn<(adapterId: string) => void>(),
     onRequestSetup: options.onRequestSetup ?? vi.fn<(manifest: CatalogEntry['manifest']) => void>(),
     boundAdapterIds: options.boundAdapterIds ?? new Set<string>(),
     disabled: options.disabled,
   };
-  const { container } = render(<ChannelPicker {...props} />);
+  const { container } = render(<ConnectionPicker {...props} />);
   return { view: within(container), container, ...props };
 }
 
 // --- Tests ---
 
-describe('ChannelPicker', () => {
+describe('ConnectionPicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders a "Connect to Channel" button', () => {
+  it('renders an "Add Connection" button', () => {
     const { view } = renderPicker();
-    expect(view.getByText('Connect to Channel')).toBeInTheDocument();
+    expect(view.getByText('Add Connection')).toBeInTheDocument();
   });
 
   it('disables the button when disabled prop is true', () => {
     const { view } = renderPicker({ disabled: true });
-    expect(view.getByText('Connect to Channel').closest('button')).toBeDisabled();
+    expect(view.getByText('Add Connection').closest('button')).toBeDisabled();
   });
 
   describe('popover content', () => {
     // PopoverContent renders via Radix portal — use screen for portal queries.
 
-    it('shows "No channels available" when catalog is empty', () => {
+    it('shows "No connections available" when catalog is empty', () => {
       const { view } = renderPicker({ catalog: [] });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
-      expect(screen.getByText('No channels available')).toBeInTheDocument();
+      fireEvent.click(view.getByText('Add Connection'));
+      expect(screen.getByText('No connections available')).toBeInTheDocument();
     });
 
-    it('lists configured channels from the catalog', () => {
+    it('lists configured connections from the catalog', () => {
       const catalog = [
         makeCatalogEntry({ displayName: 'Telegram', instanceId: 'tg-1' }),
         makeCatalogEntry({
@@ -112,7 +112,7 @@ describe('ChannelPicker', () => {
       ];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       expect(screen.getByText('Telegram')).toBeInTheDocument();
       expect(screen.getByText('Slack')).toBeInTheDocument();
     });
@@ -121,71 +121,71 @@ describe('ChannelPicker', () => {
       const catalog = [makeCatalogEntry({ label: 'Work Bot' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       expect(screen.getByText('Work Bot')).toBeInTheDocument();
     });
 
-    it('shows channel state text', () => {
+    it('shows connection state text', () => {
       const catalog = [makeCatalogEntry({ state: 'connected' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
-      // ChannelPicker uses ADAPTER_STATE_LABEL which humanizes 'connected' → 'Connected'
+      fireEvent.click(view.getByText('Add Connection'));
+      // ConnectionPicker uses ADAPTER_STATE_LABEL which humanizes 'connected' → 'Connected'
       expect(screen.getByText('Connected')).toBeInTheDocument();
     });
 
-    it('shows "Connected" text for already-bound channels', () => {
+    it('shows "Connected" text for already-bound connections', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1' })];
       const { view } = renderPicker({ catalog, boundAdapterIds: new Set(['tg-1']) });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       expect(screen.getByText('Connected')).toBeInTheDocument();
     });
 
-    it('disables already-bound channels', () => {
+    it('disables already-bound connections', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
       const { view } = renderPicker({ catalog, boundAdapterIds: new Set(['tg-1']) });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
-      const channelButton = screen.getByText('Telegram').closest('button');
-      expect(channelButton).toBeDisabled();
+      fireEvent.click(view.getByText('Add Connection'));
+      const connectionButton = screen.getByText('Telegram').closest('button');
+      expect(connectionButton).toBeDisabled();
     });
 
-    it('disables channels in error state', () => {
+    it('disables connections in error state', () => {
       const catalog = [makeCatalogEntry({ state: 'error', displayName: 'Broken Bot' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
-      const channelButton = screen.getByText('Broken Bot').closest('button');
-      expect(channelButton).toBeDisabled();
+      fireEvent.click(view.getByText('Add Connection'));
+      const connectionButton = screen.getByText('Broken Bot').closest('button');
+      expect(connectionButton).toBeDisabled();
     });
 
-    it('disables channels that are not enabled', () => {
+    it('disables connections that are not enabled', () => {
       const catalog = [makeCatalogEntry({ enabled: false, displayName: 'Disabled Bot' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
-      const channelButton = screen.getByText('Disabled Bot').closest('button');
-      expect(channelButton).toBeDisabled();
+      fireEvent.click(view.getByText('Add Connection'));
+      const connectionButton = screen.getByText('Disabled Bot').closest('button');
+      expect(connectionButton).toBeDisabled();
     });
 
-    it('calls onSelectChannel when a channel is clicked', () => {
+    it('calls onSelectConnection when a connection is clicked', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
-      const onSelectChannel = vi.fn();
-      const { view } = renderPicker({ catalog, onSelectChannel });
+      const onSelectConnection = vi.fn();
+      const { view } = renderPicker({ catalog, onSelectConnection });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       fireEvent.click(screen.getByText('Telegram'));
-      expect(onSelectChannel).toHaveBeenCalledWith('tg-1');
+      expect(onSelectConnection).toHaveBeenCalledWith('tg-1');
     });
 
-    it('closes popover after selecting a channel', () => {
+    it('closes popover after selecting a connection', () => {
       const catalog = [makeCatalogEntry({ instanceId: 'tg-1', displayName: 'Telegram' })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       fireEvent.click(screen.getByText('Telegram'));
-      // After selection, popover should close — channel name should no longer be in portal
+      // After selection, popover should close — connection name should no longer be in portal
       expect(screen.queryByText('Telegram')).not.toBeInTheDocument();
     });
   });
@@ -195,7 +195,7 @@ describe('ChannelPicker', () => {
       const catalog = [makeCatalogEntry({ displayName: 'Webhook', noInstances: true })];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       expect(screen.getByText('Available to set up')).toBeInTheDocument();
       expect(screen.getByText('Webhook')).toBeInTheDocument();
     });
@@ -206,7 +206,7 @@ describe('ChannelPicker', () => {
       ];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       expect(screen.getByText('Available to set up')).toBeInTheDocument();
     });
 
@@ -216,7 +216,7 @@ describe('ChannelPicker', () => {
       ];
       const { view } = renderPicker({ catalog });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       expect(screen.queryByText('Available to set up')).not.toBeInTheDocument();
     });
 
@@ -225,7 +225,7 @@ describe('ChannelPicker', () => {
       const onRequestSetup = vi.fn();
       const { view } = renderPicker({ catalog, onRequestSetup });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       fireEvent.click(screen.getByText('Webhook'));
       expect(onRequestSetup).toHaveBeenCalledWith(catalog[0].manifest);
     });
@@ -235,7 +235,7 @@ describe('ChannelPicker', () => {
       const onRequestSetup = vi.fn();
       const { view } = renderPicker({ catalog, onRequestSetup });
 
-      fireEvent.click(view.getByText('Connect to Channel'));
+      fireEvent.click(view.getByText('Add Connection'));
       fireEvent.click(screen.getByText('Webhook'));
       // The popover should close — the "Available to set up" text should not be visible
       expect(screen.queryByText('Available to set up')).not.toBeInTheDocument();

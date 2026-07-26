@@ -21,8 +21,8 @@ interface ActivityFeedProps {
   enabled: boolean;
   /** Ref attached to the dead-letter section wrapper for scroll-to support. */
   deadLetterRef?: RefObject<HTMLDivElement | null>;
-  /** Called when the user clicks "Set up a channel" in the no-messages empty state. */
-  onSwitchToChannels?: () => void;
+  /** Called when the user clicks "Set up a connection" in the no-messages empty state. */
+  onSwitchToConnections?: () => void;
   /** When true, forces the dead-letter section open. Used by the health bar click handler. */
   autoShowFailures?: boolean;
 }
@@ -82,7 +82,7 @@ function applyFilters(
 export function ActivityFeed({
   enabled,
   deadLetterRef,
-  onSwitchToChannels: _onSwitchToChannels,
+  onSwitchToConnections: _onSwitchToConnections,
   autoShowFailures,
 }: ActivityFeedProps) {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');

@@ -75,11 +75,11 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     id: 'relay',
     occasion: 'relay',
     offerLine: DORKBOT_TOUR_LINES.offers.relay,
-    deepLink: { kind: 'settings-tab', tab: 'channels' },
+    deepLink: { kind: 'settings-tab', tab: 'connections' },
     steps: [
       {
-        anchor: TOUR_ANCHORS.relayChannels,
-        caption: DORKBOT_TOUR_LINES.relay.relayChannels,
+        anchor: TOUR_ANCHORS.relayConnections,
+        caption: DORKBOT_TOUR_LINES.relay.relayConnections,
         chipLabel: 'Got it',
       },
     ],

@@ -8,12 +8,12 @@
  */
 
 /**
- * Title-case a channel/adapter type for display, e.g. `telegram` becomes
+ * Title-case a connection/adapter type for display, e.g. `telegram` becomes
  * "Telegram" and `claude-code` becomes "Claude Code".
  *
  * @param type - The adapter type identifier.
  */
-export function formatChannelName(type: string): string {
+export function formatConnectionName(type: string): string {
   return type
     .split(/[-_\s]+/)
     .filter(Boolean)
@@ -32,13 +32,13 @@ export function tasksOutcome(scheduleCount: number): string {
 }
 
 /**
- * Relay outcome: which channels are connected.
+ * Relay outcome: which connections are active.
  *
- * @param connectedTypes - Adapter types of connected channels.
+ * @param connectedTypes - Adapter types of active connections.
  */
 export function relayOutcome(connectedTypes: string[]): string {
-  if (connectedTypes.length === 0) return 'No channels connected yet';
-  return `Connected to ${connectedTypes.map(formatChannelName).join(', ')}`;
+  if (connectedTypes.length === 0) return 'No connections yet';
+  return `Connected to ${connectedTypes.map(formatConnectionName).join(', ')}`;
 }
 
 /**
