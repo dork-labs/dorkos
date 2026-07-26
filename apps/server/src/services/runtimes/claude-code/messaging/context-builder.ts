@@ -28,7 +28,10 @@ const RELAY_TOOLS_CONTEXT = `<relay_tools>
 DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
 Trust model: your sender identity is injected by the server on every send — there
-is NO "from" parameter and you cannot send as another agent. Every agent lives in
+is NO "from" parameter and you cannot send as another agent. Inboxes are private
+the same way: you can only read or unregister an endpoint that is your own subject,
+an inbox subject relay_send_async gave you, or one you registered yourself. Naming
+another agent's endpoint fails with code ENDPOINT_ACCESS_DENIED. Every agent lives in
 a namespace (explicit in its manifest, or derived from its directory layout);
 agents in the same namespace can message each other, cross-namespace messaging is
 DENIED by default, and the DorkBot system agent can reach (and be reached by) all
@@ -59,7 +62,8 @@ Workflow: Dispatch to another agent — LONG tasks (>10 min)
    → Returns messages[]: each { id, subject, status, createdAt, sender, payload }
    → payload is a progress event { type: "progress", step, step_type: "message"|"tool_result", text, done: false }
      or the final result { type: "agent_result", text, done: true }
-   → ack=true marks returned messages read, so each poll only returns new messages
+   → ack=true DELETES each returned message's content for good, so each poll only returns
+     new messages — take what you need from the response, it will not be there next time
 3. When a payload with done:true is received: relay_unregister_endpoint(subject=inboxSubject)
 
 Workflow: Fire-and-forget (no reply needed)
@@ -71,7 +75,7 @@ Workflow: Manual poll (fallback)
 1. relay_register_endpoint(subject="relay.inbox.{myAgentId}")
 2. relay_send(subject="relay.agent.{theirAgentId}", payload={task}, replyTo="relay.inbox.{myAgentId}")
 3. relay_inbox(endpoint_subject="relay.inbox.{myAgentId}", ack=true)
-   → messages[].payload carries each reply; ack=true marks them read
+   → messages[].payload carries each reply; ack=true deletes them for good once returned
 
 CONSTRAINT — Subagent MCP tools: DorkOS MCP tools (relay_*, mesh_*, tasks_*) are NOT available
 inside Claude Code Task() subagents. This is an SDK architectural limitation (subprocesses do not
@@ -96,9 +100,17 @@ IMPORTANT — Outbound messaging rules:
 
 relay_list_endpoints returns type ("dispatch"|"query"|"persistent"|"agent"|"unknown") and expiresAt
 (ISO string or null) for each endpoint. Use these to identify active inboxes and their expiry.
+It lists every endpoint on the machine, including ones you cannot read.
 
-Error codes: RELAY_DISABLED, ACCESS_DENIED, INVALID_SUBJECT, ENDPOINT_NOT_FOUND,
-             TIMEOUT, QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED
+Register your own inboxes under relay.inbox.* — relay.agent.*, relay.system.* and relay.human.*
+are managed by the server and return RESERVED_SUBJECT. An inbox you register stays yours across
+server restarts. A subject differing from an existing endpoint only by letter case is refused
+(the two would share one mailbox on macOS and Windows).
+
+Error codes: RELAY_DISABLED, ACCESS_DENIED, ENDPOINT_ACCESS_DENIED (not your endpoint),
+             RESERVED_SUBJECT, INVALID_SUBJECT, ENDPOINT_NOT_FOUND (no such endpoint —
+             cleanup is idempotent, do not retry), TIMEOUT, QUERY_FAILED, REJECTED,
+             DISPATCH_FAILED, UNREGISTER_FAILED
 </relay_tools>`;
 
 const MESH_TOOLS_CONTEXT = `<mesh_tools>

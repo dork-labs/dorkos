@@ -313,3 +313,175 @@ describe('EndpointRegistry', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Ownership durability and mailbox identity (DOR-506)
+// ---------------------------------------------------------------------------
+
+describe('endpoint ownership survives the process', () => {
+  it('records the owner on disk so a fresh registry still knows it', async () => {
+    await registry.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.alice' });
+
+    // A restart: the endpoint Map is gone, the Maildir is not.
+    const restarted = new EndpointRegistry(tempDir);
+    const reregistered = await restarted.registerEndpoint('relay.inbox.alice', {
+      owner: 'relay.agent.ns.alice',
+    });
+
+    expect(reregistered.owner).toBe('relay.agent.ns.alice');
+  });
+
+  it('refuses a second owner claiming the same mailbox after a restart', async () => {
+    // The B1 squat: registration is unauthenticated and used to confer
+    // ownership, so the first caller after a restart owned whatever it named.
+    await registry.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.alice' });
+
+    const restarted = new EndpointRegistry(tempDir);
+    await expect(
+      restarted.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.bob' })
+    ).rejects.toThrow(/belongs to another owner/);
+
+    // And the real owner is not locked out of her own inbox.
+    const alice = await restarted.registerEndpoint('relay.inbox.alice', {
+      owner: 'relay.agent.ns.alice',
+    });
+    expect(alice.owner).toBe('relay.agent.ns.alice');
+  });
+
+  it('never erases a recorded owner when the server re-registers with none', async () => {
+    await registry.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.alice' });
+
+    const restarted = new EndpointRegistry(tempDir);
+    const info = await restarted.registerEndpoint('relay.inbox.alice');
+
+    expect(info.owner).toBe('relay.agent.ns.alice');
+  });
+
+  it('lets exactly one of two racing claimants own an unclaimed mailbox', async () => {
+    // The read and the write are separate syscalls. Without an exclusive create
+    // both callers see no owner and both believe they claimed it, with the later
+    // write silently deciding. No restart needed: registerEndpoint awaits between
+    // the in-memory check and endpoints.set.
+    const results = await Promise.allSettled([
+      registry.registerEndpoint('relay.inbox.contested', { owner: 'relay.agent.ns.alice' }),
+      registry.registerEndpoint('relay.inbox.contested', { owner: 'relay.agent.ns.bob' }),
+    ]);
+
+    const winners = results.filter((r) => r.status === 'fulfilled');
+    expect(winners).toHaveLength(1);
+    const losers = results.filter((r) => r.status === 'rejected');
+    expect(losers).toHaveLength(1);
+
+    // Whoever won, the recorded owner agrees with the endpoint that was returned,
+    // and a third party is still refused.
+    const winner = (winners[0] as PromiseFulfilledResult<{ owner?: string }>).value.owner;
+    const restarted = new EndpointRegistry(tempDir);
+    await expect(
+      restarted.registerEndpoint('relay.inbox.contested', { owner: 'relay.agent.ns.carol' })
+    ).rejects.toThrow(/belongs to another owner/);
+    const reclaimed = await restarted.registerEndpoint('relay.inbox.contested', { owner: winner });
+    expect(reclaimed.owner).toBe(winner);
+  });
+
+  it('lets two racing claims by the SAME owner both succeed', async () => {
+    // The exclusive create must not turn a harmless duplicate into an error:
+    // one agent registering twice concurrently is not an ownership conflict.
+    const results = await Promise.allSettled([
+      registry.registerEndpoint('relay.inbox.samesame', { owner: 'relay.agent.ns.alice' }),
+      registry.registerEndpoint('relay.inbox.samesame', { owner: 'relay.agent.ns.alice' }),
+    ]);
+    const owners = results.map((r) =>
+      r.status === 'fulfilled' ? (r.value as { owner?: string }).owner : `rejected: ${r.reason}`
+    );
+    expect(owners).toEqual(['relay.agent.ns.alice', 'relay.agent.ns.alice']);
+  });
+
+  it('reports no owner for a mailbox that records none, rather than guessing one', async () => {
+    const info = await registry.registerEndpoint('relay.system.console');
+    expect(info.owner).toBeUndefined();
+  });
+
+  it('relinquishes ownership when the endpoint is unregistered', async () => {
+    await registry.registerEndpoint('relay.inbox.temp', { owner: 'relay.agent.ns.alice' });
+    await registry.unregisterEndpoint('relay.inbox.temp');
+
+    const info = await registry.registerEndpoint('relay.inbox.temp', {
+      owner: 'relay.agent.ns.bob',
+    });
+    expect(info.owner).toBe('relay.agent.ns.bob');
+  });
+});
+
+describe('one mailbox, one subject', () => {
+  it('refuses a subject that differs from a live endpoint only by letter case', async () => {
+    // The B2 collision: maildirPath is join(mailboxesDir, subject) and APFS and
+    // NTFS are case-insensitive, so these two subjects name one directory.
+    await registry.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.alice' });
+
+    await expect(
+      registry.registerEndpoint('relay.inbox.ALICE', { owner: 'relay.agent.ns.bob' })
+    ).rejects.toThrow(/collides with existing endpoint/);
+  });
+
+  it('refuses a case variant of a mailbox left on disk by a previous process', async () => {
+    await registry.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.alice' });
+
+    const restarted = new EndpointRegistry(tempDir);
+    await expect(
+      restarted.registerEndpoint('relay.inbox.Alice', { owner: 'relay.agent.ns.bob' })
+    ).rejects.toThrow(/collides with existing endpoint/);
+  });
+
+  it("does not destroy the owner's mailbox via a case variant", async () => {
+    const alice = await registry.registerEndpoint('relay.inbox.alice', {
+      owner: 'relay.agent.ns.alice',
+    });
+    await registry
+      .registerEndpoint('relay.inbox.ALICE', { owner: 'relay.agent.ns.bob' })
+      .catch(() => undefined);
+    // Bob has no endpoint to unregister, so there is nothing to delete through.
+    expect(await registry.unregisterEndpoint('relay.inbox.ALICE')).toBe(false);
+
+    await expectDirExists(alice.maildirPath);
+  });
+
+  it('refuses a case variant of a mailbox that records NO owner', async () => {
+    // The reviewer's reproduction. An unowned mailbox (created from the cockpit,
+    // or by the server) has no recorded owner to fall back on, so the collision
+    // rule is the only thing standing between it and a variant registration that
+    // could then unregister it and delete the directory they share.
+    await registry.registerEndpoint('relay.inbox.shared');
+
+    await expect(registry.registerEndpoint('relay.inbox.SHARED')).rejects.toThrow(
+      /collides with existing endpoint/
+    );
+    await expectDirExists(join(tempDir, 'mailboxes', 'relay.inbox.shared'));
+  });
+
+  it('still allows the exact same subject to be re-registered after a restart', async () => {
+    // Guards against the collision check rejecting the legitimate case.
+    await registry.registerEndpoint('relay.inbox.mixedCase', { owner: 'relay.agent.ns.alice' });
+
+    const restarted = new EndpointRegistry(tempDir);
+    const again = await restarted.registerEndpoint('relay.inbox.mixedCase', {
+      owner: 'relay.agent.ns.alice',
+    });
+    expect(again.subject).toBe('relay.inbox.mixedCase');
+  });
+
+  it('keeps unrelated subjects that share no case-folded form', async () => {
+    await registry.registerEndpoint('relay.inbox.alice');
+    await registry.registerEndpoint('relay.inbox.alicia');
+    expect(registry.size).toBe(2);
+  });
+
+  it('leaves the owner file out of the endpoint hash listing', async () => {
+    // The .owner file sits beside tmp/new/cur/failed. If it were mistaken for a
+    // mailbox the GC would try to reap it.
+    await registry.registerEndpoint('relay.inbox.alice', { owner: 'relay.agent.ns.alice' });
+    const entries = await readdir(tempDir + '/mailboxes', { withFileTypes: true });
+    expect(entries.filter((e) => e.isDirectory()).map((e) => e.name)).toEqual([
+      'relay.inbox.alice',
+    ]);
+  });
+});

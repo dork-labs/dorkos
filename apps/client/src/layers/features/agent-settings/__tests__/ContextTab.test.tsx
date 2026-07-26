@@ -53,7 +53,7 @@ describe('ContextTab', () => {
   it('shows preview when toggle is on and feature is available', () => {
     const view = renderTab();
     // Relay preview should contain subject hierarchy
-    expect(view.getByText(/relay\.agent\.\{sessionId\}/)).toBeInTheDocument();
+    expect(view.getByText(/relay\.agent\.\{agentId\}/)).toBeInTheDocument();
     // Mesh preview should contain lifecycle steps
     expect(view.getByText(/mesh_discover/)).toBeInTheDocument();
     // Adapter preview should contain binding info
@@ -67,7 +67,7 @@ describe('ContextTab', () => {
     });
     const view = renderTab();
     // Relay preview should be hidden
-    expect(view.queryByText(/relay\.agent\.\{sessionId\}/)).not.toBeInTheDocument();
+    expect(view.queryByText(/relay\.agent\.\{agentId\}/)).not.toBeInTheDocument();
     // Mesh preview should still show
     expect(view.getByText(/mesh_discover/)).toBeInTheDocument();
   });
@@ -99,7 +99,7 @@ describe('ContextTab', () => {
     });
     const view = renderTab();
     // Relay and adapter previews should be hidden (feature unavailable)
-    expect(view.queryByText(/relay\.agent\.\{sessionId\}/)).not.toBeInTheDocument();
+    expect(view.queryByText(/relay\.agent\.\{agentId\}/)).not.toBeInTheDocument();
     expect(view.queryByText(/binding_create/)).not.toBeInTheDocument();
     // Mesh preview should show (always available)
     expect(view.getByText(/mesh_discover/)).toBeInTheDocument();

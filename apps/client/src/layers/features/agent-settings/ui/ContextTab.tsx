@@ -6,20 +6,26 @@ import { useAgentContextConfig } from '../model/use-agent-context-config';
 const RELAY_PREVIEW = `DorkOS Relay is a pub/sub message bus for inter-agent communication.
 
 Subject hierarchy:
-  relay.agent.{sessionId}          — address a specific agent session
+  relay.agent.{agentId}            — address a specific agent
+  relay.inbox.{agentId}            — your own persistent reply inbox
   relay.human.console.{clientId}   — reach a human in the DorkOS UI
   relay.system.console             — system broadcast channel
   relay.system.tasks.{scheduleId}  — Tasks scheduler events
 
 Workflows:
-- Register a reply address first: relay_register_endpoint(subject="relay.agent.{your-sessionId}")
-- Message another agent: relay_send(subject="relay.agent.{their-sessionId}", payload={...}, from="relay.agent.{your-sessionId}")
-- Check for replies: relay_inbox(endpoint_subject="relay.agent.{your-sessionId}")
+- Register a reply address first: relay_register_endpoint(subject="relay.inbox.{your-agentId}")
+- Message another agent: relay_send(subject="relay.agent.{their-agentId}", payload={...}, replyTo="relay.inbox.{your-agentId}")
+- Check for replies: relay_inbox(endpoint_subject="relay.inbox.{your-agentId}")
 - See who is listening: relay_list_endpoints()
 
-The "from" field is your own subject. Set "replyTo" so the recipient knows where to respond.
+Your sender identity is set by the server — there is no "from" parameter. Set "replyTo" so the
+recipient knows where to respond.
 
-Error codes: RELAY_DISABLED (feature off), ACCESS_DENIED (subject blocked), INVALID_SUBJECT (malformed), ENDPOINT_NOT_FOUND (inbox miss).`;
+Inboxes are private: you can only read or unregister your own address, an inbox handed to you by
+relay_send_async, or one you registered yourself. Reading with ack=true deletes the messages it
+returns, for good.
+
+Error codes: RELAY_DISABLED (feature off), ACCESS_DENIED (subject blocked), ENDPOINT_ACCESS_DENIED (not your endpoint), RESERVED_SUBJECT (server-managed namespace), INVALID_SUBJECT (malformed), ENDPOINT_NOT_FOUND (inbox miss).`;
 
 const MESH_PREVIEW = `DorkOS Mesh is a local agent registry for discovering and communicating with AI agents on this machine.
 

@@ -57,6 +57,112 @@ export function resolveSenderIdentity(deps: McpToolDeps, cwd: string | undefined
 }
 
 /**
+ * Decide whether the caller owns the Relay endpoint at `subject`.
+ *
+ * An inbox is private mail. Reading one hands over another agent's undelivered
+ * messages, and reading with `ack` deletes them for good, so every inbox tool
+ * gates on this predicate rather than trusting the subject in the tool call.
+ *
+ * A caller owns an endpoint in exactly two cases:
+ *
+ * 1. The subject IS the caller's own identity subject. Mesh registers each
+ *    agent's endpoint (`relay.agent.{ns}.{id}`) on the agent's behalf, so that
+ *    endpoint carries no recorded owner; the caller's identity is the proof.
+ * 2. The caller registered the endpoint, so Relay recorded it as `owner`. This
+ *    covers the ephemeral inbox `relay_send_async` hands back and any
+ *    persistent inbox the agent registered with `relay_register_endpoint`.
+ *
+ * Two properties this must keep:
+ *
+ * - **An unresolvable caller owns nothing.** `resolveSenderIdentity` always
+ *   returns a concrete subject, and an empty one is rejected here, so there is
+ *   no path where a missing credential turns into blanket access. An endpoint
+ *   with no recorded owner (the system console, cockpit-created endpoints) is
+ *   owned by nobody and is therefore denied, never allowed by default.
+ * - **Comparison is exact.** Both checks are `===` on the whole subject string,
+ *   never a prefix test and never a wildcard match, so a different case,
+ *   stray whitespace, a trailing dot, a wildcard, or a subject that merely
+ *   starts with the caller's own never matches.
+ *
+ * The exact comparison decides who owns a *subject*. That is only the same
+ * question as who owns a *mailbox* because `EndpointRegistry` refuses to
+ * register two subjects that differ only by letter case: APFS and NTFS are
+ * case-insensitive, so without that rule `relay.inbox.alice` and
+ * `relay.inbox.ALICE` would be two subjects sharing one directory, and a check
+ * that is sound on the string would still be unsound on the resource. This
+ * function's guarantee rests on that registry rule, not on the string
+ * comparison alone.
+ *
+ * @param identity - The server-resolved identity of the calling principal
+ * @param subject - The endpoint subject the caller asked for
+ * @param owner - The endpoint's recorded owner, or `undefined` when it has none
+ * @returns `true` only when the caller may read or remove this endpoint
+ */
+export function ownsEndpoint(
+  identity: SenderIdentity,
+  subject: string,
+  owner: string | undefined
+): boolean {
+  const caller = identity.subject;
+  if (!caller) return false;
+  if (subject === caller) return true;
+  return owner === caller;
+}
+
+/**
+ * Subject namespaces the server manages, which an agent may not register.
+ *
+ * `relay.agent.*` addresses are how messages reach an agent, so letting one
+ * agent register another's would intercept its mail outright, not merely read
+ * it. `relay.system.*` and `relay.human.*` belong to the server and the person
+ * using it. The two ephemeral inbox namespaces are minted per tool call by
+ * `relay_send_and_wait` and `relay_send_async`, which register them directly
+ * rather than through the tool, so reserving them here costs nothing.
+ */
+const SERVER_MANAGED_PREFIXES = [
+  'relay.agent.',
+  'relay.system.',
+  'relay.human.',
+  'relay.inbox.dispatch.',
+  'relay.inbox.query.',
+] as const;
+
+/**
+ * Whether `subject` is in a namespace an agent may not register for itself.
+ *
+ * A caller registering its OWN address is allowed: that is the agent asking for
+ * the mailbox it already receives mail on, which grants it nothing new.
+ *
+ * @param subject - The subject the caller asked to register
+ * @param identity - The server-resolved identity of the calling principal
+ * @returns `true` when the registration must be refused
+ */
+export function isReservedSubject(subject: string, identity: SenderIdentity): boolean {
+  if (subject === identity.subject) return false;
+  return SERVER_MANAGED_PREFIXES.some((prefix) => subject.startsWith(prefix));
+}
+
+/**
+ * The error response for a Relay endpoint the caller does not own.
+ *
+ * Says what to do next instead of only saying no: the same response covers an
+ * endpoint that belongs to another agent and one that was never registered,
+ * and neither case tells the caller which it was.
+ *
+ * @param subject - The endpoint subject that was refused
+ * @param guidance - One sentence telling the caller how to reach their own
+ */
+export function endpointAccessDeniedContent(subject: string, guidance: string) {
+  return jsonContent(
+    {
+      error: `You do not own the endpoint "${subject}", so you cannot use it. ${guidance}`,
+      code: 'ENDPOINT_ACCESS_DENIED',
+    },
+    true
+  );
+}
+
+/**
  * Derive the logical type of a Relay endpoint from its subject prefix.
  *
  * Mirrors the prefix-matching convention used in RelayCore and ClaudeCodeAdapter.
