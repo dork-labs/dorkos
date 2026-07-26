@@ -12,14 +12,24 @@
  *
  * ## Why a table, and not a `tier:` field at each registration
  *
- * Because the two registration sites demonstrably drift. The same tool is written
- * out twice today — once in `runtimes/claude-code/mcp-tools/` for the in-session
- * `dorkos` server and once in `core/external-mcp/` for the external `/mcp` server —
- * and five of those pairs already disagree about their own DESCRIPTION, one
- * (`mesh_discover`) disagrees about its INPUT SCHEMA, and seven tools exist on only
- * one of the two servers. Writing a tier at 47 registrations twice over would add
- * one more hand-copied fact to a set that has already proven it drifts, on the one
- * axis where drifting is a security hole rather than a typo.
+ * Because the two registration sites demonstrably drifted, which is the whole
+ * reason this table was not built as a `tier:` field at each registration.
+ *
+ * When DOR-468 wrote that argument down, each tool was registered twice by hand:
+ * once in `runtimes/claude-code/mcp-tools/` for the in-session `dorkos` server and
+ * once in `core/external-mcp/` for the external `/mcp` server. SEVEN of those pairs
+ * disagreed about their own DESCRIPTION, and two disagreed about their INPUT SCHEMA
+ * (`mesh_discover`, whose external copy omitted a field its own shared handler
+ * read, and `create_extension`). Writing a tier at 47 registrations twice over
+ * would have added one more hand-copied fact to a set that had already proven it
+ * drifts, on the one axis where drifting is a security hole rather than a typo.
+ *
+ * DOR-499 has since removed the duplication rather than merely surviving it: the
+ * external server now projects the in-session definitions, so name, description,
+ * and input schema have one source and those counts are zero. The argument for
+ * keying BY TOOL NAME still stands on its own, and the history is kept because the
+ * next person tempted to move a fact back to the registration sites should know it
+ * was tried. Seven tools still exist on only one of the two servers.
  *
  * So the tier is keyed by TOOL NAME, and a tool has exactly one tier no matter
  * where it is registered. That is also the whole answer for a tool that exists on
@@ -227,11 +237,19 @@ export type McpToolName = keyof typeof MCP_TOOL_TIERS;
  * length. Before this, seven tools had a tier and no group, which is how the
  * cockpit came to show a tool set the server did not build.
  *
- * These live in production source, not beside the tests: `apps/server/tsconfig.json`
- * excludes `src/**\/__tests__/**`, so a type assertion written in a test file is
- * never typechecked and cannot fail. They also resolve through the shared package's
- * `types` condition, which points at its SOURCE — so an unbuilt `dist` cannot make
- * them pass by accident.
+ * These live in production source rather than beside the tests, though the reason
+ * has narrowed. It used to be that `apps/server/tsconfig.json` excluded
+ * `src/**\/__tests__/**` wholesale, so a type assertion written in any test file was
+ * decoration that could never fail. DOR-508 put the test files in the tsc program,
+ * so that is no longer true in general. It is still true for the file these would
+ * most naturally sit in, `__tests__/mcp-tool-gate.test.ts`, which remains
+ * quarantined in that tsconfig's `exclude` while its own type errors are worked off.
+ *
+ * They also resolve through the shared package's `types` condition, which points at
+ * its SOURCE, so an unbuilt or stale `dist` cannot make them pass by accident. That
+ * is not theoretical: the same table is read at RUNTIME by tests that resolve
+ * `default` to `dist`, which is why `apps/server/vitest.config.ts` aliases this
+ * module to source as well.
  *
  * Each resolves to `true` while the key sets agree and to `never` the moment they
  * do not, at which point the assignment stops compiling and `tsc` names the line

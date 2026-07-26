@@ -3,34 +3,57 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
-    // Resolve `@dorkos/shared/config-schema` to the package's SOURCE, not its
+    // Resolve a few `@dorkos/shared` subpaths to the package's SOURCE, not its
     // built `dist/`.
     //
     // The `exports` map points `default` at `dist/`, so without this a stale dist
-    // silently tests yesterday's schema. That is a false PASS, not a loud
-    // failure, and it defeats the config-disclosure drift guard specifically:
-    // that guard enumerates the leaves of `UserConfigSchema` to prove every
-    // config field has been classified for the tokenless `config_get` surface, so
-    // against a stale dist a newly added field reads as "already classified".
-    // `pnpm test` is safe (turbo's `^build`), but the targeted
+    // silently tests yesterday's module. That is a false PASS, not a loud
+    // failure. `pnpm test` is safe (turbo's `^build`), but the targeted
     // `pnpm vitest run <path>` loop AGENTS.md prescribes is not, and that is
     // where the next author actually stands.
     //
-    // Scoped to this one module on purpose. Aliasing all 42 subpaths made every
+    // Both entries below are here because they back a DRIFT GUARD — a test whose
+    // whole job is to notice that a table grew a row. Those are exactly the tests
+    // a stale dist turns into decoration, because the guard reads the old table,
+    // finds it consistent, and reports success:
+    //
+    // - `config-schema` backs the config-disclosure guard, which enumerates the
+    //   leaves of `UserConfigSchema` to prove every config field has been
+    //   classified for the tokenless `config_get` surface. Against a stale dist a
+    //   newly added field reads as "already classified".
+    // - `mcp-tool-groups` backs the tool-group guards, and it decides
+    //   `buildAllowedTools`, which is an APPROVAL BYPASS list (see
+    //   `services/runtimes/claude-code/tooling/tool-filter.ts`). Measured against
+    //   a stale dist: moving `tasks_delete` into an always-on group, making a
+    //   destructive tool permanently auto-approved, passed all 85 targeted tests
+    //   AND `tsc`, because the type-level assertions only compare key SETS and the
+    //   keys had not changed. With the alias the same edit fails immediately.
+    //
+    // Scoped to these modules on purpose. Aliasing all 43 subpaths made every
     // worker re-transform the whole package and took the suite from ~51s to
-    // ~110s (transform 97s); scoped, it costs nothing measurable (~37s). All
-    // three measured in one session, because machine load moves these numbers
-    // more than the alias does. The trade-off is that
-    // `dist/schemas.js` reaches config-schema by a relative import, which this
-    // alias does not rewrite, so a test process can hold both the src and dist
-    // copies. That is safe here and only here: the module has no mutable state and
-    // exports only Zod schemas plus plain constants, nothing whose identity is
-    // ever compared. Do not widen this alias without re-measuring.
+    // ~110s (transform 97s); scoped, it costs nothing measurable. Adding the
+    // second entry was re-measured in one session, back to back: 50.7s to 52.9s
+    // total, transform 18.9s to 19.4s. Both runs were dominated by a 45s flaky
+    // watcher integration test, so treat transform time as the signal here and
+    // total time as noise, and re-measure in ONE session rather than comparing
+    // against a number written down on a different day. The trade-off is
+    // that other `dist/*.js` files reach these modules by relative imports, which
+    // this alias does not rewrite, so a test process can hold both the src and
+    // dist copies. That is safe for these two and only because of what they are:
+    // no mutable state, and they export only Zod schemas, plain constants, and
+    // pure functions over them, nothing whose identity is ever compared. Do not
+    // widen this alias without re-measuring.
     alias: [
       {
         find: '@dorkos/shared/config-schema',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/config-schema.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/mcp-tool-groups',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/mcp-tool-groups.ts', import.meta.url)
         ),
       },
     ],

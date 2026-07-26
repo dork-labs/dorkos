@@ -22,10 +22,14 @@
  * ADR-0070 built this feature on the premise that the SDK's `allowedTools`
  * option RESTRICTS which tools a session can call. It does not. In
  * `@anthropic-ai/claude-agent-sdk` 0.3.177 it is an AUTO-APPROVAL list: "List of
- * tool names that are auto-allowed without prompting for permission... To
- * restrict which tools are available, use the `tools` option instead"
- * (`sdk.d.ts`). The option that removes a tool from the model's reach is
- * `disallowedTools`, and DorkOS sets neither it nor `tools` anywhere.
+ * tool names that are auto-allowed without prompting for permission. These tools
+ * will execute automatically without asking the user for approval" (`sdk.d.ts`).
+ *
+ * That entry goes on to say "To restrict which tools are available, use the `tools`
+ * option instead", which is NOT the fix it sounds like: `Options.tools` selects the
+ * base set of BUILT-IN tools (Bash, Read, Edit, and so on) and cannot remove an MCP
+ * tool. The option that takes an MCP tool out of the model's reach is
+ * `disallowedTools`. DorkOS sets none of the three.
  *
  * Two consequences, both load-bearing for anyone editing this file:
  *
@@ -45,7 +49,7 @@
  * `disallowedTools` and amending ADR-0070, which is a behavior change with its own
  * security review, not a list edit.
  *
- * @module services/runtimes/claude-code/tool-filter
+ * @module services/runtimes/claude-code/tooling/tool-filter
  */
 import type { EnabledToolGroups } from '@dorkos/shared/mesh-schemas';
 import {
@@ -147,9 +151,15 @@ export function resolveToolConfig(
 /**
  * Build the `allowedTools` list for an SDK session based on the resolved tool config.
  *
- * Returns `undefined` when all tool domains are enabled, meaning no filtering is needed
- * and the SDK will expose all registered MCP tools. When any domain is disabled, returns
- * an explicit allowlist that always includes core tools.
+ * Returns `undefined` when every domain is enabled, which leaves `allowedTools`
+ * unset. When any domain is disabled, returns the enabled domains' tools plus the
+ * always-on set.
+ *
+ * Read the module TSDoc before assuming what the caller does with this. Despite the
+ * name, the SDK treats the result as an auto-approval list, not a restriction, so
+ * this function does not remove a disabled domain's tools from the session. Naming
+ * it after the SDK option it feeds is the least confusing of the available options,
+ * and the discrepancy is the SDK's rather than ours.
  *
  * Implicit grouping:
  * - Binding tools are included when `config.adapter` is `true`

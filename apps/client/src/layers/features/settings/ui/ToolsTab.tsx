@@ -127,7 +127,10 @@ export function ToolsTab() {
       </p>
       <FieldCard>
         <FieldCardContent>
-          <SettingRow label="Core Tools" description="Server info, agent identity, UI control">
+          <SettingRow
+            label="Core Tools"
+            description="Server info, agent identity, cockpit control, and preview reads"
+          >
             <div className="flex items-center gap-2">
               <ToolCountBadge tools={TOOL_INVENTORY.core} />
               <span className="text-muted-foreground text-xs">Always enabled</span>

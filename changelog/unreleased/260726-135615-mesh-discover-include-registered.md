@@ -1,6 +1,7 @@
 ---
 covers:
   - "refactor(mcp): derive the mirrored tool lists from one source (DOR-499)"
+  - "fix(mcp): alias the shared tool-group table to source in vitest (DOR-499)"
 ---
 
 ### Fixed
