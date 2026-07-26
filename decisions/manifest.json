@@ -2929,6 +2929,24 @@
       "status": "accepted",
       "created": "2026-07-26",
       "supersedes": 70
+    },
+    {
+      "id": "260726-232221",
+      "slug": "api-host-guard-enforced-only-when-login-is-off",
+      "title": "The /api Host guard is enforced only when login is off",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260726-232222",
+      "slug": "locality-gates-read-the-socket-peer",
+      "title": "A local-only gate reads the socket peer; Host answers a different question",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
     }
   ]
 }
