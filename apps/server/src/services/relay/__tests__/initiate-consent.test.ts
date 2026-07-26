@@ -89,7 +89,7 @@ describe('createInitiateConsentGate — the DOR-277 delivery-layer gate', () => 
       expect(gate(AGENT, HUMAN).allowed).toBe(false);
     });
 
-    it('denies fail-closed when no binding resolves (guessed/unbound channel)', () => {
+    it('denies fail-closed when no binding resolves (guessed/unbound integration)', () => {
       const gate = createInitiateConsentGate({ bindingStore: storeFor(undefined) });
       const d = gate(AGENT, HUMAN);
       expect(d.allowed).toBe(false);
@@ -110,9 +110,9 @@ describe('createInitiateConsentGate — the DOR-277 delivery-layer gate', () => 
       expect(gate('relay.external.mcp', HUMAN).allowed).toBe(false);
     });
 
-    it('gates the in-app console principal reaching an EXTERNAL channel', () => {
+    it('gates the in-app console principal reaching an EXTERNAL integration', () => {
       // The console operator (or a spoofer of it) may not start a conversation
-      // on a bound external channel when canInitiate is off.
+      // on a bound external integration when canInitiate is off.
       const gate = createInitiateConsentGate({
         bindingStore: storeFor(makeBinding({ canInitiate: false })),
       });

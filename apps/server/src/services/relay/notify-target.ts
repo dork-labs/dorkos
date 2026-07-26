@@ -1,7 +1,7 @@
 /**
- * Shared channel-resolution for proactive, agent-initiated messages.
+ * Shared target-resolution for proactive, agent-initiated messages.
  *
- * Resolves the best bound channel an agent may INITIATE a message on: filter the
+ * Resolves the best bound integration an agent may INITIATE a message on: filter the
  * agent's non-paused bindings (optionally by channel), pick the most-recently
  * active chat session, enforce the `canInitiate` consent gate (DOR-239), and
  * build the `relay.human.*` publish subject. Both the `relay_notify_user` MCP
@@ -53,7 +53,7 @@ export type NotifyTarget =
       adapterType: string;
       chatId: string;
       bindingId: string;
-      /** The resolved binding's per-channel task-completion opt-in (DOR-240). */
+      /** The resolved binding's per-integration task-completion opt-in (DOR-240). */
       notifyOnTaskComplete: boolean;
     }
   | { ok: false; reason: 'NO_BINDING'; availableChannels: string[] }
@@ -61,9 +61,9 @@ export type NotifyTarget =
   | { ok: false; reason: 'INITIATE_NOT_ALLOWED'; bindingId: string; adapterId: string };
 
 /**
- * Resolve the channel an agent may initiate a proactive message on.
+ * Resolve the integration an agent may initiate a proactive message on.
  *
- * @param agentId - The agent whose own channel bindings are searched.
+ * @param agentId - The agent whose own integration bindings are searched.
  * @param deps - Binding/session/adapter lookups plus an optional channel filter.
  * @returns A structured target on success, or a structured non-delivery reason.
  */

@@ -20,7 +20,7 @@ export interface SenderIdentity {
   subject: string;
   /**
    * Mesh agent id — present only when the session maps to a registered agent.
-   * Used by `relay_notify_user` to resolve the caller's own channel bindings.
+   * Used by `relay_notify_user` to resolve the caller's own integration bindings.
    */
   agentId?: string;
 }

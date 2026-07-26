@@ -2,8 +2,8 @@
  * System-level task-completion notifications (DOR-240).
  *
  * Fired by the single {@link TaskStore} run-terminal hook, this service turns a
- * finished Task run into a proactive channel message — with zero agent
- * cooperation. It resolves the linked agent's bound channel through the shared
+ * finished Task run into a proactive integration message — with zero agent
+ * cooperation. It resolves the linked agent's bound integration through the shared
  * {@link resolveNotifyTarget} resolver (so it honors the same binding,
  * active-session, and `canInitiate` consent gates as `relay_notify_user`) and
  * delivers via `RelayCore.publish` with a bounded budget, inheriting the relay
@@ -70,7 +70,7 @@ export interface TaskCompletionNotifierDeps {
 
 /**
  * Turn a finished Task run into a proactive completion message on the linked
- * agent's bound channel.
+ * agent's bound integration.
  */
 export class TaskCompletionNotifier {
   private readonly deps: TaskCompletionNotifierDeps;
@@ -113,11 +113,11 @@ export class TaskCompletionNotifier {
         adapterManager: this.deps.adapterManager,
       });
       if (!target.ok) {
-        this.logger.debug(`skip run ${run.id}: cannot resolve channel (${target.reason})`);
+        this.logger.debug(`skip run ${run.id}: cannot resolve integration (${target.reason})`);
         return;
       }
 
-      // Failures always notify; successes require the per-channel opt-in.
+      // Failures always notify; successes require the per-integration opt-in.
       if (run.status === 'completed' && !target.notifyOnTaskComplete) {
         this.logger.debug(`skip completed run ${run.id}: notifyOnTaskComplete is off`);
         return;
