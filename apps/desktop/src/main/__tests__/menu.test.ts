@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } 
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('../auto-updater', () => ({ checkForUpdatesInteractive: vi.fn() }));
+vi.mock('../close-tab', () => ({ requestCloseTab: vi.fn() }));
 
 /**
  * `vi.mock('electron', factory)` memoizes its result for the whole test
@@ -49,7 +50,7 @@ describe('setupMenu (B1)', () => {
     vi.resetModules();
   });
 
-  it('builds top-level roles: custom app menu, editMenu, viewMenu, windowMenu, help', async () => {
+  it('builds top-level menus: custom app menu, editMenu, viewMenu, Window, help', async () => {
     const { Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
     const { setupMenu } = await import('../menu');
@@ -63,9 +64,35 @@ describe('setupMenu (B1)', () => {
     expect(template![0].label).toBe('DorkOS');
     expect(template!.some((item) => item.role === 'editMenu')).toBe(true);
     expect(template!.some((item) => item.role === 'viewMenu')).toBe(true);
-    expect(template!.some((item) => item.role === 'windowMenu')).toBe(true);
+    // Spelled out rather than `role: 'windowMenu'`, which hard-wires Close on
+    // Cmd+W — see buildWindowClosingItems.
+    expect(template!.some((item) => item.label === 'Window')).toBe(true);
+    expect(template!.some((item) => item.role === 'windowMenu')).toBe(false);
     expect(template!.some((item) => item.role === 'help')).toBe(true);
     expect(Menu.setApplicationMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('Window has minimize/zoom, Close Tab on Cmd+W, Close Window on Shift+Cmd+W, and front', async () => {
+    const { Menu, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    const { setupMenu } = await import('../menu');
+
+    setupMenu(() => null, vi.fn());
+    const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
+      | Electron.MenuItemConstructorOptions[]
+      | undefined;
+    const windowMenu = template!.find((item) => item.label === 'Window')!
+      .submenu as Electron.MenuItemConstructorOptions[];
+
+    expect(windowMenu.map((item) => item.label ?? item.role)).toEqual([
+      'minimize',
+      'zoom',
+      undefined,
+      'Close Tab',
+      'Close Window',
+      undefined,
+      'front',
+    ]);
   });
 
   it('app menu has About, a gated Check for Updates…, and Settings… with CmdOrCtrl+, accelerator', async () => {
@@ -284,7 +311,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     ]);
   });
 
-  it('Window has minimize/close roles', async () => {
+  it('Window has minimize, Close Tab and Close Window', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const { Menu, resetElectronMock } = await getElectronMock();
     resetElectronMock();
@@ -297,7 +324,11 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     const windowMenu = template!.find((item) => item.label === 'Window')!
       .submenu as Electron.MenuItemConstructorOptions[];
 
-    expect(windowMenu.map((item) => item.role)).toEqual(['minimize', 'close']);
+    expect(windowMenu.map((item) => item.label ?? item.role)).toEqual([
+      'minimize',
+      'Close Tab',
+      'Close Window',
+    ]);
   });
 
   it('Help has the 3 external links, a gated Check for Updates…, and About DorkOS (role about)', async () => {
@@ -343,6 +374,49 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
     const about = helpMenu.find((item) => item.role === 'about');
     expect(about).toBeDefined();
   });
+});
+
+describe('Cmd/Ctrl+W — Close Tab (DOR-538)', () => {
+  const originalPlatform = process.platform;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it.each(['darwin', 'win32'] as const)(
+    'asks the focused renderer to close a tab on %s, and keeps a way to close the window',
+    async (platform) => {
+      Object.defineProperty(process, 'platform', { value: platform });
+      const { BrowserWindow, Menu, resetElectronMock } = await getElectronMock();
+      resetElectronMock();
+      const { setupMenu } = await import('../menu');
+      const { requestCloseTab } = await import('../close-tab');
+
+      const focused = new BrowserWindow({ width: 1200, height: 800 });
+      BrowserWindow.getFocusedWindow = vi.fn(() => focused);
+
+      setupMenu(() => null, vi.fn());
+      const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
+        | Electron.MenuItemConstructorOptions[]
+        | undefined;
+
+      const closeTab = findItem(template!, 'Close Tab')!;
+      expect(closeTab.accelerator).toBe('CmdOrCtrl+W');
+      // Not a role: the renderer decides whether the window survives.
+      expect(closeTab.role).toBeUndefined();
+      closeTab.click!({} as never, undefined, {} as never);
+      expect(requestCloseTab).toHaveBeenCalledWith(focused);
+
+      const closeWindow = findItem(template!, 'Close Window')!;
+      expect(closeWindow.accelerator).toBe('CmdOrCtrl+Shift+W');
+      expect(closeWindow.role).toBe('close');
+    }
+  );
 });
 
 describe('setupDockMenu (B4)', () => {

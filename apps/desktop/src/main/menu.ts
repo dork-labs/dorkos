@@ -1,7 +1,7 @@
-import { app, Menu, shell } from 'electron';
-import type { BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, shell } from 'electron';
 import { requestNavigate, SETTINGS_ROUTE } from './navigation';
 import { checkForUpdatesInteractive } from './auto-updater';
+import { requestCloseTab } from './close-tab';
 
 /**
  * Build the "Settings…" menu item. Shared by every platform's menu —
@@ -39,6 +39,29 @@ function buildCheckForUpdatesItem(): Electron.MenuItemConstructorOptions {
     enabled: app.isPackaged,
     click: () => checkForUpdatesInteractive(),
   };
+}
+
+/**
+ * Build the two closing items every platform's Window menu shares.
+ *
+ * `CmdOrCtrl+W` used to be Electron's `close` role, which takes the whole
+ * window down — wrong once the cockpit has tabs in it, where the keystroke
+ * means "close this tab". It now asks the focused renderer first and closes the
+ * window only if the renderer has nothing to close or does not answer (see
+ * `close-tab.ts`). `CmdOrCtrl+Shift+W` keeps the old, unconditional behaviour,
+ * so there is always a keystroke that closes the window itself.
+ */
+function buildWindowClosingItems(): Electron.MenuItemConstructorOptions[] {
+  return [
+    {
+      label: 'Close Tab',
+      accelerator: 'CmdOrCtrl+W',
+      // Looked up here rather than taken from the click handler's second
+      // argument, which Electron types as the broader `BaseWindow`.
+      click: () => requestCloseTab(BrowserWindow.getFocusedWindow()),
+    },
+    { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', role: 'close' },
+  ];
 }
 
 /** Build the 3 external links every platform's Help menu shares. */
@@ -84,6 +107,7 @@ export function setupMenu(
   const settingsItem = buildSettingsItem(getMainWindow, ensureWindow);
   const checkForUpdatesItem = buildCheckForUpdatesItem();
   const helpLinkItems = buildHelpLinkItems();
+  const windowClosingItems = buildWindowClosingItems();
 
   const template: Electron.MenuItemConstructorOptions[] =
     process.platform === 'darwin'
@@ -108,7 +132,19 @@ export function setupMenu(
           },
           { role: 'editMenu' },
           { role: 'viewMenu' },
-          { role: 'windowMenu' },
+          // Spelled out rather than `role: 'windowMenu'` — that role hard-wires
+          // `Close` on Cmd+W, which is exactly what has to change.
+          {
+            label: 'Window',
+            submenu: [
+              { role: 'minimize' },
+              { role: 'zoom' },
+              { type: 'separator' },
+              ...windowClosingItems,
+              { type: 'separator' },
+              { role: 'front' },
+            ],
+          },
           {
             role: 'help',
             submenu: helpLinkItems,
@@ -153,7 +189,7 @@ export function setupMenu(
           },
           {
             label: 'Window',
-            submenu: [{ role: 'minimize' }, { role: 'close' }],
+            submenu: [{ role: 'minimize' }, ...windowClosingItems],
           },
           {
             label: 'Help',

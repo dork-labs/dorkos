@@ -6,19 +6,21 @@
 
 ## 1. What the desktop app is
 
-`apps/desktop` is a **thin shell**. It does not reimplement the product — it starts the same `@dorkos/server` and loads the same `@dorkos/client` SPA that `dorkos` (the npm CLI) runs. Its job is native macOS integration: a real menu bar, single-instance behavior, window-state restore, `dorkos://` deep links, auto-update, and shipping the whole stack as one installable `.app`.
+`apps/desktop` is a **thin shell**. It does not reimplement the product — it starts the same `@dorkos/server` and loads the same `@dorkos/client` SPA that `dorkos` (the npm CLI) runs. Its job is native integration: a real menu bar, a tray presence, single-instance behavior, window-state restore, `dorkos://` deep links, auto-update, and shipping the whole stack as one installable app.
 
-Build tooling: `electron-vite` (main/preload/renderer) + `electron-builder` (packaging/signing). Renderer root is `apps/client`. The app targets **macOS arm64** today (see `electron-builder.yml` `mac.target`).
+Build tooling: `electron-vite` (main/preload/renderer) + `electron-builder` (packaging/signing). Renderer root is `apps/client`. The app targets **macOS arm64** today (see `electron-builder.yml` `mac.target`), plus an unsigned Windows x64 alpha.
 
 ```
 apps/desktop/
-├── src/main/            # main process: window-manager, server-spawn, server-process, menu, navigation, auto-updater
+├── src/main/            # main process — see the module map in §6
 ├── src/preload/         # contextBridge → window.electronAPI
 ├── src/server-entry.ts  # the server child's entry (imports @dorkos/server for its side effect)
+├── build/               # buildResources: icons, entitlements, tray images (see build/README.md)
 ├── scripts/
 │   ├── build-server.ts     # esbuild-bundles server-entry.ts → dist/server/server-entry.mjs
-│   └── rebuild-natives.ts  # @electron/rebuild for better-sqlite3 / node-pty (Electron ABI)
-├── electron-builder.yml # packaging, signing, notarization, asarUnpack
+│   ├── rebuild-natives.ts  # @electron/rebuild for better-sqlite3 / node-pty (Electron ABI)
+│   └── smoke-packaged.ts   # launches the packaged app and asserts it serves
+├── electron-builder.yml # packaging, signing, notarization, files/asarUnpack
 └── electron.vite.config.ts
 ```
 
@@ -160,7 +162,75 @@ In CI this is `.github/workflows/desktop-smoke.yml` — a single macOS job (unsi
 
 One thing that surprises people: an **unsigned** build cannot launch as packaged. `hardenedRuntime: true` turns on library validation, and electron-builder ad-hoc-signs each binary separately, so the loader rejects the app's own Electron Framework with _"…different Team IDs"_. The smoke re-signs ad-hoc in one pass when (and only when) it finds an ad-hoc signature — a real Developer ID signature is never touched.
 
-## 6. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
+## 6. The window & app lifecycle
+
+### Closing the window does not quit (DOR-538)
+
+**The app keeps running when its last window closes, so agents keep working.** The server is a child process the shell supervises, and it is where agent turns actually run — a closed window is a closed view, not a stopped machine. This replaced a split where macOS stayed alive with zero windows and Windows quit outright: same product, two behaviours, neither of which told the person anything.
+
+The rule is deliberately not "which OS is this":
+
+```ts
+app.on('window-all-closed', () => {
+  if (!hasTray()) {
+    app.quit();
+    return;
+  } // no way back → do not linger invisibly
+  void announceBackgroundRunning(); // say it, once, ever
+});
+```
+
+**Never leave the app running with no window and no icon.** `hasTray()` is false on a platform with no tray image (Linux, which has no shipped build) and when the image fails to decode, and both cases fall back to quitting. An unreachable running app is worse than an app that quit.
+
+The window is **destroyed** on close, not hidden. Reopening remounts a fresh renderer, which is fine: session state lives on the server, and the durable per-session SSE stream replays on reconnect. Hiding would keep a renderer (and its memory) alive behind a window the person believes they closed, and would stop `window-all-closed` firing at all.
+
+`background-notice.ts` owns the one-time "DorkOS is still running" dialog, keyed off `userData/shell-notices.json`. It offers **Quit DorkOS** as well as **Got It** — someone who closed the window meaning to quit should not have to go hunting.
+
+### The tray
+
+`tray.ts`. Present whenever the app runs; it is what makes the paragraph above safe. Its menu is the activity summary (a disabled line, not a button), **Open DorkOS**, **Activity**, and **Quit DorkOS**.
+
+Activity is reflected calmly and never with colour or notifications: the tooltip everywhere, plus `tray.setTitle(count)` on macOS — the only platform that shows text beside a tray icon. Windows has no equivalent, so the tooltip carries it alone.
+
+Images come from `build/` but are **read from `dist/main/`**: `build/` is electron-builder's `buildResources`, which is not packaged, and `electron-builder.yml`'s `files` allowlist ships only `dist/**`. `electron.vite.config.ts`'s `emitTrayImages()` plugin bridges the two, so `join(__dirname, name)` resolves identically in dev and packaged. macOS gets `trayTemplate.png` (the `Template` suffix is load-bearing — it is what makes macOS recolour the glyph for light and dark menu bars); Windows gets `trayIcon.png`, a **PNG and not the `.ico`**, because Electron's `.ico` decoder is Windows-only and a `.ico` tray asset cannot be verified anywhere else. See `build/README.md` to regenerate.
+
+### Quitting goes through one door
+
+`quit-guard.ts` owns `before-quit` — the single funnel every exit reaches (Cmd+Q, the menu, the tray, the Dock, `autoUpdater.quitAndInstall()`, the crash dialog). It confirms when agents are mid-run, then stops the server, then re-issues the quit; the second pass is let through by the `quitting` latch, which is what makes `quitAndInstall()`'s install-then-relaunch land after a clean shutdown.
+
+**Do not add a second `before-quit` listener that latches.** `server-crash-recovery.ts` used to have one, and it was correct only while a quit could not be cancelled: now that one can, a latched flag would silently disable crash recovery for the rest of the session the moment someone chose "Keep Working". Ask `isQuitting()` instead.
+
+### Knowing what the agents are doing
+
+`agent-activity.ts` subscribes the **main process** to the server's global `GET /api/events` stream — the same one the cockpit uses, so there is no polling and no dependency on a window being open. It counts sessions whose `status.lifecycle` is `streaming` or `blocked` (a session paused on your approval is mid-turn, and the one you would most hate to lose), and reconnects with backoff, re-reading the port each attempt because crash recovery can restart the server onto a new one.
+
+The stream carries **transitions only, with no snapshot on connect**. That is exact in practice — this subscribes as the server comes up, before any session can start — and after a reconnect it deliberately under-reports, because a stale count that never clears would nag about finished agents and block quitting forever.
+
+### Windows, plural
+
+`window.open` at the app's own origin opens a **real second cockpit window** (`window-manager.ts`'s window-open handler), built here rather than returned as `{ action: 'allow' }` so it gets the same preload, sandboxing and link guards as its opener. Everything else is still denied a window; `http(s)` goes to the system browser.
+
+Three things are scoped to the **primary** window on purpose, and a second window does without them:
+
+| Scoped to primary                          | Why                                                                                                                          |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Window geometry (`window-state.ts`)        | Two writers on one JSON file would overwrite each other; a second window cascades off the focused one and is not remembered. |
+| `dorkos://` deep links and menu navigation | `navigation.ts` tracks one ready renderer and one pending path; `index.ts`'s `isTrackedRenderer` guard rejects the rest.     |
+| The "restart to install" update card       | Same guard on `get-update-status`. The card appears in the primary window.                                                   |
+
+A server crash-and-restart **does** move every window to the new port (`pointWindowsAtServer`), because a second window left on a dead port has no way to recover but being closed.
+
+### `Cmd/Ctrl+W` is Close Tab
+
+The cockpit has in-renderer tabs, so the accelerator asks the focused renderer first (`close-tab.ts`) and closes the window only if the renderer has nothing to close **or does not answer within 250 ms**. `CmdOrCtrl+Shift+W` ("Close Window") stays unconditional.
+
+The timeout is the design, not a safety net: a person pressing Cmd+W must never get nothing — not when the renderer has not shipped its half, not when it is wedged, not when it threw. Nothing waits on the renderer; it is a race the window always eventually wins. The renderer-facing contract is documented in full on `onCloseTab` in `src/preload/index.ts` — **do the work synchronously and return `true` only if you closed a tab.**
+
+### First paint
+
+Windows are created with `show: false` and a `backgroundColor` matching the cockpit's own, then revealed on `ready-to-show` (with a 4-second fallback, because a window that never appears is far worse than a flash). `maximize()` has to happen in that reveal, not at construction — a hidden window maximized at construction opens un-maximized on macOS.
+
+## 7. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
 
 **Read this before spending an hour concluding a build is broken.** When you launch a freshly-downloaded (quarantined) **notarized** build from the terminal and it appears to hang, it is almost certainly the macOS Gatekeeper first-launch consent dialog — _"'DorkOS.app' is an app downloaded from the Internet. Are you sure you want to open it? Apple checked it for malicious software and none was detected."_ — which **blocks the launch until a human clicks Open**. Headless, that is indistinguishable from a crash/hang:
 
@@ -181,7 +251,7 @@ It is **not** a code or signing defect (the dialog literally confirms notarizati
 
 After clearing, a healthy launch shows Electron helpers within ~1s, a listening server port, and `[RuntimeCache] warm-up populated model cache { count: N }` in the log. (Verified end-to-end 2026-07-12; this exact confusion cost hours before it was root-caused.)
 
-## 7. Signing, notarization & releasing
+## 8. Signing, notarization & releasing
 
 **The desktop build rides the unified product release.** There is no separate desktop tag scheme — the `.github/workflows/desktop-release.yml` workflow triggers on the `v*` product tags that `/system:release` creates. When that command bumps `VERSION` (and `apps/desktop/package.json` alongside it), tags `vX.Y.Z`, and pushes, the workflow builds the macOS app and **attaches** the `.dmg` + `.zip` + `latest-mac.yml` to the GitHub Release the command already created. It does not create its own release or rewrite the notes. To release the desktop app you just run `/system:release` — do **not** push a standalone tag. (For a manual/verification build without publishing, use the workflow's `workflow_dispatch` with `dry_run`.)
 
@@ -196,4 +266,4 @@ Gotchas worth knowing (details vary by machine; the setup itself lives with the 
 - **The auto-update `.zip` must be published alongside the `.dmg`** — Squirrel.Mac (electron-updater) can only install updates from the zip; a dmg-only release 404s every update check.
 - **App Store is deliberately not a target.** The app spawns shells and agent CLIs and writes across the filesystem — none of which fits the App Sandbox. It ships as a Developer-ID-signed, notarized direct download (like VS Code, Docker Desktop, iTerm). See the maintainer's notes / DOR-230 for the rationale.
 
-Verify a packaged build actually launches and runs a session (§6) before treating a release as good — static checks and unit tests pass long before the packaged runtime is exercised. `desktop-smoke.yml` (§5) covers the "does it boot and serve" half automatically; running a real session in the packaged app is still a human step.
+Verify a packaged build actually launches and runs a session (§7) before treating a release as good — static checks and unit tests pass long before the packaged runtime is exercised. `desktop-smoke.yml` (§5) covers the "does it boot and serve" half automatically; running a real session in the packaged app is still a human step.

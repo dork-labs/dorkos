@@ -8,6 +8,12 @@ import type { UpdateStatus } from '../main/auto-updater';
 /** IPC channel the main process pushes {@link UpdateStatus} events on (mirrors `UPDATE_STATUS_CHANNEL` in auto-updater.ts). */
 const UPDATE_STATUS_CHANNEL = 'update:status';
 
+/** IPC channel `Cmd/Ctrl+W` arrives on (mirrors `CLOSE_TAB_CHANNEL` in close-tab.ts). */
+const CLOSE_TAB_CHANNEL = 'close-tab';
+
+/** IPC channel the answer to {@link CLOSE_TAB_CHANNEL} goes back on (mirrors `CLOSE_TAB_ACK_CHANNEL` in close-tab.ts). */
+const CLOSE_TAB_ACK_CHANNEL = 'close-tab:ack';
+
 /**
  * Preload script — runs in a privileged context before the renderer loads.
  *
@@ -69,4 +75,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * update (macOS close→reopen).
    */
   getUpdateStatus: (): Promise<UpdateStatus | null> => ipcRenderer.invoke('get-update-status'),
+  /**
+   * Subscribe to `Cmd/Ctrl+W` ("Close Tab" in the Window menu).
+   *
+   * **The contract, precisely** — the window closes unless you claim the
+   * keystroke:
+   *
+   * - Return `true` from `cb` when you closed a tab. The window stays open.
+   * - Return `false` (or nothing) when there was no tab to close. The window
+   *   closes immediately — that is the right answer for the last tab.
+   * - Take longer than ~250 ms, throw, or never subscribe at all, and the
+   *   window closes anyway. A person pressing Cmd+W must never get nothing, so
+   *   the main process does not wait on you: it races you, and the window wins
+   *   the tie. **Do your work synchronously**; a promise is not awaited, and an
+   *   async handler will lose the race even when it succeeds.
+   *
+   * Register **one** subscriber. Several may register, but each answers
+   * independently and the first answer decides — a `false` from one closes the
+   * window even if another would have handled it.
+   *
+   * `Cmd/Ctrl+Shift+W` ("Close Window") never reaches here; it always closes
+   * the window.
+   *
+   * @param cb - Called on every `Cmd/Ctrl+W`. Return whether you handled it.
+   * @returns An unsubscribe function that removes the listener.
+   */
+  onCloseTab: (cb: () => boolean | void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: number): void => {
+      let handled = false;
+      try {
+        handled = cb() === true;
+      } catch (err) {
+        // A handler that throws must not strand the keystroke — report "not
+        // handled" so the window closes, which is what Cmd+W did before tabs.
+        console.error('[dorkos] close-tab handler threw; closing the window instead.', err);
+      }
+      ipcRenderer.send(CLOSE_TAB_ACK_CHANNEL, requestId, handled);
+    };
+    ipcRenderer.on(CLOSE_TAB_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(CLOSE_TAB_CHANNEL, listener);
+  },
 });

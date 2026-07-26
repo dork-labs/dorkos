@@ -1,143 +1,65 @@
-import { BrowserWindow, screen, shell } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen, shell } from 'electron';
 import type {
-  Display,
-  Rectangle,
   HandlerDetails,
   Event,
   WebContentsWillNavigateEventParams,
+  WindowOpenHandlerResponse,
 } from 'electron';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { app } from 'electron';
-
-/** Persisted window geometry and maximize state. */
-export interface WindowState {
-  x?: number;
-  y?: number;
-  width: number;
-  height: number;
-  isMaximized: boolean;
-}
-
-const DEFAULT_STATE: WindowState = { width: 1200, height: 800, isMaximized: false };
-
-/** Minimum on-screen overlap (px, both axes) for a saved position to be kept. */
-const MIN_VISIBLE_PX = 100;
-
-/** Debounce window for resize/move saves, so dragging doesn't thrash disk I/O. */
-const SAVE_DEBOUNCE_MS = 500;
-
-const STATE_FILE = join(app.getPath('userData'), 'window-state.json');
-
-/** Load saved window state from disk. Returns defaults on first launch or error. */
-function loadWindowState(): WindowState {
-  try {
-    return JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
-  } catch {
-    return { ...DEFAULT_STATE };
-  }
-}
-
-/** Write window state to disk, creating the userData directory if needed. */
-function persistWindowState(state: WindowState): void {
-  mkdirSync(app.getPath('userData'), { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify(state));
-}
+import {
+  attachWindowStatePersistence,
+  clampSizeToWorkArea,
+  loadValidatedWindowState,
+  type WindowState,
+} from './window-state';
 
 /**
- * Does `bounds` overlap `workArea` by at least {@link MIN_VISIBLE_PX} pixels
- * in both axes? Used to decide whether a persisted window position is still
- * usable, e.g. after a monitor was disconnected.
+ * How the cockpit's windows are made: their web preferences, what they are
+ * allowed to navigate to, and what happens when the page asks for a second one.
  *
- * @param bounds - The candidate window rectangle.
- * @param workArea - A display's usable work area (excludes menu bar/dock).
+ * Geometry lives next door in `window-state.ts`.
  */
-export function isMeaningfullyVisible(bounds: Rectangle, workArea: Rectangle): boolean {
-  const visibleWidth =
-    Math.min(bounds.x + bounds.width, workArea.x + workArea.width) - Math.max(bounds.x, workArea.x);
-  const visibleHeight =
-    Math.min(bounds.y + bounds.height, workArea.y + workArea.height) -
-    Math.max(bounds.y, workArea.y);
-  return visibleWidth >= MIN_VISIBLE_PX && visibleHeight >= MIN_VISIBLE_PX;
-}
 
-/** Shrink `size` so it fits within `workArea`, preserving aspect as-is (no upscaling). */
-export function clampSizeToWorkArea(
-  size: { width: number; height: number },
-  workArea: Rectangle
-): { width: number; height: number } {
-  return {
-    width: Math.min(size.width, workArea.width),
-    height: Math.min(size.height, workArea.height),
-  };
-}
+/** Minimum size below which the cockpit's layout stops working. */
+const MIN_WINDOW_SIZE = { width: 800, height: 600 };
 
-/** Center a rectangle of `size` within `workArea`. */
-function centerInWorkArea(
-  size: { width: number; height: number },
-  workArea: Rectangle
-): { x: number; y: number } {
-  return {
-    x: workArea.x + Math.round((workArea.width - size.width) / 2),
-    y: workArea.y + Math.round((workArea.height - size.height) / 2),
-  };
-}
+/** Diagonal offset of a second window from the one that opened it, so it doesn't land exactly on top. */
+const CASCADE_OFFSET_PX = 32;
 
 /**
- * Validate a persisted window state against the currently connected
- * displays. If the saved position no longer meaningfully overlaps any
- * display's work area (e.g. an external monitor was unplugged), the
- * position is discarded and the window is centered on the primary display
- * instead, with its size clamped to fit. A position that is still at least
- * partially visible is kept unchanged.
+ * How long to wait for the renderer's first frame before showing the window
+ * anyway.
  *
- * @param state - The persisted window state to validate.
- * @param displays - All currently connected displays.
- * @param primaryDisplay - The display to fall back to when the saved
- *   position is unusable.
+ * The window is created hidden and revealed on `ready-to-show` so nobody sees
+ * an empty white rectangle before the dark cockpit paints. That event does not
+ * fire if the page fails to load — and a window that never appears is far worse
+ * than a brief flash — so this is the floor under it.
  */
-export function validateWindowState(
-  state: WindowState,
-  displays: Display[],
-  primaryDisplay: Display
-): WindowState {
-  if (state.x === undefined || state.y === undefined) {
-    // No saved position (first launch) — let the OS place the window, but
-    // still guard against a persisted size larger than the current screen.
-    const size = clampSizeToWorkArea(state, primaryDisplay.workArea);
-    return { ...state, ...size };
-  }
+const SHOW_FALLBACK_MS = 4_000;
 
-  const bounds: Rectangle = { x: state.x, y: state.y, width: state.width, height: state.height };
-  const isVisible = displays.some((display) => isMeaningfullyVisible(bounds, display.workArea));
+/** What kind of window this is, which decides who owns the persisted geometry. */
+export type WindowRole = 'primary' | 'secondary';
 
-  if (isVisible) {
-    return state;
-  }
-
-  const size = clampSizeToWorkArea(state, primaryDisplay.workArea);
-  const position = centerInWorkArea(size, primaryDisplay.workArea);
-  return { ...size, ...position, isMaximized: state.isMaximized };
-}
-
-/**
- * Derive the state to persist for `win`. When maximized, the previously
- * saved restored bounds are preserved (so un-maximizing restores correctly)
- * and only the maximized flag is updated; otherwise the current bounds are
- * captured.
- *
- * @param win - The window to capture state from.
- * @param previousState - The last persisted state, used to preserve
- *   restored bounds while maximized.
- */
-export function shapeWindowState(win: BrowserWindow, previousState: WindowState): WindowState {
-  if (win.isMaximized()) {
-    return { ...previousState, isMaximized: true };
-  }
-  // When maximized, getBounds() returns screen-sized dimensions — this
-  // branch only runs when the window is in its restored state.
-  return { ...win.getBounds(), isMaximized: false };
+/** Options for {@link createWindow}. */
+export interface CreateWindowOptions {
+  /**
+   * Live accessor for the app's own origin (`http://localhost:<port>` in a
+   * packaged build), read fresh on every link decision.
+   *
+   * An accessor rather than a value on purpose: the server gets a **new port**
+   * when it is restarted after a crash, and a value captured at window-creation
+   * time would leave the guards below treating the app's own pages as foreign
+   * and handing them to the system browser.
+   */
+  getRendererUrl?: () => string | undefined;
+  /**
+   * Absolute URL this window opens on. Only set for a second window the
+   * renderer asked for; the primary window resolves its own entry below.
+   */
+  initialUrl?: string;
+  /** Defaults to `primary`. See {@link WindowRole}. */
+  role?: WindowRole;
 }
 
 /**
@@ -149,8 +71,7 @@ export function shapeWindowState(win: BrowserWindow, previousState: WindowState)
  *    `http://localhost:<port>` origin (see {@link createWindow}), which
  *    serves the built renderer directly: the packaged app loads via the
  *    server, not `file://`, so the server's CORS allowlist sees a real
- *    origin instead of `null` (see the
- *    `decisions/` ADR `desktop-renderer-served-from-localhost`).
+ *    origin instead of `null` (see ADR `260712-005315`).
  * 3. A `file://` URL inside the app's own `renderer/` bundle — kept as a
  *    fallback for `electron-vite preview` (no server, no dev URL), which
  *    still loads the built renderer straight off disk.
@@ -160,13 +81,12 @@ export function shapeWindowState(win: BrowserWindow, previousState: WindowState)
  * steer the app window itself onto a raw local file with no way back to
  * the SPA.
  *
- * Used by the `will-navigate` guard in {@link createWindow} to tell in-app
- * routing apart from a stray link that should open in the system browser
- * instead of hijacking the app window.
+ * Used by both link guards in {@link createWindow} to tell the cockpit apart
+ * from a stray link that belongs in the system browser.
  *
- * @param url - The URL a `will-navigate` event is about to load.
- * @param rendererUrl - The app's own origin for this window, as passed to
- *   {@link createWindow} (`http://localhost:<port>` in a packaged build).
+ * @param url - The URL a navigation or `window.open` is about to load.
+ * @param rendererUrl - The app's own origin right now, from
+ *   {@link CreateWindowOptions.getRendererUrl}.
  */
 export function isOwnOrigin(url: string, rendererUrl?: string): boolean {
   let target: URL;
@@ -195,26 +115,172 @@ export function isOwnOrigin(url: string, rendererUrl?: string): boolean {
   }
 }
 
+/** Is this a link the system browser should take? */
+function isWebLink(url: string): boolean {
+  return url.startsWith('http://') || url.startsWith('https://');
+}
+
 /**
- * Create the main BrowserWindow. On macOS it uses the hidden-inset title bar
+ * The paint colour behind the renderer, matching the cockpit's own background
+ * (`--background` in `apps/client/src/index.css`) for the current OS theme.
+ *
+ * Without it every launch flashed Chromium's default white before the dark
+ * cockpit painted. The OS theme is the best proxy the main process has for the
+ * app's theme; combined with the hidden-until-`ready-to-show` window below it
+ * is only ever seen during a resize repaint.
+ */
+function shellBackgroundColor(): string {
+  return nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#fafafa';
+}
+
+/** Where a second window opens: the same size as the one that spawned it, nudged down-right and kept on screen. */
+function cascadeFromFocusedWindow(): WindowState {
+  const opener = BrowserWindow.getFocusedWindow();
+  const { workArea } = screen.getPrimaryDisplay();
+  if (!opener || opener.isDestroyed()) {
+    return { ...clampSizeToWorkArea(MIN_WINDOW_SIZE, workArea), isMaximized: false };
+  }
+  const bounds = opener.getBounds();
+  const size = clampSizeToWorkArea(bounds, screen.getDisplayMatching(bounds).workArea);
+  return {
+    x: bounds.x + CASCADE_OFFSET_PX,
+    y: bounds.y + CASCADE_OFFSET_PX,
+    ...size,
+    isMaximized: false,
+  };
+}
+
+/**
+ * Reveal a window once, whether the renderer painted or the fallback timer
+ * gave up on it, re-maximizing first if that is how it was left.
+ *
+ * `maximize()` has to happen here rather than at construction: a window created
+ * with `show: false` and maximized immediately opens un-maximized on macOS.
+ *
+ * @param win - The window to reveal.
+ * @param state - The geometry it was created with.
+ */
+function revealWhenReady(win: BrowserWindow, state: WindowState): void {
+  let shown = false;
+  const show = (): void => {
+    if (shown || win.isDestroyed()) return;
+    shown = true;
+    clearTimeout(fallback);
+    if (state.isMaximized) win.maximize();
+    win.show();
+  };
+  const fallback = setTimeout(show, SHOW_FALLBACK_MS);
+  win.once('ready-to-show', show);
+}
+
+/**
+ * Apply the app's link policy to `win`: what may load in the window, what opens
+ * a second window, and what leaves for the system browser.
+ *
+ * Both guards ask {@link isOwnOrigin} through the live accessor, so they keep
+ * working after a server restart moves the app to a new port.
+ *
+ * @param win - The window to guard.
+ * @param options - The same options {@link createWindow} received; a second
+ *   window inherits them so it is guarded (and can itself spawn) identically.
+ */
+function applyLinkPolicy(win: BrowserWindow, options: CreateWindowOptions): void {
+  const { getRendererUrl } = options;
+
+  // `target="_blank"` and `window.open()` — chat links, gen-ui widgets,
+  // marketplace cards, the command palette's "Open in New Tab".
+  //
+  // Our own origin becomes a real second cockpit window. It used to be handed
+  // to the system browser along with everything else, because this handler
+  // looked only at the scheme: asking for a new tab on an agent sent the
+  // cockpit to Chrome. The window is built here rather than returned as
+  // `{ action: 'allow' }` so it gets the same preload, the same sandboxing and
+  // the same guards as the window that opened it — Electron's own path would
+  // produce a popup shaped by whatever `features` string the page passed.
+  //
+  // Everything else is denied a window: http(s) goes to the system browser,
+  // anything else goes nowhere. A foreign page in a chromeless BrowserWindow
+  // has no navigation UI — a dead end the person cannot get back out of.
+  win.webContents.setWindowOpenHandler(({ url }: HandlerDetails): WindowOpenHandlerResponse => {
+    if (isOwnOrigin(url, getRendererUrl?.())) {
+      createWindow({ ...options, initialUrl: url, role: 'secondary' });
+      return { action: 'deny' };
+    }
+    if (isWebLink(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  // Same policy for in-window navigation: an anchor without target="_blank"
+  // (or any other navigation-triggering surface) should not be able to steer
+  // the app window itself off the SPA — to a foreign origin or to an
+  // arbitrary local file. Only the app's own renderer entry passes; http(s)
+  // is handed off to the system browser so the link still goes somewhere
+  // useful.
+  win.webContents.on('will-navigate', (event: Event<WebContentsWillNavigateEventParams>) => {
+    if (isOwnOrigin(event.url, getRendererUrl?.())) return;
+    event.preventDefault();
+    if (isWebLink(event.url)) void shell.openExternal(event.url);
+  });
+}
+
+/**
+ * Point `win` at the renderer.
+ *
+ * In dev: electron-vite sets `ELECTRON_RENDERER_URL` for HMR. In a packaged
+ * build: the bundled server's own localhost origin (server-spawn.ts sets
+ * `CLIENT_DIST_PATH` so the server serves it) rather than `file://` — the
+ * server's CORS allowlist and Better Auth's trusted-origins check both need a
+ * real origin, not `null`, and this makes the renderer's fetches same-origin
+ * besides. `electron-vite preview` (no server, no dev URL) falls back to the
+ * built index.html straight off disk.
+ *
+ * A second window overrides all of that with the exact URL that was asked for
+ * — it is already an own-origin absolute URL, verified by the window-open
+ * handler that created it.
+ *
+ * @param win - The window to load.
+ * @param options - See {@link CreateWindowOptions}.
+ */
+function loadRenderer(win: BrowserWindow, options: CreateWindowOptions): void {
+  const rendererUrl = options.getRendererUrl?.();
+  if (options.initialUrl) {
+    void win.loadURL(options.initialUrl);
+  } else if (process.env.ELECTRON_RENDERER_URL) {
+    void win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else if (rendererUrl) {
+    void win.loadURL(rendererUrl);
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'));
+  }
+}
+
+/**
+ * Create a cockpit window. On macOS it uses the hidden-inset title bar
  * (traffic-light styling); on Windows/Linux it falls back to the native window
  * frame with standard min/max/close controls.
  *
- * @param rendererUrl - The bundled server's own origin
- *   (`http://localhost:<port>`), passed once {@link startServer} in
- *   `server-process.ts` has resolved a port. Only used in a packaged build
- *   with no dev server running — see the loading order below.
+ * The **primary** window restores and saves the remembered geometry. A
+ * **secondary** window — one the renderer asked for with `window.open` on the
+ * app's own origin — cascades off whatever is focused and is deliberately not
+ * remembered: two windows writing one geometry file would just overwrite each
+ * other.
+ *
+ * @param options - See {@link CreateWindowOptions}.
  * @returns The created BrowserWindow instance.
  */
-export function createWindow(rendererUrl?: string): BrowserWindow {
-  const persisted = loadWindowState();
-  const state = validateWindowState(persisted, screen.getAllDisplays(), screen.getPrimaryDisplay());
+export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
+  const isPrimary = (options.role ?? 'primary') === 'primary';
+  const state = isPrimary ? loadValidatedWindowState() : cascadeFromFocusedWindow();
 
   const win = new BrowserWindow({
     ...state,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth: MIN_WINDOW_SIZE.width,
+    minHeight: MIN_WINDOW_SIZE.height,
     title: 'DorkOS',
+    backgroundColor: shellBackgroundColor(),
+    // Created hidden and revealed on the renderer's first frame — see
+    // revealWhenReady.
+    show: false,
     // macOS gets the inset title bar the renderer's top region is laid out
     // around (with the traffic lights nudged to match). Everything else keeps
     // the native OS frame: on Windows a `hidden`/`hiddenInset` title bar drops
@@ -231,72 +297,28 @@ export function createWindow(rendererUrl?: string): BrowserWindow {
     },
   });
 
-  // Link policy for both guards below: http(s) goes to the system browser
-  // via shell.openExternal; everything else is denied, except the app's own
-  // renderer entry (isOwnOrigin), which only in-window navigation may load.
-  //
-  // `target="_blank"` (chat links, gen-ui widgets, marketplace cards, …) and
-  // `window.open()` would otherwise spawn a second, chromeless BrowserWindow
-  // with no navigation UI — a dead end the user can't get back out of.
-  win.webContents.setWindowOpenHandler(({ url }: HandlerDetails) => {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      void shell.openExternal(url);
-    }
-    return { action: 'deny' };
-  });
-
-  // Same policy for in-window navigation: an anchor without target="_blank"
-  // (or any other navigation-triggering surface) should not be able to steer
-  // the app window itself off the SPA — to a foreign origin or to an
-  // arbitrary local file. Only the app's own renderer entry passes; http(s)
-  // is handed off to the system browser so the link still goes somewhere
-  // useful.
-  win.webContents.on('will-navigate', (event: Event<WebContentsWillNavigateEventParams>) => {
-    if (isOwnOrigin(event.url, rendererUrl)) return;
-    event.preventDefault();
-    if (event.url.startsWith('http://') || event.url.startsWith('https://')) {
-      void shell.openExternal(event.url);
-    }
-  });
-
-  if (state.isMaximized) win.maximize();
-
-  // In dev: electron-vite sets ELECTRON_RENDERER_URL for HMR.
-  // In a packaged build: load the renderer via the bundled server's own
-  // localhost origin (server-spawn.ts sets CLIENT_DIST_PATH so the server
-  // serves it) rather than file:// — the server's CORS allowlist and
-  // Better Auth's trusted-origins check both need a real origin, not
-  // `null`, and this makes the renderer's fetches same-origin besides.
-  // `electron-vite preview` (no server, no dev URL) falls back to loading
-  // the built index.html straight off disk.
-  if (process.env.ELECTRON_RENDERER_URL) {
-    win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else if (rendererUrl) {
-    win.loadURL(rendererUrl);
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'));
-  }
-
-  // Debounce resize/move saves so dragging/resizing doesn't write on every
-  // frame; save-on-close always fires immediately and wins any pending save.
-  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-  const scheduleSave = (): void => {
-    if (saveTimeout) clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-      saveTimeout = null;
-      persistWindowState(shapeWindowState(win, loadWindowState()));
-    }, SAVE_DEBOUNCE_MS);
-  };
-
-  win.on('resize', scheduleSave);
-  win.on('move', scheduleSave);
-  win.on('close', () => {
-    if (saveTimeout) {
-      clearTimeout(saveTimeout);
-      saveTimeout = null;
-    }
-    persistWindowState(shapeWindowState(win, loadWindowState()));
-  });
+  applyLinkPolicy(win, options);
+  revealWhenReady(win, state);
+  loadRenderer(win, options);
+  if (isPrimary) attachWindowStatePersistence(win);
 
   return win;
+}
+
+/**
+ * The app's own origin right now, or `undefined` when the renderer is not being
+ * served from one (dev, or before the server has a port).
+ *
+ * Shared by `index.ts` and passed into every window as
+ * {@link CreateWindowOptions.getRendererUrl}.
+ *
+ * @param getServerPort - Point-in-time accessor for the server's port.
+ */
+export function makeRendererUrlAccessor(
+  getServerPort: () => number | null
+): () => string | undefined {
+  return () => {
+    const port = getServerPort();
+    return app.isPackaged && port ? `http://localhost:${port}` : undefined;
+  };
 }

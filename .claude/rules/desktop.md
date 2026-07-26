@@ -15,6 +15,16 @@ The Electron desktop app (`apps/desktop`) is a thin shell around the same server
 - Native modules (`better-sqlite3`, `node-pty`) and the Claude Code binary (`@anthropic-ai/claude-agent-sdk-darwin-arm64`) must be `asarUnpack`ed — a Mach-O binary cannot execute from inside `app.asar`.
 - Native modules are rebuilt for Electron's ABI at **packaging time only** (`pack`/`dist` scripts + the release workflow), never in plain `pnpm build` — that rebuild poisons the pnpm-store-shared binary for plain-Node vitest across the monorepo (recover with `pnpm rebuild better-sqlite3`).
 - `electron-builder`'s own `npmRebuild` is disabled (it produced broken binaries); `scripts/rebuild-natives.ts` calls `@electron/rebuild` directly instead.
+- **`build/` is not packaged.** It is electron-builder's `buildResources` — icons and entitlements it reads at _build_ time. Anything the runtime reads must reach `dist/**`: the tray images get there via `electron.vite.config.ts`'s `emitTrayImages()` plugin, which copies them beside the compiled main process so `join(__dirname, name)` resolves the same in dev and packaged.
+
+## Window & app lifecycle
+
+- **Closing the window does not quit** — the server keeps running so agents keep working, on every platform. The guard is `hasTray()`, not `process.platform`: with no tray there is no way back, so the app quits instead. **Never leave the app running with no window and no icon.**
+- **`before-quit` has exactly one listener**, in `quit-guard.ts` — every exit funnels through it (Cmd+Q, menu, tray, Dock, `quitAndInstall()`, the crash dialog). It confirms when agents are mid-run, stops the server, then re-issues the quit. **Do not add a second listener that latches on `before-quit`**: a quit can now be cancelled, and a latched flag silently disables whatever it guards for the rest of the session. Ask `isQuitting()`.
+- **macOS tray images must keep the `Template` filename suffix** — that suffix is what makes macOS recolour the glyph for light and dark menu bars. Windows uses a **PNG, not the `.ico`**: Electron only decodes `.ico` on Windows, so a `.ico` tray asset cannot be verified anywhere else.
+- **Read the renderer origin through an accessor, never a captured value.** A server restart gives a new port, and the link guards in `window-manager.ts` would otherwise hand the app's own pages to the system browser.
+- **Only the primary window** persists geometry, receives `dorkos://` deep links and menu navigation, and shows the update card. A second window (`window.open` at our own origin) is a full cockpit without those; two writers on one geometry file would overwrite each other.
+- **`Cmd/Ctrl+W` is "Close Tab"**, delegated to the renderer with a 250 ms ack timeout after which the window closes anyway. The renderer-facing contract lives on `onCloseTab` in `src/preload/index.ts` — keep it accurate; its consumer is in `apps/client`.
 
 ## The server build fails on warnings — that is deliberate
 

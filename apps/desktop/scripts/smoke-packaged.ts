@@ -405,7 +405,7 @@ async function waitForHealthyServer(
       `If the app produced NO output at all above and sat at 0% CPU, suspect the macOS ` +
       `Gatekeeper consent dialog rather than a code defect — it blocks launch until a human ` +
       `clicks Open, and is indistinguishable from a hang here. See ` +
-      `contributing/desktop-app-development.md §6; this script already runs \`xattr -cr\`, ` +
+      `contributing/desktop-app-development.md §7; this script already runs \`xattr -cr\`, ` +
       `which is the fix.`
   );
 }
@@ -509,7 +509,7 @@ async function main(): Promise<void> {
   // blocking launch, which looks exactly like a hang from here) costs hours to
   // diagnose. `-cr` clears ALL attributes: `-dr com.apple.quarantine` alone
   // misses com.apple.macl / com.apple.provenance, which re-trigger the dialog.
-  // See contributing/desktop-app-development.md §6.
+  // See contributing/desktop-app-development.md §7.
   execFileSync('xattr', ['-cr', appPath]);
   const resigned = relaxAdhocLibraryValidation(appPath);
   console.log(
