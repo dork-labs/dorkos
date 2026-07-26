@@ -57,6 +57,10 @@
       "types": "./src/mesh-schemas.ts",
       "default": "./dist/mesh-schemas.js"
     },
+    "./mcp-tool-groups": {
+      "types": "./src/mcp-tool-groups.ts",
+      "default": "./dist/mcp-tool-groups.js"
+    },
     "./manifest": {
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"

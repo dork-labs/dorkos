@@ -74,9 +74,14 @@ export type AgentBehavior = z.infer<typeof AgentBehaviorSchema>;
  * `undefined` means "inherit global default". Explicit `true`/`false` overrides the global setting.
  *
  * Implicit grouping rules:
- * - `adapter: false` also disables Binding tools (`binding_list`, `binding_create`, `binding_delete`)
- * - `relay: false` also disables Trace tools (`relay_get_trace`, `relay_get_metrics`)
- * - Core tools (`ping`, `get_server_info`, `get_session_count`, `get_agent`) are always enabled
+ * - `adapter: false` also disables the chat-route tools
+ * - `relay: false` also disables the trace tools
+ * - The core tools are always enabled
+ *
+ * Which tools each of those covers is declared in `mcp-tool-groups.ts` and read
+ * from there by both the server and the cockpit. It is deliberately not listed
+ * again here: the copies of it that used to live in three other files all drifted
+ * (DOR-499). Call `toolNamesForDomain` for the current answer.
  */
 export const EnabledToolGroupsSchema = z
   .object({

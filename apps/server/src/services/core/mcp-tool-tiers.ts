@@ -60,6 +60,7 @@
  * @module services/core/mcp-tool-tiers
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { McpToolGroupName } from '@dorkos/shared/mcp-tool-groups';
 import type { GatedAction } from './capabilities/tier-enforcement.js';
 
 /** One tool's tier declaration. */
@@ -215,6 +216,33 @@ export const MCP_TOOL_TIERS = {
 
 /** The name of a hand-registered MCP tool that carries a tier. */
 export type McpToolName = keyof typeof MCP_TOOL_TIERS;
+
+/**
+ * Compile-time proof that this table and the shared tool-GROUP table describe the
+ * same set of tools (DOR-499).
+ *
+ * The two answer different questions about the same 47 tools — this one "does
+ * calling it need a person's approval", the other "which toggle takes it away" —
+ * and both are keyed by tool name. Nothing but a check makes them stay the same
+ * length. Before this, seven tools had a tier and no group, which is how the
+ * cockpit came to show a tool set the server did not build.
+ *
+ * These live in production source, not beside the tests: `apps/server/tsconfig.json`
+ * excludes `src/**\/__tests__/**`, so a type assertion written in a test file is
+ * never typechecked and cannot fail. They also resolve through the shared package's
+ * `types` condition, which points at its SOURCE — so an unbuilt `dist` cannot make
+ * them pass by accident.
+ *
+ * Each resolves to `true` while the key sets agree and to `never` the moment they
+ * do not, at which point the assignment stops compiling and `tsc` names the line
+ * and the offending tool.
+ */
+const _everyTieredToolHasAGroup: [Exclude<McpToolName, McpToolGroupName>] extends [never]
+  ? true
+  : never = true;
+const _everyGroupedToolHasATier: [Exclude<McpToolGroupName, McpToolName>] extends [never]
+  ? true
+  : never = true;
 
 /**
  * The {@link GatedAction} for a hand-registered MCP tool, ready to hand to the

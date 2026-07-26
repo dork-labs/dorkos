@@ -1,23 +1,21 @@
 /**
- * Registers the core external MCP tools (`ping`, `get_server_info`,
- * `get_session_count`, `get_agent`) against the gated tool registrar (`mcp-tool-gate.ts`).
+ * Puts the core tools (`ping`, `get_server_info`, `get_session_count`,
+ * `get_agent`) on the external `/mcp` server.
  *
- * Split out of `mcp-server.ts` purely to keep that file's tool-registration
- * bulk under the repo's file-size guidance — see `.claude/rules/conventions.md`.
+ * The names, descriptions, and input schemas are NOT written here: they come from
+ * `getCoreTools`, the same definitions the in-session server uses, via
+ * {@link registerFromDefinitions}. Only the external-only additions live here —
+ * see that module for why (DOR-499).
  *
  * @module services/core/external-mcp/core-tools
  */
-import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import { z } from 'zod';
 import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
+import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
-import {
-  handlePing,
-  handleGetServerInfo,
-  createGetSessionCountHandler,
-  createGetAgentHandler,
-} from '../../runtimes/claude-code/mcp-tools/core-tools.js';
+import { getCoreTools } from '../../runtimes/claude-code/mcp-tools/core-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
+import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
 
 const A = ToolAnnotationPresets;
 
@@ -27,10 +25,12 @@ const getAgentOutputSchema = {
   message: z.string().optional(),
 };
 
-/** Shared `agent_id` / `cwd` scope shape used by `get_session_count` and `get_agent`. */
-const agentScopeSchema = {
-  agent_id: z.string().optional().describe('Agent ULID to scope the query to'),
-  cwd: z.string().optional().describe('Working directory path to scope the query to'),
+/** The external-only additions for each core tool. */
+const CORE_EXTERNAL_CONFIGS: ExternalToolConfigs = {
+  ping: { annotations: A.readOnlyLocal },
+  get_server_info: { annotations: A.readOnlyLocal },
+  get_session_count: { annotations: A.readOnlyLocal },
+  get_agent: { annotations: A.readOnlyLocal, outputSchema: getAgentOutputSchema },
 };
 
 /**
@@ -42,45 +42,5 @@ const agentScopeSchema = {
  * @param deps - Shared MCP tool dependencies.
  */
 export function registerCoreTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
-  registrar.registerTool(
-    'ping',
-    {
-      description: 'Check that the DorkOS server is running. Returns pong with a timestamp.',
-      inputSchema: {},
-      annotations: A.readOnlyLocal,
-    },
-    handlePing
-  );
-  registrar.registerTool(
-    'get_server_info',
-    {
-      description: 'Returns DorkOS server metadata including version, port, and optionally uptime.',
-      inputSchema: {
-        include_uptime: z.boolean().optional().describe('Include server uptime in seconds'),
-      },
-      annotations: A.readOnlyLocal,
-    },
-    handleGetServerInfo
-  );
-  registrar.registerTool(
-    'get_session_count',
-    {
-      description:
-        'Returns the number of sessions for a specific agent. Provide either agent_id (ULID) or cwd (working directory path).',
-      inputSchema: agentScopeSchema,
-      annotations: A.readOnlyLocal,
-    },
-    createGetSessionCountHandler(deps)
-  );
-  registrar.registerTool(
-    'get_agent',
-    {
-      description:
-        'Get the agent manifest for a specific agent. Provide either agent_id (ULID) or cwd (working directory path). Returns the agent manifest from .dork/agent.json if one exists, or null if no agent is registered.',
-      inputSchema: agentScopeSchema,
-      annotations: A.readOnlyLocal,
-      outputSchema: getAgentOutputSchema,
-    },
-    createGetAgentHandler(deps)
-  );
+  registerFromDefinitions(registrar, getCoreTools(deps), CORE_EXTERNAL_CONFIGS);
 }

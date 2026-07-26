@@ -432,7 +432,15 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps, identity
 }
 
 /**
- * Returns the Relay tool definitions for registration with the MCP server.
+ * The relay tool definitions: name, description, input schema, and handler
+ * (8 tools, including `relay_notify_user`).
+ *
+ * The single source for all of that on BOTH MCP servers. The external `/mcp`
+ * server projects the other 7 (the subject-facing send/inbox/endpoint tools)
+ * through `registerFromDefinitions` rather than typing them out again, which is
+ * what stops the two surfaces describing them differently (DOR-499).
+ * `relay_notify_user` has no entry in the external config, which is what keeps
+ * it in-session-only. Unguarded, so it needs no separate definitions function.
  *
  * @param deps - Tool dependencies
  * @param identity - Server-resolved sender identity. Injected as the publish

@@ -249,10 +249,19 @@ export function createMeshQueryTopologyHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the mesh tool definitions — only when meshCore is provided. */
-export function getMeshTools(deps: McpToolDeps) {
-  if (!deps.meshCore) return [];
-
+/**
+ * The mesh tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers. The external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again, which is what stopped the two surfaces describing `mesh_discover`
+ * differently (DOR-499). Unguarded on purpose — see {@link getMeshTools} for the
+ * in-session guard and `mcp-server.ts` for why the external server registers
+ * every tool regardless of feature flags.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function meshToolDefinitions(deps: McpToolDeps) {
   return [
     tool(
       'mesh_discover',
@@ -336,4 +345,14 @@ export function getMeshTools(deps: McpToolDeps) {
       createMeshQueryTopologyHandler(deps)
     ),
   ];
+}
+
+/**
+ * The mesh tools for the in-session server — only when meshCore is provided.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function getMeshTools(deps: McpToolDeps) {
+  if (!deps.meshCore) return [];
+  return meshToolDefinitions(deps);
 }

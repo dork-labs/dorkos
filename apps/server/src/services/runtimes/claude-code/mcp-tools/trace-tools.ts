@@ -35,10 +35,19 @@ export function createRelayGetMetricsHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the trace tool definitions — only when traceStore is provided. */
-export function getTraceTools(deps: McpToolDeps) {
-  if (!deps.traceStore) return [];
-
+/**
+ * The trace tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers. The external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again, which is what stops the two surfaces describing them differently
+ * (DOR-499). Guarded on `deps.traceStore` by {@link getTraceTools} for the
+ * in-session server; the external server registers unconditionally (see
+ * `mcp-server.ts`).
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function traceToolDefinitions(deps: McpToolDeps) {
   return [
     tool(
       'relay_get_trace',
@@ -54,4 +63,14 @@ export function getTraceTools(deps: McpToolDeps) {
       createRelayGetMetricsHandler(deps)
     ),
   ];
+}
+
+/**
+ * The trace tools for the in-session server — only when traceStore is provided.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function getTraceTools(deps: McpToolDeps) {
+  if (!deps.traceStore) return [];
+  return traceToolDefinitions(deps);
 }

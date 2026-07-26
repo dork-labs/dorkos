@@ -466,21 +466,20 @@ export function createTestExtensionHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the extension tool definitions. `get_extension_api` is always available; others require extensionManager. */
-export function getExtensionTools(deps: McpToolDeps) {
-  if (!deps.extensionManager) {
-    // get_extension_api is always available — the API reference is useful
-    // even when the extension system is not initialized
-    return [
-      tool(
-        'get_extension_api',
-        'Get the full ExtensionAPI type definitions and usage examples for both client-side and server-side extension development. Returns TypeScript interface definitions for ExtensionAPI, ExtensionPointId, ExtensionReadableState, DataProviderContext, and ServerExtensionRegister.',
-        {},
-        createGetExtensionApiHandler(deps)
-      ),
-    ];
-  }
-
+/**
+ * All six extension tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers — the external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again (DOR-499). Unlike {@link getExtensionTools}, this returns the full set
+ * unconditionally: the external server registers every tool regardless of
+ * `deps.extensionManager` (feature-guarded handlers return a descriptive error
+ * instead of disappearing — see `createExternalMcpServer` in
+ * `services/core/mcp-server.ts`).
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function extensionToolDefinitions(deps: McpToolDeps) {
   return [
     tool(
       'get_extension_api',
@@ -541,4 +540,25 @@ export function getExtensionTools(deps: McpToolDeps) {
       createTestExtensionHandler(deps)
     ),
   ];
+}
+
+/**
+ * The extension tools for the in-session server.
+ *
+ * When `deps.extensionManager` is absent, returns only `get_extension_api` —
+ * the API reference is useful even when the extension system is not
+ * initialized, so it stays available on its own. That single entry is taken
+ * directly from {@link extensionToolDefinitions}, so it is always the exact
+ * same description, schema, and handler as the full set's first tool: nothing
+ * to drift. When `extensionManager` is present, returns all six tools.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function getExtensionTools(deps: McpToolDeps) {
+  if (!deps.extensionManager) {
+    const [getExtensionApi] = extensionToolDefinitions(deps);
+    return [getExtensionApi];
+  }
+
+  return extensionToolDefinitions(deps);
 }
