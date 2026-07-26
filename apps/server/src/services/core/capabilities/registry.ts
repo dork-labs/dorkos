@@ -385,7 +385,7 @@ export function composeRegistry(
       // the very approval this gate would ask for.
       if (!supplied.trusted) {
         const decision = enforceCapabilityTier({
-          capability,
+          action: capability,
           input: parsed,
           ...(supplied.identity ? { identity: supplied.identity } : {}),
           ...(supplied.approvalToken ? { approvalToken: supplied.approvalToken } : {}),

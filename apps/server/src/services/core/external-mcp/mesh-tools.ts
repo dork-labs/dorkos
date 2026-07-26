@@ -1,11 +1,11 @@
 /**
- * Registers the `mesh_*` external MCP tools against a live `McpServer`
- * instance. Split out of `mcp-server.ts` — see `core-tools.ts` in this
+ * Registers the `mesh_*` external MCP tools against the gated tool
+ * registrar (`mcp-tool-gate.ts`). Split out of `mcp-server.ts` — see `core-tools.ts` in this
  * directory for why.
  *
  * @module services/core/external-mcp/mesh-tools
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import { z } from 'zod';
 import {
   AgentManifestSchema,
@@ -35,13 +35,14 @@ const meshListOutputSchema = {
 };
 
 /**
- * Register every `mesh_*` tool (8 total) against `server`.
+ * Register every `mesh_*` tool (8 total) against `registrar`.
  *
- * @param server - The external `McpServer` instance to register tools against.
+ * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
+ *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
-  server.registerTool(
+export function registerMeshTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+  registrar.registerTool(
     'mesh_discover',
     {
       description:
@@ -61,7 +62,7 @@ export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
     },
     createMeshDiscoverHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'mesh_register',
     {
       description:
@@ -79,7 +80,7 @@ export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
     },
     createMeshRegisterHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'mesh_list',
     {
       description: 'List all registered agents with optional filters.',
@@ -93,7 +94,7 @@ export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
     },
     createMeshListHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'mesh_deny',
     {
       description: 'Deny a candidate path from future discovery scans.',
@@ -105,7 +106,7 @@ export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
     },
     createMeshDenyHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'mesh_unregister',
     {
       description: 'Unregister an agent by ID, removing it from the registry.',
@@ -116,7 +117,7 @@ export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
     },
     createMeshUnregisterHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'mesh_status',
     {
       description:
@@ -127,7 +128,7 @@ export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
     },
     createMeshStatusHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'mesh_inspect',
     {
       description: 'Inspect a specific agent — manifest, health status, relay endpoint.',
@@ -139,7 +140,7 @@ export function registerMeshTools(server: McpServer, deps: McpToolDeps): void {
     },
     createMeshInspectHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'mesh_query_topology',
     {
       description:

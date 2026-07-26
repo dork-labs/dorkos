@@ -1,11 +1,11 @@
 /**
- * Registers the `tasks_*` external MCP tools against a live `McpServer`
- * instance. Split out of `mcp-server.ts` — see `core-tools.ts` in this
+ * Registers the `tasks_*` external MCP tools against the gated tool
+ * registrar (`mcp-tool-gate.ts`). Split out of `mcp-server.ts` — see `core-tools.ts` in this
  * directory for why.
  *
  * @module services/core/external-mcp/task-tools
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import { z } from 'zod';
 import { TaskSchema } from '@dorkos/shared/schemas';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -28,13 +28,14 @@ const tasksListOutputSchema = {
 
 /**
  * Register `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, and
- * `tasks_get_run_history` against `server`.
+ * `tasks_get_run_history` against `registrar`.
  *
- * @param server - The external `McpServer` instance to register tools against.
+ * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
+ *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerTaskTools(server: McpServer, deps: McpToolDeps): void {
-  server.registerTool(
+export function registerTaskTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+  registrar.registerTool(
     'tasks_list',
     {
       description:
@@ -47,7 +48,7 @@ export function registerTaskTools(server: McpServer, deps: McpToolDeps): void {
     },
     createListSchedulesHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'tasks_create',
     {
       description:
@@ -68,7 +69,7 @@ export function registerTaskTools(server: McpServer, deps: McpToolDeps): void {
     },
     createCreateScheduleHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'tasks_update',
     {
       description: 'Update an existing Tasks schedule. Only provided fields are updated.',
@@ -86,7 +87,7 @@ export function registerTaskTools(server: McpServer, deps: McpToolDeps): void {
     },
     createUpdateScheduleHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'tasks_delete',
     {
       description: 'Delete a Tasks schedule permanently.',
@@ -97,7 +98,7 @@ export function registerTaskTools(server: McpServer, deps: McpToolDeps): void {
     },
     createDeleteScheduleHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'tasks_get_run_history',
     {
       description: 'Get recent run history for a Tasks schedule.',

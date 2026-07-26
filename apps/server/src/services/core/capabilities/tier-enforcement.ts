@@ -90,7 +90,6 @@
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
-import type { CapabilityDefinition } from './capability-definition.js';
 import { isTrustedCaller } from './trusted-caller.js';
 // Type-only, so the value-level dependency stays one-directional: `registry.ts`
 // imports the gate, never the reverse.
@@ -109,6 +108,40 @@ import { logger } from '../../../lib/logger.js';
 
 /** Where a retry carries its approval token, per surface. */
 export type ApprovalRetryChannel = 'mcp-argument' | 'http-header';
+
+/**
+ * The thing whose tier is being enforced, reduced to the FOUR fields this gate
+ * actually reads.
+ *
+ * A `CapabilityDefinition` satisfies this structurally, so the registry path is
+ * unchanged. The reason it is stated separately is DOR-468: the 47
+ * hand-registered MCP tools are not registry capabilities and never will be until
+ * their domains migrate, but they need the same gate. Rather than build a second
+ * enforcement path beside this one, each of those tools presents itself here as a
+ * `GatedAction` — see `services/core/mcp-tool-tiers.ts` for the table that supplies
+ * one, and `services/core/mcp-tool-gate.ts` for the choke point that calls this.
+ *
+ * This is the SMALLEST shape that works, and it is deliberately not a synthetic
+ * `CapabilityDefinition`: a hand-registered tool has no Zod `input` object, no
+ * `output`, no `surfaces`, and no registry `invoke`, so faking those would be four
+ * lies to satisfy a type. What the gate needs is an identity to bind an approval
+ * to, a title a person can read, a tier to decide on, and the fields the card may
+ * show. That is all this asks for.
+ */
+export interface GatedAction {
+  /**
+   * Stable identifier the approval binds to. A capability's `domain.verb` id, or
+   * a hand-registered MCP tool's name (which has no dot, so the two id spaces
+   * cannot collide).
+   */
+  id: string;
+  /** Human-facing title, as the operator's approval card shows it. */
+  title: string;
+  /** Permission tier. This, and nothing about the caller, decides whether to gate. */
+  tier: CapabilityTier;
+  /** The input fields the approval card may show. Required on `destructive`. */
+  approvalDisplayFields?: readonly string[];
+}
 
 /** The MCP tool argument a retry passes its approval token in. */
 export const APPROVAL_TOKEN_ARGUMENT = 'approvalToken';
@@ -239,8 +272,8 @@ export type TierEnforcementDecision =
 
 /** One gated attempt, for the audit trail. */
 export interface TierEnforcementAttempt {
-  /** The capability the caller tried to run. */
-  capability: CapabilityDefinition;
+  /** The capability or hand-registered MCP tool the caller tried to run. */
+  action: GatedAction;
   /**
    * The agent that tried, when it identified itself. Absent for an unidentified
    * caller — which is still audited, because an anonymous attempt at something
@@ -253,8 +286,8 @@ export interface TierEnforcementAttempt {
 
 /** Everything the gate needs to decide one invocation. */
 export interface TierEnforcementRequest {
-  /** The capability about to be invoked. */
-  capability: CapabilityDefinition;
+  /** The capability or hand-registered MCP tool about to be invoked. */
+  action: GatedAction;
   /**
    * The PARSED input that will execute — not the raw request body.
    *
@@ -359,34 +392,35 @@ const CEILING_PHRASE: Record<CapabilityTier, string> = {
  * injected value pushed the true one out of the card's clamp. Read that module
  * before changing the rendering.
  *
- * Which fields appear is the capability's own declaration
- * (`approvalDisplayFields`), so a field like `confirmationToken` never reaches a
- * card, an event, or the agent-readable pending list.
+ * Which fields appear is the action's own declaration (`approvalDisplayFields`),
+ * so a field like `confirmationToken` never reaches a card, an event, or the
+ * agent-readable pending list.
  *
  * An unidentified caller is named as such rather than dressed up as an agent: a
  * person deciding an irreversible action should be able to see that DorkOS does
  * not know who asked.
  *
- * @param capability - The capability being requested.
+ * @param action - The capability or tool being requested.
  * @param input - The parsed input the approval is bound to.
  * @param identity - The agent asking, when it identified itself.
  * @returns The card summary.
  */
 export function describeGatedAttempt(
-  capability: CapabilityDefinition,
+  action: GatedAction,
   input: unknown,
   identity?: AgentIdentity
 ): string {
   const who = identity
     ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
     : 'An unidentified caller ';
-  const fields = summaryFields(input, capability.approvalDisplayFields);
+  const fields = summaryFields(input, action.approvalDisplayFields);
   const detail = fields.length
     ? ` with ${fields.map(({ field, value }) => `${field}: ${value}`).join(', ')}`
     : '';
-  // The title comes from the registry, so it needs no escaping — but the whole
-  // sentence gets the secret sweep anyway, because this string is broadcast.
-  return redactSecretsInText(`${who}wants to run "${capability.title}"${detail}`);
+  // The title is declared in DorkOS's own source, never by the caller, so it needs
+  // no escaping — but the whole sentence gets the secret sweep anyway, because
+  // this string is broadcast.
+  return redactSecretsInText(`${who}wants to run "${action.title}"${detail}`);
 }
 
 /** The label an approval records for who asked, or its absence for an anonymous one. */
@@ -445,18 +479,18 @@ function audit(attempt: TierEnforcementAttempt): void {
   }
 }
 
-/** Build the refusal payload for a capability the caller may never reach. */
+/** Build the refusal payload for an action the caller may never reach. */
 function denied(
-  capability: CapabilityDefinition,
+  action: GatedAction,
   reason: TierDeniedReason,
   message: string,
   extra: { approvable: boolean; approvalId?: string }
 ): TierDeniedPayload {
   return {
     status: 'denied',
-    capabilityId: capability.id,
-    capabilityTitle: capability.title,
-    tier: capability.tier,
+    capabilityId: action.id,
+    capabilityTitle: action.title,
+    tier: action.tier,
     reason,
     approvable: extra.approvable,
     message,
@@ -465,24 +499,26 @@ function denied(
 }
 
 /**
- * Enforce a capability's permission tier for one invocation.
+ * Enforce an action's permission tier for one invocation.
  *
- * Called by `registry.invoke` (and, for a caller that owns its own effect, by
- * {@link authorizeCapability}) with the input that will actually execute.
- * Proceed only on `allowed`; otherwise return the decision's payload to the
- * caller verbatim.
+ * Three callers, and only three, all pinned by `__tests__/gate-bypass-scan.test.ts`:
+ * `registry.invoke` (every registry capability), {@link authorizeCapability} (a
+ * caller that owns its own effect), and `services/core/mcp-tool-gate.ts` (the 47
+ * hand-registered MCP tools, which are not registry capabilities). Each passes the
+ * input that will actually execute. Proceed only on `allowed`; otherwise return
+ * the decision's payload to the caller verbatim.
  *
- * @param request - The capability, the parsed input, the calling identity, and
+ * @param request - The action, the parsed input, the calling identity, and
  *   any approval token presented.
  * @returns What the gate decided.
  */
 export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnforcementDecision {
-  const { capability, identity, approvalToken, input, retryChannel } = request;
+  const { action, identity, approvalToken, input, retryChannel } = request;
 
   // The TIER decides whether to gate — never whether the caller identified
   // itself. Anything else is a bypass an agent with shell access can reach by
   // dropping its own token (see the module TSDoc).
-  const tier = capability.tier;
+  const tier = action.tier;
 
   /** Attribution for the audit trail, omitted rather than nulled when anonymous. */
   const attributed = identity ? { identity } : {};
@@ -503,13 +539,13 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       ? "the agent's own limit has to change first"
       : "DorkOS's limit for unidentified callers has to change first";
     const payload = denied(
-      capability,
+      action,
       'tier_ceiling',
-      `"${capability.title}" ${TIER_PHRASE[tier]}, and ${limitedParty} ` +
+      `"${action.title}" ${TIER_PHRASE[tier]}, and ${limitedParty} ` +
         `${CEILING_PHRASE[ceiling]}. Nobody can approve this; ${changeWhat}.`,
       { approvable: false }
     );
-    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
+    audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   }
 
@@ -519,12 +555,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
 
   if (!gate) {
     const payload = denied(
-      capability,
+      action,
       'enforcement_unavailable',
-      `"${capability.title}" cannot be undone and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
+      `"${action.title}" cannot be undone and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
       { approvable: false }
     );
-    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
+    audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   }
 
@@ -533,8 +569,8 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
    * refusal. Used for both an unbindable input and a failing approval store.
    */
   const refuse = (reason: TierDeniedReason, message: string): TierEnforcementDecision => {
-    const payload = denied(capability, reason, message, { approvable: false });
-    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
+    const payload = denied(action, reason, message, { approvable: false });
+    audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   };
 
@@ -543,15 +579,15 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // approval at all — so refuse instead of asking about something inexact.
   let binding: { capabilityId: string; inputHash: string };
   try {
-    binding = { capabilityId: capability.id, inputHash: hashApprovalInput(input) };
+    binding = { capabilityId: action.id, inputHash: hashApprovalInput(input) };
   } catch (err) {
     logger.error('[capabilities] destructive input could not be bound to an approval', {
-      capabilityId: capability.id,
+      capabilityId: action.id,
       err: err instanceof Error ? err.message : String(err),
     });
     return refuse(
       'input_not_bindable',
-      `"${capability.title}" cannot be undone, and DorkOS cannot describe this exact call well enough ` +
+      `"${action.title}" cannot be undone, and DorkOS cannot describe this exact call well enough ` +
         `to ask anyone about it, so it was refused.`
     );
   }
@@ -562,18 +598,18 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
    * Audit a destructive attempt the approval store itself could not process.
    *
    * The throw propagates (the caller's surface turns it into a 500 and the
-   * capability does not run), but the attempt must not vanish: "the database was
+   * action does not run), but the attempt must not vanish: "the database was
    * down while an agent reached for something irreversible" is exactly the line an
    * operator needs, and it used to be lost because the throw jumped past `audit`.
    */
   const auditStoreFailure = (): void => {
     const payload = denied(
-      capability,
+      action,
       'enforcement_unavailable',
-      `"${capability.title}" cannot be undone and DorkOS could not record an approval request for it, so it was refused.`,
+      `"${action.title}" cannot be undone and DorkOS could not record an approval request for it, so it was refused.`,
       { approvable: false }
     );
-    audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
+    audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
   };
 
   /** Record a fresh request for THIS action and tell the caller how to retry. */
@@ -582,7 +618,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     try {
       ticket = gate!.approvals.request({
         ...binding,
-        summary: describeGatedAttempt(capability, input, identity),
+        summary: describeGatedAttempt(action, input, identity),
         ...(requestedBy ? { requestedBy } : {}),
       });
     } catch (err) {
@@ -591,17 +627,17 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     }
     const payload: ApprovalRequiredPayload = {
       status: 'approval_required',
-      capabilityId: capability.id,
-      capabilityTitle: capability.title,
+      capabilityId: action.id,
+      capabilityTitle: action.title,
       tier,
       approvalId: ticket.approvalId,
       approvalToken: ticket.token,
       expiresAt: ticket.expiresAt,
       reason,
-      message: approvalMessage(reason, capability.title),
+      message: approvalMessage(reason, action.title),
       retry: retryGuidance(retryChannel),
     };
-    audit({ capability, ...attributed, decision: { outcome: 'approval_required', payload } });
+    audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
     return { outcome: 'approval_required', payload };
   };
 
@@ -623,30 +659,30 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       // second card on the operator for one action.
       const payload: ApprovalRequiredPayload = {
         status: 'approval_required',
-        capabilityId: capability.id,
-        capabilityTitle: capability.title,
+        capabilityId: action.id,
+        capabilityTitle: action.title,
         tier,
         approvalId: result.approvalId,
         approvalToken,
         expiresAt: result.expiresAt,
         reason: 'awaiting_decision',
-        message: approvalMessage('awaiting_decision', capability.title),
+        message: approvalMessage('awaiting_decision', action.title),
         retry: retryGuidance(retryChannel),
       };
-      audit({ capability, ...attributed, decision: { outcome: 'approval_required', payload } });
+      audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
       return { outcome: 'approval_required', payload };
     }
 
     case 'denied': {
       const payload = denied(
-        capability,
+        action,
         'operator_denied',
         result.reason
           ? `A person refused this: ${result.reason}`
           : `A person refused this. Do not try again unless they ask for it.`,
         { approvable: true, approvalId: result.approvalId }
       );
-      audit({ capability, ...attributed, decision: { outcome: 'denied', payload } });
+      audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
       return { outcome: 'denied', payload };
     }
 
@@ -749,7 +785,7 @@ export function authorizeCapability(
     return { outcome: 'allowed' };
   }
   return enforceCapabilityTier({
-    capability,
+    action: capability,
     input: capability.input.parse(input),
     ...(context.identity ? { identity: context.identity } : {}),
     ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
