@@ -15,6 +15,7 @@
 export {
   ApprovalService,
   APPROVAL_TTL_MS,
+  resolveApprovalTtlMs,
   type ApprovalConsumeResult,
   type ApprovalDecisionFailure,
   type ApprovalTicket,

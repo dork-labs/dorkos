@@ -42,6 +42,14 @@ const serverEnvSchema = z.object({
   // Marketplace MCP — when '1', auto-approves every install/uninstall/create
   // confirmation request without prompting the user. Used by CI and tests.
   MARKETPLACE_AUTO_APPROVE: z.string().optional(),
+  // Approval decision window (ms). Boot-time only, and CLAMPED AT BOOT so it can
+  // only ever SHORTEN the two-hour default, never lengthen it — a one-directional
+  // knob cannot be turned into a way to keep consent alive past the moment a
+  // person gave it. Exists so the eval harness can observe the "nobody answered
+  // and the window closed" outcome as a real terminal state instead of waiting
+  // two hours or dressing up a runner timeout as expiry (DOR-498). Nothing an
+  // agent can reach through the API touches it.
+  DORKOS_APPROVAL_TTL_MS: z.coerce.number().int().min(1000).optional(),
   // Feature flags (boolean after transform)
   DORKOS_A2A_ENABLED: boolFlag,
   // A2A gateway — public base URL advertised on agent cards. Defaults to

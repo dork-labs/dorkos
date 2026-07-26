@@ -9,6 +9,7 @@
  *
  * @module evals/oracles
  */
+export * from './approvals.js';
 export * from './filesystem.js';
 export * from './api.js';
 export * from './stream.js';

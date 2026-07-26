@@ -559,3 +559,99 @@ describe('driveConversation', () => {
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('onFrames — the live observer the approval driver rides (DOR-498)', () => {
+  it('sees frames WHILE the turn runs, not only after it ends', async () => {
+    // The whole point: an approval prompt has to be answered mid-turn. An
+    // observer that only fired at the end would answer a turn that had already
+    // died on the harness timeout.
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield {
+          type: 'approval_required',
+          data: { toolCallId: 'tc1', toolName: 'mcp__dorkos__marketplace_uninstall', input: '{}' },
+        } as StreamEvent;
+        yield { type: 'text_delta', data: { text: 'waiting' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    /** Every observation, recorded as (frame count, whether the turn had ended). */
+    const observations: Array<{ count: number; ended: boolean; sessionId: string }> = [];
+    const result = await driveTurn({
+      baseUrl,
+      sessionId: 'sess-observe',
+      content: 'Uninstall it',
+      cwd: '/tmp/proj',
+      onFrames: (frames, sessionId) => {
+        observations.push({
+          count: frames.length,
+          ended: frames.some((f) => f.event === 'turn_end'),
+          sessionId,
+        });
+      },
+    });
+
+    expect(result.outcome).toBe('done');
+    expect(observations.length).toBeGreaterThan(1);
+    // At least one observation happened with the approval prompt present and the
+    // turn still open — the window in which an answer would actually help.
+    expect(observations.some((o) => !o.ended)).toBe(true);
+    expect(observations.every((o) => o.sessionId === 'sess-observe')).toBe(true);
+  });
+
+  it('reports an observer that throws as a STREAM_ERROR instead of swallowing it', async () => {
+    // A silently-dead observer would leave the turn stalling exactly as it did
+    // before the hook existed, and nothing would say why.
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'Hi' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    await expect(
+      driveTurn({
+        baseUrl,
+        sessionId: 'sess-throw',
+        content: 'Hello',
+        cwd: '/tmp/proj',
+        onFrames: () => {
+          throw new Error('observer exploded');
+        },
+      })
+    ).rejects.toMatchObject({ code: 'STREAM_ERROR' });
+  });
+
+  it('threads the observer through every turn of a conversation', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'one' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'two' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    let turnStarts = 0;
+    await driveConversation({
+      baseUrl,
+      sessionId: 'sess-multi',
+      cwd: '/tmp/proj',
+      prompts: ['first', 'second'],
+      onFrames: (frames) => {
+        turnStarts = Math.max(turnStarts, frames.filter((f) => f.event === 'turn_start').length);
+      },
+    });
+
+    expect(turnStarts).toBeGreaterThan(0);
+  });
+});

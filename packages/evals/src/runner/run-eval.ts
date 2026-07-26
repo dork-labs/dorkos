@@ -28,6 +28,8 @@ import type {
   OracleResult,
   RuntimeTier,
 } from '../types.js';
+import { emptyApprovalLog } from '../types.js';
+import { ApprovalDriver } from './approval-driver.js';
 import { createSandbox } from './sandbox.js';
 import { onInterrupt } from './interrupt.js';
 import {
@@ -250,6 +252,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   // session lock instead of colliding (a `409 SESSION_LOCKED`) on a real runtime.
   const clientId = randomUUID();
   let failed = false;
+  let approvalDriver: ApprovalDriver | undefined;
 
   // Ctrl-C mid-run must not leave a container running or a sandbox on disk. The
   // handler disposes UNCONDITIONALLY (an interrupt is not a failure to debug).
@@ -279,6 +282,22 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     const abortWhen =
       ceiling !== undefined ? (fs: SseFrame[]) => evalCostUsd(fs) > ceiling : undefined;
 
+    // A case that drives a real tool parks on an approval prompt nobody would
+    // otherwise answer (DOR-498). The driver answers within the case's policy and
+    // hands its record to the oracles; a case without a policy gets no driver and
+    // an empty log, which is correct for a turn that runs no tools.
+    const probeBeforeDecision = evalCase.probeBeforeDecision;
+    if (evalCase.approvalPolicy) {
+      approvalDriver = new ApprovalDriver({
+        baseUrl: server.baseUrl,
+        policy: evalCase.approvalPolicy,
+        ...(probeBeforeDecision ? { probe: () => probeBeforeDecision(sandbox) } : {}),
+      });
+      approvalDriver.start();
+    }
+    const driver = approvalDriver;
+    const onFrames = driver ? (fs: SseFrame[], id: string) => driver.observe(fs, id) : undefined;
+
     if (turns.length > 0) {
       const drive = await driveConversation({
         baseUrl: server.baseUrl,
@@ -288,6 +307,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         clientId,
         timeoutMs: opts.timeoutMs,
         abortWhen,
+        onFrames,
       });
       frames = drive.frames;
       sessionId = drive.canonicalId;
@@ -305,11 +325,17 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
         clientId,
         timeoutMs: opts.timeoutMs,
         abortWhen,
+        onFrames,
       });
       frames = [...frames, ...widget.frames];
       sessionId = widget.canonicalId;
       failed = applyNonDoneOutcome(result, widget.outcome);
     }
+
+    // Stop the driver BEFORE the oracles read its log: a decision POSTed in the
+    // last moments of a turn must be recorded, or a case would fail on evidence
+    // that was still being written.
+    await approvalDriver?.stop();
 
     // Record cost even on a boot-only case (0 for test-mode). A per-run breach is
     // surfaced via the tracker for the caller to skip the remaining evals.
@@ -321,6 +347,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       baseUrl: server.baseUrl,
       sessionId,
       frames,
+      approvals: approvalDriver?.log ?? emptyApprovalLog(),
     };
 
     if (!failed) {
@@ -353,6 +380,9 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
           : String(err);
     failed = true;
   } finally {
+    // Idempotent — already stopped on the happy path; this is the timeout/throw
+    // path, where an unstopped poll timer would keep the process alive.
+    await approvalDriver?.stop();
     result.durationMs = Date.now() - start;
     result.transcript = `${evalCase.id}.jsonl`;
     await writeTranscript(opts.runDir, {
@@ -364,6 +394,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       frames,
       oracleResults: result.oracleResults,
       rubricResult: result.rubricResult,
+      ...(approvalDriver ? { approvals: approvalDriver.log } : {}),
     });
     const retain = failed && retainOnFailure;
     await server?.dispose({ failed: retain });

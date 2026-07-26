@@ -48,34 +48,58 @@ cost, so the harness prints a NOTE rather than a warning. On an API key, `$0.000
 is a real symptom (either no turn ran or the cost signal broke), and there you get
 a WARNING instead.
 
-## Known gap: nothing answers a tool approval
+## Answering an approval mid-run
 
-A credentialed case that asks the agent to _do_ something parks. The driven
-session runs in the default permission mode, so the first tool call the runtime
-wants confirmed emits `approval_required` with a ten-minute window, nothing ever
-answers it, and the harness's 90-second turn timeout ends the eval as a runner
-error. In the transcript the agent thinks, picks a tool, calls it with sensible
-arguments, and then the stream just stops.
+A credentialed case that asks the agent to _do_ something gets stopped twice, by
+two unrelated mechanisms, and until DOR-498 nothing answered either one:
 
-That is the only thing standing between these cases and a real result, and it is
-why every case that drives a tool is still `quarantined`. Two things that might
-look like additional blockers are not:
+1. the **runtime's tool permission** — the prompt a person answers in the chat
+   pane, with a ten-minute window;
+2. the **capability tier gate** — a destructive action refusing to run until
+   somebody approves it, with a two-hour window.
 
-- **The DorkOS MCP tools are present.** A driven session gets the full
-  `mcp__dorkos__*` surface, deferred behind `ToolSearch` the way the CLI defers a
-  large tool set. Verified by driving a turn that asked the model to list them
-  without calling anything: it returned all of them, including `activity_list`
-  and `agents_recent_activity`, and the turn reached a terminal `done`. A
-  credentialed turn that needs no approval completes normally.
-- **A `Bash` call in the transcript is not a missing tool.** Which tool trips the
-  approval gate varies by run, because the model picks it. One run stalled on
-  `mcp__dorkos__update_agent`; another, given the same prompt, improvised a
-  `Bash` + `curl` instead. Both are the same stall.
+Nobody answered, so every such case sat until the 90-second turn timeout and
+reported a runner error. In the transcript the agent would think, pick a tool,
+call it with sensible arguments, and then the stream just stopped.
+
+A case now carries an `approvalPolicy` saying what it answers
+(`runner/approval-driver.ts`). It allows the named tools past prompt 1 and
+**denies everything else**, and it decides at most one named capability at
+prompt 2 — never a blanket yes, so a "denied" case cannot inherit a "granted"
+case's approval.
+
+The harness is a legitimate decider here, not a hole in the gate. Deciding is
+refused for anyone presenting an agent identity or an approval token
+(`services/core/approvals/decision-authority.ts`); the driver sends neither
+header, so it lands in the same `local-trust` posture the cockpit uses on a
+single-user machine. **Nothing in the server was loosened to allow this.** If a
+future change makes the driver's decisions 403, the fix is in the harness, never
+in that check.
+
+The **allowlist is not a sandbox.** The driver can only answer what it is asked,
+and the runtime auto-allows some tools without asking. On a real run, `ToolSearch`
+and a `Bash` running a bare `echo` both executed with no prompt, while every
+`Bash` that touched the filesystem was prompted and denied. The container
+(`preferDocker`) is what actually bounds a turn.
 
 **Reading transcripts: frames are not calls.** A `tool_call` frame is re-emitted
 as the tool's input streams in, so one call shows up as many frames. Twenty-seven
 `Bash` frames is one `Bash` call. Count distinct `toolCallId` values, not frames,
 or you will conclude the agent is thrashing when it made a single call.
+
+## Why the tool cases are still quarantined
+
+The harness gap is closed, but promotion is a separate question and the answer is
+still no. All three governance cases have been observed passing against a real
+model, and each also failed at least once on the same prompt for reasons that
+belong entirely to the model: one run improvised `echo` narration instead of
+calling the tool, another looped on `ToolSearch` thirty times until the turn timed
+out. That is tool-choice variance, not a product regression, and a gating case
+that goes red on it would train everyone to ignore it.
+
+Promotion needs a stable pass rate across repeated runs, which is a human decision
+made on evidence — see "Reading the output" for why a run gating on zero cases is
+itself reported as a failure.
 
 ## Where a credential comes from
 

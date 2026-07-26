@@ -12,7 +12,7 @@ import {
   APPROVAL_SUMMARY_MAX_LENGTH,
   PendingApprovalSchema,
 } from '@dorkos/shared/approval-schemas';
-import { ApprovalService, APPROVAL_TTL_MS } from '../approval-service.js';
+import { ApprovalService, APPROVAL_TTL_MS, resolveApprovalTtlMs } from '../approval-service.js';
 import { hashApprovalInput } from '../approval-input-hash.js';
 import { eventFanOut } from '../../event-fan-out.js';
 
@@ -472,5 +472,44 @@ describe('ApprovalService — reporting and card limits', () => {
     expect(service.listPending()[0].summary).toBe(
       'Uninstall "sentry-monitor", keeping its saved data'
     );
+  });
+});
+
+describe('resolveApprovalTtlMs — the window can be shortened, never lengthened', () => {
+  it('takes the default when nothing is configured', () => {
+    expect(resolveApprovalTtlMs(undefined)).toBeUndefined();
+  });
+
+  it('honors a SHORTER window, which makes the gate stricter', () => {
+    expect(resolveApprovalTtlMs(5_000)).toBe(5_000);
+  });
+
+  it('CLAMPS a longer window to the default', () => {
+    // The property that makes this knob safe to have at all: a longer window
+    // would let a "yes" stay spendable well after the moment a person meant it,
+    // which is exactly what APPROVAL_TTL_MS is written to prevent.
+    expect(resolveApprovalTtlMs(APPROVAL_TTL_MS * 10)).toBe(APPROVAL_TTL_MS);
+    expect(resolveApprovalTtlMs(APPROVAL_TTL_MS + 1)).toBe(APPROVAL_TTL_MS);
+  });
+
+  it('leaves the boundary value alone', () => {
+    expect(resolveApprovalTtlMs(APPROVAL_TTL_MS)).toBe(APPROVAL_TTL_MS);
+  });
+
+  it('a shortened window is really enforced when a token is presented', () => {
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      const service = new ApprovalService(createTestDb(), {
+        ttlMs: resolveApprovalTtlMs(1_000),
+      });
+      const ticket = service.request({ ...BINDING, summary: 'Uninstall it' });
+      service.grant(ticket.approvalId);
+      vi.advanceTimersByTime(1_001);
+      expect(service.consume(ticket.token, BINDING).outcome).toBe('expired');
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 });

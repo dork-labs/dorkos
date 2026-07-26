@@ -151,11 +151,146 @@ export interface EvalSandbox {
   dorkHome: string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Answering approvals mid-turn (DOR-498)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How an eval case answers the two approval prompts a real turn can park on.
+ *
+ * DorkOS asks twice, through two unrelated mechanisms, and a case that drives a
+ * tool has to satisfy both:
+ *
+ * 1. the RUNTIME's per-tool permission prompt — an `approval_required`
+ *    SessionEvent answered at `POST /api/sessions/:id/approve|deny`. This is the
+ *    prompt a person answers in the chat pane, and it is what stalled every
+ *    tool-executing eval before this policy existed: nothing answered, so the
+ *    turn sat until the harness timed out;
+ * 2. the CAPABILITY TIER GATE — the `approval_required` payload a destructive
+ *    capability returns instead of running, decided at
+ *    `POST /api/approvals/:id/grant|deny`. This is the governance mechanism the
+ *    governance suite exists to prove.
+ *
+ * DELIBERATELY NOT A BLANKET "SAY YES". {@link allowTools} is an allowlist and
+ * everything outside it is DENIED and recorded, so a case cannot accidentally
+ * wave through a tool it never meant to (the governance cases must, for example,
+ * refuse an agent that gives up on the MCP tool and reaches for `Bash`).
+ * {@link capability} names ONE capability id and ONE decision, so the "denied"
+ * case cannot inherit the "granted" case's yes.
+ */
+export interface ApprovalPolicy {
+  /**
+   * Tools whose runtime permission prompt is ANSWERED WITH ALLOW, unqualified
+   * (`marketplace_uninstall`, not `mcp__dorkos__marketplace_uninstall`) — matched
+   * through `toolNameMatches`, never `===`, because the SDK qualifies a tool name
+   * with its MCP server (`oracles/stream.ts`).
+   *
+   * Every prompt for a tool NOT listed here is answered with DENY. Denying is the
+   * safe answer and it keeps the turn moving; leaving a prompt unanswered is what
+   * produced the ten-minute stall this policy exists to end.
+   */
+  allowTools: string[];
+  /**
+   * The ONE capability approval this case decides, or omitted when the case's
+   * whole point is that nobody answers (the expiry case).
+   *
+   * Scoped to a single capability id on purpose. A driver that granted whatever
+   * showed up on `GET /api/approvals/pending` would make the "denied" case a lie:
+   * it would inherit the yes and still look green because nothing was deleted.
+   */
+  capability?: {
+    /** The capability id to decide, e.g. `marketplace.uninstall`. */
+    capabilityId: string;
+    /** What to answer. */
+    decision: 'grant' | 'deny';
+  };
+}
+
+/** One runtime tool-permission prompt the driver answered. */
+export const ToolPermissionRecordSchema = z.object({
+  /** The prompt's `toolCallId` (the durable frame's `id`). */
+  toolCallId: z.string(),
+  /** The tool name exactly as the stream carried it (MCP-qualified). */
+  toolName: z.string(),
+  /** What the driver answered, and why: an allowlist hit, or the deny default. */
+  answer: z.enum(['allow', 'deny']),
+  /** ISO timestamp the answer was POSTed. */
+  answeredAt: z.string(),
+  /** HTTP status the approve/deny route returned. */
+  status: z.number(),
+});
+
+/** Inferred type for {@link ToolPermissionRecordSchema}. */
+export type ToolPermissionRecord = z.infer<typeof ToolPermissionRecordSchema>;
+
+/** One capability approval the driver decided at `/api/approvals/:id/…`. */
+export const ApprovalDecisionRecordSchema = z.object({
+  /** ULID of the approval that was decided. */
+  approvalId: z.string(),
+  /** The capability the approval was bound to. */
+  capabilityId: z.string(),
+  /** The tier the gate reported on the pending card. */
+  tier: z.string(),
+  /** What the driver answered. */
+  decision: z.enum(['granted', 'denied']),
+  /** ISO timestamp the decision was POSTed. */
+  decidedAt: z.string(),
+  /** HTTP status the grant/deny route returned (200 when it was recorded). */
+  status: z.number(),
+  /**
+   * Whatever the case's probe captured IMMEDIATELY BEFORE the decision was sent.
+   *
+   * This is what makes a "granted" case falsifiable rather than decorative. The
+   * package being gone at the END of a run proves only that it is gone; a probe
+   * taken at the instant of the yes proves it was still there while nobody had
+   * said yes — i.e. that the gate actually held. A run where the gate never fired
+   * records no decision at all, so any oracle reading this goes red.
+   */
+  probe: z.unknown().optional(),
+});
+
+/** Inferred type for {@link ApprovalDecisionRecordSchema}. */
+export type ApprovalDecisionRecord = z.infer<typeof ApprovalDecisionRecordSchema>;
+
+/** Everything the approval driver did during a run, for the oracles and the transcript. */
+export const ApprovalDriverLogSchema = z.object({
+  /** Runtime tool-permission prompts answered, in the order they were answered. */
+  toolPermissions: z.array(ToolPermissionRecordSchema),
+  /** Capability approvals decided, in the order they were decided. */
+  decisions: z.array(ApprovalDecisionRecordSchema),
+  /**
+   * Pending capability approvals the driver saw but deliberately left alone
+   * because they did not match {@link ApprovalPolicy.capability} — recorded so
+   * "nobody decided it" is legible as a choice rather than a gap.
+   */
+  ignored: z.array(z.object({ approvalId: z.string(), capabilityId: z.string() })),
+  /**
+   * Anything that went wrong while answering (a non-2xx, a socket error). Never
+   * thrown: a driver fault must surface as eval evidence, not as a runner crash
+   * that hides the turn it was watching.
+   */
+  errors: z.array(z.string()),
+});
+
+/** Inferred type for {@link ApprovalDriverLogSchema}. */
+export type ApprovalDriverLog = z.infer<typeof ApprovalDriverLogSchema>;
+
+/**
+ * An empty driver log — what a case with no {@link ApprovalPolicy} presents to
+ * its oracles, and the fixture value for tests that do not exercise approvals.
+ *
+ * @returns A fresh, empty log.
+ */
+export function emptyApprovalLog(): ApprovalDriverLog {
+  return { toolPermissions: [], decisions: [], ignored: [], errors: [] };
+}
+
 /**
  * Everything an oracle needs to assert an outcome: the sandbox filesystem, the
- * running server's base URL, the driven session id, and every SSE frame the
- * drive loop collected. An oracle reads the sandbox, calls the API, or inspects
- * the collected stream — it never reads the assistant's prose.
+ * running server's base URL, the driven session id, every SSE frame the drive
+ * loop collected, and what the approval driver answered while it ran. An oracle
+ * reads the sandbox, calls the API, or inspects the collected stream — it never
+ * reads the assistant's prose.
  */
 export interface OracleContext {
   /** The isolated sandbox (project cwd + `DORK_HOME`) the eval ran in. */
@@ -166,6 +301,12 @@ export interface OracleContext {
   sessionId: string;
   /** Every SSE frame collected off `GET /api/sessions/:id/events`, in order. */
   frames: SseFrame[];
+  /**
+   * What the approval driver answered during the turn. Empty when the case
+   * carried no {@link ApprovalPolicy} — never undefined, so an oracle that reads
+   * it on a case that forgot its policy fails loudly instead of vacuously.
+   */
+  approvals: ApprovalDriverLog;
 }
 
 /** The result of one oracle: whether the intended side effect occurred, with evidence. */
@@ -298,6 +439,27 @@ export interface EvalCase extends EvalCaseMeta {
    * person otherwise has to grant (spec `agent-trust` §3.3).
    */
   serverEnv?: Record<string, string>;
+  /**
+   * How this case answers approval prompts while its turn runs (DOR-498).
+   *
+   * A case that drives a REAL tool needs one: without it the runtime's
+   * permission prompt goes unanswered and the turn dies on the harness timeout
+   * instead of producing a result. See {@link ApprovalPolicy}. Omitted ⇒ nothing
+   * is answered, which is correct only for a case that drives no tools.
+   */
+  approvalPolicy?: ApprovalPolicy;
+  /**
+   * State captured IMMEDIATELY BEFORE the driver records a capability decision,
+   * stored on {@link ApprovalDecisionRecord.probe}.
+   *
+   * The seam that lets a "granted" case assert the action had NOT happened while
+   * the approval was still undecided — the difference between proving the gate
+   * held and merely noticing the end state. Only called when
+   * {@link ApprovalPolicy.capability} is set and a matching approval appears.
+   *
+   * @param sandbox - The eval sandbox, so the probe can read the host filesystem.
+   */
+  probeBeforeDecision?: (sandbox: EvalSandbox) => Promise<unknown>;
   /** The outcome oracle(s) — ALL must pass. Asserts API/FS/stream state, never prose. */
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */

@@ -135,7 +135,7 @@ import {
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
 } from './services/core/agent-identity/index.js';
-import { ApprovalService } from './services/core/approvals/index.js';
+import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
@@ -922,7 +922,11 @@ async function start() {
   // from the very domains that request approvals (a static import would cycle).
   // The sweep drops rows whose window closed over a day ago; expiry itself is
   // enforced whenever a token is presented, never by this call.
+  // `DORKOS_APPROVAL_TTL_MS` can only SHORTEN the window — the clamp lives in
+  // `resolveApprovalTtlMs`, beside the default it clamps against (DOR-498).
+  const approvalTtlMs = resolveApprovalTtlMs(env.DORKOS_APPROVAL_TTL_MS);
   const approvalService = new ApprovalService(db, {
+    ...(approvalTtlMs !== undefined ? { ttlMs: approvalTtlMs } : {}),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
       return capability ? { title: capability.title, tier: capability.tier } : undefined;

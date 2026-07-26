@@ -63,6 +63,30 @@ import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js
  */
 export const APPROVAL_TTL_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Resolve a configured decision window, allowing it to be SHORTENED and never
+ * lengthened.
+ *
+ * `DORKOS_APPROVAL_TTL_MS` exists so the eval harness can watch an unanswered
+ * approval actually run out of time, which is otherwise unobservable: waiting two
+ * hours is impossible, and a harness that gave up early would be reporting its own
+ * timeout as a governance outcome (DOR-498).
+ *
+ * The clamp is what makes that knob safe to have at all. Shortening the window
+ * makes the gate STRICTER — consent that has run out is refused rather than
+ * honored — while lengthening it would let a "yes" stay spendable long after the
+ * moment a person actually meant it, which is the one property
+ * {@link APPROVAL_TTL_MS} is written to prevent. So the direction is enforced here
+ * rather than trusted to whoever sets the variable.
+ *
+ * @param requested - The configured window in ms, or undefined when unset.
+ * @returns The window to use, or undefined to take the default.
+ */
+export function resolveApprovalTtlMs(requested: number | undefined): number | undefined {
+  if (requested === undefined) return undefined;
+  return Math.min(requested, APPROVAL_TTL_MS);
+}
+
 /** Bytes of CSPRNG randomness behind an approval token (128 bits). */
 const TOKEN_BYTES = 16;
 
