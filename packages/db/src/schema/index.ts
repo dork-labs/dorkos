@@ -10,6 +10,7 @@
 export * from './a2a.js';
 export * from './activity.js';
 export * from './approvals.js';
+export * from './approval-grants.js';
 export * from './agent-identity.js';
 export * from './tasks.js';
 export * from './relay.js';

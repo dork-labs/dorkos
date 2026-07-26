@@ -80,6 +80,7 @@ import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/sessio
 import {
   PendingApprovalsResponseSchema,
   DenyApprovalBodySchema,
+  GrantApprovalBodySchema,
   ApprovalDecisionResponseSchema,
 } from '@dorkos/shared/approval-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
@@ -2514,8 +2515,18 @@ registry.registerPath({
     'agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in ' +
     'every posture, and when local login is enabled an authenticated user is required. With login ' +
     'disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is ' +
-    'recorded in the Activity feed with the posture it was made under.',
-  request: { params: z.object({ id: z.string() }) },
+    'recorded in the Activity feed with the posture it was made under.\n\n' +
+    'The body accepts a `standing` flag, which asks DorkOS to stop asking about this agent doing ' +
+    'this thing. It is currently REFUSED for every caller with `STANDING_GRANTS_NOT_YET_ENFORCED`, ' +
+    'because nothing enforces a standing permission yet. It is accepted and refused rather than ' +
+    'ignored so a caller is never told it got something it did not: when the standing part is ' +
+    'refused, the one-time grant does not happen either. The stricter bar that will guard it is ' +
+    'already live and is checked first, so a caller with no session cookie is refused before ' +
+    'reaching this.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: GrantApprovalBodySchema } } },
+  },
   responses: {
     200: {
       description: 'Approval granted',
@@ -2524,7 +2535,9 @@ registry.registerPath({
     403: {
       description:
         'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
-        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). For `standing: true`, also when ' +
+        'login is off (`standing_grants_require_login`) or the caller has no session cookie ' +
+        '(`operator_cookie_required`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     401: {
@@ -2536,7 +2549,9 @@ registry.registerPath({
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
-      description: 'Already decided',
+      description:
+        'Already decided; or `standing: true` was asked for, which nothing enforces yet ' +
+        '(`STANDING_GRANTS_NOT_YET_ENFORCED`). Nothing is granted in the second case',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     410: {

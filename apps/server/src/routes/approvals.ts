@@ -29,11 +29,25 @@
  * path inherits it, so these routes need no gate of their own; the authority check
  * below is a second, independent one.
  *
+ * ## `standing: true` is accepted and refused, on purpose
+ *
+ * The grant body takes a `standing` flag (spec `agent-approval-settings` §3.5),
+ * and today every use of it is refused with `STANDING_GRANTS_NOT_YET_ENFORCED`.
+ * Nothing reads a standing permission yet: the tier gate has no lookup, so a
+ * permission recorded now would change nothing while reporting success.
+ *
+ * Refusing is not the same as ignoring, and the difference is the point. An
+ * ignored flag would grant the one-time yes and drop the standing half silently,
+ * leaving a person believing they had created a permission that does not exist.
+ * The cookie bar §3.0 requires is enforced FIRST, so it is live and tested before
+ * anything is built on top of it; the phase that adds the gate lookup replaces
+ * the refusal below and nothing else.
+ *
  * @module routes/approvals
  */
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { DenyApprovalBodySchema } from '@dorkos/shared/approval-schemas';
+import { DenyApprovalBodySchema, GrantApprovalBodySchema } from '@dorkos/shared/approval-schemas';
 import type { ApprovalDecisionFailure, ApprovalService } from '../services/core/approvals/index.js';
 import {
   resolveDecisionAuthority,
@@ -41,7 +55,7 @@ import {
   type LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
+import { readCallerAuthority, requireOperatorCookie } from '../lib/caller-authority.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
@@ -161,6 +175,45 @@ export function createApprovalsRouter(
     const authority = decisionAuthority(req, res, options.isLoginEnabled);
     if (!authority.allowed) {
       return res.status(authority.status).json({ error: authority.error, code: authority.code });
+    }
+
+    // Express 5 leaves `req.body` undefined on an empty POST, and `standing` is
+    // optional, so an absent body is a plain one-time yes.
+    const parsed = GrantApprovalBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        code: 'INVALID_GRANT_BODY',
+        details: z.flattenError(parsed.error),
+      });
+    }
+
+    // `standing: true` is RECOGNIZED and refused, never ignored. Ignoring it
+    // would grant the one-time yes and drop the standing half in silence, which
+    // is precisely the outcome that would leave a person believing they had
+    // created a permission that does not exist.
+    //
+    // Both refusals below happen BEFORE anything is granted, so a caller that
+    // asked for two things gets neither and is told which part failed.
+    if (parsed.data.standing === true) {
+      // The stricter bar, checked first because it is the one that has to be in
+      // place before enforcement is built on top of it. See
+      // `requireOperatorCookie`: clearing `resolveDecisionAuthority` above is not
+      // enough, because under `local-trust` omitting two headers clears it.
+      const refusal = requireOperatorCookie(res, options.isLoginEnabled);
+      if (refusal) {
+        return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+      }
+
+      // Nothing reads a standing permission yet: the tier gate has no lookup, so
+      // a permission recorded today would change nothing while telling the caller
+      // it had. Answering honestly is the only option that is not a lie. This
+      // refusal is what the gate lookup replaces.
+      return res.status(409).json({
+        error:
+          'DorkOS cannot stop asking about this yet. Answer this one on its own, and the agent will ask again next time.',
+        code: 'STANDING_GRANTS_NOT_YET_ENFORCED',
+      });
     }
 
     const failure = approvals.grant(req.params.id);

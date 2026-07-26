@@ -92,6 +92,7 @@ describe('UserConfigSchema', () => {
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
+      approvals: { standingGrants: false, trustWindowMinutes: 480 },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       providers: {},
     });
@@ -360,6 +361,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
       auth: { enabled: false },
+      approvals: { standingGrants: false, trustWindowMinutes: 480 },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
       providers: {},
     });

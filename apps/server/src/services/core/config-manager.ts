@@ -194,6 +194,27 @@ export function backfillAuthDefaults(store: {
 }
 
 /**
+ * Migration body: backfill the `approvals` section (standing permissions,
+ * DOR-501) for configs persisted before it existed. Additive + idempotent: only
+ * writes when the key is absent, and the schema default yields the same shape on
+ * read, so this just writes the key through on the upgrade where it lands.
+ *
+ * Seeds `standingGrants: false`. A safety feature does not get quietly relaxed
+ * by an upgrade — nothing changes for an existing user until they ask for it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillApprovalsDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('approvals') == null) {
+    store.set('approvals', { standingGrants: false, trustWindowMinutes: 480 });
+  }
+}
+
+/**
  * Migration body: remove the tunnel passcode fields (`tunnel.passcodeEnabled`,
  * `tunnel.passcodeHash`, `tunnel.passcodeSalt`) and the root `sessionSecret`
  * from stored configs. The tunnel passcode auth path and the cookie-session
@@ -972,16 +993,28 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Put `ui.statusBar` into its pins shape on an existing `ui` block — status-bar
-  // preferences live in server config so devices/agents can read + flip them
-  // (DOR-431), and the line is now quiet by default with an additive pin list
-  // instead of ten subtractive visibility booleans (DOR-452). Idempotent; seeds
-  // nothing pinned, and drops the retired booleans on the one machine shape that
-  // can still carry them (see `migrateStatusBarToPins` for why the reset is
-  // deliberate and why it is not deferred to a later key). Keyed to the next
-  // unreleased version (0.56.0 is already tagged); /system:release reconciles the
-  // key at tag time if the real release differs.
-  '0.57.0': migrateStatusBarToPins,
+  // Composite: DOR-452 and DOR-501 both target "the next unreleased version"
+  // (0.56.0 is already tagged) and an object literal cannot repeat a key, so
+  // their bodies compose here in insertion order — the same convention as the
+  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. Both are independent and
+  // idempotent. /system:release reconciles the key at tag time if the real
+  // release differs.
+  '0.57.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // Put `ui.statusBar` into its pins shape on an existing `ui` block —
+    // status-bar preferences live in server config so devices/agents can read +
+    // flip them (DOR-431), and the line is now quiet by default with an additive
+    // pin list instead of ten subtractive visibility booleans (DOR-452). Seeds
+    // nothing pinned, and drops the retired booleans on the one machine shape
+    // that can still carry them (see `migrateStatusBarToPins` for why the reset
+    // is deliberate and why it is not deferred to a later key).
+    migrateStatusBarToPins(store);
+    // `approvals` section (standing permissions, DOR-501). Additive +
+    // idempotent; seeds the feature OFF, so an upgrade never relaxes the gate.
+    backfillApprovalsDefaults(store);
+  },
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

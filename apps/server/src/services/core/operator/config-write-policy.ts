@@ -275,6 +275,14 @@ export const CONFIG_WRITE_POLICY = {
   // approval enforceable. See the module doc.
   'auth.enabled': 'operator-only',
 
+  // Whether standing permissions may exist, and how long one lasts. Switching
+  // them on removes the card in front of an irreversible action for a whole
+  // window, and lengthening the window widens the same hole, so both sit exactly
+  // on the line this module states. `operator-only` is NECESSARY here but not
+  // SUFFICIENT — see REQUIRES_COOKIE_CONFIG_PATHS.
+  'approvals.standingGrants': 'operator-only',
+  'approvals.trustWindowMinutes': 'operator-only',
+
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
   'cloud.instanceName': 'operator-only',
@@ -294,6 +302,48 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
 
 /** The machine-readable code every operator-only refusal carries. */
 export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
+
+/**
+ * Config paths whose write needs a SESSION COOKIE on top of the `operator-only`
+ * verdict above (spec `agent-approval-settings` §3.0-3.1).
+ *
+ * ## Why `operator-only` is not enough on its own
+ *
+ * That verdict is enforced unconditionally on the capability surface
+ * (`operator-tool-handlers.ts`), but on `PATCH /api/config` it sits inside
+ * `if (!trustedCaller(...))`, and a caller that omits its agent header and its
+ * approval token clears `trustedCaller` under the default `local-trust` posture.
+ * So for these paths the route checks a cookie as well, BEFORE that block and
+ * regardless of its outcome.
+ *
+ * ## Deliberately just this one subtree
+ *
+ * The same divergence is real for `auth.enabled`, `tunnel.*`, `mcp.*` and the
+ * rest, and it is not closed here: extending the cookie requirement to those
+ * would change behavior for flows this change has not examined. That work is
+ * DOR-505.
+ *
+ * ## This list is meant to be temporary
+ *
+ * When DOR-505 closes the header-stripping residual for operator-only config
+ * writes generally, this list becomes a second overlapping check on the same
+ * writes and should be DELETED, not left in place. Whoever implements DOR-505
+ * owns removing it and folding `approvals.*` into the general rule. Written down
+ * because the way parallel mechanisms survive forever is that nobody ever
+ * recorded that one supersedes the other.
+ *
+ * It does NOT cover the cookie requirement on creating a standing permission
+ * itself. That one is a property of the approvals routes, not of the config write
+ * path, and it stands on its own.
+ */
+export const REQUIRES_COOKIE_CONFIG_PATHS: readonly string[] = [
+  'approvals.standingGrants',
+  'approvals.trustWindowMinutes',
+];
+
+/** The `error` field every cookie-required refusal on a config write carries. */
+export const REQUIRES_COOKIE_CONFIG_ERROR =
+  'Only a person signed in to DorkOS can change standing permissions';
 
 /**
  * Every dot-path a patch object touches, including a path that ends at an empty
@@ -317,24 +367,23 @@ function patchPaths(value: unknown, prefix = ''): string[] {
 }
 
 /**
- * Find the operator-only settings a patch tries to write.
+ * Find which of a guarded set of dot-paths a patch tries to write.
  *
  * Matching runs in both directions along the dot-path, so neither a deeper nor a
  * shallower patch slips past: `{ auth: { enabled: false } }` hits `auth.enabled`
  * exactly, `{ auth: true }` hits it as an ancestor, and
  * `{ providers: { anthropic: '…' } }` hits the `providers` record as a descendant.
  *
- * @param patch - The raw patch a caller supplied (any shape; a non-object touches
- *   nothing).
- * @returns The offending policy paths, sorted, each named once. Empty when the
- *   patch is clean.
+ * @param patch - The raw patch a caller supplied.
+ * @param guardedPaths - The policy paths to match against.
+ * @returns The offending policy paths, sorted, each named once.
  */
-export function findOperatorOnlyPaths(patch: unknown): string[] {
+function findGuardedPaths(patch: unknown, guardedPaths: readonly string[]): string[] {
   const touched = patchPaths(patch);
   const hits = new Set<string>();
 
   for (const path of touched) {
-    for (const guarded of OPERATOR_ONLY_CONFIG_PATHS) {
+    for (const guarded of guardedPaths) {
       if (path === guarded || path.startsWith(`${guarded}.`) || guarded.startsWith(`${path}.`)) {
         hits.add(guarded);
       }
@@ -342,6 +391,35 @@ export function findOperatorOnlyPaths(patch: unknown): string[] {
   }
 
   return [...hits].sort();
+}
+
+/**
+ * Find the operator-only settings a patch tries to write.
+ *
+ * @param patch - The raw patch a caller supplied (any shape; a non-object touches
+ *   nothing).
+ * @returns The offending policy paths, sorted, each named once. Empty when the
+ *   patch is clean.
+ */
+export function findOperatorOnlyPaths(patch: unknown): string[] {
+  return findGuardedPaths(patch, OPERATOR_ONLY_CONFIG_PATHS);
+}
+
+/**
+ * Find the settings a patch tries to write that additionally need a session
+ * cookie ({@link REQUIRES_COOKIE_CONFIG_PATHS}).
+ *
+ * Matches the same way {@link findOperatorOnlyPaths} does, so `{ approvals: {} }`
+ * and `{ approvals: true }` are caught as ancestors rather than sliding past a
+ * leaf-exact comparison.
+ *
+ * @param patch - The raw patch a caller supplied (any shape; a non-object touches
+ *   nothing).
+ * @returns The offending policy paths, sorted, each named once. Empty when the
+ *   patch touches none of them.
+ */
+export function findCookieRequiredPaths(patch: unknown): string[] {
+  return findGuardedPaths(patch, REQUIRES_COOKIE_CONFIG_PATHS);
 }
 
 /**

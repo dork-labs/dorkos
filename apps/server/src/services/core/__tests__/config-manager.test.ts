@@ -15,6 +15,7 @@ import {
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
+  backfillApprovalsDefaults,
   backfillCloudDefaults,
   backfillWorkbenchDefaults,
   backfillWorkbenchTerminalGraceTtl,
@@ -1039,9 +1040,16 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
   });
 
   it('is registered in CONFIG_MIGRATIONS at the newest key', () => {
+    // The key is shared with the DOR-501 `approvals` backfill (an object literal
+    // cannot repeat a key), so this asserts the EFFECT rather than the identity
+    // of the function: composing must not drop either body.
     const keys = Object.keys(CONFIG_MIGRATIONS);
     expect(keys[keys.length - 1]).toBe('0.57.0');
-    expect(CONFIG_MIGRATIONS['0.57.0']).toBe(migrateStatusBarToPins);
+
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect(store.data.ui).toMatchObject({ statusBar: { pins: [] } });
+    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
   });
 });
 
@@ -1509,6 +1517,81 @@ describe('scrubRetiredOnboardingSteps migration (shorter first-run flow)', () =>
     expect(onboarding.completedAt).toBe('2026-07-01T00:00:00Z');
     // Unrelated user data survives the upgrade untouched.
     expect((store.get('server') as { port: number }).port).toBe(5000);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('approvals section — standing permissions (DOR-501)', () => {
+  it('fresh install: the schema default has standing permissions switched OFF', () => {
+    // A safety feature does not arrive switched on. Nothing changes for anyone
+    // until they ask for it.
+    expect(USER_CONFIG_DEFAULTS.approvals).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+    });
+  });
+
+  it('upgraded install: seeds the section OFF and leaves other settings alone', () => {
+    const store = createMockStore({ auth: { enabled: true }, server: { port: 5000 } });
+    backfillApprovalsDefaults(store);
+    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.data.auth).toEqual({ enabled: true });
+    expect(store.data.server).toEqual({ port: 5000 });
+  });
+
+  it('never re-relaxes a choice the person already made', () => {
+    // Idempotent, and idempotent in the direction that matters: re-running must
+    // not turn a live setting back off, nor a deliberate off back on.
+    const store = createMockStore({
+      approvals: { standingGrants: true, trustWindowMinutes: 60 },
+    });
+    backfillApprovalsDefaults(store);
+    backfillApprovalsDefaults(store);
+    expect(store.data.approvals).toEqual({ standingGrants: true, trustWindowMinutes: 60 });
+  });
+
+  it('a config written before the section existed upgrades without a wipe (full conf path)', () => {
+    // The half of the surface a fresh-install test cannot reach: a real stored
+    // file from an earlier version, run through the real migration chain.
+    // projectVersion is stated explicitly because SERVER_VERSION lags the
+    // unreleased key this migration is filed under.
+    const dir = path.join(os.tmpdir(), 'test-dork-approvals-backfill-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 5000, cwd: null, boundary: null, open: true },
+        auth: { enabled: true },
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.56.0' } },
+      }),
+      'utf-8'
+    );
+
+    const jsonSchema = z.toJSONSchema(UserConfigSchema, { target: 'jsonSchema2019-09' }) as {
+      properties?: Record<string, unknown>;
+    };
+    const store = new Conf({
+      configName: 'config',
+      cwd: dir,
+      // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+      schema: (jsonSchema.properties ?? {}) as unknown as Schema<Record<string, unknown>>,
+      defaults: USER_CONFIG_DEFAULTS,
+      clearInvalidConfig: false,
+      projectVersion: '0.57.0',
+      migrations: CONFIG_MIGRATIONS,
+    });
+
+    expect(store.get('approvals')).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    // The upgrade does not disturb what was already there, including the login
+    // setting standing permissions depend on.
+    expect((store.get('auth') as { enabled: boolean }).enabled).toBe(true);
+    expect((store.get('server') as { port: number }).port).toBe(5000);
+    expect((store.get('ui') as { theme: string }).theme).toBe('dark');
+    // The composite key's other body still ran, so composing did not drop it.
+    expect(store.get('ui')).toMatchObject({ statusBar: { pins: [] } });
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

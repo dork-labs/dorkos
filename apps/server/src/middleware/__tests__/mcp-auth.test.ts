@@ -324,7 +324,7 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
   it('accepts a per-user identity on a mutating call', async () => {
     // Acceptor 2: shared verifier resolves an identity.
     mockConfig({ authEnabled: false });
-    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1' });
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
     const next = vi.fn() as NextFunction;
     const res = createMockRes();
     await mcpAuth(
@@ -514,7 +514,7 @@ describe('createMcpAuth — login ON (both surfaces)', () => {
   });
 
   it('accepts a per-user identity when login is on', async () => {
-    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1' });
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
     const next = vi.fn() as NextFunction;
     const res = createMockRes();
     await mcpAuth(
@@ -541,7 +541,7 @@ describe('createMcpAuth — login ON (both surfaces)', () => {
   });
 
   it('accepts a per-user identity on an a2a POST when login is on', async () => {
-    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1' });
+    vi.mocked(verifyRequestAuth).mockResolvedValue({ userId: 'owner-1', credential: 'api-key' });
     const next = vi.fn() as NextFunction;
     const res = createMockRes();
     await a2aAuth(

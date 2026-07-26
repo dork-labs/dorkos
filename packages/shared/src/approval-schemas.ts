@@ -73,6 +73,26 @@ export const APPROVAL_OUTCOMES = ['granted', 'denied', 'expired', 'consumed'] as
 /** How a pending approval ended. */
 export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
 
+/** Request body of `POST /api/approvals/:id/grant`. */
+export const GrantApprovalBodySchema = z
+  .object({
+    /**
+     * Ask to also stop being asked about this agent doing this thing.
+     *
+     * Currently refused with `STANDING_GRANTS_NOT_YET_ENFORCED`: nothing reads a
+     * standing permission yet, so recording one would report a success that
+     * changes nothing. Refusing is deliberate and is NOT the same as ignoring the
+     * field, which would grant the one-time yes and drop the standing half in
+     * silence, leaving a person believing they created a permission that does not
+     * exist.
+     */
+    standing: z.boolean().optional(),
+  })
+  .openapi('GrantApprovalBody');
+
+/** Request body of `POST /api/approvals/:id/grant`. */
+export type GrantApprovalBody = z.infer<typeof GrantApprovalBodySchema>;
+
 /** Request body of `POST /api/approvals/:id/deny`. */
 export const DenyApprovalBodySchema = z
   .object({

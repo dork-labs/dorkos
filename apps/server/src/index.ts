@@ -135,7 +135,12 @@ import {
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
 } from './services/core/agent-identity/index.js';
-import { ApprovalService, resolveApprovalTtlMs } from './services/core/approvals/index.js';
+import {
+  ApprovalGrantService,
+  ApprovalService,
+  initStandingGrantPosture,
+  resolveApprovalTtlMs,
+} from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
@@ -939,6 +944,22 @@ async function start() {
     }
   } catch (err) {
     logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  // Standing permissions: the operator's "stop asking about this agent doing
+  // this thing", bounded by a clock. The store is injected into the approvals
+  // router and registered with the posture seam, which ends every live
+  // permission when login or the master switch is turned off.
+  const approvalGrantService = new ApprovalGrantService(db);
+  initStandingGrantPosture(approvalGrantService);
+  try {
+    const purgedGrants = approvalGrantService.purgeExpired();
+    if (purgedGrants > 0) {
+      logger.info(`[Approvals] Purged ${purgedGrants} long-expired standing permissions`);
+    }
+  } catch (err) {
+    logger.warn('[Approvals] Failed to purge expired standing permissions (non-fatal)', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
