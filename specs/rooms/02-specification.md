@@ -12,13 +12,13 @@ Read `01-ideation.md` first for what is already settled and must not be re-argue
 
 ## 1. Vocabulary
 
-| Term           | Meaning                                                                                                                                   |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Room**       | A membership-scoped durable stream. Three kinds: `channel`, `dm`, `thread`.                                                               |
-| **Author**     | Anyone who can post: a human, an agent, or the system. Identified by an opaque `authorId`.                                                |
-| **Membership** | An author's binding to one room, carrying that room's addressing override and read cursor.                                                |
-| **Entry**      | One durable, turn-atomic item in a room's log. Either a `post` (someone said something) or a `notice` (the room says something happened). |
-| **Connection** | The renamed Relay concept — an external adapter (Telegram, Slack, webhook). Never called a channel after this spec.                       |
+| Term            | Meaning                                                                                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Room**        | A membership-scoped durable stream. Three kinds: `channel`, `dm`, `thread`.                                                                                          |
+| **Author**      | Anyone who can post: a human, an agent, or the system. Identified by an opaque `authorId`.                                                                           |
+| **Membership**  | An author's binding to one room, carrying that room's addressing override and read cursor.                                                                           |
+| **Entry**       | One durable, turn-atomic item in a room's log. Either a `post` (someone said something) or a `notice` (the room says something happened).                            |
+| **Integration** | The renamed Relay concept — an external adapter (Telegram, Slack, webhook). Never called a channel after this spec; "Connection" keeps meaning network connectivity. |
 
 ---
 
@@ -168,7 +168,7 @@ Wired in `apps/server/src/index.ts` beside `createWorkspaceSubsystem`. Routes at
 
 | Method   | Path                               | Purpose                                                                                              |
 | -------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/rooms`                       | List rooms visible to the caller. `?kind=` filter. Includes `unreadCount` per room.                  |
+| `GET`    | `/api/rooms`                       | List rooms. `?kind=` filter. `unreadCount` per room — see the scoping rule below.                    |
 | `POST`   | `/api/rooms`                       | Create a channel or DM.                                                                              |
 | `GET`    | `/api/rooms/:id`                   | One room with its roster.                                                                            |
 | `PATCH`  | `/api/rooms/:id`                   | Title, topic, archive.                                                                               |
@@ -181,6 +181,14 @@ Wired in `apps/server/src/index.ts` beside `createWorkspaceSubsystem`. Routes at
 | `POST`   | `/api/rooms/:id/threads`           | Open a thread off an entry.                                                                          |
 
 Every route obtains runtimes via `runtimeRegistry`, never an SDK import. All eleven routes and their schemas are registered in the OpenAPI route registry, and `docs/api/openapi.json` is regenerated (`pnpm docs:export-api`) and committed — an API surface `/api/docs` does not know about is not a shipped API surface. Note the `openapi-fresh` CI job regenerates and diffs, so unregistered routes produce **no drift and a green check**; the gap is silent and has to be closed deliberately.
+
+### Who sees which rooms
+
+- **The local human sees every room.** This is a single-player cockpit; "membership-scoped" in ADR 260726-170125 describes the model, not an authorization rule against the person running the machine.
+- **An agent sees only rooms it is a member of.** That boundary is real today — an agent enumerating the operator's DMs with other agents is an information leak, and it costs one join to prevent.
+- **`unreadCount` is only meaningful for a room you are a member of.** Derive it from the membership cursor or omit it. Never return the room's full entry count for a non-member, which is what a missing join silently produces.
+
+Real per-account scoping arrives with accounts.
 
 ### Who the author of a request is
 
@@ -286,20 +294,37 @@ The unread divider now reads `lastReadSeq` from the membership rather than `loca
 
 ---
 
-## 8. The Connection rename
+## 8. The Integration rename
 
 Mechanical, independently shippable, and it must land before the sidebar section does — two "Channels" in one product, one of them a badge inside the sidebar, is a UX defect on its own.
 
-| File                                                                                                               | Change                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `features/settings/ui/ChannelsTab.tsx` + `SettingsDialog.tsx:36`                                                   | Tab label `Channels` → `Connections`; `ChannelSettingRow` → `ConnectionSettingRow`                       |
-| `features/agent-settings/ui/ChannelsTab.tsx`, `ChannelPicker.tsx`, `BoundChannelRow.tsx`, `ChannelBindingCard.tsx` | User-facing copy and component names → Connection                                                        |
-| `features/relay/ui/ConnectionsTab.tsx`, `RelayEmptyState.tsx:70`                                                   | Body copy "Active Channels" / "Add Channel" → Connections, resolving the existing tab/body inconsistency |
-| `features/mesh/ui/BindingEdge.tsx:37-41`                                                                           | Default edge label `Channel` → `Connection`                                                              |
-| `features/dashboard-status/lib/subsystem-copy.ts:34-42`                                                            | "No channels connected yet" → connections                                                                |
-| `entities/session/config/origin-descriptors.ts:28`                                                                 | `channel: { label: 'Channel' }` → `'Connection'`                                                         |
+**"Channel" is a conversation. Relay's external adapters are "Integrations". "Connection" is left alone and keeps meaning network connectivity.** See ADR 260726-193526, which supersedes ADR-0224.
 
-The `origin` **value** `'channel'` is wire data and stays — this is a display-label change, not a schema change. Run the REVIEW.md dangling-reference sweep over `docs/`, `contributing/` and `*.md`.
+The first attempt at this used "Connection" and was wrong — ADR-0224 had already flagged that collision, and it is real: `ConnectionStatusBanner`, `ConnectionItem` ("Connection lost"), `use-sse-connection.ts`, `SessionInspector`'s "Connection" row, `status-bar-registry.ts:374` and `TestStep.tsx`'s "Connection successful/failed" all mean _is the socket up_. The status bar is always visible, so "Connection lost" beside a "Connections" tab would read as a dropped Telegram integration. Leave every one of those alone.
+
+"Integration" is what `docs/integrations/building-relay-adapters.mdx` has been calling this all along.
+
+| File                                                                                                               | Change                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `features/settings/ui/ChannelsTab.tsx` + `SettingsDialog.tsx:36`                                                   | Tab label → `Integrations`; `ChannelSettingRow` → `IntegrationSettingRow`                                               |
+| `features/agent-settings/ui/ChannelsTab.tsx`, `ChannelPicker.tsx`, `BoundChannelRow.tsx`, `ChannelBindingCard.tsx` | Copy and component names → Integration                                                                                  |
+| `features/agent-hub/ui/tabs/ConfigTab.tsx`                                                                         | The real "Channels" accordion title                                                                                     |
+| `features/agent-hub/ui/tabs/ToolsTab.tsx`, `tool-inventory.ts`, `mcp-tool-groups.ts`                               | The "External Channels" tool group                                                                                      |
+| `entities/binding/ui/BindingDialog.tsx`                                                                            | The "Connect Channel" dialog. **Keep** its "Channel Type" label — that is `ChannelTypeSchema`, the remote surface kind  |
+| `features/relay/ui/ConnectionsTab.tsx`, `RelayEmptyState.tsx:70`, `RelayPanel.tsx:68`                              | → `IntegrationsTab`; body copy "Active Channels" / "Add Channel". Watch for a filename clash — this file already exists |
+| `features/mesh/ui/BindingEdge.tsx:37-41`, `TopologyGraph.tsx`, `AdapterNode.tsx`                                   | Graph labels                                                                                                            |
+| `features/dashboard-status/lib/subsystem-copy.ts:34-42`                                                            | "No channels connected yet"                                                                                             |
+| `shared/lib/shortcuts.ts:84`, `palette-contributions.ts`                                                           | Shortcut and command-palette labels                                                                                     |
+| Tour anchors, tour definitions, DorkBot copy                                                                       | Onboarding prose                                                                                                        |
+| `entities/session/config/origin-descriptors.ts:28`                                                                 | `channel: { label: 'Channel' }` → `'Integration'`                                                                       |
+| `apps/server/.../sessions/classify-origin.ts:72`                                                                   | The generic `originLabel: 'Channel'` fallback. Server-side, but user-facing                                             |
+| `docs/concepts/relay.mdx`, `docs/guides/relay-messaging.mdx`, `docs/integrations/building-relay-adapters.mdx`      | Prose                                                                                                                   |
+
+**Wire data does not change.** The `origin` value `'channel'`, `ChannelTypeSchema`, `channelType`, and every adapter payload stay exactly as they are — `ChannelTypeSchema`'s `'channel'` names the remote surface kind inside Slack or Discord, which is their word for their thing. Nor does telemetry's "Tier 1 channel" prose in `config-schema.ts`. Generated `openapi.json` and shipped changelog entries are excluded.
+
+No database, API, or config migration is involved: no column is named channel, and the settings tab id `'channels'` is a runtime union in `app-store-panels.ts:21`, not persisted.
+
+Run the REVIEW.md dangling-reference sweep over `docs/`, `contributing/` and `*.md`.
 
 ---
 
@@ -318,7 +343,7 @@ The `origin` **value** `'channel'` is wire data and stays — this is a display-
 
 | Phase            | Deliverable                                                                                          | Depends on |
 | ---------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
-| **R0** (DOR-523) | The Connection rename (§8)                                                                           | —          |
+| **R0** (DOR-523) | The Integration rename (§8)                                                                          | —          |
 | **R1** (DOR-524) | Shared schemas, five tables + migration, rooms service, REST + SSE, tests                            | —          |
 | **R2** (DOR-525) | `entities/room`, Transport methods, sidebar sections, `/channels` route, room view rendering history | R1         |
 | **R3** (DOR-526) | Posting, addressing, mentions, triggering agents, cascade guard, read cursor                         | R2         |

@@ -1069,9 +1069,10 @@
       "slug": "channels-vocabulary-over-relay-adapters",
       "title": "User-Facing \"Channels\" Vocabulary Over \"Relay Adapters\"",
       "created": "2026-04-04",
-      "status": "accepted",
+      "status": "superseded",
       "extractedFrom": "channels-and-agent-adapters",
-      "specSlug": "channels-and-agent-adapters"
+      "specSlug": "channels-and-agent-adapters",
+      "supersededBy": "260726-193526"
     },
     {
       "number": 221,
@@ -2908,6 +2909,14 @@
       "id": "260726-170127",
       "slug": "the-room-path-carries-its-own-cascade-guard",
       "title": "The room path carries its own cascade guard, not the relay's budget envelope",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "specSlug": "rooms"
+    },
+    {
+      "id": "260726-193526",
+      "slug": "channel-is-a-conversation-relay-is-an-integration",
+      "title": "\"Channel\" means a conversation; Relay's integrations are called \"Integrations\"",
       "status": "accepted",
       "created": "2026-07-26",
       "specSlug": "rooms"

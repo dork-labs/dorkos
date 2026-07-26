@@ -1,17 +1,23 @@
 ---
 number: 224
 title: User-Facing "Channels" Vocabulary Over "Relay Adapters"
-status: accepted
+status: superseded
 created: 2026-04-04
 spec: channels-and-agent-adapters
-superseded-by: null
+superseded-by: 260726-193526
 ---
 
 # 224. User-Facing "Channels" Vocabulary Over "Relay Adapters"
 
 ## Status
 
-Accepted
+**Superseded by [260726-193526](260726-193526-channel-is-a-conversation-relay-is-an-integration.md)** on 2026-07-26.
+
+The reasoning below was sound for a product with no conversations of its own. DorkOS now
+has them, so "channel" is claimed by the conversation concept and Relay's integrations are
+called **Integrations**. Note that this ADR's own warning about the "Connections" collision
+was correct and caught a wrong first attempt at the replacement — "Connection" already means
+network connectivity here.
 
 ## Context
 
