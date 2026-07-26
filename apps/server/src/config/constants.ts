@@ -157,3 +157,15 @@ export const FILE_LISTING = {
     '.cache',
   ]),
 } as const;
+
+export const ROOMS = {
+  /**
+   * How many trailing entries a cold `GET /api/rooms/:id/events` connect
+   * hydrates with. The log itself is never trimmed — this bounds the opening
+   * frame, not the record. Older history comes back through
+   * `GET /api/rooms/:id/entries?before=<seq>` as the reader scrolls.
+   */
+  SNAPSHOT_HISTORY_LIMIT: 100,
+  /** Default page size for `GET /api/rooms/:id/entries`. */
+  DEFAULT_ENTRY_PAGE_SIZE: 50,
+} as const;

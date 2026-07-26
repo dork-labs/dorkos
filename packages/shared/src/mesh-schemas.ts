@@ -57,9 +57,26 @@ export type AgentHealthStatus = z.infer<typeof AgentHealthStatusSchema>;
 
 // === Agent Configuration ===
 
+/**
+ * When an agent answers without being asked directly.
+ *
+ * The single declaration of this enum. It reaches a second scope in
+ * `room-schemas.ts`, where a room membership carries a per-room override and
+ * this manifest value is only the default (ADR 260726-170125) — that module
+ * imports this schema rather than re-declaring the values, so the two scopes
+ * can never drift.
+ *
+ * Deliberately unnamed for OpenAPI: it stays inlined into
+ * {@link AgentBehaviorSchema}'s generated component so extracting it changed no
+ * byte of `docs/api/openapi.json`.
+ */
+export const ResponseModeSchema = z.enum(['always', 'direct-only', 'mention-only', 'silent']);
+
+export type ResponseMode = z.infer<typeof ResponseModeSchema>;
+
 export const AgentBehaviorSchema = z
   .object({
-    responseMode: z.enum(['always', 'direct-only', 'mention-only', 'silent']).default('always'),
+    responseMode: ResponseModeSchema.default('always'),
     escalationThreshold: z.number().optional(),
   })
   .openapi('AgentBehavior');

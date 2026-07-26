@@ -161,6 +161,7 @@ import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
+import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
@@ -676,6 +677,14 @@ async function start() {
     workspaceReconciler.start();
     logger.info('[Workspace] WorkspaceManager registered');
   }
+
+  // Rooms subsystem (spec `rooms`, ADR 260726-170125) — channels, DMs and
+  // threads. Unconditional: a room is a durable store plus an in-process
+  // broadcaster, so an install with no rooms in it costs one object graph and
+  // no background work. Nothing triggers agents from a room yet (R3).
+  const { service: roomService } = createRoomSubsystem({ db });
+  setRoomService(roomService);
+  logger.info('[Rooms] RoomService registered');
 
   // Initialize Tasks scheduler if enabled
   const schedulerConfig = configManager.get('scheduler');
