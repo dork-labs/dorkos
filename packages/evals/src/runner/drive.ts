@@ -103,6 +103,25 @@ export interface OpenStreamOptions {
    * `aborted` outcome.
    */
   abortWhen?: (frames: SseFrame[]) => boolean;
+  /**
+   * Live frame observer, invoked with EVERY frame collected so far each time new
+   * bytes arrive — the seam the approval driver watches for the runtime's
+   * `approval_required` prompts, which must be answered WHILE the turn is still
+   * running or the turn never ends (DOR-498).
+   *
+   * Receives the currently-subscribed session id alongside the frames, because a
+   * mid-turn remap moves collection onto the canonical id and an observer that
+   * POSTs back to the session (the approve/deny routes) has to address the id the
+   * frames are actually arriving on.
+   *
+   * Called with the CUMULATIVE list, not a delta, matching `abortWhen` — an
+   * observer that acts once per item dedupes on its own (frames are re-parsed
+   * from the raw buffer on every chunk). It must be cheap and synchronous;
+   * anything it throws is reported as a `STREAM_ERROR` rather than swallowed,
+   * because an observer that silently died would leave the turn stalling exactly
+   * as it did before this hook existed.
+   */
+  onFrames?: (frames: SseFrame[], sessionId: string) => void;
 }
 
 /** Options for {@link driveTurn}: a message-triggered turn. */
@@ -283,6 +302,20 @@ function openStream(opts: OpenStreamOptions): LiveStream {
         raw += chunk;
         if (raw.includes('event: snapshot')) markReady();
         const frames = parseFrames(raw);
+        if (opts.onFrames) {
+          try {
+            opts.onFrames(frames, opts.sessionId);
+          } catch (err) {
+            return fail(
+              new DriveError(
+                `/events frame observer threw: ${err instanceof Error ? err.message : String(err)}`,
+                'STREAM_ERROR',
+                undefined,
+                { cause: err }
+              )
+            );
+          }
+        }
         if (opts.abortWhen?.(frames)) return finish('aborted');
         if (frames.some(isTurnEnd)) finish('done');
       });
@@ -501,6 +534,7 @@ export async function driveConversation(
       timeoutMs: opts.timeoutMs,
       readyTimeoutMs: opts.readyTimeoutMs,
       abortWhen: opts.abortWhen,
+      onFrames: opts.onFrames,
     });
     sessionId = turn.canonicalId;
     allFrames.push(...turn.frames);

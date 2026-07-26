@@ -19,7 +19,7 @@ import {
   marketplaceInstallCase,
   capabilityDiscoveryCase,
 } from './operate.js';
-import { approvalGateCase } from './governance.js';
+import { governanceCases } from './governance.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -33,7 +33,7 @@ export const ALL_CASES: EvalCase[] = [
   configToggleCase,
   marketplaceInstallCase,
   capabilityDiscoveryCase,
-  approvalGateCase,
+  ...governanceCases,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -68,8 +68,13 @@ export {
   operateDorkOsCases,
 } from './operate.js';
 export {
-  approvalGateCase,
+  approvalGrantedCase,
+  approvalDeniedCase,
+  approvalExpiresCase,
   governanceCases,
   tierGateStoppedTheUninstall,
-  approvalRecordedInSandboxDb,
+  uninstallApprovalsInDb,
+  uninstallApprovalExpiredUndecided,
+  uninstallApprovalDeniedInDb,
+  uninstallApprovalGrantedAndSpent,
 } from './governance.js';

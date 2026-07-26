@@ -8,7 +8,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
-import type { OracleResult, RubricJudgeResult } from '../types.js';
+import type { ApprovalDriverLog, OracleResult, RubricJudgeResult } from '../types.js';
 
 /** One line in a transcript: a discriminated record (`kind`). */
 export type TranscriptRecord =
@@ -16,7 +16,14 @@ export type TranscriptRecord =
   | { kind: 'prompt'; index: number; content: string }
   | { kind: 'frame'; frame: SseFrame }
   | { kind: 'oracle'; result: OracleResult }
-  | { kind: 'rubric'; result: RubricJudgeResult };
+  | { kind: 'rubric'; result: RubricJudgeResult }
+  /**
+   * What the approval driver answered while the turn ran (DOR-498). Written
+   * BEFORE the oracle records, because it is the input an approval oracle
+   * judged — a reader tracing a red needs to see the decision before the verdict
+   * that rests on it.
+   */
+  | { kind: 'approvals'; log: ApprovalDriverLog };
 
 /** Everything one eval contributes to its transcript. */
 export interface TranscriptInput {
@@ -36,6 +43,8 @@ export interface TranscriptInput {
   oracleResults: OracleResult[];
   /** The rubric result, when the eval carried a rubric. */
   rubricResult?: RubricJudgeResult;
+  /** What the approval driver answered, when the case carried an approval policy. */
+  approvals?: ApprovalDriverLog;
 }
 
 /** The JSONL path for one eval within a run directory. */
@@ -56,6 +65,7 @@ export function toRecords(input: TranscriptInput): TranscriptRecord[] {
   ];
   input.prompts.forEach((content, index) => records.push({ kind: 'prompt', index, content }));
   input.frames.forEach((frame) => records.push({ kind: 'frame', frame }));
+  if (input.approvals) records.push({ kind: 'approvals', log: input.approvals });
   input.oracleResults.forEach((result) => records.push({ kind: 'oracle', result }));
   if (input.rubricResult) records.push({ kind: 'rubric', result: input.rubricResult });
   return records;
