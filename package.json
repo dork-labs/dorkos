@@ -13,7 +13,7 @@
     "test": "dotenv -- turbo test",
     "typecheck": "dotenv -- turbo typecheck",
     "verify": "pnpm test:scripts && turbo run typecheck lint --affected && turbo run test --affected -- --run",
-    "test:scripts": "pnpm typecheck:scripts && bash scripts/test-review-classifier.sh && vitest run --project scripts",
+    "test:scripts": "pnpm typecheck:scripts && bash scripts/test-review-classifier.sh && vitest run --config scripts/vitest.config.ts",
     "start": "dotenv -- pnpm --filter=@dorkos/server run start",
     "lint": "turbo lint",
     "lint:fix": "turbo lint -- --fix",

@@ -32,7 +32,7 @@ name: scripts-test
 
 ### The `harness` job depends on two files OUTSIDE scripts/: the root package.json
 ### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts
-### (registers the `scripts` project that `--project scripts` resolves). Without them
+### (holds the vitest dep this job executes). Without them
 ### in the filter, a PR touching only those could break this job without triggering
 ### it, and the breakage would surface later on an unrelated scripts/ PR.
 on:
@@ -102,4 +102,4 @@ jobs:
         run: pnpm exec eslint scripts/
 
       - name: Unit tests
-        run: pnpm exec vitest run --project scripts
+        run: pnpm exec vitest run --config scripts/vitest.config.ts
