@@ -2,17 +2,27 @@
  * Confirmation provider — gates marketplace mutation tools (install,
  * uninstall, create-package) behind explicit user approval.
  *
- * Three implementations cover the contexts in which an MCP marketplace tool
- * may be invoked:
+ * Two implementations cover the contexts in which an MCP marketplace tool may be
+ * invoked:
  *
- * 1. {@link AutoApproveConfirmationProvider} — for tests and CI runs where
- *    `MARKETPLACE_AUTO_APPROVE=1` opts out of the gate entirely.
- * 2. {@link TokenConfirmationProvider} — for external MCP clients
+ * 1. {@link TokenConfirmationProvider} — for external MCP clients
  *    (Claude Code, Cursor, Codex). Issues short-lived single-use tokens; the
  *    user approves out-of-band in the DorkOS UI; the agent re-calls the tool
  *    with the token.
- * 3. {@link InAppConfirmationProvider} — for in-process callers that wire a
- *    callback to the existing `InstallConfirmationDialog` from spec 03.
+ * 2. {@link InAppConfirmationProvider} — wires a callback to the existing
+ *    `InstallConfirmationDialog` from spec 03, for an in-process caller that
+ *    wants one. No boot path constructs it today; it is exercised only by
+ *    this module's own tests and `tool-install.test.ts`.
+ *
+ * ## There is no third one, and that is deliberate
+ *
+ * An always-approve implementation used to exist behind an environment
+ * variable, for CI and evals. It was removed (DOR-501): a switch that turns a
+ * consent gate off is a second code path nobody watches, and it made every test
+ * that used it evidence about the switch rather than about the product.
+ * Automation now answers the approval through the same routes a person uses —
+ * `GET /api/approvals/pending` then `POST /api/approvals/:id/grant` — which is
+ * both honest and a stronger test. Do not add one back.
  *
  * ## These are wrappers, not a mechanism
  *
@@ -39,7 +49,7 @@ export type ConfirmationOperation = 'install' | 'uninstall' | 'create-package';
 /**
  * Result of a confirmation request, discriminated by `status`.
  *
- * - `approved` — the user (or auto-approve) consented; the caller may proceed.
+ * - `approved` — the user consented; the caller may proceed.
  * - `declined` — the user refused; `reason` is an optional human-readable note.
  * - `pending` — the request is awaiting out-of-band approval; the caller must
  *   re-resolve the returned `token` later.
@@ -119,15 +129,15 @@ export interface MarketplaceConfirmationContext {
 
 /**
  * Generic confirmation provider that gates marketplace mutation tools. Each
- * concrete implementation chooses how the user actually consents — synchronous
- * UI prompt, out-of-band token, or unconditional auto-approval.
+ * concrete implementation chooses how the user actually consents — a
+ * synchronous UI prompt, or an out-of-band token. Every one of them asks
+ * someone; none of them is a way to not ask.
  */
 export interface ConfirmationProvider {
   /**
    * Request user confirmation for an install/uninstall/create-package
-   * operation. Implementations may surface a prompt synchronously (in-app UI),
-   * return a token for out-of-band approval (external MCP clients), or
-   * auto-approve when explicitly configured.
+   * operation. Implementations may surface a prompt synchronously (in-app UI)
+   * or return a token for out-of-band approval (external MCP clients).
    *
    * @param req - The confirmation request payload.
    */
@@ -147,32 +157,6 @@ export interface ConfirmationProvider {
    *   action the token was issued for, field for field.
    */
   resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
-}
-
-/**
- * Confirmation provider that always returns `approved`. Used when
- * `process.env.MARKETPLACE_AUTO_APPROVE === '1'` or in unit tests that want
- * to skip the confirmation gate entirely.
- *
- * Auto-approval short-circuits the primitive rather than auto-granting through
- * it: writing a row per call would flood the cockpit and the Activity feed with
- * approvals nobody ever saw, in exactly the CI and eval runs the flag exists to
- * keep quiet.
- */
-export class AutoApproveConfirmationProvider implements ConfirmationProvider {
-  /**
-   * Always returns `{ status: 'approved' }`.
-   */
-  async requestInstallConfirmation(): Promise<ConfirmationResult> {
-    return { status: 'approved' };
-  }
-
-  /**
-   * Always returns `{ status: 'approved' }` regardless of the token value.
-   */
-  async resolveToken(): Promise<ConfirmationResult> {
-    return { status: 'approved' };
-  }
 }
 
 /** Capability id each marketplace operation is gated as. */

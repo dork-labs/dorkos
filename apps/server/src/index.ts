@@ -119,7 +119,6 @@ import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
-  AutoApproveConfirmationProvider,
   TokenConfirmationProvider,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
@@ -1641,14 +1640,13 @@ async function start() {
     }
 
     // Build the confirmation provider that gates marketplace mutation tools.
-    // `MARKETPLACE_AUTO_APPROVE=1` selects the auto-approve provider for CI
-    // and tests; everything else uses the token provider, which records an
-    // approval the operator decides from the cockpit's approval card
-    // (`POST /api/approvals/:id/grant|deny`).
-    const confirmationProvider: ConfirmationProvider =
-      env.MARKETPLACE_AUTO_APPROVE === '1'
-        ? new AutoApproveConfirmationProvider()
-        : new TokenConfirmationProvider(approvalService);
+    // There is exactly one, and no way to switch it off: it records an approval
+    // the operator decides from the cockpit's approval card
+    // (`POST /api/approvals/:id/grant|deny`). Automation answers that approval
+    // through the same routes a person uses rather than skipping it (DOR-501).
+    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
+      approvalService
+    );
 
     marketplaceMcpDeps = {
       dorkHome,

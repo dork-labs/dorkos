@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { registerMarketplaceTools } from './register-marketplace-tools.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
-import { AutoApproveConfirmationProvider } from '../confirmation-provider.js';
 
 /**
  * Build a stub `McpServer`-like object that records `registerTool()`
@@ -30,7 +29,7 @@ function createStubDeps(): MarketplaceMcpDeps {
     fetcher: {} as MarketplaceMcpDeps['fetcher'],
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
-    confirmationProvider: new AutoApproveConfirmationProvider(),
+    confirmationProvider: {} as MarketplaceMcpDeps['confirmationProvider'],
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

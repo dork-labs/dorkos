@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
-  AutoApproveConfirmationProvider,
   TokenConfirmationProvider,
   InAppConfirmationProvider,
   type ConfirmationResult,
@@ -45,32 +44,6 @@ function buildRequest(
     preview: overrides.preview ?? buildPreview(),
   };
 }
-
-describe('AutoApproveConfirmationProvider', () => {
-  it('always returns approved from requestInstallConfirmation', async () => {
-    const provider = new AutoApproveConfirmationProvider();
-    const result = await provider.requestInstallConfirmation(buildRequest());
-    expect(result).toEqual({ status: 'approved' });
-  });
-
-  it('always returns approved from resolveToken regardless of token value', async () => {
-    const provider = new AutoApproveConfirmationProvider();
-    const result = await provider.resolveToken('any-token-string');
-    expect(result).toEqual({ status: 'approved' });
-  });
-
-  it('returns approved for uninstall and create-package operations too', async () => {
-    const provider = new AutoApproveConfirmationProvider();
-    const uninstall = await provider.requestInstallConfirmation(
-      buildRequest({ operation: 'uninstall' })
-    );
-    const createPkg = await provider.requestInstallConfirmation(
-      buildRequest({ operation: 'create-package' })
-    );
-    expect(uninstall.status).toBe('approved');
-    expect(createPkg.status).toBe('approved');
-  });
-});
 
 describe('TokenConfirmationProvider', () => {
   let provider: TokenConfirmationProvider;
