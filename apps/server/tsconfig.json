@@ -4,9 +4,143 @@
     "outDir": "./dist"
   },
   "include": ["src/**/*"],
+  // This is the CHECK program: it covers src/ AND its test files, so a type error
+  // in a test fails `pnpm --filter @dorkos/server typecheck`. Emit runs from
+  // tsconfig.build.json instead, which drops the tests so they stay out of dist/.
+  //
   // Bundled core-extension SOURCE (src/core-extensions/) is compiled at runtime by
   // the esbuild extension pipeline — like any user extension — not by the server's
   // tsc. Its .ts entries may contain JSX, which this Node tsconfig does not handle.
   // The build step copies the tree verbatim into dist/core-extensions/.
-  "exclude": ["node_modules", "dist", "src/**/__tests__/**", "src/core-extensions/**"]
+  //
+  // The test files listed below are QUARANTINED, not exempt. They already carried
+  // 578 type errors on the day tests were first added to this program (DOR-508):
+  // fixtures that drifted from the types they stand in for. Every OTHER test file,
+  // and every new one, is checked. The list only shrinks: delete an entry, fix what
+  // tsc then reports, and never add one. Absorbing the rest is tracked separately.
+  //
+  // That rule is not a promise — `src/__tests__/tsconfig-quarantine.test.ts`
+  // enforces it. Lowering the baseline there is how you record progress; raising it
+  // is a visible, reviewable act rather than a stray line in a config file.
+  //
+  // Only entries that NOTHING imports can appear here, which in practice means only
+  // `*.test.ts`. `exclude` drops a file from the program's ROOTS, not from the
+  // program: a file an included file imports is pulled back in and checked anyway.
+  // So the shared fixture MODULES under `__tests__` (sdk-scenarios.ts,
+  // codex-scenarios.ts, durable-turn-harness.ts, …) can never be quarantined and
+  // have to be genuinely type-correct. The guard test asserts this too.
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/core-extensions/**",
+    // --- quarantined test files (DOR-508), with their error count ---
+    "src/middleware/__tests__/mcp-auth.test.ts", // 1
+    "src/middleware/__tests__/mcp-enabled.test.ts", // 2
+    "src/routes/__tests__/admin.test.ts", // 2
+    "src/routes/__tests__/agents-conventions.test.ts", // 1
+    "src/routes/__tests__/agents-creation.test.ts", // 2
+    "src/routes/__tests__/agents.test.ts", // 1
+    "src/routes/__tests__/approvals.test.ts", // 2
+    "src/routes/__tests__/capabilities.test.ts", // 2
+    "src/routes/__tests__/command-intents.test.ts", // 5
+    "src/routes/__tests__/config-mcp.test.ts", // 4
+    "src/routes/__tests__/discovery.integration.test.ts", // 5
+    "src/routes/__tests__/extensions-secrets.test.ts", // 2
+    "src/routes/__tests__/extensions.test.ts", // 2
+    "src/routes/__tests__/marketplace-approval-flow.test.ts", // 1
+    "src/routes/__tests__/marketplace.test.ts", // 8
+    "src/routes/__tests__/mcp-config.test.ts", // 2
+    "src/routes/__tests__/relay-binding-test.test.ts", // 1
+    "src/routes/__tests__/relay-conversations.test.ts", // 3
+    "src/routes/__tests__/relay.test.ts", // 8
+    "src/routes/__tests__/session-devtools.test.ts", // 1
+    "src/routes/__tests__/sessions-boundary.test.ts", // 1
+    "src/routes/__tests__/sessions-cross-client.test.ts", // 5
+    "src/routes/__tests__/sessions-events.test.ts", // 2
+    "src/routes/__tests__/sessions-streaming.test.ts", // 5
+    "src/routes/__tests__/sessions-trigger.test.ts", // 6
+    "src/routes/__tests__/sessions-ui-action.test.ts", // 5
+    "src/routes/__tests__/sessions.test.ts", // 10
+    "src/routes/__tests__/standing-grants-chain.test.ts", // 1
+    "src/services/__tests__/transcript-parser.test.ts", // 2
+    "src/services/core/__tests__/agent-creator.test.ts", // 4
+    "src/services/core/__tests__/config-manager.test.ts", // 1
+    "src/services/core/__tests__/context-builder.test.ts", // 5
+    "src/services/core/__tests__/error-reporter.test.ts", // 2
+    "src/services/core/__tests__/mcp-devtools-tools.test.ts", // 7
+    "src/services/core/__tests__/mcp-mesh-tools.test.ts", // 5
+    "src/services/core/__tests__/mcp-relay-tools.test.ts", // 6
+    "src/services/core/__tests__/mcp-resources.test.ts", // 8
+    "src/services/core/__tests__/mcp-tool-gate.test.ts", // 7
+    "src/services/core/__tests__/mcp-tool-server.test.ts", // 11
+    "src/services/core/__tests__/runtime-registry.test.ts", // 1
+    "src/services/core/approvals/__tests__/decision-authority.test.ts", // 2
+    "src/services/core/auth/__tests__/auth.integration.test.ts", // 2
+    "src/services/core/auth/__tests__/cloud-link-client.test.ts", // 14
+    "src/services/core/auth/__tests__/cloud-link.test.ts", // 2
+    "src/services/core/auth/__tests__/session-gate-sse.integration.test.ts", // 1
+    "src/services/core/capabilities/__tests__/mcp-tier-enforcement.test.ts", // 3
+    "src/services/core/capabilities/__tests__/registry.test.ts", // 5
+    "src/services/core/capabilities/__tests__/tier-enforcement.test.ts", // 1
+    "src/services/core/capabilities/__tests__/trusted-caller.test.ts", // 1
+    "src/services/core/mcp-resources/__tests__/resource-parity.test.ts", // 2
+    "src/services/extensions/__tests__/extension-compiler.test.ts", // 1
+    "src/services/extensions/__tests__/extension-lifecycle.integration.test.ts", // 11
+    "src/services/extensions/__tests__/extension-manager-server.test.ts", // 16
+    "src/services/extensions/__tests__/extension-manager-test.test.ts", // 9
+    "src/services/extensions/__tests__/extension-manager.test.ts", // 38
+    "src/services/extensions/__tests__/extension-proxy.test.ts", // 21
+    "src/services/extensions/__tests__/extension-tools.test.ts", // 1
+    "src/services/marketplace-mcp/__tests__/confirmation-provider.test.ts", // 5
+    "src/services/marketplace-mcp/__tests__/integration.test.ts", // 1
+    "src/services/marketplace-mcp/__tests__/tool-get.test.ts", // 11
+    "src/services/marketplace-mcp/__tests__/tool-install.test.ts", // 3
+    "src/services/marketplace-mcp/__tests__/tool-search.test.ts", // 1
+    "src/services/marketplace-mcp/__tests__/tool-uninstall.test.ts", // 1
+    "src/services/marketplace/__tests__/failure-paths.test.ts", // 1
+    "src/services/marketplace/__tests__/flows/install-agent.test.ts", // 5
+    "src/services/marketplace/__tests__/flows/install-plugin.test.ts", // 9
+    "src/services/marketplace/__tests__/flows/install-shape.test.ts", // 5
+    "src/services/marketplace/__tests__/flows/install-skill-pack.test.ts", // 1
+    "src/services/marketplace/__tests__/flows/uninstall.test.ts", // 13
+    "src/services/marketplace/__tests__/flows/update.test.ts", // 1
+    "src/services/marketplace/__tests__/integration.test.ts", // 1
+    "src/services/marketplace/__tests__/marketplace-installer.test.ts", // 8
+    "src/services/marketplace/__tests__/permission-preview.test.ts", // 1
+    "src/services/marketplace/__tests__/telemetry-hook.test.ts", // 1
+    "src/services/marketplace/__tests__/telemetry-privacy.test.ts", // 1
+    "src/services/marketplace/__tests__/telemetry-reporter.test.ts", // 1
+    "src/services/marketplace/source-resolvers/__tests__/git-subdir.test.ts", // 1
+    "src/services/mesh/__tests__/ensure-dorkbot.test.ts", // 2
+    "src/services/observability/__tests__/file-span-processor.test.ts", // 1
+    "src/services/observability/__tests__/trace-proxies.test.ts", // 1
+    "src/services/relay/__tests__/adapter-manager.test.ts", // 3
+    "src/services/relay/__tests__/binding-router.integration.test.ts", // 1
+    "src/services/relay/__tests__/binding-router.test.ts", // 43
+    "src/services/runtimes/claude-code/__tests__/claude-code-runtime-models.test.ts", // 1
+    "src/services/runtimes/claude-code/__tests__/claude-code-runtime-session-contract.test.ts", // 5
+    "src/services/runtimes/claude-code/__tests__/claude-code-runtime.test.ts", // 6
+    "src/services/runtimes/claude-code/__tests__/elicitation.test.ts", // 1
+    "src/services/runtimes/claude-code/__tests__/runtime-cache.test.ts", // 4
+    "src/services/runtimes/claude-code/__tests__/sdk-event-mapper-streaming.test.ts", // 33
+    "src/services/runtimes/claude-code/__tests__/sdk-event-mapper-thinking.test.ts", // 1
+    "src/services/runtimes/claude-code/__tests__/sdk-event-mapper.test.ts", // 1
+    "src/services/runtimes/claude-code/__tests__/session-list-watcher.test.ts", // 4
+    "src/services/runtimes/claude-code/__tests__/session-store-settings.test.ts", // 1
+    "src/services/runtimes/claude-code/sdk/event-mappers/__tests__/message-event-mapper-mcp-app.test.ts", // 1
+    "src/services/runtimes/codex/__tests__/check-dependencies.test.ts", // 3
+    "src/services/runtimes/codex/__tests__/codex-runtime.test.ts", // 18
+    "src/services/runtimes/opencode/__tests__/check-dependencies.test.ts", // 3
+    "src/services/runtimes/opencode/__tests__/opencode-runtime.test.ts", // 20
+    "src/services/runtimes/opencode/__tests__/server-manager.test.ts", // 1
+    "src/services/runtimes/shared/__tests__/agent-context.test.ts", // 3
+    "src/services/runtimes/shared/__tests__/run-probe.test.ts", // 1
+    "src/services/runtimes/test-mode/__tests__/test-mode-runtime.test.ts", // 2
+    "src/services/session/__tests__/session-event-normalizer.test.ts", // 37
+    "src/services/session/__tests__/session-settings-overlay.test.ts", // 1
+    "src/services/session/__tests__/session-state-projector.test.ts", // 19
+    "src/services/shapes/__tests__/fork.test.ts", // 1
+    "src/services/tasks/__tests__/flow-drain-pulse-seat.integration.test.ts", // 1
+    "src/services/terminal/__tests__/terminal-manager.test.ts" // 5
+  ]
 }

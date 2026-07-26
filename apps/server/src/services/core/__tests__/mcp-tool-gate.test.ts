@@ -53,10 +53,14 @@
  * ## What this file deliberately does NOT check
  *
  * That a raw `McpServer` cannot be used as a `ToolRegistrar`. That guarantee is a
- * TYPE, and `apps/server/tsconfig.json` excludes `src/**\/__tests__/**`, so nothing
- * here is typechecked — a `@ts-expect-error` written in this file would be
- * decoration that can never fail. The pin lives in `mcp-tool-gate.ts` next to the
- * brand instead, where `tsc` sees it.
+ * TYPE, and the pin for it lives in `mcp-tool-gate.ts` next to the brand instead.
+ *
+ * The reason has narrowed since that was written. `apps/server/tsconfig.json` used
+ * to exclude `src/**\/__tests__/**` wholesale, so nothing in any test file was
+ * typechecked; DOR-508 fixed that. But THIS file is one of the test files still
+ * quarantined in that tsconfig's `exclude` while its own type errors are worked
+ * off, so a `@ts-expect-error` written here today would still be decoration that
+ * can never fail. When this file leaves quarantine, the pin can move here.
  *
  * @vitest-environment node
  */
