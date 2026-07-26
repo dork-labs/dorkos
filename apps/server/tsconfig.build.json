@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  // The EMIT program. tsconfig.json is the check program and deliberately includes
+  // test files; compiling those would scatter *.test.js through dist/ and make
+  // Vitest's own `include` trip over the compiled copies. `exclude` replaces the
+  // parent's array rather than merging with it, so the parent's entries are
+  // restated here — the blanket __tests__ rule subsumes its quarantine list.
+  //
+  // This narrows the parent and changes nothing else, which is the invariant that
+  // matters: the check program stays a SUPERSET of the emit program. Break that and
+  // `typecheck` can pass while `build` fails, which is a green-check/red-build gap —
+  // the same shape of hole DOR-508 closed. Concretely, that is why the parent keeps
+  // `declaration: true` (from the shared base) even though it never emits: turning
+  // it off there would silence declaration-emit diagnostics like TS2742 for
+  // production source in the check program while `build` still reported them.
+  "exclude": ["node_modules", "dist", "src/core-extensions/**", "src/**/__tests__/**"]
+}

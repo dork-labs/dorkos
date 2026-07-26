@@ -1,9 +1,55 @@
 import { vi } from 'vitest';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Mock } from 'vitest';
+import type { NonNullableUsage, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+
+/**
+ * The stub methods {@link wrapSdkQuery} bolts onto a scenario generator, mirroring
+ * the non-iterator surface of the real `query()` return value.
+ *
+ * Spelled out rather than inferred: `Object.assign` would infer `Mock` from
+ * `@vitest/spy`, a transitive path this package cannot name, so tsc rejects the
+ * inferred type as unportable (TS2742).
+ */
+type SdkQueryStubs = {
+  supportedModels: Mock;
+  supportedCommands: Mock;
+  setPermissionMode: Mock;
+  mcpServerStatus: Mock;
+  close: Mock;
+  reloadPlugins: Mock;
+  getContextUsage: Mock;
+  usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: Mock;
+};
 
 const SESSION_ID = 'test-session-id';
 const BASE_UUID =
   '00000000-0000-4000-8000-000000000001' as `${string}-${string}-${string}-${string}-${string}`;
+
+/**
+ * Builds a complete token-usage record for a result message.
+ *
+ * The SDK's `usage` is `NonNullableUsage`, so every observability field is
+ * required and non-null — there is no partial form of it. Only the token counts
+ * vary between scenarios, so they are parameters and the rest are zeroed.
+ *
+ * @param inputTokens - Input tokens to report
+ * @param outputTokens - Output tokens to report
+ */
+function makeUsage(inputTokens: number, outputTokens: number): NonNullableUsage {
+  return {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 },
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+    inference_geo: 'test-geo',
+    iterations: [],
+    output_tokens_details: { thinking_tokens: 0 },
+    server_tool_use: { web_fetch_requests: 0, web_search_requests: 0 },
+    service_tier: 'standard',
+    speed: 'standard',
+  };
+}
 
 function makeInit(sessionId = SESSION_ID): SDKMessage {
   return {
@@ -19,7 +65,7 @@ function makeInit(sessionId = SESSION_ID): SDKMessage {
     skills: [],
     plugins: [],
     cwd: '/mock',
-    apiKeySource: 'env',
+    apiKeySource: 'user',
     uuid: BASE_UUID,
     claude_code_version: '0.0.0',
   } as SDKMessage;
@@ -36,12 +82,7 @@ function makeResult(sessionId = SESSION_ID): SDKMessage {
     result: '',
     stop_reason: 'end_turn',
     total_cost_usd: 0.0001,
-    usage: {
-      input_tokens: 10,
-      output_tokens: 5,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    },
+    usage: makeUsage(10, 5),
     modelUsage: {},
     permission_denials: [],
     session_id: sessionId,
@@ -56,7 +97,9 @@ function makeResult(sessionId = SESSION_ID): SDKMessage {
  *
  * @param gen - The async generator to wrap
  */
-export function wrapSdkQuery(gen: AsyncGenerator<SDKMessage>) {
+export function wrapSdkQuery(
+  gen: AsyncGenerator<SDKMessage>
+): AsyncGenerator<SDKMessage> & SdkQueryStubs {
   return Object.assign(gen, {
     supportedModels: vi.fn().mockResolvedValue([]),
     supportedCommands: vi.fn().mockResolvedValue([]),
@@ -203,7 +246,10 @@ export async function* sdkCompaction(): AsyncGenerator<SDKMessage> {
   yield {
     type: 'system',
     subtype: 'status',
-    status: 'idle',
+    // `SDKStatus` is 'compacting' | 'requesting' | null — there is no 'idle'. A
+    // resolving status clears `status` and carries `compact_result`, which is the
+    // field the mapper actually branches on.
+    status: null,
     compact_result: 'success',
     session_id: SESSION_ID,
     uuid: BASE_UUID,
@@ -406,12 +452,7 @@ export async function* sdkError(message: string): AsyncGenerator<SDKMessage> {
     result: message,
     stop_reason: 'error',
     total_cost_usd: 0,
-    usage: {
-      input_tokens: 5,
-      output_tokens: 0,
-      cache_read_input_tokens: 0,
-      cache_creation_input_tokens: 0,
-    },
+    usage: makeUsage(5, 0),
     modelUsage: {},
     permission_denials: [],
     errors: [message],
