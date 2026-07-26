@@ -68,7 +68,14 @@ export default defineConfig({
         ),
       },
       {
-        find: '@dorkos/operating-skills',
+        // Anchored, unlike the two above. A bare string `find` is a PREFIX match
+        // in Vite, and the two entries above happen to be safe because they are
+        // already full subpaths with nothing beneath them. This one is a package
+        // ROOT: as a bare string it would also swallow a future
+        // `@dorkos/operating-skills/seed` and rewrite it to `.../src/index.ts/seed`,
+        // which resolves to nothing. The package exports only `.` today, so the
+        // regex is what keeps that a build error instead of a silent one later.
+        find: /^@dorkos\/operating-skills$/,
         replacement: fileURLToPath(
           new URL('../../packages/operating-skills/src/index.ts', import.meta.url)
         ),

@@ -197,17 +197,36 @@ describe('list_capabilities surface', () => {
      * without asking anyone. The destructive names are read out of the tier table
      * rather than typed here, so promoting a tool puts it under this assertion on
      * the same commit.
+     *
+     * The set is narrowed to tools that are NOT catalog capabilities, which is the
+     * same union blind spot review found in the pack guard, seen from the other
+     * side. This description's scope is explicitly the tools ABSENT from the
+     * catalog, so naming a destructive CAPABILITY here would be the overclaim the
+     * `agent` test below already guards against, one tier down. Deriving the
+     * exclusion means that if `tasks_delete` ever migrates onto the registry, this
+     * fails and forces the sentence to stop calling it an absent tool, rather than
+     * leaving a now-false example in the highest-traffic model-facing text there is.
      */
     it('does not tell the model that hand-registered tools are untiered', () => {
       const text = description();
       expect(text.toLowerCase()).not.toContain('carry no permission tier');
       expect(text.toLowerCase()).not.toContain('carries no permission tier');
 
-      const destructiveTools = Object.entries(MCP_TOOL_TIERS)
-        .filter(([, declared]) => declared.tier === 'destructive')
+      const catalogToolNames = new Set(
+        composeDorkOsCapabilityRegistry({
+          logger: noopLogger,
+          operatorDeps: stubOperatorDeps,
+          marketplaceDeps: stubMarketplaceDeps,
+        }).capabilities.flatMap((c) => (c.surfaces.mcp ? [c.surfaces.mcp.toolName] : []))
+      );
+      const destructiveHandRegistered = Object.entries(MCP_TOOL_TIERS)
+        .filter(
+          ([name, declared]) => declared.tier === 'destructive' && !catalogToolNames.has(name)
+        )
         .map(([name]) => name);
-      expect(destructiveTools.length).toBeGreaterThan(0);
-      for (const tool of destructiveTools) expect(text).toContain(tool);
+
+      expect(destructiveHandRegistered.length).toBeGreaterThan(0);
+      for (const tool of destructiveHandRegistered) expect(text).toContain(tool);
     });
 
     it('is written without em-dashes (repo-wide ban on model-facing prose)', () => {
