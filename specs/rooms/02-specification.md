@@ -64,7 +64,9 @@ createdAt        text not null
 lastActivityAt   text not null
 ```
 
-Unique index on `slug` where `kind = 'channel'`. Index on `parentId`.
+Partial unique index on `slug` where `kind = 'channel' AND archived = 0`. Index on `parentId`.
+
+Archived channels are deliberately excluded: a unique index over all channels would let a long-dead `#general` hold that name forever, and "you cannot reuse the name of a channel you archived two years ago" is a bug report waiting to happen.
 
 **A thread is a room with a parent.** One level only: creating a thread whose parent is itself a thread is rejected at the service boundary with a typed error, not silently flattened.
 
@@ -111,7 +113,9 @@ primary key (roomId, seq)
 
 Indexes on `(roomId, id)` and `(roomId, cascadeRoot)`.
 
-**`seq` is allocated inside the insert transaction** (`SELECT COALESCE(MAX(seq),0)+1 FROM room_entries WHERE room_id = ?` in the same tx). SQLite serialises writers, so this is safe and does not need a separate counter table.
+**`seq` is allocated inside the insert transaction** (`SELECT COALESCE(MAX(seq),0)+1 FROM room_entries WHERE room_id = ?` in the same tx), which needs no separate counter table — **but the transaction must be `IMMEDIATE`.**
+
+This is not a tuning preference. Drizzle's default is a _deferred_ transaction, which begins as a reader: it takes a read lock for the `MAX(seq)` select and then cannot upgrade to a write lock if another connection wrote in between, failing `SQLITE_BUSY_SNAPSHOT` with no retry. "SQLite serialises writers" is true of writers and says nothing about a transaction that starts life as a reader. Every write path that allocates a `seq` must pass `{ behavior: 'immediate' }`, and the concurrency test must drive real concurrent writers — flipping the flag should turn the test red.
 
 **There is no trim.** Unlike `EventLog` (capped at 5000, oldest evicted) and `SessionEventStore`, a room log never discards entries — a room that forgets what was said is not a room. Retention, if it is ever needed, is a product decision with its own spec.
 
@@ -149,7 +153,7 @@ New service domain `apps/server/src/services/rooms/`, following the `workspace` 
 
 ```
 rooms/
-  room-store.ts        Drizzle CRUD over the four tables
+  room-store.ts        Drizzle CRUD over the five tables
   author-registry.ts   mint-on-first-use resolution of (kind, naturalKey) -> authorId
   room-service.ts      orchestration: create, join, post, read cursor, thread create
   addressing.ts        who should be triggered by an entry (§5)
@@ -176,7 +180,11 @@ Wired in `apps/server/src/index.ts` beside `createWorkspaceSubsystem`. Routes at
 | `PUT`    | `/api/rooms/:id/read-cursor`       | Set `lastReadSeq`.                                                                                   |
 | `POST`   | `/api/rooms/:id/threads`           | Open a thread off an entry.                                                                          |
 
-Every route obtains runtimes via `runtimeRegistry`, never an SDK import.
+Every route obtains runtimes via `runtimeRegistry`, never an SDK import. All eleven routes and their schemas are registered in the OpenAPI route registry, and `docs/api/openapi.json` is regenerated (`pnpm docs:export-api`) and committed — an API surface `/api/docs` does not know about is not a shipped API surface. Note the `openapi-fresh` CI job regenerates and diffs, so unregistered routes produce **no drift and a green check**; the gap is silent and has to be closed deliberately.
+
+### Who the author of a request is
+
+**Resolved server-side, never from the request body.** An agent-token-bearing request is that agent; otherwise it is the local human. A body-supplied `authorId` is ignored, and there must be a test asserting that. Without this rule any caller could post as anyone, which in a shared room is impersonation rather than a data-integrity nit.
 
 ### SSE
 
