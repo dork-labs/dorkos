@@ -112,6 +112,61 @@ describe('POST /api/runtimes/opencode/provision', () => {
   });
 });
 
+/**
+ * DOR-532 review. `app.ts` sets `trust proxy: 1`, which makes Express derive
+ * `req.hostname` from `X-Forwarded-Host` when the first hop is trusted — and on
+ * a direct connection the first hop is the caller. The locality gate on these
+ * routes used to read `req.hostname`, so any caller could claim to be local by
+ * adding one header. That mattered most in the configuration `DORKOS_TRUSTED_HOSTS`
+ * exists to support (login off, behind a reverse proxy) and on the Docker image,
+ * where `DORKOS_ALLOW_INSECURE_BIND` switches the host guard off entirely.
+ *
+ * A connected tunnel stands in for that deployment: its host is one the host
+ * guard lets through, so the request reaches the route and the route's own gate
+ * is what is under test.
+ */
+describe('X-Forwarded-Host spoofing of the loopback gate', () => {
+  beforeEach(() => {
+    connectTunnel();
+  });
+
+  it.each([
+    ['/api/runtimes/opencode/provision', () => provisionOpenCode],
+    ['/api/runtimes/codex/provision', () => provisionCodex],
+    ['/api/runtimes/opencode/ollama/provision', () => provisionOllama],
+  ])('refuses %s and never installs anything', async (path, getSpy) => {
+    const res = await request(app)
+      .post(path)
+      .set('Host', TUNNEL_HOST)
+      .set('X-Forwarded-Host', 'localhost');
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/locally/i);
+    expect(getSpy()).not.toHaveBeenCalled();
+  });
+
+  it('refuses the OpenRouter OAuth callback', async () => {
+    const res = await request(app)
+      .get('/api/runtimes/opencode/openrouter/oauth/callback?code=abc&state=xyz')
+      .set('Host', TUNNEL_HOST)
+      .set('X-Forwarded-Host', 'localhost');
+
+    expect(res.status).toBe(403);
+  });
+
+  it('still admits a genuine loopback request with the same header present', async () => {
+    vi.mocked(provisionCodex).mockResolvedValue({ ok: true, binaryPath: '/dork/codex' });
+
+    const res = await request(app)
+      .post('/api/runtimes/codex/provision')
+      .set('Host', 'localhost:4242')
+      .set('X-Forwarded-Host', 'evil.example.com');
+
+    expect(res.status).toBe(200);
+    expect(provisionCodex).toHaveBeenCalledOnce();
+  });
+});
+
 describe('POST /api/runtimes/codex/provision', () => {
   beforeEach(() => {
     vi.clearAllMocks();

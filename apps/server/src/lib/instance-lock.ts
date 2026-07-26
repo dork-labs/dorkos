@@ -18,6 +18,7 @@
  *
  * @module lib/instance-lock
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -60,9 +61,12 @@ export type AcquireInstanceLockResult =
     }
   | {
       acquired: false;
-      /** The live instance already holding the data directory. */
-      holder: InstanceLockInfo;
-      /** An actionable operator-facing error naming that instance and the fix. */
+      /**
+       * The instance already holding the data directory. Absent when the lock
+       * file could not be read, so there is no pid or port to report.
+       */
+      holder?: InstanceLockInfo;
+      /** An actionable operator-facing error naming the conflict and the fix. */
       reason: string;
     };
 
@@ -80,6 +84,17 @@ export function isInstanceLockEnabled(): boolean {
   if (env.NODE_ENV === 'test') return false;
   return !env.DORKOS_SKIP_INSTANCE_LOCK;
 }
+
+/**
+ * How much later than the lock's `startedAt` the holding process may appear to
+ * have started before we call it a different process.
+ *
+ * A real holder starts, then writes its lock milliseconds later, so its start
+ * time is always at or before `startedAt`. The slack absorbs coarse reporting
+ * (`ps` truncates to whole seconds) and small clock adjustments. A recycled pid
+ * is off by minutes or days, so a generous window costs nothing.
+ */
+const PID_REUSE_TOLERANCE_MS = 5_000;
 
 /**
  * Whether a process id belongs to a process that is running right now.
@@ -102,20 +117,115 @@ function isProcessAlive(pid: number): boolean {
 }
 
 /**
+ * When a process started, or `null` when this platform cannot say.
+ *
+ * `ps -o lstart=` is POSIX-portable enough for macOS and Linux, which is where
+ * DorkOS runs today. Windows has no `ps`, so the call fails and the caller falls
+ * back to pid-only liveness. The spawn happens only on the rare path where a
+ * lock file exists AND names a live pid, never on a normal boot.
+ *
+ * @param pid - The process id recorded in the lock file.
+ */
+function processStartTime(pid: number): Date | null {
+  try {
+    const raw = execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  } catch {
+    // No `ps` (Windows), no such process, or an unparseable format.
+    return null;
+  }
+}
+
+/** What we could establish about the process named in a lock file. */
+type HolderState =
+  /** No such process, or a different process wearing a recycled pid. */
+  | 'gone'
+  /** Alive, and it started before it wrote the lock — this really is the holder. */
+  | 'live-confirmed'
+  /** Alive, but this platform cannot tell us when it started. */
+  | 'live-unconfirmed';
+
+/**
+ * Decide whether the process named in a lock file is genuinely still holding it.
+ *
+ * Pid existence alone is not enough. After a SIGKILL (an out-of-memory kill,
+ * `pkill -9`, a forced logout) the lock file survives naming a dead pid, and
+ * operating systems wrap pids around onto unrelated processes. A pid-only check
+ * would then refuse every future start forever, while telling the operator to
+ * kill a process that has nothing to do with DorkOS. So we corroborate: the
+ * holder must have STARTED no later than the moment it wrote the lock. A
+ * recycled pid belongs to a process that started afterwards, and is reported
+ * `gone` so the next boot simply takes the lock over.
+ *
+ * @param holder - The claim read from the lock file.
+ */
+function assessHolder(holder: InstanceLockInfo): HolderState {
+  if (!isProcessAlive(holder.pid)) return 'gone';
+
+  const startedAt = processStartTime(holder.pid);
+  if (startedAt === null) return 'live-unconfirmed';
+
+  const lockWrittenAt = Date.parse(holder.startedAt);
+  if (Number.isNaN(lockWrittenAt)) return 'live-unconfirmed';
+
+  return startedAt.getTime() <= lockWrittenAt + PID_REUSE_TOLERANCE_MS ? 'live-confirmed' : 'gone';
+}
+
+/**
  * Build the message printed when another instance already holds the directory.
  * Mirrors the `EADDRINUSE` message: name the conflict, then the command that
  * resolves it.
  *
- * @param holder - The live instance holding the lock.
+ * The `kill` hint appears only when {@link assessHolder} confirmed the process
+ * really is the one that wrote the lock. Unconfirmed, the pid may belong to
+ * something else entirely, and `kill <pid>` would be an instruction to damage an
+ * innocent process (`kill` is a Stop-Process alias in PowerShell, so this is not
+ * only a POSIX concern).
+ *
+ * @param holder - The instance holding the lock.
  * @param dorkHome - The contested data directory.
+ * @param state - How firmly the holder was identified.
  */
-function conflictMessage(holder: InstanceLockInfo, dorkHome: string): string {
+function conflictMessage(
+  holder: InstanceLockInfo,
+  dorkHome: string,
+  state: Exclude<HolderState, 'gone'>
+): string {
+  const stopHint =
+    state === 'live-confirmed'
+      ? `Stop it first (\`kill ${holder.pid}\`), or start this one against a different `
+      : `Stop that instance first — check that process ${holder.pid} really is DorkOS before ` +
+        `you end it — or start this one against a different `;
   return (
     `Another DorkOS instance is already using this data directory (${dorkHome}).\n` +
     `It is running as process ${holder.pid} on port ${holder.port} (DorkOS ${holder.version}).\n` +
-    `Stop it first (\`kill ${holder.pid}\`), or start this one against a different ` +
+    stopHint +
     `directory (\`DORK_HOME=/path/to/other dorkos\`).\n` +
     `If you are certain that process is not DorkOS, set DORKOS_SKIP_INSTANCE_LOCK=true to override.`
+  );
+}
+
+/**
+ * Build the message for a lock file that keeps reappearing but never parses, so
+ * there is no pid to name. Deliberately carries no `kill` command: inventing a
+ * pid here is what produced `kill 0`, which signals the caller's entire process
+ * group — in a shell, the shell itself.
+ *
+ * @param lockPath - The lock file that could not be read.
+ * @param dorkHome - The contested data directory.
+ */
+function unreadableLockMessage(lockPath: string, dorkHome: string): string {
+  return (
+    `Something else is holding the DorkOS lock file for this data directory (${dorkHome}), ` +
+    `and it cannot be read.\n` +
+    `Make sure no other DorkOS is running, then delete ${lockPath} and start again. ` +
+    `Or start this one against a different directory (\`DORK_HOME=/path/to/other dorkos\`).\n` +
+    `DORKOS_SKIP_INSTANCE_LOCK=true skips this check entirely.`
   );
 }
 
@@ -174,27 +284,53 @@ export function acquireInstanceLock(input: AcquireInstanceLockInput): AcquireIns
     }
 
     const holder = readLock(lockPath);
-    if (holder && isProcessAlive(holder.pid)) {
-      return { acquired: false, holder, reason: conflictMessage(holder, input.dorkHome) };
+    if (holder) {
+      const state = assessHolder(holder);
+      if (state !== 'gone') {
+        return {
+          acquired: false,
+          holder,
+          reason: conflictMessage(holder, input.dorkHome, state),
+        };
+      }
     }
-    // Unreadable, or naming a process that is gone: the claim is stale.
-    fs.rmSync(lockPath, { force: true });
+    // Unreadable, or naming a process that is gone (including a recycled pid):
+    // the claim is stale, so clear it and try again. If it will not clear (a
+    // directory sits at the path, the filesystem is read-only, permissions say
+    // no), there is nothing left to try — stop and report the contention rather
+    // than letting a raw filesystem error abort the boot.
+    try {
+      fs.rmSync(lockPath, { force: true });
+    } catch {
+      break;
+    }
   }
 
   const holder = readLock(lockPath);
   if (holder) {
-    return { acquired: false, holder, reason: conflictMessage(holder, input.dorkHome) };
+    const state = assessHolder(holder);
+    return {
+      acquired: false,
+      holder,
+      reason: conflictMessage(
+        holder,
+        input.dorkHome,
+        state === 'gone' ? 'live-unconfirmed' : state
+      ),
+    };
   }
   // Contended by something that keeps recreating the file without a readable
-  // claim. Refusing beats guessing, so report the contention as-is.
-  const unknown: InstanceLockInfo = { pid: 0, port: input.port, startedAt: '', version: 'unknown' };
-  return { acquired: false, holder: unknown, reason: conflictMessage(unknown, input.dorkHome) };
+  // claim. There is no pid to name, so the message names the file instead.
+  return { acquired: false, reason: unreadableLockMessage(lockPath, input.dorkHome) };
 }
 
 /**
- * Remove this process's claim on a data directory. A claim held by a different
- * live process is left alone, so a shutdown racing another instance's start can
- * never delete the winner's lock.
+ * Remove this process's claim on a data directory.
+ *
+ * A claim naming any process other than this one is left alone. Liveness is
+ * deliberately NOT checked: the only cost of leaving a dead process's file
+ * behind is that the next start clears it, whereas deleting a file we do not own
+ * could free the directory out from under an instance that is still running.
  *
  * @param dorkHome - The data directory whose lock should be released.
  */
@@ -202,5 +338,10 @@ export function releaseInstanceLock(dorkHome: string): void {
   const lockPath = path.join(dorkHome, INSTANCE_LOCK_FILENAME);
   const holder = readLock(lockPath);
   if (holder && holder.pid !== process.pid) return;
-  fs.rmSync(lockPath, { force: true });
+  try {
+    fs.rmSync(lockPath, { force: true });
+  } catch {
+    // Shutdown must not fail over a lock file we could not delete. A leftover
+    // file names a pid that is about to be gone, so the next start clears it.
+  }
 }

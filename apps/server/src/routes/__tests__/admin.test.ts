@@ -23,6 +23,9 @@ vi.mock('child_process', () => ({
 import { createAdminRouter, MANAGED_BY_DESKTOP_CODE } from '../admin.js';
 import { spawn } from 'child_process';
 
+/** The data directory the refusal copy has to name so "delete it" is actionable. */
+const DORK_HOME = '/tmp/test-dork-home';
+
 // Mock process.exit to prevent test runner from exiting
 const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
@@ -41,7 +44,7 @@ describe('Admin routes', () => {
     app.use(
       '/api/admin',
       createAdminRouter({
-        dorkHome: '/tmp/test-dork-home',
+        dorkHome: DORK_HOME,
         shutdownServices: mockShutdownServices,
         closeDb: mockCloseDb,
       })
@@ -101,6 +104,30 @@ describe('Admin routes', () => {
       expect(mockCloseDb).not.toHaveBeenCalled();
       expect(mockShutdownServices).not.toHaveBeenCalled();
       expect(mockExit).not.toHaveBeenCalled();
+    });
+
+    // Quitting and reopening IS a restart, so that advice completes the user's
+    // intent. It deletes nothing, so giving it for a reset would send someone
+    // away believing their data was wiped when it is all still there.
+    it('does not tell a reset caller that reopening the app resets anything', async () => {
+      const res = await request(app).post('/api/admin/reset').send({ confirm: 'reset' });
+
+      expect(res.body.error).toContain('Nothing has been deleted');
+      expect(res.body.error).toContain(DORK_HOME);
+      expect(res.body.error).not.toMatch(/open it again instead/);
+    });
+
+    // The 409 is a fixed fact about this deployment, not load to shed. Behind
+    // the limiter, a fourth tap on Restart replaced the explanation with "Too
+    // many admin requests" for five minutes.
+    it('keeps explaining itself past the rate limit', async () => {
+      for (let i = 0; i < 4; i++) {
+        await request(app).post('/api/admin/restart');
+      }
+      const res = await request(app).post('/api/admin/restart');
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe(MANAGED_BY_DESKTOP_CODE);
     });
   });
 

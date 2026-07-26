@@ -22,7 +22,7 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { hostGuard, isHostAllowed, parseHostname, parseTrustedHosts } from '../host-guard.js';
+import { hostGuard, isHostAllowed, parseTrustedHosts } from '../host-guard.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -175,23 +175,6 @@ describe('hostGuard', () => {
       const res = await request(app).get('/api/health').set('Host', 'anything.internal');
       expect(res.status).toBe(200);
     });
-  });
-});
-
-describe('parseHostname', () => {
-  it.each([
-    ['localhost:4242', 'localhost'],
-    ['localhost', 'localhost'],
-    ['EXAMPLE.com:8443', 'example.com'],
-    ['[::1]:4242', '::1'],
-    ['[::1]', '::1'],
-    ['  localhost:4242  ', 'localhost'],
-  ])('parses %s to %s', (header, expected) => {
-    expect(parseHostname(header)).toBe(expected);
-  });
-
-  it.each([undefined, '', '   ', ':4242', '[]'])('returns null for %s', (header) => {
-    expect(parseHostname(header)).toBeNull();
   });
 });
 

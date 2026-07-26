@@ -1,41 +1,40 @@
-import { Router, type Response } from 'express';
+import { Router } from 'express';
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
 import rateLimit from 'express-rate-limit';
 import { env } from '../env.js';
 
 /**
- * Error code returned with the 409 when the desktop app owns the server's
- * lifecycle. Stable contract: the client matches on it to show the right
- * "quit and reopen" copy instead of a generic failure.
+ * Error code accompanying the 409 when the desktop app owns the server's
+ * lifecycle.
+ *
+ * The client does not branch on it today: `system-methods.ts` throws the raw
+ * response text and the Advanced tab toasts that message, so what a person
+ * actually reads is the `error` string below. That is why each message has to
+ * stand on its own. The code is here so a future client CAN branch, and so logs
+ * and tests have something stable to match.
  */
 export const MANAGED_BY_DESKTOP_CODE = 'MANAGED_BY_DESKTOP';
 
 /**
- * Refuse an action that ends this process when something else is responsible for
- * starting it again.
+ * What each admin action says when the desktop app owns the lifecycle.
  *
- * `triggerRestart()` re-spawns `process.argv[0]`. Inside an Electron
- * `UtilityProcess` that is the packaged app executable rather than Node, so the
- * spawn produces no server and the exit leaves the desktop app with nothing to
- * talk to. Refusing is the only honest answer, and it is a 409 (conflict with
- * the current state of the server) rather than a 403, because nothing about the
- * caller is wrong.
- *
- * @param res - The response to write the 409 to.
- * @param action - What the caller asked for, e.g. `restarting`, in a sentence.
- * @returns `true` when the request was answered and the handler must stop.
+ * Keyed by the router-relative path so the refusal can run ahead of the rate
+ * limiter (see {@link createAdminRouter}). Restart and reset need different
+ * copy: quitting and reopening the app IS a restart, so that advice completes
+ * the user's intent, but it deletes nothing, so offering it for a reset would
+ * send someone away believing their data was wiped when it was not.
  */
-function refuseWhenDesktopManaged(res: Response, action: string): boolean {
-  if (env.DORKOS_MANAGED_BY !== 'desktop') return false;
-  res.status(409).json({
-    error:
-      `The DorkOS app starts and stops the server for you, so ${action} it from here ` +
-      `would leave you with no server running. Quit DorkOS and open it again instead.`,
-    code: MANAGED_BY_DESKTOP_CODE,
-  });
-  return true;
-}
+const DESKTOP_MANAGED_REFUSALS: Record<string, (dorkHome: string) => string> = {
+  '/restart': () =>
+    'The DorkOS app starts and stops the server for you, so restarting it from here would ' +
+    'leave you with no server running. Quit DorkOS and open it again instead. That does the ' +
+    'same thing.',
+  '/reset': (dorkHome) =>
+    'The DorkOS app starts and stops the server for you, so it cannot reset itself from here. ' +
+    'Nothing has been deleted. To start over, quit DorkOS, delete the folder at ' +
+    `${dorkHome}, then open DorkOS again. It will set itself up from scratch.`,
+};
 
 /** Dependencies injected into the admin router. */
 export interface AdminDeps {
@@ -90,6 +89,28 @@ function triggerRestart(): void {
 export function createAdminRouter(deps: AdminDeps): Router {
   const router = Router();
 
+  // Ahead of the rate limiter on purpose. A desktop-managed refusal is a fixed
+  // fact about this deployment, not a burst of work to shed, and it costs
+  // nothing to answer. Behind the limiter, a person tapping Restart four times
+  // would get "Too many admin requests" for five minutes instead of the
+  // explanation that tells them what to do.
+  router.use((req, res, next) => {
+    if (env.DORKOS_MANAGED_BY !== 'desktop') {
+      next();
+      return;
+    }
+    // Express routes case-insensitively, so normalize before the lookup.
+    const buildMessage = DESKTOP_MANAGED_REFUSALS[req.path.toLowerCase()];
+    if (!buildMessage) {
+      next();
+      return;
+    }
+    res.status(409).json({
+      error: buildMessage(deps.dorkHome),
+      code: MANAGED_BY_DESKTOP_CODE,
+    });
+  });
+
   const adminLimiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
     max: 3,
@@ -98,8 +119,6 @@ export function createAdminRouter(deps: AdminDeps): Router {
   router.use(adminLimiter);
 
   router.post('/reset', (req, res) => {
-    if (refuseWhenDesktopManaged(res, 'resetting')) return;
-
     const { confirm } = req.body ?? {};
     if (confirm !== 'reset') {
       res.status(400).json({
@@ -123,8 +142,6 @@ export function createAdminRouter(deps: AdminDeps): Router {
   });
 
   router.post('/restart', (_req, res) => {
-    if (refuseWhenDesktopManaged(res, 'restarting')) return;
-
     res.status(200).json({ message: 'Restart initiated.' });
 
     setImmediate(async () => {

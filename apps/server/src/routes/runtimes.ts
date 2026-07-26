@@ -44,21 +44,27 @@ import {
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/ollama-catalog.js';
 import { logger } from '../lib/logger.js';
+import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
 
 const router = Router();
 
 /**
- * Whether a request originated from loopback. Mirrors the tunnel passcode
- * endpoint: a genuine localhost request has `hostname` of `localhost`/`127.0.0.1`
- * (`::1`), while a tunnel request carries the public domain and is rejected.
+ * Reject non-loopback requests with 403; returns `true` when the request was
+ * rejected.
+ *
+ * The locality test reads the RAW `Host` header through the shared
+ * {@link isLoopbackHostHeader}. It used to compare `req.hostname`, which was
+ * spoofable: `app.ts` sets `trust proxy: 1`, so `req.hostname` prefers
+ * `X-Forwarded-Host` from the first hop, and on a direct connection the first
+ * hop is the caller. `Host: dorkos.example.com` + `X-Forwarded-Host: localhost`
+ * passed this gate and reached the package-install and OAuth-callback endpoints
+ * below (DOR-532 review). The repo's own documented nginx config forwards a
+ * client-supplied `X-Forwarded-Host` untouched, so a login-off reverse proxy —
+ * the exact configuration `DORKOS_TRUSTED_HOSTS` exists to support — exposed
+ * this to the internet.
  */
-function isLoopbackRequest(req: Request): boolean {
-  return req.hostname === 'localhost' || req.hostname === '127.0.0.1' || req.hostname === '::1';
-}
-
-/** Reject non-loopback requests with 403; returns `true` when the request was rejected. */
 function rejectNonLoopback(req: Request, res: Response): boolean {
-  if (isLoopbackRequest(req)) return false;
+  if (isLoopbackHostHeader(req.headers.host)) return false;
   res.status(403).json({ error: 'Runtime connect actions are only available locally' });
   return true;
 }
@@ -105,7 +111,7 @@ async function streamRuntimeProvision(
   provision: ProvisionFn,
   runtimeLabel: string
 ): Promise<void> {
-  if (!isLoopbackRequest(req)) {
+  if (!isLoopbackHostHeader(req.headers.host)) {
     res.status(403).json({ error: 'Runtime provisioning is only available locally' });
     return;
   }
@@ -200,7 +206,7 @@ router.post('/opencode/openrouter/oauth/start', (req, res) => {
  * the user to return to DorkOS. Loopback-only (the user's own browser hits it).
  */
 router.get('/opencode/openrouter/oauth/callback', async (req, res) => {
-  if (!isLoopbackRequest(req)) {
+  if (!isLoopbackHostHeader(req.headers.host)) {
     return res.status(403).send('Not available.');
   }
   const state = typeof req.query.state === 'string' ? req.query.state : undefined;
@@ -303,7 +309,7 @@ router.post('/opencode/ollama/pull', async (req, res) => {
  * `ok: false` (the client shows the copyable command). Loopback-only, no sudo.
  */
 router.post('/opencode/ollama/provision', async (req, res) => {
-  if (!isLoopbackRequest(req)) {
+  if (!isLoopbackHostHeader(req.headers.host)) {
     res.status(403).json({ error: 'Runtime provisioning is only available locally' });
     return;
   }

@@ -33,12 +33,16 @@
  * -L` forwards, and `docker run -p 4300:4242` all legitimately carry a port the
  * server never listened on. A port is not a security boundary; the name is.
  *
+ * The header is read RAW (`req.headers.host`), never through `req.hostname` —
+ * see `isLoopbackHostHeader` in `lib/trusted-origins.ts` for why that getter is
+ * attacker-controlled under `trust proxy`.
+ *
  * @module middleware/host-guard
  */
 import type { Request, Response, NextFunction } from 'express';
 import { env } from '../env.js';
 import { logger } from '../lib/logger.js';
-import { getTunnelHost, isLoopbackHost } from '../lib/trusted-origins.js';
+import { getTunnelHost, isLoopbackHost, parseHostname } from '../lib/trusted-origins.js';
 import { configManager } from '../services/core/config-manager.js';
 
 /**
@@ -64,30 +68,9 @@ export function parseTrustedHosts(raw: string | undefined): readonly string[] {
     .filter((host) => host.length > 0);
 }
 
-/**
- * Pull the host name out of a `Host` header, dropping the port and the brackets
- * an IPv6 literal is wrapped in (`[::1]:4242` → `::1`).
- *
- * @param hostHeader - The raw `Host` header value, or `undefined` when absent.
- * @returns The lower-cased host name, or `null` when the header is missing or
- *   carries no name (HTTP/1.1 requires one, so `null` is always a rejection).
- */
-export function parseHostname(hostHeader: string | undefined): string | null {
-  const trimmed = hostHeader?.trim();
-  if (!trimmed) return null;
-
-  if (trimmed.startsWith('[')) {
-    const close = trimmed.indexOf(']');
-    return close > 1 ? trimmed.slice(1, close).toLowerCase() : null;
-  }
-
-  const [hostname] = trimmed.split(':');
-  return hostname ? hostname.toLowerCase() : null;
-}
-
 /** The facts the host decision depends on, all resolved by the caller. */
 export interface HostPolicy {
-  /** The request's host name, from {@link parseHostname}. */
+  /** The request's host name, from `parseHostname` in `lib/trusted-origins.ts`. */
   hostname: string | null;
   /** Operator-configured extra host names, from {@link parseTrustedHosts}. */
   trustedHosts: readonly string[];

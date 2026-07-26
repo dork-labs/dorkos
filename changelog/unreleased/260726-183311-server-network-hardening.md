@@ -1,16 +1,18 @@
 ---
 covers:
   - 'fix(server): validate Host on /api, gate admin restart, lock the data directory (DOR-532)'
+  - 'fix(server): judge caller locality by the real Host header, not a forwarded one (DOR-532)'
 ---
 
 ### Security
 
 - Close a hole where a web page you visit could drive your agents. A page can point its own domain at your own machine, which makes your browser treat it as if it came from DorkOS. DorkOS now answers only to the address you actually use, so that page gets turned away (DOR-532)
 - Reach DorkOS by another name, like `dorkos.example.com` behind a proxy? Set `DORKOS_TRUSTED_HOSTS=dorkos.example.com` and it works again. Turning on login skips the check entirely, and the official Docker image is unchanged (DOR-532)
+- Stop a stranger from installing software on your machine through DorkOS. The buttons that install Ollama, Codex, and OpenCode are meant for you, sitting at your own computer. They trusted a header that any caller can set, so anyone who could reach your instance could start an install. They now judge by the address the request really came in on (DOR-532)
 
 ### Fixed
 
-- Stop the Restart and Reset buttons from leaving the desktop app with no server. They now explain that quitting and reopening DorkOS is the way to restart (DOR-532)
+- Stop the Restart and Reset buttons from leaving the desktop app with no server. Restart now tells you to quit and reopen the app, which does the same thing. Reset tells you plainly that nothing was deleted, and names the folder to remove if you really want to start over (DOR-532)
 
 ### Added
 

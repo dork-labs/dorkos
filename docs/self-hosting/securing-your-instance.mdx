@@ -96,10 +96,15 @@ Separate names with commas and leave the port off. DorkOS matches the name only,
 </Callout>
 
 <Callout type="warn">
-  **Docker operators:** the official image skips this check too, for the same reason it skips the
-  bind check. `DORKOS_ALLOW_INSECURE_BIND=true` hands the network boundary to the container. If
-  other people can reach that container, [enable login
-  first](/docs/self-hosting/docker#with-a-reverse-proxy).
+  **`DORKOS_ALLOW_INSECURE_BIND=true` also turns this address check off.** That setting now does two
+  jobs: it lets DorkOS listen beyond your own machine, and it stops DorkOS checking the address each
+  request arrived under. So if you set it once to get past the startup error, you gave up the
+  rebinding protection above as well, even on `localhost`.
+
+That is the right trade inside a container, which owns its own network boundary, and it is why the
+official Docker image ships with it. It is the wrong trade on a normal machine. If you set it for
+the listening reason alone, [turn on login](#enabling-login) instead and remove it.
+
 </Callout>
 
 ## API keys for MCP, scripts, and agents

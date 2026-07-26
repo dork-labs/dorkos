@@ -32,6 +32,47 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 /**
+ * Pull the host name out of a `Host` header, dropping the port and the brackets
+ * an IPv6 literal is wrapped in (`[::1]:4242` → `::1`).
+ *
+ * @param hostHeader - The raw `Host` header value, or `undefined` when absent.
+ * @returns The lower-cased host name, or `null` when the header is missing or
+ *   carries no name (HTTP/1.1 requires one, so `null` is always a rejection).
+ */
+export function parseHostname(hostHeader: string | undefined): string | null {
+  const trimmed = hostHeader?.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith('[')) {
+    const close = trimmed.indexOf(']');
+    return close > 1 ? trimmed.slice(1, close).toLowerCase() : null;
+  }
+
+  const [hostname] = trimmed.split(':');
+  return hostname ? hostname.toLowerCase() : null;
+}
+
+/**
+ * Whether a request's own `Host` header names this machine.
+ *
+ * Reads the RAW header on purpose. Express's `req.hostname` is NOT safe for this
+ * question: `app.ts` sets `trust proxy: 1`, which makes `req.hostname` prefer
+ * `X-Forwarded-Host` from the first hop — and on a direct connection the first
+ * hop IS the caller. A request carrying `Host: dorkos.example.com` plus
+ * `X-Forwarded-Host: localhost` therefore reports `req.hostname === 'localhost'`
+ * (verified against Express 5 with a raw socket, DOR-532 review). Any check that
+ * decides "is this caller local" from `req.hostname` is spoofable by anyone who
+ * can reach the port; the `Host` header is the value a browser sets from the
+ * address bar and a proxy rewrites deliberately, so it is the one to read.
+ *
+ * @param hostHeader - `req.headers.host`, the raw header value.
+ */
+export function isLoopbackHostHeader(hostHeader: string | undefined): boolean {
+  const hostname = parseHostname(hostHeader);
+  return hostname !== null && isLoopbackHost(hostname);
+}
+
+/**
  * Static loopback dev origins the server always trusts: `localhost` and
  * `127.0.0.1` on both the API port (`DORKOS_PORT`) and the Vite dev port
  * (`VITE_PORT`, default 4241).
