@@ -56,6 +56,22 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+/**
+ * Pins `env.DORKOS_PORT` to a literal this file controls, instead of reading
+ * whatever `DORKOS_PORT` happens to be set to in the process actually running
+ * the suite. Same pattern as `middleware/__tests__/mcp-origin.test.ts`.
+ *
+ * An earlier version derived the expected port from the real `env` (`const
+ * TRUSTED_PORT = env.DORKOS_PORT`), which is correct in every environment but
+ * proves only that the route and the test AGREE on a port — never that they
+ * agree on the RIGHT one. A route that dropped the port from its origin
+ * comparison entirely, or compared only the host, would still pass every test
+ * in this file, because both sides would drift together. Controlling the
+ * input here — and asserting the adjacent, un-pinned port below is refused —
+ * makes the port a genuine part of what's under test.
+ */
+vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
+
 import request from 'supertest';
 import express from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
@@ -64,15 +80,9 @@ import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_PATHS,
 } from '../../services/core/operator/config-write-policy.js';
-import { env } from '../../env.js';
 
-/**
- * The cockpit's own trusted port. Read from `env` rather than hardcoded 4242:
- * a worktree checkout runs on an alternate `DORKOS_PORT` to avoid colliding
- * with other worktrees, and `resolveTrustedOrigins()` (which the route under
- * test calls for real) trusts whatever port is actually configured, not 4242.
- */
-const TRUSTED_PORT = env.DORKOS_PORT;
+/** The literal port `resolveTrustedOrigins()` is pinned to above. */
+const TRUSTED_PORT = 7777;
 
 const DORK_HOME = '/tmp/dork-test';
 
@@ -359,6 +369,21 @@ describe('POST /api/extensions/:id/approve', () => {
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
+    });
+
+    it('refuses the very next port, proving the port is compared and not merely present', async () => {
+      // TRUSTED_PORT is pinned above, so this is the one case that could not
+      // pass by accident: 7778 is a real, well-formed loopback origin, one
+      // port off the one DorkOS actually trusts. Accepting it would mean the
+      // comparison ignores the port (or compares it loosely) rather than
+      // matching the exact origin the server itself composed.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', `http://127.0.0.1:${TRUSTED_PORT + 1}`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
     });
 
     it('lets a caller with no Origin header through, because only browsers send one', async () => {
