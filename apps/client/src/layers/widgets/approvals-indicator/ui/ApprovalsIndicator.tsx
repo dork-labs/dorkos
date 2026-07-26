@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { ShieldCheck, TriangleAlert } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react';
 import {
   ResponsivePopover,
   ResponsivePopoverTrigger,
@@ -183,7 +183,16 @@ export function ApprovalsIndicator() {
               )}
             >
               {trustedOnly ? (
-                <ShieldCheck aria-hidden className="size-3.5 shrink-0" />
+                // Within trustedOnly, permissionsUnreadable is the "can't check"
+                // case, never "N trusted" — a failed read always yields an empty
+                // `permissions` list (see useStandingPermissions), so the two never
+                // overlap. A check-mark shield next to "can't check permissions"
+                // would claim the opposite of what happened.
+                permissionsUnreadable ? (
+                  <ShieldAlert aria-hidden className="size-3.5 shrink-0" />
+                ) : (
+                  <ShieldCheck aria-hidden className="size-3.5 shrink-0" />
+                )
               ) : (
                 <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
               )}
