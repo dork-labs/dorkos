@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { PackageNotInstalledError, type UninstallResult } from '../marketplace/flows/uninstall.js';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
+import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
 
 /**
  * Zod input schema for `marketplace_uninstall`. Exported as a property bag
@@ -90,20 +91,35 @@ function errorContent(err: unknown, code: string, extras: Record<string, unknown
  *
  * @param deps - Marketplace MCP dependency bundle (provides
  *   `confirmationProvider` and `uninstallFlow`).
- * @returns An MCP tool handler accepting {@link UninstallToolArgs}.
+ * @returns An MCP tool handler accepting {@link UninstallToolArgs} and an
+ *   optional caller context.
  */
 export function createUninstallHandler(deps: MarketplaceMcpDeps) {
-  return async (args: UninstallToolArgs) => {
+  return async (args: UninstallToolArgs, context?: MarketplaceConfirmationContext) => {
     // 1. Resolve confirmation. A supplied token comes from a previous
     //    `requires_confirmation` response — never issue a fresh request when
     //    the agent is resuming an out-of-band flow.
-    const confirmation = args.confirmationToken
-      ? await deps.confirmationProvider.resolveToken(args.confirmationToken)
-      : await deps.confirmationProvider.requestInstallConfirmation({
-          packageName: args.name,
-          marketplace: 'installed',
-          operation: 'uninstall',
-        });
+    // Every value that reaches `uninstallFlow.uninstall()` below rides in the
+    // confirmation request, so the approval is bound to this exact effect —
+    // notably `purge`, the difference between a reversible uninstall and one
+    // that deletes the package's saved data and secrets.
+    const confirmationRequest = {
+      packageName: args.name,
+      marketplace: 'installed',
+      operation: 'uninstall' as const,
+      purge: args.purge ?? false,
+      ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
+      ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
+    };
+    // `uninstall` is a destructive capability, so the tier gate in front of this
+    // handler may already have spent an approval a person granted for these exact
+    // arguments. Asking again would put a second card in front of them for one
+    // action (spec `agent-trust` §3.2).
+    const confirmation = context?.preApproved
+      ? ({ status: 'approved' } as const)
+      : args.confirmationToken
+        ? await deps.confirmationProvider.resolveToken(args.confirmationToken, confirmationRequest)
+        : await deps.confirmationProvider.requestInstallConfirmation(confirmationRequest);
 
     if (confirmation.status === 'pending') {
       return jsonContent({

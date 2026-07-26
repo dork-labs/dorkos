@@ -28,19 +28,26 @@ vi.mock('@/layers/entities/config', () => ({
   }),
 }));
 
+// Stands in for the real composer, rendering the one thing these tests care
+// about beyond the callbacks: the line that says why a send cannot happen yet.
 vi.mock('@/layers/features/chat', () => ({
   ChatInput: ({
     value,
     onChange,
     onSubmit,
     placeholder,
+    canSubmit = true,
+    canSubmitReason,
   }: {
     value: string;
     onChange: (v: string) => void;
     onSubmit: () => void;
     placeholder?: string;
+    canSubmit?: boolean;
+    canSubmitReason?: string;
   }) => (
     <div>
+      {!canSubmit && canSubmitReason && <p>{canSubmitReason}</p>}
       <input
         data-testid="composer"
         aria-label={placeholder}
@@ -141,5 +148,21 @@ describe('DashboardComposerSection', () => {
     // Never start a session with the config-composed fallback path.
     expect(Object.keys(useAgentBirthStore.getState().records)).toHaveLength(0);
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // The refusal above is correct and used to be completely silent: this is very
+  // often the first sentence anyone types into DorkOS, and pressing Enter did
+  // nothing with nothing on screen to explain it.
+  it('says why the send is waiting while the default agent path resolves', () => {
+    mockResolved = false;
+    render(<DashboardComposerSection />);
+
+    expect(screen.getByText('Getting your agent ready…')).toBeInTheDocument();
+  });
+
+  it('says nothing once the default agent path has resolved', () => {
+    render(<DashboardComposerSection />);
+
+    expect(screen.queryByText('Getting your agent ready…')).toBeNull();
   });
 });

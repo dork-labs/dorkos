@@ -21,6 +21,19 @@ export const CONTEXT_WARNING_PERCENT = 80;
 /** Context usage at/above which a session is "at the ceiling" — red. */
 export const CONTEXT_CRITICAL_PERCENT = 95;
 
+/**
+ * Context usage at/above which the status line stops being quiet about it. Below
+ * this the number is wallpaper — a session that is 12% full is not news.
+ */
+export const CONTEXT_PROMOTE_PERCENT = 70;
+
+/**
+ * Context usage at/above which the context item grows its inline Compact
+ * action. Deliberately higher than {@link CONTEXT_PROMOTE_PERCENT}: seeing the
+ * number is the early warning, offering the fix is the late one.
+ */
+export const CONTEXT_ACTION_PERCENT = 85;
+
 /** Severity band for a context-usage percent. */
 export type ContextSeverity = 'ok' | 'warning' | 'critical';
 

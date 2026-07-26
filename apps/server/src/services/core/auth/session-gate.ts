@@ -40,6 +40,19 @@ import { getAuth } from './index.js';
 export interface RequestUser {
   /** The Better Auth user id that owns the session cookie or API key. */
   userId: string;
+  /**
+   * WHICH credential proved this identity.
+   *
+   * Required, not optional, and that is the point. A few writes are reserved for
+   * a person sitting in the cockpit rather than for anything holding a valid
+   * credential — creating a standing permission, and changing the settings that
+   * govern them (spec `agent-approval-settings` §3.0). A per-user API key
+   * satisfies this gate exactly as a browser session does (DOR-474), so those
+   * writes have to be able to tell the two apart, and `undefined` reading as
+   * "not a cookie" would be correct by accident rather than by type. Every site
+   * that resolves an identity states which credential it verified.
+   */
+  credential: 'cookie' | 'api-key';
 }
 
 /** Paths the gate protects: the API surface and the external MCP endpoint. */
@@ -82,8 +95,13 @@ function extractBearerToken(authorization: string | undefined): string | null {
  * Shared by {@link sessionGate} and the MCP auth middleware so there is exactly
  * one credential-verification path.
  *
+ * Each returning path names the credential it verified, because a caller holding
+ * a per-user API key is not the same principal as a person in a browser session
+ * and a few writes turn on telling them apart (see {@link RequestUser}).
+ *
  * @param req - The incoming Express request (its headers carry the credentials).
- * @returns The resolved `{ userId }`, or `null` when unauthenticated.
+ * @returns The resolved identity and how it was proved, or `null` when
+ *   unauthenticated.
  */
 export async function verifyRequestAuth(req: Request): Promise<RequestUser | null> {
   const auth = getAuth();
@@ -95,7 +113,7 @@ export async function verifyRequestAuth(req: Request): Promise<RequestUser | nul
   try {
     const result = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
     if (result?.user?.id) {
-      return { userId: result.user.id };
+      return { userId: result.user.id, credential: 'cookie' };
     }
   } catch (error) {
     logger.debug('[Auth] Session cookie verification failed', {
@@ -111,7 +129,7 @@ export async function verifyRequestAuth(req: Request): Promise<RequestUser | nul
       // The apiKey plugin stores the owning user id in `referenceId`. Require it
       // to be non-empty: a valid key must resolve to an owner, never `''`.
       if (result.valid && result.key?.referenceId) {
-        return { userId: result.key.referenceId };
+        return { userId: result.key.referenceId, credential: 'api-key' };
       }
     } catch (error) {
       logger.debug('[Auth] API key verification failed', {

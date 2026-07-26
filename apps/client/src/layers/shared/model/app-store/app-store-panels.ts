@@ -16,7 +16,6 @@ import type { AppState } from './app-store-types';
 export type SettingsTab =
   | 'appearance'
   | 'preferences'
-  | 'statusBar'
   | 'server'
   | 'tools'
   | 'channels'

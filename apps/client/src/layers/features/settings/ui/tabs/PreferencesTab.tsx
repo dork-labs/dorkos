@@ -27,8 +27,6 @@ export function PreferencesTab() {
     setAutoHideToolCalls,
     devtoolsOpen,
     toggleDevtools,
-    showShortcutChips,
-    setShowShortcutChips,
     showTaskCelebrations,
     setShowTaskCelebrations,
     enableNotificationSound,
@@ -97,13 +95,6 @@ export function PreferencesTab() {
             description="Fade out completed tool calls after a few seconds"
             checked={autoHideToolCalls}
             onCheckedChange={setAutoHideToolCalls}
-          />
-
-          <SwitchSettingRow
-            label="Show shortcut chips"
-            description="Display shortcut hints below the message input"
-            checked={showShortcutChips}
-            onCheckedChange={setShowShortcutChips}
           />
 
           <SwitchSettingRow

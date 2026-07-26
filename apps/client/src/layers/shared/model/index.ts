@@ -17,7 +17,8 @@ export {
   type ResolvedTheme,
 } from './use-theme';
 export { useReportIssue } from './report-issue/use-report-issue';
-export { useIsMobile } from './use-is-mobile';
+export { useIsMobile } from './media/use-is-mobile';
+export { useIsTouchOnly } from './media/use-is-touch-only';
 export { useVisualViewportBottomInset } from './viewport/use-visual-viewport-inset';
 export { useFavicon } from './use-favicon';
 export { useDocumentTitle } from './use-document-title';
@@ -45,7 +46,13 @@ export {
   useAgentBirthRecord,
   type AgentBirthRecord,
 } from './agent-birth/agent-birth-store';
-export type { ChatMessage, MessageGrouping, GroupPosition } from './chat-message-types';
+export type {
+  ChatMessage,
+  ChatStatus,
+  MessageGrouping,
+  GroupPosition,
+  MessageAuthor,
+} from './chat-message-types';
 export { useTabVisibility } from './use-tab-visibility';
 export {
   useSSEConnection,

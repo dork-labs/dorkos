@@ -21,6 +21,12 @@ import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { updateAgentManifest, AgentUpdateError } from './agent-updater.js';
 import { applyConfigPatch, sanitizedConfigSnapshot } from './config-patch.js';
+import {
+  findOperatorOnlyPaths,
+  describeOperatorOnlyRefusal,
+  OPERATOR_ONLY_CONFIG_CODE,
+  OPERATOR_ONLY_CONFIG_ERROR,
+} from './config-write-policy.js';
 import { getLatestVersion } from '../update-checker.js';
 import { listRecentSessions } from '../../session/index.js';
 
@@ -160,10 +166,10 @@ export function createActivityListHandler(deps: McpToolDeps) {
 }
 
 /**
- * `config_get` — return the user config snapshot with sensitive keys redacted
- * (via {@link sanitizedConfigSnapshot}). Secrets like `mcp.apiKey` must never
- * reach the tokenless external `/mcp` surface or the model's context, mirroring
- * what `GET /api/config` omits.
+ * `config_get` — return the allowlisted user config snapshot (via
+ * {@link sanitizedConfigSnapshot}). Neither a secret nor a credential reference
+ * may reach the tokenless external `/mcp` surface or the model's context; the
+ * projection in `config-disclosure.ts` is the authority on what does.
  *
  * @returns The bound handler (no deps; reads the config singleton).
  */
@@ -186,10 +192,35 @@ export function createConfigGetHandler() {
  * `PATCH /api/config`). A user-settings mutation: the tool description flags
  * that it requires explicit user intent.
  *
+ * Posture-bearing settings are refused here, before anything is written. This is
+ * the AGENT surface: tier `act` means no approval is asked, so leaving the patch
+ * unbounded let an agent turn off login, which is the one setting the destructive
+ * approval gate depends on. The guard lives at this layer, not inside
+ * {@link applyConfigPatch}, because the cockpit's own enable-login and
+ * disable-login flows go through that shared function via `PATCH /api/config` and
+ * must keep working. See `config-write-policy.ts` for the classification and its
+ * reasoning.
+ *
+ * A patch that touches even one operator-only path is refused whole: no partial
+ * write, so an agent cannot smuggle a posture change in behind a legitimate one.
+ *
  * @returns The bound handler (no deps; writes via the config singleton).
  */
 export function createConfigPatchHandler() {
   return async (args: { patch?: Record<string, unknown> }): Promise<OperatorToolResult> => {
+    const operatorOnly = findOperatorOnlyPaths(args.patch);
+    if (operatorOnly.length > 0) {
+      return jsonResult(
+        {
+          error: OPERATOR_ONLY_CONFIG_ERROR,
+          code: OPERATOR_ONLY_CONFIG_CODE,
+          paths: operatorOnly,
+          message: describeOperatorOnlyRefusal(operatorOnly),
+        },
+        true
+      );
+    }
+
     const result = applyConfigPatch(args.patch);
     if (!result.ok) {
       return jsonResult(

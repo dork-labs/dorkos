@@ -13,12 +13,14 @@
  *
  * The credentialed CHILD-PROCESS mode ({@link startChildProcessServer}):
  * an {@link IsolationLauncher} runs the server from its TS source (via tsx)
- * against a sandbox `DORK_HOME` with `ANTHROPIC_API_KEY` + a cheap model, and
- * this module polls
+ * against a sandbox `DORK_HOME` with the resolved model credential + a cheap
+ * model, and this module polls
  * `/api/health` until it is ready. Because the process is out-of-band, that tier
  * gets REAL per-eval isolation (no shared singletons / env mutation), unlike the
- * serial-only in-process mode. The launcher is the seam a future `docker` tier
- * plugs into — see `isolation/types.ts`.
+ * serial-only in-process mode. The launcher is the seam the hardened `docker`
+ * tier plugs into — see `isolation/types.ts`. This module polls whatever
+ * `baseUrl` the launcher reports and never assumes the server is listening on the
+ * host directly (the docker tier's is not).
  *
  * @module evals/runner/harness-server
  */
@@ -35,6 +37,18 @@ export interface HarnessServer {
   /** The `DORK_HOME` this server was booted against (the sandbox). */
   dorkHome: string;
   /**
+   * The path THIS SERVER sees for the sandbox project directory, when it differs
+   * from the host path (the docker tier's container mount point). Undefined for
+   * the local tiers, whose view is the host filesystem. The drive loop prefers
+   * it for `?cwd=`; oracles always read the host sandbox.
+   */
+  projectCwd?: string;
+  /**
+   * Identifier of the underlying isolation unit when externally inspectable (the
+   * docker tier's container id), so a retained failure is findable.
+   */
+  containerId?: string;
+  /**
    * Stop the server and free every resource the boot held. The in-process mode
    * closes the sandbox DB and restores the `process.env` it mutated (`DORK_HOME`,
    * `DORKOS_TEST_RUNTIME`) to their pre-boot values; the child-process mode kills
@@ -49,8 +63,12 @@ export interface HarnessServer {
    * unwind them is not worth it. Acceptable because in-process servers boot
    * SERIALLY (the next boot OVERWRITES each singleton) and the harness owns the
    * whole process; nothing outside the runner reads them between boots.
+   *
+   * @param opts.failed - True when the eval FAILED, so a tier that can retain
+   *   post-mortem state (the docker tier keeps the stopped container + its logs)
+   *   does; other tiers ignore it.
    */
-  dispose: () => Promise<void>;
+  dispose: (opts?: { failed?: boolean }) => Promise<void>;
 }
 
 /** Options for {@link startInProcessServer}. */
@@ -225,15 +243,15 @@ export interface StartChildProcessServerOptions {
   dorkHome: string;
   /** Host to bind. Defaults to `127.0.0.1` (loopback only). */
   host?: string;
-  /**
-   * The `ANTHROPIC_API_KEY` the credentialed runtime authenticates with. Without
-   * it the boot fails (the real runtime cannot reach a model) — the caller gates
-   * on it so a missing key is a runner error, not a false pass.
-   */
-  anthropicApiKey?: string;
   /** Cheap default model (`ANTHROPIC_MODEL`). Defaults to {@link DEFAULT_CHEAP_MODEL}. */
   model?: string;
-  /** Extra environment for the launched server (per-eval overrides). */
+  /**
+   * Extra environment for the launched server: the resolved model credential
+   * (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, from
+   * `runner/credentials.ts`) plus any per-eval overrides. May be empty when the
+   * run authenticates through the `claude` sign-in on this machine, which the
+   * child-process launcher inherits rather than being handed as a value.
+   */
   env?: Record<string, string>;
   /** Health-poll budget in ms. Defaults to {@link DEFAULT_HEALTH_TIMEOUT_MS}. */
   readyTimeoutMs?: number;
@@ -266,7 +284,6 @@ export async function startChildProcessServer(
     ANTHROPIC_MODEL: opts.model ?? DEFAULT_CHEAP_MODEL,
     ...opts.env,
   };
-  if (opts.anthropicApiKey) env.ANTHROPIC_API_KEY = opts.anthropicApiKey;
 
   const launched = await launcher.launch({ dorkHome: opts.dorkHome, host, port, env });
 
@@ -285,6 +302,10 @@ export async function startChildProcessServer(
   return {
     baseUrl: launched.baseUrl,
     dorkHome: opts.dorkHome,
-    dispose: () => launched.kill(),
+    // A tier whose server sees the sandbox at a different path (docker) reports
+    // it; local tiers leave both undefined.
+    ...(launched.projectCwd !== undefined ? { projectCwd: launched.projectCwd } : {}),
+    ...(launched.containerId !== undefined ? { containerId: launched.containerId } : {}),
+    dispose: (disposeOpts) => launched.kill(disposeOpts),
   };
 }

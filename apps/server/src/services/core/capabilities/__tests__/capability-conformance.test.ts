@@ -8,6 +8,20 @@
  * tiers and carve-out flags agree, that no two capabilities collide on an
  * OpenAPI route, and that the docs projection serves the same routes as boot.
  *
+ * It also proves the tier gate is real on ALL THREE adapter paths (spec
+ * `agent-trust` §3.2). The probes drive the registry's one genuinely `destructive`
+ * capability — `marketplace.uninstall` — through the REAL invoke route, the REAL
+ * in-session adapter, and the REAL external adapter, with an agent identity and no
+ * approval token, and assert each comes back with an `approval_required` payload
+ * while the fake `uninstallFlow` never runs. A path that forgets the gate fails
+ * here; the shared suite's own test proves this check can fail.
+ *
+ * And it proves the other half of the gate: `requesterDecideProbe` takes the
+ * approval the REAL invoke route just handed an anonymous caller and tries to grant
+ * it through the REAL approvals router as that same caller. That must be refused
+ * with the approval left pending — otherwise an agent grants its own permission,
+ * which is precisely what review reproduced end to end.
+ *
  * The registry is composed with FAKE operator + marketplace deps, and the three
  * non-hermetic seams the operator handlers reach through module singletons —
  * `config-patch` (config snapshot/merge), `update-checker` (npm fetch), and the
@@ -21,9 +35,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
+import express from 'express';
+import request from 'supertest';
 import { noopLogger } from '@dorkos/shared/logger';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { capabilityConformance } from '@dorkos/test-utils';
+
+import { createTestDb } from '@dorkos/test-utils/db';
 
 // ── Mock the non-hermetic seams the operator handlers reach through ─────────
 // config.get / config.patch read + write the real `configManager` singleton via
@@ -72,6 +90,12 @@ const operatorDeps = {
   meshCore: { listWithPaths: () => [] },
 } as unknown as McpToolDeps;
 
+/**
+ * Set by the fake `uninstallFlow` if it is ever reached. The destructive-gate
+ * probes read it to prove the capability's handler did NOT run.
+ */
+let uninstallReached = false;
+
 /** An empty permission preview, the shape `installer.preview` returns. */
 const emptyPreview = {
   fileChanges: [],
@@ -116,6 +140,9 @@ const marketplaceDeps = {
   cache: {},
   uninstallFlow: {
     uninstall: async () => {
+      // Records the side effect the tier gate must prevent, THEN refuses — so a
+      // probe can tell "the gate held" from "the gate let it through".
+      uninstallReached = true;
       throw new Error('uninstall must not be reached in conformance (gated at pending)');
     },
   },
@@ -149,8 +176,172 @@ const externalToolNames = Object.keys(
 // check is future-proofing; keep it in lock-step with cli.ts if that changes.
 const CLI_VERBS = ['agent', 'task', 'activity', 'capabilities', 'call', 'version'];
 
+// ── Destructive-gate probes: the three real adapter paths ──────────────────
+const { createCapabilitiesInvokeRouter } =
+  await import('../../../../routes/capabilities-invoke.js');
+const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
+const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
+const { ApprovalService } = await import('../../approvals/index.js');
+
+/** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
+const PROBE_IDENTITY = {
+  agentPath: path.join(SANDBOX_CWD, 'agents', 'prober'),
+  displayName: 'Prober',
+  tierCeiling: 'destructive' as const,
+  createdAt: new Date().toISOString(),
+};
+
+/** The one genuinely destructive capability in the composed registry. */
+const DESTRUCTIVE_ID = 'marketplace.uninstall';
+
+/** Its MCP tool name, read off the registry rather than restated. */
+const DESTRUCTIVE_TOOL = registry.get(DESTRUCTIVE_ID)!.surfaces.mcp!.toolName;
+
+/** The input every probe attempts, and that the approval would be bound to. */
+const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
+
+// Arm the gate over a real approval service on a throwaway database, exactly as
+// boot does — so the probes exercise the real request/consume path, not a stub.
+const approvalService = new ApprovalService(createTestDb());
+initCapabilityTierGate({ approvals: approvalService });
+
+/** Read a plain payload back out of an MCP text-content result. */
+function unwrapText(result: { content: { type: string; text?: string }[] }): unknown {
+  return JSON.parse(result.content[0].text ?? 'null');
+}
+
+/** What one adapter path did when handed a destructive capability with no approval. */
+interface AdapterProbeResult {
+  /** Whether the capability's handler actually RAN. Must be false. */
+  sideEffectHappened: boolean;
+  /** What the adapter handed back, unwrapped to plain JSON. */
+  payload: unknown;
+}
+
+/** Run one probe with a fresh side-effect flag. */
+async function probe(run: () => Promise<unknown>): Promise<AdapterProbeResult> {
+  uninstallReached = false;
+  const payload = await run();
+  return { sideEffectHappened: uninstallReached, payload };
+}
+
+/**
+ * The invoke route with an identity on `res.locals` exactly where the real
+ * `resolveAgentIdentity` middleware puts it — or with none at all, which is what
+ * `env -u DORKOS_AGENT_TOKEN dorkos call …` and a bare curl look like from here.
+ */
+function routeProbe(identity?: typeof PROBE_IDENTITY) {
+  return () =>
+    probe(async () => {
+      const app = express();
+      app.use(express.json());
+      app.use((_req, res, next) => {
+        if (identity) res.locals.agentIdentity = identity;
+        next();
+      });
+      app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
+      const res = await request(app)
+        .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
+        .send(DESTRUCTIVE_INPUT);
+      expect(res.status).toBe(202);
+      return res.body;
+    });
+}
+
+/** The in-session `dorkos` server's real tool definition, identified or not. */
+function inSessionProbe(identity?: typeof PROBE_IDENTITY) {
+  return () =>
+    probe(async () => {
+      const tools = capabilityMcpTools(
+        registry,
+        'in-session',
+        identity ? async () => ({ identity }) : undefined
+      );
+      const tool = tools.find((t) => (t as { name: string }).name === DESTRUCTIVE_TOOL)!;
+      const handler = (
+        tool as unknown as {
+          handler: (
+            args: unknown,
+            extra: unknown
+          ) => Promise<{ content: { type: string; text?: string }[] }>;
+        }
+      ).handler;
+      return unwrapText(await handler(DESTRUCTIVE_INPUT, {}));
+    });
+}
+
+/** The external `/mcp` server's real registered tool callback, identified or not. */
+function externalProbe(identity?: typeof PROBE_IDENTITY) {
+  return () =>
+    probe(async () => {
+      const server = new McpServer({ name: 'gate-probe', version: '0.0.0' });
+      registerCapabilitiesAsMcpTools(
+        server,
+        registry,
+        'external',
+        identity ? { identity } : undefined
+      );
+      const registered = (
+        server as unknown as {
+          _registeredTools: Record<
+            string,
+            {
+              handler: (
+                args: unknown,
+                extra: unknown
+              ) => Promise<{ content: { type: string; text?: string }[] }>;
+            }
+          >;
+        }
+      )._registeredTools[DESTRUCTIVE_TOOL];
+      return unwrapText(await registered.handler(DESTRUCTIVE_INPUT, {}));
+    });
+}
+
+/**
+ * Ask for an approval through the REAL invoke route as an anonymous caller, then
+ * try to GRANT it through the REAL approvals router as that same caller — carrying
+ * exactly what the 202 handed it and nothing a person in the cockpit would carry.
+ *
+ * Login is off here (`isLoginEnabled: () => false`), which is the DEFAULT posture
+ * and therefore the one worth pinning: the refusal must not depend on accounts
+ * being switched on.
+ */
+const requesterDecideProbe = async () => {
+  const app = express();
+  app.use(express.json());
+  app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
+  app.use(
+    '/api/approvals',
+    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
+  );
+
+  const asked = await request(app)
+    .post(`/api/capabilities/${DESTRUCTIVE_ID}/invoke`)
+    .send(DESTRUCTIVE_INPUT);
+  expect(asked.status).toBe(202);
+  const { approvalId, approvalToken } = asked.body as {
+    approvalId: string;
+    approvalToken: string;
+  };
+
+  const decided = await request(app)
+    .post(`/api/approvals/${approvalId}/grant`)
+    .set(APPROVAL_TOKEN_HEADER, approvalToken)
+    .send();
+
+  // Read the outcome from the service rather than trusting the status code: the
+  // approval must still be spendable-only-after-a-human, i.e. still pending.
+  const stillPending = approvalService
+    .listPending()
+    .some((pending) => pending.approvalId === approvalId);
+
+  return { status: decided.status, approvalDecided: !stillPending };
+};
+
 capabilityConformance(registry, {
   name: 'DorkOS capability registry — conformance (real registry)',
+  requesterDecideProbe,
   registeredMcpToolNames: {
     'in-session': inSessionToolNames,
     external: externalToolNames,
@@ -182,4 +373,80 @@ describe('capability conformance wiring', () => {
     expect(ids).toContain('marketplace.search');
     expect(ids).toContain('capabilities.list');
   });
+});
+
+/**
+ * The posture guard on `operator.config_patch` (DOR-488), asserted through the
+ * REAL composed registry rather than through its handler.
+ *
+ * The guard's own unit tests all call `createConfigPatchHandler()` directly, so
+ * they would stay green if `operator-capabilities.ts` were ever rewired to call
+ * `applyConfigPatch` itself and skip the handler. This is the assertion that
+ * notices. It runs the same path an agent runs, and the file's existing mock of
+ * `applyConfigPatch` (which happily "writes" anything it is given) means a bypass
+ * surfaces here as a SUCCESS where a refusal belongs.
+ */
+describe('operator.config_patch refuses posture changes through the registry', () => {
+  it('refuses to turn login off', async () => {
+    await expect(
+      registry.invoke('operator.config_patch', { patch: { auth: { enabled: false } } })
+    ).rejects.toMatchObject({
+      name: 'CapabilityToolError',
+      payload: { code: 'operator_only_config', paths: ['auth.enabled'] },
+    });
+  });
+
+  it('lets an ordinary preference past the guard', async () => {
+    // This file's `applyConfigPatch` mock returns a bare object rather than a
+    // `ConfigPatchResult`, so the call cannot reach a `success` payload here no
+    // matter what. What IS provable at this seam is the part that matters: an
+    // ordinary preference is not stopped by the POSTURE guard. That the write
+    // then lands is proven against a real store in the handler's own tests.
+    await registry.invoke('operator.config_patch', { patch: { ui: { theme: 'dark' } } }).then(
+      () => undefined,
+      (err: { payload?: { code?: string } }) => {
+        expect(err.payload?.code).not.toBe('operator_only_config');
+      }
+    );
+  });
+});
+
+/**
+ * Regression coverage for each real adapter, kept as ordinary tests rather than as
+ * a conformance CONTRACT (DOR-467).
+ *
+ * The conformance suite used to demand one probe per hand-listed adapter path, and
+ * that list is what failed: it could only go red for a path already on it, so the
+ * legacy marketplace routes — never listed — shipped ungated and nothing noticed.
+ * The contract is now derived from the registry (`registry.invoke` must refuse
+ * every destructive capability), which covers these three and any future adapter
+ * without anyone maintaining a list.
+ *
+ * These stay because they prove something the registry-level check cannot: that
+ * each adapter TRANSLATES a refusal correctly — a `202` on the route, an ordinary
+ * non-error result on both MCP servers — and that no handler ran.
+ */
+describe('every adapter path refuses an unapproved destructive call', () => {
+  const paths = {
+    'invoke-route': routeProbe,
+    'in-session-mcp': inSessionProbe,
+    'external-mcp': externalProbe,
+  };
+
+  for (const [name, make] of Object.entries(paths)) {
+    // Identified, and then with NO identity at all — which is the shape of the
+    // bypass an agent with shell access reaches for: drop the token, keep the
+    // effect. The gate keys on the capability's TIER, so both must refuse.
+    for (const [who, identity] of [
+      ['identified', PROBE_IDENTITY],
+      ['anonymous', undefined],
+    ] as const) {
+      it(`${name} (${who}): approval_required, nothing removed`, async () => {
+        const result = await make(identity)();
+        expect(result.sideEffectHappened).toBe(false);
+        expect((result.payload as { status?: string }).status).toBe('approval_required');
+        expect((result.payload as { approvalToken?: string }).approvalToken).toBeTruthy();
+      });
+    }
+  }
 });

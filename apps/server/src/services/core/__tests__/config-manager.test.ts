@@ -9,12 +9,13 @@ import {
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
-  backfillStatusBarDefaults,
+  migrateStatusBarToPins,
   backfillSidebarSettingsDefaults,
   backfillSmartGroupKindDefaults,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
+  backfillApprovalsDefaults,
   backfillCloudDefaults,
   backfillWorkbenchDefaults,
   backfillWorkbenchTerminalGraceTtl,
@@ -950,8 +951,9 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
   });
 });
 
-describe('backfillStatusBarDefaults migration (DOR-431)', () => {
-  const STATUS_BAR_DEFAULTS = {
+describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
+  /** The retired ten-boolean visibility shape, only ever written pre-release. */
+  const RETIRED_TOGGLES = {
     cwd: true,
     git: true,
     runtime: true,
@@ -964,10 +966,10 @@ describe('backfillStatusBarDefaults migration (DOR-431)', () => {
     polling: true,
   };
 
-  it('fresh install: the schema default seeds ui.statusBar with every item visible', () => {
-    // A brand-new config comes from the schema, not a migration — assert the
-    // fresh-store shape carries the full status-bar section.
-    expect(USER_CONFIG_DEFAULTS.ui.statusBar).toEqual(STATUS_BAR_DEFAULTS);
+  it('fresh install: the schema default seeds ui.statusBar with nothing pinned', () => {
+    // A brand-new config comes from the schema, not a migration — the quiet line
+    // starts with no pins at all.
+    expect(USER_CONFIG_DEFAULTS.ui.statusBar).toEqual({ pins: [] });
   });
 
   it('upgraded install: adds ui.statusBar to an existing ui block, preserving other ui fields', () => {
@@ -979,37 +981,75 @@ describe('backfillStatusBarDefaults migration (DOR-431)', () => {
         shapes: { active: null, agentDefaults: {}, autoFollowAgent: false },
       },
     });
-    backfillStatusBarDefaults(store);
+    migrateStatusBarToPins(store);
     expect(store.data.ui).toEqual({
       theme: 'dark',
       dismissedUpgradeVersions: ['1.0.0'],
       sidebar: { pinned: [], groups: [] },
       shapes: { active: null, agentDefaults: {}, autoFollowAgent: false },
-      statusBar: STATUS_BAR_DEFAULTS,
+      statusBar: { pins: [] },
     });
   });
 
-  it('is idempotent — does not overwrite an existing ui.statusBar (a migrated device keeps its choices)', () => {
+  it('replaces the retired ten-boolean shape with an empty pin list — a deliberate one-time reset', () => {
+    // The semantics inverted: the booleans were "hide this", pins are "always
+    // show this". Mapping visible→pinned would hand anyone on the defaults ten
+    // pins and erase the quiet line, so the old choices are dropped, not
+    // translated (spec composer-status-redesign §5.1).
+    const store = createMockStore({
+      ui: { theme: 'system', statusBar: { ...RETIRED_TOGGLES, git: false, model: false } },
+    });
+    migrateStatusBarToPins(store);
+    expect(store.data.ui).toEqual({ theme: 'system', statusBar: { pins: [] } });
+  });
+
+  it('is idempotent — never clears pins someone already chose', () => {
     const existing = {
       theme: 'system',
       dismissedUpgradeVersions: [],
-      statusBar: { ...STATUS_BAR_DEFAULTS, git: false, model: false },
+      statusBar: { pins: ['git', 'usage'] },
     };
     const store = createMockStore({ ui: structuredClone(existing) });
-    backfillStatusBarDefaults(store);
+    migrateStatusBarToPins(store);
     expect(store.data.ui).toEqual(existing);
   });
 
-  it('is a no-op when the ui section is absent (schema default owns that case)', () => {
+  it('is a no-op when the ui section is absent (the defaults merge owns that case)', () => {
     const store = createMockStore({ server: { port: 4242 } });
-    backfillStatusBarDefaults(store);
+    migrateStatusBarToPins(store);
     expect(store.data.ui).toBeUndefined();
   });
 
+  it('leaves no shape behind that the schema would reject', () => {
+    // conf validates the WHOLE store once migrations finish, and `ui.statusBar`
+    // is a closed object requiring `pins`. Parsing the post-migration `ui`
+    // through the schema is the guard that a stale boolean can never survive
+    // into that final validation and hard-fail startup.
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        dismissedUpgradeVersions: [],
+        sidebar: {},
+        shapes: {},
+        statusBar: RETIRED_TOGGLES,
+      },
+    });
+    migrateStatusBarToPins(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
+    expect(parsed.ui.statusBar).toEqual({ pins: [] });
+  });
+
   it('is registered in CONFIG_MIGRATIONS at the newest key', () => {
+    // The key is shared with the DOR-501 `approvals` backfill (an object literal
+    // cannot repeat a key), so this asserts the EFFECT rather than the identity
+    // of the function: composing must not drop either body.
     const keys = Object.keys(CONFIG_MIGRATIONS);
     expect(keys[keys.length - 1]).toBe('0.57.0');
-    expect(CONFIG_MIGRATIONS['0.57.0']).toBe(backfillStatusBarDefaults);
+
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect(store.data.ui).toMatchObject({ statusBar: { pins: [] } });
+    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
   });
 });
 
@@ -1477,6 +1517,81 @@ describe('scrubRetiredOnboardingSteps migration (shorter first-run flow)', () =>
     expect(onboarding.completedAt).toBe('2026-07-01T00:00:00Z');
     // Unrelated user data survives the upgrade untouched.
     expect((store.get('server') as { port: number }).port).toBe(5000);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('approvals section — standing permissions (DOR-501)', () => {
+  it('fresh install: the schema default has standing permissions switched OFF', () => {
+    // A safety feature does not arrive switched on. Nothing changes for anyone
+    // until they ask for it.
+    expect(USER_CONFIG_DEFAULTS.approvals).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+    });
+  });
+
+  it('upgraded install: seeds the section OFF and leaves other settings alone', () => {
+    const store = createMockStore({ auth: { enabled: true }, server: { port: 5000 } });
+    backfillApprovalsDefaults(store);
+    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.data.auth).toEqual({ enabled: true });
+    expect(store.data.server).toEqual({ port: 5000 });
+  });
+
+  it('never re-relaxes a choice the person already made', () => {
+    // Idempotent, and idempotent in the direction that matters: re-running must
+    // not turn a live setting back off, nor a deliberate off back on.
+    const store = createMockStore({
+      approvals: { standingGrants: true, trustWindowMinutes: 60 },
+    });
+    backfillApprovalsDefaults(store);
+    backfillApprovalsDefaults(store);
+    expect(store.data.approvals).toEqual({ standingGrants: true, trustWindowMinutes: 60 });
+  });
+
+  it('a config written before the section existed upgrades without a wipe (full conf path)', () => {
+    // The half of the surface a fresh-install test cannot reach: a real stored
+    // file from an earlier version, run through the real migration chain.
+    // projectVersion is stated explicitly because SERVER_VERSION lags the
+    // unreleased key this migration is filed under.
+    const dir = path.join(os.tmpdir(), 'test-dork-approvals-backfill-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      cfgPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 5000, cwd: null, boundary: null, open: true },
+        auth: { enabled: true },
+        ui: { theme: 'dark' },
+        __internal__: { migrations: { version: '0.56.0' } },
+      }),
+      'utf-8'
+    );
+
+    const jsonSchema = z.toJSONSchema(UserConfigSchema, { target: 'jsonSchema2019-09' }) as {
+      properties?: Record<string, unknown>;
+    };
+    const store = new Conf({
+      configName: 'config',
+      cwd: dir,
+      // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+      schema: (jsonSchema.properties ?? {}) as unknown as Schema<Record<string, unknown>>,
+      defaults: USER_CONFIG_DEFAULTS,
+      clearInvalidConfig: false,
+      projectVersion: '0.57.0',
+      migrations: CONFIG_MIGRATIONS,
+    });
+
+    expect(store.get('approvals')).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    // The upgrade does not disturb what was already there, including the login
+    // setting standing permissions depend on.
+    expect((store.get('auth') as { enabled: boolean }).enabled).toBe(true);
+    expect((store.get('server') as { port: number }).port).toBe(5000);
+    expect((store.get('ui') as { theme: string }).theme).toBe('dark');
+    // The composite key's other body still ran, so composing did not drop it.
+    expect(store.get('ui')).toMatchObject({ statusBar: { pins: [] } });
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

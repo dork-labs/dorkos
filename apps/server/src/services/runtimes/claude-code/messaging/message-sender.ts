@@ -51,6 +51,7 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import { configManager } from '../../../core/config-manager.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
+import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 
 /** Lightweight projection of the SDK's SlashCommand type — avoids leaking SDK types. */
@@ -387,6 +388,17 @@ export async function* executeSdkQuery(
   // dangling reference yields `{}`, leaving host/delegated-login auth untouched.
   const claudeCredentialEnv = await resolveClaudeCredentialEnv();
 
+  // Mint this session's agent identity token (spec `agent-trust` §3.1). It
+  // rides the process env — NOT the context-builder's prompt block — so it
+  // stays a credential for the tools the agent runs (`dorkos call ...`) rather
+  // than text in the model's context and the transcript. Yields `{}` when the
+  // working directory hosts no registered agent, leaving the session
+  // unattributed exactly as before.
+  const agentTokenEnv = await resolveAgentTokenEnv(
+    meshAgent ? effectiveCwd : undefined,
+    meshAgent?.name
+  );
+
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -415,6 +427,8 @@ export async function* executeSdkQuery(
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
       // Resolved credential (if any) wins over an inherited ANTHROPIC_API_KEY.
       ...claudeCredentialEnv,
+      // This session's freshly minted agent identity token (or nothing).
+      ...agentTokenEnv,
     },
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };

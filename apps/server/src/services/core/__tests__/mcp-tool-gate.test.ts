@@ -1,0 +1,534 @@
+/**
+ * The tier gate on the hand-registered MCP tools (DOR-468), proven on the REAL
+ * tool surface of BOTH servers.
+ *
+ * ## What this file is for
+ *
+ * The registry's conformance suite proves the gate is inside `registry.invoke`, so
+ * every capability inherits it. The 47 hand-registered tools are not capabilities
+ * and inherit nothing, so they need their own proof, and it has to be driven
+ * through the real composition roots rather than through a fixture. That is the
+ * point of `handRegisteredInSessionTools` and `createExternalMcpServer` below: a
+ * domain that quietly stopped being gated would show up here, whereas a test that
+ * restated the tool list would stay green.
+ *
+ * ## The checks, and the failure each one exists for
+ *
+ * - **Coverage, both directions, both servers.** Every registered tool has a tier,
+ *   and every declared tier belongs to a registered tool. A tool that exists on one
+ *   server only (there are seven) has exactly one entry, which is checked against
+ *   the UNION of the two servers.
+ * - **The retry argument.** `approvalToken` is advertised on every destructive tool
+ *   on every server it appears on, and nowhere else. Miss it and the gate becomes
+ *   an infinite loop: the model is told to retry with a token it has no way to
+ *   send, because the MCP SDK strips an argument the schema does not declare.
+ * - **The gate actually refuses.** Both destructive tools, on both servers, with
+ *   and without an identity, come back `approval_required` with the handler never
+ *   reached.
+ * - **And then allows.** A granted token lets the same call through, and the
+ *   handler never sees the token — so the approval covers exactly the arguments
+ *   that run.
+ * - **`observe` and `act` are untouched**, because a gate that made ordinary work
+ *   prompt would be reverted within a day, and rightly.
+ *
+ * ## This suite was shown to fail before it was trusted
+ *
+ * A check nobody has broken is a check nobody has tested. Two drifts were seeded
+ * into `mcp-tool-gate.ts`, run, and reverted:
+ *
+ * 1. `runGate` allows regardless of what the gate decided. **19 of 33 red**, on
+ *    both servers, reporting `the handler ran anyway` and `the schedule was
+ *    deleted before anyone approved` — read off the fake service, not off the
+ *    response shape.
+ * 2. `gatedInputSchema` stops adding `approvalToken`. **4 of 33 red**: the two
+ *    advertisement checks, and both real-client round trips, which come back
+ *    `approval_required` a SECOND time after a person granted the approval. That
+ *    is the infinite loop, reproduced — and it also settles empirically that the
+ *    MCP SDK silently STRIPS an unadvertised argument rather than rejecting the
+ *    call, which is why the advertisement is load-bearing rather than cosmetic.
+ *    (One SDK observed on both servers, not two: `createSdkMcpServer` hands back
+ *    an `@modelcontextprotocol/sdk` `McpServer`, which is what the external server
+ *    is too.)
+ *
+ * ## What this file deliberately does NOT check
+ *
+ * That a raw `McpServer` cannot be used as a `ToolRegistrar`. That guarantee is a
+ * TYPE, and `apps/server/tsconfig.json` excludes `src/**\/__tests__/**`, so nothing
+ * here is typechecked — a `@ts-expect-error` written in this file would be
+ * decoration that can never fail. The pin lives in `mcp-tool-gate.ts` next to the
+ * brand instead, where `tsc` sees it.
+ *
+ * @vitest-environment node
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+
+vi.mock('../../../env.js', () => ({ env: { DORKOS_PORT: 4242, MCP_API_KEY: undefined } }));
+vi.mock('../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD: false }));
+vi.mock('../../../lib/logger.js', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
+
+import { createExternalMcpServer } from '../mcp-server.js';
+import {
+  createDorkOsToolServer,
+  handRegisteredInSessionTools,
+} from '../../runtimes/claude-code/mcp-tools/index.js';
+import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../mcp-tool-tiers.js';
+import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
+import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
+import {
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+} from '../capabilities/tier-enforcement.js';
+import { ApprovalService } from '../approvals/index.js';
+import { eventFanOut } from '../event-fan-out.js';
+import type { AgentIdentity } from '../agent-identity/index.js';
+import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+
+/** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
+const AGENT: AgentIdentity = {
+  agentPath: '/projects/prober',
+  displayName: 'Prober',
+  tierCeiling: 'destructive',
+  createdAt: new Date().toISOString(),
+};
+
+/**
+ * Records whether a destructive handler was actually reached.
+ *
+ * The whole claim is "the call did not happen", so it is read off the fake service
+ * the handler would have called, never inferred from the shape of the response.
+ */
+let deletedTaskIds: string[] = [];
+let unregisteredAgentIds: string[] = [];
+
+/** The agent `mesh_unregister` finds, so its handler reaches the real removal. */
+const TARGET_AGENT_ID = '01JXAMPLE0000000000000TEST';
+
+/**
+ * Deps with EVERY optional service handle present.
+ *
+ * That matters more than it looks: several in-session domains return no tools at
+ * all when their handle is absent (bindings, adapters, traces, most of
+ * extensions), so a thinner fixture would quietly shrink the surface under test
+ * from 47 tools to 32 and take `binding_list_sessions` with it. The fixture has to
+ * turn everything on, or the coverage check stops covering.
+ *
+ * The two destructive handlers get real behaviour, because "the call did not
+ * happen" has to be read off the service they would have reached.
+ */
+function createDeps(): McpToolDeps {
+  return {
+    transcriptReader: { listSessions: vi.fn().mockResolvedValue([]) },
+    defaultCwd: '/tmp/mcp-tool-gate',
+    taskStore: {
+      deleteTask: (id: string) => {
+        deletedTaskIds.push(id);
+        return true;
+      },
+    },
+    meshCore: {
+      get: (agentId: string) => (agentId === TARGET_AGENT_ID ? { isSystem: false } : undefined),
+      unregister: async (agentId: string) => {
+        unregisteredAgentIds.push(agentId);
+      },
+    },
+    bindingStore: {},
+    bindingRouter: {},
+    adapterManager: {},
+    traceStore: {},
+    extensionManager: {},
+  } as unknown as McpToolDeps;
+}
+
+/** A registered tool as both servers expose it to this file. */
+interface ProbeTool {
+  name: string;
+  inputSchema: Record<string, unknown>;
+  outputSchema?: unknown;
+  call(args: unknown): Promise<CallToolResult>;
+}
+
+/** The in-session `dorkos` server's hand-registered tools, from the real composer. */
+function inSessionTools(identity?: AgentIdentity): Map<string, ProbeTool> {
+  const tools = handRegisteredInSessionTools(createDeps(), {
+    ...(identity ? { resolveContext: async () => ({ identity }) } : {}),
+  }) as unknown as {
+    name: string;
+    inputSchema: Record<string, unknown>;
+    handler: (args: unknown, extra: unknown) => Promise<CallToolResult>;
+  }[];
+  return new Map(
+    tools.map((tool) => [
+      tool.name,
+      {
+        name: tool.name,
+        inputSchema: tool.inputSchema,
+        call: (args: unknown) => tool.handler(args, {}),
+      },
+    ])
+  );
+}
+
+/**
+ * The external `/mcp` server's hand-registered tools, from the real composer, with
+ * the registry-generated ones removed — those are gated inside `registry.invoke`
+ * and are not this file's subject.
+ */
+function externalTools(identity?: AgentIdentity): Map<string, ProbeTool> {
+  const deps = createDeps();
+  const server = createExternalMcpServer(deps, undefined, undefined, identity);
+  const registered = (
+    server as unknown as {
+      _registeredTools: Record<
+        string,
+        {
+          inputSchema?: { shape?: Record<string, unknown> };
+          outputSchema?: unknown;
+          handler: (args: unknown, extra: unknown) => Promise<CallToolResult>;
+        }
+      >;
+    }
+  )._registeredTools;
+  const capabilityToolNames = new Set(
+    composeDorkOsCapabilityRegistry({
+      logger: { info() {}, warn() {}, error() {}, debug() {} } as never,
+      operatorDeps: deps,
+    })
+      .capabilities.filter((cap) => cap.surfaces.mcp?.servers.includes('external'))
+      .map((cap) => cap.surfaces.mcp!.toolName)
+  );
+
+  const tools = new Map<string, ProbeTool>();
+  for (const [name, tool] of Object.entries(registered)) {
+    if (capabilityToolNames.has(name)) continue;
+    tools.set(name, {
+      name,
+      inputSchema: tool.inputSchema?.shape ?? {},
+      outputSchema: tool.outputSchema,
+      call: (args: unknown) => tool.handler(args, {}),
+    });
+  }
+  return tools;
+}
+
+/** Read the plain payload back out of an MCP text result. */
+function payloadOf(result: CallToolResult): Record<string, unknown> {
+  const first = result.content[0] as { text?: string };
+  return JSON.parse(first.text ?? 'null') as Record<string, unknown>;
+}
+
+/** Every tool the table declares a tier for. */
+const declaredNames = Object.keys(MCP_TOOL_TIERS).sort();
+
+/** The tools each server really registers by hand, resolved once. */
+const registeredByServer = {
+  'in-session': [...inSessionTools().keys()].sort(),
+  external: [...externalTools().keys()].sort(),
+};
+
+/** The two tools this PR puts behind a person. */
+const DESTRUCTIVE = declaredNames.filter((name) => MCP_TOOL_TIERS[name].tier === 'destructive');
+
+/** A sample call for each destructive tool: what it would do, and to what. */
+const DESTRUCTIVE_INPUT: Record<string, Record<string, unknown>> = {
+  tasks_delete: { id: 'schedule-to-delete' },
+  mesh_unregister: { agentId: TARGET_AGENT_ID },
+};
+
+describe('hand-registered MCP tools carry a permission tier', () => {
+  describe('coverage', () => {
+    it('every tool both servers register declares a tier', () => {
+      // The reverse of the production guarantee: the composers above would have
+      // THROWN for an undeclared tool, so reaching this line already proves it.
+      // Asserted anyway, because a silent try/catch upstream would hide that.
+      for (const [server, names] of Object.entries(registeredByServer)) {
+        const undeclared = names.filter((name) => !declaredNames.includes(name));
+        expect(undeclared, `${server} registers tools with no declared tier`).toEqual([]);
+      }
+    });
+
+    it('every declared tier belongs to a tool one of the servers registers', () => {
+      // Keyed by tool NAME, not by server, so a tool that exists on one server only
+      // needs exactly one entry — and the union is what that entry is checked
+      // against. Seven tools are in-session only today.
+      const everywhere = new Set([
+        ...registeredByServer['in-session'],
+        ...registeredByServer.external,
+      ]);
+      const orphans = declaredNames.filter((name) => !everywhere.has(name));
+      expect(orphans, 'declared tiers for tools nothing registers').toEqual([]);
+    });
+
+    it('covers the whole hand-registered surface, and it is not empty', () => {
+      // A count, so a composer that silently registered nothing cannot make every
+      // other check in this file vacuously green.
+      expect(registeredByServer['in-session']).toHaveLength(47);
+      expect(registeredByServer.external).toHaveLength(40);
+      expect(declaredNames).toHaveLength(47);
+    });
+
+    it('names exactly two tools destructive', () => {
+      // Pinned by name. Promoting a third is a product decision, not a refactor,
+      // and an approval card people learn to dismiss makes every card weaker.
+      expect(DESTRUCTIVE).toEqual(['mesh_unregister', 'tasks_delete']);
+    });
+  });
+
+  describe('the table itself', () => {
+    it('gives every destructive tool the fields its approval card shows', () => {
+      for (const name of DESTRUCTIVE) {
+        const fields = MCP_TOOL_TIERS[name].approvalDisplayFields;
+        expect(fields, `${name} would ask a person to approve an unnamed action`).toBeTruthy();
+        expect(fields!.length).toBeGreaterThan(0);
+        // And the named fields are arguments the tool really takes, on both
+        // servers — a card that names a field the tool does not have shows nothing.
+        for (const server of ['in-session', 'external'] as const) {
+          const tool = (server === 'in-session' ? inSessionTools() : externalTools()).get(name);
+          if (!tool) continue;
+          for (const field of fields!) {
+            expect(Object.keys(tool.inputSchema), `${name} on ${server}`).toContain(field);
+          }
+        }
+      }
+    });
+
+    it('declares card fields only where a card can appear', () => {
+      const strays = declaredNames.filter(
+        (name) =>
+          MCP_TOOL_TIERS[name].tier !== 'destructive' && MCP_TOOL_TIERS[name].approvalDisplayFields
+      );
+      expect(strays, 'card fields on a tier that never builds a card').toEqual([]);
+    });
+
+    it('refuses to hand out an action for a tool nobody tiered', () => {
+      expect(() => gatedActionForMcpTool('a_tool_nobody_tiered')).toThrow(
+        /declares no permission tier/
+      );
+    });
+
+    it('keeps tool ids out of the capability id space', () => {
+      // An approval binds to `${id}` + an input hash, and both spaces share that
+      // one field. Capability ids always contain a dot and the COMPILER enforces
+      // it (`CapabilityDefinition.id` is `` `${string}.${string}` ``). Nothing
+      // types the tool half, so a tool named `tasks.delete` would be accepted and
+      // could collide with a capability's binding. Asserted here instead.
+      const dotted = declaredNames.filter((name) => name.includes('.'));
+      expect(dotted, 'these tool names could collide with a capability id').toEqual([]);
+    });
+
+    it('never lets a tokenless tool be anything but observe', () => {
+      // `READ_ONLY_MCP_TOOL_NAMES` is the carve-out that reaches the login-off
+      // `/mcp` surface WITHOUT a token, and its hand-listed half is now a second
+      // source of truth for "this tool only reads" alongside the tier table. All
+      // 18 agree today and nothing pinned that.
+      //
+      // The second assertion is the one that matters: promoting a tool on that
+      // list to `destructive` without also removing it from the list would make an
+      // irreversible action reachable with no credential at all.
+      const readOnlyHandTools = [...READ_ONLY_MCP_TOOL_NAMES].filter((name) =>
+        declaredNames.includes(name)
+      );
+      const notObserve = readOnlyHandTools.filter(
+        (name) => MCP_TOOL_TIERS[name].tier !== 'observe'
+      );
+      expect(
+        notObserve,
+        'these tools are reachable without a token but are not observe-tier'
+      ).toEqual([]);
+      expect(
+        DESTRUCTIVE.filter((name) => READ_ONLY_MCP_TOOL_NAMES.has(name)),
+        'a destructive tool is in the tokenless read-only carve-out'
+      ).toEqual([]);
+    });
+
+    it('keeps every structured-output tool at observe', () => {
+      // A tool with an `outputSchema` must return `structuredContent` on any
+      // non-error result, and a refusal carries none. `observe` never produces a
+      // refusal, so this holds today — pinned here so a later tier change on one of
+      // these tools breaks loudly instead of at an operator's first approval.
+      for (const tool of externalTools().values()) {
+        if (!tool.outputSchema) continue;
+        expect(MCP_TOOL_TIERS[tool.name].tier, `${tool.name} declares an outputSchema`).toBe(
+          'observe'
+        );
+      }
+    });
+  });
+
+  describe('the retry argument is advertised', () => {
+    for (const server of ['in-session', 'external'] as const) {
+      it(`${server}: destructive tools take approvalToken, and nothing else does`, () => {
+        const tools = server === 'in-session' ? inSessionTools() : externalTools();
+        for (const tool of tools.values()) {
+          const advertises = Object.keys(tool.inputSchema).includes('approvalToken');
+          const shouldAdvertise = MCP_TOOL_TIERS[tool.name].tier === 'destructive';
+          expect(
+            advertises,
+            shouldAdvertise
+              ? `${tool.name} is destructive but does not advertise approvalToken, so a retry ` +
+                  `has nowhere to put the approval and the gate loops forever`
+              : `${tool.name} is not destructive but advertises approvalToken`
+          ).toBe(shouldAdvertise);
+        }
+      });
+    }
+  });
+
+  describe('the gate runs', () => {
+    let approvals: ApprovalService;
+
+    beforeEach(() => {
+      deletedTaskIds = [];
+      unregisteredAgentIds = [];
+      approvals = new ApprovalService(createTestDb());
+      vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+      initCapabilityTierGate({ approvals });
+    });
+
+    afterEach(() => {
+      resetCapabilityTierGate();
+      vi.restoreAllMocks();
+    });
+
+    /** What the destructive handler would have touched, if it ran. */
+    const sideEffects = (): string[] => [...deletedTaskIds, ...unregisteredAgentIds];
+
+    for (const server of ['in-session', 'external'] as const) {
+      const toolsFor = (identity?: AgentIdentity) =>
+        server === 'in-session' ? inSessionTools(identity) : externalTools(identity);
+
+      for (const name of ['tasks_delete', 'mesh_unregister']) {
+        // Identified, and then with no identity at all — the shape of the bypass an
+        // agent with shell access reaches for: drop the token, keep the effect. The
+        // gate keys on the TIER, so both must refuse.
+        for (const [who, identity] of [
+          ['identified', AGENT],
+          ['anonymous', undefined],
+        ] as const) {
+          it(`${server} ${name} (${who}): refuses, and nothing ran`, async () => {
+            const result = await toolsFor(identity).get(name)!.call(DESTRUCTIVE_INPUT[name]);
+
+            expect(sideEffects(), 'the handler ran anyway').toEqual([]);
+            expect(result.isError).toBeUndefined();
+            const payload = payloadOf(result);
+            expect(payload.status).toBe('approval_required');
+            expect(payload.approvalToken).toBeTruthy();
+            expect(payload.capabilityId).toBe(name);
+            expect(payload.retry).toMatchObject({
+              channel: 'mcp-argument',
+              field: 'approvalToken',
+            });
+          });
+        }
+
+        it(`${server} ${name}: runs once a person approves, and hides the token`, async () => {
+          const tools = toolsFor(AGENT);
+          const asked = payloadOf(await tools.get(name)!.call(DESTRUCTIVE_INPUT[name]));
+          expect(sideEffects()).toEqual([]);
+
+          approvals.grant(asked.approvalId as string);
+          const result = await tools.get(name)!.call({
+            ...DESTRUCTIVE_INPUT[name],
+            approvalToken: asked.approvalToken as string,
+          });
+
+          // The handler ran, with the arguments the approval was bound to.
+          expect(sideEffects()).toEqual([Object.values(DESTRUCTIVE_INPUT[name])[0]]);
+          expect(payloadOf(result).status).not.toBe('approval_required');
+        });
+
+        it(`${server} ${name}: refuses an agent whose ceiling forbids the tier`, async () => {
+          const result = await toolsFor({ ...AGENT, tierCeiling: 'act' })
+            .get(name)!
+            .call(DESTRUCTIVE_INPUT[name]);
+          expect(sideEffects()).toEqual([]);
+          expect(payloadOf(result).status).toBe('denied');
+          expect(payloadOf(result).approvable).toBe(false);
+        });
+      }
+
+      it(`${server}: an observe call is not touched`, async () => {
+        // `ping` answers `{ status: 'pong' }`, so this asserts the VALUE rather
+        // than the absence of the key — a gate result would say
+        // `approval_required` or `denied` in the same field.
+        expect(payloadOf(await toolsFor(AGENT).get('ping')!.call({})).status).toBe('pong');
+      });
+
+      it(`${server}: an act call is not touched`, async () => {
+        // `tasks_list` reads; `mesh_deny` changes something. Use the act one, so
+        // this says what it means: `act` passes without asking.
+        const result = await toolsFor(AGENT)
+          .get('mesh_deny')!
+          .call({ path: '/tmp/somewhere', reason: 'test' });
+        expect(payloadOf(result).status).not.toBe('approval_required');
+      });
+    }
+
+    it('fails closed when the gate was never wired to an approval service', async () => {
+      resetCapabilityTierGate();
+      const result = await inSessionTools(AGENT).get('tasks_delete')!.call({ id: 'x' });
+      expect(deletedTaskIds).toEqual([]);
+      expect(payloadOf(result)).toMatchObject({
+        status: 'denied',
+        reason: 'enforcement_unavailable',
+      });
+    });
+
+    /**
+     * The same round trip over a REAL MCP client, on both servers.
+     *
+     * Everything above calls the registered handler directly, which proves the
+     * wiring but skips the one step that can silently eat the retry: each SDK
+     * validates a tool call against the ADVERTISED input schema before the handler
+     * runs, and drops what the schema does not declare. So a `tasks_delete` that
+     * did not advertise `approvalToken` would pass every check above and still
+     * loop forever in production, because the token would never survive the wire.
+     *
+     * These two go through `client.callTool`, so the token makes the trip a model
+     * would actually make it on.
+     */
+    describe('the retry survives a real client round trip', () => {
+      const servers = {
+        'in-session': () => createDorkOsToolServer(createDeps()).instance,
+        external: () => createExternalMcpServer(createDeps()),
+      };
+
+      for (const [name, build] of Object.entries(servers)) {
+        it(`${name}: ask, approve, retry, and the schedule is deleted`, async () => {
+          const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+          const client = new Client({ name: 'gate-probe', version: '0.0.0' });
+          await Promise.all([build().connect(serverTransport), client.connect(clientTransport)]);
+
+          const callDelete = async (args: Record<string, unknown>) =>
+            payloadOf(
+              (await client.callTool({ name: 'tasks_delete', arguments: args })) as CallToolResult
+            );
+
+          const asked = await callDelete({ id: 'schedule-to-delete' });
+          expect(deletedTaskIds, 'the schedule was deleted before anyone approved').toEqual([]);
+          expect(asked.status).toBe('approval_required');
+
+          approvals.grant(asked.approvalId as string);
+          const done = await callDelete({
+            id: 'schedule-to-delete',
+            approvalToken: asked.approvalToken as string,
+          });
+
+          // If the token had not been advertised, this would be a SECOND
+          // `approval_required` — the infinite loop, caught.
+          expect(done.status, 'the approval token did not survive the client call').not.toBe(
+            'approval_required'
+          );
+          expect(deletedTaskIds).toEqual(['schedule-to-delete']);
+          await client.close();
+        });
+      }
+    });
+  });
+});

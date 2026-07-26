@@ -5,7 +5,7 @@
  *
  * @module features/chat/model/native-commands
  */
-export { useNativeCommands } from './use-native-commands';
+export { useNativeCommands, isNativeCommandContent } from './use-native-commands';
 export type { NativeCommandResult } from './use-native-commands';
 export { NATIVE_COMMANDS, parseNativeCommand, NATIVE_COMMAND_ENTRIES } from './registry';
 export type { NativeCommand, NativeCommandContext } from './registry';

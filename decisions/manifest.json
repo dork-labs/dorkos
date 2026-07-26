@@ -2,6 +2,40 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260726-022251",
+      "slug": "in-session-identity-comes-from-the-working-directory",
+      "title": "An in-session agent's identity comes from its working directory, not a presented token",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260726-022250",
+      "slug": "agent-tokens-expire-on-two-clocks",
+      "title": "Agent identity tokens expire on two clocks, seven days idle and thirty days absolute",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260726-022249",
+      "slug": "tier-gate-is-boot-wired-and-refuses-destructive-calls-unwired",
+      "title": "The tier gate is wired once at boot into a module global, and an unwired gate refuses destructive calls",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260725-004456",
+      "slug": "status-bar-items-are-registry-driven-and-quiet-by-default",
+      "title": "Status bar items are registry-driven and quiet by default",
+      "status": "accepted",
+      "created": "2026-07-25"
+    },
+    {
       "id": "260718-045630",
       "slug": "connector-provider-custody-composio-nango-raw-mcp",
       "title": "Connector custody stance: a ConnectorProvider abstraction — Composio (managed), Nango (self-host), raw MCP (baseline)",
@@ -2775,10 +2809,11 @@
       "id": "260723-013234",
       "slug": "status-bar-prefs-live-in-server-config",
       "title": "Status-bar preferences live in server config, not client localStorage",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-23",
       "extractedFrom": "agents-as-operators",
-      "specSlug": "agents-as-operators"
+      "specSlug": "agents-as-operators",
+      "supersededBy": "260725-004456"
     },
     {
       "id": "260723-013235",
@@ -2793,10 +2828,11 @@
       "id": "260723-013236",
       "slug": "redact-sensitive-config-keys-from-agent-facing-tool-results",
       "title": "Sensitive config keys are redacted from every agent-facing tool result",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-23",
       "extractedFrom": "agents-as-operators",
-      "specSlug": "agents-as-operators"
+      "specSlug": "agents-as-operators",
+      "supersededBy": "260725-152018"
     },
     {
       "id": "260723-050219",
@@ -2815,6 +2851,42 @@
       "created": "2026-07-23",
       "extractedFrom": "capability-registry",
       "specSlug": "capability-registry"
+    },
+    {
+      "id": "260725-133220",
+      "slug": "tier-decides-the-gate-identity-only-caps-it",
+      "title": "The action's tier decides the gate; identity only caps it",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260725-133221",
+      "slug": "approvals-bind-to-the-exact-action-shown",
+      "title": "An approval binds to the exact action the person saw",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260725-133222",
+      "slug": "eval-isolation-and-cadence-are-infrastructure",
+      "title": "Eval isolation is a container, and eval cadence is opt-in",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agent-trust",
+      "specSlug": "agent-trust"
+    },
+    {
+      "id": "260725-152018",
+      "slug": "agent-facing-config-snapshot-is-an-allowlist",
+      "title": "The agent-facing config snapshot is an allowlist, not a denylist",
+      "status": "accepted",
+      "created": "2026-07-25",
+      "extractedFrom": "agents-as-operators",
+      "specSlug": "agents-as-operators"
     }
   ]
 }

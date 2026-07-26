@@ -10,6 +10,9 @@
  * - When no server is running, it degrades gracefully: the server version falls
  *   back to the installed CLI version and `latestVersion` comes from the local
  *   update-check cache (`~/.dork/cache/update-check.json`).
+ * - When the server answers `401` (login is on and the CLI has no API key) it
+ *   degrades the same way, but says so on stderr — reporting "not running" for a
+ *   server that is running would be a lie.
  *
  * Accepts `--json` for raw machine output. Returns an exit code rather than
  * calling `process.exit` so `cli.ts` stays the single source of truth for
@@ -20,7 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { apiCall } from '../lib/api-client.js';
+import { apiCall, ApiError } from '../lib/api-client.js';
 import { printError, printJson } from '../lib/operator-output.js';
 
 /** Help text for `dorkos version` (`--help`). */
@@ -130,8 +133,14 @@ export async function runVersionCheck(
       latest: config.latestVersion ?? null,
       source: 'server',
     };
-  } catch {
-    // No server reachable — degrade to the local cache rather than failing.
+  } catch (err) {
+    // Unreachable server: degrade to the local cache rather than failing. A 401 is
+    // a different story — the server IS running, it just wants a credential, so
+    // "not running" would be a lie. Say what is actually wrong on stderr and still
+    // degrade, because the version report is not worth a non-zero exit.
+    if (err instanceof ApiError && err.status === 401) {
+      console.error(err.message);
+    }
     report = {
       cli: cliVersion,
       server: null,

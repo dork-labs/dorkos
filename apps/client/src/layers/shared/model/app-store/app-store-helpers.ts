@@ -42,7 +42,6 @@ export const BOOL_KEYS = {
   showTimestamps: 'dorkos-show-timestamps',
   expandToolCalls: 'dorkos-expand-tool-calls',
   autoHideToolCalls: 'dorkos-auto-hide-tool-calls',
-  showShortcutChips: 'dorkos-show-shortcut-chips',
   showTaskCelebrations: 'dorkos-show-task-celebrations',
   enableNotificationSound: 'dorkos-enable-notification-sound',
   enableTasksNotifications: 'dorkos-enable-tasks-notifications',
@@ -51,22 +50,42 @@ export const BOOL_KEYS = {
 } as const;
 
 /**
- * Orphaned localStorage keys removed by the one-time migration below.
+ * Orphaned localStorage keys removed by the one-time purge below.
  *
  * `dorkos-enable-cross-client-sync` backed the retired "Multi-window sync" flag
  * and `dorkos-show-status-bar-sync` backed its now-removed status-bar toggle.
  * Cross-client live sync is always-on (spec chat-stream-reconnection, ADR-0266),
- * so both preferences no longer exist.
+ * so both preferences no longer exist. `dorkos-show-shortcut-chips` backed the
+ * "Show shortcut chips" toggle; the `/` and `@` chips are gone (spec
+ * composer-status-redesign) and the placeholder hints teach both triggers.
+ *
+ * The ten `dorkos-show-status-bar-*` keys backed the per-item visibility
+ * toggles. The status line is now quiet by default and promotes an item only
+ * when it is actionable, so those ten subtractive booleans became one additive
+ * list of pins — which lives in server config (`ui.statusBar.pins`), not here,
+ * so it syncs across clients. Purging the keys here covers a client that never
+ * ran the release that lifted them into config.
  */
 const ORPHANED_BOOL_KEYS = [
   'dorkos-enable-cross-client-sync',
   'dorkos-show-status-bar-sync',
+  'dorkos-show-shortcut-chips',
+  'dorkos-show-status-bar-cwd',
+  'dorkos-show-status-bar-git',
+  'dorkos-show-status-bar-runtime',
+  'dorkos-show-status-bar-model',
+  'dorkos-show-status-bar-cache',
+  'dorkos-show-status-bar-context',
+  'dorkos-show-status-bar-usage',
+  'dorkos-show-status-bar-permission',
+  'dorkos-show-status-bar-sound',
+  'dorkos-show-status-bar-polling',
 ] as const;
 
 /**
- * One-time purge of localStorage keys for preferences removed in the
- * always-on-sync migration. Mirrors the `try/catch` + `removeItem` pattern used
- * by `resetPreferences`. A no-op when the keys are absent; never throws.
+ * One-time purge of localStorage keys for preferences that no longer exist.
+ * Mirrors the `try/catch` + `removeItem` pattern used by `resetPreferences`.
+ * A no-op when the keys are absent; never throws.
  */
 export function purgeOrphanedPreferenceKeys(): void {
   try {
@@ -82,7 +101,6 @@ export const BOOL_DEFAULTS: Record<keyof typeof BOOL_KEYS, boolean> = {
   showTimestamps: false,
   expandToolCalls: false,
   autoHideToolCalls: true,
-  showShortcutChips: true,
   showTaskCelebrations: true,
   enableNotificationSound: true,
   enableTasksNotifications: true,

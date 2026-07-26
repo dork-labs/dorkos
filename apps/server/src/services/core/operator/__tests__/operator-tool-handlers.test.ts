@@ -8,7 +8,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   readManifest: vi.fn(),
@@ -158,19 +158,32 @@ describe('activity_list', () => {
   });
 });
 
-/** A schema-valid config store that also carries every SENSITIVE_CONFIG_KEYS value. */
+/**
+ * A schema-valid config store carrying every secret AND every credential
+ * reference, so the snapshot assertions cover both classes the disclosure
+ * allowlist withholds (`config-disclosure.ts`).
+ */
 function secretBearingStore(): Record<string, unknown> {
   return {
     version: 1,
     tunnel: { authtoken: 'ngrok-secret', auth: 'basic-secret', domain: 'my.example.com' },
     mcp: { apiKey: 'mcp-secret-key', enabled: true },
-    cloud: { instanceToken: 'cloud-secret-token', instanceName: 'my-box' },
+    cloud: {
+      instanceToken: 'cloud-secret-token',
+      instanceName: 'my-box',
+      linkedAccountLabel: 'secret-person@example.com',
+    },
+    runtimes: {
+      default: 'claude-code',
+      codex: { enabled: true, credentialRef: 'file:/home/me/.dork/secret-codex-key' },
+    },
+    providers: { anthropic: 'file:/home/me/.dork/secret-anthropic-key' },
     ui: { theme: 'dark' },
   };
 }
 
 describe('config_get', () => {
-  it('returns the config snapshot with sensitive keys redacted', async () => {
+  it('returns an allowlisted snapshot: no secrets, no credential references', async () => {
     mocks.configStore = secretBearingStore();
     const handler = createConfigGetHandler();
     const result = await handler();
@@ -179,24 +192,48 @@ describe('config_get', () => {
     const payload = parsePayload<{
       version: number;
       ui: { theme: string };
-      tunnel: { authtoken?: string; auth?: string; domain?: string };
-      mcp: { apiKey?: string; enabled?: boolean };
-      cloud: { instanceToken?: string; instanceName?: string };
+      tunnel: { authtoken?: string; auth?: string; domain?: string; authtokenConfigured?: boolean };
+      mcp: { apiKey?: string; enabled?: boolean; apiKeyConfigured?: boolean };
+      cloud: { instanceToken?: string; instanceName?: string; linkedAccountLabel?: string };
+      runtimes: { codex: { credentialRef?: string; credentialRefConfigured?: boolean } };
+      providers?: Record<string, string>;
+      providersConfigured?: string[];
     }>(result);
 
-    // Non-sensitive values survive.
+    // Exposed values survive.
     expect(payload.version).toBe(1);
     expect(payload.ui.theme).toBe('dark');
     expect(payload.tunnel.domain).toBe('my.example.com');
     expect(payload.mcp.enabled).toBe(true);
     expect(payload.cloud.instanceName).toBe('my-box');
 
-    // Every SENSITIVE_CONFIG_KEYS value is stripped.
+    // Secrets are gone.
     expect(payload.tunnel.authtoken).toBeUndefined();
     expect(payload.tunnel.auth).toBeUndefined();
     expect(payload.mcp.apiKey).toBeUndefined();
     expect(payload.cloud.instanceToken).toBeUndefined();
-    // The raw secret string appears nowhere in the serialized payload.
+    // So are the credential references that locate secrets, and the account label.
+    expect(payload.providers).toBeUndefined();
+    expect(payload.runtimes.codex.credentialRef).toBeUndefined();
+    expect(payload.cloud.linkedAccountLabel).toBeUndefined();
+
+    // Presence is still legible without the values.
+    expect(payload.tunnel.authtokenConfigured).toBe(true);
+    expect(payload.mcp.apiKeyConfigured).toBe(true);
+    expect(payload.runtimes.codex.credentialRefConfigured).toBe(true);
+    expect(payload.providersConfigured).toEqual(['anthropic']);
+
+    // No withheld value appears anywhere in the serialized payload.
+    expect(result.content[0].text).not.toMatch(/secret/);
+  });
+
+  it('withholds the same fields from the config_patch echo', async () => {
+    // `config_patch` echoes the post-write snapshot through the same projection,
+    // so a write must not become a read-around of the allowlist.
+    mocks.configStore = secretBearingStore();
+    const result = await createConfigPatchHandler()({ patch: { ui: { theme: 'light' } } });
+
+    expect(result.isError).toBeUndefined();
     expect(result.content[0].text).not.toMatch(/secret/);
   });
 });
@@ -247,6 +284,150 @@ describe('config_patch', () => {
     expect(payload.details?.length).toBeGreaterThan(0);
     // The invalid value must not have been persisted.
     expect(mocks.configStore.server).toBeUndefined();
+  });
+});
+
+/**
+ * The escalation this guard exists to close (DOR-488).
+ *
+ * `operator.config_patch` is tier `act`, so nothing asks a person before it runs.
+ * With no write allowlist, an agent could call
+ * `config_patch({ auth: { enabled: false } })` and take the instance out of the
+ * logged-in posture. That posture is where deciding an approval requires an
+ * authenticated user, so the ungated write was a path from inside the capability
+ * surface to removing the precondition that makes every destructive approval
+ * enforceable.
+ *
+ * Each case asserts the STORE, not just the response: a refusal that still wrote
+ * would be worse than no refusal at all.
+ */
+describe('config_patch posture guard', () => {
+  /** A store in the posture the guard protects: login on. */
+  function loggedInStore(): Record<string, unknown> {
+    return { version: 1, auth: { enabled: true }, ui: { theme: 'dark' } };
+  }
+
+  it('refuses to turn login off, and leaves the config alone', async () => {
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({ patch: { auth: { enabled: false } } });
+
+    // The posture is unchanged. Asserted FIRST and on the store, because a
+    // refusal that still wrote would be worse than no refusal at all.
+    expect(mocks.configStore.auth).toEqual({ enabled: true });
+
+    expect(result.isError).toBe(true);
+    const payload = parsePayload<{ error: string; code: string; paths: string[] }>(result);
+    expect(payload.code).toBe('operator_only_config');
+    expect(payload.paths).toEqual(['auth.enabled']);
+  });
+
+  it('refuses the whole patch when a posture change rides behind a real one', async () => {
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({
+      patch: { ui: { theme: 'light' }, auth: { enabled: false } },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(mocks.configStore.auth).toEqual({ enabled: true });
+    // No partial write: the legitimate half did not land either.
+    expect(mocks.configStore.ui).toEqual({ theme: 'dark' });
+  });
+
+  it('refuses every other posture-bearing area too', async () => {
+    const cases: { patch: Record<string, unknown>; expected: string[] }[] = [
+      { patch: { tunnel: { enabled: true } }, expected: ['tunnel.enabled'] },
+      { patch: { mcp: { apiKey: 'agent-chosen' } }, expected: ['mcp.apiKey'] },
+      { patch: { server: { boundary: '/' } }, expected: ['server.boundary'] },
+      { patch: { providers: { anthropic: 'file:/tmp/key' } }, expected: ['providers'] },
+      {
+        patch: { runtimes: { codex: { binaryPath: '/tmp/evil.sh' } } },
+        expected: ['runtimes.codex.binaryPath'],
+      },
+      { patch: { telemetry: { aiMetadata: true } }, expected: ['telemetry.aiMetadata'] },
+      { patch: { cloud: { instanceToken: 'attacker' } }, expected: ['cloud.instanceToken'] },
+      { patch: { extensions: { enabled: ['anything'] } }, expected: ['extensions.enabled'] },
+    ];
+
+    for (const { patch, expected } of cases) {
+      mocks.configStore = loggedInStore();
+      const result = await createConfigPatchHandler()({ patch });
+
+      expect(result.isError, JSON.stringify(patch)).toBe(true);
+      const payload = parsePayload<{ paths: string[] }>(result);
+      expect(payload.paths, JSON.stringify(patch)).toEqual(expected);
+      // Nothing at all was written.
+      expect(mocks.configStore, JSON.stringify(patch)).toEqual(loggedInStore());
+    }
+  });
+
+  it('tells the model what it may not change and what to do instead', async () => {
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({ patch: { auth: { enabled: false } } });
+    const payload = parsePayload<{ message: string }>(result);
+
+    expect(payload.message).toContain('auth.enabled');
+    expect(payload.message).toMatch(/ask the person/i);
+  });
+
+  it('still lets ordinary preferences through', async () => {
+    // The guard must not turn the capability into a brick.
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({
+      patch: { ui: { theme: 'light' }, logging: { level: 'debug' } },
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect((mocks.configStore.ui as { theme: string }).theme).toBe('light');
+    expect(mocks.configStore.auth).toEqual({ enabled: true });
+  });
+});
+
+/**
+ * The agent identity token (spec `agent-trust` §3.1) is delivered to a spawned
+ * session through `DORKOS_AGENT_TOKEN` in its process env, so the agent holding
+ * it can present it back to DorkOS. It must never round-trip into a tool RESULT,
+ * which lands in the model's context and the persisted transcript — the same
+ * invariant ADR 260723-013236 established for sensitive config keys (superseded by
+ * 260725-152018), extended to
+ * the one credential that reaches an agent by design.
+ *
+ * These guard the config surfaces specifically: they are the tools that dump a
+ * broad snapshot, so they are where an env-echoing regression would surface.
+ */
+describe('agent identity token redaction', () => {
+  const SENTINEL = 'dorkos-agent-token-sentinel-value';
+
+  beforeEach(() => {
+    vi.stubEnv('DORKOS_AGENT_TOKEN', SENTINEL);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('never leaks DORKOS_AGENT_TOKEN through config_get', async () => {
+    mocks.configStore = secretBearingStore();
+    const result = await createConfigGetHandler()();
+
+    expect(result.content[0].text).not.toContain(SENTINEL);
+    expect(result.content[0].text).not.toContain('DORKOS_AGENT_TOKEN');
+  });
+
+  it('never leaks DORKOS_AGENT_TOKEN through the config_patch echo', async () => {
+    mocks.configStore = secretBearingStore();
+    const result = await createConfigPatchHandler()({ patch: { ui: { theme: 'light' } } });
+
+    expect(result.content[0].text).not.toContain(SENTINEL);
+    expect(result.content[0].text).not.toContain('DORKOS_AGENT_TOKEN');
+  });
+
+  it('still redacts it when the token is mistakenly written into config', async () => {
+    // Defense in depth: the token has no config home, but if a future surface
+    // ever parks it in one, `config_get` must not hand it to the model.
+    mocks.configStore = { ...secretBearingStore(), mcp: { apiKey: SENTINEL, enabled: true } };
+    const result = await createConfigGetHandler()();
+
+    expect(result.content[0].text).not.toContain(SENTINEL);
   });
 });
 

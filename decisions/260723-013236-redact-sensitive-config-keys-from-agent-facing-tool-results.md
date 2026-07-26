@@ -1,17 +1,24 @@
 ---
 id: 260723-013236
 title: Sensitive config keys are redacted from every agent-facing tool result
-status: accepted
+status: superseded
 created: 2026-07-23
 spec: agents-as-operators
-superseded-by: null
+superseded-by: 260725-152018
 ---
 
 # 260723-013236. Sensitive config keys are redacted from every agent-facing tool result
 
 ## Status
 
-Accepted
+Superseded by ADR 260725-152018 on 2026-07-25.
+
+> **Erratum (2026-07-25).** Two claims below are false and were load-bearing, so read them as a record of what was believed, not as guidance.
+>
+> 1. **"New sensitive keys redact automatically"** and **"the invariant is drift-proof against new sensitive keys"** describe the wrong direction. Iterating `SENSITIVE_CONFIG_KEYS` makes a newly _listed_ key redact everywhere at once; it does nothing about a newly _added_ config field, which is disclosed the moment it exists with no signal. The list is only drift-proof against changes to itself.
+> 2. The mechanism this ADR chose (deep-clone `getAll()` and delete four dot-paths) shipped a real disclosure. It never covered credential **references** — `providers` and `runtimes.codex.credentialRef`, where a `file:` reference is an absolute path to a plaintext key — or `cloud.linkedAccountLabel`. The same failure mode had already fired once with `mcp.apiKey`, which reached this tokenless surface before joining the list.
+>
+> ADR 260725-152018 replaces the denylist with an explicit per-field classification of the whole schema plus a two-direction drift guard. What survives from here: the outcome ("never return a raw config snapshot through an agent-facing tool") and the choice to redact inside the handler rather than de-list `config_get` from the read-only carve-out.
 
 ## Context
 

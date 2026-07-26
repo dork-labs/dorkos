@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ChatInput } from '@/layers/features/chat/ui/input/ChatInput';
 import { FileChipBar } from '@/layers/features/chat/ui/input/FileChipBar';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
-import { ShortcutChips } from '@/layers/features/chat/ui/input/ShortcutChips';
 import { PromptSuggestionChips } from '@/layers/features/chat/ui/input/PromptSuggestionChips';
 import { QuestionPrompt } from '@/layers/features/chat/ui/tools/QuestionPrompt';
 import { CommandPalette } from '@/layers/features/commands';
@@ -107,6 +106,9 @@ function ChatInputDemo({
             queueDepth={queueDepth}
             onStop={() => {}}
             onQueue={() => {}}
+            // The composer only renders its clear affordance when a host wires
+            // one; without this every showcase silently lost the X.
+            onClear={() => setValue('')}
           />
         </div>
       </ShowcaseDemo>
@@ -136,7 +138,7 @@ function PaletteAnchor({
   );
 }
 
-/** Input-related component showcases: ChatInput, FileChipBar, QueuePanel, ShortcutChips, CommandPalette, FilePalette, PromptSuggestionChips, QuestionPrompt. */
+/** Input-related component showcases: ChatInput, FileChipBar, QueuePanel, CommandPalette, FilePalette, PromptSuggestionChips, QuestionPrompt. */
 export function InputShowcases() {
   const [files, setFiles] = useState(SAMPLE_FILES);
   const [cmdIndex, setCmdIndex] = useState(0);
@@ -151,41 +153,66 @@ export function InputShowcases() {
         <ChatInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
       </PlaygroundSection>
 
-      <PlaygroundSection title="FileChipBar" description="File chips in various upload states.">
+      <PlaygroundSection
+        title="FileChipBar"
+        description="File chips in various upload states. A failed upload states its reason and offers a retry."
+      >
         <ShowcaseDemo>
           <FileChipBar
             files={files}
             onRemove={(id) => setFiles((prev) => prev.filter((f) => f.id !== id))}
+            onRetry={(id) =>
+              setFiles((prev) =>
+                prev.map((f) =>
+                  f.id === id ? { ...f, status: 'pending', progress: 0, error: undefined } : f
+                )
+              )
+            }
           />
         </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection
         title="QueuePanel"
-        description="Queued messages displayed above the input."
+        description="Queued messages displayed above the input. Every row can be sent now, edited, or removed."
       >
         <ShowcaseLabel>With items</ShowcaseLabel>
         <ShowcaseDemo>
           <QueuePanel
             queue={SAMPLE_QUEUE}
-            editingIndex={null}
+            editingId={null}
             onEdit={() => {}}
             onRemove={() => {}}
+            onSend={() => {}}
+            sendBlockedReason={null}
+            whenUnblocked="Will send next"
           />
         </ShowcaseDemo>
 
         <ShowcaseLabel>With item being edited</ShowcaseLabel>
         <ShowcaseDemo>
-          <QueuePanel queue={SAMPLE_QUEUE} editingIndex={1} onEdit={() => {}} onRemove={() => {}} />
+          <QueuePanel
+            queue={SAMPLE_QUEUE}
+            editingId={SAMPLE_QUEUE[1]!.id}
+            onEdit={() => {}}
+            onRemove={() => {}}
+            onSend={() => {}}
+            sendBlockedReason={null}
+            whenUnblocked="Will send next"
+          />
         </ShowcaseDemo>
-      </PlaygroundSection>
 
-      <PlaygroundSection
-        title="ShortcutChips"
-        description="Quick-access chips for / commands and @ file mentions."
-      >
+        <ShowcaseLabel>Send-now unavailable (a reply is still streaming)</ShowcaseLabel>
         <ShowcaseDemo>
-          <ShortcutChips onChipClick={() => {}} />
+          <QueuePanel
+            queue={SAMPLE_QUEUE}
+            editingId={null}
+            onEdit={() => {}}
+            onRemove={() => {}}
+            onSend={() => {}}
+            sendBlockedReason="Waiting for the reply to finish"
+            whenUnblocked="Will send next"
+          />
         </ShowcaseDemo>
       </PlaygroundSection>
 

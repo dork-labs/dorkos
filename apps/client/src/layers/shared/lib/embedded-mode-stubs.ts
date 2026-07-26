@@ -16,6 +16,10 @@ import type {
 } from '@dorkos/shared/transport';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import type {
+  ApprovalDecisionResponse,
+  PendingApprovalsResponse,
+} from '@dorkos/shared/approval-schemas';
+import type {
   StoreCredentialResult,
   DelegatedLoginResult,
   OpenRouterKeyResult,
@@ -372,6 +376,30 @@ export const meshStubs = {
 
   async getMeshAgentAccess(_agentId: string): Promise<{ agents: AgentManifest[] }> {
     throw new Error('Mesh is not supported in embedded mode');
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Approval stubs
+// ---------------------------------------------------------------------------
+
+/**
+ * Embedded mode has no agent-facing HTTP surface, so nothing there can request
+ * an approval and there is never anything to decide.
+ *
+ * @internal
+ */
+export const approvalStubs = {
+  async listPendingApprovals(): Promise<PendingApprovalsResponse> {
+    return { approvals: [] };
+  },
+
+  async grantApproval(_approvalId: string): Promise<ApprovalDecisionResponse> {
+    throw new Error('Approvals are not supported in Obsidian plugin mode.');
+  },
+
+  async denyApproval(_approvalId: string, _reason?: string): Promise<ApprovalDecisionResponse> {
+    throw new Error('Approvals are not supported in Obsidian plugin mode.');
   },
 };
 

@@ -7,8 +7,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
-import { useNativeCommands } from '../use-native-commands';
+import { useNativeCommands, isNativeCommandContent } from '../use-native-commands';
 import { useUsageReveal } from '../../use-usage-reveal';
+import { parseNativeCommand } from '../registry';
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
@@ -64,11 +65,45 @@ describe('useNativeCommands', () => {
     act(() => {
       outcome = result.current.tryRun('/rename Foo');
     });
-    expect(outcome).toEqual({ handled: true, ran: true });
+    // `confirmed` rides along because the rename is an optimistic mutation that
+    // outlives `tryRun` — `ran: true` here only means "the write was fired".
+    expect(outcome).toEqual({ handled: true, ran: true, confirmed: expect.any(Promise) });
     await waitFor(() =>
       expect(transport.updateSession).toHaveBeenCalledWith('s1', { title: 'Foo' }, '/repo')
     );
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Renamed session to "Foo"'));
+  });
+
+  it('settles /rename even when the composer unmounts before the mutation lands', async () => {
+    // React Query drops a mutation's PER-CALL onSuccess/onError if the component
+    // unmounts first. Building `confirmed` from those left a queued `/rename`
+    // neither restored nor confirmed — permanent limbo, holding its restore
+    // closure forever (DOR-480). The mutation's own promise always settles.
+    // Under the per-call implementation this assertion never resolves at all.
+    const { result, unmount } = setup('s1', '/repo');
+    let confirmed: Promise<boolean> | undefined;
+    act(() => {
+      const outcome = result.current.tryRun('/rename Foo');
+      if (outcome.handled) confirmed = outcome.confirmed;
+    });
+    expect(confirmed).toBeInstanceOf(Promise);
+
+    unmount();
+
+    await expect(confirmed).resolves.toBe(true);
+  });
+
+  it('reports a failed /rename as not confirmed rather than leaving it pending', async () => {
+    vi.mocked(transport.updateSession).mockRejectedValue(new Error('boom'));
+    const { result } = setup('s1', '/repo');
+    let confirmed: Promise<boolean> | undefined;
+    act(() => {
+      const outcome = result.current.tryRun('/rename Foo');
+      if (outcome.handled) confirmed = outcome.confirmed;
+    });
+
+    // `false`, never a rejection — the caller's undo runs off a resolved value.
+    await expect(confirmed).resolves.toBe(false);
   });
 
   it('only shows the success toast after the rename succeeds, never on a failure', async () => {
@@ -182,7 +217,10 @@ describe('useNativeCommands', () => {
       act(() => {
         outcome = result.current.tryRun('/compress');
       });
-      expect(outcome).toEqual({ handled: true, ran: true });
+      // `confirmed` rides along because the dispatch is trigger-only (202) and
+      // returns before it settles — `ran: true` here only means "it was fired".
+      // A caller holding an undo must settle on this, not on `ran`.
+      expect(outcome).toEqual({ handled: true, ran: true, confirmed: expect.any(Promise) });
       expect(transport.runCommandIntent).toHaveBeenCalledWith('s1', 'compact', undefined);
       expect(transport.postMessage).not.toHaveBeenCalled();
     });
@@ -238,5 +276,150 @@ describe('useNativeCommands', () => {
       expect(result.current.tryRun('/compress')).toEqual({ handled: false });
       expect(transport.runCommandIntent).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('isNativeCommandContent — what the funnel will swallow (DOR-480)', () => {
+  // The predicate a caller needs when asking "would this be intercepted rather
+  // than sent?". Gating on `parseNativeCommand` instead let `/compact` through,
+  // and a `/compact` that reaches the queue flushes without starting a turn, so
+  // the pump never re-arms and everything behind it strands.
+  it('recognizes the runtime-fulfilled compact intent and its aliases', () => {
+    expect(isNativeCommandContent('/compact')).toBe(true);
+    expect(isNativeCommandContent('/compact focus on the API changes')).toBe(true);
+    expect(isNativeCommandContent('/compress')).toBe(true);
+    expect(isNativeCommandContent('/summarize')).toBe(true);
+  });
+
+  it('recognizes client-native commands and their cross-agent aliases', () => {
+    for (const content of ['/rename Foo', '/clear', '/new', '/context', '/usage']) {
+      expect(isNativeCommandContent(content)).toBe(true);
+    }
+  });
+
+  it('leaves ordinary prose and unknown slash words alone', () => {
+    expect(isNativeCommandContent('explain what /rename does')).toBe(false);
+    expect(isNativeCommandContent('run the tests')).toBe(false);
+    expect(isNativeCommandContent('/not-a-real-command')).toBe(false);
+    expect(isNativeCommandContent('')).toBe(false);
+  });
+
+  it('is strictly broader than the client-native parser it replaced', () => {
+    // The exact gap that caused the bug, pinned so it cannot silently return.
+    expect(parseNativeCommand('/compact')).toBeNull();
+    expect(isNativeCommandContent('/compact')).toBe(true);
+  });
+});
+
+describe('useNativeCommands — the in-flight latch (DOR-479)', () => {
+  let transport: ReturnType<typeof createMockTransport>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    transport = createMockTransport();
+  });
+
+  function setup() {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    return renderHook(
+      () =>
+        useNativeCommands('/repo', 's1', {
+          startFreshSession,
+          compact: { supported: true, runtimeLabel: 'Claude Code' },
+        }),
+      { wrapper }
+    );
+  }
+
+  it('is not latched when nothing has been dispatched', () => {
+    expect(setup().result.current.commandPending).toBe(false);
+  });
+
+  // The composer keeps the command's text until it confirms, so a refused
+  // `/compact` cannot eat its instructions. That window is exactly when a second
+  // Enter would turn one intent into two triggers, so it has to be observable.
+  it('latches while a dispatched /compact is still in flight', async () => {
+    let settle: () => void = () => {};
+    vi.mocked(transport.runCommandIntent).mockImplementation(
+      () =>
+        new Promise<{ sessionId: string }>((resolve) => {
+          settle = () => resolve({ sessionId: 's1' });
+        })
+    );
+    const { result } = setup();
+
+    act(() => {
+      result.current.tryRun('/compact focus on the API changes');
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(true));
+
+    await act(async () => {
+      settle();
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(false));
+  });
+
+  // The reason this is a counter and not a boolean. Nothing else in the suite
+  // distinguishes the two: a boolean would pass every other test here, then
+  // unlatch on the FIRST settle and leave a still-in-flight dispatch
+  // re-triggerable by the next Enter.
+  it('stays latched when the first of two overlapping dispatches settles', async () => {
+    const settlers: Array<() => void> = [];
+    vi.mocked(transport.runCommandIntent).mockImplementation(
+      () =>
+        new Promise<{ sessionId: string }>((resolve) => {
+          settlers.push(() => resolve({ sessionId: 's1' }));
+        })
+    );
+    const { result } = setup();
+
+    act(() => {
+      result.current.tryRun('/compact first');
+    });
+    act(() => {
+      result.current.tryRun('/compact second');
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(true));
+    expect(settlers).toHaveLength(2);
+
+    await act(async () => {
+      settlers[0]();
+    });
+    expect(result.current.commandPending).toBe(true);
+
+    await act(async () => {
+      settlers[1]();
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(false));
+  });
+
+  it('releases the latch when the dispatch is REFUSED, not just when it succeeds', async () => {
+    let reject: (err: Error) => void = () => {};
+    vi.mocked(transport.runCommandIntent).mockImplementation(
+      () =>
+        new Promise<{ sessionId: string }>((_resolve, rej) => {
+          reject = rej;
+        })
+    );
+    const { result } = setup();
+
+    act(() => {
+      result.current.tryRun('/compact');
+    });
+    await waitFor(() => expect(result.current.commandPending).toBe(true));
+
+    await act(async () => {
+      reject(Object.assign(new Error('locked'), { code: 'SESSION_LOCKED' }));
+    });
+    // A refusal must hand the composer back — otherwise the honest "keep the
+    // text" behavior becomes a box you can never send from again.
+    await waitFor(() => expect(result.current.commandPending).toBe(false));
   });
 });

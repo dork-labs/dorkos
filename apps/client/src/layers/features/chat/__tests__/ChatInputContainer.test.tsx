@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 // Mock child components to isolate ChatInputContainer behavior
 vi.mock('../ui/input/ChatInput', () => ({
   ChatInput: vi.fn(() => <div data-testid="chat-input">ChatInput</div>),
@@ -12,11 +12,11 @@ vi.mock('../ui/status/ChatStatusSection', () => ({
 }));
 
 vi.mock('../ui/input/FileChipBar', () => ({
-  FileChipBar: () => <div data-testid="file-chips">FileChipBar</div>,
+  FileChipBar: vi.fn(() => <div data-testid="file-chips">FileChipBar</div>),
 }));
 
 vi.mock('../ui/input/QueuePanel', () => ({
-  QueuePanel: () => <div data-testid="queue-panel">QueuePanel</div>,
+  QueuePanel: vi.fn(() => <div data-testid="queue-panel">QueuePanel</div>),
 }));
 
 vi.mock('../ui/tools/ToolApproval', () => ({
@@ -47,20 +47,10 @@ vi.mock('react-dropzone', () => ({
   }),
 }));
 
-vi.mock('../model/use-chat-queue', () => ({
-  useChatQueue: () => ({
-    queue: [],
-    editingIndex: null,
-    handleQueue: vi.fn(),
-    handleQueueEdit: vi.fn(),
-    handleQueueSaveEdit: vi.fn(),
-    handleQueueCancelEdit: vi.fn(),
-    handleQueueRemove: vi.fn(),
-    handleQueueNavigateUp: vi.fn(),
-    handleQueueNavigateDown: vi.fn(),
-  }),
-}));
-
+// `useChatQueue` is deliberately NOT mocked: it is the only thing in this tree
+// that can write the composer, so stubbing it made the cross-session-leak guard
+// below unfalsifiable — it asserted that a function nothing could call was never
+// called. The real hook runs against the real session stores (below).
 vi.mock('../model/use-background-tasks', () => ({
   useBackgroundTasks: () => [],
 }));
@@ -79,7 +69,11 @@ vi.mock('@/layers/entities/agent', () => ({
   useAgentVisual: () => ({ color: '#3b82f6', emoji: '' }),
 }));
 
-vi.mock('@/layers/entities/session', () => ({
+// Only the three read-hooks the container itself calls are stubbed. Everything
+// else — the session stores, `useSessionQueue`, `useSessionAwaitingDecision` —
+// stays real, so the un-mocked `useChatQueue` above operates on real state.
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => [null, vi.fn()],
   useSessionChatState: () => ({ messages: [] }),
   useSessionStreamState: () => ({
@@ -94,8 +88,16 @@ vi.mock('@/layers/entities/session', () => ({
 }));
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
+import { ChatInput } from '../ui/input/ChatInput';
+import { QueuePanel } from '../ui/input/QueuePanel';
+import { useSessionStreamStore } from '@/layers/entities/session';
 import type { ToolCallState } from '../model/chat-types';
 import { createRef } from 'react';
+
+/** Props the (mocked) ChatInput was last rendered with. */
+function lastChatInputProps() {
+  return vi.mocked(ChatInput).mock.calls.at(-1)![0];
+}
 
 const baseProps = {
   chatInputRef: createRef<null>(),
@@ -110,7 +112,6 @@ const baseProps = {
     handleArrowDown: vi.fn(),
     handleKeyboardSelect: vi.fn(),
     handleCursorChange: vi.fn(),
-    handleChipClick: vi.fn(),
     dismissPalettes: vi.fn(),
     isPaletteOpen: false,
     activeDescendantId: undefined,
@@ -118,6 +119,7 @@ const baseProps = {
   handleSubmit: vi.fn(),
   submitContent: vi.fn(),
   tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
+  commandPending: false,
   status: 'idle' as const,
   sessionBusy: false,
   stop: vi.fn(),
@@ -128,7 +130,9 @@ const baseProps = {
     pendingFiles: [],
     onFilesSelected: vi.fn(),
     onFileRemove: vi.fn(),
+    onFileRetry: vi.fn(),
     isUploading: false,
+    hasFailedUpload: false,
   },
   interaction: {
     active: null,
@@ -144,6 +148,9 @@ const baseProps = {
 
 afterEach(() => {
   cleanup();
+  // The stream store is module state shared across tests — a queue seeded by one
+  // case must not decide whether the panel renders in the next.
+  useSessionStreamStore.getState().clearQueue('test-session');
 });
 
 describe('ChatInputContainer mode switching', () => {
@@ -231,6 +238,10 @@ describe('ChatInputContainer mode switching', () => {
     // sessions while an interaction was active restored the OLD session's
     // draft into the NEW session's composer (acceptance run 20260610-173202,
     // F4). The container must not call setInput on these transitions at all.
+    //
+    // This only means anything with the real `useChatQueue` mounted (see the
+    // mocks above): it owns every setInput call the container makes, so with it
+    // stubbed the assertion could not have failed for any reason.
     const toolCall: ToolCallState = {
       toolCallId: 'tc-4',
       toolName: 'Write',
@@ -259,5 +270,142 @@ describe('ChatInputContainer mode switching', () => {
     );
 
     expect(setInput).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('leaves the send enabled while every attachment is healthy', () => {
+    render(<ChatInputContainer {...baseProps} input="have a look at this" />);
+    expect(lastChatInputProps().canSubmit).toBe(true);
+  });
+
+  it('withholds the send while an attachment failed to upload', () => {
+    // ChatInput.test.tsx pins what canSubmit={false} does: the send button reads
+    // disabled, Enter does not submit, and the textarea stays typeable — so the
+    // person keeps their words instead of watching them go out attachment-less.
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        input="have a look at this"
+        fileUpload={{ ...baseProps.fileUpload, hasFailedUpload: true }}
+      />
+    );
+    expect(lastChatInputProps().canSubmit).toBe(false);
+  });
+
+  it('blocks a hand-send from the queue too, and says why', () => {
+    // Without this the click dequeues, the upload throws inside the flush, the
+    // restore fires, and the person gets a generic "Could not send message" for
+    // a cause that was on screen the whole time.
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'queued while busy');
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        fileUpload={{ ...baseProps.fileUpload, hasFailedUpload: true }}
+      />
+    );
+
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    expect(panelProps.sendBlockedReason).toBe('An attachment did not upload');
+  });
+
+  it('gives the composer a real name in the one mode where Enter stops meaning send', () => {
+    // Editing returned '' for the placeholder, and that string is the field's
+    // aria-label — so in the single mode whose behavior differs (Enter saves)
+    // the composer announced nothing at all.
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'first queued');
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'second queued');
+    render(<ChatInputContainer {...baseProps} />);
+
+    expect(lastChatInputProps().placeholder).toBe('Send a message...');
+
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    act(() => panelProps.onEdit(panelProps.queue[1]!.id));
+
+    expect(lastChatInputProps().placeholder).toBe(
+      'Edit queued message 2 of 2 — press Enter to save'
+    );
+    expect(lastChatInputProps().editingPosition).toBe(2);
+  });
+
+  it('draws the armed-to-clear readout in the overlay lane, above the queue rows', () => {
+    // The composer owns when the arm is raised; this component owns where it
+    // reads out. Anchored inside the composer it landed on the bottom queue
+    // row's Send-now and Remove buttons (measured in a browser) — the one way
+    // out of a queue the flush pump cannot drain. The lane floats above the
+    // whole card, so nothing it contains can cover a control.
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'queued while armed');
+    const { container } = render(<ChatInputContainer {...baseProps} />);
+
+    expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
+
+    act(() => lastChatInputProps().onClearArmedChange!(true));
+
+    const hint = screen.getByTestId('clear-armed-hint');
+    expect(hint).toBeInTheDocument();
+    // The lane, not the composer: `bottom-full` on the card is what puts it
+    // clear of everything stacked inside.
+    const lane = container.querySelector('.absolute.right-0.bottom-full.left-0');
+    expect(lane).not.toBeNull();
+    expect(lane!.contains(hint)).toBe(true);
+
+    act(() => lastChatInputProps().onClearArmedChange!(false));
+    expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
+  });
+
+  it('keeps the queue panel out of the tree entirely when nothing is queued', () => {
+    // The presence guard lives at the call site so AnimatePresence can watch the
+    // panel leave; a panel that merely renders null never animates out.
+    render(<ChatInputContainer {...baseProps} />);
+    expect(vi.mocked(QueuePanel)).not.toHaveBeenCalled();
+  });
+});
+
+describe('ChatInputContainer — sending takes the palette down with it (DOR-479)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // An open palette used to swallow Enter, and `onCommandSelect` closed the
+  // panel on its way out after finding no row. Now that Enter falls through and
+  // sends when there is nothing to pick, nothing else would take the "No
+  // commands found." card down — `detectTrigger` only runs on typing or a caret
+  // move — so it floated over the agent's reply until the next keystroke.
+  it('dismisses the palettes when the composer submits', () => {
+    const dismissPalettes = vi.fn();
+    const handleSubmit = vi.fn();
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
+        handleSubmit={handleSubmit}
+        input="/zzz"
+      />
+    );
+
+    lastChatInputProps().onSubmit!();
+
+    expect(dismissPalettes).toHaveBeenCalledOnce();
+    expect(handleSubmit).toHaveBeenCalledOnce();
+  });
+
+  it('dismisses the palettes when the composer queues mid-stream', () => {
+    const dismissPalettes = vi.fn();
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        autocomplete={{ ...(baseProps.autocomplete as object), dismissPalettes } as never}
+        status="streaming"
+        input="/zzz"
+      />
+    );
+
+    lastChatInputProps().onQueue!();
+
+    expect(dismissPalettes).toHaveBeenCalledOnce();
   });
 });

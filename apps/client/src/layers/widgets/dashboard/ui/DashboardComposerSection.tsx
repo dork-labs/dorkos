@@ -60,6 +60,10 @@ export function DashboardComposerSection() {
         onSubmit={handleSubmit}
         isStreaming={false}
         canSubmit={isDefaultAgentResolved}
+        // Nothing else on this screen explains the greyed Send, and this is very
+        // often the first sentence anyone types into DorkOS: they press Enter
+        // and, without this line, nothing happens for no stated reason.
+        canSubmitReason="Getting your agent ready…"
         placeholder={`Message ${defaultAgentDisplayName}…`}
       />
     </section>

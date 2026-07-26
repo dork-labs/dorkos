@@ -8,11 +8,14 @@ export { ChatPanel } from './ui/ChatPanel';
 // scripted onboarding conversation renders real message bubbles, the typing
 // indicator, the first-light arrival, and the composer without a live session).
 export { MessageItem } from './ui/message';
+export { resolveMessageAuthor } from './lib/resolve-message-author';
+export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
 export { TypingDots } from './ui/primitives';
 export { ChatInput, type ChatInputHandle } from './ui/input/ChatInput';
 export { FirstLight } from './ui/FirstLight';
-export { ChatStatusStrip, deriveStripState } from './ui/status/ChatStatusStrip';
-export type { StripState } from './ui/status/ChatStatusStrip';
+export { ChatStatusStrip } from './ui/status/ChatStatusStrip';
+export { deriveStripState } from './ui/status/strip-state';
+export type { StripState } from './ui/status/strip-state';
 export { useChatSession } from './model/use-chat-session';
 export { useCelebrations } from './model/use-celebrations';
 export { useTaskState } from './model/use-task-state';

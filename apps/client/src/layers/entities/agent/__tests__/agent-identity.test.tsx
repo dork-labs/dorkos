@@ -97,6 +97,15 @@ describe('AgentIdentity', () => {
     expect(identity.querySelector('.flex-col')).toBeInTheDocument();
   });
 
+  it('keeps the name in the accessibility tree when it is hidden', () => {
+    // The narrowest tier of the status line's width budget shows the avatar alone.
+    // The name stays announced — and keeps naming the button — rather than vanishing.
+    const { container } = render(<AgentIdentity {...baseProps} nameHidden onClick={vi.fn()} />);
+    expect(container.querySelector('[data-slot="agent-avatar"]')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'code-reviewer' })).toBeInTheDocument();
+    expect(screen.getByText('code-reviewer').className).toContain('sr-only');
+  });
+
   it('forwards healthStatus to AgentAvatar', () => {
     const { container } = render(<AgentIdentity {...baseProps} healthStatus="active" />);
     const avatar = container.querySelector('[data-slot="agent-avatar"]')!;

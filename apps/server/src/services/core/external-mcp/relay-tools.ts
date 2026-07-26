@@ -1,12 +1,12 @@
 /**
  * Registers the `relay_*` and `binding_*`-adjacent external MCP tools —
  * message send/inbox, endpoints, adapters, and trace/metrics — against a
- * live `McpServer` instance. Split out of `mcp-server.ts` — see
+ * gated tool registrar (`mcp-tool-gate.ts`). Split out of `mcp-server.ts` — see
  * `core-tools.ts` in this directory for why.
  *
  * @module services/core/external-mcp/relay-tools
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import { z } from 'zod';
 import { DeliveryMetricsSchema, InboxStatusFilterSchema } from '@dorkos/shared/relay-schemas';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -36,21 +36,22 @@ const A = ToolAnnotationPresets;
 
 /**
  * Register every `relay_*` tool (send/inbox/endpoints, adapters, trace and
- * metrics — 13 tools total) against `server`.
+ * metrics — 13 tools total) against `registrar`.
  *
- * @param server - The external `McpServer` instance to register tools against.
+ * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
+ *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  * @param identity - Server-resolved sender identity injected as the publish
  *   `from` for every send tool, so the LLM cannot assert (spoof) its own
  *   identity to bypass namespace access rules.
  */
 export function registerRelayTools(
-  server: McpServer,
+  registrar: ToolRegistrar,
   deps: McpToolDeps,
   identity: SenderIdentity
 ): void {
   // ── Send / inbox / endpoints ─────────────────────────────────────────────
-  server.registerTool(
+  registrar.registerTool(
     'relay_send',
     {
       description:
@@ -80,7 +81,7 @@ export function registerRelayTools(
     },
     createRelaySendHandler(deps, identity)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_inbox',
     {
       description:
@@ -110,7 +111,7 @@ export function registerRelayTools(
     },
     createRelayInboxHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_list_endpoints',
     {
       description:
@@ -122,7 +123,7 @@ export function registerRelayTools(
     },
     createRelayListEndpointsHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_register_endpoint',
     {
       description: 'Register a new Relay endpoint to receive messages on a subject.',
@@ -135,7 +136,7 @@ export function registerRelayTools(
     },
     createRelayRegisterEndpointHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_send_and_wait',
     {
       description:
@@ -176,7 +177,7 @@ export function registerRelayTools(
     },
     createRelayQueryHandler(deps, identity)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_send_async',
     {
       description:
@@ -201,7 +202,7 @@ export function registerRelayTools(
     },
     createRelayDispatchHandler(deps, identity)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_unregister_endpoint',
     {
       description:
@@ -215,7 +216,7 @@ export function registerRelayTools(
   );
 
   // ── Adapters ──────────────────────────────────────────────────────────────
-  server.registerTool(
+  registrar.registerTool(
     'relay_list_adapters',
     {
       description:
@@ -225,7 +226,7 @@ export function registerRelayTools(
     },
     createRelayListAdaptersHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_enable_adapter',
     {
       description:
@@ -238,7 +239,7 @@ export function registerRelayTools(
     },
     createRelayEnableAdapterHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_disable_adapter',
     {
       description:
@@ -250,7 +251,7 @@ export function registerRelayTools(
     },
     createRelayDisableAdapterHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_reload_adapters',
     {
       description:
@@ -263,7 +264,7 @@ export function registerRelayTools(
   );
 
   // ── Trace & metrics ───────────────────────────────────────────────────────
-  server.registerTool(
+  registrar.registerTool(
     'relay_get_trace',
     {
       description:
@@ -275,7 +276,7 @@ export function registerRelayTools(
     },
     createRelayGetTraceHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'relay_get_metrics',
     {
       description:

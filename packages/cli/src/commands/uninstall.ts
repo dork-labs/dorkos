@@ -5,6 +5,11 @@
  * one-line summary. Defaults preserve `.dork/data/` and
  * `.dork/secrets.json`; pass `--purge` to remove them too.
  *
+ * Removing a package cannot be undone, so the route gates it (DOR-467): a caller
+ * that is not the person at the keyboard — an agent, which carries
+ * `DORKOS_AGENT_TOKEN` — gets an approval request back instead of the removal, and
+ * retries with `--approval <token>` once a person has said yes.
+ *
  * @module commands/uninstall
  */
 import { parseArgs } from 'node:util';
@@ -18,6 +23,8 @@ export interface UninstallArgs {
   purge?: boolean;
   /** Project path for project-local uninstalls. */
   projectPath?: string;
+  /** Approval token from a previous run that came back awaiting approval. */
+  approvalToken?: string;
 }
 
 /** Uninstall API response shape. Mirrors {@link UninstallResult} on the server. */
@@ -28,8 +35,33 @@ interface UninstallResultBody {
   preservedData: string[];
 }
 
+/**
+ * The tier gate's "a person has to approve this first" answer, returned instead
+ * of an uninstall result. Mirrors `ApprovalRequiredPayload` on the server.
+ */
+interface ApprovalRequiredBody {
+  status: 'approval_required';
+  approvalId: string;
+  approvalToken: string;
+  message: string;
+  retry: { instructions: string };
+}
+
+/**
+ * Whether the server answered with an approval request rather than a result.
+ *
+ * @param result - The parsed response body.
+ * @returns True when nothing was uninstalled because a person has to approve it.
+ */
+function isAwaitingApproval(
+  result: UninstallResultBody | ApprovalRequiredBody
+): result is ApprovalRequiredBody {
+  return (result as ApprovalRequiredBody).status === 'approval_required';
+}
+
 /** One-line usage string surfaced in error messages. */
-const USAGE_LINE = 'Usage: dorkos uninstall <name> [--purge] [--project <path>]';
+const USAGE_LINE =
+  'Usage: dorkos uninstall <name> [--purge] [--project <path>] [--approval <token>]';
 
 /**
  * Parse the raw argv slice that follows `dorkos uninstall`.
@@ -45,6 +77,7 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
       options: {
         purge: { type: 'boolean', default: false },
         project: { type: 'string' },
+        approval: { type: 'string' },
       },
       allowPositionals: true,
       strict: true,
@@ -71,6 +104,7 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
     name,
     purge: Boolean(values.purge),
     projectPath: typeof values.project === 'string' ? values.project : undefined,
+    approvalToken: typeof values.approval === 'string' ? values.approval : undefined,
   };
 }
 
@@ -86,11 +120,24 @@ export async function runUninstall(args: UninstallArgs): Promise<number> {
     if (args.purge) body.purge = true;
     if (args.projectPath) body.projectPath = args.projectPath;
 
-    const result = await apiCall<UninstallResultBody>(
+    const result = await apiCall<UninstallResultBody | ApprovalRequiredBody>(
       'POST',
       `/api/marketplace/packages/${encodeURIComponent(args.name)}/uninstall`,
-      body
+      body,
+      args.approvalToken ? { 'X-DorkOS-Approval': args.approvalToken } : undefined
     );
+
+    // Uninstalling cannot be undone, so a caller that is not the person at the
+    // keyboard gets an approval request instead of the removal. Nothing has been
+    // removed here: print what to do and exit non-zero, so a script never reads
+    // this as a completed uninstall.
+    if (isAwaitingApproval(result)) {
+      console.error(result.message);
+      console.error(result.retry.instructions);
+      console.error(`Approval id: ${result.approvalId}`);
+      console.error(`Retry with: dorkos uninstall ${args.name} --approval ${result.approvalToken}`);
+      return 1;
+    }
 
     console.log(`Uninstalled ${result.packageName} (${result.removedFiles} entries removed)`);
     if (!args.purge && result.preservedData.length > 0) {

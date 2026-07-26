@@ -25,6 +25,7 @@ import {
   groupByTier,
   type TierGroupSlug,
 } from '../lib/model-menu-tiers';
+import { statusModelLabel } from '../lib/status-labels';
 
 const EFFORT_LABELS: Record<EffortLevel, { label: string; description: string }> = {
   none: { label: 'None', description: 'No reasoning' },
@@ -44,14 +45,6 @@ function formatContextWindow(tokens: number): string {
   if (tokens >= 1_000_000) return `${Math.round(tokens / 1_000_000)}M`;
   if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
   return String(tokens);
-}
-
-/** Extract a short display label from a model identifier when no displayName is available. */
-function getModelLabel(model: string, models: ModelOption[]): string {
-  const option = models.find((o) => o.value === model);
-  if (option) return option.displayName;
-  const match = model.match(/claude-(\w+)-/);
-  return match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : model;
 }
 
 /** Loading skeleton rendered while models are being fetched. */
@@ -390,6 +383,12 @@ export interface ModelConfigPopoverProps {
   sessionId?: string;
   /** Resolved runtime (e.g. `'codex'`) so a not-yet-started session still shows the right models. */
   runtime?: string | null;
+  /**
+   * Say it in as few pixels as possible — set below the status line's widest
+   * tier. Keeps the model name and drops the effort and Fast badges, which the
+   * Session panel and this popover both still report.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -407,6 +406,7 @@ export function ModelConfigPopover({
   disabled,
   sessionId,
   runtime,
+  compact,
 }: ModelConfigPopoverProps) {
   const {
     data: models,
@@ -427,17 +427,21 @@ export function ModelConfigPopover({
 
   const showModes = selectedModel?.supportsFastMode ?? false;
 
-  const effortLabel = effort ? EFFORT_LABELS[effort].label : null;
+  // Badges are the first thing the status line gives up when it narrows: effort
+  // and Fast are settings, and this popover plus the Session panel both still
+  // report them. The model's NAME is what the line is for, so it always stays.
+  const effortLabel = !compact && effort ? EFFORT_LABELS[effort].label : null;
+  const showFastBadge = !compact && fastMode;
 
   // Build status bar trigger content
   const trigger = (
     <button
       disabled={disabled}
-      className="hover:text-foreground inline-flex items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40"
+      className="hover:text-foreground inline-flex min-w-0 items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40"
       data-testid="model-config-trigger"
     >
-      <Bot className="size-(--size-icon-xs)" />
-      <span>{getModelLabel(model, modelList)}</span>
+      <Bot className="size-(--size-icon-xs) shrink-0" />
+      <span className="truncate">{statusModelLabel(model, modelList)}</span>
       {effortLabel && (
         <>
           <span className="text-muted-foreground text-[11px]">·</span>
@@ -446,7 +450,7 @@ export function ModelConfigPopover({
           </Badge>
         </>
       )}
-      {fastMode && (
+      {showFastBadge && (
         <>
           <span className="text-muted-foreground text-[11px]">·</span>
           <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">

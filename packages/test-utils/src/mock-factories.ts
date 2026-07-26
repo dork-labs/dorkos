@@ -521,6 +521,18 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
+    // Approvals (spec `agent-trust` §3.3)
+    listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+    grantApproval: vi
+      .fn()
+      .mockImplementation((approvalId: string) =>
+        Promise.resolve({ ok: true, approvalId, outcome: 'granted' })
+      ),
+    denyApproval: vi
+      .fn()
+      .mockImplementation((approvalId: string) =>
+        Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
+      ),
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),

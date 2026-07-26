@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { TransportProvider } from '@/layers/shared/model';
-import { CONTEXT_WARNING_PERCENT } from '@/layers/entities/session';
+import { CONTEXT_ACTION_PERCENT } from '@/layers/entities/session';
 import { createMockTransport } from '@dorkos/test-utils';
 import {
   shouldShowCompactionChip,
@@ -22,12 +22,12 @@ vi.mock('sonner', () => ({
 }));
 
 describe('shouldShowCompactionChip', () => {
-  // The DOR-112 spec: "usage fraction >= 0.8" — asserted here as the exact
-  // percent boundary, since the hook and the copy both work in whole percent.
-  // The chip now shares the one threshold source (CONTEXT_WARNING_PERCENT), so
-  // this pins the shared constant the hook gates on.
-  it('gates on the shared near-full threshold (80)', () => {
-    expect(CONTEXT_WARNING_PERCENT).toBe(80);
+  // Asserted as the exact percent boundary, since the hook and the copy both work
+  // in whole percent. The action shares the one threshold source
+  // (CONTEXT_ACTION_PERCENT) with the ContextItem badge it appears beside, so this
+  // pins the shared constant the hook gates on.
+  it('gates on the shared action threshold (85)', () => {
+    expect(CONTEXT_ACTION_PERCENT).toBe(85);
   });
 
   it('hides when percent is unknown (null)', () => {
@@ -38,13 +38,13 @@ describe('shouldShowCompactionChip', () => {
 
   it('hides below the threshold', () => {
     expect(
-      shouldShowCompactionChip({ percent: 79, compactSupported: true, isStreaming: false })
+      shouldShowCompactionChip({ percent: 84, compactSupported: true, isStreaming: false })
     ).toBe(false);
   });
 
   it('shows right at the threshold', () => {
     expect(
-      shouldShowCompactionChip({ percent: 80, compactSupported: true, isStreaming: false })
+      shouldShowCompactionChip({ percent: 85, compactSupported: true, isStreaming: false })
     ).toBe(true);
   });
 
@@ -100,14 +100,14 @@ describe('useCompactionChip', () => {
       () =>
         useCompactionChip({
           sessionId: 's1',
-          percent: 82,
+          percent: 88,
           compactSupported: true,
           isStreaming: false,
         }),
       { wrapper }
     );
     expect(result.current.visible).toBe(true);
-    expect(result.current.percent).toBe(82);
+    expect(result.current.percent).toBe(88);
     expect(result.current.pending).toBe(false);
   });
 

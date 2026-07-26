@@ -192,13 +192,19 @@ Usage: dorkos uninstall <name> [options]
 
 Remove an installed marketplace package from the running DorkOS server.
 
+Removing a package cannot be undone, so an agent has to get a person's approval
+first: the command answers with an approval id and a token, and you run it again
+with --approval once the person has said yes in DorkOS.
+
 Options:
-      --purge           Remove preserved data and secrets in addition to package files
-      --project <path>  Project path for project-local uninstalls
+      --purge             Remove preserved data and secrets in addition to package files
+      --project <path>    Project path for project-local uninstalls
+      --approval <token>  Approval token from a previous run that was waiting on a person
 
 Examples:
   dorkos uninstall code-review-suite
   dorkos uninstall --purge code-review-suite
+  dorkos uninstall code-review-suite --approval appr_tok_...
 `);
     process.exit(0);
   }
@@ -479,7 +485,7 @@ Commands:
   agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
   activity             Show the activity feed (--actor|--category|--type|--limit)
-  capabilities         List everything you can do here (--json for raw catalog)
+  capabilities         List capabilities you can invoke by id (--json for raw catalog)
   call <capability-id> Invoke any capability by id (--input <json>; prints JSON)
   version --check      Show server + latest version (falls back to local cache)
   harness sync         Project agent files across harnesses (--check|--fix)

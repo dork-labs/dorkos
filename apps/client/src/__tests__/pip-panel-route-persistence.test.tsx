@@ -51,6 +51,12 @@ vi.mock('@/layers/widgets/app-banner', () => ({
   useAppBanners: () => [],
 }));
 
+// The approvals marker subscribes to the global event stream, which this suite
+// mounts no provider for. Its placement is covered by app-shell-slots.test.tsx.
+vi.mock('@/layers/widgets/approvals-indicator', () => ({
+  ApprovalsIndicator: () => null,
+}));
+
 vi.mock('@/layers/features/command-palette', () => ({
   CommandPaletteDialog: () => null,
 }));
@@ -130,16 +136,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   return {
     ...actual,
     useRelayAdaptersSync: () => {},
-  };
-});
-
-// AppShell also mounts useStatusBarLegacyMigration (DOR-431), which reads the
-// transport + query client. This isolated test provides neither, so no-op it.
-vi.mock('@/layers/entities/config', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
-  return {
-    ...actual,
-    useStatusBarLegacyMigration: () => {},
   };
 });
 

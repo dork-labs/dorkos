@@ -194,6 +194,27 @@ export function backfillAuthDefaults(store: {
 }
 
 /**
+ * Migration body: backfill the `approvals` section (standing permissions,
+ * DOR-501) for configs persisted before it existed. Additive + idempotent: only
+ * writes when the key is absent, and the schema default yields the same shape on
+ * read, so this just writes the key through on the upgrade where it lands.
+ *
+ * Seeds `standingGrants: false`. A safety feature does not get quietly relaxed
+ * by an upgrade — nothing changes for an existing user until they ask for it.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillApprovalsDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('approvals') == null) {
+    store.set('approvals', { standingGrants: false, trustWindowMinutes: 480 });
+  }
+}
+
+/**
  * Migration body: remove the tunnel passcode fields (`tunnel.passcodeEnabled`,
  * `tunnel.passcodeHash`, `tunnel.passcodeSalt`) and the root `sessionSecret`
  * from stored configs. The tunnel passcode auth path and the cookie-session
@@ -638,40 +659,55 @@ export function backfillShapesDefaults(store: {
 }
 
 /**
- * Migration body: backfill `ui.statusBar` (person-scoped status-bar visibility
- * toggles — every item shown by default; DOR-431) onto an EXISTING `ui` block.
- * conf merges top-level defaults SHALLOWLY, so a `ui` object already on disk
- * never inherits the new nested `statusBar` default — this supplies it.
- * Additive + idempotent: only writes when `ui.statusBar` is absent, never
- * overwrites an existing value. The whole-`ui`-absent case is handled by the
- * schema default on read (which already yields the status-bar defaults). Seeds
- * every item visible, matching the client's historical localStorage defaults.
+ * Migration body: put `ui.statusBar` into its pins shape (`{ pins: [] }`) on an
+ * EXISTING `ui` block. conf merges top-level defaults SHALLOWLY, so a `ui`
+ * object already on disk never inherits the new nested `statusBar` default —
+ * this supplies it. The whole-`ui`-absent case needs nothing: the shallow merge
+ * brings in the default `ui`, pins included.
+ *
+ * Two cases, one write:
+ *
+ * 1. `ui.statusBar` absent (an upgrade from any released version) — seed
+ *    `{ pins: [] }`.
+ * 2. `ui.statusBar` holding the retired ten-boolean visibility shape — replace
+ *    it with `{ pins: [] }`. **This drops the old show/hide choices rather than
+ *    translating them, deliberately.** The semantics inverted: the ten booleans
+ *    were subtractive (everything visible, hide what you don't want) and pins
+ *    are additive (nothing but news, pin what you always want). Mapping
+ *    "visible" to "pinned" would hand anyone still on the defaults ten pins and
+ *    erase the quiet-by-default line the pins exist to serve, so this is a
+ *    one-time reset (spec composer-status-redesign §5.1, DOR-452).
+ *
+ * The retired shape can only be on disk from a pre-release build: `ui.statusBar`
+ * was introduced (as ten booleans) after v0.56.0 and never appeared in a tagged
+ * release, so case 2 only ever fires on a machine that ran `main` between
+ * DOR-431 and DOR-452. It is handled here rather than in a later key because the
+ * booleans now violate the schema (`additionalProperties: false`, `pins`
+ * required) and conf validates the whole store once migrations finish — leaving
+ * them for a `0.58.0` key would hard-fail startup on any release cut as 0.57.0.
+ *
+ * Idempotent: a `statusBar` that already carries a `pins` array is left exactly
+ * as it is, so re-running (corrupt-recovery, a hand-edited migration version)
+ * never clears someone's pins.
  *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
  */
-export function backfillStatusBarDefaults(store: {
+export function migrateStatusBarToPins(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
   const ui = store.get('ui');
-  if (ui && typeof ui === 'object' && (ui as { statusBar?: unknown }).statusBar === undefined) {
-    store.set('ui', {
-      ...(ui as Record<string, unknown>),
-      statusBar: {
-        cwd: true,
-        git: true,
-        runtime: true,
-        model: true,
-        cache: true,
-        context: true,
-        usage: true,
-        permission: true,
-        sound: true,
-        polling: true,
-      },
-    });
-  }
+  if (!ui || typeof ui !== 'object') return;
+
+  const statusBar = (ui as { statusBar?: unknown }).statusBar;
+  const alreadyPinned =
+    statusBar !== null &&
+    typeof statusBar === 'object' &&
+    Array.isArray((statusBar as { pins?: unknown }).pins);
+  if (alreadyPinned) return;
+
+  store.set('ui', { ...(ui as Record<string, unknown>), statusBar: { pins: [] } });
 }
 
 /**
@@ -957,13 +993,28 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Backfill `ui.statusBar` (person-scoped status-bar visibility toggles;
-  // DOR-431) onto an existing `ui` block — promotes the toggles from client
-  // localStorage into server config so devices/agents can read + flip them.
-  // Additive + idempotent; seeds every item visible. Keyed to the next
-  // unreleased version (0.56.0 is already tagged); /system:release reconciles
-  // the key at tag time if the real release differs.
-  '0.57.0': backfillStatusBarDefaults,
+  // Composite: DOR-452 and DOR-501 both target "the next unreleased version"
+  // (0.56.0 is already tagged) and an object literal cannot repeat a key, so
+  // their bodies compose here in insertion order — the same convention as the
+  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. Both are independent and
+  // idempotent. /system:release reconciles the key at tag time if the real
+  // release differs.
+  '0.57.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // Put `ui.statusBar` into its pins shape on an existing `ui` block —
+    // status-bar preferences live in server config so devices/agents can read +
+    // flip them (DOR-431), and the line is now quiet by default with an additive
+    // pin list instead of ten subtractive visibility booleans (DOR-452). Seeds
+    // nothing pinned, and drops the retired booleans on the one machine shape
+    // that can still carry them (see `migrateStatusBarToPins` for why the reset
+    // is deliberate and why it is not deferred to a later key).
+    migrateStatusBarToPins(store);
+    // `approvals` section (standing permissions, DOR-501). Additive +
+    // idempotent; seeds the feature OFF, so an upgrade never relaxes the gate.
+    backfillApprovalsDefaults(store);
+  },
 } as const;
 
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {

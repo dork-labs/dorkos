@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
@@ -17,6 +17,7 @@ import { useChatQueue } from '../../model/use-chat-queue';
 import type { NativeCommandResult } from '../../model/native-commands';
 import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
+import { ClearArmedHint } from './ClearArmedHint';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
@@ -34,19 +35,30 @@ import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
 import { useDragAndPaste } from './use-drag-and-paste';
+import { sessionContextKey } from '../../lib/session-context-key';
 
 interface ChatInputContainerProps {
   chatInputRef: RefObject<ChatInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
-  submitContent: (content: string, originSessionId?: string, opts?: { queued: boolean }) => void;
+  submitContent: (
+    content: string,
+    originSessionId?: string,
+    opts?: { queued: boolean; restore?: () => void }
+  ) => void;
   /**
    * Native (client-side) command interceptor. Used at the queue decision so a
    * native command typed while a turn streams runs instantly instead of being
    * queued (a queued native command never starts a turn and would stall the pump).
    */
   tryNativeCommand: (content: string) => NativeCommandResult;
+  /**
+   * A dispatched native command has not settled yet. Closes both submit paths
+   * for that window — the composer keeps the command's text until it confirms,
+   * so nothing else stops a second Enter re-dispatching it.
+   */
+  commandPending: boolean;
   status: 'idle' | 'streaming' | 'error';
   sessionBusy: boolean;
   stop: () => void;
@@ -58,13 +70,24 @@ interface ChatInputContainerProps {
   sync: SyncPresenceProps;
 }
 
+/**
+ * The composer's label \u2014 its `aria-label`, and its visible placeholder whenever
+ * the rotating overlay is not covering it.
+ *
+ * Editing a queued item used to return `''`, so in the one mode where the
+ * field's behavior changes \u2014 Enter saves instead of sends \u2014 it announced
+ * nothing at all. It carries the item's text, so no visible placeholder is lost
+ * by naming it properly.
+ */
 function getPlaceholder(
   editingIndex: number | null,
   isStreaming: boolean,
   queueLength: number,
   defaultText: string
 ): string {
-  if (editingIndex !== null) return '';
+  if (editingIndex !== null) {
+    return `Edit queued message ${editingIndex + 1} of ${queueLength} \u2014 press Enter to save`;
+  }
   if (isStreaming && queueLength > 0) return `Compose another \u2014 ${queueLength} queued`;
   if (isStreaming) return 'Compose next \u2014 will send when ready';
   return defaultText;
@@ -78,6 +101,7 @@ export function ChatInputContainer({
   handleSubmit,
   submitContent,
   tryNativeCommand,
+  commandPending,
   status,
   sessionBusy,
   stop,
@@ -95,7 +119,8 @@ export function ChatInputContainer({
     onToolRef,
     onToolDecided,
   } = interaction;
-  const { pendingFiles, onFilesSelected, onFileRemove, isUploading } = fileUpload;
+  const { pendingFiles, onFilesSelected, onFileRemove, onFileRetry, isUploading, hasFailedUpload } =
+    fileUpload;
   const isStreaming = status === 'streaming';
   const isTextStreaming = useAppStore((s) => s.isTextStreaming);
   const [selectedCwd] = useDirectoryState();
@@ -151,6 +176,28 @@ export function ChatInputContainer({
     onFilesSelected,
   });
 
+  // The composer owns WHEN the double-Escape is armed (it owns the keyboard);
+  // this component owns WHERE that reads out, because the lane it belongs in
+  // floats above the queue panel and the attachment chips, which are rendered
+  // here.
+  const [clearArmed, setClearArmed] = useState(false);
+
+  // Sending closes the palettes. It used to happen by accident: an open palette
+  // swallowed Enter, and `onCommandSelect` found no row and closed the panel on
+  // its way out. Now that Enter falls through to the send when there is nothing
+  // to pick, nothing else would take the "No commands found." card down —
+  // `detectTrigger` only runs on typing or a caret move — so it would float
+  // over the agent's reply until the next keystroke.
+  const submitAndDismiss = useCallback(() => {
+    autocomplete.dismissPalettes();
+    handleSubmit();
+  }, [autocomplete, handleSubmit]);
+
+  const queueAndDismiss = useCallback(() => {
+    autocomplete.dismissPalettes();
+    chatQueue.handleQueue();
+  }, [autocomplete, chatQueue]);
+
   return (
     <div
       {...getRootProps()}
@@ -195,6 +242,11 @@ export function ChatInputContainer({
               focusedOptionIndex={focusedOptionIndex}
               onToolRef={onToolRef}
               onToolDecided={onToolDecided}
+              // The queue panel is unmounted for the whole time a card is up
+              // (this branch replaces the entire composer), so the only mark
+              // that queued messages still exist would vanish at exactly the
+              // moment it reassures. The messages survive — say so.
+              queueDepth={chatQueue.queue.length}
             />
           </motion.div>
         ) : (
@@ -205,6 +257,9 @@ export function ChatInputContainer({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
+            {/* The composer's overlay lane: everything transient that floats
+                above the card, stacked bottom-up so nothing lands on the queue
+                rows' controls. */}
             <div className="absolute right-0 bottom-full left-0 mb-2">
               <AnimatePresence>
                 {autocomplete.commands.show && (
@@ -222,26 +277,50 @@ export function ChatInputContainer({
                   />
                 )}
               </AnimatePresence>
+              {clearArmed && <ClearArmedHint />}
             </div>
 
             {pendingFiles.length > 0 && (
-              <FileChipBar files={pendingFiles} onRemove={onFileRemove} />
+              <FileChipBar files={pendingFiles} onRemove={onFileRemove} onRetry={onFileRetry} />
             )}
-            <QueuePanel
-              queue={chatQueue.queue}
-              editingIndex={chatQueue.editingIndex}
-              onEdit={chatQueue.handleQueueEdit}
-              onRemove={chatQueue.handleQueueRemove}
-            />
+            {/* The presence guard lives here, not inside the panel: a component
+                that returns null is still mounted, so AnimatePresence never saw
+                it leave and the panel's exit animation never ran — it popped out
+                at the exact moment the last queued message flushed. */}
+            <AnimatePresence>
+              {chatQueue.queue.length > 0 && (
+                <QueuePanel
+                  queue={chatQueue.queue}
+                  editingId={chatQueue.editingId}
+                  onEdit={chatQueue.handleQueueEdit}
+                  onRemove={chatQueue.handleQueueRemove}
+                  onSend={chatQueue.handleQueueSend}
+                  // A failed attachment blocks a hand-send exactly as it blocks a
+                  // normal one — and says so, instead of letting the click dequeue,
+                  // fail inside the upload, and land as a generic "Could not send
+                  // message". This component is the one place that holds both the
+                  // queue and the attachment state.
+                  sendBlockedReason={
+                    hasFailedUpload ? 'An attachment did not upload' : chatQueue.sendBlockedReason
+                  }
+                  // A turn that ended in error never armed the flush pump, so
+                  // its queue really is waiting on a person — every other
+                  // unblocked queue drains itself on the next idle edge, and
+                  // telling someone to act would be wrong for that one.
+                  whenUnblocked={status === 'error' ? 'Ready to send' : 'Will send next'}
+                />
+              )}
+            </AnimatePresence>
             <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
 
             <ChatInput
               ref={chatInputRef}
               value={input}
               onChange={autocomplete.handleInputChange}
-              onSubmit={handleSubmit}
+              onSubmit={submitAndDismiss}
               isStreaming={isStreaming}
               isUploading={isUploading}
+              commandPending={commandPending}
               sessionBusy={sessionBusy}
               onStop={stop}
               onEscape={autocomplete.dismissPalettes}
@@ -250,20 +329,38 @@ export function ChatInputContainer({
                 autocomplete.dismissPalettes();
               }}
               isPaletteOpen={autocomplete.isPaletteOpen}
+              paletteHasResults={autocomplete.paletteHasResults}
               onArrowUp={autocomplete.handleArrowUp}
               onArrowDown={autocomplete.handleArrowDown}
               onCommandSelect={autocomplete.handleKeyboardSelect}
               activeDescendantId={autocomplete.activeDescendantId}
+              paletteListboxId={autocomplete.paletteListboxId}
               onCursorChange={autocomplete.handleCursorChange}
               onAttach={onFilesSelected}
+              // A failed attachment blocks the send outright. Sending anyway
+              // delivered a message with no attachment and then wiped the error
+              // chips, leaving the person waiting on an answer about a file the
+              // agent never received (DOR-480). The red chip above states the
+              // reason and offers both ways out — try again, or remove it.
+              canSubmit={!hasFailedUpload}
               editingQueueItem={chatQueue.editingIndex !== null}
+              editingPosition={
+                chatQueue.editingIndex === null ? undefined : chatQueue.editingIndex + 1
+              }
               queueDepth={chatQueue.queue.length}
-              onQueue={chatQueue.handleQueue}
+              onQueue={queueAndDismiss}
               onSaveEdit={chatQueue.handleQueueSaveEdit}
               onCancelEdit={chatQueue.handleQueueCancelEdit}
               onQueueNavigateUp={chatQueue.handleQueueNavigateUp}
               onQueueNavigateDown={chatQueue.handleQueueNavigateDown}
               queueHasItems={chatQueue.queue.length > 0}
+              // The SAME key the queue and the parked draft are scoped by, so a
+              // pending double-Escape dies on exactly the boundary its draft
+              // does. This composer is re-rendered rather than remounted on a
+              // session switch, so an arm would otherwise survive into the next
+              // session's text.
+              contextKey={sessionContextKey(sessionId, selectedCwd) ?? undefined}
+              onClearArmedChange={setClearArmed}
               placeholder={getPlaceholder(
                 chatQueue.editingIndex,
                 isStreaming,
@@ -284,7 +381,6 @@ export function ChatInputContainer({
               sessionId={sessionId}
               sessionStatus={sessionStatus}
               isStreaming={isStreaming}
-              onChipClick={autocomplete.handleChipClick}
               syncConnectionState={sync.connectionState}
               agentName={agentName}
               agentColor={agentVisual.color}

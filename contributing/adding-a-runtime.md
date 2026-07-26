@@ -22,6 +22,8 @@ Related ADRs: [0307](../decisions/0307-second-and-third-runtimes-opencode-and-co
 | Config schema                       | `packages/shared/src/config-schema.ts` (`runtimes` block)                                         |
 | Config migrations                   | `apps/server/src/services/core/config-manager.ts` (`CONFIG_MIGRATIONS`)                           |
 | Shared session infrastructure       | `apps/server/src/services/session/` (lock manager, EventLog, projector, aggregation)              |
+| Status-line label bound             | `packages/shared/src/constants.ts` (`STATUS_VALUE_MAX_CHARS`)                                     |
+| Bound enforcement (model catalogs)  | `apps/server/src/services/runtimes/__tests__/model-catalog-labels.test.ts`                        |
 | Client visual identity              | `apps/client/src/layers/entities/runtime/config/runtime-descriptors.ts`                           |
 | Adapter icons                       | `packages/icons/src/adapter-logos.tsx`                                                            |
 | Needs-setup UX                      | `apps/client/src/layers/entities/runtime/ui/RuntimeSetupDialog.tsx`                               |
@@ -87,6 +89,63 @@ capability flag.
 
 - **`permissionModes` is structured, not boolean.** Enumerate the modes your backend genuinely supports as `PermissionModeDescriptor[]` (`{ id, label, description? }`) plus a `default` id, or declare `{ supported: false, values: [] }` for no picker at all. Draw ids from the shared `PermissionModeSchema` enum (`packages/shared/src/schemas.ts`) when a mode must persist in `session_metadata`; the conformance suite asserts `default` references a declared descriptor.
 - **`features` is a typed extension point** (`Record<string, unknown>`, ADR-0256) for runtime-specific metadata that does not merit a first-class field. Consumers must validate what they read.
+
+### Labels are budgeted: `STATUS_VALUE_MAX_CHARS`
+
+Several strings an adapter declares surface in the composer's status line, and that
+line's width budget **counts slots, not pixels** — an assumption that only holds
+while every slot is about one size. `STATUS_VALUE_MAX_CHARS`
+(`packages/shared/src/constants.ts`, currently **13**) is the width one slot is
+priced at. The constant lives in `shared` rather than the client precisely because
+it is a **contract with runtime authors**, not a private UI detail: the server's own
+tests are held to it.
+
+**Where the bound is actually applied is narrower than the price list.** Below the
+line's widest density tier every item drops its verbose parts and its value is cut to
+the bound. At the widest tier — a bar of 640px or more — only the model item is cut;
+a permission-mode label is drawn whole, and the row's own CSS truncation is all that
+stops it. That truncation fires when the whole row overflows, so an overlong label
+takes width from its neighbours instead of capping itself.
+
+`13` is the width of the longest name in the two places that _are_ asserted: the
+`CODEX_MODELS` catalog (`GPT-5.3 Codex`) and the client's runtime descriptors
+(`Claude Code`).
+
+The split that matters is authorship, not length:
+
+| String                                                                                                               | Rule                      | Enforced by                                                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `displayName` in a **static, hand-written** model catalog (`CODEX_MODELS`)                                           | Must fit outright         | `apps/server/src/services/runtimes/__tests__/model-catalog-labels.test.ts`                                                                  |
+| `RuntimeDescriptor.label` (step 8)                                                                                   | Must fit outright         | `apps/client/src/layers/features/status/__tests__/status-labels.test.ts` (`describe('the compactness invariant the slot budget rests on')`) |
+| `permissionModes.values[].label`                                                                                     | Keep it short             | Nothing. Cut to the bound below the widest tier; drawn whole at the widest                                                                  |
+| Any name your adapter merely **relays** from a third party — a provider's model display name from OpenCode's catalog | Truncated, never rejected | `compactStatusValue` (`apps/client/src/layers/features/status/lib/status-labels.ts`)                                                        |
+
+**Shipped permission labels already overshoot, so do not read them as a licence.**
+`'Bypass permissions'` (18 characters) ships in both `claude-code` and `opencode`,
+and `'Workspace write'` (15) in `codex`. Below the widest tier they are cut and the
+slot budget holds; at the widest tier they are drawn in full, which is more width
+than the budget charged for them. The gap between what a slot is priced at and what
+the widest tier draws is tracked as DOR-461 — not something a new adapter should add
+to.
+
+**Relayed strings are cut, not rejected — deliberately.** DorkOS does not control
+what a third-party provider calls its model, and failing a session because a
+provider chose a verbose name would be the wrong trade. A static catalog is
+different: DorkOS wrote it, so it can be held to the bound, and a shipped
+`GPT-5.3 Cod…` on a wide desktop is a bug in the number rather than a budget doing
+its job (DOR-452).
+
+**If your runtime ships a static catalog, register it.** Add it to
+`FIRST_PARTY_CATALOGS` in `model-catalog-labels.test.ts`; a runtime that resolves
+its catalog at runtime (Claude Code from the SDK, OpenCode from its sidecar's
+provider list) deliberately stays off that list. Note the test lives in the
+_parent_ `runtimes/__tests__/` directory, so
+`pnpm vitest run apps/server/src/services/runtimes/<name>/` does not run it.
+
+Raising the bound is legitimate but not free: `FULL_SLOT_COST_PX` in
+`apps/client/src/layers/features/status/model/status-budget.ts` is derived from
+it, so a wider character bound buys fewer slots at the same bar width. Shorten the
+name first.
 
 ### The live-state split (facade + mapper + projector)
 
@@ -240,6 +299,9 @@ myruntime: {
 },
 ```
 
+`label` is one of the strings the status line budgets, so keep it within
+`STATUS_VALUE_MAX_CHARS` — see [Labels are budgeted](#labels-are-budgeted-status_value_max_chars).
+
 Add the logo to `packages/icons/src/adapter-logos.tsx` (a 16px-legible mark; alias an existing vendor mark like `CodexLogo = OpenAILogo`, or draw an original glyph like `OpenCodeLogo`) and register it in `ADAPTER_LOGO_MAP`. Unknown types fall back to `DefaultAdapterIcon` with the raw type as label, so a missing descriptor degrades gracefully; it never crashes, it just looks generic.
 
 ### 9. `checkDependencies` + the needs-setup UX contract
@@ -257,6 +319,7 @@ Results surface through `GET /api/system/requirements`, which aggregates every r
 
 ```bash
 pnpm vitest run apps/server/src/services/runtimes/<name>/   # adapter + conformance suite
+pnpm vitest run apps/server/src/services/runtimes/__tests__/ # label bound over the real catalogs
 pnpm lint                                                    # SDK confinement holds
 pnpm typecheck
 DORKOS_<NAME>_LIVE=1 pnpm vitest run .../conformance.test.ts # local live smoke
@@ -275,6 +338,7 @@ Lessons paid for during the Codex/OpenCode implementation:
 - **Sidecar lifecycle (if applicable).** A restarted sidecar mints new credentials, so an SDK's internal SSE retry reconnects with stale auth forever; disable it and own reconnection yourself (`global-event-hub.ts` is the pattern - on drop, fail in-flight turns with a typed error, re-obtain a fresh client through the manager's backoff, resubscribe). Bind loopback-only, inject a conservative permission ruleset (`OPENCODE_SIDECAR_CONFIG`), and wire `shutdownServices()` teardown so no orphan survives DorkOS.
 - **Registering after `sessionListBroadcaster.start()`.** Sessions exist but never stream into the session list. Register earlier (step 7).
 - **Flat-config ESLint replace semantics.** Adding your per-adapter block without restating the other SDK bans silently un-bans them in your directory (step 5).
+- **A `displayName` or `label` nobody told you was bounded.** A hand-written model catalog and the client `RuntimeDescriptor.label` must both fit `STATUS_VALUE_MAX_CHARS` (13), enforced by tests that live outside your adapter directory. Overshoot and you either fail a test you have never heard of or ship a silently truncated status-line label. See [Labels are budgeted](#labels-are-budgeted-status_value_max_chars).
 
 ## Anti-Patterns
 
@@ -299,6 +363,12 @@ runtimeConformance(() => new MyRuntime({}));  // spawns `mytool --version` in ch
 supportsToolApproval: true, // backend auto-cancels approvals; UI shows dead buttons
 
 // ✅ Declare what the backend genuinely does; the UI adapts per capability
+
+// ❌ NEVER write a first-party label longer than STATUS_VALUE_MAX_CHARS (13)
+displayName: 'MyRuntime Turbo 2 Preview', // status line renders "MyRuntime Tu…"
+
+// ✅ A name that fits the bound, registered in FIRST_PARTY_CATALOGS so it stays fitting
+displayName: 'Turbo 2',
 ```
 
 ## Related Guides

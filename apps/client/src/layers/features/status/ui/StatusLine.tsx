@@ -1,166 +1,209 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import type { Transition } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
-
-/** @internal StatusLine compound component context. Not part of the public API. */
-interface StatusLineContextValue {
-  /** Shared animation transition applied to all items. */
-  itemTransition: Transition;
-  /** The itemKey of the first currently-registered visible item, or null if none. */
-  firstVisibleKey: string | null;
-  /** Called by StatusLine.Item via useEffect on mount when visible. */
-  registerItem: (key: string) => void;
-  /** Called by StatusLine.Item via useEffect cleanup on unmount or when visible becomes false. */
-  unregisterItem: (key: string) => void;
-}
-
-const StatusLineContext = React.createContext<StatusLineContextValue | null>(null);
-
-/**
- * Access the StatusLine registration context. Throws if called outside a StatusLine provider.
- *
- * @internal Use within StatusLine.Item only.
- */
-function useStatusLineContext(): StatusLineContextValue {
-  const ctx = React.useContext(StatusLineContext);
-  if (!ctx) {
-    throw new Error('StatusLine.Item must be used within a StatusLine.');
-  }
-  return ctx;
-}
+import type { PromotedStatusItem } from '../model/promoted-items';
 
 const ITEM_TRANSITION = { duration: 0.2, ease: [0.4, 0, 0.2, 1] } as const;
 
+/**
+ * Grow every tappable thing in an item to a 44px-tall hit area on touch (Apple
+ * HIG; WCAG 2.5.8 asks 24px). Padding on the control itself, not an overlay on the
+ * wrapper — an absolutely-positioned strip would sit *above* the button it was
+ * meant to enlarge and swallow the tap instead of passing it on.
+ *
+ * Vertical only, deliberately. Four 44px-wide targets plus the `⋯` do not fit
+ * across a 320px phone, and widening them would push content out of the very
+ * budget that decides what the line may hold. Horizontal separation comes from the
+ * row's 8px gaps; most items are already 44px wide once their value is rendered.
+ *
+ * @internal
+ */
+const TAP_TARGET = 'pointer-coarse:[&_button]:py-3';
+
 interface StatusLineProps {
-  /** Session identifier. Passed for future use (e.g., ARIA labeling). */
-  sessionId: string;
-  /** Whether the session is currently streaming. May affect item logic in future extensions. */
-  isStreaming: boolean;
-  /** StatusLine.Item elements. */
-  children: React.ReactNode;
-}
-
-function StatusLineRoot({
-  sessionId: _sessionId,
-  isStreaming: _isStreaming,
-  children,
-}: StatusLineProps) {
-  const [registeredKeys, setRegisteredKeys] = useState<string[]>([]);
-
-  const registerItem = useCallback((key: string) => {
-    // Guard against duplicate registration on StrictMode double-invoke
-    setRegisteredKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
-  }, []);
-
-  const unregisterItem = useCallback((key: string) => {
-    setRegisteredKeys((prev) => prev.filter((k) => k !== key));
-  }, []);
-
-  // Insertion-order first key is the first visible item — stable across re-renders
-  // because items are not conditionally reordered in JSX, only visibility changes
-  const firstVisibleKey = registeredKeys[0] ?? null;
-  // Container shows when at least one item is registered (visible)
-  const hasVisibleChildren = registeredKeys.length > 0;
-
-  const contextValue = useMemo<StatusLineContextValue>(
-    () => ({
-      itemTransition: ITEM_TRANSITION,
-      firstVisibleKey,
-      registerItem,
-      unregisterItem,
-    }),
-    [firstVisibleKey, registerItem, unregisterItem]
-  );
-
-  return (
-    <StatusLineContext.Provider value={contextValue}>
-      {/*
-       * Outer AnimatePresence: animates the entire status bar container in/out.
-       * Inner AnimatePresence (mode="popLayout"): animates individual items.
-       * This two-boundary architecture is preserved from the original implementation.
-       *
-       * Children are always mounted so that StatusLine.Item useEffect hooks
-       * can register/unregister with the context regardless of container
-       * visibility. Items with visible=false return null, so they contribute
-       * no DOM nodes but their effects still run to drive registration state.
-       */}
-      <AnimatePresence initial={false}>
-        {hasVisibleChildren && (
-          <motion.div
-            role="toolbar"
-            aria-label="Session status"
-            aria-live="polite"
-            data-testid="status-line"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-            className="overflow-hidden"
-          >
-            <StatusLineScroller>
-              <AnimatePresence initial={false} mode="popLayout">
-                {React.Children.map(children, (child) => {
-                  if (!React.isValidElement(child)) return child;
-                  const itemKey = (child.props as { itemKey?: string }).itemKey;
-                  return itemKey ? React.cloneElement(child, { key: itemKey }) : child;
-                })}
-              </AnimatePresence>
-            </StatusLineScroller>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {/* Mount children unconditionally when container is hidden so item effects can fire */}
-      {!hasVisibleChildren && children}
-    </StatusLineContext.Provider>
-  );
-}
-
-interface StatusLineItemProps {
   /**
-   * Stable unique identifier used for AnimatePresence tracking and separator logic.
-   * Must be unique within the StatusLine. Use short lowercase slugs: 'cwd', 'git', etc.
+   * The items to show, already promoted, budgeted, and in order. Visibility is
+   * decided upstream by `selectPromotedItems` and `applyStatusBudget`, so this
+   * component never asks whether an item belongs — it draws what it is given.
    */
-  itemKey: string;
-  /** Controls whether this item participates in the status bar. */
-  visible: boolean;
-  /** The status item content — one of the 9 built-in item components or a plugin element. */
-  children: React.ReactNode;
+  items: readonly PromotedStatusItem[];
+  /**
+   * The fixed trailing anchor — the Session `⋯`. Rendered outside the clipped
+   * region and outside the budget, so it is always reachable, always last, and
+   * never dropped.
+   */
+  trailing?: ReactNode;
 }
 
-function StatusLineItem({ itemKey, visible, children }: StatusLineItemProps) {
-  const { itemTransition, firstVisibleKey, registerItem, unregisterItem } = useStatusLineContext();
-
-  /*
-   * Register with root context when visible; deregister on unmount or when visibility
-   * is lost. useEffect (not render-time logic) is the correct primitive — this ensures
-   * the root state updates after commit, not during render.
-   */
-  useEffect(() => {
-    if (!visible) return;
-    registerItem(itemKey);
-    return () => unregisterItem(itemKey);
-  }, [visible, itemKey, registerItem, unregisterItem]);
-
-  // Returning null triggers AnimatePresence to fire the exit animation for this key.
-  if (!visible) return null;
-
-  const isFirst = itemKey === firstVisibleKey;
+/**
+ * The composer status line — one row, two clusters, never scrolled and never
+ * wrapped.
+ *
+ * Left is who and where; right is state and numbers. A single flexible gap
+ * separates them, and separators only ever sit *between* items inside a cluster,
+ * so no middot is ever left floating in the gap.
+ *
+ * **Both clusters can shrink**, and that is load-bearing. The width budget
+ * upstream keeps the line legible, but a budget is a prediction; a right cluster
+ * that could not shrink turned every mis-predicted pixel into silently clipped,
+ * unreachable content — worse than the scroller this replaced, because at least
+ * the old fade advertised that something was there. Now the row's total can
+ * always be made to fit, and anything the prediction got wrong degrades into an
+ * ellipsis: a cosmetic regression instead of invisible data.
+ *
+ * The one thing that never gives up a pixel is the trailing `⋯`. It is
+ * `shrink-0` and sits outside both clusters, so every dropped item stays one tap
+ * away at any width.
+ *
+ * @param props - The budgeted items and the trailing anchor.
+ */
+export function StatusLine({ items, trailing }: StatusLineProps) {
+  const left = items.filter((item) => item.cluster === 'left');
+  const right = items.filter((item) => item.cluster === 'right');
 
   return (
-    <motion.div
-      key={itemKey}
-      layout="position"
-      initial={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
-      animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-      exit={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
-      transition={itemTransition}
-      className="inline-flex items-center gap-2"
+    <div
+      role="toolbar"
+      aria-label="Session status"
+      aria-live="polite"
+      data-testid="status-line"
+      className="text-muted-foreground flex items-center gap-2 overflow-hidden px-1 text-xs whitespace-nowrap pointer-coarse:min-h-11"
     >
-      {/* Separator exits with this item during AnimatePresence — no orphaned separators */}
-      {!isFirst && <StatusLineSeparator />}
-      {children}
-    </motion.div>
+      {/* `flex-auto`, not `flex-1`: both grow into the slack, but a `flex-1`
+          basis of 0 collapses the left cluster to zero width the moment the row
+          overflows, hiding the agent instead of truncating its name. */}
+      <StatusCluster items={left} className="min-w-0 flex-auto" />
+      <StatusCluster items={right} className="min-w-0 shrink" />
+      {/* The anchor's `shrink-0` lives here, not in whatever is passed in: "the `⋯`
+          is never dropped" is the line's invariant to keep, not the caller's. */}
+      {trailing !== undefined && <span className="flex shrink-0 items-center">{trailing}</span>}
+    </div>
+  );
+}
+
+/**
+ * How much more width each step down the urgency order gives up.
+ *
+ * Steep on purpose. Flexbox shares a deficit in proportion to these factors, so a
+ * shallow gradient still takes a slice out of the most urgent item, which is the
+ * thing being fixed. At 8x per step the quietest item has given up essentially
+ * everything before the next one is asked for a pixel, which is the behaviour the
+ * budget's own ordering implies.
+ */
+const SHRINK_STEP = 8;
+
+/**
+ * The flex-shrink factor for one item, from its place in its cluster's urgency
+ * order: `1` for the loudest, `SHRINK_STEP` for the next, and so on down.
+ *
+ * @param item - The item being drawn.
+ * @param urgencyOrder - The cluster's item keys, most urgent first.
+ * @internal
+ */
+function shrinkFactorFor(item: PromotedStatusItem, urgencyOrder: readonly string[]): number {
+  return SHRINK_STEP ** Math.max(0, urgencyOrder.indexOf(item.key));
+}
+
+/**
+ * One cluster of items. Separator placement is derived from position in the
+ * *visible* list, so an item that hides and comes back can never reappear
+ * carrying a leading separator.
+ *
+ * **Numbers keep their pixels; names give them up.** A wrapper is `min-w-0`, so a
+ * squeezed cluster pushes the squeeze into the item where a `truncate` turns it
+ * into an ellipsis — which is honest for a name (`Bypass permi…` is the same fact
+ * in fewer letters) and a lie for a number (`8…` is not 88%). So an item the
+ * registry marks {@link StatusBarItemConfig.rigid} is `shrink-0` instead: the row
+ * cannot squeeze it, and the deficit lands on the items that can honestly absorb
+ * it.
+ *
+ * **The least urgent item pays first.** Deciding who *may* shrink is only half the
+ * question; the other half is who actually does, and flexbox's default answer is
+ * "everyone at once, in proportion to their width". That inverted the whole
+ * design at the last step: measured at the 438px compact floor, `connection` —
+ * `Connection lost`, the loudest signal the line has at severity 100 — was cut to
+ * 24px, a glyph and a sliver, while `subagents` at severity 35 kept every pixel
+ * because it happened to be rigid. The budget picks by urgency and the layout
+ * then took the pixels back from the most urgent thing on the row.
+ *
+ * So each non-rigid item is handed a shrink factor from its rank in the cluster's
+ * own urgency order, {@link SHRINK_STEP}x per step down. The quietest item gives
+ * up its width first and the loudest gives up last — and what the quietest item
+ * gives up is always one tap away under the `⋯`. Severity is already on the item
+ * as data, so nothing new has to be plumbed to know this.
+ *
+ * Either way the item must be able to give up whatever the row asks of it, all
+ * the way down its own tree. One `display: block` wrapper without `min-w-0`
+ * anywhere in that chain, or one `shrink-0` on a part that could have given way,
+ * and a shrinkable item renders at full width inside a narrower box and paints
+ * over its neighbour — that is DOR-461, in three items. And a rigid item that the
+ * budget should have dropped overflows its *cluster* instead. Both are caught the
+ * same way, by `apps/e2e/tests/chat/status-line-fit.spec.ts`, which measures
+ * painted extents rather than the row's `scrollWidth` — an `overflow-hidden` row
+ * can never report its own overflow.
+ *
+ * @internal
+ */
+function StatusCluster({
+  items,
+  className,
+}: {
+  items: readonly PromotedStatusItem[];
+  className?: string;
+}) {
+  // Loudest first. Ties keep registry order — the sort is stable, and the line's
+  // positions must not shuffle under the finger reaching for them.
+  const urgencyOrder = [...items].sort((a, b) => b.severity - a.severity).map((i) => i.key);
+
+  return (
+    <div className={cn('flex items-center gap-2', className)}>
+      <AnimatePresence initial={false} mode="popLayout">
+        {items.map((item, index) => (
+          <motion.div
+            key={item.key}
+            data-testid={`status-item-${item.key}`}
+            // Published for the browser guard: an item whose value is a number
+            // must never be drawn partly, and a partly-drawn number is not an
+            // overlap, so the guard cannot infer this from geometry alone.
+            data-rigid={item.rigid ? 'true' : undefined}
+            layout="position"
+            initial={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
+            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, scale: 0.8, filter: 'blur(4px)' }}
+            transition={ITEM_TRANSITION}
+            // A number, not a class: the factor is computed from this cluster's
+            // urgency order, and Tailwind cannot see a class name it did not read
+            // in the source.
+            style={item.rigid ? undefined : { flexShrink: shrinkFactorFor(item, urgencyOrder) }}
+            className={cn(
+              'inline-flex items-center gap-2',
+              // A floor, not `min-w-0`: the separator and the glyph inside the
+              // wrapper are `shrink-0`, so an item squeezed below them renders
+              // ~23px of content in a 0px box and paints into its neighbour — the
+              // very defect this file exists to prevent, reintroduced from the
+              // other end.
+              //
+              // 40px is measured, not derived, and it does not cover every item:
+              // `GitStatusItem` at full density carries an incompressible
+              // `· 12 changes` plus two ahead/behind groups, ~150px that this
+              // floor does not reserve. That is safe only because the gradient
+              // above never drives `git` near it (measured 96-180px), not because
+              // the number is right for it. CSS cannot express "the width of my
+              // own incompressible parts" — `min-width: auto` resolves to
+              // min-content, and a `truncate` child still contributes its full
+              // text to that, which for `white-space: nowrap` equals max-content
+              // — so the honest options were a per-item declaration or a
+              // measured floor with this caveat written down.
+              item.rigid ? 'shrink-0' : 'min-w-10',
+              TAP_TARGET
+            )}
+          >
+            {index > 0 && <StatusLineSeparator />}
+            {item.node}
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -171,92 +214,8 @@ function StatusLineItem({ itemKey, visible, children }: StatusLineItemProps) {
  */
 function StatusLineSeparator() {
   return (
-    <span className="text-muted-foreground/30" aria-hidden="true">
+    <span className="text-muted-foreground/30 shrink-0" aria-hidden="true">
       &middot;
     </span>
   );
 }
-
-/**
- * Horizontally scrollable container for status items.
- *
- * Shows a right-edge fade gradient when content overflows, hinting that
- * more items are available. Hides the scrollbar for a clean appearance.
- *
- * @internal
- */
-function StatusLineScroller({ children }: { children: React.ReactNode }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const checkOverflow = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // Allow 1px tolerance for sub-pixel rounding
-    setCanScrollRight(el.scrollWidth - el.scrollLeft - el.clientWidth > 1);
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    checkOverflow();
-
-    el.addEventListener('scroll', checkOverflow, { passive: true });
-
-    // ResizeObserver catches layout changes (items added/removed, viewport resize)
-    const ro = new ResizeObserver(checkOverflow);
-    ro.observe(el);
-
-    return () => {
-      el.removeEventListener('scroll', checkOverflow);
-      ro.disconnect();
-    };
-  }, [checkOverflow]);
-
-  return (
-    <div className="relative">
-      <div
-        ref={scrollRef}
-        className="text-muted-foreground scrollbar-none flex items-center gap-2 overflow-x-auto px-1 text-xs whitespace-nowrap"
-      >
-        {children}
-      </div>
-      {/* Right fade gradient — hints at scrollable overflow */}
-      <div
-        className={cn(
-          'from-background pointer-events-none absolute top-0 right-0 bottom-0 w-8 bg-gradient-to-l to-transparent transition-opacity duration-200',
-          canScrollRight ? 'opacity-100' : 'opacity-0'
-        )}
-        aria-hidden
-      />
-    </div>
-  );
-}
-
-/**
- * StatusLine compound component — animated session status bar.
- *
- * Renders a horizontal toolbar containing `StatusLine.Item` children.
- * Items animate in and out individually via Motion's AnimatePresence.
- * The container fades in when the first item becomes visible and fades
- * out when the last item disappears.
- *
- * Data fetching is the responsibility of the consumer. Pass pre-fetched
- * data to individual item components via StatusLine.Item children.
- *
- * @example
- * ```tsx
- * <StatusLine sessionId={id} isStreaming={streaming}>
- *   <StatusLine.Item itemKey="cwd" visible={showCwd && !!cwd}>
- *     <CwdItem cwd={cwd} />
- *   </StatusLine.Item>
- *   <StatusLine.Item itemKey="git" visible={showGit}>
- *     <GitStatusItem data={gitStatus} />
- *   </StatusLine.Item>
- * </StatusLine>
- * ```
- */
-export const StatusLine = Object.assign(StatusLineRoot, {
-  Item: StatusLineItem,
-});

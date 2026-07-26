@@ -88,3 +88,6 @@ export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-b
 // --- Pulse task-origin overlay (session-origin-legibility) ---
 export { applyTaskOriginOverlay } from './task-origin-overlay.js';
 export type { ResolveTaskOrigins } from './task-origin-overlay.js';
+
+// --- Persisted per-session settings overlay (ADR-0260, DOR-463) ---
+export { overlayStoredSettings, resolveSettingsKey } from './session-settings-overlay.js';

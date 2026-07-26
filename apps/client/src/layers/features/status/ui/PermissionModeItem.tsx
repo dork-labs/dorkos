@@ -13,6 +13,7 @@ import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { LucideIcon } from 'lucide-react';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { compactStatusValue } from '../lib/status-labels';
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuTrigger,
@@ -91,6 +92,12 @@ interface PermissionModeItemProps {
    * `undefined` is treated as unsupported (conservative default while models load).
    */
   modelSupportsAutoMode?: boolean;
+  /**
+   * Say it in as few pixels as possible — set below the status line's widest
+   * tier. Mode labels come from the runtime's own descriptors, so their length is
+   * not DorkOS's to promise; this bounds them.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -107,6 +114,7 @@ export function PermissionModeItem({
   disabled,
   runtime,
   modelSupportsAutoMode,
+  compact,
 }: PermissionModeItemProps) {
   // Static per-runtime lookup — nullish runtime (no session context, or the
   // display runtime is still resolving) falls back to the server default.
@@ -124,17 +132,21 @@ export function PermissionModeItem({
   const autoFiltered = !modelSupportsAutoMode && allDescriptors.some((d) => d.id === 'auto');
   const descriptors = autoFiltered ? allDescriptors.filter((d) => d.id !== 'auto') : allDescriptors;
   const currentDescriptor = descriptors.find((d) => d.id === mode);
-  const currentLabel = currentDescriptor?.label ?? FALLBACK_LABELS[mode] ?? mode;
+  const fullLabel = currentDescriptor?.label ?? FALLBACK_LABELS[mode] ?? mode;
+  const currentLabel = compact ? compactStatusValue(fullLabel) : fullLabel;
   const CurrentIcon = MODE_ICONS[mode] ?? DEFAULT_ICON;
   const currentIsDangerous = MODE_WARN[mode] ?? false;
 
   const trigger = (
     <button
       disabled={disabled}
-      className={`hover:text-foreground inline-flex items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${currentIsDangerous ? 'text-red-500' : ''}`}
+      // The full label stays the accessible name: a bounded value is a smaller
+      // drawing of the same state, never a different answer to "what mode is on?".
+      aria-label={`Permissions: ${fullLabel}`}
+      className={`hover:text-foreground inline-flex min-w-0 items-center gap-1 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${currentIsDangerous ? 'text-red-500' : ''}`}
     >
-      <CurrentIcon className="size-(--size-icon-xs)" />
-      <span>{currentLabel}</span>
+      <CurrentIcon className="size-(--size-icon-xs) shrink-0" />
+      <span className="truncate">{currentLabel}</span>
     </button>
   );
 

@@ -77,6 +77,12 @@ import {
   AgentListQuerySchema,
 } from '@dorkos/shared/mesh-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
+import {
+  PendingApprovalsResponseSchema,
+  DenyApprovalBodySchema,
+  GrantApprovalBodySchema,
+  ApprovalDecisionResponseSchema,
+} from '@dorkos/shared/approval-schemas';
 import { registerCapabilitiesInOpenApi } from './capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from './self-description/dorkos-registry.js';
 import {
@@ -2476,6 +2482,129 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Account detached (or already absent)' },
+  },
+});
+
+// --- Approvals (spec `agent-trust` §3.3) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/approvals/pending',
+  tags: ['Approvals'],
+  summary: 'List approvals waiting on a person',
+  description:
+    'Approvals an agent has requested and nobody has decided yet, oldest first. Expired requests ' +
+    'are excluded, and no response here ever carries token material.',
+  responses: {
+    200: {
+      description: 'Pending approvals',
+      content: { 'application/json': { schema: PendingApprovalsResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/approvals/{id}/grant',
+  tags: ['Approvals'],
+  summary: 'Allow the requested action',
+  description:
+    'Grants a pending approval so the requester can spend its token once, on exactly the ' +
+    'capability and input the approval is bound to. Deciding is the human half of the gate, and it ' +
+    'needs proof of a person rather than the absence of proof of a machine: a caller presenting an ' +
+    'agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in ' +
+    'every posture, and when local login is enabled an authenticated user is required. With login ' +
+    'disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is ' +
+    'recorded in the Activity feed with the posture it was made under.\n\n' +
+    'The body accepts a `standing` flag, which asks DorkOS to stop asking about this agent doing ' +
+    'this thing. It is currently REFUSED for every caller with `STANDING_GRANTS_NOT_YET_ENFORCED`, ' +
+    'because nothing enforces a standing permission yet. It is accepted and refused rather than ' +
+    'ignored so a caller is never told it got something it did not: when the standing part is ' +
+    'refused, the one-time grant does not happen either. The stricter bar that will guard it is ' +
+    'already live and is checked first, so a caller with no session cookie is refused before ' +
+    'reaching this.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: GrantApprovalBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Approval granted',
+      content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+    },
+    403: {
+      description:
+        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`). For `standing: true`, also when ' +
+        'login is off (`standing_grants_require_login`) or the caller has no session cookie ' +
+        '(`operator_cookie_required`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such approval',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'Already decided; or `standing: true` was asked for, which nothing enforces yet ' +
+        '(`STANDING_GRANTS_NOT_YET_ENFORCED`). Nothing is granted in the second case',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    410: {
+      description: 'Expired before it was decided',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/approvals/{id}/deny',
+  tags: ['Approvals'],
+  summary: 'Refuse the requested action',
+  description:
+    'Denies a pending approval, with an optional reason the requester sees. Who may decide is ' +
+    'exactly as for grant: no agent identity, no approval token, and an authenticated user when ' +
+    'local login is enabled.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: DenyApprovalBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Approval denied',
+      content: { 'application/json': { schema: ApprovalDecisionResponseSchema } },
+    },
+    403: {
+      description:
+        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    400: {
+      description: 'Invalid body',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such approval',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Already decided',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    410: {
+      description: 'Expired before it was decided',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 

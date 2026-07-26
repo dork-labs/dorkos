@@ -97,6 +97,163 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     vi.restoreAllMocks();
   });
 
+  it('survives a MALFORMED upsert even with a retirement check armed', async () => {
+    // The retirement check reads `session.id`. Doing that before schema
+    // validation threw out of the consume loop and killed the runtime's entire
+    // subscription — every later event silently lost. Validation is the gate;
+    // nothing ahead of it may assume shape.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    runtimeA.getInternalSessionId.mockImplementation((id: string) =>
+      id === SESSION_A ? SESSION_B : undefined
+    );
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted' } as unknown as SessionListEvent);
+    // A valid event after the bad one proves the loop survived.
+    a.push({ type: 'session_removed', sessionId: SESSION_A });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_removed',
+        expect.objectContaining({ sessionId: SESSION_A })
+      );
+    });
+    expect(broadcastSpy).not.toHaveBeenCalledWith('session_upserted', expect.anything());
+  });
+
+  it('suppresses an upsert for an id the runtime has RETIRED', async () => {
+    // `aggregateSessionList` drops retired ids from every listing; this stream
+    // is the OTHER producer of client-visible rows, so it must agree — otherwise
+    // a row the list refuses to show arrives over SSE moments later.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    runtimeA.getInternalSessionId.mockImplementation((id: string) =>
+      id === SESSION_A ? SESSION_B : undefined
+    );
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+    // A live, non-retired session behind it proves the loop kept running rather
+    // than stalling on the suppressed event.
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_B }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({ session: expect.objectContaining({ id: SESSION_B }) })
+      );
+    });
+    expect(broadcastSpy).not.toHaveBeenCalledWith(
+      'session_upserted',
+      expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
+    );
+  });
+
+  it('still forwards session_removed for a retired id', async () => {
+    // Telling a client to drop a row it should not be holding is always safe.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    runtimeA.getInternalSessionId.mockImplementation((id: string) =>
+      id === SESSION_A ? SESSION_B : undefined
+    );
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_removed', sessionId: SESSION_A });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_removed',
+        expect.objectContaining({ sessionId: SESSION_A })
+      );
+    });
+  });
+
+  it('overlays persisted settings onto a broadcast session_upserted', async () => {
+    // This stream — not GET /api/sessions — is what keeps a client's session
+    // list current: the cold-load query has no poll, so every later refresh of a
+    // row arrives here. Un-overlaid, an upsert OVERWRITES the operator's stored
+    // permission mode in the client's cache with the runtime-derived one, which
+    // is the same disagreement DOR-463 fixed on the HTTP endpoints (the sidebar
+    // row's bypass warning reads exactly this field).
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    const settings = {
+      getSessionSettingsMany: vi.fn(
+        () => new Map([[SESSION_A, { permissionMode: 'bypassPermissions' as const }]])
+      ),
+      has: () => true,
+      get: () => ({ getInternalSessionId: () => undefined }),
+    };
+
+    broadcaster.start([runtimeA], settings);
+    // The runtime reports the transcript-derived mode.
+    a.push({
+      type: 'session_upserted',
+      session: createMockSession({ id: SESSION_A, permissionMode: 'default' }),
+    });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({
+          session: expect.objectContaining({
+            id: SESSION_A,
+            permissionMode: 'bypassPermissions',
+          }),
+        })
+      );
+    });
+  });
+
+  it('does not mutate the session object the adapter handed it', async () => {
+    // Adapters emit the instance they hold — the Claude watcher pushes the very
+    // object in its diff map, which is also the transcript reader's mtime-cached
+    // entry. Overlaying in place would write display values into a runtime's own
+    // cached state and defeat its change suppression.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    const settings = {
+      getSessionSettingsMany: vi.fn(
+        () => new Map([[SESSION_A, { permissionMode: 'bypassPermissions' as const }]])
+      ),
+      has: () => true,
+      get: () => ({ getInternalSessionId: () => undefined }),
+    };
+    const adapterOwned = createMockSession({ id: SESSION_A, permissionMode: 'default' });
+
+    broadcaster.start([runtimeA], settings);
+    a.push({ type: 'session_upserted', session: adapterOwned });
+
+    await vi.waitFor(() => expect(broadcastSpy).toHaveBeenCalled());
+    expect(adapterOwned.permissionMode).toBe('default');
+  });
+
+  it('broadcasts as-is when the settings store throws — stale beats invisible', async () => {
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    const settings = {
+      getSessionSettingsMany: vi.fn(() => {
+        throw new Error('settings store unavailable');
+      }),
+      has: () => true,
+      get: () => ({ getInternalSessionId: () => undefined }),
+    };
+
+    broadcaster.start([runtimeA], settings);
+    a.push({
+      type: 'session_upserted',
+      session: createMockSession({ id: SESSION_A, permissionMode: 'default' }),
+    });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
+      );
+    });
+  });
+
   it('merges session-list events from every runtime onto the single fan-out', async () => {
     const a = controllableSessionList();
     const b = controllableSessionList();

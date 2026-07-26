@@ -168,14 +168,16 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       setAuthEnabled(true);
       const res = await request(app).get('/api/sessions').set('Cookie', cookies);
       expect(res.status).toBe(200);
-      expect(res.body.user).toEqual({ userId: ownerId });
+      // The attached identity says WHICH credential proved it, because a few
+      // writes are reserved for a person in the cockpit (DOR-501).
+      expect(res.body.user).toEqual({ userId: ownerId, credential: 'cookie' });
     });
 
     it('allows a gated route with a valid API key Bearer and attaches the user', async () => {
       setAuthEnabled(true);
       const res = await request(app).get('/api/sessions').set('Authorization', `Bearer ${apiKey}`);
       expect(res.status).toBe(200);
-      expect(res.body.user).toEqual({ userId: ownerId });
+      expect(res.body.user).toEqual({ userId: ownerId, credential: 'api-key' });
     });
 
     it('returns 401 AUTH_REQUIRED with an invalid API key Bearer', async () => {
@@ -189,16 +191,41 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
   });
 
   describe('verifyRequestAuth (the shared verifier reused by MCP auth in 1.4)', () => {
-    it('resolves { userId } from a session cookie', async () => {
+    // The `credential` field is asserted, not incidental. A few writes are
+    // reserved for a person in the cockpit rather than for anything holding a
+    // valid credential, and this is the only place the difference is observable
+    // — a per-user API key satisfies the gate exactly as a browser session does
+    // (DOR-474), so if these two returned the same shape those writes would have
+    // nothing to branch on.
+    it('resolves a cookie identity, and says the cookie is what proved it', async () => {
       const req = { headers: { cookie: cookies.join('; ') } } as unknown as express.Request;
-      expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId });
+      expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'cookie' });
     });
 
-    it('resolves { userId } from a Bearer API key', async () => {
+    it('resolves a Bearer API key identity, and says it was NOT a cookie', async () => {
       const req = {
         headers: { authorization: `Bearer ${apiKey}` },
       } as unknown as express.Request;
-      expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId });
+      expect(await verifyRequestAuth(req)).toEqual({ userId: ownerId, credential: 'api-key' });
+    });
+
+    it('never labels an x-api-key caller a cookie caller (pins a Better Auth default)', async () => {
+      // The `credential` label is only honest because Better Auth's apiKey plugin
+      // cannot mint a SESSION from an `x-api-key` header. That behavior is gated
+      // on `enableSessionForAPIKeys`, which defaults to `false`, and DorkOS calls
+      // bare `apiKey()` with no config — so the default is load-bearing for a
+      // guard in another module and nothing else in the repo asserts it.
+      //
+      // If a future version flips that default, `getSession` would answer for a
+      // key-bearing request and this identity would come back labelled `cookie`,
+      // silently handing a per-user API key the one thing the cookie bar exists
+      // to withhold. This test goes red on that day, which is the entire point.
+      const req = { headers: { 'x-api-key': apiKey } } as unknown as express.Request;
+      const resolved = await verifyRequestAuth(req);
+      expect(resolved?.credential).not.toBe('cookie');
+      // Today it resolves to nothing at all: `x-api-key` is not the Bearer header
+      // this codebase reads, so neither path claims it.
+      expect(resolved).toBeNull();
     });
 
     it('returns null with no credentials', async () => {

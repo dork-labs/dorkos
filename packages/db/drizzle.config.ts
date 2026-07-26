@@ -4,6 +4,9 @@ export default defineConfig({
   schema: [
     './src/schema/a2a.ts',
     './src/schema/activity.ts',
+    './src/schema/approvals.ts',
+    './src/schema/approval-grants.ts',
+    './src/schema/agent-identity.ts',
     './src/schema/tasks.ts',
     './src/schema/relay.ts',
     './src/schema/mesh.ts',

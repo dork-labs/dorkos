@@ -1,0 +1,195 @@
+import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { PlaygroundSection } from '../PlaygroundSection';
+import { ShowcaseLabel } from '../ShowcaseLabel';
+import { ShowcaseDemo } from '../ShowcaseDemo';
+import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
+
+/**
+ * The content width of the header marker's popover: 30rem panel less its 16px
+ * padding either side and the scroll gutter. The number matters because the card
+ * inside it still switches to a horizontal row at the 640px VIEWPORT breakpoint,
+ * so on a desktop screen it lays out wide inside a narrow column.
+ */
+const POPOVER_CONTENT_PX = 424;
+
+/** Roughly what the dashboard section gets on a normal window. */
+const DASHBOARD_CONTENT_PX = 848;
+
+/**
+ * Frozen at module load, not read per render: `Date.now()` during render is
+ * impure (`react-hooks/purity`), and a showcase whose countdowns shift on every
+ * re-render is harder to read anyway.
+ */
+const LOADED_AT = Date.now();
+
+/** An ISO expiry `minutes` out from page load. */
+function expiresIn(minutes: number): string {
+  return new Date(LOADED_AT + minutes * 60_000).toISOString();
+}
+
+/** An approval to draw, overriding only what a showcase varies. */
+function sample(overrides: Partial<PendingApproval> = {}): PendingApproval {
+  return {
+    approvalId: '01JZ0000000000000000000001',
+    capabilityId: 'marketplace.uninstall',
+    capabilityTitle: 'Uninstall a marketplace package',
+    tier: 'destructive',
+    summary:
+      'DorkBot wants to run "Uninstall a marketplace package" with name: sentry-monitor, purge: yes',
+    requestedBy: '/Users/dev/agents/dorkbot',
+    requestedAt: new Date(LOADED_AT).toISOString(),
+    expiresAt: expiresIn(105),
+    ...overrides,
+  };
+}
+
+/** A queue long enough to trip the six-card cap. */
+const QUEUE: PendingApproval[] = Array.from({ length: 8 }, (_, i) =>
+  sample({
+    approvalId: `01JZ000000000000000000000${i}`,
+    capabilityTitle: i % 2 === 0 ? 'Uninstall a marketplace package' : 'Delete a workspace',
+    summary:
+      i % 2 === 0
+        ? `DorkBot wants to run "Uninstall a marketplace package" with name: package-${i}, purge: no`
+        : `An unidentified caller wants to run "Delete a workspace" with path: /tmp/scratch-${i}`,
+    ...(i % 3 === 0 ? {} : { requestedBy: `/Users/dev/agents/agent-${i}` }),
+    expiresAt: expiresIn((i + 1) * 12),
+  })
+);
+
+/** A fixed-width column labelled with the surface it stands in for. */
+function WidthColumn({
+  px,
+  caption,
+  children,
+}: {
+  px: number;
+  caption: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-muted-foreground mb-2 text-[10px] tracking-wide uppercase">
+        {caption} ({px}px)
+      </p>
+      <div className="border-border/60 rounded-lg border border-dashed p-2" style={{ width: px }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Action-approval showcases: the card, the queue, and the two widths those have
+ * to survive.
+ *
+ * Exists because the decision surface moved. Approvals used to appear only in a
+ * full-width dashboard section; they now also open in a ~424px popover from the
+ * app header, which is the primary place a person answers them. Rendering both
+ * widths side by side is the cheapest way to see whether a destructive-tier card
+ * still reads at the narrow one, with no dev server and no agent asking for
+ * anything.
+ *
+ * The header marker itself (`ApprovalsIndicator`) is deliberately absent: it
+ * subscribes to the live `/api/events` stream, which the playground does not
+ * mount, and faking that here would put a replica on the page that could drift
+ * from the real component. Its behavior is covered by its own tests.
+ */
+export function ApprovalsShowcases() {
+  return (
+    <>
+      <PlaygroundSection
+        title="ApprovalCard"
+        description="One thing an agent wants to do, and the two buttons that answer it. Nothing is pre-selected and neither button is styled as the safe default."
+      >
+        <ShowcaseLabel>The same card at both decision widths</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-start gap-6">
+            <WidthColumn px={POPOVER_CONTENT_PX} caption="Header popover">
+              <ApprovalList approvals={[sample()]} />
+            </WidthColumn>
+            <WidthColumn px={DASHBOARD_CONTENT_PX} caption="Dashboard section">
+              <ApprovalList approvals={[sample()]} />
+            </WidthColumn>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Tiers</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <ApprovalList
+            approvals={[
+              sample({ tier: 'destructive' }),
+              sample({
+                approvalId: '01JZ0000000000000000000011',
+                tier: 'act',
+                capabilityTitle: 'Create an agent',
+                summary: 'DorkBot wants to run "Create an agent" with name: release-bot',
+              }),
+              sample({
+                approvalId: '01JZ0000000000000000000012',
+                tier: 'observe',
+                capabilityTitle: 'List your agents',
+                summary: 'DorkBot wants to run "List your agents"',
+              }),
+            ]}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <ApprovalList
+            approvals={[
+              sample({ approvalId: '01JZ0000000000000000000021', requestedBy: 'DorkBot' }),
+              sample({
+                approvalId: '01JZ0000000000000000000022',
+                requestedBy: undefined,
+                summary: 'An unidentified caller wants to run "Uninstall a marketplace package"',
+              }),
+              // Inside the last minute, where the countdown reads "expiring".
+              sample({
+                approvalId: '01JZ0000000000000000000023',
+                expiresAt: expiresIn(0.6),
+              }),
+            ]}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>A summary at the 500-character cap</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <ApprovalList
+            approvals={[
+              sample({
+                approvalId: '01JZ0000000000000000000031',
+                summary: `DorkBot wants to run "Uninstall a marketplace package" with ${'name: a-very-long-package-name, '.repeat(14)}purge: yes`,
+              }),
+            ]}
+          />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="ApprovalList"
+        description="The shared card stack behind both surfaces. Caps at six cards and says how many the cap is holding back, because a silently hidden request is an agent blocked with nothing on screen to suggest it exists."
+      >
+        <ShowcaseLabel>A queue past the cap</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-start gap-6">
+            <WidthColumn px={POPOVER_CONTENT_PX} caption="Header popover">
+              <ApprovalList approvals={QUEUE} />
+            </WidthColumn>
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="ApprovalsUnavailable"
+        description="The state that must never look like silence. A failed read and 'nothing is waiting' are the same empty space on screen, and the difference is an agent sitting blocked while nobody knows to answer it."
+      >
+        <ShowcaseLabel>Could not read the list</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <ApprovalsUnavailable onRetry={() => {}} />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+    </>
+  );
+}

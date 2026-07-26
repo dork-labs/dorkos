@@ -21,7 +21,7 @@ describe('CompactPendingRow', () => {
   it('renders a spinning loader icon', () => {
     const { container } = render(<CompactPendingRow type="approval" />);
     const svg = container.querySelector('svg');
-    expect(svg).toBeDefined();
+    expect(svg).not.toBeNull();
     expect(svg?.classList.contains('animate-spin')).toBe(true);
   });
 

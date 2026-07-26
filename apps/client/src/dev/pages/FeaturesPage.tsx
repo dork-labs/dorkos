@@ -2,12 +2,14 @@ import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { FEATURES_SECTIONS } from '../playground-registry';
 import { AgentIdentityShowcases } from '../showcases/AgentIdentityShowcases';
 import { AgentSidebarShowcases } from '../showcases/AgentSidebarShowcases';
+import { AgentFleetShowcases } from '../showcases/AgentFleetShowcases';
 import { RelayShowcases } from '../showcases/RelayShowcases';
 import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
 import { MeshShowcases } from '../showcases/MeshShowcases';
 import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
+import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
 
 /** Feature component showcase page for the dev playground. */
 export function FeaturesPage() {
@@ -20,11 +22,13 @@ export function FeaturesPage() {
       <PersonalityPickerShowcases />
       <AgentIdentityShowcases />
       <AgentSidebarShowcases />
+      <AgentFleetShowcases />
       <RelayShowcases />
       <AdapterWizardShowcases />
       <MeshShowcases />
       <TasksShowcases />
       <PipPanelShowcases />
+      <ApprovalsShowcases />
     </PlaygroundPageLayout>
   );
 }

@@ -1,3 +1,22 @@
+/**
+ * Persistent user-config schema. Zod is authoritative; `ConfigManager` bridges it
+ * to `conf` via `z.toJSONSchema`.
+ *
+ * **Keep this module free of module-level mutable state and of exports whose
+ * identity is compared** (`===`, `instanceof`, `Map`/`Set` keys, registry lookups).
+ * Zod schemas, derived constants, and pure functions only. `apps/server/vitest.config.ts`
+ * aliases this one subpath to source so the config-disclosure drift guard cannot
+ * read a stale `dist/`, and because `dist/schemas.js` reaches back here by a
+ * relative import that the alias does not rewrite, a test process can hold both
+ * the src and the dist copy of this module. Duplicated values are harmless;
+ * duplicated state or identity would not be.
+ *
+ * Adding a field? It also needs a disclosure verdict in `CONFIG_DISCLOSURE`
+ * (`apps/server/src/services/core/operator/config-disclosure.ts`) and a `conf`
+ * migration. See `contributing/configuration.md`.
+ *
+ * @module config-schema
+ */
 import { z } from 'zod';
 
 /** Sensitive fields that trigger a warning when set via CLI or API */
@@ -267,45 +286,63 @@ export type ShapeUserPrefs = z.infer<typeof ShapeUserPrefsSchema>;
 export const SHAPE_USER_PREFS_DEFAULTS: ShapeUserPrefs = ShapeUserPrefsSchema.parse({});
 
 /**
- * Person-scoped status-bar visibility preferences (`ui.statusBar`, DOR-431).
- * Each boolean toggles one status-bar item's visibility; all default `true`
- * (every item shown), matching the client's historical `localStorage` defaults.
- * Promoted from client `localStorage` into server config so the choices sync
- * across devices and an agent can flip them via `config_patch` (spec
- * agents-as-operators). The keys mirror the client's `StatusBarItemKey`
- * registry. The section holds no arrays, so a partial PATCH deep-merges cleanly
- * (one item can be toggled without round-tripping the whole object).
+ * Every status-line item a person is allowed to pin.
+ *
+ * Deliberately a closed set, not free strings: the list is agent-writable via
+ * `config_patch`, and an enum makes the legal values discoverable in the
+ * generated JSON/OpenAPI schema and rejects a typo at the boundary instead of
+ * persisting it. It mirrors the client registry's *pinnable* items — the Session
+ * group minus `cache`. Controls (`sound`, `polling`) are settings rather than
+ * status, and diagnostics rows are system-managed, so neither is pinnable; that
+ * exclusion is what stops pins from quietly becoming ten visibility toggles
+ * again. A client-side drift test keeps this enum and the registry in step.
+ */
+export const StatusBarPinSchema = z.enum([
+  'cwd',
+  'git',
+  'runtime',
+  'model',
+  'context',
+  'usage',
+  'permission',
+]);
+
+/** One pinnable status-line item key. */
+export type StatusBarPin = z.infer<typeof StatusBarPinSchema>;
+
+/**
+ * Every pinnable status-line item key, as a runtime array. Lets the client
+ * narrow an arbitrary registry key to a {@link StatusBarPin} without a cast, and
+ * gives the registry↔schema drift test something to compare against.
+ */
+export const STATUS_BAR_PIN_KEYS: readonly StatusBarPin[] = StatusBarPinSchema.options;
+
+/**
+ * Person-scoped status-bar preferences (`ui.statusBar`, DOR-431 → DOR-452).
+ *
+ * The status line is quiet by default: an item appears only when its promotion
+ * rule fires (it is actionable or anomalous) or when a person pinned it here.
+ * `pins` is therefore additive — it says "always show me this" — where the ten
+ * `boolean` visibility toggles this section originally held were subtractive
+ * ("hide this"). Pins live in server config rather than client `localStorage` so
+ * the choice syncs across devices and an agent can set it via `config_patch`
+ * (spec agents-as-operators).
+ *
+ * A `config_patch` replaces arrays wholesale, so patching `pins` sets the whole
+ * list — that is the intended semantics for a list of "keep these".
  */
 export const StatusBarPrefsSchema = z.object({
-  /** Show the current-working-directory item. */
-  cwd: z.boolean().default(true),
-  /** Show the git branch + change-count item. */
-  git: z.boolean().default(true),
-  /** Show the agent-runtime item. */
-  runtime: z.boolean().default(true),
-  /** Show the selected-model item. */
-  model: z.boolean().default(true),
-  /** Show the prompt-cache hit-rate item. */
-  cache: z.boolean().default(true),
-  /** Show the context-window utilization item. */
-  context: z.boolean().default(true),
-  /** Show the usage & cost item. */
-  usage: z.boolean().default(true),
-  /** Show the permission-mode selector item. */
-  permission: z.boolean().default(true),
-  /** Show the notification-sound toggle item. */
-  sound: z.boolean().default(true),
-  /** Show the background-polling toggle item. */
-  polling: z.boolean().default(true),
+  /** Status-line items to show even when their promotion rule would stay quiet. */
+  pins: z.array(StatusBarPinSchema).default([]),
 });
 
-/** Person-scoped status-bar visibility preferences (`ui.statusBar`). */
+/** Person-scoped status-bar preferences (`ui.statusBar`). */
 export type StatusBarPrefs = z.infer<typeof StatusBarPrefsSchema>;
 
 /**
- * Fully-defaulted {@link StatusBarPrefs} (every item visible). Parsed once so
- * the config route, the client selector, and the conf migration share one
- * canonical default.
+ * Fully-defaulted {@link StatusBarPrefs} (nothing pinned — the line speaks only
+ * when it has something to say). Parsed once so the config route, the client
+ * selector, and the conf migration share one canonical default.
  */
 export const STATUS_BAR_PREFS_DEFAULTS: StatusBarPrefs = StatusBarPrefsSchema.parse({});
 
@@ -362,19 +399,8 @@ export const UserConfigSchema = z.object({
         agentDefaults: {},
         autoFollowAgent: false,
       })),
-      /** Person-scoped status-bar visibility toggles (DOR-431). */
-      statusBar: StatusBarPrefsSchema.default(() => ({
-        cwd: true,
-        git: true,
-        runtime: true,
-        model: true,
-        cache: true,
-        context: true,
-        usage: true,
-        permission: true,
-        sound: true,
-        polling: true,
-      })),
+      /** Person-scoped status-line pins (DOR-431, DOR-452). */
+      statusBar: StatusBarPrefsSchema.default(() => ({ pins: [] })),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -394,18 +420,7 @@ export const UserConfigSchema = z.object({
         agentDefaults: {},
         autoFollowAgent: false,
       },
-      statusBar: {
-        cwd: true,
-        git: true,
-        runtime: true,
-        model: true,
-        cache: true,
-        context: true,
-        usage: true,
-        permission: true,
-        sound: true,
-        polling: true,
-      },
+      statusBar: { pins: [] },
     })),
   logging: LoggingConfigSchema.default(() => ({
     level: 'info' as const,
@@ -745,6 +760,41 @@ export const UserConfigSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default(() => ({ enabled: false })),
+  /**
+   * Standing permissions: whether an operator may say "stop asking about this
+   * agent doing this thing", and for how long one of those answers lasts
+   * (spec `agent-approval-settings` §3.1).
+   *
+   * The policy lives here; the permissions themselves do not. A granted
+   * permission has a creation time, an expiry, and a revocation, which is
+   * operational state and belongs in SQLite (`approval_grants`), not in a file a
+   * person edits. Keeping them out also means nothing about WHICH agents are
+   * trusted can ever leave through `config_get`.
+   *
+   * Both leaves are `operator-only`, and writing either also requires a session
+   * cookie — see `REQUIRES_COOKIE_CONFIG_PATHS`.
+   */
+  approvals: z
+    .object({
+      /**
+       * Whether standing permissions may exist at all. Off by default: a safety
+       * feature does not get quietly relaxed by an upgrade, so nothing changes
+       * for an existing user until they ask for it.
+       */
+      standingGrants: z.boolean().default(false),
+      /**
+       * How long a new standing permission lasts, in minutes, counted from the
+       * moment it is granted and never extended by use.
+       *
+       * Bounded in the schema, in both directions and on purpose. The maximum of
+       * 1440 (one day) is what makes "forever" unrepresentable. The minimum of 5
+       * keeps the window from becoming a deny-all that looks like a broken
+       * feature, which is the reasoning already applied to the approval window in
+       * `approval-service.ts`.
+       */
+      trustWindowMinutes: z.number().int().min(5).max(1440).default(480),
+    })
+    .default(() => ({ standingGrants: false, trustWindowMinutes: 480 })),
   cloud: z
     .object({
       /**

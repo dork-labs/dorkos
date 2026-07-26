@@ -59,6 +59,7 @@ vi.mock('@/layers/features/chat', () => ({
   MessageItem: ({ message }: { message: { content: string } }) => (
     <div data-testid="msg">{message.content}</div>
   ),
+  resolveMessageAuthor: () => ({ kind: 'agent', id: 'dorkbot', displayName: 'DorkBot' }),
   TypingDots: () => <div data-testid="typing" />,
   FirstLight: () => <div data-testid="first-light" />,
   ChatInput: ({
@@ -149,6 +150,23 @@ describe('OnboardingConversation', () => {
       })
     );
     expect(mockCompleteStep).toHaveBeenCalledWith('meet-dorkbot');
+  });
+
+  it('"Skip this step" moves past personality into discovery, saving nothing', async () => {
+    const onComplete = vi.fn();
+    render(<OnboardingConversation onComplete={onComplete} />);
+    await screen.findByTestId('pick-personality');
+
+    fireEvent.click(screen.getByTestId('skip-personality'));
+
+    // The discovery beat is on screen; the personality card is gone.
+    expect(await screen.findByText('Sure, look around')).toBeTruthy();
+    expect(screen.queryByTestId('pick-personality')).toBeNull();
+    expect(screen.getByText(DORKBOT_ONBOARDING_LINES.personalitySkip)).toBeTruthy();
+    // No traits were written, and the conversation was not ended.
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+    expect(mockSkipStep).toHaveBeenCalledWith('meet-dorkbot');
+    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it('does not scan before consent, and starts the scan on consent', async () => {

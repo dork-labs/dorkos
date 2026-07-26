@@ -1,0 +1,27 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": true,
+    "duration_ms": 495,
+    "num_turns": 1,
+    "total_cost_usd": 0,
+    "session_id": "a1b2c3"
+  },
+  {
+    "type": "result",
+    "subtype": "error_max_turns",
+    "is_error": true,
+    "duration_ms": 590334,
+    "num_turns": 50,
+    "total_cost_usd": 2.11,
+    "session_id": "a1b2c3"
+  }
+]

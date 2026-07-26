@@ -187,20 +187,25 @@ dorkos feedback --print      # Print the URL instead of opening a browser
 
 These let you (or an agent running in any runtime) drive a running DorkOS from the command line: discover what it can do, manage agents, schedule tasks, read activity, and check versions. Every command takes `--json` for clean, scriptable output (raw JSON on standard output, nothing else). Without `--json`, you get a readable table. See [Your agents can operate DorkOS](/docs/guides/operating-dorkos) for the plain-language tour.
 
-**`dorkos capabilities`**: list everything this DorkOS can do.
+**`dorkos capabilities`**: ask a running DorkOS which actions it accepts by name.
 
 ```bash
-dorkos capabilities                                  # Every capability as a table (id, title, tier)
+dorkos capabilities                                  # The catalog as a table (id, title, tier)
 dorkos capabilities --json                           # The full catalog as JSON
 ```
 
-**`dorkos call`**: run any capability by its id. This is the one command that reaches every action, whether or not it has its own verb. List the ids with `dorkos capabilities` first.
+This is the live list, so it never goes stale the way a docs page can. It is not the whole set of tools DorkOS gives an agent. Scheduled tasks have their own `dorkos task` commands below. Agent messaging, discovery, and extensions are tools an agent uses from inside a session, or from a connected app like Cursor, and they are not in this catalog at all. The catalog's own output says so, so an agent reading it knows to look elsewhere for the rest.
+
+**`dorkos call`**: run any capability in that catalog by its id, whether or not it has its own verb. List the ids with `dorkos capabilities` first.
 
 ```bash
 dorkos call operator.check_update                    # Run a capability with no input
 dorkos call operator.activity_list --input '{"limit":5}'
 dorkos call operator.config_patch --input-file ./patch.json   # Read the input from a file ('-' for stdin)
+dorkos call marketplace.uninstall --input '{"name":"x"}' --approval <token>
 ```
+
+A call that needs your OK comes back with `status: approval_required` and a token instead of doing the work. Approve it in DorkOS, then run the same call again with `--approval <token>`. Change the input and the token stops matching, because one approval covers one exact action. See [Action Approvals](/docs/guides/action-approvals).
 
 **`dorkos agent`**: list, inspect, create, and edit agents.
 
@@ -247,6 +252,24 @@ dorkos version --check --json     # Same, as JSON
 
 When no server is running, `dorkos version --check` still answers: it reports the CLI version and the last-known latest version from the local update-check cache.
 
+##### If your DorkOS asks you to sign in
+
+By default DorkOS has no login, and these commands just work. If you turned login on (Settings → Security), the server needs to know it is really you, so give the CLI an API key:
+
+1. In the cockpit, open Settings → Security → API keys and create a key. Copy it right away; it is shown once.
+2. Hand it to the CLI one of two ways:
+
+```bash
+export DORKOS_API_KEY=<your key>          # This shell only
+```
+
+```bash
+printf %s '<your key>' > ~/.dork/api-key  # Every shell, and agents you run
+chmod 600 ~/.dork/api-key                 # Keep it readable only by you
+```
+
+The key file is the better choice when your agents run `dorkos` commands themselves, because they inherit it without you exporting anything. If a command ever answers "this DorkOS instance has login turned on", that is the missing key talking.
+
 ### Config directory
 
 On first run, DorkOS creates `~/.dork/` for persistent storage:
@@ -254,6 +277,7 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
 <Files>
   <Folder name="~/.dork" defaultOpen>
     <File name="config.json" />
+    <File name="api-key" />
   </Folder>
 </Files>
 
@@ -272,6 +296,11 @@ On first run, DorkOS creates `~/.dork/` for persistent storage:
       type: 'string',
       description: 'Directory boundary for file access',
       default: 'Home directory',
+    },
+    DORKOS_API_KEY: {
+      type: 'string',
+      description:
+        'Your DorkOS API key, needed only when login is on. Falls back to ~/.dork/api-key',
     },
     TUNNEL_ENABLED: { type: 'boolean', description: 'Enable ngrok tunnel', default: 'false' },
     NGROK_AUTHTOKEN: { type: 'string', description: 'ngrok auth token (required for tunnels)' },

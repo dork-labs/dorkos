@@ -56,6 +56,8 @@ yalc.lock
 .plan
 .scratch/
 .temp
+# Eval run output (transcripts + results.json) — CI uploads these as artifacts
+.evals-runs/
 # Transient lock that suppresses the changelog-populator post-commit hook
 .claude/.changelog-populator.lock
 .vercel

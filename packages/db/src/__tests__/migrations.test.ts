@@ -37,8 +37,20 @@ describe('Database Migrations', () => {
       'account',
       'activity_events',
       'agent_denials',
+      // Hashed per-agent identity tokens, keyed on the stable agentPath so the
+      // mesh reconciler's rebuild-from-files cannot orphan them
+      // (agent-trust spec §3.1, migration 0030).
+      'agent_identity_tokens',
       'agents',
       'apikey',
+      // Standing permissions: one operator's "stop asking about this agent doing
+      // this thing", keyed on the stable agentPath and bounded by an absolute
+      // expiry (agent-approval-settings spec §3.2, migration 0033).
+      'approval_grants',
+      // Approval records for capability invocations that need a person's
+      // consent; the token lives here only as a hash (agent-trust spec §3.3,
+      // migration 0031).
+      'approvals',
       'codex_threads',
       // Derived cache binding a ConnectedAccountId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).

@@ -9,7 +9,7 @@
  * capability's `invoke` calls one and {@link unwrapMcpEnvelope}s its MCP text
  * envelope down to the plain payload the registry contract requires (the two
  * MCP adapters re-wrap it). Redaction stays inside the handlers, on every
- * surface, per ADR 260723-013236.
+ * surface, per ADR 260723-013236 (superseded by 260725-152018).
  *
  * The four read-only observability capabilities carry `readOnlyCarveOut: true`;
  * the two mutations (`operator.update_agent`, `operator.config_patch`) do not —
@@ -114,9 +114,13 @@ export const operatorDomain: CapabilityDomain = {
       id: 'operator.config_get',
       title: 'Get configuration',
       description:
-        'Get the DorkOS user configuration snapshot (the stored config.json object): ' +
-        'sidebar/status-bar prefs, scheduler, logging, mesh, telemetry, agents, and more. ' +
-        'Secret values (auth tokens, API keys) are redacted.',
+        'Get the DorkOS user configuration snapshot (an allowlisted view of the stored config.json): ' +
+        'sidebar/status-bar prefs, scheduler, logging, mesh scan roots, telemetry choices, runtimes, ' +
+        'workspace and server paths, and more. Left out: every secret (tunnel auth token, tunnel auth, ' +
+        'MCP api key, cloud instance token), every credential reference (the providers map and the Codex ' +
+        'credentialRef), and the linked account label. In their place you get boolean ...Configured flags ' +
+        'plus providersConfigured (the provider ids that have a credential), so you can see what is set up ' +
+        'without seeing where the material lives.',
       tier: 'observe',
       input: z.object({}),
       output: z.unknown(),
@@ -220,14 +224,20 @@ export const operatorDomain: CapabilityDomain = {
       description:
         'Update DorkOS user settings by deep-merging a partial config object (the same validated path as the ' +
         "settings UI). Use for status-bar/sidebar prefs, scheduler, logging, etc. This mutates the user's own " +
-        'settings — only do it when the user has asked for the change. Arrays replace (not merge); invalid values are rejected.',
+        'settings — only do it when the user has asked for the change. Arrays replace (not merge); invalid values are rejected. ' +
+        'Some settings only a person can change, and a patch touching any of them is refused whole: login (auth), ' +
+        'public exposure (tunnel), the MCP endpoint and its key, telemetry consent, credentials (providers, ' +
+        'credentialRef, cloud), extensions, the runtime binary paths and the OpenCode provider and baseURL, and the ' +
+        'directories DorkOS reads and writes (server.boundary, workspace.rootPath, relay.dataDir, ' +
+        'agents.defaultDirectory, mesh.scanRoots). Ask the person to change those in Settings themselves.',
       tier: 'act',
       input: z.object({
-        patch: z
-          .record(z.string(), z.unknown())
-          .describe(
-            'Partial config to deep-merge, e.g. { "ui": { "sidebar": { "collapsed": true } } }'
-          ),
+        patch: z.record(z.string(), z.unknown()).describe(
+          // Keep this example a field that actually exists: `ui.sidebar` has no
+          // `collapsed` (the earlier example's key), and `ui.statusBar` is a
+          // `pins` list rather than per-item booleans (DOR-452).
+          'Partial config to deep-merge, e.g. { "ui": { "sidebar": { "recentsCollapsed": true } } }'
+        ),
       }),
       output: z.unknown(),
       surfaces: {

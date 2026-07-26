@@ -5,15 +5,20 @@ import { useChatSession } from '../model/use-chat-session';
 import { useCommands } from '@/layers/entities/command';
 import { useTaskState } from '../model/use-task-state';
 import { useToolShortcuts } from '../model/use-tool-shortcuts';
-import { useScrollOverlay } from '../model/use-scroll-overlay';
+import { useScrollOverlay } from '../model/view/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
 import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
-import { useRuntimeChip } from '../model/status/use-runtime-chip';
+import { useRuntimeChip } from '@/layers/features/status';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
-import { useSessionId, useSessionStatus, useDirectoryState } from '@/layers/entities/session';
+import {
+  useSessionId,
+  useSessionStatus,
+  useDirectoryState,
+  sessionKeys,
+} from '@/layers/entities/session';
 import { useCapabilitiesForRuntime, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers/shared/model';
 import { playNotificationSound } from '@/layers/shared/lib';
@@ -117,7 +122,7 @@ export function ChatPanel({
       setSessionId(newId);
       // Invalidate stale session metadata so the new key fetches immediately
       // instead of waiting for TanStack Query's staleTime to expire.
-      queryClient.invalidateQueries({ queryKey: ['session', newId] });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.bySession(newId) });
     },
     [setSessionId, queryClient]
   );
@@ -130,7 +135,7 @@ export function ChatPanel({
   const handleSessionIdChangeReplace = useCallback(
     (canonicalId: string) => {
       setSessionId(canonicalId, { replace: true });
-      queryClient.invalidateQueries({ queryKey: ['session', canonicalId] });
+      queryClient.invalidateQueries({ queryKey: sessionKeys.bySession(canonicalId) });
     },
     [setSessionId, queryClient]
   );
@@ -191,6 +196,7 @@ export function ChatPanel({
     syncConnectionState,
     retryMessage,
     tryNativeCommand,
+    commandPending,
   } = useChatSession(sessionId, {
     transformContent: fileTransformContent,
     onTaskEvent: handleTaskEventWithCelebrations,
@@ -221,8 +227,10 @@ export function ChatPanel({
   // Focus the prompt textarea whenever the session changes (new session, switch, page mount).
   // Every navigation scenario — sidebar click, new session, agent switch, page load —
   // results in sessionId changing, so this single effect covers all of them.
+  // Desktop only: nobody asked for focus here, and on a phone this fires on
+  // mount and on every session switch, popping the software keyboard each time.
   useEffect(() => {
-    chatInputRef.current?.focus();
+    chatInputRef.current?.focusUnlessTouch();
   }, [sessionId]);
 
   // Seed the composer from a "Run this with…" re-run (`?prompt=`). Guarded so
@@ -234,7 +242,7 @@ export function ChatPanel({
     if (launchPrompt && seededPromptRef.current !== launchPrompt && messages.length === 0) {
       seededPromptRef.current = launchPrompt;
       setInput(launchPrompt);
-      chatInputRef.current?.focus();
+      chatInputRef.current?.focusUnlessTouch();
     }
   }, [launchPrompt, messages.length, setInput]);
 
@@ -277,7 +285,6 @@ export function ChatPanel({
     setInput,
     commands: allCommands,
     fileEntries: allFileEntries,
-    chatInputRef,
   });
 
   /** Re-send the last user message after an inline execution_error. */
@@ -413,6 +420,7 @@ export function ChatPanel({
         handleSubmit={handleSubmit}
         submitContent={submitContent}
         tryNativeCommand={tryNativeCommand}
+        commandPending={commandPending}
         status={status}
         sessionBusy={sessionBusy}
         stop={stop}
@@ -423,7 +431,9 @@ export function ChatPanel({
           pendingFiles: fileUpload.pendingFiles,
           onFilesSelected: fileUpload.addFiles,
           onFileRemove: fileUpload.removeFile,
+          onFileRetry: fileUpload.retryFile,
           isUploading: fileUpload.isUploading,
+          hasFailedUpload: fileUpload.hasFailedUpload,
         }}
         interaction={{
           active: activeInteraction,

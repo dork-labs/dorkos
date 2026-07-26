@@ -81,6 +81,14 @@ export interface SessionStreamState {
   pendingInteractions: PendingInteractionDTO[];
   /** Highest `seq` applied so far; the idempotency/gap-free watermark. */
   lastAppliedSeq: number;
+  /**
+   * `Date.now()` when this session last APPLIED a frame (snapshot or event), or
+   * `null` before the first hydration. Diagnostics-only: heartbeats and comment
+   * frames keep an SSE connection `connected` without advancing the projection,
+   * so a healthy connection paired with a long-stale timestamp is exactly the
+   * signature of a stream that has quietly stopped delivering.
+   */
+  lastEventAt: number | null;
   /** Cursor of the most recent snapshot, or `null` before first hydration. */
   streamReadyCursor: number | null;
   /** Connection state of this session's durable `/events` stream. */
@@ -115,6 +123,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   status: null,
   pendingInteractions: [],
   lastAppliedSeq: 0,
+  lastEventAt: null,
   streamReadyCursor: null,
   connectionState: 'connecting',
   triggerPending: false,
@@ -243,6 +252,17 @@ interface SessionStreamActions {
   updateQueuedMessage: (sessionId: string, id: string, content: string) => void;
   /** Remove a single queued message by id (after flush or operator removal). */
   removeQueuedMessage: (sessionId: string, id: string) => void;
+  /**
+   * Put a dequeued message BACK in the queue at `index` (clamped to the current
+   * length), keeping its original id.
+   *
+   * The flush dequeues a message before the trigger POST resolves, so a refused
+   * trigger — `SESSION_LOCKED` from a still-held turn lock, a network failure —
+   * used to destroy text a person typed (DOR-480). The submit path calls this
+   * instead of dropping it. Idempotent: a no-op when the id is already queued,
+   * so a double restore cannot duplicate the message.
+   */
+  requeueMessage: (sessionId: string, message: QueuedMessage, index: number) => void;
   /** Clear a session's entire flush queue. */
   clearQueue: (sessionId: string) => void;
   /**
@@ -324,9 +344,18 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
     // Only evict idle sessions (no turn in progress) and never the pinned
     // session (DOR-298 PIP) — a pinned session showing a completed, non-
     // streaming widget board is exactly the idle-but-must-not-evict case.
+    //
+    // A session holding QUEUED MESSAGES is never evictable either (DOR-480):
+    // those are words a person typed that have not been delivered yet, and a
+    // stranded queue is by definition not streaming — so without this guard,
+    // visiting 20 other sessions silently deleted them. The eviction only
+    // reclaims a derived projection; the queue is the only thing in here the
+    // server cannot send again.
+    const session = state.sessions[id];
     if (
-      state.sessions[id] &&
-      state.sessions[id]!.inProgressTurn.length === 0 &&
+      session &&
+      session.inProgressTurn.length === 0 &&
+      session.queuedMessages.length === 0 &&
       id !== state.pinnedSessionId
     ) {
       delete state.sessions[id];
@@ -446,6 +475,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       break;
   }
   session.lastAppliedSeq = event.seq;
+  session.lastEventAt = Date.now();
 }
 
 /**
@@ -486,6 +516,7 @@ export const useSessionStreamStore: SessionStreamStore = create<
             session.pendingInteractions = snapshot.pendingInteractions;
             session.inProgressTurn = snapshot.inProgressTurn ?? [];
             session.lastAppliedSeq = snapshot.cursor;
+            session.lastEventAt = Date.now();
             session.streamReadyCursor = snapshot.cursor;
             // Marks every lifecycle value the snapshot carries as hydration, not
             // a live transition (the turn-end reconcile re-baselines on this).
@@ -577,6 +608,18 @@ export const useSessionStreamStore: SessionStreamStore = create<
           },
           false,
           'session-stream/removeQueuedMessage'
+        ),
+
+      requeueMessage: (sessionId, message, index) =>
+        set(
+          (state) => {
+            const session = touchAndGet(state, sessionId);
+            if (session.queuedMessages.some((m) => m.id === message.id)) return;
+            const at = Math.max(0, Math.min(index, session.queuedMessages.length));
+            session.queuedMessages.splice(at, 0, { ...message });
+          },
+          false,
+          'session-stream/requeueMessage'
         ),
 
       clearQueue: (sessionId) =>
@@ -696,10 +739,104 @@ export function useSessionStreamStatus(sessionId: string): SessionStatus | null 
   );
 }
 
+/**
+ * Granular selector: the server-projected lifecycle, or `undefined` before the
+ * first hydration. Subscribing to the discriminant alone (rather than the whole
+ * status object) keeps a readout from re-rendering on every token-count delta.
+ */
+export function useSessionStreamLifecycle(sessionId: string): SessionLifecycle | undefined {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.status?.lifecycle, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: whether this session is waiting on a decision from the
+ * operator — a `blocked` lifecycle, or any pending interaction still on screen.
+ *
+ * This is the AUTHORITATIVE answer, which the coarse rendered status cannot give:
+ * `selectRenderedStatus` deliberately collapses `blocked` → `idle` because the
+ * renderer expresses blocking through the interaction cards instead. Anything
+ * that must not treat a blocked session as ready for a new turn — the queue's
+ * auto-flush above all, since the server keeps the turn's session lock for the
+ * whole time it is blocked (DOR-480) — has to read this rather than the
+ * projection meant for display.
+ */
+export function useSessionAwaitingDecision(sessionId: string): boolean {
+  return useSessionStreamStore(
+    useCallback(
+      (s) => {
+        const session = s.sessions[sessionId];
+        if (!session) return false;
+        return session.status?.lifecycle === 'blocked' || session.pendingInteractions.length > 0;
+      },
+      [sessionId]
+    )
+  );
+}
+
 /** Granular selector: this session's durable-stream connection state. */
 export function useSessionStreamConnection(sessionId: string): ConnectionState {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId]?.connectionState ?? 'connecting', [sessionId])
+  );
+}
+
+/**
+ * Granular selector: the highest `seq` applied from this session's durable
+ * stream. `0` before the first hydration. Diagnostics-only — it answers "how far
+ * has this client actually caught up?" when a stream is misbehaving.
+ */
+export function useSessionLastEventSeq(sessionId: string): number {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.lastAppliedSeq ?? 0, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: when this session last applied a frame, or `null` before
+ * the first hydration. Pairs with {@link useSessionStreamConnection} — see
+ * {@link SessionStreamState.lastEventAt} for why "connected but silent" matters.
+ */
+export function useSessionLastEventAt(sessionId: string): number | null {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.lastEventAt ?? null, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: the cursor of the most recent snapshot this session
+ * hydrated from — the point live replay resumed at. `null` before the first
+ * hydration. Diagnostics-only: read beside `lastAppliedSeq` it says whether the
+ * client has advanced at all since it (re)connected.
+ */
+export function useSessionSnapshotCursor(sessionId: string): number | null {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.streamReadyCursor ?? null, [sessionId])
+  );
+}
+
+/**
+ * Granular selector: whether a turn trigger is in flight for this session (the
+ * POST has been sent, the server's `turn_start` has not arrived). A latch stuck
+ * on is a stalled trigger, which is why the readout shows it.
+ */
+export function useSessionTriggerPending(sessionId: string): boolean {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.triggerPending ?? false, [sessionId])
+  );
+}
+
+/** Stable empty turn so unknown sessions return a referentially-stable value. */
+const EMPTY_TURN: SessionEvent[] = [];
+
+/**
+ * Granular selector: the events of the turn in progress, empty when the session
+ * is idle. Consumed by the session readout's live subagent fold.
+ */
+export function useSessionInProgressTurn(sessionId: string): SessionEvent[] {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.inProgressTurn ?? EMPTY_TURN, [sessionId])
   );
 }
 

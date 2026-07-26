@@ -7,16 +7,15 @@ import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
 import { registerMeshTools } from './external-mcp/mesh-tools.js';
 import { registerAgentAndExtensionTools } from './external-mcp/agent-extension-tools.js';
-import { registerSessionResources } from './external-mcp/session-resources.js';
-import { registerAgentResources } from './external-mcp/agent-resources.js';
-import { registerSkillResources } from './external-mcp/skill-resources.js';
-import { registerCapabilitiesResource } from './external-mcp/capabilities-resource.js';
+import { registerDorkOsResources } from './mcp-resources/index.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp/marketplace-mcp-tools.js';
 import { registerCapabilitiesAsMcpTools } from './external-mcp/capability-mcp-tools.js';
 import { composeDorkOsCapabilityRegistry } from './self-description/dorkos-registry.js';
 import type { CapabilityRegistry } from './capabilities/index.js';
+import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { logger } from '../../lib/logger.js';
 import { SERVER_ICONS } from './mcp-tool-metadata.js';
+import { gatedToolRegistrar } from './mcp-tool-gate.js';
 
 /**
  * Create the external MCP server instance with all DorkOS tools registered.
@@ -49,31 +48,29 @@ import { SERVER_ICONS } from './mcp-tool-metadata.js';
  * only when `marketplaceDeps` is present, so a relay-disabled instance simply
  * omits those capabilities from the registry (and thus the tool list).
  *
- * Read-only `dorkos://` resources (sessions, agents, skills —
- * `external-mcp/*-resources.ts`) are registered alongside the tools. This
- * server is **stateless per request** (ADR: a fresh `McpServer` is
- * constructed for every `/mcp` call — see the router in `index.ts`), so it
- * can never emit a `notifications/resources/list_changed` push after the
- * response it was created for. The MCP SDK's high-level `registerResource()`
- * unconditionally advertises `resources.listChanged: true` the moment any
- * resource is registered (no public opt-out); the explicit
- * `registerCapabilities` call below corrects that to `false` immediately
- * after registration so the `initialize` response doesn't promise a push
- * channel this transport can't deliver. Resource *subscriptions*
- * (`resources/subscribe`) are never wired up at all — the high-level SDK has
- * no subscription API — so that capability is never advertised in the first
- * place; nothing to override there.
+ * The read-only `dorkos://` resources (sessions, agents, skills, capabilities)
+ * come from {@link registerDorkOsResources}, the SAME call the in-session tool
+ * server makes (`services/core/mcp-resources/`), so neither surface can drift
+ * ahead of the other. That module also documents the auth posture and why
+ * `resources.listChanged` is advertised as `false`; this server is stateless per
+ * request (a fresh `McpServer` per `/mcp` call, see the router in `index.ts`), so
+ * it could never deliver such a push anyway.
  *
  * @param deps - Service dependencies shared with the internal tool path
  * @param marketplaceDeps - Optional marketplace dependency bundle. When
  *   provided, the marketplace capabilities join the registry (and the tool list).
  * @param registry - The shared boot-composed capability registry. When omitted
  *   (unit tests), one is composed on the spot from `deps` + `marketplaceDeps`.
+ * @param identity - The calling agent's resolved identity, when the request
+ *   carried an `X-DorkOS-Agent` token. This server is rebuilt per request, so
+ *   the identity is captured by every capability tool handler it registers and
+ *   the resulting invocations are attributed to that agent.
  */
 export function createExternalMcpServer(
   deps: McpToolDeps,
   marketplaceDeps?: MarketplaceMcpDeps,
-  registry?: CapabilityRegistry
+  registry?: CapabilityRegistry,
+  identity?: AgentIdentity
 ): McpServer {
   const server = new McpServer({
     name: 'dorkos',
@@ -86,12 +83,17 @@ export function createExternalMcpServer(
   // asserts its own `from`.
   const relayIdentity = resolveSenderIdentity(deps, undefined);
 
-  registerCoreTools(server, deps);
-  registerTaskTools(server, deps);
-  registerRelayTools(server, deps, relayIdentity);
-  registerBindingTools(server, deps);
-  registerMeshTools(server, deps);
-  registerAgentAndExtensionTools(server, deps);
+  // Every hand-registered tool goes on through the gated registrar, never onto
+  // `server` directly: that is what puts the permission tier in front of each one
+  // (DOR-468). The per-domain functions take a `ToolRegistrar`, so a new domain
+  // file has nothing ungated to register against.
+  const registrar = gatedToolRegistrar(server, identity);
+  registerCoreTools(registrar, deps);
+  registerTaskTools(registrar, deps);
+  registerRelayTools(registrar, deps, relayIdentity);
+  registerBindingTools(registrar, deps);
+  registerMeshTools(registrar, deps);
+  registerAgentAndExtensionTools(registrar, deps);
 
   // ── Registry-backed tools (operator + marketplace + self-description) ─────
   const capabilityRegistry =
@@ -101,18 +103,17 @@ export function createExternalMcpServer(
       operatorDeps: deps,
       ...(marketplaceDeps && { marketplaceDeps }),
     });
-  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external');
+  registerCapabilitiesAsMcpTools(
+    server,
+    capabilityRegistry,
+    'external',
+    identity ? { identity } : undefined
+  );
 
   // ── Read-only resources ──────────────────────────────────────────────────
-  registerSessionResources(server, deps);
-  registerAgentResources(server, deps);
-  registerSkillResources(server, deps);
-  registerCapabilitiesResource(server, capabilityRegistry);
-
-  // Correct the SDK's auto-advertised `listChanged: true` — see the module
-  // TSDoc above. Must run after registration (which is what sets it) and
-  // before `connect()` (capabilities are immutable once connected).
-  server.server.registerCapabilities({ resources: { listChanged: false } });
+  // Same call the in-session server makes. This surface has no per-request `cwd`
+  // to key on, so reads are scoped to the server's own default project.
+  registerDorkOsResources(server, deps, capabilityRegistry, deps.defaultCwd);
 
   return server;
 }

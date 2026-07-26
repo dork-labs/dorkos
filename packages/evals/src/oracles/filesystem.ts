@@ -193,6 +193,56 @@ export function dirContainsOnly(
 }
 
 /**
+ * Oracle: the resolved directory is absent, or exists and is EMPTY.
+ *
+ * The read-only counterpart to {@link fileExists}, for a directory a turn must not
+ * populate. Written for the read-only operate cases: asserting only that the
+ * project cwd stayed empty says nothing about `DORK_HOME`, which is where a
+ * read-only turn would actually do damage (that is where installs, agents, and
+ * config live). `DORK_HOME` itself is NOT assertable as a whole — the server
+ * creates a dozen entries there just by booting — but a subtree the server never
+ * creates unless something was installed, such as `plugins/`, is.
+ *
+ * Only ENOENT counts as "absent". Any other `readdir` failure (EACCES, EIO, a
+ * path that is a file) FAILS the oracle rather than passing it: an oracle that
+ * reports success because it could not look is exactly the kind of false green
+ * this harness exists to remove.
+ *
+ * @param dirOf - Resolves the directory to check from the sandbox.
+ * @param label - Human-readable label; defaults to an empty-or-absent message.
+ * @returns An {@link Oracle}.
+ */
+export function dirEmptyOrAbsent(dirOf: SandboxPath, label?: string): Oracle {
+  return async (ctx) => {
+    const dir = dirOf(ctx.sandbox);
+    const oracleLabel = label ?? `${path.basename(dir)} is empty or absent`;
+    let entries: string[] = [];
+    let exists = true;
+    try {
+      entries = await readdir(dir);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        return {
+          label: oracleLabel,
+          passed: false,
+          evidence: { dir, unreadable: true, code, error: (err as Error).message },
+          detail: `could not read ${dir} (${code ?? 'unknown error'}) — the directory was not proven empty`,
+        };
+      }
+      exists = false;
+    }
+    const passed = entries.length === 0;
+    return {
+      label: oracleLabel,
+      passed,
+      evidence: { dir, exists, entries },
+      detail: passed ? undefined : `expected nothing in ${dir}, found: ${entries.join(', ')}`,
+    };
+  };
+}
+
+/**
  * Oracle: the resolved directory holds NO crash-left `*.dorkos-bak-*` sibling —
  * proof the marketplace install/uninstall transaction cleaned up atomically
  * (`transaction.ts`, ADR-0304).

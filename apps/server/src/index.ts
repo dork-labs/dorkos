@@ -123,7 +123,6 @@ import {
   TokenConfirmationProvider,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
-import { setMarketplaceConfirmationProvider } from './services/marketplace-mcp/confirmation-registry.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
 import { ActivityService } from './services/activity/activity-service.js';
 import { sweepStaleInstallBackups } from './services/marketplace/backup-janitor.js';
@@ -131,9 +130,24 @@ import { createActivityRouter } from './routes/activity.js';
 import { createExtensionRoutesMiddleware } from './middleware/extension-routes.js';
 import { createExternalMcpServer } from './services/core/mcp-server.js';
 import { composeDorkOsCapabilityRegistry } from './services/core/self-description/dorkos-registry.js';
+import {
+  initAgentIdentityService,
+  createCapabilityAttributionObserver,
+  createCapabilityGateAuditObserver,
+} from './services/core/agent-identity/index.js';
+import {
+  ApprovalGrantService,
+  ApprovalService,
+  initStandingGrantPosture,
+  resolveApprovalTtlMs,
+} from './services/core/approvals/index.js';
+import { createApprovalsRouter } from './routes/approvals.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
-import type { CapabilityRegistry } from './services/core/capabilities/index.js';
+import {
+  initCapabilityTierGate,
+  type CapabilityRegistry,
+} from './services/core/capabilities/index.js';
 import { createMcpRouter } from './routes/mcp.js';
 import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
@@ -309,6 +323,11 @@ async function start() {
   if (configManager.get('auth')?.enabled !== true && !env.MCP_API_KEY?.trim()) {
     resolveMcpLocalToken(dorkHome);
   }
+
+  // Agent identity (spec `agent-trust` §3.1) — must be initialized before
+  // `createApp()`, whose `resolveAgentIdentity` middleware reaches this
+  // singleton lazily (it has no database handle in scope, same as `getAuth`).
+  initAgentIdentityService(db);
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
@@ -751,10 +770,13 @@ async function start() {
     });
     logger.info('[Mesh] MeshCore initialized');
 
-    // Provide MeshCore to runtime for per-session manifest lookup and peer agents context
-    // Only ClaudeCodeRuntime exposes setMeshCore — skip in test mode.
-    if (claudeRuntime) {
-      claudeRuntime.setMeshCore(meshCore);
+    // Provide MeshCore to every registered runtime that can use it: per-session
+    // manifest lookup, peer-agents context, and the guard that decides whether a
+    // turn's working directory hosts a registered agent worth minting an identity
+    // token for. `setMeshCore` is an optional DI setter on `AgentRuntime`, so a
+    // runtime that has no use for it (test-mode, opencode) simply has none.
+    for (const runtime of runtimeRegistry.listRuntimes()) {
+      runtime.setMeshCore?.(meshCore);
     }
 
     // Run startup reconciliation (non-fatal)
@@ -896,6 +918,51 @@ async function start() {
   // those closures are defined, so it cannot be a `const` initialized in place.
   // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
   let capabilityRegistry: CapabilityRegistry | undefined;
+
+  // Approval primitive (spec `agent-trust` §3.3) — one instance, injected into
+  // the marketplace confirmation provider and the approvals router so they share
+  // a single token lifecycle. Built after `capabilityRegistry` is declared so
+  // `describeCapability` can read it lazily: the card's title and tier come from
+  // the registry rather than from whoever is asking, and the registry is composed
+  // from the very domains that request approvals (a static import would cycle).
+  // The sweep drops rows whose window closed over a day ago; expiry itself is
+  // enforced whenever a token is presented, never by this call.
+  // `DORKOS_APPROVAL_TTL_MS` can only SHORTEN the window — the clamp lives in
+  // `resolveApprovalTtlMs`, beside the default it clamps against (DOR-498).
+  const approvalTtlMs = resolveApprovalTtlMs(env.DORKOS_APPROVAL_TTL_MS);
+  const approvalService = new ApprovalService(db, {
+    ...(approvalTtlMs !== undefined ? { ttlMs: approvalTtlMs } : {}),
+    describeCapability: (capabilityId) => {
+      const capability = capabilityRegistry?.get(capabilityId);
+      return capability ? { title: capability.title, tier: capability.tier } : undefined;
+    },
+  });
+  try {
+    const purged = approvalService.purgeExpired();
+    if (purged > 0) {
+      logger.info(`[Approvals] Purged ${purged} long-expired approval records`);
+    }
+  } catch (err) {
+    logger.warn('[Approvals] Failed to purge expired approvals (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  // Standing permissions: the operator's "stop asking about this agent doing
+  // this thing", bounded by a clock. The store is injected into the approvals
+  // router and registered with the posture seam, which ends every live
+  // permission when login or the master switch is turned off.
+  const approvalGrantService = new ApprovalGrantService(db);
+  initStandingGrantPosture(approvalGrantService);
+  try {
+    const purgedGrants = approvalGrantService.purgeExpired();
+    if (purgedGrants > 0) {
+      logger.info(`[Approvals] Purged ${purgedGrants} long-expired standing permissions`);
+    }
+  } catch (err) {
+    logger.warn('[Approvals] Failed to purge expired standing permissions (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   // Connector registry + the per-account → session tool-server binder, created
   // up front (both need only `db`) so the MCP factory closure can inject a
   // session's attached connector accounts as named MCP tool servers alongside
@@ -993,13 +1060,20 @@ async function start() {
     requireMcpEnabled,
     createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
-    createMcpRouter(() => {
+    createMcpRouter((agentIdentity) => {
       if (!claudeRuntime || !mcpToolDeps) {
         throw new Error(
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
         );
       }
-      return createExternalMcpServer(mcpToolDeps, marketplaceMcpDeps, capabilityRegistry);
+      // The server is rebuilt per request, so the caller's resolved identity
+      // (if any) is captured by the capability tool handlers it registers.
+      return createExternalMcpServer(
+        mcpToolDeps,
+        marketplaceMcpDeps,
+        capabilityRegistry,
+        agentIdentity
+      );
     })
   );
   logger.info(`[MCP] External MCP server mounted at /mcp (stateless, ${mcpAuthMode})`);
@@ -1141,7 +1215,10 @@ async function start() {
   // stream (session_upserted/session_removed/session_status) onto /api/events
   // with no timer poll (ADR-0310 fan-in). Started here because all runtimes
   // are registered by this point.
-  sessionListBroadcaster.start(runtimeRegistry.listRuntimes());
+  // The registry is passed as the settings store too: every broadcast session
+  // carries the operator's persisted mode/model, so a client refreshing its
+  // list from this stream agrees with GET /api/sessions (DOR-463).
+  sessionListBroadcaster.start(runtimeRegistry.listRuntimes(), runtimeRegistry);
   logger.info('[SessionList] Discovery broadcaster started');
 
   // Mount Mesh routes if MeshCore initialized successfully (always-on, ADR-0062)
@@ -1228,6 +1305,10 @@ async function start() {
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));
+
+  // Approvals — always available. The cockpit lists what is waiting on a person
+  // and records their decision (spec `agent-trust` §3.3).
+  app.use('/api/approvals', createApprovalsRouter(approvalService, { activity: activityService }));
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
@@ -1454,6 +1535,10 @@ async function start() {
     app.use(
       '/api/marketplace',
       createMarketplaceRouter({
+        // Read lazily: the registry is composed further down this same boot, so
+        // a direct reference here would capture `undefined` forever. Until it
+        // exists, the marketplace mutation routes fail closed.
+        capabilityRegistry: () => capabilityRegistry,
         sourceManager: marketplaceSourceManager,
         cache: marketplaceCache,
         fetcher: marketplaceFetcher,
@@ -1521,14 +1606,13 @@ async function start() {
 
     // Build the confirmation provider that gates marketplace mutation tools.
     // `MARKETPLACE_AUTO_APPROVE=1` selects the auto-approve provider for CI
-    // and tests; everything else uses the token provider, which issues
-    // out-of-band tokens that the DorkOS UI resolves via the
-    // `POST /api/marketplace/confirmations/:token` route.
+    // and tests; everything else uses the token provider, which records an
+    // approval the operator decides from the cockpit's approval card
+    // (`POST /api/approvals/:id/grant|deny`).
     const confirmationProvider: ConfirmationProvider =
       env.MARKETPLACE_AUTO_APPROVE === '1'
         ? new AutoApproveConfirmationProvider()
-        : new TokenConfirmationProvider();
-    setMarketplaceConfirmationProvider(confirmationProvider);
+        : new TokenConfirmationProvider(approvalService);
 
     marketplaceMcpDeps = {
       dorkHome,
@@ -1572,10 +1656,28 @@ async function start() {
   // enabled domain's deps at this point — a wiring bug fails the boot, not the
   // first request. Both MCP servers (via the closures above) and the catalog
   // route below share this one instance.
-  capabilityRegistry = composeDorkOsCapabilityRegistry({
-    logger,
-    ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
-    ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
+  // The attribution observer records an Activity event for every invocation
+  // made by an agent that presented an identity token (spec `agent-trust`
+  // §3.1). Unattributed calls write nothing, so the no-token path is unchanged.
+  capabilityRegistry = composeDorkOsCapabilityRegistry(
+    {
+      logger,
+      ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
+      ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
+    },
+    createCapabilityAttributionObserver(activityService)
+  );
+  // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval
+  // primitive and the Activity feed exist. The gate runs INSIDE `registry.invoke`
+  // (DOR-467), so every surface that reaches a capability through the registry is
+  // gated by construction rather than by remembering to be; the legacy marketplace
+  // routes, which own their own effect, reach the same gate through
+  // `authorizeCapability`. Until this call the gate REFUSES destructive
+  // invocations rather than allowing them, so a wiring mistake here fails loudly
+  // instead of silently opening the gate.
+  initCapabilityTierGate({
+    approvals: approvalService,
+    onAttempt: createCapabilityGateAuditObserver(activityService),
   });
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a

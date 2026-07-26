@@ -190,6 +190,11 @@ describe('createExternalMcpServer', () => {
     // This count changes intentionally when new MCP tools are added: 40 legacy
     // hand-registered + 6 operator capabilities + `list_capabilities` from the
     // self-description domain (both projected from the registry).
+    //
+    // These deps carry no `marketplaceDeps`, so the 8 marketplace capabilities are
+    // absent here. `docs/integrations/mcp-server.mdx` states 55 for a fully-wired
+    // server (these 47 + 8 marketplace), and that number is pinned by no test, so
+    // update both together when this one moves.
     createExternalMcpServer(createMinimalDeps());
     expect(registeredTools).toHaveLength(47);
   });

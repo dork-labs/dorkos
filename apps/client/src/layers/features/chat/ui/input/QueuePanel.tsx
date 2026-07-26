@@ -1,17 +1,65 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { X } from 'lucide-react';
+import { X, CornerDownLeft } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
 
 interface QueuePanelProps {
   queue: QueueItem[];
-  editingIndex: number | null;
-  onEdit: (index: number) => void;
-  onRemove: (index: number) => void;
+  /**
+   * Id of the item under edit, or `null`. The id, not its position: the render
+   * path compares it against the row it is already drawing, so the derived
+   * index — which only exists for keyboard navigation — never has to reach the
+   * panel at all.
+   */
+  editingId: string | null;
+  /** Called with the item's stable id — positions shift when the queue auto-flushes. */
+  onEdit: (id: string) => void;
+  /** Called with the item's stable id — positions shift when the queue auto-flushes. */
+  onRemove: (id: string) => void;
+  /** Send this message now, ahead of the queue. Called with the item's stable id. */
+  onSend: (id: string) => void;
+  /**
+   * Why Send-now cannot happen right now, or `null` when it can. Shown as the
+   * disabled control's title so the refusal always says why.
+   */
+  sendBlockedReason: string | null;
+  /**
+   * What happens next once nothing is blocking the queue — the header's answer
+   * to "when do these go out". Two different truths hide behind an unblocked
+   * queue and only the caller can tell them apart: the flush pump normally
+   * drains it on the streaming→idle edge, but a turn that ended in error never
+   * arms that edge, so the queue sits until someone sends it by hand.
+   */
+  whenUnblocked: string;
 }
 
-/** Inline queue card list rendered above the chat textarea. */
-export function QueuePanel({ queue, editingIndex, onEdit, onRemove }: QueuePanelProps) {
+/**
+ * Inline queue card list rendered above the chat textarea.
+ *
+ * Each row is a plain container holding sibling buttons — edit, send-now, and
+ * remove. Nesting them inside the edit button would be invalid HTML, so
+ * browsers handle it inconsistently and assistive tech only ever sees one
+ * control.
+ *
+ * Send-now is what keeps a queued message from ever being trapped (DOR-480). The
+ * auto-flush pump only arms on the streaming→idle edge, so a turn that ended in
+ * failure — or any lock race that put a message back — used to leave the queue
+ * frozen with no way out but Edit-then-Remove, which threw the text away. When a
+ * send genuinely cannot happen the control is disabled and says why, rather than
+ * doing nothing.
+ */
+export function QueuePanel({
+  queue,
+  editingId,
+  onEdit,
+  onRemove,
+  onSend,
+  sendBlockedReason,
+  whenUnblocked,
+}: QueuePanelProps) {
+  // Also guarded at the call site, which is what lets AnimatePresence see this
+  // panel leave and play the exit below. Kept here too so the component never
+  // renders a "Queued (0)" header for any other caller.
   if (queue.length === 0) return null;
 
   return (
@@ -22,7 +70,13 @@ export function QueuePanel({ queue, editingIndex, onEdit, onRemove }: QueuePanel
       transition={{ duration: 0.2 }}
       className="mb-1.5 overflow-hidden"
     >
-      <div className="text-muted-foreground mb-1 text-xs font-medium">Queued ({queue.length})</div>
+      {/* The count alone never said the one thing a person waiting actually
+          wants to know — when these go out. `sendBlockedReason` is exactly that
+          answer, already written for a human, so it says it here too. */}
+      <div className="text-muted-foreground mb-1 flex items-baseline gap-1 text-xs">
+        <span className="font-medium">Queued ({queue.length})</span>
+        <span className="truncate">&mdash; {sendBlockedReason ?? whenUnblocked}</span>
+      </div>
       <div className="space-y-0.5">
         <AnimatePresence mode="popLayout">
           {queue.map((item, i) => (
@@ -37,38 +91,70 @@ export function QueuePanel({ queue, editingIndex, onEdit, onRemove }: QueuePanel
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
               layout
             >
-              <button
-                type="button"
-                onClick={() => onEdit(i)}
+              <div
                 className={cn(
-                  'group flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left transition-colors',
-                  editingIndex === i ? 'border-primary bg-muted border-l-2' : 'hover:bg-muted/50'
+                  // The left border is always here, transparent at rest: applying
+                  // it only while editing shifted the whole row 2px sideways the
+                  // moment you clicked into it.
+                  'group flex w-full items-center gap-1 rounded-md border-l-2 border-l-transparent pr-2 transition-colors',
+                  editingId === item.id ? 'border-l-primary bg-muted' : 'hover:bg-muted/50'
                 )}
               >
-                <span className="text-muted-foreground shrink-0 text-xs font-medium">{i + 1}.</span>
-                <span className="text-muted-foreground line-clamp-1 flex-1 text-sm">
-                  {item.content}
-                </span>
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(i);
+                <button
+                  type="button"
+                  onClick={() => onEdit(item.id)}
+                  aria-current={editingId === item.id ? true : undefined}
+                  className="focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pl-3 text-left"
+                >
+                  <span className="text-muted-foreground shrink-0 text-xs font-medium">
+                    {i + 1}.
+                  </span>
+                  <span className="text-muted-foreground line-clamp-1 flex-1 text-sm">
+                    {item.content}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  // `aria-disabled`, never `disabled`: a real `disabled` drops the
+                  // button out of the tab order, so the one person who most needs
+                  // the reason — a keyboard user, in the state that is BLOCKED —
+                  // could not reach it to hear one. The click is neutered by the
+                  // guard below instead, and `sendNow` refuses again on its own.
+                  aria-disabled={sendBlockedReason !== null}
+                  onClick={() => {
+                    if (sendBlockedReason === null) onSend(item.id);
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      onRemove(i);
-                    }
-                  }}
-                  className="text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-0.5 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+                  title={sendBlockedReason ?? undefined}
+                  // The reason rides the ACCESSIBLE NAME, not `title`: an
+                  // aria-label wins over title, so a title-only reason is
+                  // announced to nobody. Blocked is the common state here — a
+                  // queue mostly exists while a reply is streaming.
+                  aria-label={
+                    sendBlockedReason === null
+                      ? `Send queued message ${i + 1} now`
+                      : `Send queued message ${i + 1} now — unavailable: ${sendBlockedReason}`
+                  }
+                  // Always visible, unlike the tucked-away remove: this is the
+                  // primary action on a queued row and the only way out of a
+                  // stranded queue, so it must not need a hover to be found.
+                  className={cn(
+                    'focus-ring text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
+                    sendBlockedReason === null
+                      ? 'hover:text-foreground'
+                      : 'cursor-default opacity-40'
+                  )}
+                >
+                  <CornerDownLeft className="size-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemove(item.id)}
+                  className="focus-ring text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                   aria-label={`Remove queued message ${i + 1}`}
                 >
                   <X className="size-3" />
-                </span>
-              </button>
+                </button>
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>

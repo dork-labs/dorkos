@@ -23,12 +23,16 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   if (uiAction) return <UiActionChip action={uiAction} />;
 
   if (message.messageType === 'command') {
-    return <div className="text-msg-command-fg truncate font-mono text-sm">{message.content}</div>;
+    // Wraps rather than truncates: the command sits in the full content column
+    // now, so a long command with arguments can show all of itself.
+    return (
+      <div className="text-msg-command-fg font-mono text-sm break-words">{message.content}</div>
+    );
   }
 
   // Output of a local slash command (/context, /usage, /rename, …). Rendered
-  // full-width (see MessageItem) via the shared tool-output renderer so ANSI,
-  // JSON, and plain text all display correctly (DOR-126).
+  // across the full content column (see MessageItem) via the shared tool-output
+  // renderer so ANSI, JSON, and plain text all display correctly (DOR-126).
   if (message.messageType === 'local_command_output') {
     return <OutputRenderer content={message.content} toolName="" />;
   }

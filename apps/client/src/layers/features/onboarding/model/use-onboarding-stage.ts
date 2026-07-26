@@ -114,7 +114,7 @@ export interface ClearOnboardingStageInput {
  * which flips `done` true while the overlay is deliberately still latched open —
  * stripping then would rewind the derived stage to `welcome` and destroy the
  * in-progress conversation. So the param is cleared only once the overlay has
- * actually closed (first-message dissolve, Skip setup, or dismiss), via `replace`
+ * actually closed (first-message dissolve, Skip all setup, or dismiss), via `replace`
  * so it leaves no history entry.
  *
  * @param input - The done signal plus whether the overlay is still showing.

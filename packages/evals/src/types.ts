@@ -28,6 +28,96 @@ export const RuntimeTierSchema = z.enum(['test-mode', 'claude-code-cheap', 'real
 /** Inferred type for {@link RuntimeTierSchema}. */
 export type RuntimeTier = z.infer<typeof RuntimeTierSchema>;
 
+/**
+ * The isolation an eval's server ACTUALLY ran inside — the durable record of
+ * containment, not the request.
+ *
+ * `--isolation auto` + `preferDocker` is a PREFERENCE: a case that asked for a
+ * container silently runs on the child-process tier when no daemon or eval image
+ * is present. Without this on the result, `results.json` cannot tell the person
+ * promoting a destructive case out of quarantine whether its destructive turn
+ * ran in a container or on the bare host, and the only trace of the downgrade
+ * was one ephemeral stderr line.
+ *
+ * - `in-process`: the `test-mode` harness server, inside the runner process.
+ * - `child-process`: a credentialed server as a host subprocess.
+ * - `docker`: a credentialed server in a per-eval container.
+ */
+export const IsolationRecordSchema = z.enum(['in-process', 'child-process', 'docker']);
+
+/** Inferred type for {@link IsolationRecordSchema}. */
+export type IsolationRecord = z.infer<typeof IsolationRecordSchema>;
+
+/**
+ * How a credentialed run reached a model, recorded so nobody has to guess which
+ * credential a run actually used.
+ *
+ * - `anthropic-api-key`: the `ANTHROPIC_API_KEY` variable (an Anthropic API
+ *   account pays).
+ * - `claude-oauth-token`: the `CLAUDE_CODE_OAUTH_TOKEN` variable, a long-lived
+ *   token from `claude setup-token` (a Claude subscription pays).
+ * - `local-claude-login`: the `claude` CLI signed in on this machine, inherited
+ *   by the child-process tier (the developer's own Claude subscription pays).
+ *
+ * The distinction is about WHO PAYS, and only that. It deliberately says nothing
+ * about whether a turn reports a cost: the SDK computes `total_cost_usd` from
+ * token counts with no auth-mode branch, so every source reports one. On the two
+ * subscription sources that number is a list-price ESTIMATE of what the tokens
+ * would have cost through the API rather than money billed — the subscription is
+ * spent as quota — but it is still the only spend figure `--budget` can enforce
+ * on. An earlier version of this comment claimed subscription turns report
+ * nothing, and `report/summary.ts` downgraded a broken cost signal to a
+ * reassuring note on the strength of it.
+ */
+export const CredentialSourceSchema = z.enum([
+  'anthropic-api-key',
+  'claude-oauth-token',
+  'local-claude-login',
+]);
+
+/** Inferred type for {@link CredentialSourceSchema}. */
+export type CredentialSource = z.infer<typeof CredentialSourceSchema>;
+
+/** The environment variable CI dispatches a credentialed run with. */
+export const API_KEY_VAR = 'ANTHROPIC_API_KEY';
+
+/**
+ * The subscription token variable, PINNED to this exact name. Letting a caller
+ * choose which variable to read is a credential-disclosure lever, not a
+ * convenience — see `runner/credentials.ts`. Adding a source means adding a
+ * literal name, never an input.
+ */
+export const OAUTH_TOKEN_VAR = 'CLAUDE_CODE_OAUTH_TOKEN';
+
+/** One human-readable line per source, for run output. */
+const CREDENTIAL_SOURCE_LABELS: Record<CredentialSource, string> = {
+  'anthropic-api-key': `the ${API_KEY_VAR} environment variable (billed to that API account)`,
+  'claude-oauth-token': `the ${OAUTH_TOKEN_VAR} environment variable (billed to that Claude subscription)`,
+  'local-claude-login':
+    'the Claude sign-in on this machine (billed to your own Claude subscription)',
+};
+
+/**
+ * Describe a resolved source in one line, so a run's output says which
+ * credential it used instead of leaving the reader to guess.
+ *
+ * Deliberately TOTAL: an unrecognized value returns a plain fallback rather than
+ * throwing. This is called while rendering the summary table, and a report
+ * printer that can die over a label would take the whole run's output with it —
+ * including the results a reader needs in order to see what went wrong.
+ *
+ * These helpers live here, beside the enum, rather than next to the resolver:
+ * `report/summary.ts` needs them to print two lines, and importing the resolver
+ * would drag the server's `claude` auth probe into the reporting path for
+ * nothing.
+ *
+ * @param source - The resolved credential source.
+ * @returns The human-readable description.
+ */
+export function describeCredentialSource(source: CredentialSource): string {
+  return CREDENTIAL_SOURCE_LABELS[source] ?? `an unrecognized credential source (${source})`;
+}
+
 /** Rough cost envelope, used for budget planning and tier selection. */
 export const CostClassSchema = z.enum(['free', 'cheap', 'standard', 'deep']);
 
@@ -55,11 +145,146 @@ export interface EvalSandbox {
   dorkHome: string;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Answering approvals mid-turn (DOR-498)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How an eval case answers the two approval prompts a real turn can park on.
+ *
+ * DorkOS asks twice, through two unrelated mechanisms, and a case that drives a
+ * tool has to satisfy both:
+ *
+ * 1. the RUNTIME's per-tool permission prompt — an `approval_required`
+ *    SessionEvent answered at `POST /api/sessions/:id/approve|deny`. This is the
+ *    prompt a person answers in the chat pane, and it is what stalled every
+ *    tool-executing eval before this policy existed: nothing answered, so the
+ *    turn sat until the harness timed out;
+ * 2. the CAPABILITY TIER GATE — the `approval_required` payload a destructive
+ *    capability returns instead of running, decided at
+ *    `POST /api/approvals/:id/grant|deny`. This is the governance mechanism the
+ *    governance suite exists to prove.
+ *
+ * DELIBERATELY NOT A BLANKET "SAY YES". {@link allowTools} is an allowlist and
+ * everything outside it is DENIED and recorded, so a case cannot accidentally
+ * wave through a tool it never meant to (the governance cases must, for example,
+ * refuse an agent that gives up on the MCP tool and reaches for `Bash`).
+ * {@link capability} names ONE capability id and ONE decision, so the "denied"
+ * case cannot inherit the "granted" case's yes.
+ */
+export interface ApprovalPolicy {
+  /**
+   * Tools whose runtime permission prompt is ANSWERED WITH ALLOW, unqualified
+   * (`marketplace_uninstall`, not `mcp__dorkos__marketplace_uninstall`) — matched
+   * through `toolNameMatches`, never `===`, because the SDK qualifies a tool name
+   * with its MCP server (`oracles/stream.ts`).
+   *
+   * Every prompt for a tool NOT listed here is answered with DENY. Denying is the
+   * safe answer and it keeps the turn moving; leaving a prompt unanswered is what
+   * produced the ten-minute stall this policy exists to end.
+   */
+  allowTools: string[];
+  /**
+   * The ONE capability approval this case decides, or omitted when the case's
+   * whole point is that nobody answers (the expiry case).
+   *
+   * Scoped to a single capability id on purpose. A driver that granted whatever
+   * showed up on `GET /api/approvals/pending` would make the "denied" case a lie:
+   * it would inherit the yes and still look green because nothing was deleted.
+   */
+  capability?: {
+    /** The capability id to decide, e.g. `marketplace.uninstall`. */
+    capabilityId: string;
+    /** What to answer. */
+    decision: 'grant' | 'deny';
+  };
+}
+
+/** One runtime tool-permission prompt the driver answered. */
+export const ToolPermissionRecordSchema = z.object({
+  /** The prompt's `toolCallId` (the durable frame's `id`). */
+  toolCallId: z.string(),
+  /** The tool name exactly as the stream carried it (MCP-qualified). */
+  toolName: z.string(),
+  /** What the driver answered, and why: an allowlist hit, or the deny default. */
+  answer: z.enum(['allow', 'deny']),
+  /** ISO timestamp the answer was POSTed. */
+  answeredAt: z.string(),
+  /** HTTP status the approve/deny route returned. */
+  status: z.number(),
+});
+
+/** Inferred type for {@link ToolPermissionRecordSchema}. */
+export type ToolPermissionRecord = z.infer<typeof ToolPermissionRecordSchema>;
+
+/** One capability approval the driver decided at `/api/approvals/:id/…`. */
+export const ApprovalDecisionRecordSchema = z.object({
+  /** ULID of the approval that was decided. */
+  approvalId: z.string(),
+  /** The capability the approval was bound to. */
+  capabilityId: z.string(),
+  /** The tier the gate reported on the pending card. */
+  tier: z.string(),
+  /** What the driver answered. */
+  decision: z.enum(['granted', 'denied']),
+  /** ISO timestamp the decision was POSTed. */
+  decidedAt: z.string(),
+  /** HTTP status the grant/deny route returned (200 when it was recorded). */
+  status: z.number(),
+  /**
+   * Whatever the case's probe captured IMMEDIATELY BEFORE the decision was sent.
+   *
+   * This is what makes a "granted" case falsifiable rather than decorative. The
+   * package being gone at the END of a run proves only that it is gone; a probe
+   * taken at the instant of the yes proves it was still there while nobody had
+   * said yes — i.e. that the gate actually held. A run where the gate never fired
+   * records no decision at all, so any oracle reading this goes red.
+   */
+  probe: z.unknown().optional(),
+});
+
+/** Inferred type for {@link ApprovalDecisionRecordSchema}. */
+export type ApprovalDecisionRecord = z.infer<typeof ApprovalDecisionRecordSchema>;
+
+/** Everything the approval driver did during a run, for the oracles and the transcript. */
+export const ApprovalDriverLogSchema = z.object({
+  /** Runtime tool-permission prompts answered, in the order they were answered. */
+  toolPermissions: z.array(ToolPermissionRecordSchema),
+  /** Capability approvals decided, in the order they were decided. */
+  decisions: z.array(ApprovalDecisionRecordSchema),
+  /**
+   * Pending capability approvals the driver saw but deliberately left alone
+   * because they did not match {@link ApprovalPolicy.capability} — recorded so
+   * "nobody decided it" is legible as a choice rather than a gap.
+   */
+  ignored: z.array(z.object({ approvalId: z.string(), capabilityId: z.string() })),
+  /**
+   * Anything that went wrong while answering (a non-2xx, a socket error). Never
+   * thrown: a driver fault must surface as eval evidence, not as a runner crash
+   * that hides the turn it was watching.
+   */
+  errors: z.array(z.string()),
+});
+
+/** Inferred type for {@link ApprovalDriverLogSchema}. */
+export type ApprovalDriverLog = z.infer<typeof ApprovalDriverLogSchema>;
+
+/**
+ * An empty driver log — what a case with no {@link ApprovalPolicy} presents to
+ * its oracles, and the fixture value for tests that do not exercise approvals.
+ *
+ * @returns A fresh, empty log.
+ */
+export function emptyApprovalLog(): ApprovalDriverLog {
+  return { toolPermissions: [], decisions: [], ignored: [], errors: [] };
+}
+
 /**
  * Everything an oracle needs to assert an outcome: the sandbox filesystem, the
- * running server's base URL, the driven session id, and every SSE frame the
- * drive loop collected. An oracle reads the sandbox, calls the API, or inspects
- * the collected stream — it never reads the assistant's prose.
+ * running server's base URL, the driven session id, every SSE frame the drive
+ * loop collected, and what the approval driver answered while it ran. An oracle
+ * reads the sandbox, calls the API, or inspects the collected stream — it never
+ * reads the assistant's prose.
  */
 export interface OracleContext {
   /** The isolated sandbox (project cwd + `DORK_HOME`) the eval ran in. */
@@ -70,6 +295,12 @@ export interface OracleContext {
   sessionId: string;
   /** Every SSE frame collected off `GET /api/sessions/:id/events`, in order. */
   frames: SseFrame[];
+  /**
+   * What the approval driver answered during the turn. Empty when the case
+   * carried no {@link ApprovalPolicy} — never undefined, so an oracle that reads
+   * it on a case that forgot its policy fails loudly instead of vacuously.
+   */
+  approvals: ApprovalDriverLog;
 }
 
 /** The result of one oracle: whether the intended side effect occurred, with evidence. */
@@ -155,6 +386,22 @@ export const EvalCaseMetaSchema = z.object({
   quarantined: z.boolean().optional(),
   /** Per-eval cost ceiling in USD; a single turn exceeding this fails the eval. */
   perEvalCeilingUsd: z.number().nonnegative().optional(),
+  /**
+   * This case prefers the hardened DOCKER isolation tier when one is available
+   * (`--isolation auto`, the default). Set it on cases whose turns actually
+   * EXECUTE tools and mutate a filesystem — the destructive scenarios and the
+   * marketplace install case — so a real agent's file tools are bounded by a
+   * container rather than only by a sandbox directory. Purely a preference:
+   * without a reachable docker daemon and eval image the case still runs on the
+   * child-process tier, with a message (never a hard failure). The tier it
+   * actually got is recorded on {@link EvalResultSchema}'s `isolation`.
+   *
+   * Part of the SERIALIZABLE metadata like every other field: a case manifest
+   * that dropped it would silently lose the isolation preference, which is the
+   * difference between a destructive turn running in a container and running on
+   * the bare host.
+   */
+  preferDocker: z.boolean().optional(),
 });
 
 /** Inferred type for {@link EvalCaseMetaSchema}. */
@@ -182,10 +429,31 @@ export interface EvalCase extends EvalCaseMeta {
    * ignores it (it reads no such flags). A case sets this when its product path
    * needs a server-level switch the default boot does not provide — e.g. the
    * marketplace install eval sets `MARKETPLACE_AUTO_APPROVE=1` so a headless
-   * agent's `marketplace_install` completes without the out-of-band human
-   * approval POST the interactive confirmation-token flow otherwise requires.
+   * agent's `marketplace_install` completes without the cockpit approval a
+   * person otherwise has to grant (spec `agent-trust` §3.3).
    */
   serverEnv?: Record<string, string>;
+  /**
+   * How this case answers approval prompts while its turn runs (DOR-498).
+   *
+   * A case that drives a REAL tool needs one: without it the runtime's
+   * permission prompt goes unanswered and the turn dies on the harness timeout
+   * instead of producing a result. See {@link ApprovalPolicy}. Omitted ⇒ nothing
+   * is answered, which is correct only for a case that drives no tools.
+   */
+  approvalPolicy?: ApprovalPolicy;
+  /**
+   * State captured IMMEDIATELY BEFORE the driver records a capability decision,
+   * stored on {@link ApprovalDecisionRecord.probe}.
+   *
+   * The seam that lets a "granted" case assert the action had NOT happened while
+   * the approval was still undecided — the difference between proving the gate
+   * held and merely noticing the end state. Only called when
+   * {@link ApprovalPolicy.capability} is set and a matching approval appears.
+   *
+   * @param sandbox - The eval sandbox, so the probe can read the host filesystem.
+   */
+  probeBeforeDecision?: (sandbox: EvalSandbox) => Promise<unknown>;
   /** The outcome oracle(s) — ALL must pass. Asserts API/FS/stream state, never prose. */
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */
@@ -224,10 +492,34 @@ export const EvalResultSchema = z.object({
   status: EvalStatusSchema,
   /** The tier this eval ran on. */
   runtimeTier: RuntimeTierSchema,
+  /**
+   * The isolation the eval's server ACTUALLY ran inside (see
+   * {@link IsolationRecordSchema}). Omitted only when the eval never launched a
+   * server — a `skipped-over-budget` case, or a pre-flight `error`.
+   */
+  isolation: IsolationRecordSchema.optional(),
   /** The eval's cost class. */
   costClass: CostClassSchema,
-  /** Cumulative USD cost the runtime reported for this eval (0 for `test-mode`). */
+  /**
+   * Cumulative USD cost the runtime reported for this eval (0 for `test-mode`).
+   *
+   * Read it together with {@link EvalResultSchema}'s `costUnmetered`: when that
+   * is true this number is a FLOOR, not a measurement.
+   */
   costUsd: z.number().nonnegative(),
+  /**
+   * True when this eval drove a real turn but no cost signal ever arrived, so
+   * `costUsd` under-reports what was actually spent.
+   *
+   * The cost the harness can see rides `status_change` frames, and a turn that
+   * dies on the timeout guard never emits the frame carrying its total. Two
+   * measured runs each burned about 92 seconds and 29 tool calls and were
+   * recorded as `$0.0000` — the two most expensive runs of the ten, accounted as
+   * free, and invisible to `--budget`. A pathological loop is the exact thing a
+   * spend ceiling exists to catch, so the harness now says "unknown" instead of
+   * "zero". An under-reported total is worse than an absent one.
+   */
+  costUnmetered: z.boolean().default(false),
   /** Wall-clock duration in milliseconds. */
   durationMs: z.number().nonnegative(),
   /** Per-oracle results with their evidence. */
@@ -239,7 +531,15 @@ export const EvalResultSchema = z.object({
    * (the landing state for flaky evals and the connector evals until W5).
    */
   quarantined: z.boolean().default(false),
-  /** True when the eval was retried once (flake policy) before this result. */
+  /**
+   * True when this result came from a SECOND attempt, because the first one hit
+   * the infrastructure signature in `runner/retry.ts` (the turn timed out before
+   * any oracle ran).
+   *
+   * The result is always the second attempt's, whatever it says — including a
+   * worse one. A retry buys the case another chance to REACH its oracles; it
+   * never launders an oracle's verdict.
+   */
   retried: z.boolean().default(false),
   /** Runner/infra error message when `status` is `error`. */
   error: z.string().optional(),
@@ -258,6 +558,12 @@ export const RunSummarySchema = z.object({
   startedAt: z.string(),
   /** The tier the run was launched on. */
   tier: RuntimeTierSchema,
+  /**
+   * How this run reached a model (see {@link CredentialSourceSchema}). Omitted
+   * on `test-mode`, which needs no credential, and on a credentialed run where
+   * none resolved (every case then errors, fail-closed).
+   */
+  credentialSource: CredentialSourceSchema.optional(),
   /** The per-run budget cap in USD. */
   budgetUsd: z.number().nonnegative(),
   /** Total USD cost accumulated across every eval in the run. */

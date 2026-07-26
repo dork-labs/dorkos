@@ -26,7 +26,6 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-user-msg: var(--user-msg);
   --radius: var(--radius);
 }
 
@@ -166,7 +165,6 @@
   --color-border: var(--background-modifier-border);
   --color-input: var(--background-modifier-form-field);
   --color-ring: var(--interactive-accent);
-  --color-user-msg: var(--background-secondary-alt);
 
   /* Raw HSL variables for Tailwind utility classes (bg-background, text-foreground, etc.) */
   --background: var(--background-secondary);
@@ -188,7 +186,6 @@
   --border: var(--background-modifier-border);
   --input: var(--background-modifier-form-field);
   --ring: var(--interactive-accent);
-  --user-msg: var(--background-secondary-alt);
 
   color: var(--text-normal);
   background-color: var(--background-secondary);

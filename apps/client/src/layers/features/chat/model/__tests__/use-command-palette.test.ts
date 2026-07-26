@@ -124,6 +124,69 @@ describe('useCommandPalette — disabled-row keyboard navigation (DOR-109 VC3)',
   });
 });
 
+describe('useCommandPalette — selecting a command keeps the rest of the line (DOR-480)', () => {
+  const deploy: CommandEntry = { fullCommand: '/deploy', description: 'Deploy' };
+
+  /** Opens the palette with the caret at `cursor`, then picks `cmd`. */
+  function selectWithCaretAt(input: string, cursor: number, cmd = deploy): string {
+    const { result } = renderHook(() =>
+      useCommandPalette({ commands: [deploy], input, cursorPos: cursor })
+    );
+    act(() => {
+      result.current.detectCommandTrigger(input, cursor);
+    });
+    let next = '';
+    act(() => {
+      next = result.current.handleCommandSelect(cmd);
+    });
+    return next;
+  }
+
+  it('preserves text after the caret', () => {
+    // Real sequence: type `/deploy staging`, click back to just after `/deploy`
+    // (which reopens the palette), then press Enter believing you are sending.
+    // The tail used to be deleted AND nothing was sent — the words were gone.
+    expect(selectWithCaretAt('/deploy staging', 7)).toBe('/deploy staging');
+  });
+
+  it('preserves text after the caret when the command is mid-line', () => {
+    expect(selectWithCaretAt('look at @src/app.ts /dep and report back', 24)).toBe(
+      'look at @src/app.ts /deploy and report back'
+    );
+  });
+
+  it('preserves a multi-word tail verbatim', () => {
+    expect(selectWithCaretAt('/dep staging --dry-run then tell me', 4)).toBe(
+      '/deploy staging --dry-run then tell me'
+    );
+  });
+
+  it('still appends one trailing space when there is nothing after the caret', () => {
+    expect(selectWithCaretAt('/dep', 4)).toBe('/deploy ');
+  });
+
+  it('does not double the separating space', () => {
+    expect(selectWithCaretAt('/deploy staging', 7)).not.toContain('  ');
+  });
+
+  it('keyboard selection preserves the tail too', () => {
+    const input = '/deploy staging';
+    const { result } = renderHook(() =>
+      useCommandPalette({ commands: [deploy], input, cursorPos: 7 })
+    );
+    act(() => {
+      result.current.detectCommandTrigger(input, 7);
+    });
+
+    let next: string | null = null;
+    act(() => {
+      next = result.current.handleKeyboardSelect();
+    });
+
+    expect(next).toBe('/deploy staging');
+  });
+});
+
 describe('useCommandPalette — command-intent alias hints (DOR-109)', () => {
   it('surfaces the compact intent with a "matched" alias when the query is a cross-agent alias', () => {
     // Typing an agent's own word for compaction (/summarize) resolves to the

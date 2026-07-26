@@ -12,22 +12,41 @@
  * The server is booted per TIER: `test-mode` runs IN-PROCESS (a process-level
  * singleton, so those cases run serially); the credentialed tiers
  * (`claude-code-cheap` / `real-provider`) boot the server OUT OF PROCESS through
- * the isolation launcher, gated on `ANTHROPIC_API_KEY` — a missing key is a
- * runner `error`, never a false pass.
+ * the isolation launcher, gated on a resolved model credential (`runner/
+ * credentials.ts`: an API key, a subscription token, or the `claude` sign-in on
+ * this machine). No credential at all is a runner `error`, never a false pass.
  *
  * @module evals/runner/run-eval
  */
 import { randomUUID } from 'node:crypto';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
-import type { EvalCase, EvalResult, OracleContext, OracleResult, RuntimeTier } from '../types.js';
+import type {
+  EvalCase,
+  EvalResult,
+  IsolationRecord,
+  OracleContext,
+  OracleResult,
+  RuntimeTier,
+} from '../types.js';
+import { emptyApprovalLog } from '../types.js';
+import { ApprovalDriver } from './approval-driver.js';
 import { createSandbox } from './sandbox.js';
+import { onInterrupt } from './interrupt.js';
 import {
   startInProcessServer,
   startChildProcessServer,
   type HarnessServer,
 } from './harness-server.js';
+import type { IsolationLauncher } from './isolation/index.js';
 import { driveConversation, driveWidgetAction, DriveError, type TurnOutcome } from './drive.js';
-import { BudgetTracker, evalCostUsd } from './budget.js';
+import { BudgetTracker, evalCostSignal, evalCostUsd } from './budget.js';
+import { TURN_TIMEOUT_ERROR } from './retry.js';
+import {
+  resolveModelCredential,
+  noCredentialMessage,
+  dockerNeedsPortableCredentialMessage,
+  type ModelCredential,
+} from './credentials.js';
 import { writeTranscript } from '../report/transcript.js';
 
 /** Options for {@link runEval}. */
@@ -44,6 +63,29 @@ export interface RunEvalOptions {
   timeoutMs?: number;
   /** Cheap model for the credentialed tiers (`ANTHROPIC_MODEL`); defaults per the boot. */
   model?: string;
+  /**
+   * The isolation launcher the credentialed tiers boot through (`--isolation`).
+   * Omitted ⇒ the default child-process tier. `test-mode` runs in-process and
+   * ignores this.
+   */
+  launcher?: IsolationLauncher;
+  /**
+   * The model credential this eval authenticates with. {@link runSuite} resolves
+   * it ONCE per run and passes it here, so a suite never re-probes the local
+   * `claude` sign-in per case. Omitted ⇒ resolve on demand (direct callers and
+   * tests). `test-mode` ignores it.
+   */
+  credential?: ModelCredential;
+  /**
+   * The transcript file name (without a directory) this attempt writes into.
+   * Defaults to `<eval id>.jsonl`.
+   *
+   * The retry policy (`runner/retry.ts`) sets it so a second attempt cannot
+   * overwrite the first one's frames — the transcript of the attempt that got
+   * classified as infrastructure is the only evidence FOR that classification,
+   * and a reader who cannot open it has to take it on trust.
+   */
+  transcriptName?: string;
 }
 
 /** Normalize an eval case's prompt into an ordered list (empty ⇒ no drive). */
@@ -61,11 +103,30 @@ function baseResult(evalCase: EvalCase, tier: RuntimeTier): EvalResult {
     runtimeTier: tier,
     costClass: evalCase.costClass,
     costUsd: 0,
+    costUnmetered: false,
     durationMs: 0,
     oracleResults: [],
     quarantined: evalCase.quarantined ?? false,
     retried: false,
   };
+}
+
+/**
+ * The isolation this eval's server will actually run inside — recorded on the
+ * result, so a `preferDocker` case that silently degraded is legible in
+ * `results.json` rather than only in one line of stderr.
+ *
+ * `test-mode` always boots in-process and never consults a launcher; a
+ * credentialed run with no launcher is the child-process default; a launcher is
+ * whatever tier the resolver actually produced.
+ *
+ * @param tier - The runtime tier the run booted on.
+ * @param launcher - The launcher the resolver chose, if any.
+ * @returns The isolation to record.
+ */
+function isolationOf(tier: RuntimeTier, launcher?: IsolationLauncher): IsolationRecord {
+  if (tier === 'test-mode') return 'in-process';
+  return launcher?.id === 'docker' ? 'docker' : 'child-process';
 }
 
 /** Run every oracle against the context; ALL must pass. */
@@ -77,33 +138,59 @@ async function runOracles(evalCase: EvalCase, ctx: OracleContext): Promise<Oracl
   return results;
 }
 
-/** The credentialed tiers' `ANTHROPIC_API_KEY` — a runner/CI secret, not a DorkOS config field. */
-function anthropicApiKey(): string | undefined {
-  // eslint-disable-next-line no-restricted-syntax -- the credentialed tier's API key is a CI/runner secret read once here (the harness-server env carve-out pattern), not an app config value.
-  return process.env.ANTHROPIC_API_KEY;
+/**
+ * Why this credentialed eval cannot run, or `undefined` when it can.
+ *
+ * Fail-closed in both branches: a run with no credential at all, and a docker-tier
+ * run whose only credential is the local sign-in (which the container cannot see,
+ * by design), are BOTH runner errors reported before anything boots. Neither is
+ * ever allowed to look like a pass.
+ *
+ * @param tier - The runtime tier the run booted on.
+ * @param isolation - The isolation this eval would actually run inside.
+ * @param credential - The resolved credential, if any.
+ * @returns The runner-error message, or undefined when the eval may proceed.
+ */
+function credentialGateError(
+  tier: RuntimeTier,
+  isolation: IsolationRecord,
+  credential: ModelCredential | undefined
+): string | undefined {
+  if (!credential) return noCredentialMessage(tier);
+  if (isolation === 'docker' && !credential.portable) {
+    return dockerNeedsPortableCredentialMessage();
+  }
+  return undefined;
 }
 
 /**
  * Boot the harness server for `tier`: in-process for `test-mode`, else the
- * credentialed child-process server (its `ANTHROPIC_API_KEY` prerequisite is
- * checked by the caller before this runs).
+ * credentialed child-process server (whose credential prerequisite the caller
+ * has already checked via {@link credentialGateError}).
  *
  * @param tier - The runtime tier.
  * @param dorkHome - The sandbox `DORK_HOME`.
- * @param opts - The model + api key for a credentialed boot.
+ * @param opts - The model, the credential env, and the case's own server env.
  * @returns The running {@link HarnessServer}.
  */
 function bootServerForTier(
   tier: RuntimeTier,
   dorkHome: string,
-  opts: { model?: string; apiKey?: string; env?: Record<string, string> }
+  opts: {
+    model?: string;
+    credentialEnv?: Record<string, string>;
+    env?: Record<string, string>;
+    launcher?: IsolationLauncher;
+  }
 ): Promise<HarnessServer> {
   if (tier === 'test-mode') return startInProcessServer({ dorkHome });
   return startChildProcessServer({
     dorkHome,
-    anthropicApiKey: opts.apiKey,
     model: opts.model,
-    ...(opts.env ? { env: opts.env } : {}),
+    // The credential env goes FIRST so a case's own `serverEnv` stays the last
+    // word on everything else, exactly as before.
+    env: { ...opts.credentialEnv, ...opts.env },
+    ...(opts.launcher ? { launcher: opts.launcher } : {}),
   });
 }
 
@@ -119,7 +206,7 @@ function bootServerForTier(
 function applyNonDoneOutcome(result: EvalResult, outcome: TurnOutcome): boolean {
   if (outcome === 'timeout') {
     result.status = 'error';
-    result.error = 'Turn timed out before reaching a terminal frame.';
+    result.error = TURN_TIMEOUT_ERROR;
     return true;
   }
   if (outcome === 'aborted') {
@@ -145,15 +232,28 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   const result = baseResult(evalCase, opts.tier);
   const turns = prompts(evalCase);
 
-  // Credentialed tiers need a real key; a missing one is a RUNNER error (never a
-  // false pass), reported before any sandbox/server is spun up.
-  const apiKey = anthropicApiKey();
-  if (opts.tier !== 'test-mode' && !apiKey) {
-    result.status = 'error';
-    result.error = `Tier '${opts.tier}' requires ANTHROPIC_API_KEY (credentialed child-process server).`;
-    result.durationMs = Date.now() - start;
-    return result;
+  // Credentialed tiers need a way to reach a model; having none is a RUNNER
+  // error (never a false pass), reported before any sandbox/server is spun up.
+  const isolation = isolationOf(opts.tier, opts.launcher);
+  const credential =
+    opts.tier === 'test-mode' ? undefined : (opts.credential ?? (await resolveModelCredential()));
+  if (opts.tier !== 'test-mode') {
+    const gateError = credentialGateError(opts.tier, isolation, credential);
+    if (gateError) {
+      result.status = 'error';
+      result.error = gateError;
+      result.durationMs = Date.now() - start;
+      return result;
+    }
   }
+
+  result.isolation = isolation;
+
+  // A quarantined case fails BY DESIGN on `test-mode` (its oracles need real MCP
+  // tools), so honoring retain-on-failure for it would leak one sandbox — and,
+  // on the docker tier, one stopped container — per case per run, forever.
+  // Retention exists to debug a surprise; a quarantined red is not one.
+  const retainOnFailure = !(evalCase.quarantined ?? false);
 
   const sandbox = await createSandbox();
   let server: HarnessServer | undefined;
@@ -164,6 +264,17 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   // session lock instead of colliding (a `409 SESSION_LOCKED`) on a real runtime.
   const clientId = randomUUID();
   let failed = false;
+  let approvalDriver: ApprovalDriver | undefined;
+  // True once a trigger has been POSTed to a real runtime — from that instant
+  // the eval may have spent money, whether or not it ever reports a cost.
+  let turnAttempted = false;
+
+  // Ctrl-C mid-run must not leave a container running or a sandbox on disk. The
+  // handler disposes UNCONDITIONALLY (an interrupt is not a failure to debug).
+  const releaseInterrupt = onInterrupt(async () => {
+    await server?.dispose({ failed: false });
+    await sandbox.cleanup({ failed: false });
+  });
 
   try {
     // Seed the sandbox BEFORE the server boots or any turn runs — a case that
@@ -173,22 +284,46 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
 
     server = await bootServerForTier(opts.tier, sandbox.dorkHome, {
       model: opts.model,
-      apiKey,
+      ...(credential ? { credentialEnv: credential.env } : {}),
       ...(evalCase.serverEnv ? { env: evalCase.serverEnv } : {}),
+      ...(opts.launcher ? { launcher: opts.launcher } : {}),
     });
+    // The cwd a turn runs in must be a path the SERVER can validate against its
+    // own filesystem boundary. Local tiers see the host sandbox; the docker tier
+    // sees it at its container mount point and reports that as `projectCwd`.
+    // Oracles are unaffected — they always read the host sandbox.
+    const driveCwd = server.projectCwd ?? sandbox.projectCwd;
     const ceiling = evalCase.perEvalCeilingUsd;
     const abortWhen =
       ceiling !== undefined ? (fs: SseFrame[]) => evalCostUsd(fs) > ceiling : undefined;
 
+    // A case that drives a real tool parks on an approval prompt nobody would
+    // otherwise answer (DOR-498). The driver answers within the case's policy and
+    // hands its record to the oracles; a case without a policy gets no driver and
+    // an empty log, which is correct for a turn that runs no tools.
+    const probeBeforeDecision = evalCase.probeBeforeDecision;
+    if (evalCase.approvalPolicy) {
+      approvalDriver = new ApprovalDriver({
+        baseUrl: server.baseUrl,
+        policy: evalCase.approvalPolicy,
+        ...(probeBeforeDecision ? { probe: () => probeBeforeDecision(sandbox) } : {}),
+      });
+      approvalDriver.start();
+    }
+    const driver = approvalDriver;
+    const onFrames = driver ? (fs: SseFrame[], id: string) => driver.observe(fs, id) : undefined;
+
     if (turns.length > 0) {
+      turnAttempted = true;
       const drive = await driveConversation({
         baseUrl: server.baseUrl,
         sessionId,
-        cwd: sandbox.projectCwd,
+        cwd: driveCwd,
         prompts: turns,
         clientId,
         timeoutMs: opts.timeoutMs,
         abortWhen,
+        onFrames,
       });
       frames = drive.frames;
       sessionId = drive.canonicalId;
@@ -198,19 +333,26 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // A widget-round-trip case POSTs its action AFTER the prompt(s) established
     // the session — a fresh turn on the runtime-agnostic /ui-action channel.
     if (!failed && evalCase.widgetAction) {
+      turnAttempted = true;
       const widget = await driveWidgetAction({
         baseUrl: server.baseUrl,
         sessionId,
         action: evalCase.widgetAction,
-        cwd: sandbox.projectCwd,
+        cwd: driveCwd,
         clientId,
         timeoutMs: opts.timeoutMs,
         abortWhen,
+        onFrames,
       });
       frames = [...frames, ...widget.frames];
       sessionId = widget.canonicalId;
       failed = applyNonDoneOutcome(result, widget.outcome);
     }
+
+    // Stop the driver BEFORE the oracles read its log: a decision POSTed in the
+    // last moments of a turn must be recorded, or a case would fail on evidence
+    // that was still being written.
+    await approvalDriver?.stop();
 
     // Record cost even on a boot-only case (0 for test-mode). A per-run breach is
     // surfaced via the tracker for the caller to skip the remaining evals.
@@ -222,6 +364,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       baseUrl: server.baseUrl,
       sessionId,
       frames,
+      approvals: approvalDriver?.log ?? emptyApprovalLog(),
     };
 
     if (!failed) {
@@ -254,20 +397,33 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
           : String(err);
     failed = true;
   } finally {
+    // Idempotent — already stopped on the happy path; this is the timeout/throw
+    // path, where an unstopped poll timer would keep the process alive.
+    await approvalDriver?.stop();
     result.durationMs = Date.now() - start;
-    result.transcript = `${evalCase.id}.jsonl`;
+    // A credentialed turn that never reported a cost SPENT something the harness
+    // cannot measure. Recorded here rather than beside `tracker.record` so the
+    // paths that skip it — a timeout, a thrown DriveError — are covered too:
+    // those are the expensive ones, and they were the ones reporting $0.0000.
+    result.costUnmetered =
+      turnAttempted && opts.tier !== 'test-mode' && evalCostSignal(frames) === null;
+    result.transcript = opts.transcriptName ?? `${evalCase.id}.jsonl`;
     await writeTranscript(opts.runDir, {
       runId: opts.runId,
       evalId: evalCase.id,
+      ...(opts.transcriptName ? { fileName: opts.transcriptName } : {}),
       title: evalCase.title,
       startedAt: startedAt.toISOString(),
       prompts: turns,
       frames,
       oracleResults: result.oracleResults,
       rubricResult: result.rubricResult,
+      ...(approvalDriver ? { approvals: approvalDriver.log } : {}),
     });
-    await server?.dispose();
-    await sandbox.cleanup({ failed });
+    const retain = failed && retainOnFailure;
+    await server?.dispose({ failed: retain });
+    await sandbox.cleanup({ failed: retain });
+    releaseInterrupt();
   }
 
   return result;

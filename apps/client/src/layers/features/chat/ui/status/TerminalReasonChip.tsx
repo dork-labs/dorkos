@@ -36,7 +36,7 @@ export function TerminalReasonChip({ terminalReason }: TerminalReasonChipProps) 
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
-          className="flex justify-center px-4 py-1 md:justify-start"
+          className="flex px-4 py-1"
           data-testid="terminal-reason-chip"
         >
           <Badge variant="secondary" aria-label={`Session ended: ${label}`}>

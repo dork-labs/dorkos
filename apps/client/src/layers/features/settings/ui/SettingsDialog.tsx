@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   Palette,
   Settings2,
-  LayoutList,
   Server,
   Wrench,
   Radio,
@@ -17,7 +16,6 @@ import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
 import { AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
-import { StatusBarTab } from './tabs/StatusBarTab';
 import { RuntimesTab } from './tabs/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
@@ -33,7 +31,6 @@ import { TunnelDialog } from './TunnelDialog';
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette, component: AppearanceTab },
   { id: 'preferences', label: 'Preferences', icon: Settings2, component: PreferencesTab },
-  { id: 'statusBar', label: 'Status Bar', icon: LayoutList, component: StatusBarTab },
   { id: 'server', label: 'Server', icon: Server, component: ServerTab },
   { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab },
   { id: 'channels', label: 'Channels', icon: Radio, component: ChannelsTab },

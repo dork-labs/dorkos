@@ -54,6 +54,23 @@ export function useFileUpload() {
     setPendingFiles([]);
   }, []);
 
+  /**
+   * Put a failed file back in line so the next send uploads it again.
+   *
+   * The whole retry: a `pending` file is what the send path picks up, so
+   * resetting the status is the retry. No separate upload trigger, no state
+   * machine.
+   */
+  const retryFile = useCallback((id: string) => {
+    setPendingFiles((prev) =>
+      prev.map((f) =>
+        f.id === id && f.status === 'error'
+          ? { ...f, status: 'pending' as const, progress: 0, error: undefined }
+          : f
+      )
+    );
+  }, []);
+
   const uploadMutation = useMutation({
     mutationFn: async (files: PendingFile[]) => {
       if (!selectedCwd) throw new Error('No working directory selected');
@@ -98,31 +115,47 @@ export function useFileUpload() {
   });
 
   /**
-   * Upload all pending files and return their saved paths for message injection.
+   * Upload every not-yet-uploaded file and return the saved paths of ALL
+   * attachments — already-uploaded ones included — for message injection.
    *
-   * If there are no pending files, returns the paths of already-uploaded files.
-   * This is the primary API for ChatPanel's submit flow.
+   * THROWS when any attachment is in `error`. It used to filter those out
+   * silently, so a message went to the model with no attachment (or a partial
+   * one) while the person waited for an answer about a file the agent never
+   * received (DOR-480). The composer refuses to send while a chip is in error
+   * (`hasFailedUpload`), which is where a person can act on it; this throw is the
+   * backstop for the queue flush, which has nobody to ask.
    */
   const uploadAndGetPaths = useCallback(async (): Promise<string[]> => {
-    const toUpload = pendingFiles.filter((f) => f.status === 'pending');
-
-    if (toUpload.length === 0) {
-      return pendingFiles
-        .filter((f) => f.status === 'uploaded' && f.result)
-        .map((f) => f.result!.savedPath);
+    const failed = pendingFiles.filter((f) => f.status === 'error');
+    if (failed.length > 0) {
+      throw new Error(
+        failed.length === 1
+          ? `${failed[0].file.name} did not upload. Retry it or remove it, then send again.`
+          : `${failed.length} attachments did not upload. Retry them or remove them, then send again.`
+      );
     }
 
+    const uploadedPaths = pendingFiles
+      .filter((f) => f.status === 'uploaded' && f.result)
+      .map((f) => f.result!.savedPath);
+
+    const toUpload = pendingFiles.filter((f) => f.status === 'pending');
+    if (toUpload.length === 0) return uploadedPaths;
+
     const results = await uploadMutation.mutateAsync(toUpload);
-    return results.map((r) => r.savedPath);
+    return [...uploadedPaths, ...results.map((r) => r.savedPath)];
   }, [pendingFiles, uploadMutation]);
 
   return {
     pendingFiles,
     addFiles,
     removeFile,
+    retryFile,
     clearFiles,
     uploadAndGetPaths,
     hasPendingFiles: pendingFiles.length > 0,
+    /** True while any attachment failed to upload — the send must not go out. */
+    hasFailedUpload: pendingFiles.some((f) => f.status === 'error'),
     isUploading: uploadMutation.isPending,
   };
 }

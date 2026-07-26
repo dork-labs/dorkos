@@ -71,9 +71,9 @@ src/
 │   ├── features/        # Complete user-facing functionality
 │   │   ├── chat/        # ChatPanel, MessageList, streaming, useChatSession
 │   │   │   ├── ui/
-│   │   │   │   ├── input/    # ChatInput, ChatInputContainer, FileChipBar, ShortcutChips, QueuePanel
+│   │   │   │   ├── input/    # ChatInput, ChatInputContainer, FileChipBar, QueuePanel
 │   │   │   │   ├── message/  # AssistantMessageContent, StreamingText, ThinkingBlock, SubagentBlock
-│   │   │   │   ├── status/   # ChatStatusSection, ChatStatusStrip, DragHandle, inference themes
+│   │   │   │   ├── status/   # ChatStatusSection, AgentIdentityChip, ChatStatusStrip, inference themes
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
 │   │   │   │   └── tools/    # ToolCallCard, ToolApproval, QuestionPrompt, ElicitationPrompt
 │   │   │   ├── model/
@@ -87,7 +87,7 @@ src/
 │   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
 │   │   ├── dashboard-status/ # SystemStatusRow — Tasks/Relay/Mesh health cards + activity sparkline
 │   │   ├── dashboard-activity/ # RecentActivityFeed — time-grouped event feed with last-visit tracking
-│   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Status Bar, Server, Tools, Advanced)
+│   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, ConnectionsTab)
 │   │   ├── files/       # FileBrowser
 │   │   ├── tasks/        # TasksPanel, ScheduleRow, CronVisualBuilder, AgentCombobox

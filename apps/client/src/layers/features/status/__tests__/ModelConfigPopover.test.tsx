@@ -270,6 +270,51 @@ describe('ModelConfigPopover', () => {
       // since gpt-4o is not in the mock catalog — scope to the trigger).
       expect(screen.getByTestId('model-config-trigger')).toHaveTextContent('gpt-4o');
     });
+
+    it('drops the picker parenthetical — a status line names the model, it does not recommend one', () => {
+      // "Default (recommended)" measured ~160px in Chromium and, paired with the
+      // runtime item, overflowed a 375px status line by 46px (DOR-452). The
+      // parenthetical is advice for someone choosing; it says nothing once chosen.
+      mockUseModels.mockImplementation(() => ({
+        data: [
+          {
+            value: 'default',
+            displayName: 'Default (recommended)',
+            description: 'Opus with 1M context',
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+      }));
+      render(<ModelConfigPopover {...defaultProps({ model: 'default' })} />);
+      const trigger = screen.getByTestId('model-config-trigger');
+      expect(trigger).toHaveTextContent('Default');
+      expect(trigger).not.toHaveTextContent('recommended');
+    });
+  });
+
+  describe('compact (below the status line’s widest tier)', () => {
+    it('keeps the model name and drops the effort badge', () => {
+      // The name is what the line is for; effort is a setting this popover and the
+      // Session panel both still report.
+      render(<ModelConfigPopover {...defaultProps({ effort: 'high', compact: true })} />);
+      const trigger = screen.getByTestId('model-config-trigger');
+      expect(trigger).toHaveTextContent('Opus');
+      expect(trigger).not.toHaveTextContent('High');
+    });
+
+    it('drops the Fast badge', () => {
+      render(<ModelConfigPopover {...defaultProps({ fastMode: true, compact: true })} />);
+      expect(screen.getByTestId('model-config-trigger')).not.toHaveTextContent('Fast');
+    });
+
+    it('still shows both badges at the widest tier', () => {
+      render(<ModelConfigPopover {...defaultProps({ effort: 'high', fastMode: true })} />);
+      const trigger = screen.getByTestId('model-config-trigger');
+      expect(trigger).toHaveTextContent('High');
+      expect(trigger).toHaveTextContent('Fast');
+    });
   });
 
   describe('disabled state', () => {

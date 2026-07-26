@@ -36,6 +36,7 @@ import {
   useSessionStreamStore,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
@@ -143,7 +144,7 @@ export function useSessionSubmit({
    * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
    * @param restoreContentOnLock - Content to restore if the session is locked.
-   * @param queued - True when this send originated from a queue auto-flush; sent
+   * @param queued - True when this send originated from a queue flush; sent
    *   as `context: { queued: true }` so the server renders a `<queue_note>`.
    * @param opts - `{ kickoff: true }` for the M4 auto-first-turn: the content is
    *   a DorkOS-injected "introduce yourself" instruction, not a person's typing,
@@ -151,6 +152,10 @@ export function useSessionSubmit({
    *   the honesty seam — the optimistic user bubble. It still rides the full
    *   trigger machinery (subscribe-first, rekey, watchdog) so the greeting
    *   streams in normally.
+   *   `{ restoreQueued }` is the queue's undo for a flushed message: the queue
+   *   dequeues before the trigger resolves, so ANY failed trigger — a lock the
+   *   server still holds while a turn sits blocked on an approval, a dead
+   *   network — has to put the message back rather than drop it (DOR-480).
    */
   const executeSubmission = useCallback(
     async (
@@ -158,7 +163,7 @@ export function useSessionSubmit({
       clearInput: boolean,
       restoreContentOnLock: string,
       queued = false,
-      opts: { kickoff?: boolean } = {}
+      opts: { kickoff?: boolean; restoreQueued?: () => void } = {}
     ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
       // runtime/model. This is the funnel safety net for the non-streaming paths
@@ -172,13 +177,106 @@ export function useSessionSubmit({
       if (!opts.kickoff) {
         const native = tryNativeCommand(content);
         if (native.handled) {
-          if (clearInput && native.ran) setInput('');
+          // A REJECTED command performed nothing, and this return is upstream of
+          // the try/catch that restores a queued flush — so a queued message the
+          // operator had rewritten into one (say a bare `/rename`) was dequeued
+          // and then simply ceased to exist: the composer never held it either
+          // (DOR-480). Put it back. Restoring is idempotent, so a later edge that
+          // flushes it again just returns it again, and the row stays on screen
+          // with its Send-now control until the text is corrected.
+          //
+          // A command that RAN is not restored — it did what was asked, so the
+          // message is consumed and re-queueing would re-run it on every edge.
+          // But `ran` is only "the dispatch started" for a command that finishes
+          // asynchronously: a queued `/compact` refused by the session lock would
+          // otherwise be spent with no compaction and nothing to recover. Settle
+          // those on `confirmed` instead, so "it ran" has to be true before the
+          // message is treated as gone.
+          if (!native.ran) {
+            opts.restoreQueued?.();
+          } else if (native.confirmed && opts.restoreQueued) {
+            const restoreQueued = opts.restoreQueued;
+            // The rejection arm is not defensive padding: without it "never
+            // rejects" is a convention two producers happen to honour rather
+            // than something the call site can rely on. Treating an unexpected
+            // rejection as "not confirmed" is also the right default — it puts
+            // the message back instead of silently eating it.
+            void native.confirmed.then(
+              (accepted) => {
+                if (!accepted) restoreQueued();
+              },
+              () => restoreQueued()
+            );
+          }
+          // The composer's clear settles on `confirmed` for the same reason the
+          // queue's undo does: emptying it on "the dispatch started" deleted
+          // `/compact focus on the API changes` and then toasted that the agent
+          // was busy, with the instructions already gone.
+          if (clearInput && native.ran) {
+            if (native.confirmed) {
+              clearComposerOnConfirmed(sessionId, content, native.confirmed);
+            } else {
+              setInput('');
+            }
+          }
           return;
         }
       }
 
       const targetSessionId = sessionId!;
       const cwd = selectedCwdRef.current;
+      setError(null);
+
+      // Subscribe-first, and BEFORE the upload await. `attachSession` re-targets
+      // the single active-session connection, and the only other caller is an
+      // effect keyed on (sessionId, cwd) that fires once per switch — so calling
+      // it after an await means a switch made DURING the upload gets undone:
+      // session B attaches, the upload resolves, and this line drags the
+      // connection back to A, leaving B on screen with no live stream and
+      // nothing to re-fire until the session or cwd changes again. Here it is a
+      // no-op against the effect that already attached this same session.
+      streamManager.attachSession(targetSessionId, cwd);
+
+      // Attachments upload next — before the optimistic bubble, before the
+      // trigger latch, before the composer is cleared.
+      //
+      // Latching first made the session read `streaming` for the whole upload:
+      // the button turned into a red Stop that called `interruptSession` on a
+      // session with no turn, the `.catch()` swallowed the refusal, and the
+      // click did nothing at all — there was no way to cancel an upload. Worse,
+      // a hung upload never cleared the latch, because the watchdog that
+      // releases it is only armed after the POST, so the composer stayed wedged
+      // in queue mode indefinitely. While this runs the composer shows the
+      // upload in place of Stop and both submit paths are closed (`isUploading`).
+      let finalContent: string;
+      try {
+        // The kickoff content is already the exact message to deliver — never
+        // run it through the file/content transform (there are no pending files
+        // on a brand-new session, and it must reach the model verbatim so the
+        // fence stays intact for suppression).
+        finalContent =
+          !opts.kickoff && transformContentRef.current
+            ? await transformContentRef.current(content)
+            : content;
+      } catch (err) {
+        // Nothing was sent. A queued message goes back to its row; a typed one
+        // is still in the composer, because `clearInput` has not run yet — the
+        // clear used to happen before the upload and only `SESSION_LOCKED`
+        // restored it, so an upload failure on an ordinary send destroyed the
+        // message outright.
+        opts.restoreQueued?.();
+        if (opts.kickoff) throw err;
+        setError({
+          heading: 'Could not send message',
+          message: (err as Error).message || 'The attachment did not upload. Please try again.',
+          // The words are still in the composer (or back in the queue row), so
+          // the retry is a keystroke away. A Retry button here would re-send the
+          // PREVIOUS user message, which is not what anyone asked for.
+          retryable: false,
+        });
+        return;
+      }
+
       const streamStore = useSessionStreamStore.getState();
 
       // A session absent from the list cache is being CREATED by this send —
@@ -220,23 +318,8 @@ export function useSessionSubmit({
       streamStore.setTriggerPending(targetSessionId, true);
 
       if (clearInput) setInput('');
-      setError(null);
-
-      // Subscribe-first: ensure the durable stream is attached BEFORE the POST so
-      // the turn's first frames (turn_start, deltas) are never missed. Idempotent
-      // on the already-attached session+cwd.
-      streamManager.attachSession(targetSessionId, cwd);
 
       try {
-        // The kickoff content is already the exact message to deliver — never
-        // run it through the file/content transform (there are no pending files
-        // on a brand-new session, and it must reach the model verbatim so the
-        // fence stays intact for suppression).
-        const finalContent =
-          !opts.kickoff && transformContentRef.current
-            ? await transformContentRef.current(content)
-            : content;
-
         // Client UI-state snapshot for agent situational awareness (ADR-0273),
         // omitted when unchanged since the last successful send for this session
         // so identical snapshots don't accumulate in the transcript.
@@ -326,6 +409,14 @@ export function useSessionSubmit({
         useSessionStreamStore.getState().setOptimisticUserMessage(targetSessionId, null);
         useSessionStreamStore.getState().setTriggerPending(targetSessionId, false);
 
+        // A queued message was dequeued to make this attempt. The attempt failed,
+        // so it goes straight back where it was — every failure mode, not just the
+        // lock: the composer was never holding this text, so dropping it here is
+        // pure data loss with nowhere to recover it from (DOR-480). The queue row
+        // reappears with its Send-now control, so the person can see it survived
+        // and retry deliberately.
+        opts.restoreQueued?.();
+
         if ((err as { code?: string }).code === 'SESSION_LOCKED') {
           // A locked birth session means a turn is already running — the
           // greeting rode another trigger. Nothing to restore or retry.
@@ -367,29 +458,46 @@ export function useSessionSubmit({
 
   /**
    * Submit a message by content string directly, without clearing the input state.
-   * Used by the auto-flush mechanism for queued messages.
+   * Used by the queue's flush (automatic and hand-triggered).
    *
    * @param content - The message text to submit (PRISTINE — never annotated).
-   * @param originSessionId - When supplied (queue auto-flush), the session the
-   *   message was QUEUED in. Defense-in-depth (DOR-81): if it no longer matches
-   *   the active session, the message is dropped (logged) rather than misdelivered
-   *   — a queued message must never flush into a session the operator switched to.
+   * @param originSessionId - When supplied (queue flush), the session the message
+   *   was QUEUED in. Defense-in-depth (DOR-81): if it no longer matches the
+   *   active session, the message is NOT delivered here — it goes back into its
+   *   own session's queue, because a queued message must never flush into a
+   *   session the operator switched to.
    * @param opts - `{ queued }` carries the queue origin out-of-band so the send
-   *   forwards `context: { queued: true }` (ADR-0273). Defaults to non-queued.
+   *   forwards `context: { queued: true }` (ADR-0273). `{ restore }` puts the
+   *   message back in its queue when the send does not happen — every refusal
+   *   path below, and every failed trigger, calls it (DOR-480). Defaults to
+   *   non-queued.
    */
   const submitContent = useCallback(
-    async (content: string, originSessionId?: string, opts?: { queued: boolean }) => {
-      if (!content.trim() || status === 'streaming') return;
-      if (originSessionId !== undefined && originSessionId !== sessionId) {
-        // Should be unreachable — the per-session queue key already pins the
-        // flush to its origin. Logged + dropped so a wrong-session flush can
-        // never silently misdeliver.
-        console.warn(
-          `[chat] Dropped a queued message whose origin session (${originSessionId}) no longer matches the active session (${sessionId ?? 'none'}).`
-        );
+    async (
+      content: string,
+      originSessionId?: string,
+      opts?: { queued: boolean; restore?: () => void }
+    ) => {
+      if (!content.trim() || status === 'streaming') {
+        // A turn started between the drain decision and this call. The message is
+        // already dequeued, so put it back — it will ride the next edge.
+        opts?.restore?.();
         return;
       }
-      await executeSubmission(content.trim(), false, '', opts?.queued ?? false);
+      if (originSessionId !== undefined && originSessionId !== sessionId) {
+        // Should be unreachable — the per-session queue key already pins the
+        // flush to its origin. Logged, and returned to its OWN queue (the restore
+        // closes over the origin session), so a wrong-session flush can neither
+        // misdeliver nor destroy the message.
+        console.warn(
+          `[chat] Refused a queued message whose origin session (${originSessionId}) no longer matches the active session (${sessionId ?? 'none'}); it stays queued in its origin.`
+        );
+        opts?.restore?.();
+        return;
+      }
+      await executeSubmission(content.trim(), false, '', opts?.queued ?? false, {
+        ...(opts?.restore ? { restoreQueued: opts.restore } : {}),
+      });
     },
     [status, sessionId, executeSubmission]
   );

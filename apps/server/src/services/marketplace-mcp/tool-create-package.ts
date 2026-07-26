@@ -27,6 +27,7 @@ import { createPackage } from '@dorkos/marketplace/scaffolder';
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from '@dorkos/marketplace';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
+import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
 import { PERSONAL_MARKETPLACE_NAME, personalMarketplaceRoot } from './personal-marketplace.js';
 
 /**
@@ -109,20 +110,30 @@ function errorContent(err: unknown, code: string) {
  * matching entry to the personal `marketplace.json`.
  *
  * @param deps - Marketplace MCP dependency bundle.
- * @returns An async MCP handler that accepts a {@link CreatePackageInput}.
+ * @returns An async MCP handler that accepts a {@link CreatePackageInput} and an
+ *   optional caller context.
  */
 export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
-  return async (args: CreatePackageInput) => {
+  return async (args: CreatePackageInput, context?: MarketplaceConfirmationContext) => {
     // 1. Confirmation gate — fires BEFORE any disk write. This is the trust
     //    boundary: external agents cannot create files on the user's machine
     //    without explicit approval (or `MARKETPLACE_AUTO_APPROVE=1`).
-    const confirmation = args.confirmationToken
-      ? await deps.confirmationProvider.resolveToken(args.confirmationToken)
-      : await deps.confirmationProvider.requestInstallConfirmation({
-          packageName: args.name,
-          marketplace: PERSONAL_MARKETPLACE_NAME,
-          operation: 'create-package',
-        });
+    // `type` decides the shape of what lands on disk, so it is bound too; the
+    // rest of the args are metadata inside the package the user is creating.
+    const confirmationRequest = {
+      packageName: args.name,
+      marketplace: PERSONAL_MARKETPLACE_NAME,
+      operation: 'create-package' as const,
+      packageType: args.type,
+      ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
+    };
+    // A person already approved this exact invocation at the capability tier gate;
+    // asking again would be a second card for one action.
+    const confirmation = context?.preApproved
+      ? ({ status: 'approved' } as const)
+      : args.confirmationToken
+        ? await deps.confirmationProvider.resolveToken(args.confirmationToken, confirmationRequest)
+        : await deps.confirmationProvider.requestInstallConfirmation(confirmationRequest);
 
     if (confirmation.status === 'pending') {
       return jsonContent({

@@ -39,6 +39,20 @@ const { field } = parsed.data;
 ```
 
 4. Export the inferred type from `packages/shared/src/types.ts` if needed by client code
+5. **Regenerate the published docs** with BOTH commands below, and commit the result
+
+## Regenerating the published API docs (two steps, not one)
+
+Anything that changes `openapi-registry.ts`, including a description or a response code, has to be regenerated and committed:
+
+```bash
+pnpm docs:export-api                          # 1. registry  -> docs/api/openapi.json
+pnpm --filter=@dorkos/site generate:api-docs  # 2. that JSON -> docs/api/api/**/*.mdx
+```
+
+**Running only the first one is the trap, and it is a quiet one.** They are two generators in a chain: `docs:export-api` writes the spec, and `generate:api-docs` writes the Fumadocs MDX pages the site actually publishes from it. If you run step 1 alone and `git status` is clean, the natural read is "no drift, nothing to commit" — but a description change lands entirely in step 2's output, so the JSON can be byte-identical while the published page still shows the old text. That is a page telling users something untrue, and it is not visible in the diff you just looked at.
+
+The `docs-openapi-check` workflow runs both and fails on any difference, so CI catches it. Catching it locally costs one extra command.
 
 ## Marketplace (`/api/marketplace/*`)
 
@@ -1395,7 +1409,9 @@ The `open_canvas` UI command accepts an optional `content` field. When `content`
 
 ### Resources
 
-Alongside its tools, the external MCP server exposes read-only `dorkos://` resources — the same underlying data as the tools above, addressed by URI instead of a tool call, for hosts that render resource catalogs (`resources/list`) directly. All resources return `application/json`. Every resource and template is scoped to the server's own default working directory — there's no per-request `cwd` parameter on a resource read.
+Alongside its tools, DorkOS exposes read-only `dorkos://` resources: the same underlying data as the tools above, addressed by URI instead of a tool call, for hosts that render resource catalogs (`resources/list`) directly. All resources return `application/json`.
+
+**Both MCP servers register the same set**, from one place: `registerDorkOsResources` in `apps/server/src/services/core/mcp-resources/`. The external `/mcp` server and the in-session `dorkos` tool server each call it once, so an in-session agent can ask "what sessions are open?" exactly like a third-party MCP client (spec `agents-as-operators`). Session and skill reads are scoped to a project directory: the session's own working directory in-session, and the server's default project on `/mcp`, which has no per-request `cwd` to key on.
 
 | URI                      | Kind     | Content                                                                                                                                                                                                                                                                                         |
 | ------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1405,12 +1421,13 @@ Alongside its tools, the external MCP server exposes read-only `dorkos://` resou
 | `dorkos://agents/{id}`   | Template | One agent's `.dork/agent.json` manifest, by ULID                                                                                                                                                                                                                                                |
 | `dorkos://skills`        | Static   | Authored skills under `.agents/skills` — name and description only                                                                                                                                                                                                                              |
 | `dorkos://skills/{name}` | Template | One skill's full `SKILL.md` frontmatter and body, by name                                                                                                                                                                                                                                       |
+| `dorkos://capabilities`  | Static   | The live capability catalog: every registry entry with its id, title, description, tier, input/output JSON Schema, and surfaces, plus a content-hash `catalogVersion`. Same payload as `list_capabilities` and `GET /api/capabilities/catalog`.                                                 |
 
 Item templates (`{id}`/`{name}`) are not enumerated into `resources/list` — the corresponding collection resource already lists every valid id/name, so re-enumerating them individually would be redundant. Reading an unknown id/name returns a standard MCP `InvalidParams` error.
 
-Because the server is stateless (a fresh `McpServer` per request — see above), it can never push a `notifications/resources/list_changed` notification after the response it was created for. The `initialize` response accordingly advertises `resources: { listChanged: false }`; resource _subscriptions_ (`resources/subscribe`) are not implemented at all, so that capability is never advertised either.
+Neither server pushes `notifications/resources/list_changed`: the external one is stateless (a fresh `McpServer` per request, see above) and so cannot outlive the response it was created for, and the in-session one registers a fixed set that never changes during a query. Both `initialize` responses accordingly advertise `resources: { listChanged: false }`, which `registerDorkOsResources` sets explicitly because the MCP SDK's `registerResource()` otherwise advertises `true` with no opt-out. Resource _subscriptions_ (`resources/subscribe`) are not implemented at all, so that capability is never advertised either.
 
-Session and agent data here already flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `mcpApiKeyAuth` → the MCP router), so a resource read is authorized identically to a tool call — no separate resource-level auth gate. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`.
+On `/mcp`, session and agent data flows through the same auth middleware chain as every tool (`validateMcpOrigin` → `mcpApiKeyAuth` → the MCP router), so a resource read is authorized identically to a tool call — no separate resource-level auth gate. `dorkos://sessions` and `dorkos://sessions/{id}` include each session's `cwd`, matching what `GET /api/sessions` already returns to the same authenticated caller — not a new exposure, but called out here since it's the one field in these resources that names a filesystem path. Agent manifests (`dorkos://agents`, `dorkos://agents/{id}`) never include a filesystem path (`AgentManifest` has no `projectPath` field), matching `mesh_list`/`mesh_inspect`. The in-session surface is deliberately not gated further: those tools run in-process inside a session the user started, there is no HTTP hop to carry a token, and every payload is data the same agent can already reach through `mesh_list`, `GET /api/sessions`, or its own filesystem.
 
 ### Extension MCP Tools
 

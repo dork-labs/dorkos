@@ -13,6 +13,28 @@ import {
   type ConfirmationRequest,
   type ConfirmationResult,
 } from '../confirmation-provider.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../core/approvals/index.js';
+
+/**
+ * A token provider over a fresh approval store, plus the two things the cockpit
+ * does with a pending approval. Decisions go through the store by approval id —
+ * the provider has no decide-by-token path, because the agent holds the token.
+ */
+function buildTokenProvider() {
+  const approvals = new ApprovalService(createTestDb());
+  return {
+    provider: new TokenConfirmationProvider(approvals),
+    /** Grant every pending approval, the way the cockpit's Allow button does. */
+    grantPending: () => {
+      for (const pending of approvals.listPending()) approvals.grant(pending.approvalId);
+    },
+    /** Deny every pending approval, with an optional reason. */
+    denyPending: (reason?: string) => {
+      for (const pending of approvals.listPending()) approvals.deny(pending.approvalId, reason);
+    },
+  };
+}
 
 /**
  * In-memory `ConfirmationProvider` test double. Tests can pre-program the
@@ -157,7 +179,7 @@ describe('createUninstallHandler — in-app approve happy path', () => {
 
 describe('createUninstallHandler — token resume flow', () => {
   it('returns requires_confirmation + token on first call from external client', async () => {
-    const tokenProvider = new TokenConfirmationProvider();
+    const { provider: tokenProvider } = buildTokenProvider();
     const uninstallFlow = createStubUninstallFlow({
       result: uninstallResult({ packageName: 'sentry' }),
     });
@@ -173,14 +195,14 @@ describe('createUninstallHandler — token resume flow', () => {
       message: string;
     }>(result);
     expect(payload.status).toBe('requires_confirmation');
-    expect(payload.confirmationToken).toMatch(/[0-9a-f-]{36}/);
+    expect(payload.confirmationToken).toMatch(/^[0-9a-f]{32}$/);
     expect(payload.message).toContain('confirmationToken');
     // The flow must NOT have been invoked yet — the user still has to approve.
     expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
   });
 
   it('proceeds with uninstall when re-called with an approved token', async () => {
-    const tokenProvider = new TokenConfirmationProvider();
+    const { provider: tokenProvider, grantPending } = buildTokenProvider();
     const uninstallFlow = createStubUninstallFlow({
       result: uninstallResult({ packageName: 'sentry', removedFiles: 3 }),
     });
@@ -192,7 +214,7 @@ describe('createUninstallHandler — token resume flow', () => {
     const { confirmationToken } = parseToolPayload<{ confirmationToken: string }>(first);
 
     // Out-of-band approval (simulates the DorkOS UI clicking Approve).
-    tokenProvider.approve(confirmationToken);
+    grantPending();
 
     // Second call → handler must use the token, NOT issue a new one.
     const requestSpy = vi.spyOn(tokenProvider, 'requestInstallConfirmation');
@@ -249,7 +271,7 @@ describe('createUninstallHandler — declined', () => {
   });
 
   it('returns declined when a token resolves to declined', async () => {
-    const tokenProvider = new TokenConfirmationProvider();
+    const { provider: tokenProvider, denyPending } = buildTokenProvider();
     const uninstallFlow = createStubUninstallFlow({
       result: uninstallResult({ packageName: 'sentry' }),
     });
@@ -258,7 +280,7 @@ describe('createUninstallHandler — declined', () => {
 
     const first = await handler({ name: 'sentry' });
     const { confirmationToken } = parseToolPayload<{ confirmationToken: string }>(first);
-    tokenProvider.decline(confirmationToken, 'Changed my mind');
+    denyPending('Changed my mind');
 
     const second = await handler({ name: 'sentry', confirmationToken });
     const payload = parseToolPayload<{ status: string; reason: string }>(second);
@@ -359,5 +381,60 @@ describe('createUninstallHandler — purge flag', () => {
         projectPath: '/tmp/some-project',
       })
     );
+  });
+});
+
+/**
+ * Cooperation with the capability tier gate (spec `agent-trust` §3.2).
+ *
+ * `marketplace.uninstall` is the one `destructive` capability in the registry, so
+ * the gate in front of it may already hold a person's yes for these exact
+ * arguments. When it does, this handler must NOT run its own confirmation flow —
+ * otherwise one uninstall puts two cards in front of the operator.
+ */
+describe('createUninstallHandler — tier gate cooperation', () => {
+  it('skips its own confirmation when the gate already got approval for this call', async () => {
+    const provider = new FakeConfirmationProvider();
+    const uninstallFlow = createStubUninstallFlow({
+      result: uninstallResult({ packageName: 'sentry-monitor' }),
+    });
+    const handler = createUninstallHandler(createStubDeps({ confirmationProvider: provider, uninstallFlow }));
+
+    const result = await handler({ name: 'sentry-monitor' }, { preApproved: true });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('uninstalled');
+    expect(uninstallFlow.uninstall).toHaveBeenCalledOnce();
+    // Not a second card: the provider was never consulted.
+    expect(provider.requestInstallConfirmation).not.toHaveBeenCalled();
+    expect(provider.resolveToken).not.toHaveBeenCalled();
+  });
+
+  it('names the requesting agent on its own card when the gate did not pre-approve', async () => {
+    const provider = new FakeConfirmationProvider();
+    provider.requestInstallConfirmation.mockResolvedValue({ status: 'pending', token: 't' });
+    const handler = createUninstallHandler(
+      createStubDeps({
+        confirmationProvider: provider,
+        uninstallFlow: createStubUninstallFlow({}),
+      })
+    );
+
+    await handler({ name: 'sentry-monitor' }, { requestedBy: 'DorkBot' });
+
+    expect(provider.requestInstallConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedBy: 'DorkBot' })
+    );
+  });
+
+  it('still gates a call with no context at all', async () => {
+    const provider = new FakeConfirmationProvider();
+    provider.requestInstallConfirmation.mockResolvedValue({ status: 'pending', token: 't' });
+    const uninstallFlow = createStubUninstallFlow({});
+    const handler = createUninstallHandler(createStubDeps({ confirmationProvider: provider, uninstallFlow }));
+
+    const result = await handler({ name: 'sentry-monitor' });
+
+    expect(parseToolPayload<{ status: string }>(result).status).toBe('requires_confirmation');
+    expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,5 @@
 import type { DashboardSectionContribution } from '@/layers/shared/model';
+import { PendingApprovalsSection } from '@/layers/features/approvals';
 import { NeedsAttentionSection } from '@/layers/features/dashboard-attention';
 import { SystemStatusRow } from '@/layers/features/dashboard-status';
 import { RecentActivityFeed } from '@/layers/features/dashboard-activity';
@@ -18,9 +19,11 @@ function PromoSlotWrapper() {
 /** Built-in dashboard sections in priority order (lower number renders first). */
 export const DASHBOARD_SECTION_CONTRIBUTIONS: DashboardSectionContribution[] = [
   { id: 'composer', component: DashboardComposerSection, priority: 1 },
-  { id: 'needs-attention', component: NeedsAttentionSection, priority: 2 },
-  { id: 'promo', component: PromoSlotWrapper, priority: 3 },
-  { id: 'your-agents', component: YourAgentsSection, priority: 4 },
-  { id: 'system-status', component: SystemStatusRow, priority: 5 },
-  { id: 'recent-activity', component: RecentActivityFeed, priority: 6 },
+  // Approvals outrank attention items: an agent is blocked until you answer.
+  { id: 'pending-approvals', component: PendingApprovalsSection, priority: 2 },
+  { id: 'needs-attention', component: NeedsAttentionSection, priority: 3 },
+  { id: 'promo', component: PromoSlotWrapper, priority: 4 },
+  { id: 'your-agents', component: YourAgentsSection, priority: 5 },
+  { id: 'system-status', component: SystemStatusRow, priority: 6 },
+  { id: 'recent-activity', component: RecentActivityFeed, priority: 7 },
 ];

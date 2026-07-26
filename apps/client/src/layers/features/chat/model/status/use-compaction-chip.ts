@@ -1,14 +1,13 @@
 /**
- * Visibility + dispatch for the proactive compaction chip (DOR-112): a quiet,
- * one-click nudge shown in the chat status area once a session's context
- * usage nears the ceiling — turning the passive `ContextItem` percentage into
- * a timely action.
+ * Visibility + dispatch for the proactive compact action (DOR-112): a quiet,
+ * one-click nudge that appears beside the context percentage once a session's
+ * window nears the ceiling — turning a passive number into a timely action.
  *
  * @module features/chat/model/status/use-compaction-chip
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTransport } from '@/layers/shared/model';
-import { CONTEXT_WARNING_PERCENT } from '@/layers/entities/session';
+import { CONTEXT_ACTION_PERCENT } from '@/layers/entities/session';
 import { dispatchCompactIntent } from '../native-commands';
 
 /**
@@ -54,12 +53,11 @@ export interface CompactionChipVisibilityInput {
 }
 
 /**
- * Pure visibility rule for the compaction chip — unit-testable without React.
- * All three conditions must hold: usage at/above the shared "near full"
- * threshold ({@link CONTEXT_WARNING_PERCENT} — the same amber point
- * `ContextItem` uses, so the warning color and the one-click fix agree on what
- * "nearly full" means), the runtime can fulfill compact, and no turn is
- * currently streaming.
+ * Pure visibility rule for the compact action — unit-testable without React.
+ * All three conditions must hold: usage at/above {@link CONTEXT_ACTION_PERCENT}
+ * (the one threshold `ContextItem` uses to grow its inline action, so the badge
+ * and the fix can never disagree about what "nearly full" means), the runtime can
+ * fulfill compact, and no turn is currently streaming.
  *
  * @param input - The current context percent, compact support, and streaming state.
  */
@@ -69,7 +67,7 @@ export function shouldShowCompactionChip({
   isStreaming,
 }: CompactionChipVisibilityInput): boolean {
   if (percent === null) return false;
-  if (percent < CONTEXT_WARNING_PERCENT) return false;
+  if (percent < CONTEXT_ACTION_PERCENT) return false;
   if (!compactSupported) return false;
   if (isStreaming) return false;
   return true;
@@ -81,7 +79,7 @@ export interface UseCompactionChipOptions extends CompactionChipVisibilityInput 
   sessionId: string;
 }
 
-/** Compaction-chip state consumed by {@link import('../../ui/status/CompactionChip').CompactionChip}. */
+/** Compaction state consumed by `ContextItem`'s inline Compact action. */
 export interface CompactionChipState {
   /** Whether the chip should render at all. */
   visible: boolean;

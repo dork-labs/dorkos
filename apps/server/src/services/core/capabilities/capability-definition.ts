@@ -30,6 +30,7 @@
 import type { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
 import type { CapabilityTier, CapabilitySurfaces } from '@dorkos/shared/capabilities';
+import type { CapabilityHandlerContext } from './registry.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -62,7 +63,13 @@ export interface CapabilityDeps {
  * `invoke` and their `output` schema (a `requires_confirmation` result carrying
  * a token, re-invoked with that token) — by design, there is no declarative
  * "needs confirmation" flag on the definition. The registry treats these as
- * ordinary capabilities; the trust boundary lives in the handler.
+ * ordinary capabilities; that trust boundary lives in the handler.
+ *
+ * The `tier` gate is the separate, declarative one, and it runs OUTSIDE the
+ * handler, inside `registry.invoke` itself (`tier-enforcement.ts`, DOR-467) — so
+ * it cannot be reached around. A handler that also gates itself reads
+ * `context.approval` (or `context.trusted`) so the two never ask a person twice
+ * for one action.
  *
  * @template In - The Zod input schema type.
  * @template Out - The Zod output schema type.
@@ -83,7 +90,11 @@ export interface CapabilityDefinition<
    * reach for it, written for the agent that will decide to call it.
    */
   description: string;
-  /** Permission tier (declared now, enforced in phase 3). */
+  /**
+   * Permission tier. Enforced inside `registry.invoke` before this handler runs,
+   * so `destructive` really does mean "a person has to say yes first" (see
+   * `tier-enforcement.ts`).
+   */
   tier: CapabilityTier;
   /** Zod input contract; validated before `invoke`, projected as JSON Schema. */
   input: In;
@@ -92,15 +103,47 @@ export interface CapabilityDefinition<
   /** The MCP / CLI / HTTP surfaces this capability projects onto. */
   surfaces: CapabilitySurfaces;
   /**
+   * The input fields the approval card may show, as dotted paths, in the order a
+   * person should read them.
+   *
+   * An allowlist rather than a redaction list, because the failure it prevents is
+   * a field nobody thought about reaching a card. The summary is broadcast on the
+   * global event stream and returned by `GET /api/approvals/pending`, which agents
+   * can read — so `marketplace.uninstall`'s own `confirmationToken` field, whose
+   * description tells a model to re-call with a token, would otherwise publish a
+   * live secret to every connected cockpit.
+   *
+   * Declare this on any `destructive` capability — conformance fails one that does
+   * not, and one that names a secret-shaped field. Omitting it is otherwise safe
+   * but blunt: every top-level field is shown except those whose NAME says secret
+   * (`approval-summary.ts`), and a nested object renders as an unhelpful
+   * `details` — naming `options.purge` here fixes that.
+   *
+   * **Order most-consequential-first.** The whole sentence is capped at
+   * `APPROVAL_SUMMARY_MAX_LENGTH`, and while today's cards are nowhere near it (312
+   * characters worst case), a capability declaring several long string fields could
+   * push a later one past the cap. The field that decides how much damage the action
+   * does should never be the one at risk of being cut.
+   */
+  approvalDisplayFields?: readonly string[];
+  /**
    * Execute the capability against the injected dependencies, returning PLAIN
    * typed output (see the module-level "result-wrapping seam" note — transport
    * adapters own envelope shaping; redaction stays here).
    *
    * @param deps - The boot-time service-dependency bag.
    * @param input - The validated input (already parsed against {@link input}).
+   * @param context - Who is calling and what the tier gate already decided about
+   *   this exact call. Most handlers ignore it; a handler that runs its own
+   *   confirmation flow reads `context.approval` so a person who has ALREADY
+   *   approved this invocation at the choke point is not asked a second time.
    * @returns The plain typed output.
    */
-  invoke(deps: CapabilityDeps, input: z.infer<In>): Promise<z.infer<Out>>;
+  invoke(
+    deps: CapabilityDeps,
+    input: z.infer<In>,
+    context: CapabilityHandlerContext
+  ): Promise<z.infer<Out>>;
 }
 
 /**

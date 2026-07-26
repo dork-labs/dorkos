@@ -2,6 +2,7 @@ import { Gauge, DollarSign } from 'lucide-react';
 import type { UsageStatus } from '@dorkos/shared/types';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { formatCost } from '../lib/format-tokens';
 
 interface UsageStatusItemProps {
   usage: UsageStatus;
@@ -80,6 +81,18 @@ export function UsageDetail({ usage }: UsageStatusItemProps) {
  * subscription sessions with no utilization yet, render cost primary. The
  * primary metric flips by `kind` so the two numbers are never both primary.
  *
+ * Every branch renders a **number** — a utilization percent or a dollar figure —
+ * so the registry marks this item {@link StatusBarItemConfig.rigid} and the row
+ * never squeezes it. `shrink-0` here says the same thing one level down: a
+ * `$12.4…` or a `7…` is not the same fact in fewer letters, it is a different
+ * amount, and the honest failure is for the width budget to drop the whole item
+ * to the `⋯` where the figure is still exact.
+ *
+ * This is the third item that carried `shrink-0` with nothing beside it able to
+ * give way (DOR-461 review). The other two were fixed by making them shrinkable,
+ * because they had a label to spend; this one has only the number, so it is the
+ * row that has to stop asking.
+ *
  * @param props - The usage descriptor to render.
  */
 export function UsageStatusItem({ usage }: UsageStatusItemProps) {
@@ -95,7 +108,7 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
       <Tooltip>
         <TooltipTrigger asChild>
           <span
-            className={cn('inline-flex cursor-default items-center gap-1', colorClass)}
+            className={cn('inline-flex shrink-0 cursor-default items-center gap-1', colorClass)}
             aria-label="Subscription usage"
           >
             <Gauge className="size-(--size-icon-xs)" />
@@ -112,11 +125,18 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
   // Cost-primary: pay-as-you-go, or a subscription before its first rate-limit
   // signal. Rendered only when a cost is present (parent gate).
   if (usage.costUsd == null) return null;
-  const costLabel = `$${usage.costUsd.toFixed(2)}`;
+  // Bounded by magnitude, not by character count: this is the only value in the
+  // line that can grow without limit, and a rigid item cannot truncate its way out
+  // of one. `formatCost` keeps it to seven characters short of a billion dollars,
+  // so the figure never outgrows the slot in the first place. A character limit
+  // written for labels was the wrong instrument — it admitted `$99999.99` long
+  // after the cluster had run out of room (DOR-461 review). Reachable today only
+  // by a pin, which bypasses `promote` entirely.
+  const costLabel = formatCost(usage.costUsd);
 
   if (!usage.detail) {
     return (
-      <span className="inline-flex items-center gap-1" aria-label="Session cost">
+      <span className="inline-flex shrink-0 items-center gap-1" aria-label="Session cost">
         <DollarSign className="size-(--size-icon-xs)" />
         <span>{costLabel}</span>
       </span>
@@ -126,7 +146,10 @@ export function UsageStatusItem({ usage }: UsageStatusItemProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex cursor-default items-center gap-1" aria-label="Session cost">
+        <span
+          className="inline-flex shrink-0 cursor-default items-center gap-1"
+          aria-label="Session cost"
+        >
           <DollarSign className="size-(--size-icon-xs)" />
           <span>{costLabel}</span>
         </span>

@@ -20,6 +20,18 @@ import {
   SAMPLE_MESSAGE_MULTI_SELECT,
 } from '../mock-chat-data';
 import type { MessageGrouping } from '@/layers/features/chat/model/chat-types';
+import type { MessageAuthor } from '@/layers/shared/model';
+
+/** Stand-in participants for the identity gutter. */
+const HUMAN_AUTHOR: MessageAuthor = { kind: 'human', id: 'human', displayName: 'You' };
+const AGENT_AUTHOR: MessageAuthor = {
+  kind: 'agent',
+  id: 'dorkbot',
+  displayName: 'DorkBot',
+  emoji: '\u{1F916}',
+  color: 'hsl(210, 70%, 55%)',
+};
+const SYSTEM_AUTHOR: MessageAuthor = { kind: 'system', id: 'system', displayName: 'System' };
 
 const STANDALONE_CTX = {
   sessionId: MOCK_SESSION_ID,
@@ -209,10 +221,10 @@ export function MessageShowcases() {
       >
         {(
           [
-            { position: 'only', groupIndex: 0 },
-            { position: 'first', groupIndex: 0 },
-            { position: 'middle', groupIndex: 0 },
-            { position: 'last', groupIndex: 0 },
+            { position: 'only' },
+            { position: 'first' },
+            { position: 'middle' },
+            { position: 'last' },
           ] satisfies MessageGrouping[]
         ).map((grouping) => (
           <div key={grouping.position}>
@@ -223,6 +235,7 @@ export function MessageShowcases() {
                   content: `Message with position="${grouping.position}"`,
                 })}
                 grouping={grouping}
+                author={HUMAN_AUTHOR}
                 sessionId={MOCK_SESSION_ID}
               />
             </ShowcaseDemo>
@@ -235,7 +248,8 @@ export function MessageShowcases() {
             message={createAssistantMessage({
               content: 'Here is a short assistant reply.',
             })}
-            grouping={{ position: 'only', groupIndex: 1 }}
+            grouping={{ position: 'only' }}
+            author={AGENT_AUTHOR}
             sessionId={MOCK_SESSION_ID}
           />
         </ShowcaseDemo>
@@ -258,18 +272,18 @@ export function MessageShowcases() {
                 },
               ],
             })}
-            grouping={{ position: 'only', groupIndex: 2 }}
+            grouping={{ position: 'only' }}
+            author={AGENT_AUTHOR}
             sessionId={MOCK_SESSION_ID}
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>
-          Local command (/context) — right-aligned bubble + full-width output
-        </ShowcaseLabel>
+        <ShowcaseLabel>Local command (/context) — prompt + full-width output</ShowcaseLabel>
         <ShowcaseDemo>
           <MessageItem
             message={createUserMessage({ content: '/context', messageType: 'command' })}
-            grouping={{ position: 'first', groupIndex: 3 }}
+            grouping={{ position: 'first' }}
+            author={HUMAN_AUTHOR}
             sessionId={MOCK_SESSION_ID}
           />
           <MessageItem
@@ -278,7 +292,8 @@ export function MessageShowcases() {
                 '\x1b[1mContext Usage\x1b[0m\n\x1b[32m█████████\x1b[0m\x1b[90m░░░░░░░░░░░\x1b[0m 45%\n\nSystem prompt   2.3k tokens\nTools          11.1k tokens\nMessages       45.2k tokens',
               messageType: 'local_command_output',
             })}
-            grouping={{ position: 'last', groupIndex: 3 }}
+            grouping={{ position: 'last' }}
+            author={SYSTEM_AUTHOR}
             sessionId={MOCK_SESSION_ID}
           />
         </ShowcaseDemo>

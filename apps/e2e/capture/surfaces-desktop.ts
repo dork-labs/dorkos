@@ -247,9 +247,16 @@ async function seedRightPanelSplit(page: Page, rightPct: number): Promise<void> 
 }
 
 /**
- * Canvas right-panel split (founder art direction: the document needs a
- * genuinely readable column, not a sliver — 45% ≈ 576px at the 1280px capture
+ * Canvas right-panel split (founder art direction: chat keeps the wider column,
+ * the document gets a genuinely readable one — 45% ≈ 576px at the 1280px capture
  * viewport).
+ *
+ * This was 58% for one release, to dodge two product bugs rather than shoot them:
+ * the six-tab strip left the active Canvas tab's label clipped at 45% (DOR-471),
+ * and the composer's status line landed on the `full` tier's 640px floor where
+ * items painted over each other (DOR-461). Both are fixed — the strip now scrolls
+ * the selected tab into view, and no status item can render outside its own box —
+ * so the split is back where the art direction wanted it.
  */
 const CANVAS_PANEL_PCT = 45;
 
@@ -415,15 +422,21 @@ async function shootSubagents(page: Page, theme: Theme, rec: RunRecorder): Promi
 
 /** Stagger between concurrent multi-session turn triggers. */
 const MULTI_SESSION_STAGGER_MS = 700;
-/** How many concurrent sessions each multi-session drive launches. */
-const MULTI_SESSION_COUNT = 4;
+/**
+ * How many concurrent sessions each multi-session drive launches. Capped at
+ * `AgentListItem`'s `MAX_PREVIEW_SESSIONS` (3) — the sidebar's per-agent
+ * conversation preview never renders a 4th real row for the same agent
+ * (session-origin-legibility, DOR-408), so a 4th launched session here would
+ * leave the drive waiting on a row that can never mount.
+ */
+const MULTI_SESSION_COUNT = 3;
 /** Rotates through the prompt pool so repeated drives mint distinct titles. */
 let multiSessionPromptCursor = 0;
 
 /**
- * Drive the fleet moment: launch four concurrent turns (three coding streams +
- * one approval-blocked) across separate sessions, THEN open the session view
- * with the sidebar visible — the freshly mounted list includes every new row,
+ * Drive the fleet moment: launch concurrent turns (coding streams + one
+ * approval-blocked) across separate sessions, THEN open the session view with
+ * the sidebar visible — the freshly mounted list includes every new row,
  * pulsing green and amber while the turns stream. (Triggers come first because
  * an already-mounted list does not grow rows for brand-new sessions.)
  */
@@ -451,7 +464,7 @@ async function driveMultiSession(page: Page): Promise<void> {
   await page.goto(url(`/session?session=${first.id}&dir=${encodeURIComponent(cwd)}`));
   await page.waitForSelector('[data-testid="chat-panel"]', { timeout: WAIT_MS });
   await ensureDesktopSidebarExpanded(page);
-  // All four rows present in the freshly mounted, expanded list.
+  // Every launched row present in the freshly mounted, expanded list.
   await page
     .locator('[data-testid="session-row"]')
     .nth(MULTI_SESSION_COUNT - 1)
@@ -510,21 +523,44 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
 }
 
 /**
- * Drive the onboarding wizard to the agent-discovery step and let the real
+ * Drive the onboarding conversation to the agent-discovery beat and let the real
  * unified scanner sweep the seeded projects tree until the mixed-harness
  * candidates are on screen. Requires onboarding to be un-dismissed first.
+ *
+ * Two things shape this drive, both from the conversational redesign
+ * (ADR 260722-111314/111315) that left it broken between DOR-460 and DOR-472:
+ *
+ * - **It routes past the personality beat by skipping it, never by confirming
+ *   it.** DOR-472 gave that beat a real "Skip this step" control
+ *   (`skip-personality`), which advances one beat and — unlike
+ *   `confirm-personality` — writes no traits. So this drive never touches
+ *   DorkBot's on-disk manifest, the write whose confinement to the sandboxed
+ *   `DORK_HOME` was never confirmed and which is why the previous pass refused
+ *   to drive through here.
+ * - **Discovery is consent-first**, so the scan starts on "Sure, look around",
+ *   not on arrival at the beat.
+ *
+ * Verified in a real browser through the consent chips (DOR-472). The candidate
+ * wait after consent is the pre-redesign recipe, carried forward unchanged: it
+ * depends on the seeded `DISCOVERY_PROJECTS` tree, not on the flow.
+ *
+ * A timeout here costs one run and only one run. `WAIT_MS` (20s) outlives the
+ * beat's own `DISCOVERY_TIMEOUT_MS` (8s), so a scan slower than 8s makes the app
+ * hand the conversation off to the handoff beat — which writes `completedAt` —
+ * while this wait spends its remaining budget on cards that will never arrive.
+ * `attempt` records that failure and the shot keeps its last asset. The next run
+ * starts clean because `reopenOnboarding` clears `completedAt` too, so the
+ * overlay genuinely reopens rather than inheriting a finished onboarding.
  */
 async function driveOnboardingDiscovery(page: Page): Promise<void> {
   // With onboarding un-dismissed the wizard replaces the app shell entirely,
   // so the boot signal is the welcome screen itself.
   await page.goto(url('/'));
-  // Welcome → Requirements → Meet DorkBot → Discovery. Meet DorkBot is
-  // advanced via the nav bar's Skip: its Continue writes DorkBot traits under
-  // the DorkOS home, which sits outside the capture-world boundary.
   await page.getByText('Get Started', { exact: true }).first().click({ timeout: WAIT_MS });
-  await page.getByText('Continue', { exact: true }).first().click({ timeout: WAIT_MS });
-  await page.getByText('Skip', { exact: true }).first().click({ timeout: WAIT_MS });
-  // The discovery step auto-starts its scan; wait for the seeded fleet.
+  // The ready-state CTA reads "Meet DorkBot"; its testid predates that copy.
+  await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
+  await page.getByTestId('skip-personality').click({ timeout: WAIT_MS });
+  await page.getByText('Sure, look around', { exact: true }).click({ timeout: WAIT_MS });
   await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
   await sleep(800); // let the remaining candidate cards animate in
 }
@@ -542,9 +578,18 @@ export async function captureAgentDiscovery(browser: Browser, rec: RunRecorder):
     process.stdout.write('  ⤿ agent-discovery skipped (captured elsewhere)\n');
     return;
   }
+  // Mirrors the "Replay setup" reset in `PreferencesTab`: `completedAt` is the
+  // authoritative "onboarding is done" gate, so clearing `dismissedAt` alone
+  // leaves the overlay shut for good once any run reaches the handoff beat.
   const reopenOnboarding = () =>
     patch('/api/config', {
-      onboarding: { dismissedAt: null, completedSteps: [], skippedSteps: [] },
+      onboarding: {
+        completedSteps: [],
+        skippedSteps: [],
+        startedAt: null,
+        dismissedAt: null,
+        completedAt: null,
+      },
     });
   const dismissOnboarding = () =>
     patch('/api/config', { onboarding: { dismissedAt: '2026-07-01T00:00:00.000Z' } });

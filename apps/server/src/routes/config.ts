@@ -9,6 +9,20 @@ import {
   STATUS_BAR_PREFS_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
+import {
+  describeOperatorOnlyRefusal,
+  findCookieRequiredPaths,
+  findOperatorOnlyPaths,
+  OPERATOR_ONLY_CONFIG_CODE,
+  OPERATOR_ONLY_CONFIG_ERROR,
+  REQUIRES_COOKIE_CONFIG_ERROR,
+} from '../services/core/operator/config-write-policy.js';
+import { trustedCaller } from '../services/core/capabilities/index.js';
+import { readCallerAuthority, requireOperatorCookie } from '../lib/caller-authority.js';
+import {
+  revokeStandingGrantsIfPostureNarrowed,
+  type StandingGrantPosture,
+} from '../services/core/approvals/index.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isTasksEnabled, getTasksInitError } from '../services/tasks/task-state.js';
 import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
@@ -39,6 +53,14 @@ function configuredRuntimes(): string[] {
   if (config?.codex?.enabled !== false) runtimes.push('codex');
   if (config?.opencode?.enabled !== false) runtimes.push('opencode');
   return runtimes;
+}
+
+/** The two settings that license a standing permission to exist, as stored now. */
+function readStandingGrantPosture(): StandingGrantPosture {
+  return {
+    loginEnabled: configManager.get('auth')?.enabled === true,
+    standingGrants: configManager.get('approvals')?.standingGrants === true,
+  };
 }
 
 router.get('/', async (_req, res) => {
@@ -170,6 +192,10 @@ router.get('/', async (_req, res) => {
       aiMetadata: false,
     },
     auth: configManager.get('auth') ?? { enabled: false },
+    approvals: configManager.get('approvals') ?? {
+      standingGrants: false,
+      trustWindowMinutes: 480,
+    },
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },
     // Surface the sidebar organization + Shape + status-bar prefs so the client
     // can read them via useConfig() (DOR-329, DOR-355, DOR-431). Schema defaults
@@ -185,6 +211,77 @@ router.get('/', async (_req, res) => {
 
 router.patch('/', (req, res) => {
   try {
+    // A few settings need MORE than the block below can ask for, and they are
+    // checked FIRST, outside it, so the outcome of `trustedCaller` cannot change
+    // the answer (spec `agent-approval-settings` §3.0-3.1).
+    //
+    // The reason is written out at REQUIRES_COOKIE_CONFIG_PATHS: the operator-only
+    // check underneath is skipped for a caller that omits its agent header and
+    // its approval token, which an agent with a shell can do. For most settings
+    // that is an accepted trade. For "may standing permissions exist, and for how
+    // long" it is not, because a standing permission keeps saying yes for hours,
+    // and this exact chain was reproduced before the feature shipped.
+    const cookieRequired = findCookieRequiredPaths(req.body);
+    if (cookieRequired.length > 0) {
+      const refusal = requireOperatorCookie(res);
+      if (refusal) {
+        return res.status(refusal.status).json({
+          error: REQUIRES_COOKIE_CONFIG_ERROR,
+          code: refusal.code,
+          paths: cookieRequired,
+          message: refusal.error,
+        });
+      }
+    }
+
+    // The REST twin of the guard on `operator.config_patch` (DOR-467). PR #469
+    // put the operator-only write policy on the capability surface, but this
+    // route reaches the SAME `applyConfigPatch` and had no policy check at all —
+    // and with login off `sessionGate` is a documented pass-through, so an agent
+    // with a shell could `curl` straight past the guard whose whole promise is
+    // that agents cannot change the settings protecting the instance.
+    //
+    // The cockpit must keep working: its own enable-login and disable-login flows
+    // legitimately write `auth.enabled` through here, and under `local-trust`
+    // nothing distinguishes the cockpit's request from any other loopback caller.
+    // So the policy is skipped for a caller that presents no agent identity and no
+    // approval token, and applied to everyone else.
+    //
+    // ## Do not read `trusted-caller.ts`'s invariant as covering this
+    //
+    // That module justifies its escape with "whoever may decide an approval may
+    // act without one", which rests on the two-step path existing: ask, get the
+    // 202, grant it, retry. For operator-only config paths THERE IS NO SUCH PATH.
+    // `operator.config_patch` is tier `act`, so its refusal is not an approval
+    // gate at all — the capability twin refuses these paths unconditionally, with
+    // no approval that could ever unlock them (`operator-tool-handlers.ts`).
+    //
+    // So state the divergence plainly rather than dressing it up: for this one
+    // effect the trusted escape grants something the two-step path cannot, and the
+    // twins disagree — the same principal is refused on the capability surface and
+    // allowed here. That is accepted, not overlooked, for one reason only: the
+    // cockpit needs this route and `local-trust` cannot tell it apart from anything
+    // else on loopback. It is also strictly TIGHTER than before, since this route
+    // had no policy check for any caller.
+    //
+    // Under login-on the divergence sharpens: a caller holding a valid per-user API
+    // key that strips its agent header satisfies `resolveDecisionAuthority` (DOR-474)
+    // and could write `auth.enabled` here while being refused on the capability
+    // surface. That last step is REASONED FROM CODE, NOT RUN — treat it as a lead to
+    // verify, not as a finding.
+    if (!trustedCaller(readCallerAuthority(req, res))) {
+      const operatorOnly = findOperatorOnlyPaths(req.body);
+      if (operatorOnly.length > 0) {
+        return res.status(403).json({
+          error: OPERATOR_ONLY_CONFIG_ERROR,
+          code: OPERATOR_ONLY_CONFIG_CODE,
+          paths: operatorOnly,
+          message: describeOperatorOnlyRefusal(operatorOnly),
+        });
+      }
+    }
+
+    const postureBefore = readStandingGrantPosture();
     const result = applyConfigPatch(req.body);
     if (!result.ok) {
       return res.status(400).json({
@@ -192,6 +289,10 @@ router.patch('/', (req, res) => {
         ...(result.details && { details: result.details }),
       });
     }
+    // Turning login off, or the master switch off, ends every live standing
+    // permission. Leaving them dormant would let them wake up later under a
+    // posture that can no longer justify them.
+    revokeStandingGrantsIfPostureNarrowed(postureBefore, readStandingGrantPosture());
 
     if (req.body && typeof req.body === 'object') {
       logger.debug(`[Config] Patched: ${Object.keys(req.body).join(', ')}`);

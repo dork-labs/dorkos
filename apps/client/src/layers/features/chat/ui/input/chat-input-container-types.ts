@@ -8,7 +8,15 @@ export interface FileUploadProps {
   pendingFiles: PendingFile[];
   onFilesSelected: (files: File[]) => void;
   onFileRemove: (id: string) => void;
+  /** Put a failed attachment back in line for the next send. */
+  onFileRetry: (id: string) => void;
   isUploading: boolean;
+  /**
+   * True while any attachment failed to upload. Blocks the send: the message
+   * would otherwise go to the model with no attachment while the person waited
+   * for an answer about a file the agent never received (DOR-480).
+   */
+  hasFailedUpload: boolean;
 }
 
 /** Interactive tool state shared between the message list and input zone. */

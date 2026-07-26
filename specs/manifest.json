@@ -2,11 +2,40 @@
   "version": 1,
   "specs": [
     {
+      "id": "260726-015631",
+      "slug": "agent-approval-settings",
+      "title": "Agent approval settings: a supported way to say stop asking",
+      "created": "2026-07-25",
+      "status": "specified",
+      "project": "Agents as First-Class Operators"
+    },
+    {
+      "id": "260725-112204",
+      "slug": "agents-list-attention-order",
+      "title": "Agents list, ordered by attention",
+      "created": "2026-07-25",
+      "status": "implemented"
+    },
+    {
+      "id": "260725-014841",
+      "slug": "multi-participant-message-list",
+      "title": "Multi-participant message list — Slack-style identity, reactions, threads",
+      "created": "2026-07-25",
+      "status": "specified"
+    },
+    {
+      "id": "260724-225642",
+      "slug": "composer-status-redesign",
+      "title": "Composer + status bar redesign — quiet by default, one line, measured mobile budget",
+      "created": "2026-07-24",
+      "status": "implemented"
+    },
+    {
       "id": "260723-050355",
       "slug": "agent-trust",
       "title": "Agent trust — identity, capability tiers, approvals, isolated evals",
       "created": "2026-07-23",
-      "status": "specified",
+      "status": "implemented",
       "project": "Agents as First-Class Operators"
     },
     {
@@ -14,7 +43,7 @@
       "slug": "capability-registry",
       "title": "Capability Registry — one source of truth, projected everywhere",
       "created": "2026-07-23",
-      "status": "specified",
+      "status": "implemented",
       "project": "Agents as First-Class Operators"
     },
     {
@@ -22,7 +51,7 @@
       "slug": "agents-as-operators",
       "title": "Agents as First-Class Operators",
       "created": "2026-07-22",
-      "status": "specified",
+      "status": "implemented",
       "project": "Agents as First-Class Operators"
     },
     {

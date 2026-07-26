@@ -1,13 +1,13 @@
 /**
  * Registers the core external MCP tools (`ping`, `get_server_info`,
- * `get_session_count`, `get_agent`) against a live `McpServer` instance.
+ * `get_session_count`, `get_agent`) against the gated tool registrar (`mcp-tool-gate.ts`).
  *
  * Split out of `mcp-server.ts` purely to keep that file's tool-registration
  * bulk under the repo's file-size guidance — see `.claude/rules/conventions.md`.
  *
  * @module services/core/external-mcp/core-tools
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import { z } from 'zod';
 import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -35,13 +35,14 @@ const agentScopeSchema = {
 
 /**
  * Register `ping`, `get_server_info`, `get_session_count`, and `get_agent`
- * against `server`.
+ * against `registrar`.
  *
- * @param server - The external `McpServer` instance to register tools against.
+ * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
+ *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerCoreTools(server: McpServer, deps: McpToolDeps): void {
-  server.registerTool(
+export function registerCoreTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+  registrar.registerTool(
     'ping',
     {
       description: 'Check that the DorkOS server is running. Returns pong with a timestamp.',
@@ -50,7 +51,7 @@ export function registerCoreTools(server: McpServer, deps: McpToolDeps): void {
     },
     handlePing
   );
-  server.registerTool(
+  registrar.registerTool(
     'get_server_info',
     {
       description: 'Returns DorkOS server metadata including version, port, and optionally uptime.',
@@ -61,7 +62,7 @@ export function registerCoreTools(server: McpServer, deps: McpToolDeps): void {
     },
     handleGetServerInfo
   );
-  server.registerTool(
+  registrar.registerTool(
     'get_session_count',
     {
       description:
@@ -71,7 +72,7 @@ export function registerCoreTools(server: McpServer, deps: McpToolDeps): void {
     },
     createGetSessionCountHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'get_agent',
     {
       description:

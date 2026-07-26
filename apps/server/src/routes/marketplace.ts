@@ -10,7 +10,7 @@
  *
  * @module routes/marketplace
  */
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { lstat, open, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -52,9 +52,16 @@ import {
   type AgentScopeRef,
   type InstalledPackage,
 } from '../services/marketplace/installed-scanner.js';
-import { getMarketplaceConfirmationProvider } from '../services/marketplace-mcp/confirmation-registry.js';
-import { TokenConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import {
+  APPROVAL_TOKEN_HEADER,
+  authorizeCapability,
+  trustedCaller,
+  type CapabilityRegistry,
+  type TierEnforcementDecision,
+} from '../services/core/capabilities/index.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { readCallerAuthority } from '../lib/caller-authority.js';
 
 /**
  * Re-export the canonical {@link InstalledPackage} type from this route module
@@ -79,6 +86,18 @@ export interface MarketplaceRouteDeps {
   updateFlow: UpdateFlow;
   /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
   dorkHome: string;
+  /**
+   * The composed capability registry, read lazily because it is built AFTER this
+   * router (`index.ts`) — the same late-bound read the approval service uses.
+   *
+   * These routes perform marketplace mutations directly rather than through
+   * `registry.invoke`, because they own a response contract the cockpit and the
+   * CLI already depend on. They therefore have to reach the tier gate explicitly,
+   * through `authorizeCapability`. Returning `undefined` here means the registry
+   * is not composed yet, which FAILS CLOSED for a destructive route rather than
+   * waving it through — see {@link createMarketplaceRouter}.
+   */
+  capabilityRegistry: () => CapabilityRegistry | undefined;
   /**
    * Optional callback fired after a successful install/uninstall. Carries the
    * change context (which package, which action, and the project root for a
@@ -149,18 +168,6 @@ const PruneCacheBodySchema = z.object({
   keepLastN: z.number().int().nonnegative().optional(),
 });
 
-/**
- * Body schema for `POST /api/marketplace/confirmations/:token`.
- *
- * Used by the DorkOS UI when a user clicks Approve / Decline in the install
- * confirmation dialog for an externally-initiated marketplace install. The
- * `reason` field is only meaningful for declines and is capped at 1024 chars.
- */
-const ConfirmationActionBodySchema = z.object({
-  action: z.enum(['approve', 'decline']),
-  reason: z.string().max(1024).optional(),
-});
-
 /** Query schema for `GET /api/marketplace/packages/:name`. */
 const GetPackageQuerySchema = z.object({
   marketplace: z.string().optional(),
@@ -217,8 +224,6 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  * - `POST /packages/:name/install` — install a package
  * - `POST /packages/:name/uninstall` — uninstall a package
  * - `POST /packages/:name/update` — advisory update check (with `apply: true` option)
- * - `POST /confirmations/:token` — resolve an out-of-band confirmation token
- *   issued by the marketplace MCP install/uninstall tools (UI Approve/Decline)
  *
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).
@@ -234,8 +239,79 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     dorkHome,
     onPluginsChanged,
     listAgentScopes,
+    capabilityRegistry,
   } = deps;
   const router = Router();
+
+  /**
+   * Run the tier gate for the capability this route is about to perform itself.
+   *
+   * These routes predate the Capability Registry and own a response contract the
+   * cockpit and `dorkos install|uninstall` already depend on, so they cannot be
+   * re-pointed at `registry.invoke` without changing what those callers receive.
+   * What they CAN do — and until DOR-467 did not — is answer to the same gate.
+   *
+   * The caller that clears {@link trustedCaller} skips it, and that is the whole
+   * cockpit story: a person clicking Uninstall sends no `X-DorkOS-Agent` header
+   * and no approval token, so they are the caller `resolveDecisionAuthority`
+   * already lets DECIDE approvals — asking them to approve their own click would
+   * be a card for something they just did. An agent following its instructions
+   * carries `DORKOS_AGENT_TOKEN`, so `dorkos uninstall` from inside a session
+   * presents an identity and is gated, which is the door this ticket closes.
+   *
+   * @param req - The incoming request.
+   * @param res - The response, for `sessionGate`'s resolved user.
+   * @param id - The capability id whose tier governs this effect.
+   * @param input - The effect's arguments, parsed against that capability's schema.
+   * @returns What the gate decided. Proceed only on `allowed`.
+   */
+  const authorize = (
+    req: Request,
+    res: Response,
+    id: string,
+    input: unknown
+  ): TierEnforcementDecision => {
+    const registry = capabilityRegistry();
+    if (!registry) {
+      // Fail closed: with no registry there is no tier to read and nobody to ask,
+      // and treating "not wired yet" as "allowed" is how a wiring mistake becomes
+      // an unreviewed destructive action.
+      return {
+        outcome: 'denied',
+        payload: {
+          status: 'denied',
+          capabilityId: id,
+          capabilityTitle: id,
+          tier: 'destructive',
+          reason: 'enforcement_unavailable',
+          approvable: false,
+          message:
+            'DorkOS cannot check permissions for this action right now, so it was refused. Try again in a moment.',
+        },
+      };
+    }
+    const identity = getRequestAgentIdentity(res);
+    const header = req.headers[APPROVAL_TOKEN_HEADER];
+    const approvalToken = (Array.isArray(header) ? header[0] : header)?.trim();
+    const trusted = trustedCaller(readCallerAuthority(req, res));
+    return authorizeCapability(registry, id, input, {
+      ...(trusted ? { trusted } : {}),
+      ...(identity ? { identity } : {}),
+      ...(approvalToken ? { approvalToken } : {}),
+      retryChannel: 'http-header',
+    });
+  };
+
+  /**
+   * Turn a non-`allowed` gate decision into this router's HTTP answer: `202` when
+   * a person has been asked and the caller should come back with the token, `403`
+   * when no retry can change the answer.
+   */
+  const gateResponse = (
+    res: Response,
+    decision: Exclude<TierEnforcementDecision, { outcome: 'allowed' }>
+  ): Response =>
+    res.status(decision.outcome === 'approval_required' ? 202 : 403).json(decision.payload);
 
   // GET /sources -- list configured marketplace sources
   router.get('/sources', async (_req, res) => {
@@ -503,6 +579,16 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       if (parsed.data.projectPath) {
         await validateBoundary(parsed.data.projectPath);
       }
+      // `marketplace.install` is tier `act`, so this passes for every caller
+      // today and no approval card appears for a person clicking Install. It is
+      // gated anyway so the route answers to the capability's declared tier
+      // rather than to nothing: raise that tier and this route follows.
+      const decision = authorize(req, res, 'marketplace.install', {
+        name: req.params.name,
+        ...(parsed.data.marketplace !== undefined && { marketplace: parsed.data.marketplace }),
+        ...(parsed.data.projectPath !== undefined && { projectPath: parsed.data.projectPath }),
+      });
+      if (decision.outcome !== 'allowed') return gateResponse(res, decision);
       const result = await installer.install({
         name: req.params.name,
         ...parsed.data,
@@ -540,6 +626,20 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       if (parsed.data.projectPath) {
         await validateBoundary(parsed.data.projectPath);
       }
+      // The door DOR-467 closed. `marketplace.uninstall` is the one `destructive`
+      // capability, and this route used to remove a package with no tier check,
+      // no approval and no attribution — which is what `dorkos uninstall`, the
+      // verb the seeded skill pack taught every agent, rides.
+      //
+      // The arguments are gated in the capability's own schema shape, so the
+      // approval a person grants here binds to the same hash `dorkos call
+      // marketplace.uninstall` would produce: a token minted on one surface is
+      // honored on the other, and neither can be replayed for a different action.
+      const decision = authorize(req, res, 'marketplace.uninstall', {
+        name: req.params.name,
+        ...parsed.data,
+      });
+      if (decision.outcome !== 'allowed') return gateResponse(res, decision);
       const result = await uninstallFlow.uninstall({
         name: req.params.name,
         ...parsed.data,
@@ -561,41 +661,6 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // POST /confirmations/:token -- resolve an out-of-band confirmation token
-  //
-  // The marketplace MCP install/uninstall tools issue short-lived tokens via
-  // `TokenConfirmationProvider` when invoked by external agents. The DorkOS
-  // UI calls this endpoint when the user clicks Approve/Decline in the
-  // existing install confirmation dialog. The route is intentionally
-  // restricted to the token-based provider — `AutoApproveConfirmationProvider`
-  // has nothing to confirm and the in-app provider returns synchronously, so
-  // both are reported as 409 to surface the misconfiguration loudly.
-  router.post('/confirmations/:token', (req, res) => {
-    const parsed = ConfirmationActionBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
-    }
-
-    const provider = getMarketplaceConfirmationProvider();
-    if (!provider) {
-      return res.status(503).json({ error: 'Confirmation provider not available' });
-    }
-
-    if (!(provider instanceof TokenConfirmationProvider)) {
-      return res.status(409).json({ error: 'Server not configured for out-of-band confirmations' });
-    }
-
-    const { token } = req.params;
-    if (parsed.data.action === 'approve') {
-      provider.approve(token);
-    } else {
-      provider.decline(token, parsed.data.reason);
-    }
-    return res.json({ ok: true });
-  });
-
   // POST /packages/:name/update -- advisory update check (pass apply:true to apply)
   router.post('/packages/:name/update', async (req, res) => {
     const parsed = UpdateRequestBodySchema.safeParse(req.body);
@@ -608,6 +673,18 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     try {
       if (parsed.data.projectPath) {
         await validateBoundary(parsed.data.projectPath);
+      }
+      // Only an APPLIED update is an effect. Without `apply` this route reports
+      // what a newer version would change and touches nothing, so gating it would
+      // be gating a read. An applied update reinstalls the package in place
+      // (`MarketplaceInstaller.update` = uninstall then install), which is why it
+      // is authorized as `marketplace.install` rather than under an id of its own.
+      if (parsed.data.apply) {
+        const decision = authorize(req, res, 'marketplace.install', {
+          name: req.params.name,
+          ...(parsed.data.projectPath !== undefined && { projectPath: parsed.data.projectPath }),
+        });
+        if (decision.outcome !== 'allowed') return gateResponse(res, decision);
       }
       const result = await updateFlow.run({
         name: req.params.name,

@@ -12,17 +12,32 @@ export type { SwitchAgentCwdStore, SwitchAgentCwdDeps } from './lib/switch-agent
 export {
   CONTEXT_WARNING_PERCENT,
   CONTEXT_CRITICAL_PERCENT,
+  CONTEXT_PROMOTE_PERCENT,
+  CONTEXT_ACTION_PERCENT,
   contextSeverity,
   deriveContextPercent,
   resolveDisplayContextPercent,
 } from './lib/context-health';
 export type { ContextSeverity } from './lib/context-health';
+export { deriveStatusBarValues } from './lib/derive-status-bar';
+export { selectRenderedStatus } from './lib/select-rendered-status';
+export { useSessionRenderedStatus } from './model/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
 export { useSessionRuntime } from './model/use-session-runtime';
 export { useSessionId } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
 export { useSessionStatus } from './model/use-session-status';
 export type { SessionStatusData } from './model/use-session-status';
+// Query-key factory — the one place a session cache key is built, so a reader
+// can never look in an entry no writer fills (DOR-482).
+export { sessionKeys } from './api/query-keys';
+// Permission mode — the single client answer to "will this agent ask me first?".
+export { useSessionDetail, useSessionPermissionMode } from './model/use-session-detail';
+export { isBypassPermissionMode } from './lib/permission-mode';
+// The store itself is published (tests reset it between cases); the per-session
+// selector and its types stay slice-private — `useSessionStatus` is the only
+// legitimate reader of a pending change.
+export { useSessionSettingsOverridesStore } from './model/session-settings-overrides';
 export { useDefaultCwd } from './model/use-default-cwd';
 export { useDirectoryState } from './model/use-directory-state';
 export type { SetDirOptions } from './model/use-directory-state';
@@ -43,7 +58,14 @@ export {
   useSessionStreamStore,
   useSessionStreamState,
   useSessionStreamStatus,
+  useSessionStreamLifecycle,
+  useSessionAwaitingDecision,
   useSessionStreamConnection,
+  useSessionLastEventSeq,
+  useSessionLastEventAt,
+  useSessionSnapshotCursor,
+  useSessionTriggerPending,
+  useSessionInProgressTurn,
   useSessionQueue,
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/session-stream-store';

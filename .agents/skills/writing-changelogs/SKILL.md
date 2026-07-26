@@ -25,7 +25,9 @@ colliding on a shared `[Unreleased]` block (ADR `260707-231641`; full guide in
 
 - **Filename** — `<YYMMDD-HHMMSS>-<kebab-slug>.md`: a timestamp id from `.claude/scripts/id.ts`
   followed by a short slug. The post-commit hook names it from your commit subject.
-- **Body** — no frontmatter; one or more `### Category` headings (Added, Changed, Deprecated,
+- **Body** — optional `covers:` frontmatter (which commits this fragment covers; the
+  post-commit hook fills it in, and the PR check reads it so your prose stays free to be
+  rewritten for a human), then one or more `### Category` headings (Added, Changed, Deprecated,
   Removed, Fixed, Security) with bullets written per the principles below. One fragment may
   carry multiple categories.
 - **Creation** — the `post-commit` hook writes a fragment from each conventional commit; curate

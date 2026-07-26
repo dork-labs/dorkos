@@ -62,6 +62,42 @@ vi.mock('@/layers/widgets/app-banner', async (importOriginal) => {
   return { ...actual, useAppBanners: () => mockBanners };
 });
 
+// Keep the real ApprovalsIndicator so this suite can prove the approvals marker
+// reaches EVERY route — the defect it fixes was a pending approval that only
+// appeared on the dashboard. Only the feature slice is faked (the real hook needs
+// an EventStreamProvider this shell-level suite does not mount), so the widget,
+// its placement, and its render-nothing-at-zero rule are all under test.
+// The marker also reads the global stream's connection state, and this suite
+// mounts no EventStreamProvider. Stub that one hook; the rest of the barrel
+// (TransportProvider, the already-stubbed favicon/title submodules) stays real.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useEventStream: () => ({
+      subscribe: vi.fn(),
+      connectionState: 'connected' as const,
+      failedAttempts: 0,
+    }),
+  };
+});
+
+let mockPendingApprovals: Array<{ approvalId: string }> = [];
+let mockApprovalsError = false;
+vi.mock('@/layers/features/approvals', () => ({
+  PendingApprovalsSection: () => null,
+  ApprovalList: ({ approvals }: { approvals: Array<{ approvalId: string }> }) => (
+    <div data-testid="approval-list">{approvals.length} cards</div>
+  ),
+  ApprovalsUnavailable: () => <div data-testid="approvals-unavailable">unavailable</div>,
+  usePendingApprovals: () => ({
+    approvals: mockPendingApprovals,
+    isLoading: false,
+    isError: mockApprovalsError,
+    retry: vi.fn(),
+  }),
+}));
+
 vi.mock('@/layers/features/command-palette', () => ({
   CommandPaletteDialog: () => null,
 }));
@@ -141,17 +177,6 @@ vi.mock('@/layers/entities/relay', async (importOriginal) => {
   return {
     ...actual,
     useRelayAdaptersSync: () => {},
-  };
-});
-
-// AppShell also mounts useStatusBarLegacyMigration (DOR-431), which reads the
-// transport + query client. This isolated slot test provides neither, so no-op
-// the migration here.
-vi.mock('@/layers/entities/config', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
-  return {
-    ...actual,
-    useStatusBarLegacyMigration: () => {},
   };
 });
 
@@ -469,6 +494,41 @@ describe('AppShell slot integration', () => {
       const sidebar = document.querySelector('[data-slot="sidebar"]');
       expect(sidebar).not.toBeNull();
       expect(sidebar).not.toContainElement(banner);
+    });
+  });
+
+  describe('approvals marker placement', () => {
+    afterEach(() => {
+      mockPendingApprovals = [];
+      mockApprovalsError = false;
+    });
+
+    it('shows the marker in the header on /session, not only on the dashboard', () => {
+      // The whole point of the widget: an agent asks while its operator is in a
+      // session, and before this the question only existed on the dashboard.
+      mockPendingApprovals = [{ approvalId: '01JZ1' }];
+      mockPathname = '/session';
+      renderAppShell();
+
+      const marker = screen.getByTestId('approvals-indicator');
+      const header = document.querySelector('[data-slot="sidebar-inset"] header');
+      expect(header).not.toBeNull();
+      expect(header).toContainElement(marker);
+    });
+
+    it('shows the marker on the dashboard route too', () => {
+      mockPendingApprovals = [{ approvalId: '01JZ1' }];
+      mockPathname = '/';
+      renderAppShell();
+
+      expect(screen.getByTestId('approvals-indicator')).toBeInTheDocument();
+    });
+
+    it('renders no marker when nothing is waiting', () => {
+      mockPathname = '/session';
+      renderAppShell();
+
+      expect(screen.queryByTestId('approvals-indicator')).not.toBeInTheDocument();
     });
   });
 

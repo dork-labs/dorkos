@@ -211,6 +211,34 @@
       "when": 1784673863246,
       "tag": "0029_clear_gateway",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1784930972769,
+      "tag": "0030_zippy_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1784973456307,
+      "tag": "0031_mushy_radioactive_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1784979729686,
+      "tag": "0032_simple_mysterio",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1785033405181,
+      "tag": "0033_numerous_leopardon",
+      "breakpoints": true
     }
   ]
 }

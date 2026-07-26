@@ -1,0 +1,17 @@
+[
+  {
+    "type": "system",
+    "subtype": "init",
+    "session_id": "a1b2c3",
+    "model": "claude-opus-4-6",
+    "cwd": "/home/runner/work/dorkos/dorkos"
+  },
+  {
+    "type": "assistant",
+    "message": {
+      "role": "assistant",
+      "content": [{ "type": "text", "text": "Reading REVIEW.md" }]
+    },
+    "session_id": "a1b2c3"
+  }
+]

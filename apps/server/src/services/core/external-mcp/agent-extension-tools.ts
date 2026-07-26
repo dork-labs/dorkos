@@ -1,12 +1,12 @@
 /**
  * Registers `create_agent` and the `*_extension(s)` external MCP tools
- * against a live `McpServer` instance. Split out of `mcp-server.ts` — see
+ * against the gated tool registrar (`mcp-tool-gate.ts`). Split out of `mcp-server.ts` — see
  * `core-tools.ts` in this directory for why. Grouped together (rather than
  * one file each) since `create_agent` is a single tool.
  *
  * @module services/core/external-mcp/agent-extension-tools
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import { z } from 'zod';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { createCreateAgentHandler } from '../../runtimes/claude-code/mcp-tools/agent-tools.js';
@@ -24,13 +24,14 @@ const A = ToolAnnotationPresets;
 
 /**
  * Register `create_agent` and every `*_extension(s)` tool (7 total) against
- * `server`.
+ * `registrar`.
  *
- * @param server - The external `McpServer` instance to register tools against.
+ * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
+ *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolDeps): void {
-  server.registerTool(
+export function registerAgentAndExtensionTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+  registrar.registerTool(
     'create_agent',
     {
       description: 'Create a new DorkOS agent workspace with scaffolded config files',
@@ -45,7 +46,7 @@ export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolD
     createCreateAgentHandler(deps)
   );
 
-  server.registerTool(
+  registrar.registerTool(
     'get_extension_api',
     {
       description:
@@ -55,7 +56,7 @@ export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolD
     },
     createGetExtensionApiHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'list_extensions',
     {
       description:
@@ -65,7 +66,7 @@ export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolD
     },
     createListExtensionsHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'get_extension_errors',
     {
       description:
@@ -75,7 +76,7 @@ export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolD
     },
     createGetExtensionErrorsHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'create_extension',
     {
       description:
@@ -100,7 +101,7 @@ export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolD
     },
     createCreateExtensionHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'reload_extensions',
     {
       description:
@@ -112,7 +113,7 @@ export function registerAgentAndExtensionTools(server: McpServer, deps: McpToolD
     },
     createReloadExtensionsHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'test_extension',
     {
       description:

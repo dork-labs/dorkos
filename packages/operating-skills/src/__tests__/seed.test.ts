@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { seedOperatingSkills } from '../seed.js';
-import { OPERATING_SKILLS_PACK } from '../pack.js';
+import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '../pack.js';
 
 const UMBRELLA = 'operating-dorkos';
 
@@ -104,7 +104,43 @@ describe('seedOperatingSkills', () => {
     expect(result.outcomes.find((o) => o.name === UMBRELLA)?.action).toBe('upgraded');
 
     // Assert on the raw file: the stamp was rewritten to the current pack version.
+    // Read the version from the pack rather than hardcoding it, so a content bump
+    // does not need this test edited to stay honest.
     const after = await readFile(skillFile(UMBRELLA), 'utf-8');
-    expect(after).toContain("dorkosPackVersion: '2'");
+    expect(after).toContain(`dorkosPackVersion: '${OPERATING_SKILLS_VERSION}'`);
+  });
+
+  it('re-seeds every skill once, and only once, after a version bump', async () => {
+    // The idempotence contract the whole seeder rests on, exercised across a bump:
+    // the first pass after a bump upgrades every unmodified file, and the pass
+    // after that touches nothing. Simulated by rewinding every stamp to '0' while
+    // keeping each body hash intact, which is exactly what an older pack left on
+    // disk.
+    await seedOperatingSkills(root);
+    for (const skill of OPERATING_SKILLS_PACK) {
+      const { data, content } = matter(await readFile(skillFile(skill.name), 'utf-8'));
+      const meta = { ...(data.metadata as Record<string, string>), dorkosPackVersion: '0' };
+      await writeFile(
+        skillFile(skill.name),
+        matter.stringify(content, { ...data, metadata: meta }),
+        'utf-8'
+      );
+    }
+
+    const upgrade = await seedOperatingSkills(root);
+    expect(upgrade.outcomes.map((o) => o.action)).toEqual(
+      OPERATING_SKILLS_PACK.map(() => 'upgraded')
+    );
+
+    const settled = await seedOperatingSkills(root);
+    expect(settled.outcomes.map((o) => o.action)).toEqual(
+      OPERATING_SKILLS_PACK.map(() => 'unchanged')
+    );
+
+    // And the upgraded bodies really are the current pack, not the older text.
+    for (const skill of OPERATING_SKILLS_PACK) {
+      const { content } = matter(await readFile(skillFile(skill.name), 'utf-8'));
+      expect(content.trim()).toBe(skill.body.trim());
+    }
   });
 });

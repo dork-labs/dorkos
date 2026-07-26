@@ -1,5 +1,5 @@
 /**
- * Status feature — bottom status bar with git info, model, and session indicators.
+ * Status feature — the composer status line and the Session panel behind its `⋯`.
  *
  * @module features/status
  */
@@ -10,34 +10,33 @@ export { PermissionModeItem } from './ui/PermissionModeItem';
 export { RuntimeItem } from './ui/RuntimeItem';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
 export { ModelConfigPopover } from './ui/ModelConfigPopover';
-export type { ModelConfigPopoverProps } from './ui/ModelConfigPopover';
-export { CacheItem } from './ui/CacheItem';
 export { ContextItem } from './ui/ContextItem';
-export { UsageStatusItem, UsageDetail, hasRenderableUsage } from './ui/UsageStatusItem';
+export type { ContextCompactAction } from './ui/ContextItem';
+export { UsageStatusItem, hasRenderableUsage } from './ui/UsageStatusItem';
 export { UsageRevealPopover } from './ui/UsageRevealPopover';
-export { NotificationSoundItem } from './ui/NotificationSoundItem';
-export { PollingItem } from './ui/PollingItem';
 export { ConnectionItem } from './ui/ConnectionItem';
 export { SubagentsItem } from './ui/SubagentsItem';
-export { StatusBarConfigureContent } from './ui/StatusBarConfigureContent';
-export { StatusBarConfigurePopover } from './ui/StatusBarConfigurePopover';
-export type { StatusBarConfigurePopoverProps } from './ui/StatusBarConfigurePopover';
-export { useGitStatus } from './model/use-git-status';
+export { SessionPopover } from './ui/SessionPopover';
+export { useGitStatus, isGitStatusOk } from './model/use-git-status';
+export { useRuntimeChip, useResolvedSessionRuntime } from './model/use-runtime-chip';
+export type { RuntimeChipState, ResolvedSessionRuntime } from './model/use-runtime-chip';
+export { useSessionPopoverShortcut } from './model/use-session-popover-shortcut';
 export { isNewer, isFeatureUpdate } from './lib/version-compare';
-export {
-  STATUS_BAR_REGISTRY,
-  GROUP_LABELS,
-  getGroupedRegistryItems,
-  useStatusBarVisibility,
-  useResetStatusBarPreferences,
-} from './model/status-bar-registry';
-export type {
-  StatusBarItemKey,
-  StatusBarItemGroup,
-  StatusBarItemConfig,
-} from './model/status-bar-registry';
-// Status-bar visibility prefs live in server config (`ui.statusBar`, DOR-431).
-// Re-exported here so status-bar consumers (e.g. the chat status section) read
-// and mutate them through the status feature's public surface.
-export { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
-export type { StatusBarPrefKey } from '@/layers/entities/config';
+// Exported because "running" is a distinction every reader of a fold has to make
+// before it may say the word — the fold keeps terminal rows on purpose. The
+// composer needs it to decide whether the subagents item has anything to say.
+export { partitionSubagents } from './lib/fold-active-subagents';
+// `lib/status-labels` is deliberately NOT re-exported: like `lib/model-menu-tiers`,
+// it is the slice's own presentation rule, consumed only by the items in this
+// folder. Publishing it would invite a caller outside the line to bound a value
+// that has nothing to do with the line's width.
+export { gitPromotionState, useStatusBarPins } from './model/status-bar-registry';
+export type { StatusBarItemKey, StatusPromotionContext } from './model/status-bar-registry';
+export { selectPromotedItems } from './model/promoted-items';
+export { applyStatusBudget } from './model/status-budget';
+export type { StatusDensity } from './model/status-budget';
+export { useStatusBudget } from './model/use-status-budget';
+export { SessionInspector, SessionReadout } from './ui/SessionInspector';
+export { useSessionDiagnostics } from './model/use-session-diagnostics';
+export { formatDiagnostics } from './model/session-diagnostics';
+export type { SessionDiagnostics, ActiveSubagent } from './model/session-diagnostics';

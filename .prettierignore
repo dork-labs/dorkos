@@ -22,3 +22,9 @@ apps/server/src/core-extensions/
 # The hand-authored docs/api/meta.json and .gitkeep are deliberately NOT ignored.
 docs/api/openapi.json
 docs/api/api/
+
+# Deliberately malformed fixture: it stands for a truncated
+# claude-execution-output.json, so scripts/test-review-classifier.sh can prove the
+# review-failure classifier reports "unknown" instead of crashing or guessing.
+# Formatting it would destroy the only thing it tests.
+scripts/fixtures/review-failure/malformed.json

@@ -55,7 +55,16 @@ vi.mock('../config-manager.js', () => ({
 }));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  createSdkMcpServer: vi.fn((config: Record<string, unknown>) => config),
+  // The real factory returns `{ type, name, instance }` where `instance` is a live
+  // `McpServer`; `createDorkOsToolServer` registers the `dorkos://` resources on
+  // it. The stub carries just enough of that shape to record the registrations.
+  createSdkMcpServer: vi.fn((config: Record<string, unknown>) => ({
+    ...config,
+    instance: {
+      registerResource: vi.fn(),
+      server: { registerCapabilities: vi.fn() },
+    },
+  })),
   tool: vi.fn(
     (
       name: string,

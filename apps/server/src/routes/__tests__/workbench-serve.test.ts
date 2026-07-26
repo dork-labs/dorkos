@@ -106,7 +106,17 @@ describe('GET /api/workbench/serve/:token/*', () => {
 
   it('rejects a FORGED token (tampered signature) with 403', async () => {
     const token = validToken();
-    const forged = `${token.slice(0, -2)}xx`;
+    const dot = token.indexOf('.');
+    // Tamper the FIRST signature character, never the last. A 32-byte HMAC
+    // base64url-encodes to 43 characters — 258 bits of alphabet for 256 bits of
+    // data — so the final character carries 2 bits that decoding throws away,
+    // and two different trailing characters can decode to the SAME signature.
+    // Tampering there leaves a measured ~6% flake where the "forged" token is
+    // byte-identical to the valid one and the route correctly returns 200.
+    // Every bit of the first character is significant, so this always differs.
+    const sigHead = token[dot + 1];
+    const forged = `${token.slice(0, dot + 1)}${sigHead === 'A' ? 'B' : 'A'}${token.slice(dot + 2)}`;
+    expect(forged).not.toBe(token);
     const res = await request(app).get(`/api/workbench/serve/${forged}/index.html`);
     expect(res.status).toBe(403);
   });

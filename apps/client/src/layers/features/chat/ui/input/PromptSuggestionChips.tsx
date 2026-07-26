@@ -20,13 +20,17 @@ export function PromptSuggestionChips({ suggestions, onChipClick }: PromptSugges
       transition={{ duration: 0.2 }}
       role="group"
       aria-label="Suggested follow-ups"
-      className="mt-1.5 flex flex-wrap items-center justify-center gap-2 sm:justify-start"
+      className="mt-1.5 flex flex-wrap items-center gap-2"
     >
       {visible.map((suggestion) => (
         <button
           key={suggestion}
           type="button"
           aria-label={suggestion}
+          // A chip wider than 200px is cut off mid-word, and the full text used
+          // to live only in the accessible name — readable by a screen reader
+          // and by nobody with a mouse. `title` is the same string, hovered.
+          title={suggestion}
           onClick={() => onChipClick(suggestion)}
           className="bg-secondary text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring inline-flex max-w-[200px] items-center gap-1.5 truncate rounded-md px-2.5 py-1 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-offset-2"
         >

@@ -16,6 +16,13 @@ name: changelog-fragment-check
 # branch commits, so it is immune to squash-merge relabeling and to wherever the
 # work was committed.
 #
+# Coverage is a declared fact (DOR-387): a fragment's `covers:` frontmatter names
+# the commit subjects, SHAs, or PR it covers, and the hook that mints fragments
+# pre-fills it. That keeps the gate independent of the fragment's prose, which
+# authors are supposed to rewrite for a human. `--pr` is passed so a fragment
+# declaring `"#<this PR>"` covers the whole PR. Fragments with no declaration
+# still fall back to the old word-overlap match.
+#
 # To pass: add the fragment (see changelog/README.md + the writing-changelogs
 # skill), or label the PR `skip-changelog` for a deliberately non-user-facing
 # change — a pure refactor, a CI/build-infra fix (e.g. a `fix(ci):` scope), or a
@@ -48,11 +55,45 @@ jobs:
           base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
-      # Skipped (success) when the PR carries `skip-changelog`, so a deliberate
-      # non-user-facing PR is never blocked and the check still reports green.
+      # The gate guards itself: the analyzer's own tests run before it decides
+      # anything. Pure-stdlib Python 3, seconds to run, and it fires even on a
+      # `skip-changelog` PR so a regression in the gate can never slip through.
+      #
+      # That last part is only safe because the suite is HERMETIC: every case
+      # builds a throwaway git repo in a temp dir, and nothing reads this repo's
+      # real changelog/unreleased/ or commit history. A test that depended on live
+      # repo state would red-light unrelated PRs — including the `skip-changelog`
+      # ones this job is supposed to wave through. Keep it that way.
+      - name: Test the fragment analyzer
+        run: python3 .claude/scripts/__tests__/test_changelog_backfill.py
+
+      # VALIDITY — deliberately separate from coverage below, on both axes:
+      #
+      #   * No `skip-changelog` bypass. A fragment with a broken `covers:` block is
+      #     a defect regardless of whether this PR owes a changelog entry, and it
+      #     is contagious: its declaration is ignored, so it silently claims
+      #     nothing. Letting one in through the skip door means the NEXT PR pays.
+      #   * `--changed-only`, so this step judges only the fragments this PR
+      #     actually wrote. A stray broken fragment already on main is reported
+      #     (see the NOTE in the step below) but never fails an author who did not
+      #     write it.
+      #
+      # Those two together are what keep this gate's blast radius equal to the
+      # PR's own diff. Do not re-widen either one: dropping `--changed-only` makes
+      # innocent PRs red, and adding a `skip-changelog` bypass lets the defect in.
+      - name: Validate the changelog fragments this PR touched
+        run: |
+          python3 .claude/scripts/changelog_backfill.py \
+            --since "${{ steps.base.outputs.sha }}" --validate --changed-only
+
+      # COVERAGE — skipped (success) when the PR carries `skip-changelog`, so a
+      # deliberate non-user-facing PR is never blocked and the check still reports
+      # green. `--changed-only` here too, so a stray malformed fragment downgrades
+      # to a NOTE on stdout instead of failing this PR.
       # The analyzer is pure-stdlib Python 3 — no install/build step needed.
       - name: Require a changelog fragment for every user-facing commit
         if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         run: |
           python3 .claude/scripts/changelog_backfill.py \
-            --since "${{ steps.base.outputs.sha }}" --check
+            --since "${{ steps.base.outputs.sha }}" \
+            --pr "${{ github.event.pull_request.number }}" --check --changed-only

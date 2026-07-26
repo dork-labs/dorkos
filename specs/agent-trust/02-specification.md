@@ -43,7 +43,7 @@ Internal only: the capability registry + invoke endpoint (phase 2), ActivityServ
 
 ### 3.1 Agent identity + attribution
 
-New `services/core/agent-identity/`: mints a per-agent token (random 128-bit, stored hashed in the agents SQLite table via the existing file-first agents domain; `agent.json` never holds the secret) with fields `{ agentPath, displayName, tierCeiling: 'observe'|'act'|'destructive' (default 'destructive' = unrestricted, per current trust), createdAt, revokedAt? }`. Delivery: the claude-code runtime env seam injects `DORKOS_AGENT_TOKEN` into spawned sessions (context-builder env block stays clean; the token rides process env for CLI use and an `X-DorkOS-Agent` header the api-client and MCP tool deps attach when present). Resolution middleware on `/api/*` and both MCP servers resolves the token to an `AgentIdentity` and stashes it on the request context; absent token = human/unattributed (today's behavior). ActivityService emit sites for capability invocations gain `actorType: 'agent', actorId: <agentPath>` when identity is present. Cockpit: no new UI beyond Activity showing agent attribution (existing actor rendering).
+New `services/core/agent-identity/`: mints a per-agent token (random 128-bit, stored hashed in the agents SQLite table via the existing file-first agents domain; `agent.json` never holds the secret) with fields `{ agentPath, displayName, tierCeiling: 'observe'|'act'|'destructive' (default 'destructive' = unrestricted, per current trust), createdAt, revokedAt? }`. Delivery: the claude-code runtime env seam injects `DORKOS_AGENT_TOKEN` into spawned sessions (context-builder env block stays clean; the token rides process env for CLI use and an `X-DorkOS-Agent` header the api-client and MCP tool deps attach when present). Resolution middleware on `/api/*` and both MCP servers resolves the token to an `AgentIdentity` and stashes it on the request context; absent token = human/unattributed (today's behavior). ActivityService emit sites for capability invocations gain `actorType: 'agent', actorId: <agentPath>` when identity is present. [Narrowed — see Errata.] Cockpit: no new UI beyond Activity showing agent attribution (existing actor rendering).
 
 ### 3.2 Tier enforcement at the choke points
 
@@ -51,11 +51,15 @@ New `services/core/agent-identity/`: mints a per-agent token (random 128-bit, st
 
 ### 3.3 The approval primitive
 
-`services/core/approvals/`: `ApprovalService` with `request({capabilityId, inputHash, summary, requestedBy}) → {approvalId}`, `grant/deny(approvalId)` (route: `POST /api/approvals/:id/grant|deny`, sessionGate), `consume(token)` (single-use, TTL 10 min, input-hash-bound so the approved action is exactly the attempted one). Pending approvals ride the durable SSE fan-out; the cockpit renders an approval card (client feature slice; pattern: existing session approval prompts) showing capability title, tier, summary, requesting agent. The marketplace confirmation providers become thin wrappers over ApprovalService (AutoApprove maps to auto-grant; the bespoke token store is deleted — no tolerated legacy). MCP/CLI contract: the `approval_required` payload documents "ask the user to approve in DorkOS, then retry with approval_token".
+`services/core/approvals/`: `ApprovalService` with `request({capabilityId, inputHash, summary, requestedBy}) → {approvalId}`, `grant/deny(approvalId)` (route: `POST /api/approvals/:id/grant|deny`, sessionGate), `consume(token)` (single-use, TTL 10 min [raised to two hours as built; see the correction below], input-hash-bound so the approved action is exactly the attempted one). Pending approvals ride the durable SSE fan-out; the cockpit renders an approval card (client feature slice; pattern: existing session approval prompts) showing capability title, tier, summary, requesting agent. The marketplace confirmation providers become thin wrappers over ApprovalService (AutoApprove maps to auto-grant; the bespoke token store is deleted — no tolerated legacy). MCP/CLI contract: the `approval_required` payload documents "ask the user to approve in DorkOS, then retry with approval_token".
+
+**As-built correction (2026-07-26):** the decision window is **two hours**, not ten minutes. `APPROVAL_TTL_MS = 2 * 60 * 60 * 1000` (`apps/server/src/services/core/approvals/approval-service.ts:64`). The phase shipped at ten minutes, which was only ever defensible for an operator already watching the dashboard, the one place a pending approval appeared. It was raised once the cockpit gained a global pending-approval marker that reaches a person on any route; see the amendment on ADR 260725-133221. `DORKOS_APPROVAL_TTL_MS` can only SHORTEN the window, clamped to `[MIN_APPROVAL_TTL_MS, APPROVAL_TTL_MS]` (`approval-service.ts:75` and `:108`), and exists so the eval harness can watch an approval expire.
 
 ### 3.4 Docker eval isolation tier
 
 `packages/evals/src/runner/isolation/docker-launcher.ts`: builds/reuses the existing Dockerfile `runtime`-adjacent target, mounts nothing from the host home, injects `DORK_HOME=/eval/.dork` + credentials via env, boots the server in-container, exposes the port to the harness, tears down the container per run (retain on failure). Tier selection stays `--isolation docker` per the existing `IsolationLauncher` seam. Destructive-scenario evals (and the marketplace install case) prefer docker when available; graceful skip with a clear message when the docker daemon is absent.
+
+**As-built correction (2026-07-25):** "exposes the port to the harness" turned out to be incompatible with real containment. The container now runs `--network none` (plus `--cap-drop=ALL`, `no-new-privileges`, and memory/CPU/pids limits), because without it a "hardened" agent could reach the internet and the developer's own DorkOS on host loopback. `--network none` makes `--publish` inert, so the harness reaches the server through a loopback proxy that relays into the container's network namespace via `docker exec` (`isolation/netns-proxy.ts`). The tier each eval actually ran on is recorded on `EvalResult.isolation`, since `preferDocker` degrades silently. See ADR 260725-133222's amendment.
 
 ### 3.5 Eval CI cadence
 
@@ -91,13 +95,13 @@ Single phase; decomposition in `03-tasks.json`.
 
 ## Open Questions
 
-- ~~Should identity be enforced (agent must present a token)?~~ **(RESOLVED)** No: absent identity = today's behavior. Rationale: mandatory identity breaks external MCP clients and human CLI use; attribution + tier gating deliver the value without a breaking change.
+- ~~Should identity be enforced (agent must present a token)?~~ **(RESOLVED)** No: absent identity = today's behavior. Rationale: mandatory identity breaks external MCP clients and human CLI use; attribution + tier gating deliver the value without a breaking change. [Narrowed — see Errata.]
 - ~~Approval persistence?~~ **(RESOLVED)** SQLite table (derived data, not user-owned files). Rationale: approvals are operational state like tasks runs, not identity like `agent.json`.
 - ~~Docker tier in per-PR CI?~~ **(RESOLVED)** No: docker-in-CI cost and flake risk; per-PR stays test-mode structural; docker is local + nightly/dispatch. Rationale: eval-harness spec's cadence intent, honest about CI budget.
 
 ## Related ADRs
 
-260723-050220 (invoke endpoint is the enforcement choke point — this spec discharges its "tier enforcement must target this endpoint first" consequence), 260723-013236 (redaction invariant extends to agent tokens), ADR-0304 (marketplace transaction; its confirmation seam migrates), eval-harness spec (DOR-357) Phase 5.
+260723-050220 (invoke endpoint is the enforcement choke point — this spec discharges its "tier enforcement must target this endpoint first" consequence), 260723-013236 (redaction invariant extends to agent tokens; superseded by 260725-152018), ADR-0304 (marketplace transaction; its confirmation seam migrates), eval-harness spec (DOR-357) Phase 5.
 
 ## References
 
@@ -105,3 +109,12 @@ Single phase; decomposition in `03-tasks.json`.
 - `specs/capability-registry/04-implementation.md` (the choke points)
 - `specs/eval-harness/02-specification.md` (isolation seam + cadence design)
 - `apps/server/src/services/marketplace-mcp/` confirmation providers (the seam being generalized)
+
+## Errata (2026-07-25)
+
+Adversarial review after phase 3 shipped found that this spec's "absent identity = today's behavior" resolution, correct for attribution in general, left a hole for irreversible actions. Two clauses above are narrower than written:
+
+- **An anonymous `destructive` invocation IS recorded.** The tier gate deliberately does not audit calls it allows (it defers to the registry's invocation observer), and that observer only fired for an identified caller — so an unidentified caller that completed something irreversible produced a `capability.approval_required` line and then silence. Such an invocation now emits with `actorType: 'system'` and `actorLabel: 'Unidentified caller'`, never as a nameless agent. `observe` and `act` calls by an unidentified caller still write nothing, exactly as this spec intended.
+- **An unidentified caller has a tier ceiling.** §3.2's ceiling was applied only when an identity was present, which meant dropping `DORKOS_AGENT_TOKEN` moved a caller onto the more permissive path. Every caller is capped now; an unidentified one defaults to `destructive` (no extra restriction), so shipped behavior is unchanged while the escape is closed.
+
+Also corrected in the same round: who may DECIDE an approval. `POST /api/approvals/:id/grant` keyed on the presence of an agent identity, so a requester that omitted one header granted its own approval. See the errata on ADRs 260725-133220 and 260725-133221, and the follow-up section in `04-implementation.md`.

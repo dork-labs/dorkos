@@ -147,7 +147,54 @@ For **type changes** (e.g., `number` → `string`):
 
 **Every migration must be idempotent.** Guard every `store.set/delete` with `store.has()` or a type check so re-running the same migration (e.g., after corrupt-recovery) is safe.
 
-### 4. Document the field in `contributing/configuration.md`
+### 4. Classify the field for agent disclosure
+
+Edit `CONFIG_DISCLOSURE` in `apps/server/src/services/core/operator/config-disclosure.ts` and give the new leaf a verdict: `expose` or `withhold`.
+
+This is not optional bookkeeping. The `config_get` MCP tool carries `readOnlyCarveOut: true`, so on the default login-off posture it answers on `/mcp` with no credential at all, and its snapshot is built by copying only `expose` paths. The drift guard compares the table against every leaf of `UserConfigSchema` in three directions (every leaf is classified, no verdict is stale, and every `expose` verdict resolves to something safe), so it stays red until you decide:
+
+```bash
+pnpm vitest run apps/server/src/services/core/operator/__tests__/config-disclosure.test.ts
+```
+
+That reads the schema **source**, not `packages/shared/dist/` — `apps/server/vitest.config.ts` aliases `@dorkos/shared/*` to `src/` precisely so a stale dist cannot turn this guard into a silent pass. No rebuild needed.
+
+```typescript
+// A plain preference: safe to hand to an agent.
+'server.timeout': 'expose',
+
+// A secret, or anything that names where a secret lives (an env var name, a
+// keychain entry, a file path). Withhold it.
+'someService.apiKey': 'withhold',
+```
+
+**Withhold anything that is a credential or points at one.** If callers legitimately need to know whether it is set up, add the path to `PRESENCE_FLAG_PATHS` in the same file: the projection then emits a boolean `<leafName>Configured` sibling instead of the value. Absolute paths are exposed on purpose (they are how the operator surface addresses agents and directories); see that module's doc comment for the reasoning before changing that line.
+
+**Two things about the key you write.** A field nested inside an array of objects gets one verdict per field, with `[]` marking the array hop: a new property on a sidebar group is keyed `'ui.sidebar.groups[].myField'`, not covered by any verdict on `ui.sidebar.groups`. And an `expose` verdict has to resolve to a scalar, an array of scalars, or an open record (`z.record`) listed in `EXPOSED_RECORD_PATHS` — a subtree cannot be exposed wholesale, because that would silently cover whatever anyone adds inside it later. If the guard reports your field as `unsupported`, the schema shape is one the walker will not disclose without being taught it first.
+
+### 5. Classify the field for agent WRITES
+
+Edit `CONFIG_WRITE_POLICY` in `apps/server/src/services/core/operator/config-write-policy.ts` and give the new leaf a verdict: `agent-writable` or `operator-only`.
+
+Same shape as step 4, opposite direction, and it is a separate decision: a field can be perfectly safe to SHOW an agent and still be unsafe to let one CHANGE. The `config_patch` capability is tier `act`, so the tier gate runs it with no approval, which is how an agent could once turn off `auth.enabled` and remove the very posture that makes destructive approvals enforceable (DOR-488). Its drift guard also compares against every leaf of `UserConfigSchema` in both directions and stays red until you decide:
+
+```bash
+pnpm vitest run apps/server/src/services/core/operator/__tests__/config-write-policy.test.ts
+```
+
+```typescript
+// A preference: an agent may change it when the user asks.
+'server.timeout': 'agent-writable',
+
+// Changing it removes or widens a security control. Only a person may.
+'someService.requireLogin': 'operator-only',
+```
+
+**Mark it `operator-only` when changing it, on its own, removes or widens a security control**: the login gate, public exposure, the MCP endpoint's own gate, credential material and the hosts it is sent to, code the server loads or spawns, how far DorkOS reaches on disk, or consent about what leaves the machine. Everything else is a preference, even a disruptive one. Read that module's doc comment before adding to the list: it states the line and records what was deliberately left writable, so your entry should either fit the line or extend it on purpose.
+
+A patch touching an `operator-only` path is refused whole, and the person keeps changing it in Settings through `PATCH /api/config`, which is deliberately NOT guarded. If your field needs a UI toggle, that is the path it uses.
+
+### 6. Document the field in `contributing/configuration.md`
 
 Add a row to the Settings Reference table at the top of the file:
 
@@ -157,11 +204,11 @@ Add a row to the Settings Reference table at the top of the file:
 
 If the field warrants per-setting narrative (like `server.port` does), add a `### server.timeout` section with a `dorkos config set` example and any precedence notes.
 
-### 5. Mirror the doc to `docs/getting-started/configuration.mdx`
+### 7. Mirror the doc to `docs/getting-started/configuration.mdx`
 
 The `check-docs-changed.sh` hook will remind you at session-stop via the `configuration.md:config-manager|config-schema|packages/cli/` mapping. Do it inline. Find the same settings table in the MDX file and add the matching row.
 
-### 6. Add or update tests
+### 8. Add or update tests
 
 Edit `apps/server/src/services/core/__tests__/config-manager.test.ts`. Add an **upgrade-path test** that exercises the migration against a realistic stale-config blob:
 
@@ -189,7 +236,7 @@ Test both cases:
 - Stale config missing the field → migration runs, field is populated.
 - Fresh config → defaults handle it, no migration needed.
 
-### 7. Wire a CLI flag if applicable
+### 9. Wire a CLI flag if applicable
 
 If the new field needs to be controllable from the `dorkos` CLI, edit `packages/cli/src/cli.ts`. Follow the precedence rule documented in `contributing/configuration.md`: **CLI flag > env var > config > default**.
 

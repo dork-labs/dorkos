@@ -1,11 +1,11 @@
 /**
- * Registers the `binding_*` external MCP tools against a live `McpServer`
- * instance. Split out of `mcp-server.ts` — see `core-tools.ts` in this
+ * Registers the `binding_*` external MCP tools against the gated tool
+ * registrar (`mcp-tool-gate.ts`). Split out of `mcp-server.ts` — see `core-tools.ts` in this
  * directory for why.
  *
  * @module services/core/external-mcp/binding-tools
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolRegistrar } from '../mcp-tool-gate.js';
 import { z } from 'zod';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import {
@@ -19,13 +19,14 @@ const A = ToolAnnotationPresets;
 
 /**
  * Register `binding_list`, `binding_create`, and `binding_delete` against
- * `server`.
+ * `registrar`.
  *
- * @param server - The external `McpServer` instance to register tools against.
+ * @param registrar - The gated tool registrar from `mcp-server.ts`, which runs each
+ *   tool's permission tier before its handler.
  * @param deps - Shared MCP tool dependencies.
  */
-export function registerBindingTools(server: McpServer, deps: McpToolDeps): void {
-  server.registerTool(
+export function registerBindingTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
+  registrar.registerTool(
     'binding_list',
     {
       description: 'List all adapter-to-agent bindings.',
@@ -34,7 +35,7 @@ export function registerBindingTools(server: McpServer, deps: McpToolDeps): void
     },
     createBindingListHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'binding_create',
     {
       description:
@@ -57,7 +58,7 @@ export function registerBindingTools(server: McpServer, deps: McpToolDeps): void
     },
     createBindingCreateHandler(deps)
   );
-  server.registerTool(
+  registrar.registerTool(
     'binding_delete',
     {
       description: 'Delete an adapter-to-agent binding by ID.',

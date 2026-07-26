@@ -13,8 +13,6 @@ export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-defa
 export type { DefaultAgentSession, DefaultAgentIdentity } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
 export { useStatusBarPrefs, useUpdateStatusBarPrefs } from './model/use-status-bar-prefs';
-export type { StatusBarPrefKey, UpdateStatusBarPrefs } from './model/use-status-bar-prefs';
-export { useStatusBarLegacyMigration } from './model/use-status-bar-legacy-migration';
 export { TelemetryPayloadBlock } from './ui/TelemetryPayloadBlock';
 export { TelemetryPayloadDisclosure } from './ui/TelemetryPayloadDisclosure';
 export { TelemetryPayloadToggle } from './ui/TelemetryPayloadToggle';

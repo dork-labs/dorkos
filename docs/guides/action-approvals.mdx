@@ -1,0 +1,156 @@
+---
+title: Action Approvals
+description: DorkOS asks you first before an agent adds or removes a marketplace package
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Action Approvals
+
+Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Removing an installed package is not.
+
+So DorkOS stops there and asks you. The agent does not get to remove a package and then tell you about it.
+
+<Callout type="info">
+  This is not the same as [tool approval](/docs/guides/tool-approval). Tool approval covers what an
+  agent does inside a session: writing a file, running a command. Action approvals cover what an
+  agent does to DorkOS itself.
+</Callout>
+
+## What you see
+
+An amber marker appears in the top bar, on whatever screen you happen to be on, saying how many requests are waiting on you. Click it and the requests open right there, so you can answer without leaving what you were doing. The same requests also show up on your dashboard under **Waiting On You**.
+
+Either way you get the same card, and it holds everything you need to decide:
+
+- **What would run**, in plain words, including the details that matter (which package, whether saved data goes too)
+- **How big the change is**: a label that reads "Cannot be undone", "Changes things", or "Read only"
+- **Who asked**: the agent's name, or a note that the request came in without an agent identity
+- **How long you have** before the request runs out
+- **Two buttons**: Allow and Don't allow
+
+<Steps>
+  <Step>
+    **Read what would run.** The sentence on the card is written by DorkOS, not by the agent. The
+    name of the action comes from DorkOS itself, and anything the agent supplied is shown in quotes,
+    so an agent cannot word the card to look like something else. For anything that cannot be
+    undone, the whole sentence is shown, never cut short.
+  </Step>
+  <Step>
+    **Click Allow** to let it through. Nothing runs on its own at that point: the agent has to ask
+    for the same thing again, and this time it goes ahead.
+  </Step>
+  <Step>
+    **Or click Don't allow.** The agent is told you said no, and it should stop rather than look for
+    another way in.
+  </Step>
+</Steps>
+
+Nothing is pre-selected, and neither button is styled as the safe choice. Saying no is a normal answer.
+
+## What needs your OK, and what doesn't
+
+Three things an agent asks for will wait for you today:
+
+- **Removing an installed package**, with or without its saved data
+- **Installing a package**
+- **Creating a new package** in your personal marketplace
+
+Everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a setting: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
+
+The rule is about the action, not about which agent asked.
+
+<Callout type="warn">
+  **Some tools are not covered yet.** Agents also get tools for scheduled tasks, agent-to-agent
+  messages, agent discovery, and extensions. None of those wait for you: an agent can delete one of
+  your scheduled tasks without asking first. Bringing them under the same question is work we have
+  not finished. If that gap matters for how you run your agents, the safe move today is to not hand
+  an agent a job that depends on deleting things you cannot rebuild.
+</Callout>
+
+Each action DorkOS does cover carries a size label on its card, so you can tell at a glance what you are being asked:
+
+| Label                | What it means                                                     |
+| -------------------- | ----------------------------------------------------------------- |
+| **Read only**        | Only reads. You will not be asked about these at all.             |
+| **Changes things**   | Changes something you can change back.                            |
+| **Cannot be undone** | There is no undo. Removing an installed package is the one today. |
+
+## What about an agent that does not say who it is?
+
+An agent can tell DorkOS who it is, and most do. One that doesn't is still stopped by the same question. The card simply says the request came in without an agent identity, so you know DorkOS cannot tell you who asked.
+
+This also holds for `dorkos call`, which is how an agent reaches any DorkOS action from a shell. Running an agent outside DorkOS does not get past the question.
+
+There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. An agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries. But a program that deliberately drops that identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it.
+
+## The agent that asked cannot answer
+
+Saying yes is your half of this. An agent that asks for something is never allowed to answer its own request, and neither is anything else that holds the retry code DorkOS handed the agent. Both get refused, and the request stays on your dashboard, waiting.
+
+<Callout type="warn">
+  **What this protects, and what it doesn't.** With **Require login** off (the default), DorkOS
+  runs as you on your own machine, and anything else running as you looks exactly the same to it.
+  So the question stops mistakes, and it stops an agent that follows the rules but was talked into
+  something it shouldn't do. It does not stop a program that already has full run of your computer
+  and is deliberately pretending to be you. Nothing on the same machine can, with no password in
+  the way.
+
+Turn on **Require login** (Settings, under Security) and that changes: answering a request then
+needs a real account, and a program with no account cannot answer at all. If you run agents you
+don't fully trust, or you reach DorkOS from another device, turn it on.
+
+Worth knowing either way: a real account is what gets checked, not a real person. If you hand a
+program one of your API keys, it can answer requests the way you would. Your activity feed says
+"a signed-in account" rather than "a person" for exactly that reason. So give out API keys the way
+you would give out your password.
+
+</Callout>
+
+Either way, every yes and every no lands in your activity feed. With login required, it says which account answered. Without it, the feed says the answer came from this machine and that DorkOS could not check who gave it, so an approval you never clicked is something you can find.
+
+## Approvals are used once, and they expire
+
+- **One approval, one action.** Saying yes to removing one package does not say yes to removing another, or to the same one with different options. If a detail changes, DorkOS asks again.
+- **Used once.** After an approval is spent it stops working. A second attempt needs a second yes.
+- **Two hours.** If nobody answers in two hours, the request runs out and the agent has to ask again. Two hours is long enough that a meeting or a school run does not kill the request, and short enough that you are never asked to approve something you read about yesterday.
+- **No secrets on the card.** DorkOS shows only the details a capability says a person needs, and it hides anything that looks like a password or a code. Cards are visible to your agents, so nothing private goes on one.
+
+You don't have to babysit the card. Whatever the agent does next, the action itself does not run until you answer.
+
+## Your activity feed names who did what
+
+The activity feed says which agent made each change, not just that something changed. It also records the attempts that did **not** go through: when a request is waiting on you, and when one was refused. So the feed reflects what your agents tried, not only what they finished.
+
+## From the command line
+
+If you drive agents in a terminal, the same rule applies to `dorkos call`. A call that needs your OK comes back with `status: approval_required` and a token instead of doing the work:
+
+```bash
+dorkos call marketplace.uninstall --input '{"name":"some-package"}'
+# status: approval_required, with an approval token
+```
+
+Approve it in DorkOS, then run the same call again with the token:
+
+```bash
+dorkos call marketplace.uninstall --input '{"name":"some-package"}' --approval <token>
+```
+
+Change the input and the token stops matching, because an approval covers one exact action.
+
+## Next steps
+
+<Cards>
+  <Card title="Your Agents Can Operate DorkOS" href="/docs/guides/operating-dorkos">
+    What you can ask an agent to do for you in DorkOS.
+  </Card>
+  <Card title="Tool Approval" href="/docs/guides/tool-approval">
+    The other approval flow: what an agent does inside a session.
+  </Card>
+  <Card title="Marketplace" href="/docs/marketplace">
+    Installing and removing packages.
+  </Card>
+</Cards>

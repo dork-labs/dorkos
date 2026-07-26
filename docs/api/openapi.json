@@ -4728,6 +4728,107 @@
         },
         "description": "The client’s live chrome, merged field-wise over the source Shape’s layout. Only honored alongside `captureCurrent` on the active Shape."
       },
+      "PendingApprovalsResponse": {
+        "type": "object",
+        "properties": {
+          "approvals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingApproval"
+            }
+          }
+        },
+        "required": [
+          "approvals"
+        ]
+      },
+      "PendingApproval": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "capabilityTitle": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approvalId",
+          "capabilityId",
+          "capabilityTitle",
+          "tier",
+          "summary",
+          "requestedAt",
+          "expiresAt"
+        ]
+      },
+      "ApprovalDecisionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "denied"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "approvalId",
+          "outcome"
+        ]
+      },
+      "GrantApprovalBody": {
+        "type": "object",
+        "properties": {
+          "standing": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DenyApprovalBody": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      },
       "ActorType": {
         "type": "string",
         "enum": [
@@ -11065,6 +11166,217 @@
         }
       }
     },
+    "/api/approvals/pending": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "List approvals waiting on a person",
+        "description": "Approvals an agent has requested and nobody has decided yet, oldest first. Expired requests are excluded, and no response here ever carries token material.",
+        "responses": {
+          "200": {
+            "description": "Pending approvals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingApprovalsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/grant": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Allow the requested action",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\nThe body accepts a `standing` flag, which asks DorkOS to stop asking about this agent doing this thing. It is currently REFUSED for every caller with `STANDING_GRANTS_NOT_YET_ENFORCED`, because nothing enforces a standing permission yet. It is accepted and refused rather than ignored so a caller is never told it got something it did not: when the standing part is refused, the one-time grant does not happen either. The stricter bar that will guard it is already live and is checked first, so a caller with no session cookie is refused before reaching this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantApprovalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval granted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`). For `standing: true`, also when login is off (`standing_grants_require_login`) or the caller has no session cookie (`operator_cookie_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided; or `standing: true` was asked for, which nothing enforces yet (`STANDING_GRANTS_NOT_YET_ENFORCED`). Nothing is granted in the second case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired before it was decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/deny": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Refuse the requested action",
+        "description": "Denies a pending approval, with an optional reason the requester sees. Who may decide is exactly as for grant: no agent identity, no approval token, and an authenticated user when local login is enabled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyApprovalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired before it was decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/activity": {
       "get": {
         "tags": [
@@ -11145,7 +11457,7 @@
           "Capabilities"
         ],
         "summary": "List capabilities",
-        "description": "List everything you can do in this DorkOS: the live, versioned catalog of every capability the registry exposes, each with its id, title, description, permission tier, input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Call this first to discover what actions and tools are available before reaching for a specific one.",
+        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools, ui tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog, carry no permission tier, and cannot be reached by `dorkos call`. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest.",
         "responses": {
           "200": {
             "description": "List capabilities result",

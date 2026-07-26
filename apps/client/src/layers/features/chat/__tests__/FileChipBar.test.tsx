@@ -163,6 +163,47 @@ describe('FileChipBar', () => {
     expect(container.querySelector('img')).toBeNull();
   });
 
+  it('states the reason a file failed to upload (DOR-480)', () => {
+    // The error was captured on the PendingFile and rendered nowhere — a bare red
+    // icon with no words, so nobody could tell the attachment never arrived.
+    const files = [
+      createPendingFile({ status: 'error', error: 'File too large (max 10 MB)', progress: 12 }),
+    ];
+
+    render(<FileChipBar files={files} onRemove={vi.fn()} />);
+
+    expect(screen.getByText('File too large (max 10 MB)')).toBeInTheDocument();
+  });
+
+  it('falls back to plain words when a failure carried no message', () => {
+    const files = [createPendingFile({ status: 'error' })];
+
+    render(<FileChipBar files={files} onRemove={vi.fn()} />);
+
+    expect(screen.getByText("This file didn't upload")).toBeInTheDocument();
+  });
+
+  it('offers a retry on a failed chip, addressed by file id', () => {
+    const onRetry = vi.fn();
+    const files = [createPendingFile({ id: 'failed-1', status: 'error', error: 'Network error' })];
+
+    render(<FileChipBar files={files} onRemove={vi.fn()} onRetry={onRetry} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Try uploading test-file\.txt again/ }));
+    expect(onRetry).toHaveBeenCalledWith('failed-1');
+  });
+
+  it('offers no retry on chips that have not failed', () => {
+    const files = [
+      createPendingFile({ id: 'ok-1', status: 'pending' }),
+      createPendingFile({ id: 'ok-2', status: 'uploading', progress: 30 }),
+    ];
+
+    render(<FileChipBar files={files} onRemove={vi.fn()} onRetry={vi.fn()} />);
+
+    expect(screen.queryByText('Try again')).not.toBeInTheDocument();
+  });
+
   it('shows spinner instead of thumbnail during upload of an image', () => {
     const files = [
       createPendingFile({
@@ -177,5 +218,30 @@ describe('FileChipBar', () => {
 
     expect(container.querySelector('img')).toBeNull();
     expect(screen.getByText('60%')).toBeInTheDocument();
+  });
+
+  it('makes one thumbnail URL per image, not one per upload progress tick', () => {
+    // Every progress tick rebuilds the array (`prev.map(...)` in use-file-upload),
+    // so a memo keyed on the array's identity re-ran on each one — minting a new
+    // blob URL for the same bytes and revoking the URL the <img> was still
+    // pointing at. Keying on the (id, File) pairs is what makes the work track
+    // the files instead of the ticks.
+    // The URL spies live for the whole file; only this test counts them.
+    vi.mocked(URL.createObjectURL).mockClear();
+    vi.mocked(URL.revokeObjectURL).mockClear();
+
+    const image = new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' });
+    const at = (progress: number, status: PendingFile['status']) => [
+      { id: 'img-1', file: image, status, progress },
+    ];
+
+    const { rerender } = render(<FileChipBar files={at(0, 'uploading')} onRemove={vi.fn()} />);
+    for (const percent of [10, 40, 70, 100]) {
+      rerender(<FileChipBar files={at(percent, 'uploading')} onRemove={vi.fn()} />);
+    }
+    rerender(<FileChipBar files={at(100, 'uploaded')} onRemove={vi.fn()} />);
+
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
 });

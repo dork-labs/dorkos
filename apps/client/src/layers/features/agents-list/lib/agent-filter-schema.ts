@@ -66,7 +66,17 @@ export const agentFilterSchema = createFilterSchema<TopologyAgent>({
   }),
 });
 
-/** Sort options for the agents list. */
+/**
+ * Field name for the default attention order.
+ *
+ * It carries no accessor because attention is not a field: it is derived from
+ * health, schedule, and session state together, and applied by
+ * `sortAgentsByAttention` rather than by the generic field comparator. An empty
+ * `sort` param means this order too, so a fresh `/agents` visit lands on it.
+ */
+export const ATTENTION_SORT_FIELD = 'attention';
+
+/** Field sort options for the agents list. */
 export const agentSortOptions = createSortOptions<TopologyAgent>({
   // Sort by the resolved display name (displayName → name → fallback) so the
   // order matches the rendered label, not the raw kebab-case identifier.
@@ -75,3 +85,9 @@ export const agentSortOptions = createSortOptions<TopologyAgent>({
   status: { label: 'Status', accessor: (a) => a.healthStatus },
   registered: { label: 'Registered', accessor: (a) => a.registeredAt, direction: 'desc' },
 });
+
+/** Everything the sort menu offers: attention first, then the field sorts. */
+export const agentSortMenuOptions: Record<string, { label: string }> = {
+  [ATTENTION_SORT_FIELD]: { label: 'Attention' },
+  ...agentSortOptions,
+};

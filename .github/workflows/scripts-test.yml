@@ -1,0 +1,57 @@
+name: scripts-test
+
+# Runs the shell-script fixture suites under scripts/.
+#
+# These have no package to belong to, so `pnpm verify`'s affected-only turbo run
+# ignores them: a change touching only `scripts/` resolves to 0 affected packages.
+# `pnpm verify` does call `pnpm test:scripts` first, but that is a local habit, not
+# a guarantee — nothing in the pre-push gate or in any other workflow runs it. The
+# suite covers two scripts behind the automated PR reviewer, and both have already
+# failed quietly once: classify-review-failure.sh decides what the reviewer TELLS
+# you when it fails (DOR-457 was that message being confidently wrong twice), and
+# review-gh.sh is the reviewer's only GitHub access (DOR-464), where a wrong path
+# or a loosened argument check is a silent hole rather than a red check.
+#
+# claude-code-review.yml is in the path filter because the suite asserts against
+# it: the allow-list entry, the materialized helper path and the reviewer prompt
+# all name one absolute path, and drift between them denies every tool call while
+# leaving the check green. That workflow cannot test itself on a PR (the action
+# refuses to run when the file differs from the default branch), so this job is
+# where such a change gets checked at all.
+#
+# No Node or pnpm setup: the suite needs only bash, jq and iconv, all present on
+# ubuntu-latest. Skipping the toolchain keeps this job a few seconds.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/scripts-test.yml'
+      - '.github/workflows/claude-code-review.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - '.github/workflows/scripts-test.yml'
+      - '.github/workflows/claude-code-review.yml'
+
+# Opt into Node 24 for JavaScript-based actions (checkout) ahead of GitHub's
+# Sept 2026 cutoff for the Node 20 runtime.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+concurrency:
+  group: scripts-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reviewer shell-script fixtures
+        run: bash scripts/test-review-classifier.sh

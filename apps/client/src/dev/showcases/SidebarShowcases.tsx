@@ -130,11 +130,11 @@ const GROUPED_SESSIONS = [
 // Showcases
 // ---------------------------------------------------------------------------
 
-/** Sidebar component showcases: SessionItem, SessionsView, SidebarFooterBar. */
+/** Sidebar component showcases: SessionRow, SessionsView, SidebarFooterBar. */
 export function SidebarShowcases() {
   return (
     <>
-      <SessionItemShowcase />
+      <SessionRowShowcase />
       <SessionsViewShowcase />
       <SidebarFooterBarShowcase />
     </>
@@ -142,10 +142,10 @@ export function SidebarShowcases() {
 }
 
 // ---------------------------------------------------------------------------
-// SessionItem
+// SessionRow
 // ---------------------------------------------------------------------------
 
-function SessionItemShowcase() {
+function SessionRowShowcase() {
   const [showNew, setShowNew] = useState(false);
   const updateSession = useSessionChatStore((s) => s.updateSession);
 
@@ -158,7 +158,7 @@ function SessionItemShowcase() {
 
   return (
     <PlaygroundSection
-      title="SessionItem"
+      title="SessionRow"
       description="Sidebar row for a single session with expandable details, permission badge, and entrance animation."
     >
       <ShowcaseLabel>Default (inactive)</ShowcaseLabel>
@@ -298,7 +298,7 @@ function SessionItemShowcase() {
   );
 }
 
-/** Wraps a SessionItem in sidebar menu markup for correct styling context. */
+/** Wraps a SessionRow in sidebar menu markup for correct styling context. */
 function SidebarItemWrapper({ children }: { children: React.ReactNode }) {
   return (
     <div className="w-64">

@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
-import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
+import { render, screen, cleanup } from '@testing-library/react';
 import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
 
 // Mock useIsMobile — default to mobile
 const mockUseIsMobile = vi.fn(() => true);
-vi.mock('@/layers/shared/model/use-is-mobile', () => ({
+vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }));
 
@@ -115,13 +114,11 @@ vi.mock('@/layers/entities/session/model/use-directory-state', () => ({
 }));
 
 // Mock useAppStore — supports both selector call and no-selector (destructure) call patterns
-const mockShowShortcutChips = vi.fn(() => true);
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
       pendingRuntime: null,
       setPendingRuntime: vi.fn(),
-      showShortcutChips: mockShowShortcutChips(),
       setIsStreaming: vi.fn(),
       setIsTextStreaming: vi.fn(),
       setIsWaitingForUser: vi.fn(),
@@ -135,66 +132,35 @@ vi.mock('@/layers/shared/model/app-store', () => ({
   },
 }));
 
-// Mock child components
+// Mock child components. The composer forwards a real handle so the tests can
+// see WHICH focus entry point the panel reaches for.
+const chatInputFocus = vi.fn();
+const chatInputFocusIfDesktop = vi.fn();
 vi.mock('../ui/input/ChatInput', () => ({
-  ChatInput: vi.fn(() => <div data-testid="chat-input">ChatInput</div>),
+  ChatInput: React.forwardRef<unknown, Record<string, unknown>>(function MockChatInput(_p, ref) {
+    React.useImperativeHandle(ref, () => ({
+      focus: chatInputFocus,
+      focusUnlessTouch: chatInputFocusIfDesktop,
+      focusAt: vi.fn(),
+    }));
+    return <div data-testid="chat-input">ChatInput</div>;
+  }),
 }));
 
 vi.mock('../ui/MessageList', () => ({
   MessageList: vi.fn(() => <div data-testid="message-list">MessageList</div>),
 }));
 
-vi.mock('../ui/input/ShortcutChips', () => ({
-  ShortcutChips: vi.fn(() => <div data-testid="shortcut-chips">ShortcutChips</div>),
-}));
-
-vi.mock('@/layers/features/status', () => ({
-  StatusLine: Object.assign(
-    vi.fn(() => <div data-testid="status-line">StatusLine</div>),
-    {
-      Item: vi.fn(({ visible, children }: { visible: boolean; children: React.ReactNode }) =>
-        visible ? <>{children}</> : null
-      ),
-    }
-  ),
-  CwdItem: vi.fn(() => null),
-  GitStatusItem: vi.fn(() => null),
-  PermissionModeItem: vi.fn(() => null),
+vi.mock('@/layers/features/status', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/features/status')>()),
+  StatusLine: vi.fn(() => <div data-testid="status-line">StatusLine</div>),
+  SessionPopover: vi.fn(({ children }: { children: React.ReactNode }) => <>{children}</>),
   AutoModeConfirmDialog: vi.fn(() => null),
-  ModelConfigPopover: vi.fn(() => null),
-  UsageStatusItem: vi.fn(() => null),
   UsageRevealPopover: vi.fn(() => null),
-  hasRenderableUsage: vi.fn(() => false),
-  ContextItem: vi.fn(() => null),
-  NotificationSoundItem: vi.fn(() => null),
-  PollingItem: vi.fn(() => null),
-  ConnectionItem: vi.fn(() => null),
-  StatusBarConfigurePopover: vi.fn(({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  )),
   useGitStatus: vi.fn(() => ({ data: undefined })),
-  SubagentsItem: vi.fn(() => null),
-  STATUS_BAR_REGISTRY: [],
-  // Status-bar visibility lives in server config (DOR-431); ChatStatusSection
-  // reads/writes it through these hooks. Everything hidden — this suite asserts
-  // ChatPanel layout, not individual status items.
-  useStatusBarPrefs: () => ({
-    cwd: false,
-    git: false,
-    runtime: false,
-    model: false,
-    cache: false,
-    context: false,
-    usage: false,
-    permission: false,
-    sound: false,
-    polling: false,
-  }),
-  useUpdateStatusBarPrefs: () => ({
-    setVisibility: vi.fn(),
-    reset: vi.fn(),
-    isPending: false,
-  }),
+  // Pins live in server config (`ui.statusBar.pins`); stub the bridge so this
+  // suite needs no query client or transport.
+  useStatusBarPins: () => ({ pins: [], toggle: vi.fn(), reset: vi.fn() }),
 }));
 
 vi.mock('../ui/tasks/TaskListPanel', () => ({
@@ -235,86 +201,23 @@ afterEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   mockUseIsMobile.mockReturnValue(true);
-  mockShowShortcutChips.mockReturnValue(true);
   mockChatStatus = 'idle';
   useExtensionRegistry.setState({ slots: createInitialSlots() });
   localStorage.clear();
 });
 
-describe('ChatPanel collapse', () => {
-  it('mobile: renders drag handle', () => {
-    mockUseIsMobile.mockReturnValue(true);
+describe('ChatPanel status line', () => {
+  // The width budget caps the line at one row of at most a few items, so there is
+  // nothing left to collapse: no drag handle, no swipe gesture, and no hint to
+  // teach either of them.
+  it.each([
+    ['a phone', true],
+    ['desktop', false],
+  ])('shows one uncollapsible status line on %s', (_label, mobile) => {
+    mockUseIsMobile.mockReturnValue(mobile);
     render(<ChatPanel sessionId="test" />);
-    const handle = screen.getByLabelText(/input extras/);
-    expect(handle).toBeTruthy();
-    expect(handle.getAttribute('role')).toBe('button');
-  });
-
-  it('desktop: does not render drag handle', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(<ChatPanel sessionId="test" />);
+    expect(screen.getByTestId('status-line')).toBeTruthy();
     expect(screen.queryByLabelText(/input extras/)).toBeNull();
-  });
-
-  it('mobile: chips and status bar visible by default', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.getByTestId('shortcut-chips')).toBeTruthy();
-    expect(screen.getByTestId('status-line')).toBeTruthy();
-  });
-
-  it('mobile: tap handle hides chips and status bar', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(<ChatPanel sessionId="test" />);
-    fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.queryByTestId('shortcut-chips')).toBeNull();
-    expect(screen.queryByTestId('status-line')).toBeNull();
-  });
-
-  it('mobile: tap handle again shows chips and status bar', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    render(<ChatPanel sessionId="test" />);
-    const handle = screen.getByLabelText(/input extras/);
-    fireEvent.click(handle);
-    expect(screen.queryByTestId('shortcut-chips')).toBeNull();
-    fireEvent.click(screen.getByLabelText(/input extras/));
-    expect(screen.getByTestId('shortcut-chips')).toBeTruthy();
-    expect(screen.getByTestId('status-line')).toBeTruthy();
-  });
-});
-
-describe('ChatPanel first-use hint', () => {
-  it('shows hint when localStorage count < 3 on mobile', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '1');
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.getByText('Swipe to collapse')).toBeTruthy();
-  });
-
-  it('does not show hint when count >= 3', () => {
-    mockUseIsMobile.mockReturnValue(true);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '3');
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.queryByText('Swipe to collapse')).toBeNull();
-  });
-
-  it('increments count on dismiss', () => {
-    vi.useFakeTimers();
-    mockUseIsMobile.mockReturnValue(true);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '0');
-    render(<ChatPanel sessionId="test" />);
-    expect(screen.getByText('Swipe to collapse')).toBeTruthy();
-    act(() => {
-      vi.advanceTimersByTime(4000);
-    });
-    expect(localStorage.getItem(STORAGE_KEYS.GESTURE_HINT_COUNT)).toBe('1');
-    vi.useRealTimers();
-  });
-
-  it('does not show hint on desktop regardless of count', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    localStorage.setItem(STORAGE_KEYS.GESTURE_HINT_COUNT, '0');
-    render(<ChatPanel sessionId="test" />);
     expect(screen.queryByText('Swipe to collapse')).toBeNull();
   });
 });
@@ -343,5 +246,35 @@ describe('ChatPanel suggestion-chip slot', () => {
     mockChatStatus = 'idle';
     rerender(<ChatPanel sessionId="test" />);
     expect(screen.getByTestId('suggestion-chip')).toBeTruthy();
+  });
+});
+
+describe('ChatPanel composer focus', () => {
+  // The composer's own mount autofocus has always been guarded (touch devices
+  // pop the software keyboard and scroll the view). ChatPanel then focused it
+  // through the handle on mount, on every session switch, and again on
+  // `?prompt=` seeding — with no mobile check — so the guard only ever
+  // protected the dashboard and onboarding composers.
+  it('reaches for the guarded focus, never the unguarded one, on mount', () => {
+    render(<ChatPanel sessionId="test" />);
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
+  });
+
+  it('reaches for the guarded focus on a session switch', () => {
+    const { rerender } = render(<ChatPanel sessionId="test" />);
+    chatInputFocusIfDesktop.mockClear();
+    chatInputFocus.mockClear();
+
+    rerender(<ChatPanel sessionId="other" />);
+
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
+  });
+
+  it('reaches for the guarded focus when a launch prompt seeds the composer', () => {
+    render(<ChatPanel sessionId="test" launchPrompt="re-run this" />);
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
   });
 });

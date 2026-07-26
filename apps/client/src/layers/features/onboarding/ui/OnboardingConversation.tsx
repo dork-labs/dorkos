@@ -17,9 +17,16 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useAgentBirthStore, useAppStore, type AgentBirthRecord } from '@/layers/shared/model';
-import { fireCelebration } from '@/layers/shared/lib';
+import { fireCelebration, resolveAgentVisual } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
-import { MessageItem, TypingDots, ChatInput, FirstLight } from '@/layers/features/chat';
+import {
+  MessageItem,
+  TypingDots,
+  ChatInput,
+  FirstLight,
+  resolveMessageAuthor,
+  type MessageAuthorAgent,
+} from '@/layers/features/chat';
 import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { useUpdateAgent } from '@/layers/entities/agent';
@@ -152,6 +159,14 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       }
     : {};
 
+  // DorkBot speaks every scripted line, so the list's identity gutter names it
+  // and wears the same avatar first light just showed — not the resolver's
+  // anonymous fallback.
+  const dorkbotAuthor = useMemo<MessageAuthorAgent>(() => {
+    const { color, emoji } = resolveAgentVisual({ id: 'dorkbot' });
+    return { id: 'dorkbot', displayName: 'DorkBot', emoji, color };
+  }, []);
+
   const dorkbotArrival = useMemo<AgentBirthRecord>(
     () => ({
       name: 'dorkbot',
@@ -199,6 +214,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
               key={message.id}
               message={message}
               grouping={convo.grouping[i]}
+              author={resolveMessageAuthor(message, { agent: dorkbotAuthor })}
               sessionId=""
               presentation
             />
@@ -231,7 +247,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
                     {DORKBOT_ONBOARDING_LINES.saveError}
                   </p>
                 )}
-                <div className="flex justify-center">
+                <div className="flex flex-wrap justify-center gap-2">
                   <Button
                     size="sm"
                     onClick={() => convo.confirmPersonality(traits)}
@@ -239,6 +255,18 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
                     data-testid="confirm-personality"
                   >
                     {confirmLabel}
+                  </Button>
+                  {/* Per-beat skip, mirroring the discovery beat's "Not now":
+                      moves on one beat without saving traits. Disabled while a
+                      save is in flight so both paths can't advance at once. */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={convo.skipPersonality}
+                    disabled={convo.saving}
+                    data-testid="skip-personality"
+                  >
+                    Skip this step
                   </Button>
                 </div>
               </div>

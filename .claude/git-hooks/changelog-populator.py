@@ -24,6 +24,24 @@ Commit Message Format (Conventional Commits):
 
 Fragment filename: <YYMMDD-HHMMSS>-<kebab-slug>.md (UTC commit time + subject slug).
 
+Every fragment this hook writes opens with a `covers:` declaration naming the
+commit it covers, by subject line:
+
+    ---
+    covers:
+      - "fix(chat): stop dropping the last streamed token (DOR-123)"
+    ---
+
+That declaration is what makes the PR-time gate
+(.claude/scripts/changelog_backfill.py --check) deterministic: coverage is a
+declared fact, so you can rewrite the bullet for a human — the whole point of a
+fragment — without the gate losing track of the commit. Curate the prose freely;
+leave the frontmatter alone.
+
+Why the subject and not the SHA: this hook amends the commit to include the
+fragment, which changes the commit's SHA — a commit can never contain its own
+SHA. Rebases rewrite SHAs too. The subject survives both.
+
 Installation:
     ln -sf ../../.claude/git-hooks/changelog-populator.py .git/hooks/post-commit
 
@@ -77,6 +95,11 @@ PREFIX_SECTION_MAP = {
 # Max length of the human-readable slug portion of a fragment filename.
 SLUG_MAX_LEN = 40
 
+# Frontmatter field declaring which commits a fragment covers. Kept in sync with
+# `.claude/scripts/changelog_backfill.py`, which reads it — the two scripts are
+# deliberately standalone (a git hook must not depend on an import path).
+COVERS_FIELD = "covers"
+
 
 def get_vault_root() -> Path:
     """Get the vault root directory from git."""
@@ -97,6 +120,21 @@ def get_last_commit_message() -> str:
     """Get the message of the last commit."""
     result = subprocess.run(
         ["git", "log", "-1", "--pretty=%B"],
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def get_last_commit_subject() -> str:
+    """Get HEAD's subject exactly as `git log --pretty=%s` renders it.
+
+    Not `message.split("\\n")[0]`: git folds a wrapped subject into one line, and
+    the analyzer compares against `%s`. Taking the first raw line instead would
+    write a declaration that can never match its own commit.
+    """
+    result = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
         capture_output=True,
         text=True,
     )
@@ -241,22 +279,74 @@ def is_replayed_commit() -> bool:
     return not action.startswith(("commit:", "commit (initial):", "commit (merge):"))
 
 
-def entry_already_recorded(unreleased_dir: Path, entry: str) -> bool:
-    """Return True if any existing fragment already contains this exact entry line.
+def quote_yaml_scalar(value: str) -> str:
+    """Render a `covers:` item as a double-quoted YAML scalar.
+
+    Quoting is required, not cosmetic: a conventional-commit subject contains
+    ": ", which bare YAML would read as a mapping key.
+    """
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def read_yaml_scalar(value: str) -> str:
+    """Read back a `covers:` item, whichever way it was quoted.
+
+    The hook writes double-quoted scalars; Prettier rewrites them to single
+    quotes the first time it formats the fragment. Comparing rendered strings
+    therefore stopped matching as soon as a hand-written fragment had been
+    committed once, and the hook minted a duplicate on every later commit even
+    though the fragment declared the subject (DOR-461 review, twice).
+    """
+    text = value.strip()
+    for quote in ('"', "'"):
+        if len(text) >= 2 and text.startswith(quote) and text.endswith(quote):
+            body = text[1:-1]
+            return body.replace('\\"', '"').replace("\\\\", "\\") if quote == '"' else body
+    return text
+
+
+def render_fragment(section: str, entry: str, subject: str) -> str:
+    """Render fragment contents: a `covers:` declaration, then the entry."""
+    return (
+        "---\n"
+        f"{COVERS_FIELD}:\n"
+        f"  - {quote_yaml_scalar(subject)}\n"
+        "---\n"
+        "\n"
+        f"### {section}\n"
+        "\n"
+        f"{entry}\n"
+    )
+
+
+def already_recorded(unreleased_dir: Path, entry: str, subject: str) -> bool:
+    """Return True if a fragment already covers this commit.
 
     Second idempotency layer behind the reflog guard: catches replays the
     reflog cannot see (e.g. a fragment-less commit re-created verbatim in a
-    fresh clone). Matching by entry line (not filename) works even when the
-    commit time — and therefore the fragment name — differs. Defeated by
-    hand-editing the fragment wording, which is why the reflog guard runs
-    first.
+    fresh clone). Two keys are checked, either of which is enough:
+
+    - the `covers:` declaration for this commit's subject — the durable key,
+      unaffected by anyone rewriting the fragment's prose, or by the quote style
+      Prettier settles on when it formats the file;
+    - the exact entry line — the legacy key, which still catches fragments
+      written before declarations existed.
+
+    Matching by content (not filename) works even when the commit time — and
+    therefore the fragment name — differs.
     """
     if not unreleased_dir.is_dir():
         return False
-    target = entry.strip()
+    entry_target = entry.strip()
     for frag in unreleased_dir.glob("*.md"):
-        for line in frag.read_text().split("\n"):
-            if line.strip() == target:
+        for line in frag.read_text(encoding="utf-8").split("\n"):
+            stripped = line.strip()
+            if stripped == entry_target:
+                return True
+            # Compare the subject itself, not a rendering of it: the quote style
+            # of a committed fragment is Prettier's to choose, not ours.
+            if stripped.startswith("- ") and read_yaml_scalar(stripped[2:]) == subject:
                 return True
     return False
 
@@ -310,15 +400,16 @@ def main() -> int:
 
     section, description, is_breaking = parsed
     entry = format_changelog_entry(description, is_breaking)
+    subject = get_last_commit_subject()
 
-    # Idempotency: skip if this exact entry already lives in a fragment (amend/rebase).
-    if entry_already_recorded(unreleased_dir, entry):
+    # Idempotency: skip if a fragment already covers this commit (amend/rebase).
+    if already_recorded(unreleased_dir, entry, subject):
         return 0
 
     stamp = get_last_commit_timestamp().strftime("%y%m%d-%H%M%S")
     slug = slugify(description)
     fragment_path = resolve_fragment_path(unreleased_dir, stamp, slug)
-    content = f"### {section}\n\n{entry}\n"
+    content = render_fragment(section, entry, subject)
 
     try:
         # Create lock file to prevent re-entry during amend
@@ -326,7 +417,7 @@ def main() -> int:
         lock_file.touch()
 
         unreleased_dir.mkdir(parents=True, exist_ok=True)
-        fragment_path.write_text(content)
+        fragment_path.write_text(content, encoding="utf-8")
 
         # Stage the fragment
         subprocess.run(["git", "add", str(fragment_path)], capture_output=True)

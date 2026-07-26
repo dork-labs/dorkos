@@ -127,8 +127,10 @@ async function fetchLiveTools(): Promise<ToolListEntry[]> {
 describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
   it('has exactly 28 members (the audited read-only set)', () => {
     // A hard count anchors the constant against silent additions/removals.
-    // 27 legacy + operator + marketplace carve-outs, plus `list_capabilities`
-    // from the self-description domain.
+    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 10 registry-derived carve-outs:
+    // 4 operator, 5 marketplace, plus `list_capabilities` from the
+    // self-description domain. A carve-out only counts when its tool reaches the
+    // `external` server, which is what `readOnlyCarveOutToolNames` checks.
     expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(28);
   });
 

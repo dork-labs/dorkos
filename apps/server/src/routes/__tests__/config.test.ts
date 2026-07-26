@@ -25,6 +25,28 @@ function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-config-route-test-'));
 }
 
+/**
+ * Stands in for `sessionGate`'s resolved user. `PATCH /api/config` now skips the
+ * operator-only write policy only for a caller that may DECIDE approvals, and
+ * with login ON that requires an authenticated user on `res.locals` — which the
+ * real cockpit carries and a bare test app otherwise would not (DOR-467).
+ */
+let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+
+/** Stands in for the `X-DorkOS-Agent` header an agent's CLI attaches. */
+let agentHeader: string | undefined;
+
+/** Mount the request-shaping middleware every config-route app needs. */
+function mountCallerFixture(app: express.Express): void {
+  signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+  agentHeader = undefined;
+  app.use((req, res, next) => {
+    if (signedInUser) res.locals.user = signedInUser;
+    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
+    next();
+  });
+}
+
 describe('PATCH /api/config', () => {
   let app: express.Express;
   let tmpDir: string;
@@ -40,6 +62,7 @@ describe('PATCH /api/config', () => {
     const configRouter = (await import('../config.js')).default;
     app = express();
     app.use(express.json());
+    mountCallerFixture(app);
     app.use('/api/config', configRouter);
   });
 
@@ -123,6 +146,198 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('ui.theme')).toBe('dark');
   });
 
+  it('lets a person turn login on and off (the cockpit path)', async () => {
+    // DOR-488: the agent-facing `config_patch` capability refuses posture-bearing
+    // settings, but the guard sits at the CAPABILITY HANDLER, not inside the
+    // shared `applyConfigPatch`. This route is what the cockpit's own enable-login
+    // (`OwnerSetupHost.tsx`) and disable-login (`SecurityPanel.tsx`) flows call, so
+    // if it ever starts refusing, a person can no longer turn login on at all.
+    const { configManager } = await import('../../services/core/config-manager.js');
+
+    const enabled = await request(app)
+      .patch('/api/config')
+      .send({ auth: { enabled: true } })
+      .expect(200);
+    expect(enabled.body.success).toBe(true);
+    expect(enabled.body.config.auth.enabled).toBe(true);
+    expect(configManager.getDot('auth.enabled')).toBe(true);
+
+    const disabled = await request(app)
+      .patch('/api/config')
+      .send({ auth: { enabled: false } })
+      .expect(200);
+    expect(disabled.body.success).toBe(true);
+    expect(configManager.getDot('auth.enabled')).toBe(false);
+  });
+
+  it('refuses an AGENT the settings that protect the instance (DOR-467)', async () => {
+    // The door this closes. PR #469 put the operator-only write policy on the
+    // agent-facing capability, but this REST route reached the same
+    // `applyConfigPatch` with no policy check at all — and with login off
+    // `sessionGate` is a pass-through, so `curl -X PATCH /api/config` walked
+    // straight around the guard whose whole promise is that agents cannot change
+    // the settings protecting the instance.
+    agentHeader = 'agent-token';
+    signedInUser = undefined;
+
+    const refused = await request(app)
+      .patch('/api/config')
+      .send({ server: { boundary: '/' } })
+      .expect(403);
+    expect(refused.body.code).toBe('operator_only_config');
+    expect(refused.body.paths).toContain('server.boundary');
+
+    const { configManager } = await import('../../services/core/config-manager.js');
+    expect(configManager.getDot('server.boundary')).not.toBe('/');
+  });
+
+  it('refuses an agent turning login OFF, the setting approvals depend on', async () => {
+    agentHeader = 'agent-token';
+    signedInUser = undefined;
+
+    await request(app)
+      .patch('/api/config')
+      .send({ auth: { enabled: false } })
+      .expect(403);
+  });
+
+  describe('approvals.* — the settings that need a session cookie (DOR-501)', () => {
+    /** Turn local login on, which is what makes a cookie possible at all. */
+    async function enableLogin(): Promise<void> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+    }
+
+    it('refuses a header-stripping caller, which the operator-only check alone lets through', async () => {
+      // This is step 1 of the reproduced chain. `trustedCaller` is satisfied by a
+      // caller presenting neither an agent header nor an approval token, so the
+      // operator-only block below is SKIPPED for it. That was an accepted trade
+      // when the worst case was one config write; a standing permission is a
+      // renewable window of silent auto-approval, so this path gets a second bar.
+      await enableLogin();
+      agentHeader = undefined;
+      signedInUser = undefined;
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_cookie_required');
+      expect(refused.body.paths).toEqual(['approvals.standingGrants']);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('approvals.standingGrants')).toBe(false);
+    });
+
+    it('refuses a caller holding a per-user API key rather than a session', async () => {
+      // Login being ON is not enough. A key satisfies `sessionGate` exactly as a
+      // browser session does, so a program handed one would otherwise qualify.
+      await enableLogin();
+      signedInUser = { userId: 'user_program', credential: 'api-key' };
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_cookie_required');
+    });
+
+    it('refuses everyone while login is off, and says why', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: false });
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true } })
+        .expect(403);
+      expect(refused.body.code).toBe('standing_grants_require_login');
+      expect(refused.body.message).toMatch(/Require login/);
+    });
+
+    it('catches a patch that stops short of the leaf', async () => {
+      await enableLogin();
+      signedInUser = undefined;
+
+      const refused = await request(app).patch('/api/config').send({ approvals: {} }).expect(403);
+      expect(refused.body.code).toBe('operator_cookie_required');
+    });
+
+    it('lets a person signed in to the cockpit change them', async () => {
+      await enableLogin();
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      const ok = await request(app)
+        .patch('/api/config')
+        .send({ approvals: { standingGrants: true, trustWindowMinutes: 120 } })
+        .expect(200);
+      expect(ok.body.config.approvals).toEqual({
+        standingGrants: true,
+        trustWindowMinutes: 120,
+      });
+    });
+
+    it('refuses an array-shaped body, which the path matcher deliberately ignores', async () => {
+      // `findCookieRequiredPaths` walks objects and returns nothing for an array,
+      // so the cookie bar never sees this body. It is safe only because the config
+      // schema is an object and `applyConfigPatch` rejects the shape outright.
+      // Pinned so that stays true: if config ever accepted an array anywhere, this
+      // goes red instead of quietly becoming a way around the bar.
+      await enableLogin();
+      signedInUser = undefined;
+
+      await request(app)
+        .patch('/api/config')
+        .send([{ approvals: { standingGrants: true } }])
+        .expect(400);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('approvals.standingGrants')).toBe(false);
+    });
+
+    it('refuses a window longer than a day, so "forever" stays unrepresentable', async () => {
+      await enableLogin();
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      await request(app)
+        .patch('/api/config')
+        .send({ approvals: { trustWindowMinutes: 10080 } })
+        .expect(400);
+    });
+  });
+
+  it('still lets an agent change ordinary settings', async () => {
+    // The refusal is scoped to the policy, not to agents: an agent editing a
+    // theme is exactly what the operator surface is for.
+    agentHeader = 'agent-token';
+    signedInUser = undefined;
+
+    const ok = await request(app)
+      .patch('/api/config')
+      .send({ ui: { theme: 'dark' } })
+      .expect(200);
+    expect(ok.body.config.ui.theme).toBe('dark');
+  });
+
+  it('lets a person change the other operator-only settings too', async () => {
+    // The rest of the write allowlist, proven not to have leaked onto the human
+    // path: exposure, the MCP endpoint's key, telemetry consent, and the boundary.
+    const response = await request(app)
+      .patch('/api/config')
+      .send({
+        tunnel: { enabled: true },
+        mcp: { apiKey: 'chosen-by-a-person' },
+        telemetry: { usage: false },
+        server: { boundary: '/Users/test-user' },
+      })
+      .expect(200);
+
+    expect(response.body.success).toBe(true);
+    expect(response.body.config.tunnel.enabled).toBe(true);
+    expect(response.body.config.telemetry.usage).toBe(false);
+    expect(response.body.config.server.boundary).toBe('/Users/test-user');
+  });
+
   it('returns 400 for invalid theme value', async () => {
     const response = await request(app)
       .patch('/api/config')
@@ -188,6 +403,7 @@ describe('GET /api/config', () => {
     const configRouter = (await import('../config.js')).default;
     app = express();
     app.use(express.json());
+    mountCallerFixture(app);
     app.use('/api/config', configRouter);
   });
 
@@ -235,22 +451,11 @@ describe('GET /api/config', () => {
     expect(res.body.ui.shapes.autoFollowAgent).toBe(false);
   });
 
-  it('includes ui.statusBar visibility prefs, all visible by default (DOR-431)', async () => {
+  it('includes ui.statusBar pins, nothing pinned by default (DOR-431, DOR-452)', async () => {
     const res = await request(app).get('/api/config').expect(200);
 
     expect(res.body.ui.statusBar).toBeDefined();
-    expect(res.body.ui.statusBar).toEqual({
-      cwd: true,
-      git: true,
-      runtime: true,
-      model: true,
-      cache: true,
-      context: true,
-      usage: true,
-      permission: true,
-      sound: true,
-      polling: true,
-    });
+    expect(res.body.ui.statusBar).toEqual({ pins: [] });
   });
 });
 
@@ -268,6 +473,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
     const configRouter = (await import('../config.js')).default;
     app = express();
     app.use(express.json());
+    mountCallerFixture(app);
     app.use('/api/config', configRouter);
   });
 

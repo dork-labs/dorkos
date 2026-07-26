@@ -16,13 +16,23 @@
  * `deps.confirmationProvider`, unchanged by the migration. The five read-only
  * lookups carry `readOnlyCarveOut: true`; the three mutations do not.
  *
+ * ## Cooperating with the tier gate
+ *
+ * Since spec `agent-trust` §3.2 the mutation handlers also receive the invocation
+ * context, which carries two things they cannot work out for themselves: WHO asked
+ * (so the approval card names the agent) and whether a person has ALREADY approved
+ * this exact call at the choke point. Without the second, `marketplace.uninstall`
+ * — the one `destructive` capability here — would show an operator two cards for
+ * one uninstall: the tier gate's, then its own.
+ *
  * @module services/marketplace-mcp/marketplace-capabilities
  */
 import { z } from 'zod';
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
-import type { CapabilityDeps } from '../core/capabilities/index.js';
+import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
+import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import { createSearchHandler, SearchInputSchema } from './tool-search.js';
@@ -60,6 +70,28 @@ function requireMarketplaceDeps(deps: CapabilityDeps): MarketplaceMcpDeps {
     throw new Error('Marketplace capability invoked without marketplaceDeps in the registry bag.');
   }
   return deps.marketplaceDeps;
+}
+
+/**
+ * Translate a capability invocation context into what a marketplace handler needs
+ * from it: who asked, and whether the tier gate already got a person's yes for
+ * this exact call.
+ *
+ * @param context - The context the registry handed this handler.
+ * @returns The handler-facing caller context.
+ */
+function callerContext(context: CapabilityHandlerContext): MarketplaceConfirmationContext {
+  const requestedBy = context.identity
+    ? context.identity.displayName || context.identity.agentPath
+    : undefined;
+  return {
+    ...(requestedBy ? { requestedBy } : {}),
+    // Two different proofs that this person has already said yes to this exact
+    // call, and the handler must not ask again for either: an approval the tier
+    // gate spent, or a caller that proved it may DECIDE approvals — for whom the
+    // confirmation this flow would go and fetch is its own.
+    ...(context.approval || context.trusted ? { preApproved: true } : {}),
+  };
 }
 
 /**
@@ -192,8 +224,10 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { openWorldHint: true },
         },
       },
-      invoke: async (deps, input) =>
-        unwrapMcpEnvelope(await createInstallHandler(requireMarketplaceDeps(deps))(input)),
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createInstallHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+        ),
     }),
     defineCapability({
       id: 'marketplace.uninstall',
@@ -204,6 +238,11 @@ export const marketplaceDomain: CapabilityDomain = {
       tier: 'destructive',
       input: z.object(UninstallInputSchema),
       output: z.unknown(),
+      // What a person needs to decide, and nothing else. `confirmationToken` is a
+      // field of this schema, so without this allowlist the card — and the
+      // agent-readable pending list, and the SSE broadcast — echoed whatever token
+      // a model put there.
+      approvalDisplayFields: ['name', 'purge', 'projectPath'],
       surfaces: {
         mcp: {
           toolName: 'marketplace_uninstall',
@@ -211,8 +250,10 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps, input) =>
-        unwrapMcpEnvelope(await createUninstallHandler(requireMarketplaceDeps(deps))(input)),
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createUninstallHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+        ),
     }),
     defineCapability({
       id: 'marketplace.create_package',
@@ -230,8 +271,13 @@ export const marketplaceDomain: CapabilityDomain = {
           servers: ['in-session', 'external'],
         },
       },
-      invoke: async (deps, input) =>
-        unwrapMcpEnvelope(await createCreatePackageHandler(requireMarketplaceDeps(deps))(input)),
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createCreatePackageHandler(requireMarketplaceDeps(deps))(
+            input,
+            callerContext(context)
+          )
+        ),
     }),
   ],
 };
