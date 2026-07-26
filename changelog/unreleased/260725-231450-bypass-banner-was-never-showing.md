@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(session): the permission-bypass banner reads the cache the app writes (DOR-482)'
+  - "fix(session): address review — scope the banner's query and pin the write key (DOR-482)"
 ---
 
 ### Fixed

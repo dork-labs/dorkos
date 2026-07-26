@@ -1,16 +1,16 @@
 /**
  * @vitest-environment jsdom
  *
- * These tests never seed the query cache by hand. They stand up the REAL
- * session hooks over a mock transport and assert on what a person would see on
- * screen, because the defect this suite exists to catch (DOR-482) was a reader
- * and a writer disagreeing about which cache entry holds the session: the
+ * These tests never seed the query cache with a hand-written key. They stand up
+ * the REAL session hooks over a mock transport and assert on what a person would
+ * see on screen, because the defect this suite exists to catch (DOR-482) was a
+ * reader and a writer disagreeing about which cache entry holds the session: the
  * banner read `['session', id]` while every session hook writes
- * `['session', id, cwd]`. A test that seeded the key the reader happened to
- * read would have stayed green through the entire outage.
+ * `['session', id, cwd]`. A test that seeded the key the reader happened to read
+ * would have stayed green through the entire outage.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, screen } from '@testing-library/react';
+import { render, cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
@@ -22,15 +22,31 @@ import { createMockTransport } from '@dorkos/test-utils';
 // The working directory is part of the session cache key. Pinning it to a real
 // path (rather than null) is deliberate: a reader that rebuilt the key by hand
 // and guessed the cwd would still miss the entry the writer created.
-const SELECTED_CWD = '/Users/dev/work/dorkos';
-vi.mock('@/layers/shared/model/app-store', () => ({
+const fixtures = vi.hoisted(() => ({
+  selectedCwd: '/Users/dev/work/dorkos',
+  /** Drives `useSafePathname` — the banner only fetches on the session route. */
+  pathname: '/session',
+}));
+const SELECTED_CWD = fixtures.selectedCwd;
+
+vi.mock('@/layers/shared/model/app-store', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model/app-store')>()),
   useAppStore: vi.fn((selector: (s: { selectedCwd: string | null }) => unknown) =>
-    selector({ selectedCwd: SELECTED_CWD })
+    selector({ selectedCwd: fixtures.selectedCwd })
   ),
 }));
 
+vi.mock('@/layers/shared/model/use-safe-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model/use-safe-router')>()),
+  useSafePathname: () => fixtures.pathname,
+}));
+
 import { TransportProvider } from '@/layers/shared/model';
-import { useSessionStatus, useSessionSettingsOverridesStore } from '@/layers/entities/session';
+import {
+  useSessionStatus,
+  useSessionSettingsOverridesStore,
+  sessionKeys,
+} from '@/layers/entities/session';
 import { PermissionBanner } from '../ui/PermissionBanner';
 
 /** A session row shaped the way the server reports one. */
@@ -43,13 +59,15 @@ function sessionRow(permissionMode: PermissionMode): Session {
   } as Session;
 }
 
-function createWrapper(transport: Transport) {
+/** One QueryClient per render, exposed so a test can inspect what was written. */
+function harness(transport: Transport) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return ({ children }: { children: ReactNode }) => (
+  const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
+  return { queryClient, wrapper };
 }
 
 /**
@@ -70,19 +88,21 @@ function renderBanner(mode: PermissionMode | null, sessionId: string | null = 's
     getModels: vi.fn().mockResolvedValue([]),
     updateSession: vi.fn().mockResolvedValue({ permissionMode: 'bypassPermissions' }),
   });
+  const { queryClient, wrapper } = harness(transport);
   const result = render(
     <>
       {sessionId && <SessionStatusProbe sessionId={sessionId} />}
       <PermissionBanner sessionId={sessionId} />
     </>,
-    { wrapper: createWrapper(transport) }
+    { wrapper }
   );
-  return { ...result, transport };
+  return { ...result, transport, queryClient };
 }
 
 describe('PermissionBanner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fixtures.pathname = '/session';
     // Module-level store — one test's pending change must not bleed into the next.
     useSessionSettingsOverridesStore.setState({ bySession: {} });
   });
@@ -126,12 +146,13 @@ describe('PermissionBanner', () => {
       );
     }
 
+    const { queryClient, wrapper } = harness(transport);
     render(
       <>
         <Writer />
         <PermissionBanner sessionId="s1" />
       </>,
-      { wrapper: createWrapper(transport) }
+      { wrapper }
     );
 
     await screen.findByText('mode:default');
@@ -140,6 +161,44 @@ describe('PermissionBanner', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Bypass All' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('All permissions bypassed');
+
+    // The banner above could be riding the optimistic override alone, which lives
+    // in Zustand and never touches the cache. Assert the confirmed write landed
+    // on the shared key too — otherwise the writer's `setQueryData` key could
+    // drift to anything and the whole suite would stay green.
+    await waitFor(() =>
+      expect(queryClient.getQueryData(sessionKeys.detail('s1', SELECTED_CWD))).toMatchObject({
+        permissionMode: 'bypassPermissions',
+      })
+    );
+    // And nothing is written to the key the broken reader used to look at.
+    expect(queryClient.getQueryData(sessionKeys.bySession('s1'))).toBeUndefined();
+  });
+
+  it('does not fetch a session row on a page that shows no session', async () => {
+    // The banner reports on the session cache; it must not be the surface that
+    // goes and populates it for `/agents` or `/marketplace`, which display
+    // nothing about the session.
+    fixtures.pathname = '/agents';
+    const transport = createMockTransport({
+      getSession: vi.fn().mockResolvedValue(sessionRow('bypassPermissions')),
+      getModels: vi.fn().mockResolvedValue([]),
+    });
+    const { queryClient, wrapper } = harness(transport);
+    const { rerender } = render(<PermissionBanner sessionId="s1" />, { wrapper });
+
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    expect(transport.getSession).not.toHaveBeenCalled();
+
+    // It still warns off a cache another surface already filled — the gate stops
+    // it fetching, not reading.
+    queryClient.setQueryData(
+      sessionKeys.detail('s1', SELECTED_CWD),
+      sessionRow('bypassPermissions')
+    );
+    rerender(<PermissionBanner sessionId="s1" />);
+    expect(await screen.findByRole('status')).toHaveTextContent('All permissions bypassed');
+    expect(transport.getSession).not.toHaveBeenCalled();
   });
 
   it('stays silent when no session is selected', async () => {
