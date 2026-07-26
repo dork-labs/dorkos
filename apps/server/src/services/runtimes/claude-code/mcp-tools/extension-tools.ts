@@ -1,5 +1,6 @@
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { EXTENSION_ID_REGEX } from '@dorkos/extension-api';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { broadcastExtensionReloaded } from '../../../../routes/extensions.js';
@@ -503,7 +504,10 @@ export function getExtensionTools(deps: McpToolDeps) {
       'create_extension',
       'Scaffold a new DorkOS extension with manifest and starter code. Creates the directory, writes extension.json and index.ts, compiles, and enables the extension in one step.',
       {
-        name: z.string().describe('Extension name (kebab-case, e.g. my-dashboard-widget)'),
+        name: z
+          .string()
+          .regex(EXTENSION_ID_REGEX, 'Use lowercase letters, numbers, and hyphens only')
+          .describe('Extension name (kebab-case, e.g. my-dashboard-widget)'),
         description: z.string().optional().describe('Short description shown in settings UI'),
         template: z
           .enum(['dashboard-card', 'right-panel-tab', 'command', 'settings-panel', 'data-provider'])

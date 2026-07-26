@@ -15,7 +15,7 @@
  * @module scaffold/instructions
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { HARNESS_IDS, type HarnessId } from '../manifest/schema.js';
 import { planInstruction } from '../plan/instructions.js';
 import { getActionContent } from '../plan/content-map.js';
@@ -40,6 +40,14 @@ export interface ScaffoldInstructionsResult {
   created: string[];
   /** Files left untouched because they already existed (user-owned). */
   skipped: string[];
+  /**
+   * Directory trees this run created, each named by its topmost new directory
+   * (for example `.github` when `.github/copilot-instructions.md` was written
+   * into a workspace that had no `.github`). Nothing at or below one of these
+   * paths existed before the run, which is what lets a caller undo the whole
+   * scaffold without guessing at directories that were already the user's.
+   */
+  createdDirs: string[];
 }
 
 /**
@@ -60,9 +68,10 @@ export function scaffoldInstructions(
 ): ScaffoldInstructionsResult {
   const created: string[] = [];
   const skipped: string[] = [];
+  const createdDirs: string[] = [];
 
   // 1. The canonical AGENTS.md — write-if-absent, never regenerated (ADR-0302).
-  writeIfAbsent(rootDir, 'AGENTS.md', opts.agentsBody, created, skipped);
+  writeIfAbsent(rootDir, 'AGENTS.md', opts.agentsBody, created, skipped, createdDirs);
 
   // 2. Per-harness pointers — reuse the projector's instruction mapping so the
   //    target paths + pointer content stay defined in exactly one place.
@@ -72,10 +81,10 @@ export function scaffoldInstructions(
     if (action.kind !== 'scaffold' || !action.target) continue; // native harnesses write nothing
     const content = getActionContent(action);
     if (content === undefined) continue; // planInstruction always attaches content to a scaffold
-    writeIfAbsent(rootDir, action.target, content, created, skipped);
+    writeIfAbsent(rootDir, action.target, content, created, skipped, createdDirs);
   }
 
-  return { created, skipped };
+  return { created, skipped, createdDirs };
 }
 
 /** Write `relPath` under `rootDir` only when absent; record the outcome. */
@@ -84,14 +93,19 @@ function writeIfAbsent(
   relPath: string,
   content: string,
   created: string[],
-  skipped: string[]
+  skipped: string[],
+  createdDirs: string[]
 ): void {
   const abs = join(rootDir, relPath);
   if (existsSync(abs)) {
     skipped.push(relPath);
     return;
   }
-  mkdirSync(dirname(abs), { recursive: true });
+  // `mkdirSync` with `recursive` returns the topmost directory it had to
+  // create, or undefined when the parent was already there. That return value
+  // is the only proof available that the directory is this run's to undo.
+  const firstCreated = mkdirSync(dirname(abs), { recursive: true });
+  if (firstCreated) createdDirs.push(relative(rootDir, firstCreated));
   writeFileSync(abs, content);
   created.push(relPath);
 }

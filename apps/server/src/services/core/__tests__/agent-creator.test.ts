@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ── Mock dependencies before importing ──────────────────────────────────────
 
 const mockWriteManifest = vi.fn();
-vi.mock('@dorkos/shared/manifest', () => ({
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
   writeManifest: (...args: unknown[]) => mockWriteManifest(...args),
 }));
 
@@ -29,13 +30,13 @@ vi.mock('@dorkos/shared/dorkbot-templates', () => ({
   dorkbotClaudeMdTemplate: vi.fn(() => '# DorkBot'),
 }));
 
-const mockScaffoldInstructions = vi.fn(() => ({ created: [], skipped: [] }));
+const mockScaffoldInstructions = vi.fn(() => ({ created: [], skipped: [], createdDirs: [] }));
 vi.mock('@dorkos/harness', () => ({
   scaffoldInstructions: (...args: unknown[]) => mockScaffoldInstructions(...args),
 }));
 
 const mockSeedOperatingSkills = vi.fn(() =>
-  Promise.resolve({ skillsDir: '/skills', outcomes: [] })
+  Promise.resolve({ skillsDir: '/skills', outcomes: [], createdDirs: [] })
 );
 vi.mock('@dorkos/operating-skills', () => ({
   seedOperatingSkills: (...args: unknown[]) => mockSeedOperatingSkills(...args),
@@ -63,7 +64,10 @@ vi.mock('../config-manager.js', () => ({
 
 const mockMkdir = vi.fn();
 const mockStat = vi.fn();
+const mockLstat = vi.fn();
 const mockRm = vi.fn();
+const mockUnlink = vi.fn();
+const mockRmdir = vi.fn();
 const mockWriteFile = vi.fn();
 const mockReadFile = vi.fn();
 
@@ -71,7 +75,10 @@ vi.mock('fs/promises', () => ({
   default: {
     mkdir: (...args: unknown[]) => mockMkdir(...args),
     stat: (...args: unknown[]) => mockStat(...args),
+    lstat: (...args: unknown[]) => mockLstat(...args),
     rm: (...args: unknown[]) => mockRm(...args),
+    unlink: (...args: unknown[]) => mockUnlink(...args),
+    rmdir: (...args: unknown[]) => mockRmdir(...args),
     writeFile: (...args: unknown[]) => mockWriteFile(...args),
     readFile: (...args: unknown[]) => mockReadFile(...args),
   },
@@ -96,6 +103,8 @@ describe('createAgentWorkspace', () => {
     vi.clearAllMocks();
     // Default: directory does not exist
     mockStat.mockRejectedValue(enoent());
+    // Default: nothing is at any path the scaffold is about to write
+    mockLstat.mockRejectedValue(enoent());
     mockMkdir.mockResolvedValue(undefined);
     mockWriteManifest.mockResolvedValue(undefined);
     mockWriteFile.mockResolvedValue(undefined);

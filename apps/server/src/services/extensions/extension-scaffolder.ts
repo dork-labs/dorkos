@@ -7,6 +7,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
+import { EXTENSION_ID_REGEX } from '@dorkos/extension-api';
 import {
   generateManifest,
   generateTemplate,
@@ -14,6 +15,33 @@ import {
 } from './extension-templates.js';
 import type { ExtensionTemplate } from './extension-templates.js';
 import type { CreateExtensionResult } from './extension-manager-types.js';
+
+/**
+ * Resolve an extension name to a directory sitting directly inside `root`.
+ *
+ * The name is also a path segment, so a name like `../../evil` would otherwise
+ * write outside the extensions folder. {@link EXTENSION_ID_REGEX} already rules
+ * that out, and this second check confirms it against the resolved path: the
+ * result must be a direct child of the root, which no escape and no nested path
+ * can satisfy.
+ *
+ * @param root - Directory that must contain the extension
+ * @param name - Extension name, used as the directory name
+ * @returns Absolute path of the extension directory
+ * @throws Error when the name does not resolve to a direct child of `root`
+ */
+function resolveExtensionDir(root: string, name: string): string {
+  const resolvedRoot = path.resolve(root);
+  const targetDir = path.resolve(resolvedRoot, name);
+
+  if (path.dirname(targetDir) !== resolvedRoot) {
+    throw new Error(
+      `Invalid extension name '${name}': an extension must be created directly inside ${resolvedRoot}`
+    );
+  }
+
+  return targetDir;
+}
 
 /**
  * Scaffold a new extension directory with manifest and starter code.
@@ -33,16 +61,25 @@ export async function scaffoldExtension(options: {
 }): Promise<{ targetDir: string; files: string[] }> {
   const { name, description, template, scope, dorkHome, currentCwd } = options;
 
+  // The name becomes a directory name, so it is checked before it is used as
+  // one. Anything with a dot, a slash, or a non-ASCII character is refused.
+  if (!EXTENSION_ID_REGEX.test(name)) {
+    throw new Error(
+      `Invalid extension name '${name}': use lowercase letters, numbers, and hyphens only`
+    );
+  }
+
   // Resolve target directory
-  let targetDir: string;
+  let extensionsRoot: string;
   if (scope === 'local') {
     if (!currentCwd) {
       throw new Error('Cannot create local extension: no working directory is active');
     }
-    targetDir = path.join(currentCwd, '.dork', 'extensions', name);
+    extensionsRoot = path.join(currentCwd, '.dork', 'extensions');
   } else {
-    targetDir = path.join(dorkHome, 'extensions', name);
+    extensionsRoot = path.join(dorkHome, 'extensions');
   }
+  const targetDir = resolveExtensionDir(extensionsRoot, name);
 
   // Check directory does not exist
   try {

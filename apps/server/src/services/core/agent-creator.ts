@@ -12,7 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { z } from 'zod';
 import { ulid } from 'ulidx';
-import { writeManifest } from '@dorkos/shared/manifest';
+import { writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest, CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
@@ -29,6 +29,7 @@ import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { validateBoundaryOrDorkHome, expandTilde, BoundaryError } from '../../lib/boundary.js';
 import { configManager } from './config-manager.js';
 import { notifyAgentCreated } from './agent-created-hook.js';
+import { ScaffoldLedger } from '../../lib/scaffold-ledger.js';
 import { logger } from '../../lib/logger.js';
 
 /** Minimal MeshCore interface for sync-on-write. */
@@ -130,12 +131,77 @@ async function maybeSetDefaultAgent(agentName: string): Promise<void> {
 }
 
 /**
+ * Close `text` off as a sentence so the next one does not run into it.
+ *
+ * Error messages from other tools end however they end: `git clone https://x/y`
+ * has no full stop, and running the cleanup sentence straight onto it reads as
+ * one broken line.
+ *
+ * @param text - Text to finish
+ * @returns The text with one closing full stop, if it needed one
+ */
+function endSentence(text: string): string {
+  const trimmed = text.trimEnd();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/**
+ * Undo a scaffold that failed partway through, and describe what is left.
+ *
+ * The two cases are deliberately different. When this run created the workspace
+ * folder itself, the whole folder can go: nothing in it predates the run. When
+ * the run scaffolded into a folder the user already had, only the ledger's
+ * entries are removed, and the user's folder stays. That is the trade this
+ * function exists to make: a leftover file is recoverable, a deleted folder is
+ * not.
+ *
+ * Only paths this run can prove it created come off disk. That includes the
+ * folders it made on the way in (`.agents/skills/`, `.claude/`, `.github/`),
+ * because the writers that make them report them: a rollback that left those
+ * behind would make the sentence this returns untrue. They are pruned only
+ * while empty, so a folder holding anything else keeps itself and its parents,
+ * and is named in the returned sentence.
+ *
+ * @param resolvedPath - Absolute path of the agent workspace
+ * @param createdWorkspaceDir - Whether this run created that folder
+ * @param ledger - Ledger of everything the run wrote inside an existing folder
+ * @returns A plain-language sentence describing the state the folder is in
+ */
+async function undoScaffold(
+  resolvedPath: string,
+  createdWorkspaceDir: boolean,
+  ledger: ScaffoldLedger
+): Promise<string> {
+  if (createdWorkspaceDir) {
+    try {
+      await fs.rm(resolvedPath, { recursive: true, force: true });
+      return 'The new folder was removed.';
+    } catch {
+      return `The new folder ${resolvedPath} could not be removed, so you may want to delete it.`;
+    }
+  }
+
+  const { kept } = await ledger.rollback();
+  if (kept.length === 0) {
+    return 'Your folder was kept, and the new files were removed.';
+  }
+  // Named relative to the folder the surrounding message already states, so a
+  // long list stays readable in a toast.
+  const inside = kept.map((entry) => path.relative(resolvedPath, entry) || entry);
+  return `Your folder was kept, but these new files are still in it and you can delete them: ${inside.join(', ')}.`;
+}
+
+/**
  * Create a new agent workspace with scaffolded config files.
  *
  * Validates input, resolves directory, creates workspace directory, optionally
  * downloads a template, scaffolds agent.json/SOUL.md/NOPE.md, syncs to Mesh DB,
- * and auto-sets as default agent when appropriate. Rolls back the created
- * directory on any failure.
+ * and auto-sets as default agent when appropriate.
+ *
+ * Scaffolding into a folder the user already has is allowed (only a `.dork/`
+ * collision or a template request is refused), so failure cleanup is bounded to
+ * what this run created. See {@link undoScaffold}. A failure that leaves
+ * anything behind says so in the thrown error rather than deleting more.
  *
  * A seeded `persona` is written as SOUL.md's custom prose (below the trait
  * block); `capabilities` and `runtime` are recorded on the manifest as-is —
@@ -151,7 +217,8 @@ async function maybeSetDefaultAgent(agentName: string): Promise<void> {
  * @param input - Raw input to validate with CreateAgentOptionsSchema
  * @param meshCore - Optional MeshCore instance for DB sync after creation
  * @returns The created agent manifest, resolved path, and optional template meta
- * @throws AgentCreationError on validation, collision, boundary, or template failures
+ * @throws AgentCreationError on validation, collision, boundary, template, or
+ * scaffold failures
  */
 export async function createAgentWorkspace(
   input: unknown,
@@ -169,6 +236,10 @@ export async function createAgentWorkspace(
   }
 
   const opts: CreateAgentOptions = parseResult.data;
+  // Everything this run creates inside a folder that already existed. Failure
+  // cleanup removes these and only these.
+  const ledger = new ScaffoldLedger();
+  let createdWorkspaceDir = false;
   const agentsConfig = configManager.get('agents');
   const resolvedPath = opts.directory
     ? path.resolve(opts.directory)
@@ -224,7 +295,10 @@ export async function createAgentWorkspace(
       // Create parent directory (recursive) then agent directory (non-recursive)
       const parentDir = path.dirname(resolvedPath);
       await fs.mkdir(parentDir, { recursive: true });
+      // Non-recursive: it succeeds only when this call is what created the
+      // directory, which is what makes a full rollback of it safe later.
       await fs.mkdir(resolvedPath);
+      createdWorkspaceDir = true;
     }
   }
 
@@ -238,23 +312,25 @@ export async function createAgentWorkspace(
       const hasPostInstall = await checkForPostInstallHook(resolvedPath);
       meta = { hasPostInstall, templateMethod: 'git' };
     } catch (templateErr) {
-      // Rollback: remove the created directory on template failure
-      try {
-        await fs.rm(resolvedPath, { recursive: true, force: true });
-      } catch {
-        /* best-effort cleanup */
-      }
+      // Templates are refused for existing directories above, so this always
+      // rolls back a directory this run created.
+      const cleanup = await undoScaffold(resolvedPath, createdWorkspaceDir, ledger);
       const message = templateErr instanceof Error ? templateErr.message : String(templateErr);
-      throw new AgentCreationError(`Template download failed: ${message}`, 'TEMPLATE', 500);
+      throw new AgentCreationError(
+        `Template download failed: ${endSentence(message)} ${cleanup}`,
+        'TEMPLATE',
+        500
+      );
     }
   }
 
   try {
-    // Create .dork/ subdirectory. Recursive so this works in both modes:
-    // a fresh agent creation (where the dir doesn't exist) and a marketplace
-    // install (where the package may already ship a `.dork/` directory).
-    const dorkDir = path.join(resolvedPath, '.dork');
-    await fs.mkdir(dorkDir, { recursive: true });
+    // Create .dork/. Tolerates an existing directory so this works in both
+    // modes: a fresh agent creation (where it doesn't exist) and a marketplace
+    // install (where the package may already ship a `.dork/` directory). The
+    // ledger records it only when this call is what created it.
+    const dorkDir = path.join(resolvedPath, MANIFEST_DIR);
+    await ledger.mkdir(dorkDir);
 
     // Scaffold agent.json
     const traits = opts.traits ?? DEFAULT_TRAITS;
@@ -284,6 +360,7 @@ export async function createAgentWorkspace(
       enabledToolGroups: {},
     };
 
+    await ledger.claimFile(path.join(dorkDir, MANIFEST_FILE));
     await writeManifest(resolvedPath, manifest);
 
     // Scaffold SOUL.md. When a persona is seeded (e.g. a Shape's offered agent),
@@ -294,10 +371,12 @@ export async function createAgentWorkspace(
     const soulContent = opts.persona
       ? buildSoulContent(traitBlock, opts.persona)
       : defaultSoulTemplate(manifest.displayName ?? manifest.name, traitBlock);
+    await ledger.claimFile(path.join(dorkDir, 'SOUL.md'));
     await writeConventionFile(resolvedPath, 'SOUL.md', soulContent);
 
     // Scaffold NOPE.md
     const nopeContent = defaultNopeTemplate();
+    await ledger.claimFile(path.join(dorkDir, 'NOPE.md'));
     await writeConventionFile(resolvedPath, 'NOPE.md', nopeContent);
 
     // Scaffold cross-harness instruction files (canonical AGENTS.md + per-harness
@@ -310,13 +389,35 @@ export async function createAgentWorkspace(
       opts.name === 'dorkbot'
         ? dorkbotClaudeMdTemplate()
         : defaultAgentsTemplate(manifest.displayName ?? manifest.name);
-    scaffoldInstructions(resolvedPath, { agentsBody });
+    const instructions = scaffoldInstructions(resolvedPath, { agentsBody });
+    // Directories first: rollback works backwards, so the files inside a tree
+    // are deleted before the tree itself is pruned.
+    for (const relPath of instructions.createdDirs) {
+      ledger.noteDirTree(path.join(resolvedPath, relPath));
+    }
+    for (const relPath of instructions.created) {
+      ledger.noteFile(path.join(resolvedPath, relPath));
+    }
 
     // Seed the Operating DorkOS skill pack into the new workspace's
     // .agents/skills/ so every agent knows how to run DorkOS. Idempotent and
     // version-stamped; best-effort so a seeding hiccup never fails creation.
     try {
-      await seedOperatingSkills(resolvedPath);
+      const seeded = await seedOperatingSkills(resolvedPath);
+      for (const dir of seeded.createdDirs) {
+        ledger.noteDirTree(dir);
+      }
+      for (const outcome of seeded.outcomes) {
+        // Only 'created' is ours to undo. An 'upgraded' file was already on
+        // disk before this run, so rollback leaves it: note that the seeder
+        // did rewrite it, and rollback does not put the previous bytes back.
+        // That is lossless in practice, because the seeder only upgrades a
+        // file whose contents still match the hash of the pack version it was
+        // seeded from, so what was overwritten was DorkOS's own older copy.
+        if (outcome.action === 'created') {
+          ledger.noteFile(path.join(seeded.skillsDir, outcome.name, 'SKILL.md'));
+        }
+      }
     } catch (err) {
       logger.warn('[agents] Failed to seed Operating DorkOS skill pack: %s', String(err));
     }
@@ -344,14 +445,15 @@ export async function createAgentWorkspace(
 
     return { manifest, path: resolvedPath, meta };
   } catch (scaffoldErr) {
-    // Rollback: remove the created directory on scaffold failure
-    if (!(scaffoldErr instanceof AgentCreationError)) {
-      try {
-        await fs.rm(resolvedPath, { recursive: true, force: true });
-      } catch {
-        /* best-effort cleanup */
-      }
-    }
-    throw scaffoldErr;
+    if (scaffoldErr instanceof AgentCreationError) throw scaffoldErr;
+
+    const cleanup = await undoScaffold(resolvedPath, createdWorkspaceDir, ledger);
+    const reason = scaffoldErr instanceof Error ? scaffoldErr.message : String(scaffoldErr);
+    logger.error('[agents] Scaffold failed for "%s": %s', opts.name, reason);
+    throw new AgentCreationError(
+      `Could not finish setting up the agent in ${resolvedPath}. ${cleanup} Reason: ${endSentence(reason)}`,
+      'SCAFFOLD',
+      500
+    );
   }
 }

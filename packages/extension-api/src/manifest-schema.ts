@@ -132,13 +132,21 @@ export const StorageDeclarationSchema = z
     message: 'storage.migrations must be numbered 1..N in order with no gaps',
   });
 
+/**
+ * Allowed shape of an extension id: lowercase letters, digits, and hyphens,
+ * starting with a letter or digit.
+ *
+ * The id doubles as the extension's directory name, so this pattern is also the
+ * rule that keeps a scaffolded extension inside the extensions folder. It
+ * admits no dot, slash, backslash, or non-ASCII character, which is every way a
+ * name could climb out of its parent directory.
+ */
+export const EXTENSION_ID_REGEX = /^[a-z0-9][a-z0-9-]*$/;
+
 /** Zod schema for `extension.json` manifest files. */
 export const ExtensionManifestSchema = z.object({
   /** Unique extension identifier (kebab-case). Used as directory name and registry key. */
-  id: z
-    .string()
-    .min(1)
-    .regex(/^[a-z0-9][a-z0-9-]*$/),
+  id: z.string().min(1).regex(EXTENSION_ID_REGEX),
   /** Human-readable display name. */
   name: z.string().min(1),
   /** Semver version string. */
