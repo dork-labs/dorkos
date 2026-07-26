@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(security): only the person running DorkOS can add a package source (DOR-502)'
+  - 'fix(cli): print what to do next when a package-source write is refused (DOR-502)'
 ---
 
 ### Security
