@@ -40,7 +40,11 @@
  * invoking a tool; it cannot reach inside the tool. Both are gated in the handler
  * instead, by `gateHandRegisteredMcpTools` (`core/mcp-tool-gate.ts`), which runs
  * `runGate` and returns `approval_required` before the real handler runs (DOR-468).
- * The exposure was therefore the 29 to 34 `act` and `observe` tools in the list. The
+ * The list therefore held 29 to 34 `act` and `observe` tools. Not all of those were
+ * newly exposed: 7 to 13 of them (the overlap with `DORKOS_AGENT_TOOLS`) auto-approve
+ * through `canUseTool` no matter what any toggle says, before the bug and after it.
+ * The prompts the toggle actually silenced numbered 16 to 24, peaking with Mesh off.
+ * State the delta, not the end state, if you cite this again. The
  * lesson for anyone editing this file: enforcement of consequence belongs in the
  * tier gate, which sits below every caller, not in a list of names handed to an SDK
  * option that a config toggle can rewrite.
