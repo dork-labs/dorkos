@@ -1,6 +1,7 @@
 ---
 covers:
   - 'refactor(ui): Relay''s "channels" are connections (DOR-523)'
+  - 'test(tours): assert the Connections deep-link tab id (DOR-523)'
 ---
 
 ### Changed

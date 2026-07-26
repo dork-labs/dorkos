@@ -114,9 +114,9 @@ describe('TourHost', () => {
   });
 
   it('deep-links a settings-tab tour to the right tab', () => {
-    mockRunningDefinition = TOUR_DEFINITIONS.relay; // settings-tab: channels
+    mockRunningDefinition = TOUR_DEFINITIONS.relay; // settings-tab: connections
     render(<TourHost />);
-    expect(openSettingsToTab).toHaveBeenCalledWith('channels');
+    expect(openSettingsToTab).toHaveBeenCalledWith('connections');
   });
 
   it('does not navigate for a no-deep-link tour (mesh)', () => {
