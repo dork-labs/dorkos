@@ -78,6 +78,14 @@ function applyPending(db: BetterSqlite3.Database, migrations: StorageMigration[]
   const runInTransaction = db.transaction(() => {
     for (const m of pending) {
       currentVersion = m.version;
+      // `m.up` is SQL an extension author wrote in their manifest, executed as-is.
+      // That is intended — a migration IS arbitrary DDL, and there is no useful
+      // subset to allow — and it is safe only because of where it sits: nothing
+      // reaches this function until a person has approved that extension to run
+      // its code inside DorkOS (`extension-load-policy.ts`), and an extension that
+      // may run `server.ts` in this process can already do strictly more than run
+      // SQL against its own `store.db`. Any future caller that arrives BEFORE that
+      // approval has to bring its own gate.
       db.exec(m.up);
       setSchemaVersion(db, m.version);
     }

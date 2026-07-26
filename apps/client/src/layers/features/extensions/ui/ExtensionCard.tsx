@@ -41,10 +41,10 @@ export function ExtensionCard({
   // two enforcement points in lockstep (ADR-0271). A locked extension renders a
   // "Required" hint instead of a toggle.
   const canDisable = !(origin === 'core' && manifest.canDisable === false);
-  // Whether withholding approval actually stops something the person would notice.
-  // A client-only extension still loads in the browser and works; only the
-  // in-process paths (an agent's `test_extension`) are refused. A server entry or
-  // data proxy is genuinely off until approved, so it gets the louder wording.
+  // Nothing about an unapproved extension runs: the server refuses its `server.ts`
+  // AND withholds its client bundle, so the browser never imports it either
+  // (DOR-516). This only picks which reach to name, because a server entry or data
+  // proxy adds "anything on this machine" to "anything you can do in DorkOS".
   const runsInServer = extension.hasServerEntry || extension.hasDataProxy;
   // Health/availability state — communicated by a badge that is visually
   // distinct from the on/off toggle (an errored extension can still be "on").
@@ -148,18 +148,15 @@ export function ExtensionCard({
                 className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3"
                 data-testid={`extension-needs-approval-${extension.id}`}
               >
-                <p className="text-sm font-medium">
-                  {runsInServer
-                    ? 'This extension is waiting for you'
-                    : 'DorkOS has not run this extension here'}
-                </p>
+                <p className="text-sm font-medium">This extension is waiting for you</p>
                 <p className="text-muted-foreground text-sm">
                   {runsInServer
-                    ? 'It comes with code that runs inside DorkOS itself, which means it can reach ' +
-                      'anything on this machine that DorkOS can. Until you allow it, the rest of ' +
-                      'the extension works but that part stays off.'
-                    : 'Allow this only if you trust where it came from. Its code would run inside ' +
-                      'DorkOS itself, with the same reach as DorkOS.'}
+                    ? 'None of it has run yet. Allowing it lets its code run inside DorkOS, both ' +
+                      'on this machine, where it can reach anything DorkOS can, and on this page, ' +
+                      'signed in as you. Allow it only if you trust where it came from.'
+                    : 'None of it has run yet. Allowing it lets its code run on this page, signed ' +
+                      'in as you, so it can do anything you can do in DorkOS. Allow it only if ' +
+                      'you trust where it came from.'}
                 </p>
                 <Button
                   size="sm"

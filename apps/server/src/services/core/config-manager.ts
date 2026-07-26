@@ -1031,10 +1031,10 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Composite: DOR-452 and DOR-501 both target "the next unreleased version"
-  // (0.56.0 is already tagged) and an object literal cannot repeat a key, so
-  // their bodies compose here in insertion order — the same convention as the
-  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. Both are independent and
+  // Composite: DOR-452, DOR-501 and DOR-516 all target "the next unreleased
+  // version" (0.56.0 is already tagged) and an object literal cannot repeat a key,
+  // so their bodies compose here in insertion order — the same convention as the
+  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. All three are independent and
   // idempotent. /system:release reconciles the key at tag time if the real
   // release differs.
   '0.57.0': (store: {

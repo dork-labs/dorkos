@@ -74,6 +74,11 @@ export interface UninstallResult {
  */
 export interface UninstallExtensionManager {
   disable(id: string): Promise<unknown>;
+  /**
+   * Drop the person's standing approval for this extension to run code inside
+   * DorkOS (DOR-516), because the code it was given to is going away.
+   */
+  forgetRunApproval(id: string): Promise<void>;
 }
 
 /**
@@ -333,8 +338,22 @@ export class UninstallFlow {
   }
 
   /**
-   * Walk the staged `.dork/extensions/` directory and call
-   * `extensionManager.disable()` for each extension ID found.
+   * Walk the staged `.dork/extensions/` directory and, for each extension ID
+   * found, turn it off and forget the person's approval for it to run code inside
+   * DorkOS.
+   *
+   * Forgetting the approval is the load-bearing half (DOR-516). An approval is
+   * keyed to the extension id, and an update is an uninstall followed by a fresh
+   * install ({@link MarketplaceInstaller.update}), so leaving the approval behind
+   * meant `foo` v2 — or a package that merely reuses the name `foo` — inherited a
+   * decision the person made about entirely different code, with nothing to click
+   * and nothing shown. `marketplace_install` is tier `act`, so an agent reaches
+   * that path unaided.
+   *
+   * A person who updates an extension they had approved is asked once more. That
+   * is the intended cost: new code, new decision. Editing an installed
+   * extension's files never comes through here, so the edit → test → reload loop
+   * stays free.
    *
    * @internal
    */
@@ -345,6 +364,7 @@ export class UninstallFlow {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         await this.deps.extensionManager.disable(entry.name);
+        await this.deps.extensionManager.forgetRunApproval(entry.name);
       }
     }
   }

@@ -68,7 +68,16 @@ export function createProxyRouter(
     const targetPath = (req.params.splat as string[] | undefined)?.join('/') ?? '';
     let targetUrl = `${config.baseUrl.replace(/\/+$/, '')}/${targetPath}`;
 
-    // Apply path rewrites if configured
+    // Apply path rewrites if configured.
+    //
+    // `from` is a pattern an extension author wrote in their manifest, compiled to
+    // a RegExp and run against a caller-supplied path — a catastrophic-backtracking
+    // surface on paper. It stays as-is because of where it sits: this router is
+    // only ever mounted for an extension a person approved to run its code inside
+    // DorkOS (`extension-load-policy.ts`), and an extension that may run code in
+    // this process can hang it far more directly than by writing a slow regex. A
+    // linear-time engine here would buy nothing against an adversary already past
+    // that gate, and would silently change what authors' patterns mean.
     if (config.pathRewrite) {
       for (const [from, to] of Object.entries(config.pathRewrite)) {
         targetUrl = targetUrl.replace(new RegExp(from), to);

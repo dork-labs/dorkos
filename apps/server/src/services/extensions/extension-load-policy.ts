@@ -1,6 +1,21 @@
 /**
- * Whether one extension's code may EXECUTE inside the DorkOS server process
- * (DOR-516).
+ * Whether one extension's code may EXECUTE — inside the DorkOS server process, or
+ * inside the cockpit page (DOR-516).
+ *
+ * ## Both halves, and why the client half is not "just UI"
+ *
+ * An extension is two bundles: a `server.ts` that DorkOS `require()`s into its own
+ * process, and a client bundle the cockpit `import()`s and `activate()`s in the
+ * browser. This one answer covers both, because the browser half is not a weaker
+ * place to run: it is same-origin JavaScript on the cockpit page, so it carries the
+ * person's session with every `fetch` it makes. Gating only the server half left
+ * the shorter way round wide open — `create_extension` (tier `act`) scaffolds,
+ * enables, compiles and broadcasts a hot reload, the cockpit picks the bundle up
+ * with no page refresh, and that browser code can then `POST
+ * /api/extensions/<id>/approve` with the operator's own cookie and approve the
+ * server half of itself. Worse, the page a person opens *in order to decide* is the
+ * page that runs it. So the client bundle is served only for an extension that may
+ * run (`ExtensionManager.readBundle`), and the client loader skips the rest.
  *
  * ## What this stops, and why a tier could not stop it
  *
@@ -70,21 +85,57 @@
  * itself cannot approve its own extension, through any surface — `config_patch`
  * refuses `operator-only` paths unconditionally, `PATCH /api/config` refuses a
  * caller carrying agent identity, and `POST /api/extensions/:id/approve` refuses
- * it on the same bar. Turning on Require login closes the residual too, since then
- * every one of those writes needs a real session cookie.
+ * it on the same bar. Turning on Require login closes the header residual, since
+ * then every one of those writes needs a real session cookie.
+ *
+ * "Needs a cookie" is only worth something if the cookie cannot be spent by code
+ * the person did not run, which is why two things sit alongside it. The client
+ * bundle of an unapproved extension is never served, so agent-authored JavaScript
+ * does not get to run on the cockpit page and spend the session it finds there.
+ * And both approval routes require a trusted `Origin` when the browser sends one,
+ * so a page on another site cannot post the approval through a visitor's browser —
+ * a cross-site POST needs no cookie at all while login is off, so CORS (which only
+ * withholds the response) does not cover it.
  *
  * Adding this field to `REQUIRES_LOGIN_CONFIG_PATHS` was considered and rejected:
  * that list forbids a write while login is OFF, which in the shipped default would
  * mean nobody could ever approve anything.
  *
- * ## Core extensions are exempt, by origin
+ * ## Core extensions are exempt, by origin — which is a PATH, not an id
  *
  * `origin: 'core'` extensions ship inside the DorkOS the person installed
- * (`ensureCoreExtensions()` stages them; the origin is derived from that staging
- * set, never from a manifest claim). Gating them would make DorkOS ask permission
- * to run itself, and would break the bundled `linear-issues` data proxy on every
- * install. Only `origin: 'user'` extensions — anything an agent scaffolded or the
- * marketplace installed — are gated.
+ * (`ensureCoreExtensions()` stages them). Gating them would make DorkOS ask
+ * permission to run itself, and would break the bundled `linear-issues` data proxy
+ * on every install. Only `origin: 'user'` extensions — anything an agent
+ * scaffolded or the marketplace installed — are gated.
+ *
+ * That exemption is only as good as what `origin` is derived from, and it must be
+ * the record's resolved PATH: `core` means "this is the copy `ensureCoreExtensions`
+ * staged under `{dorkHome}/extensions/<id>`" (`extension-discovery.ts`). Deriving
+ * it from id membership instead handed the exemption to anything that reused a
+ * bundled id, and the cheapest way to reuse one is a file in the project tree —
+ * `{cwd}/.dork/extensions/marketplace/server.ts`, written with no prompt and no
+ * shell, which won the local-over-global merge and ran as core at the next boot.
+ * The staging copy is rewritten from the bundle on every boot for the same reason
+ * (`ensure-core-extensions.ts`), so a "core" directory always holds DorkOS's code.
+ *
+ * ## What the approval is attached to, and what it is not
+ *
+ * It is attached to the extension id, so the edit → test → reload loop is asked
+ * once and never again. The consequence is stated plainly rather than hidden:
+ * approving `foo` trusts whoever can write `foo`'s files from then on, and editing
+ * those files never re-asks. That is the deliberate trade named above.
+ *
+ * Two ways an id could change hands underneath an approval are closed, because
+ * neither is the person editing their own extension:
+ *
+ * - **Replacement by the marketplace.** Uninstalling a package forgets the
+ *   approval for every extension it bundled (`flows/uninstall.ts`), and an update
+ *   is an uninstall followed by an install, so different code arriving under a
+ *   familiar name is asked about again.
+ * - **Shadowing from the project tree.** A `{cwd}/.dork/extensions/<id>` directory
+ *   is ignored when `<id>` is core or already approved (`extension-discovery.ts`),
+ *   so a project file cannot inherit a decision made about the installed copy.
  *
  * ## Not covered, deliberately
  *
@@ -111,7 +162,16 @@ export const EXTENSION_NOT_APPROVED_ERROR =
   'Only a person can approve an extension to run inside DorkOS';
 
 /**
- * Whether this extension's code may execute inside the DorkOS server process.
+ * Whether this extension's code may execute at all — in the DorkOS server process
+ * or in the cockpit page.
+ *
+ * One answer for both halves on purpose. There are three call sites and they are
+ * the three places extension-authored code starts running:
+ * {@link ExtensionServerLifecycle.initialize} (`require()` of a server bundle),
+ * {@link testClientExtension} (`import()` of a data URI), and
+ * {@link ExtensionManager.readBundle} (the client bundle the browser `import()`s
+ * and `activate()`s). A fourth, {@link toPublic}, only reports the answer to the
+ * cockpit so it can render the card.
  *
  * Pure: no I/O and no `config-manager` import, matching
  * {@link module:services/extensions/extension-enable-resolution}. Callers pass the
@@ -123,12 +183,14 @@ export const EXTENSION_NOT_APPROVED_ERROR =
  * approved, and one that fails to compile is still approved once it builds.
  *
  * @param id - Extension id.
- * @param origin - `'core'` (ships with DorkOS, always allowed) or `'user'`.
+ * @param origin - `'core'` (staged by DorkOS itself, always allowed) or `'user'`.
+ *   Derived from the record's path in `extension-discovery.ts`, never from its id
+ *   or its manifest.
  * @param approvedToRun - `config.extensions.approvedToRun`, the ids a person
  *   approved.
- * @returns `true` when DorkOS may execute this extension's code in-process.
+ * @returns `true` when DorkOS may execute this extension's code.
  */
-export function mayRunInServer(
+export function mayRunExtensionCode(
   id: string,
   origin: 'core' | 'user',
   approvedToRun: readonly string[]

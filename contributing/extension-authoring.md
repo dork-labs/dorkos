@@ -942,17 +942,24 @@ The `create_extension` tool handles scaffolding, compilation, and enabling in a 
 
 ### Step 4: the one-time approval (DOR-516)
 
-`test_extension` and the server half of `reload_extensions --id` both execute the extension's code **inside the DorkOS server process**, with the server's own privileges and outside the tier gate. So a person allows each extension once, before any of its code runs, and after that the loop above is unprompted.
+An extension runs in two places, and the approval covers both:
+
+- **In the server process.** `test_extension` and the server half of `reload_extensions --id` execute the extension's code with the server's own privileges, outside the tier gate.
+- **In the cockpit page.** `GET /api/extensions/:id/bundle` serves the client bundle the browser `import()`s and `activate()`s. That is same-origin JavaScript carrying the person's session, so it is not a lesser place to run — it can call the API as the operator, including the route that approves the server half.
+
+So a person allows each extension once, before any of its code runs anywhere, and after that the loop above is unprompted.
 
 What this looks like in practice:
 
 - The **first** `test_extension` or server-entry load for a new extension is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
-- The person clicks **Allow it to run**, once. The extension starts immediately; no restart.
+- Its client bundle is not served either, so the extension contributes nothing to the cockpit until the person answers. `GET /api/extensions/:id/bundle` returns 404, the same as an extension that has not compiled.
+- The person clicks **Allow it to run**, once. Both halves start immediately; no restart, no page reload.
 - **Every** later call goes through: editing, testing, reloading, a compile error, and the fix after it. Turning the extension off and on again does not re-ask. Approval is recorded per extension id and is never spent by use.
+- A marketplace **uninstall clears it**, and an update is an uninstall plus a fresh install, so an update re-asks. That is the one thing an id-keyed approval must not survive: different code arriving under a familiar name.
 
 Everything that is not execution still works while you wait, which is what makes the wait cheap: you can create and edit files, and compiling reports real errors. Only running is held back.
 
-There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere — an agent that could write it would be approving its own code. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
+There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere — an agent that could write it would be approving its own code. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this — and `origin` is derived from the record's path under `{dorkHome}/extensions`, so a `{cwd}/.dork/extensions/<core-id>` directory does not inherit the exemption; it is ignored outright, as is a project directory reusing the id of an extension the person already approved. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
 
 `reload_extensions --id` also refuses an extension the user has turned **off**, rather than quietly turning it back on. Turn it on in Settings first.
 

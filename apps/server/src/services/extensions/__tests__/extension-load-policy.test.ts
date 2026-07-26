@@ -23,7 +23,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
-  mayRunInServer,
+  mayRunExtensionCode,
   describeExtensionLoadRefusal,
   EXTENSION_NOT_APPROVED_CODE,
 } from '../extension-load-policy.js';
@@ -143,27 +143,27 @@ function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): Exten
 const OBSERVABLE_BUNDLE =
   'export function activate(api) { api.registerCommand("x", "X", () => {}); }';
 
-describe('mayRunInServer', () => {
+describe('mayRunExtensionCode', () => {
   it('refuses a user extension that nobody approved', () => {
-    expect(mayRunInServer('my-ext', 'user', [])).toBe(false);
-    expect(mayRunInServer('my-ext', 'user', ['some-other-ext'])).toBe(false);
+    expect(mayRunExtensionCode('my-ext', 'user', [])).toBe(false);
+    expect(mayRunExtensionCode('my-ext', 'user', ['some-other-ext'])).toBe(false);
   });
 
   it('allows a user extension a person approved', () => {
-    expect(mayRunInServer('my-ext', 'user', ['my-ext'])).toBe(true);
+    expect(mayRunExtensionCode('my-ext', 'user', ['my-ext'])).toBe(true);
   });
 
   it('allows a core extension with no approval at all', () => {
     // Core extensions ship inside the DorkOS the person installed. Gating them
     // would make DorkOS ask permission to run itself, and would break the bundled
     // `linear-issues` data proxy on every install.
-    expect(mayRunInServer('linear-issues', 'core', [])).toBe(true);
+    expect(mayRunExtensionCode('linear-issues', 'core', [])).toBe(true);
   });
 
   it('is decided by id, never by a manifest claim', () => {
     // The `origin` argument comes from the startup staging set, not from anything
     // the extension says about itself, so an extension cannot declare itself core.
-    expect(mayRunInServer('pretender', 'user', ['a-different-id'])).toBe(false);
+    expect(mayRunExtensionCode('pretender', 'user', ['a-different-id'])).toBe(false);
   });
 });
 

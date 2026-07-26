@@ -180,11 +180,13 @@ An extension absent from both lists uses its default: ships-on extensions stay o
 
 #### Letting an extension run inside DorkOS
 
-Some extensions bring code that runs inside DorkOS itself, rather than only in your browser. That code can reach anything on your computer that DorkOS can reach, so DorkOS asks you about each one, once.
+An extension is code, in two places: some of it runs on your computer with the same reach DorkOS has, and the rest runs on the DorkOS page in your browser, signed in as you. Neither is a small thing to hand out, so DorkOS asks you about each extension once, and runs none of it until you answer.
 
 You will see it the first time: the extension shows up in Settings → Extensions with a note that it is waiting for you, and an **Allow it to run** button. Click it once and you are done. Editing that extension, testing it, and reloading it all work from then on with nothing further to click, and turning the extension off and on again does not ask you again. If you change your mind, **Stop it** on the same card takes the permission back and stops the extension straight away.
 
-Extensions that ship with DorkOS never ask. You already installed DorkOS.
+Two things do ask again, because in both the code has changed hands rather than been edited by you: installing an update to an extension, and reinstalling one you removed. Editing an extension you already allowed never re-asks.
+
+Extensions that ship with DorkOS never ask. You already installed DorkOS. DorkOS tells its own extensions apart by where their files sit, not by the name inside them, so a folder in your project cannot claim to be one.
 
 Your answer lives in `extensions.approvedToRun`. Your agents can read it but cannot write it, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
 

@@ -480,7 +480,37 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
     // The copy has to say what the person is deciding, in their terms — not
     // "unapproved extension" and not a status code.
     expect(screen.getByText(/waiting for you/i)).toBeInTheDocument();
-    expect(screen.getByText(/anything on this machine that DorkOS can/i)).toBeInTheDocument();
+    expect(screen.getByText(/anything DorkOS can/i)).toBeInTheDocument();
+    // And it has to be TRUE. Nothing of an unapproved extension has run, in the
+    // server or on this page, so the card says exactly that.
+    expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
+  });
+
+  it('tells the truth about a client-only extension, which also has not run', async () => {
+    // This card used to read "DorkOS has not run this extension here" and describe
+    // the risk in the conditional. Both were false: the bundle was served and
+    // activated in the browser the moment the page loaded, on the very screen the
+    // person opens to decide. The server now withholds the bundle until they do.
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({
+          id: 'client-only',
+          origin: 'user',
+          hasServerEntry: false,
+          hasDataProxy: false,
+          approvedToRun: false,
+        }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('extension-needs-approval-client-only')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/signed in as you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/has not run this extension here/i)).not.toBeInTheDocument();
   });
 
   it('sends the approval and confirms it, so one click is the whole job', async () => {

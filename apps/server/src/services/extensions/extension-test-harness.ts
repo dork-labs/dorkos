@@ -17,7 +17,7 @@ import type { TestExtensionResult } from './extension-manager-types.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
   describeExtensionLoadRefusal,
-  mayRunInServer,
+  mayRunExtensionCode,
 } from './extension-load-policy.js';
 import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
@@ -138,7 +138,7 @@ export async function testClientExtension(
   // process (DOR-516). Deliberately ahead of the compile: refusing early keeps the
   // refusal about consent instead of burying it under whatever esbuild says, and
   // there is no reason to build a bundle nothing may evaluate.
-  if (!mayRunInServer(id, record.origin, configManager.get('extensions').approvedToRun)) {
+  if (!mayRunExtensionCode(id, record.origin, configManager.get('extensions').approvedToRun)) {
     logger.warn(
       `[Extensions] Test refused for ${id}: waiting for a person to approve it ` +
         `(${EXTENSION_NOT_APPROVED_CODE})`

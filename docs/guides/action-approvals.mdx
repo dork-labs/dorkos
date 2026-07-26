@@ -71,7 +71,8 @@ One set of settings is neither of those things. Agents are refused them outright
   finished. If that gap matters for how you run your agents, the safe move today is to not hand an
   agent a job that depends on deleting things you cannot rebuild. Extension tools are a partial
   exception: an agent can still write and compile extension files freely, but it cannot make DorkOS
-  **run** an extension's code until you have allowed that extension, once.
+  **run** an extension's code until you have allowed that extension, once. That covers both places
+  it would run, on your computer and on the DorkOS page in your browser.
 </Callout>
 
 Each action DorkOS does cover carries a size label on its card, so you can tell at a glance what you are being asked:

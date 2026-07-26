@@ -271,6 +271,156 @@ describe('ExtensionManager', () => {
     expect(bundle).toBeNull();
   });
 
+  /**
+   * The client bundle is the OTHER way extension code runs (DOR-516), and it was
+   * ungated. The chain, every link of it real: `create_extension` (tier `act`,
+   * always allowed) scaffolds and enables, `enable` compiles and sets
+   * `bundleReady`, the tool broadcasts a hot reload, the cockpit picks it up with
+   * no page refresh, and the browser `import()`s and `activate()`s the bundle. That
+   * code is same-origin JavaScript on the cockpit page, so a plain
+   * `fetch('/api/extensions/<id>/approve')` carries the person's session and no
+   * agent header — meaning the agent's unapproved client code could approve the
+   * agent's server code, with Require login ON.
+   */
+  describe('the client bundle is gated too (DOR-516)', () => {
+    it('withholds the bundle of a compiled extension nobody approved', async () => {
+      const record = makeRecord('unapproved', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['unapproved'],
+        disabled: [],
+        approvedToRun: [],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hash789' });
+      mockReadBundle.mockResolvedValue('bundle-code');
+
+      await manager.initialize(null);
+      // It compiled, and it is ready to serve — the two things the old check asked.
+      expect(manager.get('unapproved')).toMatchObject({ status: 'compiled', bundleReady: true });
+
+      const bundle = await manager.readBundle('unapproved');
+
+      expect(bundle).toBeNull();
+      // Not merely "the caller got null": the compiler was never asked, so there is
+      // no path where the bytes leave this process.
+      expect(mockReadBundle).not.toHaveBeenCalled();
+    });
+
+    it('serves it the moment the person approves, with no recompile', async () => {
+      const record = makeRecord('waiting', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({ enabled: ['waiting'], disabled: [], approvedToRun: [] });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hashabc' });
+      mockReadBundle.mockResolvedValue('bundle-code');
+
+      await manager.initialize(null);
+      expect(await manager.readBundle('waiting')).toBeNull();
+
+      mockConfigGet.mockReturnValue({
+        enabled: ['waiting'],
+        disabled: [],
+        approvedToRun: ['waiting'],
+      });
+
+      expect(await manager.readBundle('waiting')).toBe('bundle-code');
+      expect(mockReadBundle).toHaveBeenCalledWith('waiting', 'hashabc');
+    });
+
+    it('never withholds a core extension, which DorkOS ships and never asks about', async () => {
+      const record = makeRecord('linear-issues', { status: 'enabled', origin: 'core' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['linear-issues'],
+        disabled: [],
+        approvedToRun: [],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'core-code', sourceHash: 'hashcore' });
+      mockReadBundle.mockResolvedValue('core-code');
+
+      await manager.initialize(null);
+
+      expect(await manager.readBundle('linear-issues')).toBe('core-code');
+    });
+
+    it('reads the approval list, not some other list that happens to hold the id', async () => {
+      // A gate that consulted `enabled` instead of `approvedToRun` would pass every
+      // extension an agent turned on — which is every extension an agent creates,
+      // since `create_extension` enables what it scaffolds.
+      const record = makeRecord('enabled-not-approved', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['enabled-not-approved'],
+        disabled: ['something-else'],
+        approvedToRun: ['a-different-extension'],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle-code', sourceHash: 'hashdef' });
+      mockReadBundle.mockResolvedValue('bundle-code');
+
+      await manager.initialize(null);
+
+      expect(await manager.readBundle('enabled-not-approved')).toBeNull();
+    });
+  });
+
+  /**
+   * Approval is keyed to the extension id and survives the edit → test → reload
+   * loop, deliberately. What it must NOT survive is the artifact being swapped for
+   * different code under the same name: `marketplace_install` is tier `act`, and
+   * `MarketplaceInstaller.update()` is an uninstall followed by a fresh install, so
+   * without this the second `foo` inherits the decision made about the first.
+   */
+  describe('forgetRunApproval, for code that is being replaced (DOR-516)', () => {
+    it('drops the id from the stored list and stops the extension', async () => {
+      const record = makeRecord('foo', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['foo'],
+        disabled: [],
+        approvedToRun: ['foo', 'bar'],
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'c', sourceHash: 'h' });
+
+      await manager.initialize(null);
+      mockConfigSet.mockClear();
+
+      await manager.forgetRunApproval('foo');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: ['foo'],
+        disabled: [],
+        approvedToRun: ['bar'],
+      });
+    });
+
+    it('works for an id whose files are already gone, because uninstall stages them away', async () => {
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: ['gone'] });
+      mockDiscover.mockResolvedValue([]);
+
+      await manager.initialize(null);
+      mockConfigSet.mockClear();
+
+      await manager.forgetRunApproval('gone');
+
+      expect(mockConfigSet).toHaveBeenCalledWith('extensions', {
+        enabled: [],
+        disabled: [],
+        approvedToRun: [],
+      });
+    });
+
+    it('writes nothing when there was no approval to forget', async () => {
+      mockConfigGet.mockReturnValue({ enabled: [], disabled: [], approvedToRun: ['other'] });
+      mockDiscover.mockResolvedValue([]);
+
+      await manager.initialize(null);
+      mockConfigSet.mockClear();
+
+      await manager.forgetRunApproval('never-approved');
+
+      expect(mockConfigSet).not.toHaveBeenCalled();
+    });
+  });
+
   // === 9. Report activated ===
 
   it('transitions status from compiled to active on reportActivated', async () => {

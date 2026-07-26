@@ -25,6 +25,7 @@ import { logger } from '../lib/logger.js';
 import { broadcastExtensionReloaded } from './extensions.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
   EXTENSION_NOT_APPROVED_ERROR,
@@ -51,12 +52,37 @@ import {
  *    /api/config` (DOR-505's documented residual). Turning on Require login closes
  *    it.
  *
- * @param req - The request, read for the agent-identity and approval-token headers.
+ * Plus one bar the config route does not need, because these two routes are
+ * reachable by a plain cross-site `fetch`: a browser that sends an `Origin` must
+ * send one DorkOS trusts. Without it, any web page a person visits could POST this
+ * approval through their browser — no cookie required in the default posture, and
+ * CORS does not help, since it withholds the RESPONSE while the write has already
+ * happened. Requests with no `Origin` (curl, the CLI, the desktop shell) pass, the
+ * same allowance `validateMcpOrigin` makes for the same reason: only browsers send
+ * the header, so only browsers can be judged by it.
+ *
+ * @param req - The request, read for the `Origin` header and the agent-identity and
+ *   approval-token headers.
  * @param res - The response, read for a resolved session user and written on refusal.
  * @returns `true` when the request was already answered with a refusal, so the
  *   caller must return immediately.
  */
 function refuseIfNotAPerson(req: Request, res: Response): boolean {
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  const sameOrigin = host ? origin === `${req.protocol}://${host}` : false;
+  if (origin && !sameOrigin && !resolveTrustedOrigins().includes(origin)) {
+    res.status(403).json({
+      error: EXTENSION_NOT_APPROVED_ERROR,
+      code: EXTENSION_NOT_APPROVED_CODE,
+      message:
+        `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
+        `Allowing an extension to run code inside DorkOS is something a person does in ` +
+        `their own cockpit, not something another site can ask for on their behalf.`,
+    });
+    return true;
+  }
+
   const cookieRefusal = requireOperatorCookieUnderLogin(
     res,
     'which extensions may run code inside DorkOS'

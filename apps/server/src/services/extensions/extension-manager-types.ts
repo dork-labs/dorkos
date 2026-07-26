@@ -10,7 +10,7 @@ import type {
   ExtensionStatus,
 } from '@dorkos/extension-api';
 import type { Router } from 'express';
-import { mayRunInServer } from './extension-load-policy.js';
+import { mayRunExtensionCode } from './extension-load-policy.js';
 
 /** Tracks an active server-side extension instance. */
 export interface ActiveServerExtension {
@@ -98,6 +98,6 @@ export function toPublic(
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
-    approvedToRun: mayRunInServer(record.id, record.origin, approvedToRun),
+    approvedToRun: mayRunExtensionCode(record.id, record.origin, approvedToRun),
   };
 }

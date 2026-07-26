@@ -153,8 +153,15 @@ export class ExtensionLoader {
     extensions: ExtensionRecordPublic[];
     loaded: Map<string, LoadedExtension>;
   }> {
-    // Only load extensions that have been compiled and have a ready bundle.
-    const ready = extensions.filter((ext) => ext.status === 'compiled' && ext.bundleReady);
+    // Only load extensions that have been compiled, have a ready bundle, and that
+    // the person allowed to run (DOR-516). The server withholds the bundle either
+    // way — that is the actual guarantee, and it lives at
+    // `ExtensionManager.readBundle` so a hand-written request cannot skip it. This
+    // filter is here so the cockpit does not fire a request it knows will be
+    // refused and log a console error for every extension awaiting a decision.
+    const ready = extensions.filter(
+      (ext) => ext.status === 'compiled' && ext.bundleReady && ext.approvedToRun
+    );
 
     if (ready.length === 0) {
       console.log('[extensions] No extensions to load');

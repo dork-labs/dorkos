@@ -103,6 +103,7 @@ describe('POST /api/extensions/:id/approve', () => {
     approveToRun: ReturnType<typeof vi.fn>;
     revokeRunApproval: ReturnType<typeof vi.fn>;
     listPublic: ReturnType<typeof vi.fn>;
+    readBundle: ReturnType<typeof vi.fn>;
   };
   /** Stands in for `sessionGate`'s resolved user, when login is on. */
   let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
@@ -124,6 +125,11 @@ describe('POST /api/extensions/:id/approve', () => {
       }),
       revokeRunApproval: vi.fn().mockResolvedValue(stubPublic(false)),
       listPublic: vi.fn().mockReturnValue([]),
+      readBundle: vi.fn().mockImplementation(async (id: string) =>
+        // Mirrors the real `ExtensionManager.readBundle` gate: an extension a
+        // person has not approved has no bundle to serve.
+        state.extensions.approvedToRun.includes(id) ? 'export function activate() {}' : null
+      ),
     };
 
     app = express();
@@ -247,6 +253,72 @@ describe('POST /api/extensions/:id/approve', () => {
     });
   });
 
+  /**
+   * A cross-site POST is the one caller that is neither an agent nor the person,
+   * and neither of the two bars above sees it. With login off it needs no cookie at
+   * all, and CORS does not help: it withholds the RESPONSE, by which time the write
+   * has happened. So the routes require a trusted `Origin` whenever a browser sends
+   * one.
+   */
+  describe('a page on another site, posting through the person browser', () => {
+    it('is refused, and nothing is written', async () => {
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', 'https://evil.example')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+      expect(state.extensions.approvedToRun).toEqual([]);
+    });
+
+    it('is refused on revoke too, so nothing can be silently switched off', async () => {
+      state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
+
+      const res = await request(app)
+        .post('/api/extensions/my-ext/revoke')
+        .set('origin', 'https://evil.example')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual(['my-ext']);
+    });
+
+    it('is still refused when login is on and it holds a real session cookie', async () => {
+      // The cookie is exactly what a cross-site request would ride on, so the origin
+      // bar has to be independent of it rather than a fallback for when it is absent.
+      state.authEnabled = true;
+      signedInUser = { userId: 'u1', credential: 'cookie' };
+
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', 'https://evil.example')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
+    });
+
+    it('lets the cockpit through on its own origin', async () => {
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', 'http://127.0.0.1:4242')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(state.extensions.approvedToRun).toEqual(['my-ext']);
+    });
+
+    it('lets a caller with no Origin header through, because only browsers send one', async () => {
+      // curl, the CLI, and the desktop shell send no Origin. Refusing them would
+      // block the person without stopping the attack, since the header is set by the
+      // browser and cannot be forged by the page.
+      const res = await request(app).post('/api/extensions/my-ext/approve').send({});
+
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe('inputs that are not an approvable extension', () => {
     it('rejects an id that is not a valid extension id', async () => {
       const res = await request(app).post('/api/extensions/..%2Fetc/approve').send({});
@@ -266,6 +338,59 @@ describe('POST /api/extensions/:id/approve', () => {
       expect(res.status).toBe(409);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('GET /api/extensions/:id/bundle', () => {
+  /**
+   * The client bundle is the second way extension code runs, and serving it before
+   * the person decided handed an agent same-origin JavaScript on the cockpit page —
+   * which carries the person's session, and can therefore POST the approval for the
+   * agent's OWN server code. The gate is inside `ExtensionManager.readBundle`
+   * because this route is the only way a bundle reaches a browser; what this test
+   * pins is that the route honours it rather than falling back to something else.
+   */
+  let app: express.Application;
+  let manager: { readBundle: ReturnType<typeof vi.fn>; listPublic: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.extensions = { enabled: ['my-ext'], disabled: [], approvedToRun: [] };
+
+    manager = {
+      readBundle: vi
+        .fn()
+        .mockImplementation(async (id: string) =>
+          state.extensions.approvedToRun.includes(id) ? 'export function activate() {}' : null
+        ),
+      listPublic: vi.fn().mockReturnValue([]),
+    };
+
+    app = express();
+    app.use(
+      '/api/extensions',
+      createExtensionsRouter(
+        manager as unknown as Parameters<typeof createExtensionsRouter>[0],
+        DORK_HOME,
+        () => null
+      )
+    );
+  });
+
+  it('serves nothing for an extension the person has not approved', async () => {
+    const res = await request(app).get('/api/extensions/my-ext/bundle');
+
+    expect(res.status).toBe(404);
+    expect(res.text).not.toContain('activate');
+  });
+
+  it('serves it once the person approves', async () => {
+    state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
+
+    const res = await request(app).get('/api/extensions/my-ext/bundle');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('activate');
   });
 });
 
