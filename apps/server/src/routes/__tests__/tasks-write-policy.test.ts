@@ -1,0 +1,284 @@
+/**
+ * The operator-only field guard on the TASK REST routes (DOR-504).
+ *
+ * The MCP tools are the surface everybody thinks of, and covering only them is
+ * this program's most-repeated defect: `POST /api/tasks` and
+ * `PATCH /api/tasks/:id` reach the same store, accept the same two fields, and
+ * had no policy check at all. `PATCH` is also the wider hole of the two, because
+ * it accepts `status` — which the cockpit's Approve button sends, so a caller
+ * that can set it can approve its own pending task.
+ *
+ * These tests pin both directions of the check, and the second one is the one
+ * that matters: the guard must not be satisfied merely by the ABSENCE of an agent
+ * header. With login ON, a caller with no proven user is refused even though it
+ * sent no agent header at all.
+ *
+ * @module routes/__tests__/tasks-write-policy
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import type { Db } from '@dorkos/db';
+import type { Task } from '@dorkos/shared/schemas';
+
+/** Mutable posture the mocked config manager reports. */
+const state = vi.hoisted(() => ({ authEnabled: false }));
+
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'auth' ? { enabled: state.authEnabled } : undefined),
+  },
+}));
+
+vi.mock('../../lib/boundary.js', () => ({
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('@dorkos/skills/writer', () => ({
+  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
+  deleteSkillDir: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@dorkos/skills/parser', () => ({
+  parseSkillFile: vi.fn().mockReturnValue({ ok: false, errors: ['mocked'] }),
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    default: {
+      ...(actual.default as Record<string, unknown>),
+      access: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      readFile: vi.fn().mockResolvedValue(''),
+    },
+  };
+});
+
+import { createTasksRouter } from '../tasks.js';
+import { TaskStore } from '../../services/tasks/task-store.js';
+import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+
+function createMockScheduler(): TaskSchedulerService {
+  return {
+    registerTask: vi.fn(),
+    unregisterTask: vi.fn(),
+    triggerManualRun: vi.fn().mockResolvedValue(null),
+    cancelRun: vi.fn().mockReturnValue(false),
+    getNextRun: vi.fn().mockReturnValue(new Date('2026-03-01T00:00:00Z')),
+    getActiveRunCount: vi.fn().mockReturnValue(0),
+    isRegistered: vi.fn().mockReturnValue(false),
+  } as unknown as TaskSchedulerService;
+}
+
+describe('operator-only task fields on the REST routes', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let existing: Task;
+  let scheduler: TaskSchedulerService;
+  /** Stands in for `sessionGate`'s resolved user, when login is on. */
+  let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+
+  beforeEach(() => {
+    state.authEnabled = false;
+    signedInUser = undefined;
+    scheduler = createMockScheduler();
+    db = createTestDb();
+    store = new TaskStore(db);
+    existing = store.createTask({
+      name: 'nightly',
+      description: 'nightly',
+      prompt: 'the prompt the person approved',
+      cron: '0 2 * * *',
+      filePath: '/tmp/tasks/nightly/SKILL.md',
+    });
+
+    app = express();
+    app.use(express.json());
+    app.use((_req, res, next) => {
+      if (signedInUser) res.locals.user = signedInUser;
+      next();
+    });
+    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+  });
+
+  afterEach(() => {
+    store.close();
+  });
+
+  describe('an agent that names itself', () => {
+    it('is refused permissionMode on PATCH, and NOTHING ELSE from the call lands', async () => {
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({
+          prompt: 'a different prompt nobody approved',
+          cron: '* * * * *',
+          permissionMode: 'bypassPermissions',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only_task_field');
+      expect(res.body.fields).toEqual(['permissionMode']);
+
+      const after = store.getTask(existing.id)!;
+      expect(after.permissionMode).toBe('acceptEdits');
+      expect(after.prompt).toBe('the prompt the person approved');
+      expect(after.cron).toBe('0 2 * * *');
+      expect(after.updatedAt).toBe(existing.updatedAt);
+    });
+
+    it('cannot approve its own pending task by setting status', async () => {
+      const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
+      const res = await request(app)
+        .patch(`/api/tasks/${parked.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ status: 'active', enabled: true });
+
+      expect(res.status).toBe(403);
+      expect(res.body.fields).toEqual(['status']);
+      expect(store.getTask(parked.id)!.status).toBe('pending_approval');
+    });
+
+    it('is refused permissionMode on POST, and no task is created', async () => {
+      const before = store.getTasks().length;
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({
+          name: 'sneaky',
+          description: 'sneaky',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+          permissionMode: 'bypassPermissions',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.fields).toEqual(['permissionMode']);
+      expect(store.getTasks()).toHaveLength(before);
+    });
+
+    it('cannot arm a live cron task through POST, even sending no status', async () => {
+      // The reviewer's reproduction. `tasks_create` parks its schedules, but that
+      // parking lived in the MCP HANDLER, not the store — and both store insert
+      // paths hardcode `status: 'active'`, so this route (which is what
+      // `dorkos task create` calls) armed a live cron task with no `status` field
+      // sent at all. There is no field to refuse here; the task must simply park.
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({
+          name: 'nightly-persistence',
+          description: 'fires later, unattended',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe('pending_approval');
+
+      const created = store.getTasks().find((t) => t.name === 'nightly-persistence')!;
+      expect(created.status).toBe('pending_approval');
+      // And it must not have been handed to the scheduler on the way out.
+      expect(scheduler.registerTask).not.toHaveBeenCalled();
+    });
+
+    it('may still write the ordinary fields', async () => {
+      // The guard has to be provably narrow, or refusing everything would pass
+      // every test above.
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ prompt: 'an updated prompt', enabled: false });
+
+      expect(res.status).toBe(200);
+      const after = store.getTask(existing.id)!;
+      expect(after.prompt).toBe('an updated prompt');
+      expect(after.enabled).toBe(false);
+      expect(after.permissionMode).toBe('acceptEdits');
+    });
+  });
+
+  describe('the cockpit', () => {
+    it('still approves a task and sets its permission mode', async () => {
+      // Under the default `local-trust` posture a caller presenting no agent
+      // identity and no approval token clears `trustedCaller`, exactly as on
+      // PATCH /api/config. This is the flow the Approve button drives.
+      const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
+      const res = await request(app)
+        .patch(`/api/tasks/${parked.id}`)
+        .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+
+      expect(res.status).toBe(200);
+      const after = store.getTask(parked.id)!;
+      expect(after.status).toBe('active');
+      expect(after.permissionMode).toBe('bypassPermissions');
+    });
+
+    it('creates a live task straight away, without the parking an agent gets', async () => {
+      // The other half of the parking change: a person creating a task in their
+      // own cockpit must not be made to approve their own request.
+      const res = await request(app).post('/api/tasks').send({
+        name: 'my-own-task',
+        description: 'mine',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        target: 'global',
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.status).toBe('active');
+      expect(scheduler.registerTask).toHaveBeenCalled();
+    });
+  });
+
+  describe('with login on, the check is positive proof and not header absence', () => {
+    beforeEach(() => {
+      state.authEnabled = true;
+    });
+
+    it('refuses a caller with no proven user, even with no agent header', async () => {
+      // The defect shape this exists to avoid: a guard that means "refuse when an
+      // agent header is present" is bypassed by omitting the header. Here the
+      // header is absent and the write is still refused, because with login on
+      // `trustedCaller` requires an authenticated user rather than the absence of
+      // a credential.
+      signedInUser = undefined;
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ permissionMode: 'bypassPermissions' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.fields).toEqual(['permissionMode']);
+      expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
+    });
+
+    it('allows a signed-in person', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ permissionMode: 'bypassPermissions' });
+
+      expect(res.status).toBe(200);
+      expect(store.getTask(existing.id)!.permissionMode).toBe('bypassPermissions');
+    });
+
+    it('still refuses a signed-in caller that names itself an agent', async () => {
+      // A per-user API key satisfies `sessionGate` exactly as a cookie does
+      // (DOR-474), so the agent header is what separates an honest agent holding
+      // a credential from the person. Both checks have to hold, not either one.
+      signedInUser = { userId: 'user_cockpit', credential: 'api-key' };
+      const res = await request(app)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ permissionMode: 'bypassPermissions' });
+
+      expect(res.status).toBe(403);
+      expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
+    });
+  });
+});

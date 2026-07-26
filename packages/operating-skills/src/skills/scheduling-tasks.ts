@@ -43,10 +43,14 @@ The tool requires a cron expression.
 
 ### The approval gate
 
-A task you create is NOT live yet. \`tasks_create\` sets its status to
-\`pending_approval\`; the user must approve it in DorkOS before it runs. Tell the
-user the task was created and needs their approval. Do not promise it will run
-until they approve.
+A task you create is NOT live yet, whichever way you created it. Both
+\`tasks_create\` and \`dorkos task create\` leave it at \`pending_approval\`, and the
+user must approve it in DorkOS before it runs. Tell the user the task was created
+and needs their approval. Do not promise it will run until they approve.
+
+Moving a task to \`active\` is that approval, so it is not something you can do.
+\`tasks_update\` refuses \`status\` and changes nothing else in the same call. Use
+\`enabled\` to turn an already-approved task on or off.
 
 This is the tasks scheduler's own gate. It is not the capability approval flow in
 operating-dorkos: there is no \`approvalToken\` to retry with, and nothing for you
@@ -59,9 +63,19 @@ Both of these are MCP tools with no \`dorkos task\` equivalent. Without the
 
 - Tool: \`tasks_update\` with the schedule \`id\` and any of \`name\`, \`prompt\`, \`cron\`,
   \`enabled\` (true/false to turn it on or off), \`timezone\`, \`maxRuntime\`
-  (e.g. \`"5m"\`, \`"1h"\`), \`permissionMode\`.
+  (e.g. \`"5m"\`, \`"1h"\`).
+
 - \`tasks_delete\` removes a task permanently. Confirm with the user first: this
   tool carries no gate of its own.
+
+### Two fields you cannot set
+
+Do not send \`permissionMode\` or \`status\` to \`tasks_create\` or \`tasks_update\`. A
+task runs later with nobody watching, so how much it may do without asking, and
+whether it is approved to run at all, are the user's choice, not yours. If you
+send either one, DorkOS refuses the whole call and changes nothing at all, not
+even the other fields. Send your other changes without it, and tell the user to
+open the task in DorkOS if they want those changed.
 
 ## Run a task now
 

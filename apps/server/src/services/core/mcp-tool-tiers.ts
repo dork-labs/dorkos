@@ -33,9 +33,15 @@
  * A tier governs WHETHER A CALL NEEDS A PERSON'S APPROVAL. It says nothing about
  * what the call's arguments are allowed to contain. An `act` tool can still take an
  * argument that turns off some other safety system, and labeling it `act` here is
- * not a claim that it cannot — `tasks_create` and `tasks_update` accept a
- * `permissionMode` argument, which is exactly that shape, and is tracked
- * separately. Do not read a full table as a governed domain.
+ * not a claim that it cannot. Do not read a full table as a governed domain.
+ *
+ * `tasks_create` and `tasks_update` were the worked example of that gap: both
+ * accept a `permissionMode` argument, and `tasks_update` applied it, so an `act`
+ * call could hand a future unattended run the safety prompts its caller did not
+ * have. The answer was NOT a higher tier — a card on every schedule edit is the
+ * over-tiering that teaches people to click through — but a policy on the FIELD,
+ * in `tasks/task-write-policy.ts` (DOR-504). Both tools stay `act`. If you find
+ * another argument of this shape, that is the pattern to copy.
  *
  * Only `destructive` changes runtime behavior. `observe` returns allowed before any
  * other check runs, and `act` passes the gate. Labeling all 47 anyway is the point:

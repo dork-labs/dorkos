@@ -373,14 +373,25 @@ describe('MCP Tool Handlers', () => {
       expect(parsed.error).toContain('not found');
     });
 
-    it('handles permissionMode string conversion', async () => {
-      const store = makeMockTasksStore({
-        updateTask: vi.fn().mockReturnValue({ id: 'u1', permissionMode: 'plan' }),
-      });
+    it('refuses permissionMode and writes nothing (DOR-504)', async () => {
+      // This test used to assert the OPPOSITE: that the handler passed
+      // `permissionMode` through to the store. That was the defect — an agent
+      // could hand a future unattended run the safety prompts its caller did not
+      // have. The field is now refused, and the refusal is whole, so the store is
+      // never touched. Full coverage of both servers lives in
+      // `mcp-tools/__tests__/task-tools.test.ts` and
+      // `external-mcp/__tests__/task-permission-mode.test.ts`.
+      const store = makeMockTasksStore({ updateTask: vi.fn() });
       const deps = { ...makeMockDeps(), taskStore: store };
       const handler = createUpdateScheduleHandler(deps);
-      await handler({ id: 'u1', permissionMode: 'plan' });
-      expect(store!.updateTask).toHaveBeenCalledWith('u1', { permissionMode: 'plan' });
+      const result = await handler({ id: 'u1', name: 'Renamed', permissionMode: 'plan' });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.code).toBe('operator_only_task_field');
+      expect(parsed.fields).toEqual(['permissionMode']);
+      // Not even the rename landed.
+      expect(store!.updateTask).not.toHaveBeenCalled();
     });
 
     it('returns error when Tasks disabled', async () => {

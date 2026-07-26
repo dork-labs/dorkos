@@ -124,7 +124,47 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
+      'routes/tasks.ts':
+        'a person approving a scheduled task, or setting how it runs, in their own cockpit (DOR-504)',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'sets how much a scheduled task may do unattended, and whether it is approved to run',
+    call: 'createTask(',
+    allowed: {
+      'routes/tasks.ts':
+        'the cockpit REST route, on its parse-failure FALLBACK branch only — the happy path is upsertFromFile below. Refuses operator-only task fields unless the caller is a trusted caller, and parks the task at pending_approval when it is not (DOR-504)',
+      'services/runtimes/claude-code/mcp-tools/task-tools.ts':
+        'the tasks_create handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
+      'services/shapes/shape-schedule-service.ts':
+        'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy (see task-write-policy.ts)',
+      'services/tasks/task-store.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "writes a task's permission mode and status from a SKILL.md file on disk, which is the primary create path",
+    call: 'upsertFromFile(',
+    allowed: {
+      'routes/tasks.ts':
+        'the cockpit REST route, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504)',
+      'services/tasks/task-file-watcher.ts':
+        'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
+      'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
+      'services/shapes/shape-schedule-service.ts':
+        'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
+      'services/tasks/task-store.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "changes a scheduled task's permission mode or approval status",
+    call: 'updateTask(',
+    allowed: {
+      'routes/tasks.ts':
+        'the cockpit REST route — refuses operator-only task fields unless the caller is a trusted caller (DOR-504)',
+      'services/runtimes/claude-code/mcp-tools/task-tools.ts':
+        'the tasks_create and tasks_update handlers shared by both MCP servers — refuse operator-only fields unconditionally (DOR-504)',
+      'services/tasks/task-store.ts': 'the definition itself',
     },
   },
 ];

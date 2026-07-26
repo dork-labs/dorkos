@@ -15,6 +15,8 @@ import {
   createUpdateScheduleHandler,
   createDeleteScheduleHandler,
   createGetRunHistoryHandler,
+  REFUSED_PERMISSION_MODE_DESCRIPTION,
+  REFUSED_STATUS_DESCRIPTION,
 } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
 
@@ -60,10 +62,8 @@ export function registerTaskTools(registrar: ToolRegistrar, deps: McpToolDeps): 
         description: z.string().optional().describe('Description of what this task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: z.string().optional().describe('Maximum run time (e.g., "5m", "1h")'),
-        permissionMode: z
-          .string()
-          .optional()
-          .describe('Permission mode: acceptEdits or bypassPermissions'),
+        permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
+        status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
       },
       annotations: A.mutateCreateLocal,
     },
@@ -81,7 +81,8 @@ export function registerTaskTools(registrar: ToolRegistrar, deps: McpToolDeps): 
         enabled: z.boolean().optional().describe('Enable or disable the schedule'),
         timezone: z.string().optional().describe('New timezone'),
         maxRuntime: z.string().optional().describe('New max runtime (e.g., "5m", "1h")'),
-        permissionMode: z.string().optional().describe('New permission mode'),
+        permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
+        status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
       },
       annotations: A.mutateUpdateLocal,
     },
