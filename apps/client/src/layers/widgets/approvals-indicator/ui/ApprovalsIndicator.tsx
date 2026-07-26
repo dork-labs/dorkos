@@ -13,6 +13,7 @@ import {
   ApprovalList,
   ApprovalsUnavailable,
   StandingPermissionList,
+  StandingPermissionsUnavailable,
   usePendingApprovals,
   useStandingPermissions,
 } from '@/layers/features/approvals';
@@ -106,7 +107,11 @@ function trustedLabel(count: number): string {
  */
 export function ApprovalsIndicator() {
   const { approvals, isError, retry } = usePendingApprovals();
-  const { permissions } = useStandingPermissions();
+  const {
+    permissions,
+    isError: permissionsUnreadable,
+    retry: retryPermissions,
+  } = useStandingPermissions();
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
 
@@ -117,17 +122,19 @@ export function ApprovalsIndicator() {
   // amber marker in the header meaning exactly one thing: an agent is blocked.
   const linkDown = connectionState !== 'connected';
   const unreadable = count === 0 && isError && !linkDown;
-  const quiet = count === 0 && trustedCount === 0 && !unreadable;
+  const quiet = count === 0 && trustedCount === 0 && !unreadable && !permissionsUnreadable;
   // Trust that is live is worth showing and is NOT worth an alarm: nobody is
   // blocked and nothing is waiting. It takes the amber pill only when something
   // actually needs answering, and reads as a quiet neutral marker otherwise.
-  const trustedOnly = count === 0 && !unreadable && trustedCount > 0;
+  const trustedOnly = count === 0 && !unreadable && (trustedCount > 0 || permissionsUnreadable);
 
   const label = unreadable
     ? 'DorkOS could not check for approvals. Open for details.'
-    : trustedOnly
-      ? trustedLabel(trustedCount)
-      : waitingLabel(count);
+    : permissionsUnreadable && count === 0
+      ? 'DorkOS could not check which standing permissions are live. Open for details.'
+      : trustedOnly
+        ? trustedLabel(trustedCount)
+        : waitingLabel(count);
 
   return (
     <>
@@ -182,6 +189,8 @@ export function ApprovalsIndicator() {
               )}
               {unreadable ? (
                 <span className="hidden sm:inline">can&apos;t check approvals</span>
+              ) : permissionsUnreadable && count === 0 ? (
+                <span className="hidden sm:inline">can&apos;t check permissions</span>
               ) : trustedOnly ? (
                 <>
                   <span className="tabular-nums">
@@ -229,6 +238,13 @@ export function ApprovalsIndicator() {
                   saying so beats a stale count nobody thinks to question. */}
               {isError && <ApprovalsUnavailable onRetry={retry} />}
               {count > 0 && <ApprovalList approvals={approvals} />}
+
+              {/* A permission list that cannot be read is NOT the same as no
+                  permissions, and the difference is an agent still acting without
+                  asking under one the person can no longer end. */}
+              {permissionsUnreadable && (
+                <StandingPermissionsUnavailable onRetry={retryPermissions} />
+              )}
 
               {/* Under any pending cards, never above them: something waiting on a
                   person outranks something already decided. A permission a person

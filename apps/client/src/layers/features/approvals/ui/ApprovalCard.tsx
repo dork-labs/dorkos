@@ -113,9 +113,19 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
         </div>
 
         {/* A column so the standing answer can sit UNDER the two one-time ones in
-            both layouts. `items-end` only where the card is horizontal — stacked,
-            the buttons stretch to the card's width like everything above them. */}
-        <div className="flex min-w-0 shrink-0 flex-col gap-1.5 @[34rem]/approval:items-end">
+            both layouts: start-aligned when the card is stacked, end-aligned under
+            Allow when it is horizontal.
+
+            `items-start` rather than the default `stretch` is a measured choice,
+            not tidiness. The standing button's label is a whole sentence, so
+            stretched it spanned the card — 380px against Allow's 52px in the 424px
+            header panel, which is quiet in colour and loud in area. Shrink-wrapped
+            it is 271px and stops running the full width. The remaining size
+            difference is not removable: §3.7 requires the label to name the whole
+            scope so nobody learns afterwards what they granted, and a sentence is
+            simply bigger than the word "Allow". Prominence is carried by fill,
+            colour, weight, and order instead — see the button itself. */}
+        <div className="flex min-w-0 shrink-0 flex-col items-start gap-1.5 @[34rem]/approval:items-end">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -148,11 +158,19 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
                   card renders as narrow as ~240px in a phone sheet; a nowrap button
                   there sets a minimum width the card cannot meet, and the card
                   scrolls sideways. Verified in a real engine, not reasoned: jsdom
-                  has no layout and reported the broken version as fine. */}
+                  has no layout and reported the broken version as fine.
+
+                  `md:h-auto` is not redundant. The Button base carries `md:h-8`, a
+                  media variant that outranks a plain `h-auto` in the cascade — so
+                  without it the height override silently stops applying at 768px
+                  and `min-h-7` never binds. Measured: 49.25px at 375, and 32px at
+                  768 until this was added. Nothing clips there today only because
+                  no production container is that narrow at desktop width, which
+                  makes it accidentally sufficient rather than correct. */}
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-muted-foreground hover:text-foreground h-auto min-h-7 px-2.5 py-1 text-xs leading-snug font-normal whitespace-normal @[34rem]/approval:text-right"
+                className="text-muted-foreground hover:text-foreground h-auto min-h-7 px-2.5 py-1 text-xs leading-snug font-normal whitespace-normal md:h-auto @[34rem]/approval:text-right"
                 disabled={deciding}
                 onClick={() => grant.mutate({ approvalId: approval.approvalId, standing: true })}
               >

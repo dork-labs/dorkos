@@ -32,6 +32,12 @@
  * So this is a floor, not a fence: it catches the honest case of somebody adding
  * a broadcast, which is the case that has actually happened.
  *
+ * It also reads COMMENTS, deliberately, so a broadcast written out in prose would
+ * ask for an allowlist entry. Two attempts at stripping comments first were each
+ * defeated by ordinary source in this repo and each failed silently green; the
+ * whole argument is on {@link broadcastNames}, and it is worth reading before
+ * anyone tries a third.
+ *
  * @module services/core/__tests__/sse-event-allowlist
  */
 import { readdir, readFile } from 'node:fs/promises';
@@ -76,30 +82,41 @@ async function productionSources(dir: string): Promise<string[]> {
 }
 
 /**
- * Strip comments, so a name mentioned in prose is not read as a call.
+ * Every literal event name broadcast on the global fan-out.
  *
- * Line comments go FIRST, and that order is load-bearing rather than tidy. A `//`
- * line that mentions a block-comment opener — `apps/server/src/index.ts` has one,
- * reading "`/*` regardless of `config.auth.enabled`" — opens a block comment that
- * the next `*&#47;` anywhere in the file closes. Stripping blocks first ate 71,000
- * characters of that file, including four live broadcasts, and the scan came back
- * green over the wreckage. Removing the line comments first leaves nothing for the
- * block pass to mis-pair.
+ * ## This reads the RAW source, and stripping comments first was the bug
+ *
+ * The obvious refinement here is to remove comments before matching, so a name
+ * mentioned in prose is not read as a call. Two separate attempts at that were
+ * defeated by ordinary source in this repo, and both failed **silently green**:
+ *
+ * 1. Stripping block comments before line comments. `apps/server/src/index.ts`
+ *    has a `//` line reading "`/*` regardless of `config.auth.enabled`", which
+ *    opens a block comment that the next `*&#47;` anywhere below closes. That ate
+ *    71,000 characters of the file, including four live broadcasts, and the scan
+ *    passed over the wreckage.
+ * 2. Fixing the order. The block-comment pass is still blind to STRING LITERALS,
+ *    and three files carry a `'*&#47;*'` media type — `services/core/upload-handler.ts`,
+ *    `routes/relay-adapters.ts`, `services/workbench-serve/proxy.ts`. Each opens a
+ *    fake comment at offset 1 that the next real `*&#47;` closes, masking anything
+ *    between. Seeding one broadcast behind each still gave three green tests.
+ *
+ * Getting this right needs a real tokenizer, and the whole point of the file is to
+ * be a cheap floor. So it does not try: it matches the raw text, and accepts that a
+ * broadcast written out in a comment would demand an allowlist entry.
+ *
+ * That trade is chosen for its DIRECTION, not because the false positive is
+ * unlikely. Missing a real broadcast means an event silently dropped in production,
+ * with no error anywhere — the exact defect this file exists to prevent. A false
+ * positive means one extra name in a list, which is visible, cheap, and safe.
+ * Measured on the tree as it stands: raw and comment-stripped scans return the same
+ * 14 names, so nothing is being paid for this today.
  */
-function code(text: string): string {
-  return text
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//'))
-    .join('\n')
-    .replace(/\/\*[\s\S]*?\*\//g, '');
-}
-
-/** Every literal event name broadcast on the global fan-out. */
 async function broadcastNames(): Promise<string[]> {
   const found = new Set<string>();
   for (const file of await productionSources(SERVER_SRC)) {
     const pattern = /\.broadcast\(\s*['"]([A-Za-z0-9_]+)['"]/g;
-    for (const match of code(await readFile(file, 'utf-8')).matchAll(pattern)) {
+    for (const match of (await readFile(file, 'utf-8')).matchAll(pattern)) {
       found.add(match[1]);
     }
   }
@@ -148,6 +165,11 @@ describe('the client allowlist covers every event the server broadcasts', () => 
     // The reverse direction, so the list cannot rot into names nothing emits. An
     // entry that is real but built from a variable belongs in
     // NOT_BROADCAST_BY_LITERAL with its reason, not deleted.
+    //
+    // Weaker than the forward direction by exactly the trade above: a broadcast
+    // that was commented out rather than deleted still counts as emitted here, so
+    // this will not notice. That is the harmless half — a stale allowlist entry
+    // dispatches an event nobody sends, which costs nothing.
     const stale = ALLOWED.filter(
       (name) => !BROADCAST.includes(name) && !(name in NOT_BROADCAST_BY_LITERAL)
     );

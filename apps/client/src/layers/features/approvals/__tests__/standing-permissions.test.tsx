@@ -25,6 +25,11 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   return { ...actual, useEventSubscription: vi.fn() };
 });
 
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn(), message: vi.fn() },
+}));
+
+import { toast } from 'sonner';
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { PendingApprovalsSection } from '../ui/PendingApprovalsSection';
 import { StandingPermissionsSettings } from '../ui/StandingPermissionsSettings';
@@ -301,6 +306,61 @@ describe('the third button on an approval card', () => {
     expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001', { standing: true });
   });
 
+  it('says the action ran when only the permission failed to record', async () => {
+    // The 500 that is not a failure. The server says so in plain words; the app-wide
+    // handler would replace all of it with "Action failed. Please try again." about
+    // an irreversible action that succeeded, which invites doing it twice.
+    const failure = new Error(
+      'DorkOS allowed this one action, but could not record the permission to stop asking. The agent will ask again next time.'
+    ) as Error & { code?: string };
+    failure.code = 'STANDING_PERMISSION_NOT_RECORDED';
+
+    renderWith(
+      <>
+        <PolicyProbe />
+        <PendingApprovalsSection />
+      </>,
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+        getConfig: configWith(),
+        grantApproval: vi.fn().mockRejectedValue(failure),
+      }
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /stop asking about this/i }));
+
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+    expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain('allowed this one action');
+    // Not the generic toast, and not an error tone.
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's own reason when the permission is refused", async () => {
+    const failure = new Error(
+      'Standing permissions are switched off. Turn them on in Settings, under Security, first.'
+    ) as Error & { code?: string };
+    failure.code = 'STANDING_GRANTS_DISABLED';
+
+    renderWith(
+      <>
+        <PolicyProbe />
+        <PendingApprovalsSection />
+      </>,
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+        getConfig: configWith(),
+        grantApproval: vi.fn().mockRejectedValue(failure),
+      }
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /stop asking about this/i }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toBe(
+      'Standing permissions are switched off. Turn them on in Settings, under Security, first.'
+    );
+  });
+
   it('keeps "Don\'t allow" first, and the standing answer last', async () => {
     // Neither answer may be dressed up as the safe one, and the permanent answer
     // must not sit where the eye lands first.
@@ -335,6 +395,27 @@ describe('standing permissions in Settings, under Security', () => {
     const toggle = await screen.findByRole('switch', { name: 'Standing permissions' });
     await waitFor(() => expect(toggle).toBeDisabled());
     expect(screen.getByText(/Turn on Require login above to use this/i)).toBeInTheDocument();
+  });
+
+  it('does not blame Require login before it knows whether login is on', async () => {
+    // The config has not answered yet. Reading `loginEnabled` as false is the right
+    // default for the SWITCH (never offer what might be refused) and the wrong one
+    // for the DESCRIPTION, which would state a reason and then flip.
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    renderWith(<StandingPermissionsSettings />, {
+      getConfig: vi.fn().mockReturnValue(pending),
+    });
+
+    const toggle = await screen.findByRole('switch', { name: 'Standing permissions' });
+    expect(toggle).toBeDisabled();
+    expect(screen.queryByText(/Turn on Require login above to use this/i)).not.toBeInTheDocument();
+
+    // …and it says it once it actually knows.
+    release({ auth: { enabled: false }, approvals: { standingGrants: false } });
+    expect(await screen.findByText(/Turn on Require login above to use this/i)).toBeInTheDocument();
   });
 
   it('is usable once Require login is on', async () => {
@@ -403,6 +484,22 @@ describe('standing permissions in Settings, under Security', () => {
     expect(await screen.findByText('~/work/acme/helper')).toBeInTheDocument();
     expect(screen.getByText('~/work/beta/helper')).toBeInTheDocument();
     expect(screen.queryByText('helper')).not.toBeInTheDocument();
+  });
+
+  it('says so when the list cannot be read, rather than saying nothing is trusted', async () => {
+    // "Nothing is trusted right now" is the most reassuring sentence this panel
+    // has. A failed read must not borrow it: while it is on screen the gate may
+    // still be auto-approving under a permission that can no longer be ended here.
+    renderWith(<StandingPermissionsSettings />, {
+      getConfig: configWith(),
+      listStandingPermissions: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+
+    expect(
+      await screen.findByText(/could not check which standing permissions are live/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Nothing is trusted right now')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
   it('says that switching the feature off ends every live permission', async () => {

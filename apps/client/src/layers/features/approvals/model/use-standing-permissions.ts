@@ -15,8 +15,18 @@ export interface StandingPermissionsState {
   permissions: StandingPermission[];
   /** True only on the very first load, before any answer has arrived. */
   isLoading: boolean;
-  /** True when the list could not be read. */
+  /**
+   * True when the list could not be read.
+   *
+   * NOT the same as "nothing is trusted", and the difference is the whole reason
+   * this field exists. A failed read and an empty list are the same empty space on
+   * screen, and while it is on screen the gate may still be auto-approving under a
+   * permission the person can no longer see or end. Every consumer renders this;
+   * the field is not decoration.
+   */
   isError: boolean;
+  /** Read the list again. */
+  retry: () => void;
 }
 
 /**
@@ -54,7 +64,7 @@ export function useStandingPermissions(): StandingPermissionsState {
   const { canGrant } = useStandingGrantPolicy();
   const now = useNow(EXPIRY_TICK_MS);
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: STANDING_PERMISSIONS_QUERY_KEY,
     queryFn: () => transport.listStandingPermissions(),
     enabled: canGrant,
@@ -79,6 +89,7 @@ export function useStandingPermissions(): StandingPermissionsState {
     permissions: canGrant ? live : [],
     isLoading: canGrant && isLoading,
     isError: canGrant && isError,
+    retry: () => void refetch(),
   };
 }
 

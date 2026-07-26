@@ -21,6 +21,7 @@ import { formatTrustWindow } from '../lib/format-trust-window';
 import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
 import { useStandingPermissions } from '../model/use-standing-permissions';
 import { StandingPermissionList } from './StandingPermissionList';
+import { StandingPermissionsUnavailable } from './StandingPermissionsUnavailable';
 
 /**
  * The windows a person can pick from, in minutes.
@@ -61,8 +62,9 @@ const WINDOW_CHOICES = [30, 60, 120, 240, 480, 720, 1440];
  * would have decided that.
  */
 export function StandingPermissionsSettings() {
-  const { standingGrantsEnabled, loginEnabled, windowMinutes } = useStandingGrantPolicy();
-  const { permissions } = useStandingPermissions();
+  const { standingGrantsEnabled, loginEnabled, windowMinutes, isResolved } =
+    useStandingGrantPolicy();
+  const { permissions, isError, retry } = useStandingPermissions();
   const updateConfig = useUpdateConfig();
   const [confirmingOff, setConfirmingOff] = useState(false);
 
@@ -82,8 +84,12 @@ export function StandingPermissionsSettings() {
     <>
       <SettingRow
         label="Standing permissions"
+        // The login-off REASON waits for the config to land; the disabled state
+        // does not. The asymmetry is deliberate: starting disabled and becoming
+        // enabled never offers something DorkOS might refuse, while stating a
+        // reason that is not true and then flipping is just wrong for a second.
         description={
-          loginEnabled
+          loginEnabled || !isResolved
             ? 'Let yourself answer "stop asking about this" from an approval card, for one agent and one action at a time.'
             : 'Turn on Require login above to use this. Without it, DorkOS cannot tell you apart from an agent running on this machine.'
         }
@@ -132,9 +138,19 @@ export function StandingPermissionsSettings() {
 
           <div className="space-y-2 px-4 py-3">
             <p className="text-sm font-medium">
-              {liveCount === 0 ? 'Nothing is trusted right now' : `Live right now (${liveCount})`}
+              {isError
+                ? 'Live right now'
+                : liveCount === 0
+                  ? 'Nothing is trusted right now'
+                  : `Live right now (${liveCount})`}
             </p>
-            {liveCount === 0 ? (
+            {/* The failed read is checked BEFORE the empty case, and the order is
+                the point: an empty list here reads as "nothing is trusted", which
+                is the most reassuring thing this surface can say and the last
+                thing it should say when it does not know. */}
+            {isError ? (
+              <StandingPermissionsUnavailable onRetry={retry} />
+            ) : liveCount === 0 ? (
               <p className="text-muted-foreground text-xs">
                 When you answer &ldquo;stop asking about this&rdquo; on an approval card, it shows
                 up here until it runs out.

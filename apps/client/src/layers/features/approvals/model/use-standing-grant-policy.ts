@@ -11,6 +11,16 @@ export interface StandingGrantPolicy {
   loginEnabled: boolean;
   /** How long a new permission would last, in minutes. */
   windowMinutes: number;
+  /**
+   * Whether the config has actually been read yet.
+   *
+   * Both flags above read `false` until it lands, which is the right default for
+   * anything that OFFERS a permission — never hold out a control you might not be
+   * able to honor. It is the wrong default for anything that EXPLAINS, because a
+   * description rendered from an unread config states a reason that may not be
+   * true, and then flips. Say nothing rather than the wrong thing.
+   */
+  isResolved: boolean;
 }
 
 /**
@@ -43,5 +53,6 @@ export function useStandingGrantPolicy(): StandingGrantPolicy {
     standingGrantsEnabled,
     loginEnabled,
     windowMinutes: config?.approvals?.trustWindowMinutes ?? DEFAULT_TRUST_WINDOW_MINUTES,
+    isResolved: config !== undefined,
   };
 }

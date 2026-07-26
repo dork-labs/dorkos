@@ -22,5 +22,6 @@ export { ApprovalList } from './ui/ApprovalList';
 export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
 export { usePendingApprovals } from './model/use-pending-approvals';
 export { StandingPermissionList } from './ui/StandingPermissionList';
+export { StandingPermissionsUnavailable } from './ui/StandingPermissionsUnavailable';
 export { StandingPermissionsSettings } from './ui/StandingPermissionsSettings';
 export { useStandingPermissions } from './model/use-standing-permissions';
