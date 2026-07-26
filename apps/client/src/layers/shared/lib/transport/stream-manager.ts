@@ -160,6 +160,11 @@ export const GENERIC_EVENTS = [
   'approval_pending',
   'approval_resolved',
   'approval_grant_changed',
+  'room_created',
+  'room_updated',
+  'room_member_added',
+  'room_member_removed',
+  'room_activity',
 ] as const;
 
 /** A member of {@link GENERIC_EVENTS}. */
