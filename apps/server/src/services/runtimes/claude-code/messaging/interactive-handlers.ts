@@ -25,8 +25,18 @@ const READ_ONLY_TOOLS = new Set([
 ]);
 
 /**
- * DorkOS agent communication tools — pure messaging/discovery infrastructure.
- * Relay access control (relay/access-rules.json) handles authorization separately.
+ * DorkOS agent communication tools, auto-approved because they carry their own
+ * authorization, NOT because they are read-only. Some of these mutate:
+ * `relay_inbox` with `ack: true` permanently deletes the messages it returns
+ * (see the `act` tier note in `mcp-tool-tiers.ts`) and `relay_register_endpoint`
+ * creates a mailbox.
+ *
+ * The exemption is deliberate. An agent polls its inbox continuously, so a card
+ * per poll would train the user to dismiss cards without reading them, which
+ * weakens every other approval card. What bounds the damage instead is that the
+ * server injects the caller's identity and the endpoint tools refuse any inbox
+ * the caller does not own, so an `ack` can only ever destroy the caller's own
+ * mail. Cross-agent messaging authorization lives in relay/access-rules.json.
  */
 const DORKOS_AGENT_TOOLS = new Set([
   'mcp__dorkos__relay_send',

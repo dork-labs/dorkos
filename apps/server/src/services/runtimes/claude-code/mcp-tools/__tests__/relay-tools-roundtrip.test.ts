@@ -24,12 +24,17 @@ import {
   createRelayQueryHandler,
   createRelayDispatchHandler,
   createRelayInboxHandler,
+  createRelayRegisterEndpointHandler,
+  createRelayUnregisterEndpointHandler,
 } from '../relay-tools.js';
 import type { McpToolDeps } from '../types.js';
 import type { SenderIdentity } from '../relay-helpers.js';
 
 /** Server-injected caller identity (relay tools no longer accept a `from` arg). */
 const CALLER: SenderIdentity = { subject: 'relay.agent.caller', agentId: 'caller' };
+
+/** A second agent, used to prove it cannot reach the caller's mail (DOR-506). */
+const INTRUDER: SenderIdentity = { subject: 'relay.agent.intruder', agentId: 'intruder' };
 
 /**
  * Adapter registry that mimics ClaudeCodeAdapter's behavior for
@@ -125,7 +130,7 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
 
   it('relay_send_async + relay_inbox polling (no status arg) returns payloads and ack drains pending (C2, DOR-406)', async () => {
     const dispatchHandler = createRelayDispatchHandler(deps, CALLER);
-    const inboxHandler = createRelayInboxHandler(deps);
+    const inboxHandler = createRelayInboxHandler(deps, CALLER);
 
     const dispatchResult = await dispatchHandler({
       to_subject: 'relay.agent.responder',
@@ -155,5 +160,206 @@ describe('relay MCP tools → real RelayCore round-trip', () => {
     // Acked messages stop being returned by the (still-defaulted) pending filter.
     const afterAck = parse(await inboxHandler({ endpoint_subject: inboxSubject }));
     expect(afterAck.messages).toEqual([]);
+  });
+
+  it("a second agent cannot drain or destroy the caller's dispatch inbox (DOR-506)", async () => {
+    // The whole bug in one test, against a real Maildir: agent A dispatches,
+    // agent B names A's inbox subject with ack:true. Before the ownership
+    // check this returned A's messages AND unlinked their payload files, so A
+    // polled an empty inbox and the content was gone for good.
+    const dispatchResult = await createRelayDispatchHandler(
+      deps,
+      CALLER
+    )({
+      to_subject: 'relay.agent.responder',
+      payload: { task: 'long-running work' },
+    });
+    const { inboxSubject } = parse(dispatchResult) as { inboxSubject: string };
+
+    const callerInbox = createRelayInboxHandler(deps, CALLER);
+    await vi.waitFor(async () => {
+      const peek = parse(await callerInbox({ endpoint_subject: inboxSubject }));
+      expect((peek.messages as unknown[]).length).toBe(3);
+    });
+
+    const stolen = await createRelayInboxHandler(
+      deps,
+      INTRUDER
+    )({
+      endpoint_subject: inboxSubject,
+      ack: true,
+    });
+    expect(stolen.isError).toBe(true);
+    const denial = parse(stolen);
+    expect(denial.code).toBe('ENDPOINT_ACCESS_DENIED');
+    expect(denial.messages).toBeUndefined();
+
+    // The intruder also cannot delete the mailbox out from under the caller.
+    const wiped = await createRelayUnregisterEndpointHandler(
+      deps,
+      INTRUDER
+    )({
+      subject: inboxSubject,
+    });
+    expect(wiped.isError).toBe(true);
+    expect(parse(wiped).code).toBe('ENDPOINT_ACCESS_DENIED');
+
+    // The caller's mail is untouched: still three pending messages, payloads intact.
+    const survived = parse(await callerInbox({ endpoint_subject: inboxSubject }));
+    const payloads = (survived.messages as Array<{ payload: Record<string, unknown> }>).map(
+      (m) => m.payload
+    );
+    expect(payloads).toHaveLength(3);
+    expect(payloads[2]).toMatchObject({ type: 'agent_result', text: 'final answer', done: true });
+
+    // And the owner can still clean up its own inbox.
+    const removed = await createRelayUnregisterEndpointHandler(
+      deps,
+      CALLER
+    )({
+      subject: inboxSubject,
+    });
+    expect(removed.isError).toBeUndefined();
+    expect(relay.getEndpoint(inboxSubject)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ownership across a restart, and mailbox identity (DOR-506 review round 2)
+//
+// Two real RelayCore instances over one dataDir. The endpoint Map does not
+// survive the restart; the Maildir, the SQLite index, and the recorded owner do.
+// ---------------------------------------------------------------------------
+
+describe('relay endpoint ownership across a restart', () => {
+  const ALICE: SenderIdentity = { subject: 'relay.agent.ns.alice', agentId: 'alice' };
+  const BOB: SenderIdentity = { subject: 'relay.agent.ns.bob', agentId: 'bob' };
+  const INBOX = 'relay.inbox.alice';
+
+  let tmpDir: string;
+  let first: RelayCore;
+  let second: RelayCore | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-owner-restart-'));
+    first = new RelayCore({ dataDir: tmpDir });
+  });
+
+  afterEach(async () => {
+    await first.close();
+    await second?.close();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Register Alice's inbox, deliver a message to it, then restart the bus. */
+  async function seedAndRestart(): Promise<McpToolDeps> {
+    const aliceDeps = { relayCore: first } as McpToolDeps;
+    const registered = await createRelayRegisterEndpointHandler(
+      aliceDeps,
+      ALICE
+    )({
+      subject: INBOX,
+    });
+    expect(registered.isError).toBeUndefined();
+
+    await first.publish(INBOX, { secret: 'undelivered mail for alice' }, { from: BOB.subject });
+    await first.close();
+
+    second = new RelayCore({ dataDir: tmpDir });
+    return { relayCore: second } as McpToolDeps;
+  }
+
+  it("bob cannot claim alice's inbox after a restart, read it, or ack it away", async () => {
+    const deps = await seedAndRestart();
+
+    // Bob tries to take ownership by naming the subject first.
+    const claim = await createRelayRegisterEndpointHandler(deps, BOB)({ subject: INBOX });
+    expect(claim.isError).toBe(true);
+    expect(parse(claim).code).toBe('ENDPOINT_ACCESS_DENIED');
+
+    // Alice re-registers and is still the owner, so she is not locked out.
+    const reclaim = await createRelayRegisterEndpointHandler(deps, ALICE)({ subject: INBOX });
+    expect(reclaim.isError).toBeUndefined();
+
+    // Bob now has a live endpoint to name, and is still refused on both paths.
+    const stolen = await createRelayInboxHandler(
+      deps,
+      BOB
+    )({
+      endpoint_subject: INBOX,
+      ack: true,
+    });
+    expect(stolen.isError).toBe(true);
+    expect(parse(stolen).code).toBe('ENDPOINT_ACCESS_DENIED');
+
+    const wiped = await createRelayUnregisterEndpointHandler(deps, BOB)({ subject: INBOX });
+    expect(wiped.isError).toBe(true);
+    expect(parse(wiped).code).toBe('ENDPOINT_ACCESS_DENIED');
+
+    // Alice's mail survived the whole attempt, payload intact.
+    const mine = parse(await createRelayInboxHandler(deps, ALICE)({ endpoint_subject: INBOX }));
+    const payloads = (mine.messages as Array<{ payload: unknown }>).map((m) => m.payload);
+    expect(payloads).toEqual([{ secret: 'undelivered mail for alice' }]);
+  });
+
+  it("bob cannot reach alice's mailbox through a letter-case variant of the subject", async () => {
+    const deps = await seedAndRestart();
+    await createRelayRegisterEndpointHandler(deps, ALICE)({ subject: INBOX });
+
+    const variant = await createRelayRegisterEndpointHandler(
+      deps,
+      BOB
+    )({
+      subject: 'relay.inbox.ALICE',
+    });
+    expect(variant.isError).toBe(true);
+    expect(parse(variant).code).toBe('ENDPOINT_ACCESS_DENIED');
+
+    // Nothing registered under the variant, so unregistering it deletes nothing.
+    const wiped = await createRelayUnregisterEndpointHandler(
+      deps,
+      BOB
+    )({
+      subject: 'relay.inbox.ALICE',
+    });
+    expect(parse(wiped).code).toBe('ENDPOINT_NOT_FOUND');
+
+    const mine = parse(await createRelayInboxHandler(deps, ALICE)({ endpoint_subject: INBOX }));
+    expect(mine.messages).toHaveLength(1);
+    expect((mine.messages as Array<{ payload: unknown }>)[0].payload).toEqual({
+      secret: 'undelivered mail for alice',
+    });
+  });
+
+  it('bob cannot register an agent address to intercept its mail', async () => {
+    const deps = { relayCore: first } as McpToolDeps;
+    const claim = await createRelayRegisterEndpointHandler(
+      deps,
+      BOB
+    )({
+      subject: ALICE.subject,
+    });
+    expect(claim.isError).toBe(true);
+    expect(parse(claim).code).toBe('RESERVED_SUBJECT');
+    expect(first.getEndpoint(ALICE.subject)).toBeUndefined();
+  });
+
+  it('an agent may still register its own address', async () => {
+    const deps = { relayCore: first } as McpToolDeps;
+    const own = await createRelayRegisterEndpointHandler(deps, BOB)({ subject: BOB.subject });
+    expect(own.isError).toBeUndefined();
+  });
+
+  it('cleanup of an inbox that no longer exists reports a miss, not a denial', async () => {
+    // Retry-loop guard: the agent context block documents ENDPOINT_NOT_FOUND for
+    // idempotent cleanup, and a denial would make a cleanup loop spin.
+    const deps = await seedAndRestart();
+    const result = await createRelayUnregisterEndpointHandler(
+      deps,
+      ALICE
+    )({
+      subject: 'relay.inbox.dispatch.long-gone',
+    });
+    expect(parse(result).code).toBe('ENDPOINT_NOT_FOUND');
   });
 });

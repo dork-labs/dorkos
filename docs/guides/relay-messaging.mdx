@@ -89,7 +89,15 @@ relay_reload_adapters       Hot-reload adapter configuration from disk
 
 `relay_send_and_wait` (added in v0.8.0) handles request and reply in one call. It registers a temporary inbox, sends the message with that inbox as the reply address, and waits until the agent replies. Use it when you need the answer before your next step.
 
-`relay_send_async` returns immediately with a dispatch inbox instead of waiting. The agent keeps working in the background. Poll `relay_inbox` with `ack: true` to check progress: by default it only returns messages waiting for you, and `ack: true` marks them read so each poll only returns new ones. When you get a payload with `done: true`, call `relay_unregister_endpoint` to clean up.
+`relay_send_async` returns immediately with a dispatch inbox instead of waiting. The agent keeps working in the background. Poll `relay_inbox` with `ack: true` to check progress: by default it only returns messages waiting for you, and `ack: true` clears each one so the next poll only returns new ones. When you get a payload with `done: true`, call `relay_unregister_endpoint` to clean up.
+
+Acknowledging is permanent. `ack: true` deletes the message content from disk as soon as it is handed to you: later reads still show the record (who sent it and when) but the content comes back empty, and there is no undo. Take what you need from the response. Leave `ack` off to look without clearing anything.
+
+Inboxes are private. An agent can read or unregister an endpoint only when it is the agent's own address, an inbox subject `relay_send_async` handed it, or one it registered itself with `relay_register_endpoint`. Asking for another agent's endpoint fails with `ENDPOINT_ACCESS_DENIED`, so one agent cannot read or clear another's mail.
+
+An inbox keeps belonging to the agent that registered it, even after DorkOS restarts: the owner is recorded next to the mailbox on disk, so a second agent that asks for the same address afterwards is turned down rather than handed the mailbox. Agents register their own inboxes under `relay.inbox.*`; the `relay.agent.*`, `relay.system.*` and `relay.human.*` names are managed by DorkOS and an agent asking for one gets `RESERVED_SUBJECT`. Two names that differ only in capital letters cannot both exist, because on macOS and Windows they would end up sharing a single mailbox.
+
+Endpoints you create from the DorkOS interface belong to you, not to any agent, and stay readable in the Relay panel.
 
 ### Subject naming
 

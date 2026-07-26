@@ -71,6 +71,17 @@ export interface EndpointInfo {
   hash: string;
   maildirPath: string;
   registeredAt: string;
+  /**
+   * Relay subject of the principal that registered this endpoint, when the
+   * registering caller supplied one.
+   *
+   * Absent for endpoints the server registers on its own behalf (the system
+   * console, Mesh-managed agent endpoints, endpoints created from the cockpit's
+   * HTTP route). An absent owner means **nobody** owns the endpoint, never
+   * "everybody": callers that gate access on ownership must deny on `undefined`
+   * rather than fall through to allow.
+   */
+  owner?: string;
 }
 
 export interface SubscriptionInfo {

@@ -85,14 +85,19 @@ export function registerRelayTools(
     'relay_inbox',
     {
       description:
-        'Read inbox messages for a Relay endpoint. Each message includes the sender payload: ' +
+        'Read inbox messages for a Relay endpoint you own: your own agent subject, an inbox subject ' +
+        'relay_send_async returned, or one you registered with relay_register_endpoint. Naming another ' +
+        "agent's endpoint fails with code ENDPOINT_ACCESS_DENIED. Each message includes the sender payload: " +
         '{ id, subject, status, createdAt, sender, payload }. For agent dispatch inboxes the payload is ' +
         'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
         '{ type: "agent_result", text, done: true }. Defaults to status="pending" (deliverable, unread ' +
         'messages) so budget-rejected failures never surface silently next to real deliverables. Pass ' +
-        'ack=true when polling so returned messages are marked read and the next poll only returns new ones.',
+        'ack=true when polling so each message is returned once — note that ack PERMANENTLY DELETES the ' +
+        'message content, so read what you need out of the response before your next call.',
       inputSchema: {
-        endpoint_subject: z.string().describe('Subject of the endpoint to read inbox for'),
+        endpoint_subject: z
+          .string()
+          .describe('Subject of the endpoint to read inbox for. Must be an endpoint you own.'),
         limit: z.number().int().min(1).max(100).optional().describe('Max messages to return'),
         status: InboxStatusFilterSchema.optional().describe(
           'Filter messages by status. Defaults to "pending" (deliverable, unread messages). Pass ' +
@@ -103,13 +108,16 @@ export function registerRelayTools(
           .boolean()
           .optional()
           .describe(
-            'Acknowledge returned unread messages (mark them read). Set true when polling a dispatch inbox so each message is returned exactly once.'
+            'Acknowledge returned unread messages. This DESTROYS them: the message content is deleted ' +
+              'from disk and cannot be recovered, and only the record (id, sender, timestamps) remains, ' +
+              'with payload null on later reads. Set true when polling a dispatch inbox so each message ' +
+              'is returned exactly once; leave it off to peek without destroying anything.'
           ),
       },
-      // Not read-only: ack:true marks returned messages read, mutating inbox state.
+      // Not read-only: ack:true destroys the returned messages' payloads.
       annotations: A.mutateUpdateLocal,
     },
-    createRelayInboxHandler(deps)
+    createRelayInboxHandler(deps, identity)
   );
   registrar.registerTool(
     'relay_list_endpoints',
@@ -126,15 +134,21 @@ export function registerRelayTools(
   registrar.registerTool(
     'relay_register_endpoint',
     {
-      description: 'Register a new Relay endpoint to receive messages on a subject.',
+      description:
+        'Register a new Relay endpoint to receive messages on a subject. The endpoint belongs to you, ' +
+        'so you are the only caller that can read or unregister it, and it keeps belonging to you ' +
+        'across server restarts. Use the relay.inbox.* namespace: relay.agent.*, relay.system.* and ' +
+        'relay.human.* are managed by the server and fail with code RESERVED_SUBJECT. A subject that ' +
+        'differs from an existing endpoint only by letter case is refused, because the two would ' +
+        'share one mailbox on macOS and Windows.',
       inputSchema: {
-        subject: z.string().describe('Subject for the new endpoint (e.g., "relay.agent.mybot")'),
+        subject: z.string().describe('Subject for the new endpoint (e.g., "relay.inbox.mybot")'),
         description: z.string().optional().describe('Human-readable description of the endpoint'),
       },
       // Throws "already registered" on a duplicate subject rather than upserting — not idempotent.
       annotations: A.mutateCreateLocal,
     },
-    createRelayRegisterEndpointHandler(deps)
+    createRelayRegisterEndpointHandler(deps, identity)
   );
   registrar.registerTool(
     'relay_send_and_wait',
@@ -206,13 +220,15 @@ export function registerRelayTools(
     'relay_unregister_endpoint',
     {
       description:
-        'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_send_async completes (when done:true received).',
+        'Unregister a Relay endpoint you own, deleting its mailbox and every message still in it. Use ' +
+        'to clean up dispatch inboxes after relay_send_async completes (when done:true received). ' +
+        "Another caller's endpoint fails with code ENDPOINT_ACCESS_DENIED.",
       inputSchema: {
-        subject: z.string().describe('Subject of the endpoint to unregister'),
+        subject: z.string().describe('Subject of the endpoint to unregister. Must be one you own.'),
       },
       annotations: A.mutateDeleteLocal,
     },
-    createRelayUnregisterEndpointHandler(deps)
+    createRelayUnregisterEndpointHandler(deps, identity)
   );
 
   // ── Adapters ──────────────────────────────────────────────────────────────

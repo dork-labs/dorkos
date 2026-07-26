@@ -52,8 +52,8 @@ export {
   createRelayQueryHandler,
   createRelayDispatchHandler,
   createRelayUnregisterEndpointHandler,
-  createRelayNotifyUserHandler,
 } from './relay-tools.js';
+export { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 export {
   createRelayListAdaptersHandler,
   createRelayEnableAdapterHandler,

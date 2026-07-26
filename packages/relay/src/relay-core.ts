@@ -41,6 +41,7 @@ import {
   executeRegisterEndpoint,
   executeUnregisterEndpoint,
   executeListEndpoints,
+  executeGetEndpoint,
   executeGetMessage,
   executeGetMessageDetail,
   executeListMessages,
@@ -75,11 +76,17 @@ import type {
   InboxMessage,
   MessageDetail,
   ReadInboxOptions,
+  RegisterEndpointOptions,
 } from './relay-endpoint-management.js';
 
 // Re-export public types from sub-modules
 export type { PublishResult } from './relay-publish.js';
-export type { InboxMessage, MessageDetail, ReadInboxOptions } from './relay-endpoint-management.js';
+export type {
+  InboxMessage,
+  MessageDetail,
+  ReadInboxOptions,
+  RegisterEndpointOptions,
+} from './relay-endpoint-management.js';
 
 // === Constants ===
 
@@ -355,10 +362,19 @@ export class RelayCore {
 
   // --- Endpoint Management ---
 
-  /** Register a new message endpoint (creates Maildir directories). */
-  async registerEndpoint(subject: string): Promise<EndpointInfo> {
+  /**
+   * Register a new message endpoint (creates Maildir directories).
+   *
+   * @param subject - The hierarchical subject for this endpoint
+   * @param options - Pass `owner` to record which principal this mailbox
+   *   belongs to, so ownership-gated callers can tell whose mail it is.
+   */
+  async registerEndpoint(
+    subject: string,
+    options?: RegisterEndpointOptions
+  ): Promise<EndpointInfo> {
     this.assertOpen();
-    return executeRegisterEndpoint(subject, this.endpointDeps);
+    return executeRegisterEndpoint(subject, options, this.endpointDeps);
   }
 
   /** Unregister an endpoint and stop its watcher. */
@@ -371,6 +387,19 @@ export class RelayCore {
   listEndpoints(): EndpointInfo[] {
     this.assertOpen();
     return executeListEndpoints(this.endpointDeps);
+  }
+
+  /**
+   * Look up one registered endpoint by its exact subject.
+   *
+   * Exact match only, on the same string the endpoint was registered with.
+   *
+   * @param subject - The endpoint subject to look up
+   * @returns The endpoint, or `undefined` when no endpoint is registered
+   */
+  getEndpoint(subject: string): EndpointInfo | undefined {
+    this.assertOpen();
+    return executeGetEndpoint(subject, this.endpointDeps);
   }
 
   /** Returns the configured dispatch inbox TTL in milliseconds. */
