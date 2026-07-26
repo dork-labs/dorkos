@@ -75,7 +75,7 @@ function buildDeps(): {
   const ranUninstall = vi.fn(
     async (req: UninstallRequest): Promise<UninstallResult> => ({
       ok: true,
-      packageName: req.packageName,
+      packageName: req.name,
       removedFiles: 1,
       preservedData: [],
     })
@@ -86,6 +86,8 @@ function buildDeps(): {
     resolveToken: async () => ({ status: 'declined', reason: 'not used in these tests' }),
   };
 
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+
   const marketplaceDeps = {
     dorkHome: '/tmp/.dork-test',
     installer: {} as MarketplaceMcpDeps['installer'],
@@ -94,10 +96,12 @@ function buildDeps(): {
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: { uninstall: ranUninstall } as unknown as MarketplaceMcpDeps['uninstallFlow'],
     confirmationProvider,
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    logger,
   } satisfies MarketplaceMcpDeps;
 
-  return { deps: { marketplaceDeps } as CapabilityDeps, askedForConfirmation, ranUninstall };
+  const deps: CapabilityDeps = { logger, marketplaceDeps };
+
+  return { deps, askedForConfirmation, ranUninstall };
 }
 
 /**
