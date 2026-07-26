@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Turning off a group of tools for an agent had the opposite effect: instead of holding those tools back, it let the agent run about 30 other DorkOS tools, including deleting scheduled tasks and removing agents, without asking you first. Now the switches only control which tools an agent is told about. Turning a group off never grants extra automatic approval, so you still get asked before anything risky happens (DOR-519)
+- Turning off a group of tools for an agent did the opposite of what it looked like. Instead of holding those tools back, it let the agent use up to 34 other DorkOS tools without asking you first. Deleting a chat route and switching off a connected channel like Slack were both in that set. The two riskiest actions, deleting a scheduled task and removing an agent, were never exposed: a separate check already guards those, and it held. Now the switches only control which tools an agent is told about, and turning a group off never grants extra automatic approval (DOR-519)

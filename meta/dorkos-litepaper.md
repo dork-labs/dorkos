@@ -76,7 +76,7 @@ Remote access is available via an optional Remote module (ngrok-based). Engine c
 - REST + SSE API with OpenAPI documentation
 - JSONL transcripts as the single source of truth for session data
 - Pluggable agent runtimes via `AgentRuntime` interface (Claude Code via Agent SDK today)
-- Per-agent tool filtering — control which MCP tools each agent can access
+- Per-agent tool context — control which MCP tools each agent is told about
 - Optional Remote for access from any device
 - Directory boundary enforcement for security
 - MCP tool server for agent-accessible capabilities
@@ -159,7 +159,7 @@ Mesh is always-on. No feature flag required.
 - `.dork/agent.json` manifest generated at registration — name, persona, color, icon, tool config
 - Agent-agnostic: `.dork/` configuration works with any runtime, not just Claude Code
 - Network topology graph with ELK.js layout, zoom levels, and access control visualization
-- Per-agent tool filtering — each agent can have a custom set of enabled tool domains
+- Per-agent tool context — each agent can have a custom set of enabled tool domains, which decides the tool documentation it receives
 - Health monitoring and heartbeat system
 - Access control rules authored by Mesh, enforced by Relay
 - Three approval interfaces: Console UI, MCP tools (agent-driven), CLI

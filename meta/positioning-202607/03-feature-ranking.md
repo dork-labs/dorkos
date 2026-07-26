@@ -26,7 +26,7 @@ _Why:_ the retention hook (notifications are why people come back) and the ingre
 _Benefit:_ install a working agent or skill pack in one command; and because DorkOS speaks Anthropic's marketplace format, every existing Claude Code plugin already works here, day one.
 _Why:_ the flywheel, and the shelf is not empty at launch: it starts stocked with the largest agent-plugin ecosystem in the world. ClawHub proved skills marketplaces compound; DorkOS's is live, MCP-reachable from other tools, and bidirectionally compatible (DorkOS marketplaces serve plain Claude Code users too). Superset claim needs verification against popular real-world plugins before public use (`09-gtm-plan.md` §2.5).
 
-**6. Trust controls** (tool approvals, permission modes, per-agent tool filtering, honest data-flow story)
+**6. Trust controls** (tool approvals, permission modes, per-agent tool context, honest data-flow story)
 _Benefit:_ let agents run exactly as far as you trust them, and see everything they did.
 _Why:_ the enabler of everything above (autonomy without controls is a horror story) and, post-OpenClaw, a first-class buying criterion. Pair with a published security posture to convert it from feature to positioning.
 

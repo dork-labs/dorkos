@@ -24,14 +24,26 @@
  * option was misread on day one.
  *
  * A `buildAllowedTools` function used to turn this config into that list, and the
- * message sender passed it to the SDK. Because it returned `undefined` when every
- * group was on and a 31-name list as soon as any group was off, turning a group off
- * made 31 tools skip the approval prompt, including `tasks_delete`,
- * `mesh_unregister`, `binding_delete`, and `relay_disable_adapter`. With every group
- * on, only the 13 names in `DORKOS_AGENT_TOOLS` auto-approved. So the toggle ran
+ * message sender passed it to the SDK. It returned `undefined` when every group was
+ * on, and a 31- to 35-name list (depending which group was off) as soon as one was
+ * off. Every name in that list then skipped the approval prompt: `binding_delete`,
+ * which deletes a chat route, and `relay_disable_adapter`, which switches off a
+ * connected channel, are representative of what that exposed. With every group on,
+ * only the 13 names in `DORKOS_AGENT_TOOLS` auto-approved. So the toggle ran
  * backwards: switching a group off WIDENED the agent's auto-approval instead of
  * narrowing its access. Since `enabledToolGroups` is agent-writable through
  * `config_patch`, an agent could do that to itself.
+ *
+ * The two `destructive` tools, `tasks_delete` and `mesh_unregister`, were in those
+ * lists but were never actually exposed, and it is worth knowing why before trusting
+ * this layer with anything. `allowedTools` only decides whether the SDK asks before
+ * invoking a tool; it cannot reach inside the tool. Both are gated in the handler
+ * instead, by `gateHandRegisteredMcpTools` (`core/mcp-tool-gate.ts`), which runs
+ * `runGate` and returns `approval_required` before the real handler runs (DOR-468).
+ * The exposure was therefore the 29 to 34 `act` and `observe` tools in the list. The
+ * lesson for anyone editing this file: enforcement of consequence belongs in the
+ * tier gate, which sits below every caller, not in a list of names handed to an SDK
+ * option that a config toggle can rewrite.
  *
  * The function and its tool-name arrays are gone. Nothing in this file feeds
  * `allowedTools`, and nothing should: every DorkOS tool now routes through

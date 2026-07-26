@@ -1,21 +1,26 @@
 ---
 number: 70
 title: Per-Agent Tool Filtering via Domain-Level allowedTools
-status: deprecated
+status: superseded
 created: 2026-03-04
 spec: agent-tools-elevation
-superseded-by: null
+superseded-by: '260726-171347'
 ---
 
 # 70. Per-Agent Tool Filtering via Domain-Level allowedTools
 
 ## Status
 
-Deprecated (2026-07-26, DOR-519) — the mechanism decided here was removed. See the
-amendments under Decision. What DorkOS does today is option 3 from the Context
-above, context-only gating, documented in `contributing/architecture.md`
-(Per-Session Tool Groups). No replacement ADR exists yet; one is due with the work
-that restricts real tool access at MCP registration time.
+Superseded (2026-07-26, DOR-519) by ADR-260726-171347 (Tool-group toggles gate
+context, not access). The mechanism decided here was removed; see the amendments
+under Decision for what was wrong with it and what the removal did. What DorkOS
+does today is option 3 from the Context below, context-only gating, and that is now
+recorded as an accepted decision in its own right rather than surviving only as a
+rejected option inside a dead ADR.
+
+Every bullet under Consequences was written for the mechanism this ADR chose. Two
+of them are false and are struck through in place, because an ADR is a record of
+what was believed, not a page to be quietly corrected.
 
 ## Context
 
@@ -41,7 +46,11 @@ Use the SDK's `allowedTools` option to filter MCP tools per session based on the
 >
 > **The wildcard homework was never done.** The Negative consequence "may need testing" was never actioned in the three months this shipped, and the testing would not have helped: no wildcard syntax makes an auto-approval list into a restriction.
 >
-> **How bad it was.** `buildAllowedTools()` returned `undefined` when every group was on, so nothing reached the SDK and all DorkOS tools went through `canUseTool`, which auto-approves only the 13 names in `DORKOS_AGENT_TOOLS`. Turn a single group off and it returned 31 names, all of which then skipped the approval prompt, including `tasks_delete`, `mesh_unregister`, `binding_delete`, and `relay_disable_adapter`. The toggle ran backwards: turning protection off widened auto-approval. And because `config-write-policy.ts` classifies the `agentContext.*Tools` fields as `agent-writable` while defining `operator-only` as "changing it removes or widens a security control", an agent could call `config_patch` with `relayTools: false` and widen its own auto-approval, globally. Deleting the wiring makes that misclassification harmless without touching the policy table.
+> **How bad it was.** `buildAllowedTools()` returned `undefined` when every group was on, so nothing reached the SDK and all DorkOS tools went through `canUseTool`, which auto-approves only the 13 names in `DORKOS_AGENT_TOOLS`. Turn a single group off and it returned between 31 and 35 names, depending which one (35 with Scheduling off, that group being the smallest), and every name in the list then skipped the approval prompt. `binding_delete`, which deletes a chat route, and `relay_disable_adapter`, which switches off a connected channel such as Slack or Telegram, are representative of what that exposed. The toggle ran backwards: turning protection off widened auto-approval. And because `config-write-policy.ts` classifies the `agentContext.*Tools` fields as `agent-writable` while defining `operator-only` as "changing it removes or widens a security control", an agent could call `config_patch` with `relayTools: false` and widen its own auto-approval, globally. Deleting the wiring makes that misclassification harmless without touching the policy table.
+>
+> **What the tier gate held, and why that matters.** The list also carried the only two tools DorkOS classes as `destructive` — `tasks_delete` and `mesh_unregister`, the sole `tier: 'destructive'` entries in `services/core/mcp-tool-tiers.ts` — and neither was ever actually exposed by this bug. `allowedTools` only decides whether the SDK asks a person before invoking a tool; it cannot reach inside the tool. Both destructive tools are gated a layer below that, in the handler itself: `handRegisteredInSessionTools` wraps the in-session tool array in `gateHandRegisteredMcpTools` (`runtimes/claude-code/mcp-tools/index.ts`), and that wrapper runs `runGate` and returns `approval_required` before the real handler is ever called. The gate is DOR-468 (`1789f958f`), an ancestor of this fix's base commit, and `services/core/__tests__/mcp-tool-gate.test.ts` asserts that in-session `tasks_delete` and `mesh_unregister` both refuse with nothing run, identified and anonymous alike.
+>
+> So the blast radius was the 29 to 34 `act` and `observe` tools in the list, not the two that destroy a person's data. This is recorded here as a strengthening of the record, not a softening of it: the first layer failed for three months, the second layer caught exactly what it was built to catch, and that is the argument for keeping enforcement of consequence in the tier gate rather than in a list of names passed to an SDK option. The earlier drafts of this amendment, the changelog fragment, and the `contributing/` prose all led with `tasks_delete` and `mesh_unregister` as the examples. That was wrong in the direction that overstates our own exposure, which is its own kind of dishonest, and it obscured the one part of the system that worked.
 >
 > **Only claude-code was ever affected.** `supportsMcp` is true for claude-code alone (`runtime-constants.ts`); codex, opencode, and test-mode cannot receive DorkOS MCP tools. None of this was persisted in SQLite, so no migration was needed.
 >
@@ -53,13 +62,25 @@ Use the SDK's `allowedTools` option to filter MCP tools per session based on the
 
 ### Positive
 
-- Uses the SDK's intended mechanism for per-session tool access control
+- ~~Uses the SDK's intended mechanism for per-session tool access control~~
+  **False (DOR-519).** `allowedTools` is not an access-control mechanism and never
+  was. It is an auto-approval list. The SDK's intended mechanism for removing an MCP
+  tool is `disallowedTools`, which this ADR did not use.
 - No dynamic server creation — avoids resource leak risks and complexity
-- Dual gating (allowedTools + context block omission) ensures tools and context stay in sync
+- ~~Dual gating (allowedTools + context block omission) ensures tools and context stay in sync~~
+  **Half false (DOR-519).** There was never dual gating. The context-block omission
+  is real and survives; the `allowedTools` half gated nothing, so tools and context
+  were never in sync. Disabling a group left every tool callable while hiding its
+  documentation.
 - Backward-compatible: agents without `enabledToolGroups` get all tools (existing behavior)
 
 ### Negative
 
 - Requires maintaining an explicit list of tool names per domain (fragile if tool names change)
 - `allowedTools` wildcard behavior with prefixes is not fully documented in the SDK — may need testing
+  (**Never actioned, and it would not have helped:** no wildcard syntax turns an
+  auto-approval list into a restriction. See the DOR-519 amendment.)
 - Tool filtering is advisory, not a hard security boundary — agents can still attempt equivalent actions via Bash
+  (**Understated.** There was no filtering at all, advisory or otherwise. What is
+  advisory is the context omission. The hard boundary lives in the tier gate,
+  `services/core/mcp-tool-gate.ts`, not here.)

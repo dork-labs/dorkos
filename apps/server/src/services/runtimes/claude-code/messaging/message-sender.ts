@@ -3,7 +3,8 @@
  * for file size management.
  *
  * Contains the core messaging pipeline: boundary validation, agent manifest loading,
- * tool filtering, system prompt building, SDK option configuration, and event streaming.
+ * tool-group resolution, system prompt building, SDK option configuration, and event
+ * streaming.
  *
  * @module services/runtimes/claude-code/message-sender
  */
@@ -283,7 +284,7 @@ function emptyStreamError(): StreamEvent {
  * Execute an SDK query and yield StreamEvent objects.
  *
  * This is the core messaging pipeline: validates boundary, loads agent manifest,
- * resolves tool filtering, builds system prompt context, configures SDK options,
+ * resolves tool groups, builds system prompt context, configures SDK options,
  * and streams events from the SDK query.
  *
  * @param sessionId - Session identifier
@@ -326,7 +327,8 @@ export async function* executeSdkQuery(
     opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
   }
 
-  // Load agent manifest for per-agent tool filtering
+  // Load agent manifest for the agent's per-agent tool-group settings. These decide
+  // which tool docs reach the system prompt; they never restrict what is callable.
   let manifest: Awaited<ReturnType<typeof readManifest>> | null = null;
   try {
     manifest = await readManifest(effectiveCwd);

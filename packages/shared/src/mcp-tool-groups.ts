@@ -1,6 +1,27 @@
 /**
- * Which tool-group toggle gates each hand-registered DorkOS MCP tool, written
+ * Which tool-group toggle covers each hand-registered DorkOS MCP tool, written
  * down once (DOR-499).
+ *
+ * ## What a toggle actually controls (read this first)
+ *
+ * A toggle controls what an agent is TOLD ABOUT, not what it can DO. Turning a
+ * group off leaves every tool in it registered and callable; all it does is make
+ * `buildSystemPromptAppend` leave that group's documentation out of the agent's
+ * context, so the agent is not told those tools exist
+ * (`runtimes/claude-code/messaging/context-builder.ts`). An agent that names one
+ * of those tools anyway still reaches it.
+ *
+ * There is no hard filter anywhere in this pipeline, and "gates" in the names
+ * below means "is described by", nothing stronger. Until DOR-519 this file said
+ * otherwise, because ADR-0070 built the feature on the premise that the SDK's
+ * `allowedTools` option restricted a session's tool set. It does not; it
+ * auto-approves. See ADR-260726-171347 for the current position and ADR-0070 for
+ * the full history.
+ *
+ * What stops an agent from doing something consequential is the permission tier
+ * on the tool, enforced in `apps/server/src/services/core/mcp-tool-gate.ts` below
+ * every caller (DOR-468). Nothing in this file is a security boundary, and no
+ * edit here can make one.
  *
  * ## Why this table exists
  *
@@ -11,8 +32,8 @@
  * claimed to be the same fact:
  *
  * - the server's seven `*_TOOLS` arrays in
- *   `runtimes/claude-code/tooling/tool-filter.ts`, which build the per-session
- *   tool list,
+ *   `runtimes/claude-code/tooling/tool-filter.ts`, which built the per-session
+ *   tool list (deleted in DOR-519 along with the `allowedTools` wiring they fed),
  * - `TOOL_INVENTORY` in the cockpit's Settings tab, which shows the count and
  *   the names behind each toggle,
  * - a second copy of `TOOL_INVENTORY` pasted into the per-agent Tools tab,
@@ -21,8 +42,8 @@
  *
  * They drifted, in both directions. The cockpit listed six always-on tools
  * where the server had nine, and seven tools the server registers were in none
- * of the arrays at all. Nothing failed; agents just quietly had a different tool
- * set than the screen said.
+ * of the arrays at all. Nothing failed; the screen just described a different
+ * tool set than the one an agent was told about.
  *
  * So the grouping is keyed by TOOL NAME and lives here, in the one package both
  * the server and the cockpit already depend on. Everything else is derived. This
@@ -35,13 +56,13 @@
  * There are four toggles but eleven groups, because two different questions get
  * asked of this table and they need different resolution:
  *
- * - "What does turning off Messaging remove?" — answered by the toggle a group
- *   maps to in {@link TOOL_GATE_GROUP_DOMAIN}. Two groups are gated by a toggle
- *   that is not named after them: `trace` follows Messaging and `binding`
- *   follows External Channels (ADR-0071). That implicit parenting is recorded
- *   once here rather than re-explained at each list.
- * - "What is always on, no matter what?" — answered by the groups that map to
- *   `null`. Those are kept apart (`core`, `ui`, `devtools`, `agents`,
+ * - "What does turning off Messaging stop the agent being told about?" —
+ *   answered by the toggle a group maps to in {@link TOOL_GATE_GROUP_DOMAIN}.
+ *   Two groups follow a toggle that is not named after them: `trace` follows
+ *   Messaging and `binding` follows External Channels (ADR-0071). That implicit
+ *   parenting is recorded once here rather than re-explained at each list.
+ * - "What is always described, no matter what?" — answered by the groups that
+ *   map to `null`. Those are kept apart (`core`, `ui`, `devtools`, `agents`,
  *   `extensions`) rather than merged into one `core` bucket, because the cockpit
  *   and the server want to name different slices of them, and a single bucket
  *   forced one of them to keep a private copy.
@@ -54,7 +75,11 @@
  * `apps/server/src/services/core/mcp-tool-tiers.ts`. Choose the group by asking which
  * toggle a person would expect to control the tool. If the honest answer is
  * "none of them", it belongs in one of the always-on groups, and it will then be
- * available to every agent regardless of their toggles.
+ * described to every agent regardless of their toggles.
+ *
+ * Choosing a group is a documentation decision, so get the tool's TIER right in
+ * `mcp-tool-tiers.ts` as well: that is the entry that decides whether the tool
+ * can run without a person saying yes.
  *
  * Registry-generated tools (the Capability Registry's operator, marketplace, and
  * self-description capabilities) are deliberately absent: the registry already
@@ -87,15 +112,18 @@ export type ToolGateGroup =
   | 'binding';
 
 /**
- * The toggle that gates each group, or `null` when nothing gates it.
+ * The toggle that covers each group, or `null` when no toggle names it.
  *
- * `null` means "always available": no toggle removes these tools, so every agent
- * has them. `trace` and `binding` map to a toggle not named after them, which is
- * the implicit parenting from ADR-0071.
+ * `null` means "always described": no toggle hides these tools, so every agent is
+ * told about them. `trace` and `binding` map to a toggle not named after them,
+ * which is the implicit parenting from ADR-0071.
+ *
+ * Every tool is callable by every agent whichever way this maps, toggles included
+ * — see the module TSDoc. This decides documentation only.
  *
  * Registry-generated tools are not in {@link MCP_TOOL_GATE_GROUPS} and therefore
- * have no group here. They are ungated by the same rule the `null` groups follow:
- * no toggle names them, so no toggle may remove them.
+ * have no group here. They follow the same rule the `null` groups follow: no
+ * toggle names them, so no toggle omits their documentation.
  */
 const TOOL_GATE_GROUP_DOMAIN: Readonly<Record<ToolGateGroup, ToolDomainKey | null>> = {
   core: null,
@@ -188,9 +216,10 @@ export const MCP_TOOL_GATE_GROUPS = {
 export type McpToolGroupName = keyof typeof MCP_TOOL_GATE_GROUPS;
 
 /**
- * The tools one toggle controls, including the groups that implicitly follow it.
+ * The tools one toggle covers, including the groups that implicitly follow it.
  *
- * Turning that toggle off removes exactly these.
+ * Turning that toggle off leaves exactly these out of the agent's context. It
+ * removes nothing: they stay registered and callable (see the module TSDoc).
  *
  * @param domain - The toggle to resolve.
  * @returns The bare tool names (no `mcp__dorkos__` prefix), in declaration order.
@@ -202,7 +231,7 @@ export function toolNamesForDomain(domain: ToolDomainKey): McpToolGroupName[] {
 }
 
 /**
- * The tool groups no toggle gates.
+ * The tool groups no toggle names.
  *
  * Server identity and agent lookup (`core`), the tools that drive the cockpit's
  * own screen rather than the system underneath (`ui`), and the reads of the

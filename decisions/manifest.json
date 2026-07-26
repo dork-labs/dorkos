@@ -2011,10 +2011,11 @@
       "number": 70,
       "slug": "per-agent-tool-filtering-via-allowedtools",
       "title": "Per-Agent Tool Filtering via Domain-Level allowedTools",
-      "status": "deprecated",
+      "status": "superseded",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
-      "specSlug": "agent-tools-elevation"
+      "specSlug": "agent-tools-elevation",
+      "supersededBy": "260726-171347"
     },
     {
       "number": 69,
@@ -2920,6 +2921,14 @@
       "status": "accepted",
       "created": "2026-07-26",
       "specSlug": "rooms"
+    },
+    {
+      "id": "260726-171347",
+      "slug": "tool-group-toggles-gate-context-not-access",
+      "title": "Tool-group toggles gate context, not access",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "supersedes": 70
     }
   ]
 }
