@@ -306,13 +306,13 @@ The `origin` **value** `'channel'` is wire data and stays — this is a display-
 
 ## 10. Phasing
 
-| Phase  | Deliverable                                                                                          | Depends on |
-| ------ | ---------------------------------------------------------------------------------------------------- | ---------- |
-| **R0** | The Connection rename (§8)                                                                           | —          |
-| **R1** | Shared schemas, four tables + migration, rooms service, REST + SSE, tests                            | —          |
-| **R2** | `entities/room`, Transport methods, sidebar sections, `/channels` route, room view rendering history | R1         |
-| **R3** | Posting, addressing, mentions, triggering agents, cascade guard, read cursor                         | R2         |
-| **R4** | Threads: child rooms, summary rows, `conversation_context` digest                                    | R3         |
+| Phase            | Deliverable                                                                                          | Depends on |
+| ---------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
+| **R0** (DOR-523) | The Connection rename (§8)                                                                           | —          |
+| **R1** (DOR-524) | Shared schemas, five tables + migration, rooms service, REST + SSE, tests                            | —          |
+| **R2** (DOR-525) | `entities/room`, Transport methods, sidebar sections, `/channels` route, room view rendering history | R1         |
+| **R3** (DOR-526) | Posting, addressing, mentions, triggering agents, cascade guard, read cursor                         | R2         |
+| **R4** (DOR-527) | Threads: child rooms, summary rows, `conversation_context` digest                                    | R3         |
 
 R0 and R1 are independent and run in parallel. Each phase is one PR, in its own worktree, reviewed by a separate agent against `REVIEW.md`.
 

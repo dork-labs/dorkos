@@ -4,6 +4,7 @@
 - **Id:** 260726-170533
 - **Date:** 2026-07-26
 - **Project:** Agents as First-Class Operators
+- **Tracker:** DOR-521 (phases: DOR-523 R0, DOR-524 R1, DOR-525 R2, DOR-526 R3, DOR-527 R4)
 
 ## Intent
 
