@@ -22,7 +22,13 @@
  */
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { RunSummarySchema, type EvalResult, type RunSummary } from '../types.js';
+import {
+  RunSummarySchema,
+  describeCredentialSource,
+  isSubscriptionBilled,
+  type EvalResult,
+  type RunSummary,
+} from '../types.js';
 
 /** The results file name written into a run directory. */
 export const RESULTS_FILE = 'results.json';
@@ -141,31 +147,50 @@ export function formatSummaryTable(summary: RunSummary): string {
       : `GATING: ${gate.gatingCases} of ${gate.totalCases} cases gate this run; ${gate.quarantinedCases} quarantined case(s) report but cannot fail it.`;
 
   const lines = [header, ...rows, '', footer, gatingLine];
-  const costWarning = missingCostSignalWarning(summary);
-  if (costWarning) lines.push(costWarning);
+  if (summary.credentialSource) {
+    lines.push(`CREDENTIAL: ${describeCredentialSource(summary.credentialSource)}.`);
+  }
+  const costLine = costSignalLine(summary);
+  if (costLine) lines.push(costLine);
   return lines.join('\n');
 }
 
 /**
- * Warn when a CREDENTIALED run reports no cost at all.
+ * Say something about a CREDENTIALED run that reported no cost at all, scaled to
+ * WHICH credential it used. Getting this wrong in either direction is a real
+ * failure: a warning that always fires teaches people to ignore it, and a warning
+ * that never fires hides a broken cost signal.
  *
- * A real model turn always reports a cumulative cost on its status frames, so
- * `$0.0000` across a whole credentialed run means one of two things: no turn
- * actually ran, or the cost signal never arrived. Either way the budget cap was
- * never exercised — and a run that spends nothing is indistinguishable on screen
- * from a run that spends unmetered, which is the same shape as the cleared-budget
- * defect one layer down. `test-mode` is free by design and never warns.
+ * - On an **API key**, a real turn always reports a cumulative cost, so
+ *   `$0.0000` means either no turn ran or the cost signal never arrived. Both
+ *   mean the spend cap was never exercised, which on screen is indistinguishable
+ *   from spending unmetered. That is a WARNING.
+ * - On **subscription auth** (a `claude setup-token` token, or the machine's own
+ *   Claude sign-in), `$0.0000` is the expected reading: those turns are paid for
+ *   by the subscription and report no per-turn cost. Warning there would be a
+ *   false alarm on the ordinary local path. It is still worth saying out loud
+ *   that the cap did not gate anything, so this is a NOTE.
+ * - `test-mode` is free by design and says nothing.
  *
  * @param summary - The run summary.
- * @returns The warning line, or undefined when there is nothing to say.
+ * @returns The line to print, or undefined when there is nothing to say.
  */
-function missingCostSignalWarning(summary: RunSummary): string | undefined {
+function costSignalLine(summary: RunSummary): string | undefined {
   if (summary.tier === 'test-mode') return undefined;
   if (summary.totalCostUsd > 0) return undefined;
+
+  if (summary.credentialSource && isSubscriptionBilled(summary.credentialSource)) {
+    return (
+      'NOTE: this run reported $0.0000 because subscription turns do not report a per-turn ' +
+      'cost. That is expected here, but it does mean the spend cap never gated anything, so ' +
+      'these results are not evidence about spend.'
+    );
+  }
+
   return (
-    `WARNING: this ${summary.tier} run reported $0.0000 across every case. A real turn always ` +
-    'reports cost, so either no turn ran or the cost signal is missing — the spend cap was ' +
-    'not exercised, and these results are not evidence about spend.'
+    `WARNING: this ${summary.tier} run reported $0.0000 across every case, and it was not on ` +
+    'subscription auth. A real turn reports cost, so either no turn ran or the cost signal is ' +
+    'missing. The spend cap was not exercised, and these results are not evidence about spend.'
   );
 }
 

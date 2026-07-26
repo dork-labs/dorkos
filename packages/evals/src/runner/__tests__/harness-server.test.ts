@@ -172,7 +172,7 @@ describe('startChildProcessServer (isolation seam)', () => {
 
     const booted = await startChildProcessServer({
       dorkHome: '/tmp/sandbox-dork',
-      anthropicApiKey: 'sk-test',
+      env: { ANTHROPIC_API_KEY: 'sk-test' },
       launcher: fake.launcher,
       readyTimeoutMs: 5_000,
     });
@@ -215,7 +215,7 @@ describe('startChildProcessServer (isolation seam)', () => {
     await expect(
       startChildProcessServer({
         dorkHome: '/tmp/x',
-        anthropicApiKey: 'k',
+        env: { ANTHROPIC_API_KEY: 'k' },
         launcher: fake.launcher,
         readyTimeoutMs: 3_000,
       })
@@ -231,7 +231,7 @@ describe('startChildProcessServer (isolation seam)', () => {
     await expect(
       startChildProcessServer({
         dorkHome: '/tmp/x',
-        anthropicApiKey: 'k',
+        env: { ANTHROPIC_API_KEY: 'k' },
         launcher: fake.launcher,
         readyTimeoutMs: 300,
       })
@@ -244,6 +244,11 @@ describe('startChildProcessServer (isolation seam)', () => {
 // tier), never in the default vitest run. Proves the real child-process boot
 // end-to-end: spawn the server from its TS source (via tsx), drive a trivial
 // prompt, collect a terminal `done`.
+//
+// Deliberately still gated on the KEY, not on `resolveModelCredential()`. This
+// file is part of the default `pnpm test` run, and a developer signed in to
+// `claude` would otherwise start spending money every time they ran the unit
+// suite. Spending on a local machine has to be something a person asked for.
 // eslint-disable-next-line no-restricted-syntax -- gating on the real credentialed secret is the whole point of this test.
 const HAS_ANTHROPIC_KEY = !!process.env.ANTHROPIC_API_KEY;
 
@@ -251,8 +256,11 @@ describe.skipIf(!HAS_ANTHROPIC_KEY)('startChildProcessServer (credentialed, real
   it('boots the real server as a child process and drives a trivial prompt to a terminal done', async () => {
     sandbox = await createSandbox();
     // eslint-disable-next-line no-restricted-syntax -- the gated test reads the real secret to pass it to the credentialed boot.
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    server = await startChildProcessServer({ dorkHome: sandbox.dorkHome, anthropicApiKey: apiKey });
+    const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
+    server = await startChildProcessServer({
+      dorkHome: sandbox.dorkHome,
+      env: { ANTHROPIC_API_KEY: apiKey },
+    });
 
     const res = await driveTurn({
       baseUrl: server.baseUrl,

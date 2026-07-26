@@ -485,6 +485,43 @@ describe('isolation tier resolution', () => {
     expect(messages[0]).toMatch(/Falling back to the child-process tier/i);
   });
 
+  it('auto: declines docker when the credential is one a container cannot be given', async () => {
+    // The machine's `claude` sign-in lives in its keychain and home folder, so a
+    // container cannot use it. Under `auto` that has to behave like a missing
+    // daemon: degrade with a message. Erroring instead would mean HAVING docker
+    // installed makes an ordinary local run fail where a machine without docker
+    // succeeds, which is backwards.
+    const { docker, calls } = healthyDocker();
+    const messages: string[] = [];
+    const resolver = createLauncherResolver({
+      isolation: 'auto',
+      docker,
+      credentialIsPortable: false,
+      notify: (m) => messages.push(m),
+    });
+
+    expect(await resolver.forCase({ preferDocker: true })).toBeUndefined();
+    expect(await resolver.forCase({ preferDocker: true })).toBeUndefined();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatch(/a container cannot see/i);
+    // It never even probed: the answer could not depend on docker's health.
+    expect(calls).toEqual([]);
+  });
+
+  it('explicit docker: still hands back the launcher, so the run refuses loudly', async () => {
+    // Someone who typed `--isolation docker` asked for containment by name. The
+    // honest answer is the runner error naming the two variables, NOT a silent
+    // downgrade that runs a destructive turn outside the container they asked for.
+    const { docker } = healthyDocker();
+    const resolver = createLauncherResolver({
+      isolation: 'docker',
+      docker,
+      credentialIsPortable: false,
+      notify: () => {},
+    });
+    expect((await resolver.forCase({ preferDocker: true }))?.id).toBe('docker');
+  });
+
   it('probes docker at most once per run (memoized across cases)', async () => {
     const { docker, calls } = healthyDocker();
     const resolver = createLauncherResolver({ isolation: 'docker', docker, notify: () => {} });

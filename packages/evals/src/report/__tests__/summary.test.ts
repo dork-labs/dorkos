@@ -123,7 +123,7 @@ describe('formatSummaryTable', () => {
     expect(shortRow.indexOf('test-mode')).toBe(tierColumn);
   });
 
-  it('WARNS when a credentialed run reported no cost at all', () => {
+  it('WARNS when an API-KEY run reported no cost at all', () => {
     // A real turn always reports cumulative cost, so $0.0000 across a whole
     // credentialed run means no turn ran or the signal is missing — either way
     // the spend cap was never exercised. Silence here is the same shape as the
@@ -132,10 +132,38 @@ describe('formatSummaryTable', () => {
     const table = formatSummaryTable({
       ...summary([result({ id: 'governance-approval-gate', runtimeTier: 'claude-code-cheap' })]),
       tier: 'claude-code-cheap',
+      credentialSource: 'anthropic-api-key',
       totalCostUsd: 0,
     });
     expect(table).toMatch(/WARNING: this claude-code-cheap run reported \$0\.0000/);
     expect(table).toMatch(/not evidence about spend/);
+  });
+
+  it('does NOT warn about $0.0000 on a local subscription run, but still says the cap did not gate', () => {
+    // Subscription turns report no per-turn cost, so $0.0000 is the EXPECTED
+    // reading on the ordinary local path. Warning here would be a false alarm on
+    // every developer's run, and a warning that always fires gets ignored — which
+    // is how the real API-key symptom would then slip past.
+    const table = formatSummaryTable({
+      ...summary([result({ id: 'governance-approval-gate', runtimeTier: 'claude-code-cheap' })]),
+      tier: 'claude-code-cheap',
+      credentialSource: 'local-claude-login',
+      totalCostUsd: 0,
+    });
+    expect(table).not.toMatch(/WARNING/);
+    expect(table).toMatch(/NOTE: this run reported \$0\.0000/);
+    expect(table).toMatch(/not evidence about spend/);
+  });
+
+  it('names the credential the run actually used', () => {
+    const table = formatSummaryTable({
+      ...summary([result({ id: 'a', runtimeTier: 'claude-code-cheap', costUsd: 0.02 })]),
+      tier: 'claude-code-cheap',
+      credentialSource: 'local-claude-login',
+      totalCostUsd: 0.02,
+    });
+    // Nobody should have to guess which of the three sources answered.
+    expect(table).toMatch(/CREDENTIAL: the Claude sign-in on this machine/);
   });
 
   it('does NOT warn about cost on a free test-mode run', () => {

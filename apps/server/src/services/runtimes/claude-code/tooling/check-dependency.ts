@@ -21,8 +21,9 @@
  *    rest and only materialized into `ANTHROPIC_API_KEY` at the SDK spawn seam —
  *    a separate `claude auth status` probe process never inherits it.
  * 2/3. The host's own Claude login OR an inherited env credential, both read via
- *    the CLI's own `claude auth status` — the codex-parity, read-only,
- *    ToS-safe probe (see {@link checkHostLogin}).
+ *    the CLI's own `claude auth status` — the codex-parity, read-only, ToS-safe
+ *    probe, which lives in `claude-cli-auth.ts` because the eval harness asks the
+ *    same question and the two answers must never drift apart.
  *
  * Probes are async and time-bounded (shared `run-probe` helpers): a hung binary
  * or a stalled `PATH` mount degrades to `missing` fast instead of blocking the
@@ -32,14 +33,18 @@
  */
 import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import { resolveBundledClaudeBinary } from '../sdk/sdk-utils.js';
-import { findBinaryOnPath, runBinaryProbe } from '../../shared/run-probe.js';
+import { runBinaryProbe } from '../../shared/run-probe.js';
 import { configManager } from '../../../core/config-manager.js';
 import { credentialProvider, type CredentialProvider } from '../../../core/credential-provider.js';
 import { ANTHROPIC_PROVIDER_ID } from '../../../core/credential-env.js';
+import {
+  CLAUDE_PROBE_TIMEOUT_MS,
+  isClaudeCliAuthenticated,
+  resolveClaudeBinaryPath,
+} from './claude-cli-auth.js';
 
 /** Hard bound on each Claude CLI probe (the PATH locate, `--version`, and `auth status`). */
-const PROBE_TIMEOUT_MS = 5_000;
+const PROBE_TIMEOUT_MS = CLAUDE_PROBE_TIMEOUT_MS;
 
 /** Binary-check name — the CLI probe the derivation matches with `/\bCLI\b/i`. */
 const CLI_CHECK_NAME = 'Claude Code CLI';
@@ -76,20 +81,6 @@ export interface ClaudeDependencyDeps {
   config?: ConfigReader;
   /** Credential read port used to resolve a stored Anthropic reference (defaults to the singleton). */
   credentialProvider?: CredentialProvider;
-}
-
-/**
- * Resolve the `claude` executable to probe: bundled native binary first, then
- * `PATH`. This approximates (not exactly mirrors) the SDK's spawn resolution,
- * which also honors a CLAUDE_CLI_PATH env override before these steps; in the
- * packaged desktop app that env path may resolve where this probe cannot. The
- * bundled lookup is a synchronous `require.resolve` (no spawn); the PATH
- * locate is bounded.
- *
- * @returns Absolute path to the binary, or `null` when unresolvable.
- */
-async function resolveClaudeBinaryPath(): Promise<string | null> {
-  return resolveBundledClaudeBinary() ?? (await findBinaryOnPath('claude', PROBE_TIMEOUT_MS));
 }
 
 /** Check that a usable Claude Code binary resolves and answers `--version`. */
@@ -166,58 +157,24 @@ async function checkPersistedCredential(
   return null;
 }
 
-/** Whether `claude auth status --json` output reports an authenticated session (no token material read). */
-function isLoggedIn(statusJson: string): boolean {
-  try {
-    const parsed: unknown = JSON.parse(statusJson);
-    return (parsed as { loggedIn?: unknown }).loggedIn === true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Rungs 2 & 3 — the host's own Claude login OR an inherited env credential, both
- * read through the CLI's own `claude auth status` subcommand (codex-parity: the
- * CLI is the single source of truth for auth state).
- *
- * `claude auth status --json` reports `{"loggedIn":true,...}` and exits 0 when
- * the host is authenticated by ANY means the SDK subprocess would also honor:
- * the host's own `claude` sign-in (read platform-appropriately — macOS Keychain
- * service "Claude Code-credentials", or `~/.claude/.credentials.json` on
- * Linux/WSL), an inherited `ANTHROPIC_API_KEY`, or an inherited
- * `CLAUDE_CODE_OAUTH_TOKEN`. It exits non-zero (which `runBinaryProbe` rejects)
- * when signed out. Using the status subcommand instead of hand-reading the
- * keychain/credentials file keeps this cross-platform and always in step with
- * whatever the CLI actually honors.
- *
- * Read-only and ToS-safe: we spawn only the CLI's own status subcommand and read
- * the boolean `loggedIn` flag — never the token, never the keychain secret, no
- * setup-token flow, no OAuth browser step. A PRESENT-but-expired or revoked host
- * credential still reads `satisfied` here: `auth status` reports `loggedIn` from
- * stored state without a live network check, so DorkOS cannot tell an expired
- * token from a valid one at probe time. That is accepted — in-session auth-error
- * remediation is the parallel workstream that catches a revoked credential when a
- * turn actually fails.
+ * read through {@link isClaudeCliAuthenticated}, the shared `claude auth status`
+ * probe (codex-parity: the CLI is the single source of truth for auth state).
+ * The eval harness asks that same probe the same question, so readiness here and
+ * a credentialed eval boot can never disagree about this machine's sign-in.
  *
  * @param binary - The resolved `claude` binary (or `null`).
  */
 async function checkHostLogin(binary: string | null): Promise<DependencyCheck> {
   const name = AUTH_CHECK_NAME;
 
-  if (binary) {
-    try {
-      const out = await runBinaryProbe(binary, ['auth', 'status', '--json'], PROBE_TIMEOUT_MS);
-      if (isLoggedIn(out)) {
-        return {
-          name,
-          description: 'Signed in to Claude.',
-          status: 'satisfied',
-        };
-      }
-    } catch {
-      // Non-zero exit (signed out) or a bounded-out probe — fall through to "missing".
-    }
+  if (await isClaudeCliAuthenticated(binary)) {
+    return {
+      name,
+      description: 'Signed in to Claude.',
+      status: 'satisfied',
+    };
   }
 
   return {

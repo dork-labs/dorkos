@@ -48,6 +48,82 @@ export const IsolationRecordSchema = z.enum(['in-process', 'child-process', 'doc
 /** Inferred type for {@link IsolationRecordSchema}. */
 export type IsolationRecord = z.infer<typeof IsolationRecordSchema>;
 
+/**
+ * How a credentialed run reached a model, recorded so nobody has to guess which
+ * credential a run actually used.
+ *
+ * - `anthropic-api-key`: the `ANTHROPIC_API_KEY` variable (an Anthropic API
+ *   account pays).
+ * - `claude-oauth-token`: the `CLAUDE_CODE_OAUTH_TOKEN` variable, a long-lived
+ *   token from `claude setup-token` (a Claude subscription pays).
+ * - `local-claude-login`: the `claude` CLI signed in on this machine, inherited
+ *   by the child-process tier (the developer's own Claude subscription pays).
+ *
+ * The distinction is not cosmetic. The two subscription-backed sources report no
+ * per-turn cost, so `$0.0000` means something different depending on which one
+ * answered — see `report/summary.ts`.
+ */
+export const CredentialSourceSchema = z.enum([
+  'anthropic-api-key',
+  'claude-oauth-token',
+  'local-claude-login',
+]);
+
+/** Inferred type for {@link CredentialSourceSchema}. */
+export type CredentialSource = z.infer<typeof CredentialSourceSchema>;
+
+/** The environment variable CI dispatches a credentialed run with. */
+export const API_KEY_VAR = 'ANTHROPIC_API_KEY';
+
+/**
+ * The subscription token variable, PINNED to this exact name. Letting a caller
+ * choose which variable to read is a credential-disclosure lever, not a
+ * convenience — see `runner/credentials.ts`. Adding a source means adding a
+ * literal name, never an input.
+ */
+export const OAUTH_TOKEN_VAR = 'CLAUDE_CODE_OAUTH_TOKEN';
+
+/**
+ * Whether a credential source bills a Claude subscription rather than the
+ * Anthropic API. Subscription turns report no per-turn cost, so `$0.0000` on
+ * such a run is expected rather than a missing-signal symptom.
+ *
+ * @param source - The resolved credential source.
+ * @returns True for the two subscription-backed sources.
+ */
+export function isSubscriptionBilled(source: CredentialSource): boolean {
+  return source === 'claude-oauth-token' || source === 'local-claude-login';
+}
+
+/** One human-readable line per source, for run output. */
+const CREDENTIAL_SOURCE_LABELS: Record<CredentialSource, string> = {
+  'anthropic-api-key': `the ${API_KEY_VAR} environment variable (billed to that API account)`,
+  'claude-oauth-token': `the ${OAUTH_TOKEN_VAR} environment variable (billed to that Claude subscription)`,
+  'local-claude-login':
+    'the Claude sign-in on this machine (billed to your own Claude subscription)',
+};
+
+/**
+ * Describe a resolved source in one line, so a run's output says which
+ * credential it used instead of leaving the reader to guess.
+ *
+ * Deliberately TOTAL: an unrecognized value returns a plain fallback rather than
+ * throwing. This is called while rendering the summary table, and a report
+ * printer that can die over a label would take the whole run's output with it —
+ * including the results a reader needs in order to see what went wrong.
+ *
+ * These helpers live here, beside the enum, rather than next to the resolver:
+ * `report/summary.ts` needs them to print two lines, and importing the resolver
+ * would drag the server's `claude` auth probe into the reporting path for
+ * nothing.
+ *
+ * @param source - The resolved credential source.
+ * @returns The human-readable description.
+ */
+export function describeCredentialSource(source: CredentialSource): string {
+  return CREDENTIAL_SOURCE_LABELS[source] ?? `an unrecognized credential source (${source})`;
+}
+
 /** Rough cost envelope, used for budget planning and tier selection. */
 export const CostClassSchema = z.enum(['free', 'cheap', 'standard', 'deep']);
 
@@ -300,6 +376,12 @@ export const RunSummarySchema = z.object({
   startedAt: z.string(),
   /** The tier the run was launched on. */
   tier: RuntimeTierSchema,
+  /**
+   * How this run reached a model (see {@link CredentialSourceSchema}). Omitted
+   * on `test-mode`, which needs no credential, and on a credentialed run where
+   * none resolved (every case then errors, fail-closed).
+   */
+  credentialSource: CredentialSourceSchema.optional(),
   /** The per-run budget cap in USD. */
   budgetUsd: z.number().nonnegative(),
   /** Total USD cost accumulated across every eval in the run. */

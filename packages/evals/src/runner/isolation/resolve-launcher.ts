@@ -5,8 +5,9 @@
  *
  * The rule, in one line: **docker is used when it is asked for AND it works;
  * otherwise the run continues on the child-process tier with a clear message.**
- * A missing daemon or a missing image is never a hard failure — a machine
- * without docker must still run the whole suite, just less hardened.
+ * A missing daemon, a missing image, or a credential a container cannot be given
+ * is never a hard failure under `auto` — a machine without any of those must
+ * still run the whole suite, just less hardened.
  *
  * Two things can ask for docker:
  * - the operator, with `--isolation docker` (an explicit request: if docker is
@@ -67,6 +68,20 @@ export interface LauncherResolverOptions {
   runId?: string;
   /** Sink for the one-time availability notice. Defaults to `process.stderr`. */
   notify?: (message: string) => void;
+  /**
+   * Whether the run's model credential is a value a container can be given (an
+   * API key or a subscription token) rather than the `claude` sign-in on this
+   * machine, which a container cannot see. Defaults to true.
+   *
+   * A non-portable credential makes docker UNUSABLE, so under `auto` this
+   * declines it the same way a missing daemon does — otherwise having docker
+   * installed would make an ordinary local run FAIL where a machine without
+   * docker succeeds. Under an explicit `--isolation docker` the launcher is
+   * still returned, so `runEval` refuses with the actionable message rather than
+   * quietly running a destructive turn outside a container the operator asked
+   * for by name.
+   */
+  credentialIsPortable?: boolean;
 }
 
 /**
@@ -100,8 +115,11 @@ export function createLauncherResolver(opts: LauncherResolverOptions = {}): Laun
       process.stderr.write(`${message}\n`);
     });
 
+  const credentialIsPortable = opts.credentialIsPortable ?? true;
+
   let probe: DockerAvailability | undefined;
   let notified = false;
+  let notifiedCredential = false;
 
   /** Probe docker once per run and announce the verdict once. */
   const probeOnce = async (): Promise<DockerAvailability> => {
@@ -125,6 +143,18 @@ export function createLauncherResolver(opts: LauncherResolverOptions = {}): Laun
     async forCase({ preferDocker = false }) {
       if (isolation === 'child-process') return undefined;
       if (isolation === 'auto' && !preferDocker) return undefined;
+
+      if (!credentialIsPortable && isolation === 'auto') {
+        if (!notifiedCredential) {
+          notifiedCredential = true;
+          notify(
+            'This run reaches the model through the Claude sign-in on this machine, which a ' +
+              'container cannot see. Cases preferring docker run on the child-process tier. Set ' +
+              'ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN to containerize them.'
+          );
+        }
+        return undefined;
+      }
 
       const verdict = await probeOnce();
       if (!verdict.available) return undefined;

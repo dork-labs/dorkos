@@ -12,8 +12,9 @@
  * The server is booted per TIER: `test-mode` runs IN-PROCESS (a process-level
  * singleton, so those cases run serially); the credentialed tiers
  * (`claude-code-cheap` / `real-provider`) boot the server OUT OF PROCESS through
- * the isolation launcher, gated on `ANTHROPIC_API_KEY` — a missing key is a
- * runner `error`, never a false pass.
+ * the isolation launcher, gated on a resolved model credential (`runner/
+ * credentials.ts`: an API key, a subscription token, or the `claude` sign-in on
+ * this machine). No credential at all is a runner `error`, never a false pass.
  *
  * @module evals/runner/run-eval
  */
@@ -37,6 +38,12 @@ import {
 import type { IsolationLauncher } from './isolation/index.js';
 import { driveConversation, driveWidgetAction, DriveError, type TurnOutcome } from './drive.js';
 import { BudgetTracker, evalCostUsd } from './budget.js';
+import {
+  resolveModelCredential,
+  noCredentialMessage,
+  dockerNeedsPortableCredentialMessage,
+  type ModelCredential,
+} from './credentials.js';
 import { writeTranscript } from '../report/transcript.js';
 
 /** Options for {@link runEval}. */
@@ -59,6 +66,13 @@ export interface RunEvalOptions {
    * ignores this.
    */
   launcher?: IsolationLauncher;
+  /**
+   * The model credential this eval authenticates with. {@link runSuite} resolves
+   * it ONCE per run and passes it here, so a suite never re-probes the local
+   * `claude` sign-in per case. Omitted ⇒ resolve on demand (direct callers and
+   * tests). `test-mode` ignores it.
+   */
+  credential?: ModelCredential;
 }
 
 /** Normalize an eval case's prompt into an ordered list (empty ⇒ no drive). */
@@ -110,20 +124,39 @@ async function runOracles(evalCase: EvalCase, ctx: OracleContext): Promise<Oracl
   return results;
 }
 
-/** The credentialed tiers' `ANTHROPIC_API_KEY` — a runner/CI secret, not a DorkOS config field. */
-function anthropicApiKey(): string | undefined {
-  // eslint-disable-next-line no-restricted-syntax -- the credentialed tier's API key is a CI/runner secret read once here (the harness-server env carve-out pattern), not an app config value.
-  return process.env.ANTHROPIC_API_KEY;
+/**
+ * Why this credentialed eval cannot run, or `undefined` when it can.
+ *
+ * Fail-closed in both branches: a run with no credential at all, and a docker-tier
+ * run whose only credential is the local sign-in (which the container cannot see,
+ * by design), are BOTH runner errors reported before anything boots. Neither is
+ * ever allowed to look like a pass.
+ *
+ * @param tier - The runtime tier the run booted on.
+ * @param isolation - The isolation this eval would actually run inside.
+ * @param credential - The resolved credential, if any.
+ * @returns The runner-error message, or undefined when the eval may proceed.
+ */
+function credentialGateError(
+  tier: RuntimeTier,
+  isolation: IsolationRecord,
+  credential: ModelCredential | undefined
+): string | undefined {
+  if (!credential) return noCredentialMessage(tier);
+  if (isolation === 'docker' && !credential.portable) {
+    return dockerNeedsPortableCredentialMessage();
+  }
+  return undefined;
 }
 
 /**
  * Boot the harness server for `tier`: in-process for `test-mode`, else the
- * credentialed child-process server (its `ANTHROPIC_API_KEY` prerequisite is
- * checked by the caller before this runs).
+ * credentialed child-process server (whose credential prerequisite the caller
+ * has already checked via {@link credentialGateError}).
  *
  * @param tier - The runtime tier.
  * @param dorkHome - The sandbox `DORK_HOME`.
- * @param opts - The model + api key for a credentialed boot.
+ * @param opts - The model, the credential env, and the case's own server env.
  * @returns The running {@link HarnessServer}.
  */
 function bootServerForTier(
@@ -131,7 +164,7 @@ function bootServerForTier(
   dorkHome: string,
   opts: {
     model?: string;
-    apiKey?: string;
+    credentialEnv?: Record<string, string>;
     env?: Record<string, string>;
     launcher?: IsolationLauncher;
   }
@@ -139,9 +172,10 @@ function bootServerForTier(
   if (tier === 'test-mode') return startInProcessServer({ dorkHome });
   return startChildProcessServer({
     dorkHome,
-    anthropicApiKey: opts.apiKey,
     model: opts.model,
-    ...(opts.env ? { env: opts.env } : {}),
+    // The credential env goes FIRST so a case's own `serverEnv` stays the last
+    // word on everything else, exactly as before.
+    env: { ...opts.credentialEnv, ...opts.env },
     ...(opts.launcher ? { launcher: opts.launcher } : {}),
   });
 }
@@ -184,17 +218,22 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   const result = baseResult(evalCase, opts.tier);
   const turns = prompts(evalCase);
 
-  // Credentialed tiers need a real key; a missing one is a RUNNER error (never a
-  // false pass), reported before any sandbox/server is spun up.
-  const apiKey = anthropicApiKey();
-  if (opts.tier !== 'test-mode' && !apiKey) {
-    result.status = 'error';
-    result.error = `Tier '${opts.tier}' requires ANTHROPIC_API_KEY (credentialed child-process server).`;
-    result.durationMs = Date.now() - start;
-    return result;
+  // Credentialed tiers need a way to reach a model; having none is a RUNNER
+  // error (never a false pass), reported before any sandbox/server is spun up.
+  const isolation = isolationOf(opts.tier, opts.launcher);
+  const credential =
+    opts.tier === 'test-mode' ? undefined : (opts.credential ?? (await resolveModelCredential()));
+  if (opts.tier !== 'test-mode') {
+    const gateError = credentialGateError(opts.tier, isolation, credential);
+    if (gateError) {
+      result.status = 'error';
+      result.error = gateError;
+      result.durationMs = Date.now() - start;
+      return result;
+    }
   }
 
-  result.isolation = isolationOf(opts.tier, opts.launcher);
+  result.isolation = isolation;
 
   // A quarantined case fails BY DESIGN on `test-mode` (its oracles need real MCP
   // tools), so honoring retain-on-failure for it would leak one sandbox — and,
@@ -227,7 +266,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
 
     server = await bootServerForTier(opts.tier, sandbox.dorkHome, {
       model: opts.model,
-      apiKey,
+      ...(credential ? { credentialEnv: credential.env } : {}),
       ...(evalCase.serverEnv ? { env: evalCase.serverEnv } : {}),
       ...(opts.launcher ? { launcher: opts.launcher } : {}),
     });

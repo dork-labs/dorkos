@@ -23,6 +23,12 @@
  * every one, `child-process` never does. Without a reachable docker daemon and
  * eval image the run degrades to child-process with a message, never a failure.
  *
+ * A credentialed tier reaches a model through `ANTHROPIC_API_KEY`, or
+ * `CLAUDE_CODE_OAUTH_TOKEN`, or the `claude` sign-in on this machine — in that
+ * order, and the run prints which one answered. Being signed in is enough to run
+ * locally; see `packages/evals/README.md`. The docker tier is the exception: a
+ * container cannot see the local sign-in, so it needs one of the two variables.
+ *
  * @module evals/bin
  */
 import path from 'node:path';

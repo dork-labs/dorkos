@@ -13,8 +13,8 @@
  *
  * The credentialed CHILD-PROCESS mode ({@link startChildProcessServer}):
  * an {@link IsolationLauncher} runs the server from its TS source (via tsx)
- * against a sandbox `DORK_HOME` with `ANTHROPIC_API_KEY` + a cheap model, and
- * this module polls
+ * against a sandbox `DORK_HOME` with the resolved model credential + a cheap
+ * model, and this module polls
  * `/api/health` until it is ready. Because the process is out-of-band, that tier
  * gets REAL per-eval isolation (no shared singletons / env mutation), unlike the
  * serial-only in-process mode. The launcher is the seam the hardened `docker`
@@ -243,15 +243,15 @@ export interface StartChildProcessServerOptions {
   dorkHome: string;
   /** Host to bind. Defaults to `127.0.0.1` (loopback only). */
   host?: string;
-  /**
-   * The `ANTHROPIC_API_KEY` the credentialed runtime authenticates with. Without
-   * it the boot fails (the real runtime cannot reach a model) — the caller gates
-   * on it so a missing key is a runner error, not a false pass.
-   */
-  anthropicApiKey?: string;
   /** Cheap default model (`ANTHROPIC_MODEL`). Defaults to {@link DEFAULT_CHEAP_MODEL}. */
   model?: string;
-  /** Extra environment for the launched server (per-eval overrides). */
+  /**
+   * Extra environment for the launched server: the resolved model credential
+   * (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, from
+   * `runner/credentials.ts`) plus any per-eval overrides. May be empty when the
+   * run authenticates through the `claude` sign-in on this machine, which the
+   * child-process launcher inherits rather than being handed as a value.
+   */
   env?: Record<string, string>;
   /** Health-poll budget in ms. Defaults to {@link DEFAULT_HEALTH_TIMEOUT_MS}. */
   readyTimeoutMs?: number;
@@ -284,7 +284,6 @@ export async function startChildProcessServer(
     ANTHROPIC_MODEL: opts.model ?? DEFAULT_CHEAP_MODEL,
     ...opts.env,
   };
-  if (opts.anthropicApiKey) env.ANTHROPIC_API_KEY = opts.anthropicApiKey;
 
   const launched = await launcher.launch({ dorkHome: opts.dorkHome, host, port, env });
 
