@@ -40,12 +40,13 @@ const PACKAGED_CLAUDE_BINARY_SUBPATH = path.join(
 /**
  * Value of `DORKOS_MANAGED_BY` in the child's environment.
  *
- * Producer side of a contract with `apps/server`: the server refuses
- * `POST /api/admin/restart` and `POST /api/admin/reset` with 409 when this is
- * set. Those endpoints re-exec the server process, which cannot work here —
- * the desktop shell owns the process lifecycle, and inside an Electron
- * UtilityProcess there is nothing to re-exec into. Without the gate the
- * server exits 0 and the app is left pointing at a dead port.
+ * This module owns only the producer half of a contract with `apps/server`:
+ * it sets the variable and nothing else. The matching gate lives server-side,
+ * where `POST /api/admin/restart` and `POST /api/admin/reset` answer 409 when
+ * they see it. Those endpoints re-exec the server process, which cannot work
+ * here — the desktop shell owns the process lifecycle, and inside an Electron
+ * UtilityProcess there is nothing to re-exec into. Ungated, the server exits 0
+ * and leaves the app pointing at a dead port.
  */
 const MANAGED_BY = 'desktop';
 
@@ -274,6 +275,13 @@ function buildServerEnv(port: number): Record<string, string> {
     DORKOS_PORT: String(port),
     NODE_ENV: app.isPackaged ? 'production' : 'development',
     DORKOS_MANAGED_BY: MANAGED_BY,
+    // Dev only: tell the child which pid to watch so it can kill itself if the
+    // shell dies without cleaning up (see server-entry.ts's exitWhenOrphaned).
+    // It has to be handed down explicitly because the child cannot work it out
+    // for itself — `tsx` runs the server as a *grandchild* of this process, so
+    // from in there `process.ppid` is the tsx wrapper, not us. A packaged build
+    // needs none of this: Electron tears a UtilityProcess down with the app.
+    ...(app.isPackaged ? {} : { DORKOS_PARENT_PID: String(process.pid) }),
     ...(dorkHome ? { DORK_HOME: dorkHome } : {}),
     ...(rendererUrl ? { DORKOS_CORS_ORIGIN: new URL(rendererUrl).origin } : {}),
     ...(clientDistPath ? { CLIENT_DIST_PATH: clientDistPath } : {}),

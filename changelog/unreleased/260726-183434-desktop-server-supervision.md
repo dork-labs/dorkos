@@ -1,15 +1,15 @@
 ---
 covers:
   - 'fix(desktop): supervise the server process with explicit lifecycle state (DOR-533)'
+  - "fix(desktop): watch the shell's pid so an orphaned dev server actually dies (DOR-533)"
 ---
 
 ### Fixed
 
-- The Mac and Windows apps now tell you when their background server stops, instead of quietly
-  going dead. Before, the app could keep showing a window that no longer talked to anything —
-  most visibly after "Reset All Data" — with nothing on screen to say why (DOR-533)
-- Quitting the desktop app no longer hangs for five seconds after the server has stopped (DOR-533)
-- The desktop app no longer sits at a blank screen forever when its server fails to start. It
-  now says what went wrong and closes (DOR-533)
-- Running the desktop app in development no longer reads and writes your real DorkOS data, and
-  no longer leaves a stray server running in the background after you close it (DOR-533)
+- The Mac app now tells you when the background server it runs has stopped, and offers to start
+  it again. Before, the window stayed open but quietly stopped working — most noticeably right
+  after "Reset All Data" — with nothing on screen to explain why (DOR-533)
+- Quitting the Mac app no longer pauses for several seconds when that server has already stopped
+  (DOR-533)
+- When the Mac app can't start its server at all, it now says so and closes, instead of leaving
+  you with no window and no message (DOR-533)

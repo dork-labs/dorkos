@@ -72,6 +72,15 @@ let safetyNetInstalled = false;
  * `~/Library/Logs`. The crash-restart path below was the concrete case — but
  * the net is deliberately process-wide, because the whole main process is
  * event handlers whose promises nobody awaits.
+ *
+ * Know what registering this changes, because it is not local to this module.
+ * Node's default for an unhandled rejection is to raise it as an uncaught
+ * exception and terminate; **any** listener replaces that with "call the
+ * listener and keep going". So from here on, every unawaited rejection
+ * anywhere in the main process is survivable and shows up only as a log line.
+ * That is the right trade for a desktop shell — a stray rejection in one
+ * handler should not take the user's windows and running agents down with it —
+ * but it does mean the log is now the only place such a bug surfaces.
  */
 function installSafetyNet(): void {
   if (safetyNetInstalled) return;
@@ -122,12 +131,21 @@ function settleStart(err: Error | null): void {
   else pending.resolve();
 }
 
-/** Clear every trace of the current child. Idempotent. */
+/**
+ * Clear every trace of the current child. Idempotent.
+ *
+ * Settling any outstanding startup wait is part of "every trace": once there
+ * is no child, nothing will ever arrive to settle it. This is the backstop for
+ * the path {@link stopServer} takes when it gives up and kills a child that
+ * never exited — the identity guard on the `exit` listener means that child's
+ * eventual exit is ignored, so {@link handleExit} is not coming.
+ */
 function clearChild(): void {
   child = null;
   serverPort = null;
   state = 'dead';
   expectedExit = false;
+  settleStart(new Error('The DorkOS server was stopped before it finished starting.'));
   for (const waiter of [...exitWaiters]) waiter();
   exitWaiters.clear();
 }
@@ -144,18 +162,19 @@ function clearChild(): void {
 function handleExit(code: number | null): void {
   const wasExpected = expectedExit;
   const wasStarting = pendingStart !== null;
+
+  // Settle before clearing, so the specific reason wins over clearChild's
+  // generic backstop. Always settle: clearing the timeout without rejecting
+  // left `await startServer()` pending forever inside app.on('ready') — no
+  // window, no error, nothing to do but force-quit. Asking about the
+  // outstanding wait rather than the state also covers a quit that lands
+  // mid-boot, where stopServer has already moved the state on to 'stopping'.
+  if (wasStarting) {
+    settleStart(new Error(`The server exited with code ${code} before it was ready.`));
+  }
   clearChild();
 
-  if (wasStarting) {
-    // Always settle. Clearing the timeout without rejecting left `await
-    // startServer()` pending forever inside app.on('ready') — no window, no
-    // error, nothing to do but force-quit. Asking about the outstanding wait
-    // rather than the state also covers a quit that lands mid-boot, where
-    // stopServer has already moved the state on to 'stopping'.
-    settleStart(new Error(`The server exited with code ${code} before it was ready.`));
-    return;
-  }
-  if (wasExpected) return;
+  if (wasStarting || wasExpected) return;
   reportCrash(code);
 }
 

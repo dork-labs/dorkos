@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { join } from 'node:path';
 import type { MockServerProcess } from './server-child-mock';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../../shared/boot-timeouts';
+
+/**
+ * Mirrors `SHUTDOWN_GRACE_MS` in `server-process.ts`. Not imported: it is an
+ * internal policy value with no reason to be exported, and the tests that use
+ * it are asserting on that exact policy.
+ */
+const SHUTDOWN_GRACE_MS = 5_000;
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('electron-log', () => import('./electron-log-mock'));
@@ -43,11 +51,25 @@ function flush(): Promise<void> {
  */
 async function devChildAt(index: number): Promise<MockServerProcess> {
   const { forkedChildren } = await getChildProcessMock();
-  for (let turn = 0; turn < 1000 && !forkedChildren[index]; turn++) {
+  return spawnedChildAt(forkedChildren, index, 'dev');
+}
+
+/** {@link devChildAt}'s packaged counterpart — the `utilityProcess.fork` path. */
+async function utilityChildAt(index: number): Promise<MockServerProcess> {
+  const { utilityProcessChildren } = await getElectronMock();
+  return spawnedChildAt(utilityProcessChildren, index, 'utility process');
+}
+
+async function spawnedChildAt(
+  children: MockServerProcess[],
+  index: number,
+  label: string
+): Promise<MockServerProcess> {
+  for (let turn = 0; turn < 1000 && !children[index]; turn++) {
     await new Promise((resolve) => setImmediate(resolve));
   }
-  const child = forkedChildren[index];
-  if (!child) throw new Error(`dev child #${index} was never spawned`);
+  const child = children[index];
+  if (!child) throw new Error(`${label} child #${index} was never spawned`);
   return child;
 }
 
@@ -190,7 +212,7 @@ describe('startServer — the readiness handshake', () => {
     }
   });
 
-  it('settles the startup wait when a quit lands mid-boot', async () => {
+  it('settles the startup wait when a booting child exits during shutdown', async () => {
     const { startServer, stopServer } = await import('../server-process');
 
     const started = startServer();
@@ -204,6 +226,28 @@ describe('startServer — the readiness handshake', () => {
 
     await stopping;
     await assertion;
+  });
+
+  it('settles the startup wait when a booting child never answers shutdown', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { startServer, stopServer } = await import('../server-process');
+
+    const started = startServer();
+    const assertion = expect(started).rejects.toThrow(/stopped before it finished starting/i);
+    const child = await devChildAt(0);
+
+    // This is the *guaranteed* shape of quit-during-boot, not an exotic one:
+    // server-entry.ts only registers its shutdown listener after the health
+    // poll succeeds, so a child that is still booting cannot answer. The
+    // grace period runs out, the supervisor kills it, and its later exit is
+    // ignored by the identity guard — so nothing but the kill path is left to
+    // settle the startup wait.
+    const stopping = stopServer();
+    await vi.advanceTimersByTimeAsync(SHUTDOWN_GRACE_MS);
+    await stopping;
+    await assertion;
+
+    expect(child.killed).toBe(true);
   });
 
   it('ignores a late exit from a child it already gave up on', async () => {
@@ -232,6 +276,22 @@ describe('startServer — the readiness handshake', () => {
 });
 
 describe('the environment handed to the server child', () => {
+  /**
+   * A DORK_HOME the *test process* exports, so these assertions are about what
+   * `buildServerEnv` contributes rather than about the developer's shell. The
+   * child inherits `process.env` wholesale, so asserting "undefined" here
+   * would go red for anyone who has DORK_HOME set.
+   */
+  const INHERITED_DORK_HOME = '/tmp/dor-533-inherited-dork-home';
+
+  beforeEach(() => {
+    vi.stubEnv('DORK_HOME', INHERITED_DORK_HOME);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('marks the server as desktop-managed so it refuses to restart itself', async () => {
     const { startServer } = await import('../server-process');
 
@@ -240,37 +300,46 @@ describe('the environment handed to the server child', () => {
     expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
   });
 
-  it('does not pin DORK_HOME in dev, so the child keeps its own dev data dir (M3)', async () => {
+  it('leaves DORK_HOME alone in dev, so the child picks its own dev data dir (M3)', async () => {
     const { startServer } = await import('../server-process');
 
     const { child } = await startReadyServer(startServer);
 
-    // Passing DORK_HOME in dev pointed the dev build at the production
-    // ~/.dork and applied unreleased migrations to it.
-    expect(child.env.DORK_HOME).toBeUndefined();
+    // Overriding DORK_HOME in dev pointed the dev build at the production
+    // ~/.dork and applied unreleased migrations to it. Whatever the
+    // environment already said is passed through untouched.
+    expect(child.env.DORK_HOME).toBe(INHERITED_DORK_HOME);
     expect(child.env.NODE_ENV).toBe('development');
+  });
+
+  it('hands the dev child this process id to watch, and no pid when packaged', async () => {
+    const { startServer } = await import('../server-process');
+
+    const { child } = await startReadyServer(startServer);
+
+    // The child cannot derive this itself — tsx runs it as a grandchild, so
+    // its own ppid is the tsx wrapper. See server-entry.ts's exitWhenOrphaned.
+    expect(child.env.DORKOS_PARENT_PID).toBe(String(process.pid));
   });
 
   it('pins DORK_HOME to ~/.dork in a packaged build, spawned as a UtilityProcess', async () => {
     const restorePaths = stubPackagedPaths();
     try {
-      const { app, utilityProcess, utilityProcessChildren } = await getElectronMock();
+      const { app, utilityProcess } = await getElectronMock();
       app.isPackaged = true;
       const { startServer } = await import('../server-process');
 
       const started = startServer();
-      const child = await vi.waitFor(() => {
-        const spawned = utilityProcessChildren[0];
-        if (!spawned) throw new Error('no utility process spawned yet');
-        return spawned;
-      });
+      const child = await utilityChildAt(0);
       child.emitReady();
       await started;
 
       expect(utilityProcess.fork).toHaveBeenCalledTimes(1);
-      expect(child.env.DORK_HOME).toMatch(/\.dork$/);
+      expect(child.env.DORK_HOME).toBe(join(app.getPath('home'), '.dork'));
       expect(child.env.NODE_ENV).toBe('production');
       expect(child.env.DORKOS_MANAGED_BY).toBe('desktop');
+      // Electron tears a UtilityProcess down with the app; no watchdog needed.
+      expect(child.env.DORKOS_PARENT_PID).toBeUndefined();
     } finally {
       restorePaths();
     }
@@ -363,6 +432,36 @@ describe('the crash monitor', () => {
     // Dev renderer comes from electron-vite, so it only needs a reload to
     // re-read the port over IPC.
     expect(tracked.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves a packaged window to the restarted server’s origin', async () => {
+    const restorePaths = stubPackagedPaths();
+    try {
+      const { app, BrowserWindow, dialog } = await getElectronMock();
+      app.isPackaged = true;
+      const tracked = new BrowserWindow({ width: 1200, height: 800 });
+      dialog.showMessageBox = vi.fn(async () => ({ response: 0, checkboxChecked: false }));
+      const { startServer, getServerPort } = await import('../server-process');
+
+      const started = startServer(() => tracked as unknown as Electron.BrowserWindow);
+      const child = await utilityChildAt(0);
+      child.emitReady();
+      await started;
+
+      child.emitExit(1);
+      const replacement = await utilityChildAt(1);
+      replacement.emitReady();
+      await flush();
+
+      // A packaged renderer is served *by* the server, so it has to move to
+      // the new origin — the port changed, and a stale one strands it.
+      const newPort = Number(replacement.env.DORKOS_PORT);
+      expect(getServerPort()).toBe(newPort);
+      expect(tracked.loadURL).toHaveBeenCalledWith(`http://localhost:${newPort}`);
+      expect(tracked.reload).not.toHaveBeenCalled();
+    } finally {
+      restorePaths();
+    }
   });
 
   it('catches a restart that fails: logs it, tells the user, and quits (H1)', async () => {
@@ -474,7 +573,7 @@ describe('stopServer', () => {
 
     vi.useFakeTimers();
     const stopping = stopServer();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(SHUTDOWN_GRACE_MS);
     await expect(stopping).resolves.toBeUndefined();
 
     expect(child.sent).toEqual([{ type: 'shutdown' }]);
