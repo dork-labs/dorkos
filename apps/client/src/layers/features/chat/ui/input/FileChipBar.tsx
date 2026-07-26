@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Loader2, File as FileIcon, AlertCircle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
@@ -27,25 +27,48 @@ interface FileChipBarProps {
  * attachment never arrived — and the send went out without it (DOR-480).
  */
 export function FileChipBar({ files, onRemove, onRetry }: FileChipBarProps) {
-  // Create object URLs for image thumbnails, keyed by PendingFile id
+  // One object URL per image, tracked against the (id, File) pair it was made
+  // from. The array's identity is not a usable key here: every upload progress
+  // tick rebuilds it (`prev.map(...)` in use-file-upload), so a memo keyed on it
+  // minted a fresh URL for the same bytes and revoked the one the <img> was
+  // still pointing at — many times a second, per image. Reconciling against the
+  // pairs makes the work track the files instead of the ticks, and is stable
+  // under a double-invoked render because the second pass finds its own entry.
+  const liveUrlsRef = useRef(new Map<string, { file: File; url: string }>());
+
   const thumbnailUrls = useMemo(() => {
-    const urls = new Map<string, string>();
+    const live = liveUrlsRef.current;
+    const shown = new Map<string, string>();
     for (const f of files) {
-      if (isImageFile(f.file)) {
-        urls.set(f.id, URL.createObjectURL(f.file));
+      if (!isImageFile(f.file)) continue;
+      const existing = live.get(f.id);
+      if (existing?.file === f.file) {
+        shown.set(f.id, existing.url);
+        continue;
       }
+      if (existing) URL.revokeObjectURL(existing.url);
+      const url = URL.createObjectURL(f.file);
+      live.set(f.id, { file: f.file, url });
+      shown.set(f.id, url);
     }
-    return urls;
+    // A chip that left the bar releases its URL here rather than in an effect:
+    // it is already absent from `shown`, so nothing on screen can still need it.
+    for (const [id, entry] of live) {
+      if (shown.has(id)) continue;
+      URL.revokeObjectURL(entry.url);
+      live.delete(id);
+    }
+    return shown;
   }, [files]);
 
-  // Revoke object URLs when they're no longer needed
+  // Release whatever is still held when the bar goes away.
   useEffect(() => {
+    const live = liveUrlsRef.current;
     return () => {
-      for (const url of thumbnailUrls.values()) {
-        URL.revokeObjectURL(url);
-      }
+      for (const entry of live.values()) URL.revokeObjectURL(entry.url);
+      live.clear();
     };
-  }, [thumbnailUrls]);
+  }, []);
 
   return (
     <div className="flex flex-wrap gap-1.5 px-1 pb-1.5">

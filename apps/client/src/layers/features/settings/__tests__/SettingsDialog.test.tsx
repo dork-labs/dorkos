@@ -263,7 +263,7 @@ describe('SettingsDialog', () => {
     const label = screen.getByText('Feature suggestions');
     const row = label.closest('[data-slot="field"], [class~="justify-between"]')!;
     const toggle = row.querySelector('[role="switch"]');
-    expect(toggle).toBeDefined();
+    expect(toggle).not.toBeNull();
     expect(toggle?.getAttribute('data-state')).toBe('checked');
   });
 

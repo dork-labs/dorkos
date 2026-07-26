@@ -38,6 +38,9 @@ interface UseChatQueueOptions {
 
 interface UseChatQueueReturn {
   queue: QueueItem[];
+  /** Id of the item under edit — what the queue panel compares against a row. */
+  editingId: string | null;
+  /** Position of that item, for the composer's "message 2 of 3" and for arrow-key navigation. */
   editingIndex: number | null;
   /** Why Send-now is unavailable right now, or `null` when it will work. */
   sendBlockedReason: string | null;
@@ -331,6 +334,7 @@ export function useChatQueue({
 
   return {
     queue: messageQueue.queue,
+    editingId: messageQueue.editingId,
     editingIndex: messageQueue.editingIndex,
     sendBlockedReason: messageQueue.sendBlockedReason,
     handleQueue,

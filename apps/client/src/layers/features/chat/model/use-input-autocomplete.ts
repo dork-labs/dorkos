@@ -32,6 +32,13 @@ interface UseInputAutocompleteReturn {
    */
   paletteHasResults: boolean;
   activeDescendantId: string | undefined;
+  /**
+   * `id` of the listbox the open palette renders, or `undefined` when none is
+   * open — the composer's `aria-controls`. Read off the same `show` flags that
+   * decide which palette to draw, so it cannot point at an element that was
+   * never rendered.
+   */
+  paletteListboxId: string | undefined;
   handleInputChange: (value: string) => void;
   handleCursorChange: (pos: number) => void;
   handleArrowUp: () => void;
@@ -153,6 +160,14 @@ export function useInputAutocomplete({
     (fileComplete.showFiles && fileComplete.filteredFiles.length > 0) ||
     (cmdPalette.showCommands && cmdPalette.filteredCommands.length > 0);
 
+  // Mirrors the render order in ChatInputContainer: the file palette wins when
+  // both flags are somehow set, exactly as the markup does.
+  const paletteListboxId = fileComplete.showFiles
+    ? 'file-palette-listbox'
+    : cmdPalette.showCommands
+      ? 'command-palette-listbox'
+      : undefined;
+
   const activeDescendantId =
     fileComplete.showFiles && fileComplete.filteredFiles.length > 0
       ? `file-item-${fileComplete.fileSelectedIndex}`
@@ -174,6 +189,7 @@ export function useInputAutocomplete({
     isPaletteOpen,
     paletteHasResults,
     activeDescendantId,
+    paletteListboxId,
     handleInputChange,
     handleCursorChange,
     handleArrowUp,

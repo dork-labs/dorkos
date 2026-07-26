@@ -180,7 +180,7 @@ export function InputShowcases() {
         <ShowcaseDemo>
           <QueuePanel
             queue={SAMPLE_QUEUE}
-            editingIndex={null}
+            editingId={null}
             onEdit={() => {}}
             onRemove={() => {}}
             onSend={() => {}}
@@ -192,7 +192,7 @@ export function InputShowcases() {
         <ShowcaseDemo>
           <QueuePanel
             queue={SAMPLE_QUEUE}
-            editingIndex={1}
+            editingId={SAMPLE_QUEUE[1]!.id}
             onEdit={() => {}}
             onRemove={() => {}}
             onSend={() => {}}
@@ -204,7 +204,7 @@ export function InputShowcases() {
         <ShowcaseDemo>
           <QueuePanel
             queue={SAMPLE_QUEUE}
-            editingIndex={null}
+            editingId={null}
             onEdit={() => {}}
             onRemove={() => {}}
             onSend={() => {}}

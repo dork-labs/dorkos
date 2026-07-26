@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 // Mock child components to isolate ChatInputContainer behavior
 vi.mock('../ui/input/ChatInput', () => ({
   ChatInput: vi.fn(() => <div data-testid="chat-input">ChatInput</div>),
@@ -47,22 +47,10 @@ vi.mock('react-dropzone', () => ({
   }),
 }));
 
-vi.mock('../model/use-chat-queue', () => ({
-  useChatQueue: () => ({
-    queue: [],
-    editingIndex: null,
-    sendBlockedReason: null,
-    handleQueue: vi.fn(),
-    handleQueueEdit: vi.fn(),
-    handleQueueSaveEdit: vi.fn(),
-    handleQueueCancelEdit: vi.fn(),
-    handleQueueRemove: vi.fn(),
-    handleQueueSend: vi.fn(),
-    handleQueueNavigateUp: vi.fn(),
-    handleQueueNavigateDown: vi.fn(),
-  }),
-}));
-
+// `useChatQueue` is deliberately NOT mocked: it is the only thing in this tree
+// that can write the composer, so stubbing it made the cross-session-leak guard
+// below unfalsifiable — it asserted that a function nothing could call was never
+// called. The real hook runs against the real session stores (below).
 vi.mock('../model/use-background-tasks', () => ({
   useBackgroundTasks: () => [],
 }));
@@ -81,7 +69,11 @@ vi.mock('@/layers/entities/agent', () => ({
   useAgentVisual: () => ({ color: '#3b82f6', emoji: '' }),
 }));
 
-vi.mock('@/layers/entities/session', () => ({
+// Only the three read-hooks the container itself calls are stubbed. Everything
+// else — the session stores, `useSessionQueue`, `useSessionAwaitingDecision` —
+// stays real, so the un-mocked `useChatQueue` above operates on real state.
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => [null, vi.fn()],
   useSessionChatState: () => ({ messages: [] }),
   useSessionStreamState: () => ({
@@ -98,6 +90,7 @@ vi.mock('@/layers/entities/session', () => ({
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { ChatInput } from '../ui/input/ChatInput';
 import { QueuePanel } from '../ui/input/QueuePanel';
+import { useSessionStreamStore } from '@/layers/entities/session';
 import type { ToolCallState } from '../model/chat-types';
 import { createRef } from 'react';
 
@@ -155,6 +148,9 @@ const baseProps = {
 
 afterEach(() => {
   cleanup();
+  // The stream store is module state shared across tests — a queue seeded by one
+  // case must not decide whether the panel renders in the next.
+  useSessionStreamStore.getState().clearQueue('test-session');
 });
 
 describe('ChatInputContainer mode switching', () => {
@@ -242,6 +238,10 @@ describe('ChatInputContainer mode switching', () => {
     // sessions while an interaction was active restored the OLD session's
     // draft into the NEW session's composer (acceptance run 20260610-173202,
     // F4). The container must not call setInput on these transitions at all.
+    //
+    // This only means anything with the real `useChatQueue` mounted (see the
+    // mocks above): it owns every setInput call the container makes, so with it
+    // stubbed the assertion could not have failed for any reason.
     const toolCall: ToolCallState = {
       toolCallId: 'tc-4',
       toolName: 'Write',
@@ -301,6 +301,7 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     // Without this the click dequeues, the upload throws inside the flush, the
     // restore fires, and the person gets a generic "Could not send message" for
     // a cause that was on screen the whole time.
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'queued while busy');
     render(
       <ChatInputContainer
         {...baseProps}
@@ -310,6 +311,32 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
 
     const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
     expect(panelProps.sendBlockedReason).toBe('An attachment did not upload');
+  });
+
+  it('gives the composer a real name in the one mode where Enter stops meaning send', () => {
+    // Editing returned '' for the placeholder, and that string is the field's
+    // aria-label — so in the single mode whose behavior differs (Enter saves)
+    // the composer announced nothing at all.
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'first queued');
+    useSessionStreamStore.getState().enqueueMessage('test-session', 'second queued');
+    render(<ChatInputContainer {...baseProps} />);
+
+    expect(lastChatInputProps().placeholder).toBe('Send a message...');
+
+    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
+    act(() => panelProps.onEdit(panelProps.queue[1]!.id));
+
+    expect(lastChatInputProps().placeholder).toBe(
+      'Edit queued message 2 of 2 — press Enter to save'
+    );
+    expect(lastChatInputProps().editingPosition).toBe(2);
+  });
+
+  it('keeps the queue panel out of the tree entirely when nothing is queued', () => {
+    // The presence guard lives at the call site so AnimatePresence can watch the
+    // panel leave; a panel that merely renders null never animates out.
+    render(<ChatInputContainer {...baseProps} />);
+    expect(vi.mocked(QueuePanel)).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,13 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import type { RefObject } from 'react';
 
+/**
+ * How long the first bare Escape stays armed, so the second one clears.
+ *
+ * The single source of truth for the whole double-tap: the timer below both
+ * closes the window and takes the on-screen readout down with it, so the hint
+ * cannot outlive the shortcut it advertises.
+ */
 const DOUBLE_ESCAPE_THRESHOLD_MS = 500;
 
 /**
@@ -115,6 +122,19 @@ interface UseInputKeyboardOptions {
   onQueueNavigateDown?: () => void;
 }
 
+interface UseInputKeyboardReturn {
+  handleKeyDown: (e: React.KeyboardEvent) => void;
+  /**
+   * `true` for exactly as long as a second Escape would clear the draft.
+   *
+   * The first bare Escape has no other effect, so without this the capability
+   * was unreachable: nothing moved, and nobody tries a key twice that appeared
+   * to do nothing once. The composer renders this as a transient readout, which
+   * is why the flag is state rather than the ref it used to be.
+   */
+  clearArmed: boolean;
+}
+
 /** Keyboard handler for the chat input textarea. */
 export function useInputKeyboard({
   textareaRef,
@@ -141,8 +161,31 @@ export function useInputKeyboard({
   onCancelEdit,
   onQueueNavigateUp,
   onQueueNavigateDown,
-}: UseInputKeyboardOptions) {
-  const lastEscapeRef = useRef(0);
+}: UseInputKeyboardOptions): UseInputKeyboardReturn {
+  const [clearArmed, setClearArmed] = useState(false);
+  const disarmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const disarm = useCallback(() => {
+    if (disarmTimerRef.current !== null) clearTimeout(disarmTimerRef.current);
+    disarmTimerRef.current = null;
+    setClearArmed(false);
+  }, []);
+
+  // The timer IS the window — there is no second clock to drift against it.
+  const arm = useCallback(() => {
+    if (disarmTimerRef.current !== null) clearTimeout(disarmTimerRef.current);
+    setClearArmed(true);
+    disarmTimerRef.current = setTimeout(() => {
+      disarmTimerRef.current = null;
+      setClearArmed(false);
+    }, DOUBLE_ESCAPE_THRESHOLD_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (disarmTimerRef.current !== null) clearTimeout(disarmTimerRef.current);
+    };
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -156,8 +199,8 @@ export function useInputKeyboard({
       if (e.key === 'Escape') {
         if (isPaletteOpen) {
           onEscape?.();
-          // Deliberately no `lastEscapeRef` stamp: closing a palette must not
-          // arm the draft-wiping second Escape. Clearing takes two bare taps.
+          // Deliberately no arming: closing a palette must not arm the
+          // draft-wiping second Escape. Clearing takes two bare taps.
           return;
         }
         if (editingQueueItem) {
@@ -168,8 +211,7 @@ export function useInputKeyboard({
           onStop?.();
           return;
         }
-        const now = Date.now();
-        if (value.trim() && now - lastEscapeRef.current < DOUBLE_ESCAPE_THRESHOLD_MS) {
+        if (value.trim() && clearArmed) {
           // Wipe through the field's own editing pipeline first, so the draft is
           // one Cmd+Z away. `onClear` still runs for whatever the host hangs off
           // it (dismissing a palette); the state write it performs is the same
@@ -177,10 +219,10 @@ export function useInputKeyboard({
           const textarea = textareaRef.current;
           if (textarea) clearThroughUndoStack(textarea);
           onClear?.();
-          lastEscapeRef.current = 0;
+          disarm();
         } else {
           onEscape?.();
-          lastEscapeRef.current = now;
+          arm();
         }
         return;
       }
@@ -299,8 +341,11 @@ export function useInputKeyboard({
       sessionBusy,
       canSubmit,
       textareaRef,
+      clearArmed,
+      arm,
+      disarm,
     ]
   );
 
-  return handleKeyDown;
+  return { handleKeyDown, clearArmed };
 }

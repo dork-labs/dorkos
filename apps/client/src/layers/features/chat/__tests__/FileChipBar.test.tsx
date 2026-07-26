@@ -219,4 +219,29 @@ describe('FileChipBar', () => {
     expect(container.querySelector('img')).toBeNull();
     expect(screen.getByText('60%')).toBeInTheDocument();
   });
+
+  it('makes one thumbnail URL per image, not one per upload progress tick', () => {
+    // Every progress tick rebuilds the array (`prev.map(...)` in use-file-upload),
+    // so a memo keyed on the array's identity re-ran on each one — minting a new
+    // blob URL for the same bytes and revoking the URL the <img> was still
+    // pointing at. Keying on the (id, File) pairs is what makes the work track
+    // the files instead of the ticks.
+    // The URL spies live for the whole file; only this test counts them.
+    vi.mocked(URL.createObjectURL).mockClear();
+    vi.mocked(URL.revokeObjectURL).mockClear();
+
+    const image = new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' });
+    const at = (progress: number, status: PendingFile['status']) => [
+      { id: 'img-1', file: image, status, progress },
+    ];
+
+    const { rerender } = render(<FileChipBar files={at(0, 'uploading')} onRemove={vi.fn()} />);
+    for (const percent of [10, 40, 70, 100]) {
+      rerender(<FileChipBar files={at(percent, 'uploading')} onRemove={vi.fn()} />);
+    }
+    rerender(<FileChipBar files={at(100, 'uploaded')} onRemove={vi.fn()} />);
+
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
 });

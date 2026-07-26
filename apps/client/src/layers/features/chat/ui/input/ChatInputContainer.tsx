@@ -68,13 +68,24 @@ interface ChatInputContainerProps {
   sync: SyncPresenceProps;
 }
 
+/**
+ * The composer's label \u2014 its `aria-label`, and its visible placeholder whenever
+ * the rotating overlay is not covering it.
+ *
+ * Editing a queued item used to return `''`, so in the one mode where the
+ * field's behavior changes \u2014 Enter saves instead of sends \u2014 it announced
+ * nothing at all. It carries the item's text, so no visible placeholder is lost
+ * by naming it properly.
+ */
 function getPlaceholder(
   editingIndex: number | null,
   isStreaming: boolean,
   queueLength: number,
   defaultText: string
 ): string {
-  if (editingIndex !== null) return '';
+  if (editingIndex !== null) {
+    return `Edit queued message ${editingIndex + 1} of ${queueLength} \u2014 press Enter to save`;
+  }
   if (isStreaming && queueLength > 0) return `Compose another \u2014 ${queueLength} queued`;
   if (isStreaming) return 'Compose next \u2014 will send when ready';
   return defaultText;
@@ -260,21 +271,29 @@ export function ChatInputContainer({
             {pendingFiles.length > 0 && (
               <FileChipBar files={pendingFiles} onRemove={onFileRemove} onRetry={onFileRetry} />
             )}
-            <QueuePanel
-              queue={chatQueue.queue}
-              editingIndex={chatQueue.editingIndex}
-              onEdit={chatQueue.handleQueueEdit}
-              onRemove={chatQueue.handleQueueRemove}
-              onSend={chatQueue.handleQueueSend}
-              // A failed attachment blocks a hand-send exactly as it blocks a
-              // normal one — and says so, instead of letting the click dequeue,
-              // fail inside the upload, and land as a generic "Could not send
-              // message". This component is the one place that holds both the
-              // queue and the attachment state.
-              sendBlockedReason={
-                hasFailedUpload ? 'An attachment did not upload' : chatQueue.sendBlockedReason
-              }
-            />
+            {/* The presence guard lives here, not inside the panel: a component
+                that returns null is still mounted, so AnimatePresence never saw
+                it leave and the panel's exit animation never ran — it popped out
+                at the exact moment the last queued message flushed. */}
+            <AnimatePresence>
+              {chatQueue.queue.length > 0 && (
+                <QueuePanel
+                  queue={chatQueue.queue}
+                  editingId={chatQueue.editingId}
+                  onEdit={chatQueue.handleQueueEdit}
+                  onRemove={chatQueue.handleQueueRemove}
+                  onSend={chatQueue.handleQueueSend}
+                  // A failed attachment blocks a hand-send exactly as it blocks a
+                  // normal one — and says so, instead of letting the click dequeue,
+                  // fail inside the upload, and land as a generic "Could not send
+                  // message". This component is the one place that holds both the
+                  // queue and the attachment state.
+                  sendBlockedReason={
+                    hasFailedUpload ? 'An attachment did not upload' : chatQueue.sendBlockedReason
+                  }
+                />
+              )}
+            </AnimatePresence>
             <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
 
             <ChatInput
@@ -298,6 +317,7 @@ export function ChatInputContainer({
               onArrowDown={autocomplete.handleArrowDown}
               onCommandSelect={autocomplete.handleKeyboardSelect}
               activeDescendantId={autocomplete.activeDescendantId}
+              paletteListboxId={autocomplete.paletteListboxId}
               onCursorChange={autocomplete.handleCursorChange}
               onAttach={onFilesSelected}
               // A failed attachment blocks the send outright. Sending anyway
@@ -307,6 +327,9 @@ export function ChatInputContainer({
               // reason and offers both ways out — try again, or remove it.
               canSubmit={!hasFailedUpload}
               editingQueueItem={chatQueue.editingIndex !== null}
+              editingPosition={
+                chatQueue.editingIndex === null ? undefined : chatQueue.editingIndex + 1
+              }
               queueDepth={chatQueue.queue.length}
               onQueue={queueAndDismiss}
               onSaveEdit={chatQueue.handleQueueSaveEdit}

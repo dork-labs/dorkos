@@ -6,6 +6,7 @@ import { useIsTouchOnly } from '@/layers/shared/model';
 import { useInputKeyboard } from './use-input-keyboard';
 import { useTextareaResize } from './use-textarea-resize';
 import { InputActionButton } from './InputActionButton';
+import { ClearArmedHint } from './ClearArmedHint';
 
 export interface ChatInputHandle {
   focus: () => void;
@@ -45,6 +46,12 @@ interface ChatInputProps {
   sessionBusy?: boolean;
   /** Currently editing a queued message item. */
   editingQueueItem?: boolean;
+  /**
+   * 1-based position of the queue item under edit, when one is. Names *which*
+   * message is being rewritten — the composer is the only place that can say so
+   * while the queue panel is scrolled away or the row is off screen.
+   */
+  editingPosition?: number;
   /** Number of items currently in the message queue (for badge display). */
   queueDepth?: number;
   onStop?: () => void;
@@ -74,6 +81,13 @@ interface ChatInputProps {
   onArrowDown?: () => void;
   onCommandSelect?: () => void;
   activeDescendantId?: string;
+  /**
+   * `id` of the listbox the open palette actually rendered, or `undefined` when
+   * no palette is open. Must come from whatever decided which palette to draw:
+   * inferring it from `activeDescendantId` pointed at nothing whenever the open
+   * palette had zero matches, because there is no active option to infer from.
+   */
+  paletteListboxId?: string;
   onCursorChange?: (pos: number) => void;
   /** Callback when files are selected via the paperclip button. */
   onAttach?: (files: File[]) => void;
@@ -116,6 +130,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     commandPending = false,
     sessionBusy = false,
     editingQueueItem = false,
+    editingPosition,
     queueDepth = 0,
     onStop,
     onQueue,
@@ -129,6 +144,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onArrowDown,
     onCommandSelect,
     activeDescendantId,
+    paletteListboxId,
     onCursorChange,
     onAttach,
     placeholder = 'Send a message...',
@@ -174,7 +190,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     textareaRef.current?.focus();
   }, []);
 
-  const handleKeyDown = useInputKeyboard({
+  const { handleKeyDown, clearArmed } = useInputKeyboard({
     textareaRef,
     value,
     isStreaming,
@@ -228,10 +244,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
   const showClear = hasText && !sessionBusy;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="relative flex flex-col gap-1.5">
+      {clearArmed && hasText && <ClearArmedHint />}
       {sessionBusy && (
         <div className="px-1 text-xs text-amber-600 dark:text-amber-500">
-          Session is busy. Please wait...
+          Your agent is still finishing the last message. Try again in a moment.
         </div>
       )}
       {/* A live region, not a plain line: the failure it explains is "I pressed
@@ -244,7 +261,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
       )}
       {editingQueueItem && (
         <div className="text-muted-foreground px-0.5 text-xs">
-          Editing message{queueDepth > 0 ? ' \u2014' : ''}
+          {editingPosition !== undefined && queueDepth > 0
+            ? `Editing message ${editingPosition} of ${queueDepth}`
+            : 'Editing message'}
         </div>
       )}
       <div
@@ -271,7 +290,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md px-1.5 py-1 transition-colors disabled:opacity-50"
+              className="focus-ring text-muted-foreground hover:text-foreground flex shrink-0 items-center justify-center rounded-md px-1.5 py-1 transition-colors disabled:opacity-50"
               aria-label="Attach file"
             >
               <Paperclip className="size-4" />
@@ -290,13 +309,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             onSelect={handleSelect}
             role="combobox"
             aria-autocomplete="list"
-            aria-controls={
-              isPaletteOpen
-                ? activeDescendantId?.startsWith('file-')
-                  ? 'file-palette-listbox'
-                  : 'command-palette-listbox'
-                : undefined
-            }
+            aria-controls={isPaletteOpen ? paletteListboxId : undefined}
             aria-expanded={isPaletteOpen ?? false}
             aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
             // The visual placeholder may render as an overlay (AnimatedPlaceholder),
@@ -320,7 +333,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
             disabled={!showClear}
             type="button"
             className={cn(
-              'text-muted-foreground hover:text-foreground shrink-0 rounded-lg p-1 transition-colors',
+              'focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-lg p-1 transition-colors',
               !showClear && 'pointer-events-none'
             )}
             aria-label="Clear message"
