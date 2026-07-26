@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
+import { openLink } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
 /** The paste-key Gateway connect: validate + store an OpenRouter key. */
@@ -100,7 +101,7 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
     mutationFn: () => transport.startOpenRouterOAuth(),
     onMutate: () => setStartError(null),
     onSuccess: ({ authorizeUrl, state }) => {
-      window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
+      openLink(authorizeUrl);
       setFlowState(state);
     },
     onError: (err) =>

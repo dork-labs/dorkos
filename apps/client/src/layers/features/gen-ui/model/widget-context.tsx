@@ -41,6 +41,7 @@ import {
 } from '@dorkos/shared/ui-widget';
 import {
   executeUiCommand,
+  openLink,
   TIMING,
   type CelebrationOrigin,
   type DispatcherContext,
@@ -257,7 +258,7 @@ export function WidgetActionProvider({
         isOpen={pendingUrl !== null}
         onClose={() => setPendingUrl(null)}
         onConfirm={() => {
-          if (pendingUrl) window.open(pendingUrl, '_blank', 'noopener,noreferrer');
+          if (pendingUrl) openLink(pendingUrl);
           setPendingUrl(null);
         }}
       />

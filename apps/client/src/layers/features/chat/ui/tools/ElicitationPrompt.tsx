@@ -7,7 +7,7 @@
  */
 import { useState, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
+import { cn, openLink } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import type { ElicitationAction } from '@dorkos/shared/types';
@@ -112,7 +112,7 @@ export function ElicitationPrompt({
 
   const handleOpenUrl = useCallback(() => {
     if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openLink(url);
       setUrlOpened(true);
     }
   }, [url]);

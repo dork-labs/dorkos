@@ -10,6 +10,7 @@ import {
   useRelayDeepLink,
   useReportIssue,
 } from '@/layers/shared/model';
+import { openLink } from '@/layers/shared/lib';
 import { useDirectoryState } from '@/layers/entities/session';
 import { useAgentFrecency } from './use-agent-frecency';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -125,7 +126,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           navigate({ to: '/' });
           return;
         case 'openDevPlayground':
-          window.open('/dev', '_blank');
+          // `/dev` mounts outside the router (see `Root` in main.tsx), so the
+          // seam classifies it as external and gives it its own window.
+          openLink('/dev', { newTab: true });
           return;
         case 'toggleDevtools':
           useAppStore.getState().toggleDevtools();

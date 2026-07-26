@@ -21,6 +21,11 @@ import { useNavigate } from '@tanstack/react-router';
  * a Settings… click with zero windows open, both of which would otherwise
  * be dropped by the live `navigate` channel alone. Unsubscribes on unmount.
  *
+ * Deliberately drives the router directly rather than the link seam
+ * (`openLink`): the channel's contract is router paths, never arbitrary URLs,
+ * so classification has nothing to decide — and an unrecognized path belongs on
+ * the in-app not-found page, not in the system browser.
+ *
  * Mounted once by {@link AppShell} — the app shell owns the router.
  */
 export function useElectronNavigate(): void {

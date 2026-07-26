@@ -23,6 +23,22 @@ export {
   localDeviceNoun,
   type PlatformAdapter,
 } from './platform';
+export {
+  APP_ROUTE_PATHS,
+  classifyLink,
+  openLink,
+  openExternalLink,
+  registerLinkNavigator,
+  supportsNewTab,
+  type BlockedLink,
+  type BlockedLinkReason,
+  type ClassifiedLink,
+  type ExternalLink,
+  type InternalLink,
+  type LinkNavigation,
+  type LinkNavigator,
+  type OpenLinkOptions,
+} from './link-navigation';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
 export { HttpTransport, streamManager } from './transport';

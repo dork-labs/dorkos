@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
+import { cn, openLink, supportsNewTab } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -69,6 +69,24 @@ export function CommandPaletteDialog() {
     setDir,
     selectedCwd,
   } = usePaletteActions(closePalette);
+
+  // "Open in New Tab" — a second cockpit window aimed at this agent's project.
+  // The href is query-only on purpose: the link seam merges it into the current
+  // search, so the new window lands on the same route in the same state, just
+  // pointed at another agent. Where there is no second window to open (the
+  // Obsidian embed), open the agent here rather than dropping the action.
+  const openAgentInNewTab = useCallback(
+    (agent: AgentPathEntry) => {
+      if (!supportsNewTab()) {
+        handleAgentSelect(agent);
+        return;
+      }
+      openLink(`?${new URLSearchParams({ dir: agent.projectPath }).toString()}`, { newTab: true });
+      recordUsage(agent.id);
+      closePalette();
+    },
+    [handleAgentSelect, recordUsage, closePalette]
+  );
 
   const {
     recentAgents,
@@ -247,11 +265,7 @@ export function CommandPaletteDialog() {
               // Cmd+Enter (or Ctrl+Enter) on root page opens selected agent in new tab
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !page && selectedAgent) {
                 e.preventDefault();
-                const url = new URL(window.location.href);
-                url.searchParams.set('dir', selectedAgent.projectPath);
-                window.open(url.toString(), '_blank');
-                recordUsage(selectedAgent.id);
-                closePalette();
+                openAgentInNewTab(selectedAgent);
                 return;
               }
               // Cmd+Enter (or Ctrl+Enter) on agent sub-menu opens in new tab
@@ -262,11 +276,7 @@ export function CommandPaletteDialog() {
                 subMenuAgent
               ) {
                 e.preventDefault();
-                const url = new URL(window.location.href);
-                url.searchParams.set('dir', subMenuAgent.projectPath);
-                window.open(url.toString(), '_blank');
-                recordUsage(subMenuAgent.id);
-                closePalette();
+                openAgentInNewTab(subMenuAgent);
                 return;
               }
               // Backspace when input is empty pops the last page (goes back)
@@ -358,13 +368,7 @@ export function CommandPaletteDialog() {
                       <AgentSubMenu
                         agent={subMenuAgent}
                         onOpenHere={() => handleAgentSelect(subMenuAgent)}
-                        onOpenNewTab={() => {
-                          const url = new URL(window.location.href);
-                          url.searchParams.set('dir', subMenuAgent.projectPath);
-                          window.open(url.toString(), '_blank');
-                          recordUsage(subMenuAgent.id);
-                          closePalette();
-                        }}
+                        onOpenNewTab={() => openAgentInNewTab(subMenuAgent)}
                         onNewSession={() => {
                           setDir(subMenuAgent.projectPath);
                           recordUsage(subMenuAgent.id);

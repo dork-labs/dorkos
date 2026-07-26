@@ -347,6 +347,31 @@ describe('CommandPaletteDialog', () => {
     expect(screen.getByText('Agent: Worker')).toBeInTheDocument();
   });
 
+  it('opens a second cockpit window — not the system browser — from Open in New Tab', () => {
+    // DOR-534: the palette used to hand its own origin to `window.open` with no
+    // classification, so the packaged desktop shell forwarded the cockpit to
+    // Chrome. The target must stay same-origin, on an app route, carrying the
+    // agent's directory — and keep the plain `_blank` shape the desktop shell
+    // turns into a real DorkOS window.
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<CommandPaletteDialog />);
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    const newTabItem = screen.getByText('Open in New Tab').closest('[data-slot="command-item"]');
+    if (newTabItem) fireEvent.click(newTabItem as Element);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    const [target, features] = openSpy.mock.calls[0];
+    const opened = new URL(String(target));
+    expect(opened.origin).toBe(window.location.origin);
+    expect(opened.pathname).toBe('/');
+    expect(opened.searchParams.get('dir')).toBe('/projects/current');
+    expect(features).toBe('_blank');
+    expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
+
+    openSpy.mockRestore();
+  });
+
   it('calls recordUsage and setDir when Open Here is clicked in sub-menu', () => {
     render(<CommandPaletteDialog />);
     // Click agent to enter sub-menu

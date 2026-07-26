@@ -16,6 +16,7 @@ import { buildIssueUrl, type FeedbackKind } from '@dorkos/shared/feedback';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { useTransport } from '../TransportContext';
 import { buildClientReport } from '../../lib/build-issue-report';
+import { openLink } from '../../lib/link-navigation';
 
 /**
  * Get a callback that opens a prefilled GitHub issue for the given kind.
@@ -34,7 +35,7 @@ export function useReportIssue(): (kind: FeedbackKind) => void {
   return useCallback(
     (kind: FeedbackKind) => {
       const url = buildIssueUrl(buildClientReport(kind, config, pathname));
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openLink(url);
     },
     [config, pathname]
   );
