@@ -5,8 +5,9 @@ export const usingTheMarketplace: OperatingSkill = {
   name: 'using-the-marketplace',
   description:
     'Use when finding, inspecting, installing, or removing a DorkOS marketplace package ' +
-    '(agent, plugin, skill pack, or adapter), or managing marketplace sources. Covers search, ' +
-    'the install confirmation flow, the uninstall approval flow, and listing what is installed.',
+    '(agent, plugin, skill pack, or adapter), or reading marketplace sources. Covers search, ' +
+    'the install confirmation flow, the uninstall approval flow, listing what is installed, and ' +
+    'why only a person may add or remove a source.',
   body: `# Using the marketplace
 
 The marketplace distributes installable packages: agents, plugins, skill packs,
@@ -89,11 +90,31 @@ for you exactly like the two paths above, so it is not a way around waiting for 
 approval. Prefer \`dorkos call marketplace.uninstall\`: it reports the approval
 payload in the shape this skill describes.
 
-## Manage sources
+## Sources: you may read them, only a person may change them
 
-- CLI: \`dorkos marketplace list|add|remove|refresh|validate\`. \`add\` registers a
-  new marketplace source; \`refresh\` re-fetches its catalog; \`validate\` checks a
-  source or package on disk.
+A source is a feed this install fetches and runs code from, so the list of
+sources is the person's to set, not yours. What you can do:
+
+- \`dorkos marketplace list\` shows the sources this install reads from.
+- \`dorkos marketplace refresh [<name>]\` re-fetches a source's catalog.
+- \`dorkos marketplace validate <path-or-url>\` checks a marketplace or package
+  file without changing anything.
+
+\`dorkos marketplace add\` and \`dorkos marketplace remove\` exist, but the server
+refuses you. You will get a 403 with
+\`code: "operator_only_marketplace_source"\`. There is no approval that unlocks
+it and retrying will not help, so do not try a second time or look for another
+route to the same change.
+
+When you need a package from a feed this install does not read yet, say so and
+hand the person the exact line to run:
+
+\`\`\`
+dorkos marketplace add <url> --name <name>
+\`\`\`
+
+Then wait. They can also do it on the Marketplace sources screen in DorkOS. Once
+they have, \`install\` works normally.
 
 ## Scaffold your own package (tier: act)
 

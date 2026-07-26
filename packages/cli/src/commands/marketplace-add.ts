@@ -144,6 +144,12 @@ export async function runMarketplaceAdd(args: MarketplaceAddArgs): Promise<numbe
         console.error(
           `Error: marketplace '${name}' already exists. Pass --name to choose another.`
         );
+      } else if (err.status === 403 && err.body.message) {
+        // The operator-only refusal (DOR-502). Its `message` is the half that
+        // says what to do instead, and an AGENT running this verb is exactly who
+        // needs to read it — printing only the one-line `error` would leave it
+        // with a "no" and no next step.
+        console.error(`Error: ${err.message}\n${err.body.message}`);
       } else {
         console.error(`Error: ${err.message}`);
       }

@@ -108,6 +108,9 @@ let gateRegistry: CapabilityRegistry;
 /** Set to make a request look like an agent's rather than the cockpit's. */
 let agentHeader: string | undefined;
 
+/** Stands in for what `sessionGate` attaches once local login is on. */
+let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+
 function createFakeUninstallFlow(): FakeUninstallFlow {
   return { uninstall: vi.fn() };
 }
@@ -187,6 +190,7 @@ describe('Marketplace Routes', () => {
     onPluginsChanged = vi.fn();
     agentScopes = [];
     agentHeader = undefined;
+    signedInUser = undefined;
     // The gate asks `auth.enabled` to decide whether proof of a person is even
     // possible, and with no config manager it fails CLOSED (assumes login on).
     // Initialize it so these tests run in the real DEFAULT posture, login off.
@@ -204,6 +208,8 @@ describe('Marketplace Routes', () => {
       // request looks like the cockpit's, which is the caller the mutation routes
       // let through without an approval (DOR-467).
       if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
+      // And for `sessionGate`, which resolves an identity only when login is on.
+      if (signedInUser) res.locals.user = signedInUser;
       next();
     });
     app.use(
@@ -1056,6 +1062,122 @@ describe('Marketplace Routes', () => {
 
       expect(res.status).toBe(200);
       expect(installer.install).toHaveBeenCalled();
+    });
+  });
+
+  describe('the operator-only bar on the source routes (DOR-502)', () => {
+    /** Read the source names back as the cockpit would, with no agent header. */
+    async function listSourceNames(): Promise<string[]> {
+      agentHeader = undefined;
+      const res = await request(app).get('/api/marketplace/sources');
+      return res.body.sources.map((s: { name: string }) => s.name);
+    }
+
+    it('refuses an AGENT that tries to add a source, and adds nothing', async () => {
+      // The door this closes: a source decides which feed `install` may fetch
+      // code from, and the install gate never asks where a package came from.
+      agentHeader = 'agent-token';
+
+      const res = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only_marketplace_source');
+      expect(res.body.error).toBe('Only the person running DorkOS can add a package source');
+      // Legible to a model: it must learn to ask the person, not to retry.
+      expect(res.body.message).toContain('dorkos marketplace add');
+      expect(res.body.message).toContain('Retrying will not help');
+
+      expect(await listSourceNames()).not.toContain('attacker');
+    });
+
+    it('refuses an AGENT that tries to remove a source, and the source survives', async () => {
+      await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'keeper', source: 'https://example.com/keeper' });
+
+      agentHeader = 'agent-token';
+      const res = await request(app).delete('/api/marketplace/sources/keeper');
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only_marketplace_source');
+      expect(res.body.error).toBe('Only the person running DorkOS can remove a package source');
+      expect(res.body.message).toContain('dorkos marketplace remove');
+
+      expect(await listSourceNames()).toContain('keeper');
+    });
+
+    it('refuses an agent BEFORE validating the body, so the schema cannot be probed', async () => {
+      // Pins the guard's position in the handler. If it moved below the Zod
+      // parse, an agent would get a 400 with `details` describing the schema —
+      // a different answer for a caller that may not do this at all.
+      agentHeader = 'agent-token';
+
+      const res = await request(app).post('/api/marketplace/sources').send({ name: '' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_only_marketplace_source');
+      expect(res.body.details).toBeUndefined();
+    });
+
+    it('lets the person in the cockpit add and then remove a source', async () => {
+      // The other half of the bar. Without this, inverting the guard so it
+      // refuses the operator and allows the agent would still look green.
+      const added = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'mine', source: 'https://example.com/mine' });
+      expect(added.status).toBe(201);
+      expect(await listSourceNames()).toContain('mine');
+
+      const removed = await request(app).delete('/api/marketplace/sources/mine');
+      expect(removed.status).toBe(204);
+      expect(await listSourceNames()).not.toContain('mine');
+    });
+
+    it('still lets the operator add from their terminal with Require login ON', async () => {
+      // The posture this PR's central argument turns on, pinned so it cannot be
+      // "hardened" away by accident. `dorkos marketplace add` is a first-class
+      // operator verb and the CLI has no cookie — it presents a per-user API key.
+      // Copying the `PATCH /api/config` cookie bar onto this route would therefore
+      // refuse the person at their own terminal on every login-on instance, and
+      // nothing but this test would notice. See source-write-policy.ts.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_cli', credential: 'api-key' };
+
+      const added = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'from-cli', source: 'https://example.com/from-cli' });
+      expect(added.status).toBe(201);
+
+      const removed = await request(app).delete('/api/marketplace/sources/from-cli');
+      expect(removed.status).toBe(204);
+
+      // And the agent bar still holds in this posture — the allow above is about
+      // WHICH credential the operator may present, not a hole login-on opens.
+      agentHeader = 'agent-token';
+      const refused = await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe('operator_only_marketplace_source');
+    });
+
+    it('leaves reading, refreshing, and listing open to an agent', async () => {
+      // Refusing more than the line justifies makes the surface useless. An
+      // agent still needs to see what this install reads from.
+      await request(app)
+        .post('/api/marketplace/sources')
+        .send({ name: 'readable', source: 'https://example.com/readable' });
+
+      agentHeader = 'agent-token';
+      const list = await request(app).get('/api/marketplace/sources');
+      expect(list.status).toBe(200);
+
+      const refresh = await request(app).post('/api/marketplace/sources/readable/refresh');
+      expect(refresh.status).toBe(200);
     });
   });
 

@@ -1620,11 +1620,26 @@ registry.registerPath({
   },
 });
 
+/**
+ * The refusal both package-source WRITE routes answer with when the caller is not
+ * the operator (DOR-502). Not an approval gate: there is no token that unlocks it.
+ */
+const MarketplaceSourceRefusalSchema = z.object({
+  error: z.string(),
+  code: z.literal('operator_only_marketplace_source'),
+  message: z.string(),
+});
+
 registry.registerPath({
   method: 'post',
   path: '/api/marketplace/sources',
   tags: ['Marketplace'],
-  summary: 'Add a marketplace source',
+  summary: 'Add a marketplace source (operator only)',
+  description:
+    'Only the person running DorkOS may add a package source. Any caller that could not decide ' +
+    'an approval is refused with 403, which includes one presenting an agent identity, one ' +
+    'presenting an approval token, and (with local login on) one with no signed-in identity. ' +
+    'There is no approval that unlocks it.',
   request: {
     body: {
       content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
@@ -1639,6 +1654,10 @@ registry.registerPath({
       description: 'Validation error',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
+    403: {
+      description: 'Caller is not the operator',
+      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+    },
     409: {
       description: 'Duplicate source name',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -1650,12 +1669,21 @@ registry.registerPath({
   method: 'delete',
   path: '/api/marketplace/sources/{name}',
   tags: ['Marketplace'],
-  summary: 'Remove a marketplace source',
+  summary: 'Remove a marketplace source (operator only)',
+  description:
+    'Only the person running DorkOS may remove a package source. Any caller that could not ' +
+    'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
+    'one presenting an approval token, and (with local login on) one with no signed-in ' +
+    'identity. There is no approval that unlocks it.',
   request: {
     params: z.object({ name: z.string() }),
   },
   responses: {
     204: { description: 'Source removed' },
+    403: {
+      description: 'Caller is not the operator',
+      content: { 'application/json': { schema: MarketplaceSourceRefusalSchema } },
+    },
   },
 });
 
