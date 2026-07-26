@@ -104,7 +104,7 @@ export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } fr
 export { formatDuration } from './format-duration';
 export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './humanize-name';
 export { truncateMiddle } from './truncate-middle';
-export { queryClient } from './query-client';
+export { queryClient, createQueryClientConfig } from './query-client';
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
