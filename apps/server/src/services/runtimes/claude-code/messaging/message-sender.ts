@@ -35,7 +35,7 @@ import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
-import { resolveToolConfig, buildAllowedTools } from '../tooling/tool-filter.js';
+import { resolveToolConfig } from '../tooling/tool-filter.js';
 // A turn runs in the session's working directory, which for the system agent
 // (DorkBot) and marketplace agents is {dorkHome}/agents/* — legitimately outside
 // a narrow DORKOS_BOUNDARY. The turn must be able to run there (the onboarding
@@ -542,12 +542,14 @@ export async function* executeSdkQuery(
     sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId);
   }
 
-  // Apply per-agent MCP tool filtering (undefined = no filter = all tools available)
-  const allowedTools = buildAllowedTools(toolConfig);
-  if (allowedTools) {
-    sdkOptions.allowedTools = [...(sdkOptions.allowedTools ?? []), ...allowedTools];
-  }
-
+  // Nothing here sets `allowedTools`, on purpose (DOR-519). The tool-group toggles
+  // used to feed it a list, on the premise that the SDK option restricts which tools
+  // a session may call. It does not: it auto-approves the names in it. Because the
+  // list was only non-empty once a group was turned OFF, turning a group off widened
+  // this agent's auto-approval instead of narrowing its access. Every DorkOS tool now
+  // goes through `canUseTool` below, which auto-approves only `DORKOS_AGENT_TOOLS`.
+  // The toggles still take effect through `buildSystemPromptAppend` above, which
+  // leaves a disabled group's tool block out of the agent's context.
   const editBaselineCapture = createEditBaselineCapture(sessionId, effectiveCwd);
   sdkOptions.canUseTool = createCanUseTool(session, logger.debug.bind(logger), editBaselineCapture);
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):

@@ -188,18 +188,6 @@ export const MCP_TOOL_GATE_GROUPS = {
 export type McpToolGroupName = keyof typeof MCP_TOOL_GATE_GROUPS;
 
 /**
- * The tools in one group, in declaration order.
- *
- * @param group - The group to list.
- * @returns The bare tool names (no `mcp__dorkos__` prefix).
- */
-export function toolNamesInGroup(group: ToolGateGroup): McpToolGroupName[] {
-  return (Object.keys(MCP_TOOL_GATE_GROUPS) as McpToolGroupName[]).filter(
-    (name) => MCP_TOOL_GATE_GROUPS[name] === group
-  );
-}
-
-/**
  * The tools one toggle controls, including the groups that implicitly follow it.
  *
  * Turning that toggle off removes exactly these.
@@ -214,19 +202,21 @@ export function toolNamesForDomain(domain: ToolDomainKey): McpToolGroupName[] {
 }
 
 /**
- * The groups the per-session tool list always includes, whatever the toggles say.
+ * The tool groups no toggle gates.
  *
  * Server identity and agent lookup (`core`), the tools that drive the cockpit's
  * own screen rather than the system underneath (`ui`), and the reads of the
- * session's own preview pane (`devtools`, DOR-213).
+ * session's own preview pane (`devtools`, DOR-213). The cockpit's "always enabled"
+ * row reads this constant, so the screen cannot drift from the table above it.
  *
- * This is narrower than "every group no toggle gates" — `agents` and `extensions`
- * also map to `null` but are not here. That is deliberate and the reason is in the
- * TSDoc of `buildAllowedTools`'s module
- * (`services/runtimes/claude-code/tooling/tool-filter.ts`): the list this feeds is
- * an approval bypass rather than an availability filter, so adding names to it
- * grants rather than restores. Both the server's session list and the cockpit's
- * "always enabled" row read this one constant, so they cannot disagree about it.
+ * It is narrower than the full set of groups that map to `null`: `agents` and
+ * `extensions` do too and are not listed here. That gap dates from when this
+ * constant fed the SDK's `allowedTools`, where every name added widened an approval
+ * bypass, so the list was kept as short as it could be. Nothing feeds `allowedTools`
+ * any more (DOR-519), so the only thing the omission costs today is that the cockpit
+ * does not show those two groups in its always-enabled row. Widening it is a display
+ * change — safe, but visible to the person using it, so it is deliberately not
+ * bundled with the security fix.
  */
 export const SESSION_CORE_TOOL_GROUPS: readonly ToolGateGroup[] = ['core', 'ui', 'devtools'];
 
