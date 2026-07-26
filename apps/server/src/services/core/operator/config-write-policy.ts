@@ -218,6 +218,13 @@ export const CONFIG_WRITE_POLICY = {
   // cockpit toggles these through `/api/extensions`, not through a config patch.
   'extensions.enabled': 'operator-only',
   'extensions.disabled': 'operator-only',
+  // The standing consent that lets one extension's code execute INSIDE the server
+  // process, with the server's privileges and outside the tier gate (DOR-516).
+  // This is the record of a human decision, so a caller that can write it can
+  // manufacture that decision — the textbook case of "changing it removes a
+  // security control", and the reason the whole gate hangs off a config field
+  // instead of anything under the project tree an agent edits freely.
+  'extensions.approvedToRun': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.

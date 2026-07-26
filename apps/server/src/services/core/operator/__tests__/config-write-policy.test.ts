@@ -54,6 +54,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'cloud.instanceName',
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
+      'extensions.approvedToRun',
       'extensions.disabled',
       'extensions.enabled',
       'mcp.apiKey',

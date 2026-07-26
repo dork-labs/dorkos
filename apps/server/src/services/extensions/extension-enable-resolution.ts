@@ -24,12 +24,20 @@ export interface CoreExtensionInfo {
   canDisable: boolean;
 }
 
-/** The two deviation lists persisted under `config.extensions`. */
+/** The lists persisted under `config.extensions`. */
 export interface ExtensionsConfig {
   /** Ids turned ON that default OFF (user/marketplace + default-off core). */
   enabled: string[];
   /** Ids turned OFF that default ON (default-on core). */
   disabled: string[];
+  /**
+   * Ids a person approved to run code inside the DorkOS server process (DOR-516).
+   *
+   * Not a deviation list and not read by {@link isEnabled} — approval and on/off
+   * are independent questions (`extension-load-policy.ts`). It appears on this
+   * interface only so {@link setEnabled} can carry it through untouched.
+   */
+  approvedToRun: string[];
 }
 
 /**
@@ -82,9 +90,18 @@ export function isEnabled(
  * The id is first stripped from both lists, then re-added to at most one — so an
  * id is never duplicated and a non-deviating state is recorded in neither list.
  *
+ * SPREADS the incoming config rather than building a fresh two-key object,
+ * because the return value is written straight to the store with
+ * `configManager.set('extensions', next)` — a whole-subtree replace. Naming only
+ * the keys this function reasons about would DELETE every other key under
+ * `extensions`, and `approvedToRun` is one of them: without the spread, turning
+ * any extension off and on again would silently erase every load approval on the
+ * install, re-asking the person for consent they had already given. Pinned by a
+ * test in `__tests__/extension-enable-resolution.test.ts`.
+ *
  * @param id - Extension id being toggled.
  * @param on - Target state (`true` = enable, `false` = disable).
- * @param config - The current `{ enabled, disabled }` deviation lists.
+ * @param config - The current `extensions` config subtree.
  * @param core - Core-extension tier metadata keyed by id.
  */
 export function setEnabled(
@@ -102,5 +119,5 @@ export function setEnabled(
     // Default-off (and user/marketplace): the only deviation worth recording is ON.
     if (on) enabled.push(id);
   }
-  return { enabled, disabled };
+  return { ...config, enabled, disabled };
 }

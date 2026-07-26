@@ -60,7 +60,7 @@ describe('UserConfigSchema', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
-      extensions: { enabled: [], disabled: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -329,7 +329,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
-      extensions: { enabled: [], disabled: [] },
+      extensions: { enabled: [], disabled: [], approvedToRun: [] },
       mcp: {
         enabled: true,
         apiKey: null,
@@ -926,7 +926,7 @@ describe('SmartGroupRulesSchema + SidebarGroupSchema kind/rules (smart-agent-gro
 describe('UserConfigSchema extensions (deviation lists)', () => {
   it('defaults to empty enabled and disabled when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
-    expect(result.extensions).toEqual({ enabled: [], disabled: [] });
+    expect(result.extensions).toEqual({ enabled: [], disabled: [], approvedToRun: [] });
   });
 
   it('defaults disabled to [] when only enabled is provided', () => {
@@ -934,7 +934,11 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       version: 1,
       extensions: { enabled: ['linear-issues'] },
     });
-    expect(result.extensions).toEqual({ enabled: ['linear-issues'], disabled: [] });
+    expect(result.extensions).toEqual({
+      enabled: ['linear-issues'],
+      disabled: [],
+      approvedToRun: [],
+    });
   });
 
   it('defaults enabled to [] when only disabled is provided', () => {
@@ -942,7 +946,11 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
       version: 1,
       extensions: { disabled: ['marketplace'] },
     });
-    expect(result.extensions).toEqual({ enabled: [], disabled: ['marketplace'] });
+    expect(result.extensions).toEqual({
+      enabled: [],
+      disabled: ['marketplace'],
+      approvedToRun: [],
+    });
   });
 
   it('round-trips both lists when populated', () => {
@@ -953,12 +961,45 @@ describe('UserConfigSchema extensions (deviation lists)', () => {
     expect(result.extensions).toEqual({
       enabled: ['hello-world'],
       disabled: ['marketplace'],
+      approvedToRun: [],
     });
   });
 
   it('rejects a non-array disabled', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, extensions: { disabled: 'marketplace' } })
+    ).toThrow();
+  });
+
+  it('defaults approvedToRun to [] — nothing is approved unless a person said so', () => {
+    // A stored config written before DOR-516 has no `approvedToRun` key at all, and
+    // it must read as "nothing approved", never as "everything already enabled is
+    // fine to run". The migration writes the key through; this default is what
+    // covers the read that happens first.
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { enabled: ['hello-world'], disabled: [] },
+    });
+    expect(result.extensions.approvedToRun).toEqual([]);
+  });
+
+  it('round-trips approvedToRun independently of the two deviation lists', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      extensions: { enabled: [], disabled: [], approvedToRun: ['my-ext'] },
+    });
+    // Approved but turned OFF is a legitimate, reachable state: the person allowed
+    // the code and then disabled the extension.
+    expect(result.extensions).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+    });
+  });
+
+  it('rejects a non-array approvedToRun', () => {
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, extensions: { approvedToRun: 'my-ext' } })
     ).toThrow();
   });
 });

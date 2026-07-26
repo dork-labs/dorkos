@@ -922,6 +922,8 @@ Six MCP tools provide the complete extension lifecycle:
 | `get_extension_errors` | None                                          | Get only extensions in an error state with diagnostic details      |
 | `test_extension`       | `id`                                          | Headless smoke test: compile + activate against mock API           |
 
+Compiling is always allowed. **Running** an extension's code in the server process is not, until a person has allowed that extension once — see [Step 4](#step-4-the-one-time-approval-dor-516).
+
 ### Agent Workflow
 
 The recommended iteration loop:
@@ -930,12 +932,29 @@ The recommended iteration loop:
 1. get_extension_api         # Understand the API surface
 2. create_extension          # Scaffold with a starter template
 3. Edit index.ts             # Write the extension logic
-4. test_extension            # Verify compilation and activation (headless)
-5. reload_extensions --id    # Hot-reload into the running client
-6. Iterate from step 3       # Fix errors, add features
+4. Ask the person to allow it   # ONCE per extension, in Settings > Extensions
+5. test_extension            # Verify compilation and activation (headless)
+6. reload_extensions --id    # Hot-reload into the running client
+7. Iterate from step 3       # Fix errors, add features
 ```
 
 The `create_extension` tool handles scaffolding, compilation, and enabling in a single call. After that, the edit-test-reload cycle is the core loop. Use `test_extension` for fast headless validation before triggering a visual reload.
+
+### Step 4: the one-time approval (DOR-516)
+
+`test_extension` and the server half of `reload_extensions --id` both execute the extension's code **inside the DorkOS server process**, with the server's own privileges and outside the tier gate. So a person allows each extension once, before any of its code runs, and after that the loop above is unprompted.
+
+What this looks like in practice:
+
+- The **first** `test_extension` or server-entry load for a new extension is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
+- The person clicks **Allow it to run**, once. The extension starts immediately; no restart.
+- **Every** later call goes through: editing, testing, reloading, a compile error, and the fix after it. Turning the extension off and on again does not re-ask. Approval is recorded per extension id and is never spent by use.
+
+Everything that is not execution still works while you wait, which is what makes the wait cheap: you can create and edit files, and compiling reports real errors. Only running is held back.
+
+There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere — an agent that could write it would be approving its own code. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
+
+`reload_extensions --id` also refuses an extension the user has turned **off**, rather than quietly turning it back on. Turn it on in Settings first.
 
 ### Template Types
 

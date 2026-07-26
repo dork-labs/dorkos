@@ -16,7 +16,7 @@
  */
 import type { Router } from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
-import { setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
+import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
 import { ExtensionServerLifecycle } from './extension-server-lifecycle.js';
@@ -125,10 +125,34 @@ export class ExtensionManager {
     return this.listPublic();
   }
 
-  /** Reload a single extension: recompile and update its record. */
+  /**
+   * Reload a single extension: recompile and update its record.
+   *
+   * Refuses an extension the user has turned OFF. Without that check this method
+   * silently turned a disabled extension back on: {@link applyCompileResult} writes
+   * `status = 'compiled'` over whatever the status was, and `'compiled'` is one of
+   * the statuses {@link ExtensionServerLifecycle.initialize} accepts — so
+   * `reload_extensions --id <a-disabled-extension>` mounted its routes and ran its
+   * `server.ts`, with the cockpit still showing the toggle as off.
+   *
+   * The question is asked of {@link isEnabled} against stored config, NOT of
+   * `record.status`, precisely because the status field is what the bug corrupts.
+   * Config is the user's decision; status is a derived cache of it.
+   *
+   * A compile error does not trip this. `compile_error` leaves config untouched, so
+   * `isEnabled` still says yes and the next reload after a fix goes straight
+   * through — the edit-fix-reload loop keeps working.
+   */
   async reloadExtension(id: string): Promise<ReloadExtensionResult> {
     const record = this.extensions.get(id);
     if (!record) throw new Error(`Extension '${id}' not found`);
+
+    if (!isEnabled(id, configManager.get('extensions'), this.coreExtensions)) {
+      throw new Error(
+        `Extension '${id}' is turned off, so DorkOS did not reload it. Nothing about it ran. ` +
+          `Turn it on in Settings > Extensions in DorkOS first, then reload.`
+      );
+    }
 
     const compileResult = await this.compiler.compile(record);
     const ok = applyCompileResult(record, compileResult);
@@ -194,7 +218,8 @@ export class ExtensionManager {
 
   /** Get all extensions as public records (for API responses). */
   listPublic(): ExtensionRecordPublic[] {
-    return Array.from(this.extensions.values()).map(toPublic);
+    const { approvedToRun } = configManager.get('extensions');
+    return Array.from(this.extensions.values()).map((record) => toPublic(record, approvedToRun));
   }
 
   /** Get a single extension by ID. */
@@ -228,7 +253,10 @@ export class ExtensionManager {
       }
     }
 
-    return { extension: toPublic(record), reloadRequired: true };
+    return {
+      extension: toPublic(record, configManager.get('extensions').approvedToRun),
+      reloadRequired: true,
+    };
   }
 
   /** Disable an extension: remove from config. */
@@ -254,7 +282,73 @@ export class ExtensionManager {
     record.bundleReady = false;
     record.error = undefined;
 
-    return { extension: toPublic(record), reloadRequired: true };
+    return {
+      extension: toPublic(record, configManager.get('extensions').approvedToRun),
+      reloadRequired: true,
+    };
+  }
+
+  /**
+   * Record that a person approved this extension to run code inside the DorkOS
+   * server process, then start it (DOR-516).
+   *
+   * Only the caller-facing surfaces may call this, and only after they have
+   * established that a PERSON asked: the routes in `routes/extensions.ts` apply the
+   * same bar `PATCH /api/config` applies to any `operator-only` setting. There is
+   * deliberately no MCP tool for it — see `extension-load-policy.ts`.
+   *
+   * Starting the extension here is what makes one click enough. Approval alone
+   * would leave a full-stack extension compiled but unmounted until the next
+   * restart, which reads as the approval not having worked.
+   *
+   * @param id - Extension id to approve.
+   * @returns The updated public record, or `null` when no such extension exists.
+   */
+  async approveToRun(id: string): Promise<ExtensionRecordPublic | null> {
+    const record = this.extensions.get(id);
+    if (!record) return null;
+
+    const extensions = configManager.get('extensions');
+    if (!extensions.approvedToRun.includes(id)) {
+      configManager.set('extensions', {
+        ...extensions,
+        approvedToRun: [...extensions.approvedToRun, id],
+      });
+    }
+
+    if (this.needsServer(record)) {
+      const result = await this.serverLifecycle.initialize(id, record);
+      if (!result.ok) {
+        logger.warn(`[Extensions] Server init after approval failed for ${id}: ${result.error}`);
+      }
+    }
+
+    return toPublic(record, configManager.get('extensions').approvedToRun);
+  }
+
+  /**
+   * Withdraw a person's approval for this extension to run code in the server, and
+   * stop it immediately.
+   *
+   * Withdrawing is not the same as disabling: the extension stays on and its client
+   * bundle still loads in the browser, but DorkOS stops executing its code in-process.
+   *
+   * @param id - Extension id to revoke.
+   * @returns The updated public record, or `null` when no such extension exists.
+   */
+  async revokeRunApproval(id: string): Promise<ExtensionRecordPublic | null> {
+    const record = this.extensions.get(id);
+    if (!record) return null;
+
+    const extensions = configManager.get('extensions');
+    configManager.set('extensions', {
+      ...extensions,
+      approvedToRun: extensions.approvedToRun.filter((eid) => eid !== id),
+    });
+
+    await this.serverLifecycle.shutdown(id);
+
+    return toPublic(record, configManager.get('extensions').approvedToRun);
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */

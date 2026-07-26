@@ -16,6 +16,12 @@ import type { ExtensionCompiler } from './extension-compiler.js';
 import { createProxyRouter } from './extension-proxy.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
 import type { ActiveServerExtension } from './extension-manager-types.js';
+import {
+  EXTENSION_NOT_APPROVED_CODE,
+  describeExtensionLoadRefusal,
+  mayRunInServer,
+} from './extension-load-policy.js';
+import { configManager } from '../core/config-manager.js';
 import { logger } from '../../lib/logger.js';
 
 const require = createRequire(import.meta.url);
@@ -38,6 +44,19 @@ export class ExtensionServerLifecycle {
   /**
    * Initialize a server-side extension: compile, load, and register routes.
    *
+   * ## The one place server-side extension code starts running
+   *
+   * Every route, tool, and internal flow that can make DorkOS execute an
+   * extension's `server.ts` arrives here — startup (`ExtensionManager.initialize`),
+   * `enable` (reached by `POST /api/extensions/:id/enable`, a marketplace install
+   * via `install-plugin.ts`, and a Shape apply via `apply-shape.ts`),
+   * `initializeServer` (`POST /api/extensions/:id/init-server`), and
+   * `reloadExtension` (the `reload_extensions --id` tool). That is why the approval
+   * gate below sits HERE rather than on each caller: the surfaces outnumber the
+   * brief for this work by more than two to one, and a check on the tool would have
+   * left every route walking around it — the DOR-467 shape. A new caller inherits
+   * the gate by construction instead of having to remember it.
+   *
    * @param id - Extension identifier
    * @param record - The extension's discovery record
    * @returns Result with ok flag and optional error message
@@ -46,6 +65,19 @@ export class ExtensionServerLifecycle {
     const hasServerCapability = record.hasServerEntry || record.hasDataProxy;
     if (!hasServerCapability || !['enabled', 'compiled', 'active'].includes(record.status)) {
       return { ok: false, error: 'Extension has no server entry or is not enabled' };
+    }
+
+    // A person approves an extension once before its code may run in this process
+    // (DOR-516). Checked before compiling and before any mount, and it covers the
+    // `dataProxy`-only branch below as well as the `require()` of a server entry:
+    // a proxy hands extension-authored config the server's outbound reach and its
+    // stored secrets, which is the same consent question one step quieter.
+    if (!mayRunInServer(id, record.origin, configManager.get('extensions').approvedToRun)) {
+      logger.warn(
+        `[Extensions] Server init refused for ${id}: waiting for a person to approve it ` +
+          `(${EXTENSION_NOT_APPROVED_CODE})`
+      );
+      return { ok: false, error: describeExtensionLoadRefusal(id) };
     }
 
     // Shut down existing instance if reloading

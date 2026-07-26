@@ -111,10 +111,11 @@ The `agents` section configures agent storage defaults:
 
 The `extensions` section controls the extension system:
 
-| Key                   | Type       | Default | Description                                                           |
-| --------------------- | ---------- | ------- | --------------------------------------------------------------------- |
-| `extensions.enabled`  | `string[]` | `[]`    | Extension IDs the user turned ON that default OFF (opt-in overrides)  |
-| `extensions.disabled` | `string[]` | `[]`    | Extension IDs the user turned OFF that default ON (opt-out overrides) |
+| Key                        | Type       | Default | Description                                                                                                                                                                                                                                                  |
+| -------------------------- | ---------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `extensions.enabled`       | `string[]` | `[]`    | Extension IDs the user turned ON that default OFF (opt-in overrides)                                                                                                                                                                                         |
+| `extensions.disabled`      | `string[]` | `[]`    | Extension IDs the user turned OFF that default ON (opt-out overrides)                                                                                                                                                                                        |
+| `extensions.approvedToRun` | `string[]` | `[]`    | Extension IDs a person approved to run code IN the server process (DOR-516). Not a deviation list and independent of on/off; `operator-only`. Core extensions are exempt by origin and never appear here. See `services/extensions/extension-load-policy.ts` |
 
 Both arrays record **deviations** from each extension's default state, not the full enabled set. This mirrors JetBrains' `disabled_plugins.txt`, generalized to two defaults:
 

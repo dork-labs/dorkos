@@ -8,6 +8,7 @@ import {
   useEnableExtension,
   useDisableExtension,
   useReloadExtensions,
+  useSetExtensionRunApproval,
 } from '../api/queries';
 import { ExtensionCard } from './ExtensionCard';
 
@@ -17,11 +18,36 @@ export function ExtensionsSettingsTab() {
   const enableMutation = useEnableExtension();
   const disableMutation = useDisableExtension();
   const reloadMutation = useReloadExtensions();
+  const approveMutation = useSetExtensionRunApproval(true);
+  const revokeMutation = useSetExtensionRunApproval(false);
 
   const togglingIds = new Set([
     ...(enableMutation.variables ? [enableMutation.variables] : []),
     ...(disableMutation.variables ? [disableMutation.variables] : []),
   ]);
+
+  const approvingIds = new Set([
+    ...(approveMutation.isPending && approveMutation.variables ? [approveMutation.variables] : []),
+    ...(revokeMutation.isPending && revokeMutation.variables ? [revokeMutation.variables] : []),
+  ]);
+
+  function handleSetRunApproval(id: string, approve: boolean) {
+    const mutation = approve ? approveMutation : revokeMutation;
+
+    mutation.mutate(id, {
+      onSuccess: (result) => {
+        const name = result.extension.manifest.name;
+        toast.success(
+          approve
+            ? `${name} can now run inside DorkOS`
+            : `${name} has stopped running inside DorkOS`
+        );
+      },
+      onError: (err) => {
+        toast.error(err.message);
+      },
+    });
+  }
 
   async function handleToggle(id: string, enabled: boolean) {
     const mutation = enabled ? enableMutation : disableMutation;
@@ -68,6 +94,8 @@ export function ExtensionsSettingsTab() {
       extension={ext}
       onToggle={handleToggle}
       isToggling={togglingIds.has(ext.id)}
+      onSetRunApproval={handleSetRunApproval}
+      isSettingApproval={approvingIds.has(ext.id)}
     />
   );
 

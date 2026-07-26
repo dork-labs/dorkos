@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { AlertTriangle, XCircle, Puzzle, ChevronDown } from 'lucide-react';
+import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide-react';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { Badge, Switch } from '@/layers/shared/ui';
+import { Badge, Button, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 interface ExtensionCardProps {
@@ -11,13 +11,23 @@ interface ExtensionCardProps {
   onToggle: (id: string, enabled: boolean) => void;
   /** Whether an API call for this extension is in progress. */
   isToggling: boolean;
+  /** Called when the person allows or stops this extension running code in DorkOS. */
+  onSetRunApproval: (id: string, approve: boolean) => void;
+  /** Whether an approve/stop call for this extension is in progress. */
+  isSettingApproval: boolean;
 }
 
 const TERMINAL_STATUSES = new Set(['disabled', 'discovered', 'incompatible', 'invalid']);
 
 /** Per-extension card in the Extensions settings tab. */
-export function ExtensionCard({ extension, onToggle, isToggling }: ExtensionCardProps) {
-  const { manifest, status, scope, error, origin } = extension;
+export function ExtensionCard({
+  extension,
+  onToggle,
+  isToggling,
+  onSetRunApproval,
+  isSettingApproval,
+}: ExtensionCardProps) {
+  const { manifest, status, scope, error, origin, approvedToRun } = extension;
   const [errorExpanded, setErrorExpanded] = useState(false);
 
   const isEnabled = !TERMINAL_STATUSES.has(status);
@@ -31,6 +41,11 @@ export function ExtensionCard({ extension, onToggle, isToggling }: ExtensionCard
   // two enforcement points in lockstep (ADR-0271). A locked extension renders a
   // "Required" hint instead of a toggle.
   const canDisable = !(origin === 'core' && manifest.canDisable === false);
+  // Whether withholding approval actually stops something the person would notice.
+  // A client-only extension still loads in the browser and works; only the
+  // in-process paths (an agent's `test_extension`) are refused. A server entry or
+  // data proxy is genuinely off until approved, so it gets the louder wording.
+  const runsInServer = extension.hasServerEntry || extension.hasDataProxy;
   // Health/availability state — communicated by a badge that is visually
   // distinct from the on/off toggle (an errored extension can still be "on").
   const healthLabel = hasError
@@ -108,6 +123,54 @@ export function ExtensionCard({ extension, onToggle, isToggling }: ExtensionCard
               )}
             </div>
           )}
+
+          {/* Permission to run code inside DorkOS (DOR-516). Core extensions ship
+              with DorkOS and are never asked about. */}
+          {origin === 'user' &&
+            (approvedToRun ? (
+              <div
+                className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs"
+                data-testid={`extension-run-allowed-${extension.id}`}
+              >
+                <ShieldCheck className="size-3.5 shrink-0" aria-hidden="true" />
+                <span>You allowed this to run inside DorkOS.</span>
+                <button
+                  type="button"
+                  onClick={() => onSetRunApproval(extension.id, false)}
+                  disabled={isSettingApproval}
+                  className="hover:text-foreground underline underline-offset-2 disabled:opacity-50"
+                >
+                  Stop it
+                </button>
+              </div>
+            ) : (
+              <div
+                className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3"
+                data-testid={`extension-needs-approval-${extension.id}`}
+              >
+                <p className="text-sm font-medium">
+                  {runsInServer
+                    ? 'This extension is waiting for you'
+                    : 'DorkOS has not run this extension here'}
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  {runsInServer
+                    ? 'It comes with code that runs inside DorkOS itself, which means it can reach ' +
+                      'anything on this machine that DorkOS can. Until you allow it, the rest of ' +
+                      'the extension works but that part stays off.'
+                    : 'Allow this only if you trust where it came from. Its code would run inside ' +
+                      'DorkOS itself, with the same reach as DorkOS.'}
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => onSetRunApproval(extension.id, true)}
+                  disabled={isSettingApproval}
+                  data-testid={`extension-approve-run-${extension.id}`}
+                >
+                  Allow it to run
+                </Button>
+              </div>
+            ))}
 
           {/* Metadata row */}
           <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">

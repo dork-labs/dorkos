@@ -15,6 +15,7 @@ import { eventFanOut } from '../services/core/event-fan-out.js';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
+import { registerExtensionApprovalRoutes } from './extensions-approval.js';
 
 /** Connected SSE clients for extension lifecycle events. */
 const sseClients = new Set<Response>();
@@ -520,6 +521,8 @@ export function createExtensionsRouter(
       res.status(500).json({ error: 'Failed to delete setting' });
     }
   });
+
+  registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID);
 
   return router;
 }

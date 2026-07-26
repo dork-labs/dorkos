@@ -66,10 +66,12 @@ One set of settings is neither of those things. Agents are refused them outright
 
 <Callout type="warn">
   **Some tools are not covered yet.** Agents also get tools for scheduled tasks, agent-to-agent
-  messages, agent discovery, and extensions. None of those wait for you: an agent can delete one of
-  your scheduled tasks without asking first. Bringing them under the same question is work we have
-  not finished. If that gap matters for how you run your agents, the safe move today is to not hand
-  an agent a job that depends on deleting things you cannot rebuild.
+  messages, and agent discovery. None of those wait for you: an agent can delete one of your
+  scheduled tasks without asking first. Bringing them under the same question is work we have not
+  finished. If that gap matters for how you run your agents, the safe move today is to not hand an
+  agent a job that depends on deleting things you cannot rebuild. Extension tools are a partial
+  exception: an agent can still write and compile extension files freely, but it cannot make DorkOS
+  **run** an extension's code until you have allowed that extension, once.
 </Callout>
 
 Each action DorkOS does cover carries a size label on its card, so you can tell at a glance what you are being asked:
@@ -90,6 +92,7 @@ Most settings are preferences, and an agent can change one on your word. A few a
 - Your provider credentials, and the addresses they get sent to
 - The DorkOS account this instance is linked to
 - The folder DorkOS is allowed to touch, and the programs it is allowed to start
+- Which extensions may run their code inside DorkOS
 - Your privacy choices
 
 Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself in Settings. Three of these settings can still be reached by another route, which the second note below explains.

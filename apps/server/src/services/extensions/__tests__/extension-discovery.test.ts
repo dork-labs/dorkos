@@ -6,7 +6,7 @@ import { ExtensionDiscovery } from '../extension-discovery.js';
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 
 /** No user overrides. */
-const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [] };
+const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
 /** No core extensions (everything resolves to origin 'user'). */
 const EMPTY_CORE = new Map<string, CoreExtensionInfo>();
 
@@ -167,7 +167,7 @@ describe('ExtensionDiscovery', () => {
 
     const results = await discovery.discover(
       null,
-      { enabled: ['future-ext'], disabled: [] },
+      { enabled: ['future-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -187,7 +187,7 @@ describe('ExtensionDiscovery', () => {
 
     const results = await discovery.discover(
       null,
-      { enabled: ['enabled-ext'], disabled: [] },
+      { enabled: ['enabled-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -207,7 +207,7 @@ describe('ExtensionDiscovery', () => {
 
     const results = await discovery.discover(
       null,
-      { enabled: ['other-ext'], disabled: [] },
+      { enabled: ['other-ext'], disabled: [], approvedToRun: [] },
       EMPTY_CORE
     );
 
@@ -420,7 +420,7 @@ describe('ExtensionDiscovery', () => {
       const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
       const results = await discovery.discover(
         null,
-        { enabled: [], disabled: ['marketplace'] },
+        { enabled: [], disabled: ['marketplace'], approvedToRun: [] },
         core
       );
 
@@ -450,7 +450,7 @@ describe('ExtensionDiscovery', () => {
       const core = coreMap({ id: 'hello-world', defaultEnabled: false, canDisable: true });
       const results = await discovery.discover(
         null,
-        { enabled: ['hello-world'], disabled: [] },
+        { enabled: ['hello-world'], disabled: [], approvedToRun: [] },
         core
       );
 
@@ -465,7 +465,11 @@ describe('ExtensionDiscovery', () => {
       });
 
       const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
-      const results = await discovery.discover(null, { enabled: ['user-ext'], disabled: [] }, core);
+      const results = await discovery.discover(
+        null,
+        { enabled: ['user-ext'], disabled: [], approvedToRun: [] },
+        core
+      );
 
       expect(results[0]).toMatchObject({ id: 'user-ext', origin: 'user', status: 'enabled' });
     });

@@ -106,6 +106,44 @@ export function backfillExtensionsDisabled(store: {
 }
 
 /**
+ * Migration body: backfill `extensions.approvedToRun: []` for configs persisted
+ * before extension code needed a person's approval to run in-process (DOR-516).
+ *
+ * Seeds the list EMPTY, which means nothing an upgrading user already had
+ * installed is pre-approved. That is the deliberate choice, and it is the one
+ * place this migration could have gone wrong: backfilling from
+ * `extensions.enabled` would read "the person once toggled this on in the
+ * cockpit" as "the person reviewed this code", and an agent can turn an extension
+ * on through an ungated route. An upgrade must never hand out an approval nobody
+ * gave. The cost is that anyone already running a user extension with a server
+ * entry approves it once, which is one click and is stated in the changelog.
+ *
+ * Core extensions are unaffected either way — they are exempt by origin, not by
+ * this list (see `extension-load-policy.ts`), so the shipped `linear-issues`
+ * data proxy keeps working across the upgrade with nothing to click.
+ *
+ * Additive and idempotent — only writes when `approvedToRun` is not already an
+ * array, and never touches `enabled` or `disabled`. Configs with no `extensions`
+ * key are skipped (the schema default supplies the object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillExtensionsApprovedToRun(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (
+    ext &&
+    typeof ext === 'object' &&
+    !Array.isArray((ext as { approvedToRun?: unknown }).approvedToRun)
+  ) {
+    store.set('extensions', { ...(ext as Record<string, unknown>), approvedToRun: [] });
+  }
+}
+
+/**
  * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
  * for configs persisted before it existed. Additive + idempotent — only writes
  * when the key is absent; the schema default also yields this object on read, so
@@ -1014,6 +1052,10 @@ export const CONFIG_MIGRATIONS = {
     // `approvals` section (standing permissions, DOR-501). Additive +
     // idempotent; seeds the feature OFF, so an upgrade never relaxes the gate.
     backfillApprovalsDefaults(store);
+    // `extensions.approvedToRun` (extension load approval, DOR-516). Additive +
+    // idempotent; seeds the list EMPTY, so an upgrade never hands out an approval
+    // nobody gave.
+    backfillExtensionsApprovedToRun(store);
   },
 } as const;
 

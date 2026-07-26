@@ -52,6 +52,17 @@ export interface ExtensionRecordPublic {
   bundleReady: boolean;
   hasServerEntry: boolean;
   hasDataProxy: boolean;
+  /**
+   * Whether a person has approved this extension to RUN CODE inside the DorkOS
+   * server process (DOR-516). Always `true` for `origin: 'core'`, which ships with
+   * DorkOS and never needs approving.
+   *
+   * `false` means DorkOS will compile this extension and report real errors, but
+   * will not execute it in-process. The cockpit surfaces that as a per-extension
+   * Approve control rather than an error, because nothing is broken — it is
+   * waiting on a person.
+   */
+  approvedToRun: boolean;
 }
 
 /** The interface an extension module must export. */

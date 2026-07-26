@@ -179,6 +179,12 @@ export const CONFIG_DISCLOSURE = {
 
   'extensions.enabled': 'expose',
   'extensions.disabled': 'expose',
+  // Which extensions a person approved to run code in the server (DOR-516).
+  // Exposed on purpose even though it is `operator-only` to WRITE: an agent that
+  // can read the list can tell the person exactly which id to approve, instead of
+  // retrying a load that will keep being refused. It names extension ids the
+  // caller can already see in `list_extensions`, so it discloses nothing new.
+  'extensions.approvedToRun': 'expose',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',

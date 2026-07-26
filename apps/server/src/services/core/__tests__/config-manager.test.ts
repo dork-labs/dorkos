@@ -6,6 +6,7 @@ import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-sc
 import {
   initConfigManager,
   backfillExtensionsDisabled,
+  backfillExtensionsApprovedToRun,
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
@@ -215,7 +216,13 @@ describe('ConfigManager', () => {
 
   it('exposes extensions.disabled default on a fresh config', () => {
     const configManager = initConfigManager(testDir);
-    expect(configManager.get('extensions')).toEqual({ enabled: [], disabled: [] });
+    // `approvedToRun` starts EMPTY on a fresh install, so a brand-new DorkOS runs
+    // no user extension's code until a person approves it (DOR-516).
+    expect(configManager.get('extensions')).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [],
+    });
   });
 
   it('exposes harness.autoSync default (true) on a fresh config', () => {
@@ -1365,6 +1372,63 @@ describe('backfillExtensionsDisabled migration', () => {
     const store = createMockStore({ extensions: { enabled: [], disabled: 'oops' } });
     backfillExtensionsDisabled(store);
     expect(store.data.extensions).toEqual({ enabled: [], disabled: [] });
+  });
+});
+
+describe('backfillExtensionsApprovedToRun migration (DOR-516)', () => {
+  it('seeds an EMPTY list, approving nothing the user already had installed', () => {
+    // The whole point. Backfilling from `enabled` would read "the person once
+    // toggled this on" as "the person reviewed this code", and an agent can turn an
+    // extension on through an ungated route. An upgrade must never hand out an
+    // approval nobody gave — the one click this costs an upgrading user is the
+    // deliberate price.
+    const store = createMockStore({
+      extensions: { enabled: ['my-ext', 'another-ext'], disabled: ['marketplace'] },
+    });
+    backfillExtensionsApprovedToRun(store);
+    expect(store.data.extensions).toEqual({
+      enabled: ['my-ext', 'another-ext'],
+      disabled: ['marketplace'],
+      approvedToRun: [],
+    });
+  });
+
+  it('is idempotent — leaves an existing approval list untouched', () => {
+    const store = createMockStore({
+      extensions: { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] },
+    });
+    backfillExtensionsApprovedToRun(store);
+    backfillExtensionsApprovedToRun(store);
+    expect(store.data.extensions).toEqual({
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+    });
+  });
+
+  it('skips when the extensions key is absent (no throw, no write)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillExtensionsApprovedToRun(store)).not.toThrow();
+    expect(store.data.extensions).toBeUndefined();
+  });
+
+  it('repairs a non-array approvedToRun rather than trusting it', () => {
+    const store = createMockStore({
+      extensions: { enabled: [], disabled: [], approvedToRun: 'oops' },
+    });
+    backfillExtensionsApprovedToRun(store);
+    expect(store.data.extensions).toEqual({ enabled: [], disabled: [], approvedToRun: [] });
+  });
+
+  it('leaves the migrated config parseable by the schema', () => {
+    const store = createMockStore({ extensions: { enabled: ['my-ext'], disabled: [] } });
+    backfillExtensionsApprovedToRun(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ...store.data });
+    expect(parsed.extensions).toEqual({
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: [],
+    });
   });
 });
 

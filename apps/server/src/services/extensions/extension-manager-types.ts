@@ -10,6 +10,7 @@ import type {
   ExtensionStatus,
 } from '@dorkos/extension-api';
 import type { Router } from 'express';
+import { mayRunInServer } from './extension-load-policy.js';
 
 /** Tracks an active server-side extension instance. */
 export interface ActiveServerExtension {
@@ -58,7 +59,13 @@ export interface ReloadExtensionResult {
 export interface TestExtensionResult {
   status: 'ok' | 'error';
   id: string;
-  phase?: 'compilation' | 'activation';
+  /**
+   * Which step failed. `'approval'` is not a failure of the extension: it means a
+   * person has not yet approved this extension to run code inside DorkOS
+   * (`extension-load-policy.ts`), so the harness refused before evaluating the
+   * bundle. Nothing about the code was executed.
+   */
+  phase?: 'approval' | 'compilation' | 'activation';
   contributions?: Record<ExtensionPointId, number>;
   errors?: Array<{
     text: string;
@@ -69,8 +76,18 @@ export interface TestExtensionResult {
   message?: string;
 }
 
-/** Strip server-internal fields from ExtensionRecord for client consumption. */
-export function toPublic(record: ExtensionRecord): ExtensionRecordPublic {
+/**
+ * Strip server-internal fields from ExtensionRecord for client consumption.
+ *
+ * @param record - The internal discovery record.
+ * @param approvedToRun - `config.extensions.approvedToRun`, so the public record
+ *   can carry the load-approval answer the cockpit renders. Passed in rather than
+ *   read here to keep this module free of config I/O.
+ */
+export function toPublic(
+  record: ExtensionRecord,
+  approvedToRun: readonly string[]
+): ExtensionRecordPublic {
   return {
     id: record.id,
     manifest: record.manifest,
@@ -81,5 +98,6 @@ export function toPublic(record: ExtensionRecord): ExtensionRecordPublic {
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
+    approvedToRun: mayRunInServer(record.id, record.origin, approvedToRun),
   };
 }

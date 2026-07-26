@@ -167,10 +167,26 @@ DorkOS records only your **deviations** from each extension's default state, acr
       type: 'string[]',
       default: '[]',
     },
+    'extensions.approvedToRun': {
+      description:
+        'Extension IDs you allowed to run code inside DorkOS itself. Separate from on/off, and only you can change it.',
+      type: 'string[]',
+      default: '[]',
+    },
   }}
 />
 
 An extension absent from both lists uses its default: ships-on extensions stay on, ships-off extensions stay off. To turn a ships-on extension off, add its id to `disabled`; to turn a ships-off extension on, add its id to `enabled`.
+
+#### Letting an extension run inside DorkOS
+
+Some extensions bring code that runs inside DorkOS itself, rather than only in your browser. That code can reach anything on your computer that DorkOS can reach, so DorkOS asks you about each one, once.
+
+You will see it the first time: the extension shows up in Settings → Extensions with a note that it is waiting for you, and an **Allow it to run** button. Click it once and you are done. Editing that extension, testing it, and reloading it all work from then on with nothing further to click, and turning the extension off and on again does not ask you again. If you change your mind, **Stop it** on the same card takes the permission back and stops the extension straight away.
+
+Extensions that ship with DorkOS never ask. You already installed DorkOS.
+
+Your answer lives in `extensions.approvedToRun`. Your agents can read it but cannot write it, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
 
 <Callout type="warn">
   Adding a ships-on extension's id to `enabled` does nothing, since it's already on. To disable it,
