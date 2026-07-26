@@ -4,13 +4,14 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import fs from 'node:fs';
+import { TRAY_IMAGE_FILES } from './src/shared/tray-images';
 
 const clientRoot = path.resolve(__dirname, '../client');
 const sharedSrc = path.resolve(__dirname, '../../packages/shared/src');
 const buildResources = path.resolve(__dirname, 'build');
 
 /**
- * Tray images, authored in `build/` and read at runtime from `dist/main/`.
+ * Copy the tray images from `build/` into the main process's output directory.
  *
  * `build/` is electron-builder's `buildResources` directory, which is
  * deliberately NOT packaged into the app — and `electron-builder.yml`'s `files`
@@ -19,23 +20,15 @@ const buildResources = path.resolve(__dirname, 'build');
  * emitted alongside the compiled main process, so `src/main/tray.ts` resolves
  * one path — `join(__dirname, name)` — in dev and packaged alike.
  *
- * `@2x` variants have no entry of their own in the resolver: Electron's
- * `nativeImage` finds a `@2x` sibling automatically, so both files simply have
- * to land in the same directory.
+ * The file list is shared with the loader (`src/shared/tray-images.ts`) rather
+ * than repeated here: adding a platform to one list and not the other would
+ * package green and produce an app with no tray.
  */
-const TRAY_IMAGES = [
-  'trayTemplate.png',
-  'trayTemplate@2x.png',
-  'trayIcon.png',
-  'trayIcon@2x.png',
-] as const;
-
-/** Copy {@link TRAY_IMAGES} into the main process's output directory. */
 function emitTrayImages(): Plugin {
   return {
     name: 'dorkos:tray-images',
     generateBundle() {
-      for (const fileName of TRAY_IMAGES) {
+      for (const fileName of TRAY_IMAGE_FILES) {
         this.emitFile({
           type: 'asset',
           fileName,

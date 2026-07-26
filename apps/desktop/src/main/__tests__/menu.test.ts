@@ -64,10 +64,11 @@ describe('setupMenu (B1)', () => {
     expect(template![0].label).toBe('DorkOS');
     expect(template!.some((item) => item.role === 'editMenu')).toBe(true);
     expect(template!.some((item) => item.role === 'viewMenu')).toBe(true);
-    // Spelled out rather than `role: 'windowMenu'`, which hard-wires Close on
-    // Cmd+W — see buildWindowClosingItems.
-    expect(template!.some((item) => item.label === 'Window')).toBe(true);
-    expect(template!.some((item) => item.role === 'windowMenu')).toBe(false);
+    // The role is KEPT while the submenu is replaced: dropping it would cost
+    // the macOS windows menu (the automatic list of open windows and the
+    // frontmost checkmark), which matters most now that a second cockpit
+    // window is possible.
+    expect(template!.some((item) => item.role === 'windowMenu')).toBe(true);
     expect(template!.some((item) => item.role === 'help')).toBe(true);
     expect(Menu.setApplicationMenu).toHaveBeenCalledTimes(1);
   });
@@ -81,9 +82,11 @@ describe('setupMenu (B1)', () => {
     const template = vi.mocked(Menu.buildFromTemplate).mock.calls[0][0] as
       | Electron.MenuItemConstructorOptions[]
       | undefined;
-    const windowMenu = template!.find((item) => item.label === 'Window')!
+    const windowMenu = template!.find((item) => item.role === 'windowMenu')!
       .submenu as Electron.MenuItemConstructorOptions[];
 
+    // Supplying a submenu alongside the role replaces the default one rather
+    // than being ignored — verified against a real Electron build.
     expect(windowMenu.map((item) => item.label ?? item.role)).toEqual([
       'minimize',
       'zoom',

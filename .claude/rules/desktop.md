@@ -24,7 +24,8 @@ The Electron desktop app (`apps/desktop`) is a thin shell around the same server
 - **macOS tray images must keep the `Template` filename suffix** — that suffix is what makes macOS recolour the glyph for light and dark menu bars. Windows uses a **PNG, not the `.ico`**: Electron only decodes `.ico` on Windows, so a `.ico` tray asset cannot be verified anywhere else.
 - **Read the renderer origin through an accessor, never a captured value.** A server restart gives a new port, and the link guards in `window-manager.ts` would otherwise hand the app's own pages to the system browser.
 - **Only the primary window** persists geometry, receives `dorkos://` deep links and menu navigation, and shows the update card. A second window (`window.open` at our own origin) is a full cockpit without those; two writers on one geometry file would overwrite each other.
-- **`Cmd/Ctrl+W` is "Close Tab"**, delegated to the renderer with a 250 ms ack timeout after which the window closes anyway. The renderer-facing contract lives on `onCloseTab` in `src/preload/index.ts` — keep it accurate; its consumer is in `apps/client`.
+- **`Cmd/Ctrl+W` is "Close Tab"**, but only for a renderer that subscribed via `onCloseTab`; with no subscriber the window closes immediately, and a subscriber that goes quiet for 3s loses the window anyway. The renderer-facing contract lives on `onCloseTab` in `src/preload/index.ts` — keep it accurate; its consumer is in `apps/client`.
+- **`quitAndInstall()` closes every window BEFORE calling `app.quit()`**, so `window-all-closed` fires on the update path and `isQuitting()` is still false there. Anything hooked to either must check `isRestartingToUpdate()` (`auto-updater.ts`). That path asks about mid-run agents before arming the installer, not from `before-quit`, because by then there is no window left to ask in front of.
 
 ## The server build fails on warnings — that is deliberate
 

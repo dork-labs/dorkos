@@ -14,6 +14,21 @@ const CLOSE_TAB_CHANNEL = 'close-tab';
 /** IPC channel the answer to {@link CLOSE_TAB_CHANNEL} goes back on (mirrors `CLOSE_TAB_ACK_CHANNEL` in close-tab.ts). */
 const CLOSE_TAB_ACK_CHANNEL = 'close-tab:ack';
 
+/** IPC channel this renderer claims `Cmd/Ctrl+W` on (mirrors `CLOSE_TAB_SUBSCRIBE_CHANNEL` in close-tab.ts). */
+const CLOSE_TAB_SUBSCRIBE_CHANNEL = 'close-tab:subscribe';
+
+/** IPC channel this renderer gives `Cmd/Ctrl+W` back on (mirrors `CLOSE_TAB_UNSUBSCRIBE_CHANNEL` in close-tab.ts). */
+const CLOSE_TAB_UNSUBSCRIBE_CHANNEL = 'close-tab:unsubscribe';
+
+/**
+ * How many live `onCloseTab` subscriptions this renderer holds.
+ *
+ * Counted here rather than in the main process so main sees exactly one
+ * subscribe and one unsubscribe per renderer, however many times the client
+ * mounts and unmounts its handler.
+ */
+let closeTabSubscriptions = 0;
+
 /**
  * Preload script — runs in a privileged context before the renderer loads.
  *
@@ -78,17 +93,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /**
    * Subscribe to `Cmd/Ctrl+W` ("Close Tab" in the Window menu).
    *
-   * **The contract, precisely** — the window closes unless you claim the
-   * keystroke:
+   * **Subscribing is what claims the keystroke.** Until you call this, and
+   * again after you unsubscribe, `Cmd/Ctrl+W` closes the window immediately
+   * with no round trip — the behaviour it had before tabs existed. Subscribe on
+   * mount, unsubscribe on unmount, and nothing in between is ambiguous.
+   *
+   * **The contract, precisely** — once subscribed, the window closes unless you
+   * claim the keystroke:
    *
    * - Return `true` from `cb` when you closed a tab. The window stays open.
    * - Return `false` (or nothing) when there was no tab to close. The window
    *   closes immediately — that is the right answer for the last tab.
-   * - Take longer than ~250 ms, throw, or never subscribe at all, and the
-   *   window closes anyway. A person pressing Cmd+W must never get nothing, so
-   *   the main process does not wait on you: it races you, and the window wins
-   *   the tie. **Do your work synchronously**; a promise is not awaited, and an
-   *   async handler will lose the race even when it succeeds.
+   * - Throw, and the window closes: a handler that fails must not strand the
+   *   keystroke.
+   * - Take longer than 3 seconds and the window closes anyway. A person
+   *   pressing Cmd+W must never get nothing, so the main process does not wait
+   *   on you indefinitely: it races you, and the window wins the tie. **Do your
+   *   work synchronously** — a promise is not awaited, and an async handler
+   *   loses the race even when it succeeds.
    *
    * Register **one** subscriber. Several may register, but each answers
    * independently and the first answer decides — a `false` from one closes the
@@ -98,7 +120,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * the window.
    *
    * @param cb - Called on every `Cmd/Ctrl+W`. Return whether you handled it.
-   * @returns An unsubscribe function that removes the listener.
+   * @returns An unsubscribe function that removes the listener and, once the
+   *   last one is gone, hands `Cmd/Ctrl+W` back. Safe to call more than once.
    */
   onCloseTab: (cb: () => boolean | void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, requestId: number): void => {
@@ -113,6 +136,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.send(CLOSE_TAB_ACK_CHANNEL, requestId, handled);
     };
     ipcRenderer.on(CLOSE_TAB_CHANNEL, listener);
-    return () => ipcRenderer.removeListener(CLOSE_TAB_CHANNEL, listener);
+    if (++closeTabSubscriptions === 1) ipcRenderer.send(CLOSE_TAB_SUBSCRIBE_CHANNEL);
+
+    let unsubscribed = false;
+    return () => {
+      if (unsubscribed) return;
+      unsubscribed = true;
+      ipcRenderer.removeListener(CLOSE_TAB_CHANNEL, listener);
+      if (--closeTabSubscriptions === 0) ipcRenderer.send(CLOSE_TAB_UNSUBSCRIBE_CHANNEL);
+    };
   },
 });

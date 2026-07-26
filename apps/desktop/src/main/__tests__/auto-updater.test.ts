@@ -231,11 +231,13 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     const { restartToUpdate } = await import('../auto-updater');
 
     app.isPackaged = false;
-    restartToUpdate();
+    await restartToUpdate();
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
 
+    // With no quit guard armed there is nothing to ask about, so this goes
+    // straight through — the agent question is exercised in the DOR-538 suite.
     app.isPackaged = true;
-    restartToUpdate();
+    await restartToUpdate();
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
@@ -453,5 +455,116 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     );
     // Single-argument overload: no window as the first argument.
     expect(vi.mocked(dialog.showMessageBox).mock.calls[0]).toHaveLength(1);
+  });
+});
+
+describe('restarting to install an update (DOR-538)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /**
+   * Wire the updater and the quit guard together the way `index.ts` does, with
+   * `app.isPackaged` true — the restart path no-ops without it, which is why
+   * nothing reached it before.
+   */
+  async function armUpdateRestart(activeAgents = 0) {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const autoUpdaterModule = await import('../auto-updater');
+    const quitGuard = await import('../quit-guard');
+    quitGuard.resetQuitGuard();
+    autoUpdaterModule.resetUpdateRestartState();
+    const shutdown = vi.fn(() => Promise.resolve());
+    quitGuard.armQuitGuard({
+      countActiveAgents: () => activeAgents,
+      getWindow: () => null,
+      shutdown,
+      isRestartingToUpdate: autoUpdaterModule.isRestartingToUpdate,
+    });
+    return { app, autoUpdater, autoUpdaterModule, quitGuard, shutdown };
+  }
+
+  it('arms the installer and flags the restart, so window-all-closed can stay quiet', async () => {
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart();
+
+    await autoUpdaterModule.restartToUpdate();
+
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    // quitAndInstall() closes every window BEFORE calling app.quit(), so this
+    // flag has to be true by the time `window-all-closed` fires. `isQuitting()`
+    // is still false there — `before-quit` has not happened yet.
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(true);
+    expect(autoUpdaterModule.getLastUpdateStatus).toBeDefined();
+  });
+
+  it('asks about mid-run agents BEFORE arming the installer, not after the windows are gone', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(3);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+
+    await autoUpdaterModule.restartToUpdate();
+
+    const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
+      Electron.MessageBoxOptions,
+    ];
+    expect(options.message).toBe('3 agents are still working. Quit anyway?');
+    // "Keep Working" here costs nothing: no window has been destroyed and the
+    // installer was never armed. Asked from before-quit it would have left a
+    // windowless app with a half-armed updater.
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(false);
+  });
+
+  it('restarts once confirmed', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(2);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+
+    await autoUpdaterModule.restartToUpdate();
+
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(true);
+  });
+
+  it('does not ask twice: the quit that follows skips the confirmation', async () => {
+    const { app, dialog } = await getElectronMock();
+    const { autoUpdaterModule, shutdown } = await armUpdateRestart(2);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+    await autoUpdaterModule.restartToUpdate();
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    // quitAndInstall()'s own app.quit(), arriving after the windows closed.
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes the native "Restart Now" dialog through the same path', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(1);
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    // "Keep Working" on the agent question.
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+
+    // No window, so update-downloaded shows the native dialog; response 0 there
+    // is "Restart Now", which must reach the same confirmation.
+    autoUpdater.emit('update-downloaded', { version: '2.0.0' } as UpdateDownloadedEvent);
+
+    await vi.waitFor(() => {
+      expect(dialog.showMessageBox).toHaveBeenCalledTimes(2);
+    });
+    const [agentPrompt] = vi.mocked(dialog.showMessageBox).mock.calls[1] as [
+      Electron.MessageBoxOptions,
+    ];
+    expect(agentPrompt.message).toBe('1 agent is still working. Quit anyway?');
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 });

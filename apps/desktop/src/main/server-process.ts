@@ -322,7 +322,7 @@ function isReadyMessage(msg: unknown): boolean {
  * `exit` event from a process that had already exited, which made Cmd+Q
  * visibly hang after any server death.
  *
- * Safe to call twice: `index.ts`'s `before-quit` handler and
+ * Safe to call twice: the quit sequence in `quit-guard.ts` and
  * `autoUpdater.quitAndInstall()` can both reach it.
  */
 export async function stopServer(): Promise<void> {

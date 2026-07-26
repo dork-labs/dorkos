@@ -29,7 +29,13 @@ function arm(overrides: Partial<QuitGuardOptions> = {}): {
 } {
   const shutdown = vi.fn(() => Promise.resolve());
   const countActiveAgents = vi.fn(() => 0);
-  armQuitGuard({ countActiveAgents, getWindow: () => null, shutdown, ...overrides });
+  armQuitGuard({
+    countActiveAgents,
+    getWindow: () => null,
+    shutdown,
+    isRestartingToUpdate: () => false,
+    ...overrides,
+  });
   return { shutdown, countActiveAgents };
 }
 
@@ -132,6 +138,22 @@ describe('confirming a quit while agents are working', () => {
     answerWith(1);
     await emitBeforeQuit();
 
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask when the quit is an update restart that already asked', async () => {
+    answerWith(0);
+    const { shutdown } = arm({
+      countActiveAgents: () => 3,
+      isRestartingToUpdate: () => true,
+    });
+
+    await emitBeforeQuit();
+
+    // Asking here would be a second dialog for one decision — and answering
+    // "Keep Working" would cancel a quit whose windows are already destroyed.
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(shutdown).toHaveBeenCalledTimes(1);
     expect(app.quit).toHaveBeenCalledTimes(1);
   });
 

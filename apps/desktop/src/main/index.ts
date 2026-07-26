@@ -4,7 +4,12 @@ import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
-import { setupAutoUpdater, restartToUpdate, getLastUpdateStatus } from './auto-updater';
+import {
+  setupAutoUpdater,
+  restartToUpdate,
+  getLastUpdateStatus,
+  isRestartingToUpdate,
+} from './auto-updater';
 import { hasTray, setTrayActivity, setupTray } from './tray';
 import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
 import { announceBackgroundRunning } from './background-notice';
@@ -169,6 +174,7 @@ if (!gotTheLock) {
     countActiveAgents: getActiveAgentCount,
     getWindow: getMainWindow,
     shutdown: stopServer,
+    isRestartingToUpdate,
   });
 
   // Register IPC handlers for the preload bridge.
@@ -190,7 +196,7 @@ if (!gotTheLock) {
   // event fired (macOS close→reopen). No-ops in dev (unpackaged builds can't
   // apply updates).
   ipcMain.on('update:restart', () => {
-    restartToUpdate();
+    void restartToUpdate();
   });
 
   // Replay the last `downloading`/`downloaded` status — called once by the
@@ -274,6 +280,13 @@ if (!gotTheLock) {
   // quitting is the only honest thing left. An app running with no window and
   // no icon is one nobody can reach.
   app.on('window-all-closed', () => {
+    // `autoUpdater.quitAndInstall()` closes every window and only *then* calls
+    // `app.quit()`, so this fires on the update-restart path exactly as if a
+    // person had closed the last window by hand. Without this line they get
+    // "DorkOS is still running" — with a Quit button — in the middle of an
+    // update, and the one-time notice is burnt for good. `isQuitting()` cannot
+    // catch it: on that path `before-quit` has not happened yet.
+    if (isRestartingToUpdate()) return;
     if (!hasTray()) {
       app.quit();
       return;

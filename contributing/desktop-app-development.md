@@ -222,9 +222,19 @@ A server crash-and-restart **does** move every window to the new port (`pointWin
 
 ### `Cmd/Ctrl+W` is Close Tab
 
-The cockpit has in-renderer tabs, so the accelerator asks the focused renderer first (`close-tab.ts`) and closes the window only if the renderer has nothing to close **or does not answer within 250 ms**. `CmdOrCtrl+Shift+W` ("Close Window") stays unconditional.
+The cockpit has in-renderer tabs, so the accelerator asks the focused renderer first (`close-tab.ts`). `CmdOrCtrl+Shift+W` ("Close Window") stays unconditional.
 
-The timeout is the design, not a safety net: a person pressing Cmd+W must never get nothing — not when the renderer has not shipped its half, not when it is wedged, not when it threw. Nothing waits on the renderer; it is a race the window always eventually wins. The renderer-facing contract is documented in full on `onCloseTab` in `src/preload/index.ts` — **do the work synchronously and return `true` only if you closed a tab.**
+**Subscribing is what claims the keystroke.** A renderer announces itself on `close-tab:subscribe` when it first calls `onCloseTab`; with no subscriber the window closes immediately, no message and no wait — exactly what Cmd+W did before tabs. Only a subscribed renderer gets asked, and only then does the 3-second timeout apply.
+
+That gate is what lets the timeout be generous. An ack runs on the renderer's main thread, which a streaming turn can block well past a snappy budget, and giving up early destroys a window full of tabs nobody asked to lose. Without the gate, a budget long enough to be safe would be a delay on _every_ Cmd+W in every window that was never going to answer.
+
+The timeout is still the design, not a safety net: a person pressing Cmd+W must never get nothing — not when the renderer is wedged, not when it threw. Nothing waits on the renderer; it is a race the window always eventually wins. The renderer-facing contract is documented in full on `onCloseTab` in `src/preload/index.ts` — **subscribe on mount, unsubscribe on unmount, do the work synchronously, and return `true` only if you closed a tab.**
+
+### Quitting to install an update is not a normal quit
+
+`autoUpdater.quitAndInstall()` **closes every window and only then calls `app.quit()`**. So `window-all-closed` fires first, and on that path it must stay silent — otherwise clicking "Restart to install" produces "DorkOS is still running, so your agents keep working", complete with a Quit button, and burns the one-time notice for good. `isQuitting()` cannot catch it, because `before-quit` has not happened yet.
+
+`auto-updater.ts` owns the flag (`isRestartingToUpdate()`), and it asks about mid-run agents **before** arming the installer rather than from `before-quit` — by then the windows are gone, and "Keep Working" would leave a windowless app with a half-armed updater. `quit-guard.ts` takes the flag as an option rather than importing it, so it stays a leaf module.
 
 ### First paint
 

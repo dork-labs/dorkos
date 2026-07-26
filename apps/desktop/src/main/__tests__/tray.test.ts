@@ -105,6 +105,20 @@ describe('setupTray', () => {
     expect(Tray.instances).toHaveLength(0);
   });
 
+  it('runs without a tray when the platform refuses to create one', () => {
+    onPlatform('darwin');
+    vi.mocked(nativeImage.createFromPath).mockImplementationOnce(() => {
+      throw new Error('no display available');
+    });
+
+    // This runs inside the async `ready` handler, whose rejections Electron
+    // surfaces nowhere — a throw here would skip the activity watch, the
+    // display watch and the updater with no log line and no explanation.
+    expect(() => setupTray(options)).not.toThrow();
+    expect(hasTray()).toBe(false);
+    expect(Tray.instances).toHaveLength(0);
+  });
+
   it('is idempotent — a second call does not create a second tray', () => {
     onPlatform('darwin');
 
@@ -167,7 +181,7 @@ describe('setTrayActivity', () => {
 
     setTrayActivity(3);
 
-    expect(tray.setToolTip).toHaveBeenLastCalledWith('DorkOS — 3 agents working');
+    expect(tray.setToolTip).toHaveBeenLastCalledWith('DorkOS: 3 agents working');
     expect(tray.setTitle).toHaveBeenLastCalledWith('3');
     expect(menuLabels()[0]).toBe('3 agents working');
   });
@@ -178,7 +192,7 @@ describe('setTrayActivity', () => {
 
     setTrayActivity(1);
 
-    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS — 1 agent working');
+    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 1 agent working');
   });
 
   it('clears the macOS title when nothing is running, rather than showing a zero', () => {
@@ -199,7 +213,7 @@ describe('setTrayActivity', () => {
     setTrayActivity(2);
 
     expect(Tray.instances[0].setTitle).not.toHaveBeenCalled();
-    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS — 2 agents working');
+    expect(Tray.instances[0].setToolTip).toHaveBeenLastCalledWith('DorkOS: 2 agents working');
   });
 
   it('does not redraw when the count has not changed', () => {

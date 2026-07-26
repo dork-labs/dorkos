@@ -41,6 +41,7 @@ export function isQuitting(): boolean {
 export function resetQuitGuard(): void {
   quitting = false;
   armed = false;
+  guardOptions = null;
 }
 
 /** Options for {@link armQuitGuard}. */
@@ -51,6 +52,34 @@ export interface QuitGuardOptions {
   getWindow: () => BrowserWindow | null;
   /** Stop the server; resolves once it is gone. */
   shutdown: () => Promise<void>;
+  /**
+   * Whether this quit is an update restart, which asked its own question
+   * already (see `auto-updater.ts`). Passed in rather than imported so this
+   * module stays a leaf — `auto-updater.ts` imports
+   * {@link confirmInterruptingAgents} from here.
+   */
+  isRestartingToUpdate: () => boolean;
+}
+
+/** The options {@link armQuitGuard} was given, for {@link confirmInterruptingAgents} to reuse. */
+let guardOptions: QuitGuardOptions | null = null;
+
+/**
+ * Ask before interrupting agents that are mid-run. Resolves `true` when there
+ * is nothing to interrupt, or when the person said to go ahead.
+ *
+ * Exported so the updater can ask **before** it arms the installer.
+ * `autoUpdater.quitAndInstall()` closes every window and only then calls
+ * `app.quit()`, so a question asked from `before-quit` on that path would
+ * arrive with the windows already gone — and answering "Keep Working" would
+ * leave a windowless app with a half-armed updater. Asking first costs nothing
+ * to cancel.
+ */
+export async function confirmInterruptingAgents(): Promise<boolean> {
+  if (!guardOptions) return true;
+  const activeAgents = guardOptions.countActiveAgents();
+  if (activeAgents === 0) return true;
+  return confirmQuit(guardOptions.getWindow, activeAgents);
 }
 
 /**
@@ -73,6 +102,7 @@ export interface QuitGuardOptions {
 export function armQuitGuard(options: QuitGuardOptions): void {
   if (armed) return;
   armed = true;
+  guardOptions = options;
   app.on('before-quit', (event: Electron.Event) => {
     // The second pass — our own `app.quit()` at the end of the sequence.
     if (quitting) return;
@@ -89,8 +119,9 @@ export function armQuitGuard(options: QuitGuardOptions): void {
  * @param options - See {@link QuitGuardOptions}.
  */
 async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
-  const activeAgents = options.countActiveAgents();
-  if (activeAgents > 0 && !(await confirmQuit(options.getWindow, activeAgents))) return;
+  // An update restart already asked, back when there was still a window to ask
+  // in front of. Asking again here would be a second dialog for one decision.
+  if (!options.isRestartingToUpdate() && !(await confirmInterruptingAgents())) return;
 
   quitting = true;
   try {
@@ -124,8 +155,8 @@ async function confirmQuit(
     title: 'Quit DorkOS?',
     message: `${subject} still working. Quit anyway?`,
     detail:
-      'Quitting stops them where they are. You can close the window instead — DorkOS keeps ' +
-      'running in the background and your agents carry on.',
+      'Quitting stops them where they are. To leave them running, close the window instead: ' +
+      'DorkOS keeps going in the background and your agents carry on.',
     buttons: ['Keep Working', 'Quit Anyway'],
     defaultId: PRIMARY_BUTTON,
     cancelId: PRIMARY_BUTTON,

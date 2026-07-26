@@ -15,8 +15,9 @@ vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
 vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
 vi.mock('../auto-updater', () => ({
   setupAutoUpdater: vi.fn(),
-  restartToUpdate: vi.fn(),
+  restartToUpdate: vi.fn(async () => undefined),
   getLastUpdateStatus: vi.fn(() => null),
+  isRestartingToUpdate: vi.fn(() => false),
 }));
 vi.mock('../tray', () => ({
   setupTray: vi.fn(),
@@ -532,6 +533,39 @@ describe('keeping DorkOS running in the background (DOR-538)', () => {
     expect(app.quit).toHaveBeenCalledTimes(1);
     // Nothing to reassure them about: the app really did go.
     expect(notice.announceBackgroundRunning).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when quitAndInstall closes the windows on its way to an update restart', async () => {
+    // quitAndInstall() "will close all application windows first, and
+    // automatically call app.quit() after all windows have been closed" — so
+    // this event fires on the update path exactly as if a person had closed
+    // the last window. Left unguarded it showed "DorkOS is still running", with
+    // a Quit button, mid-update, and burnt the one-time notice for good.
+    const autoUpdater = await import('../auto-updater');
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(true);
+    const tray = await import('../tray');
+    vi.mocked(tray.hasTray).mockReturnValue(true);
+    const notice = await import('../background-notice');
+    vi.mocked(notice.announceBackgroundRunning).mockClear();
+    const { app } = await boot();
+
+    await app.emit('window-all-closed');
+
+    expect(notice.announceBackgroundRunning).not.toHaveBeenCalled();
+    // No quit either: quitAndInstall's own app.quit() is what finishes this.
+    expect(app.quit).not.toHaveBeenCalled();
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(false);
+  });
+
+  it('tells the quit guard when a quit is an update restart', async () => {
+    const autoUpdater = await import('../auto-updater');
+    const quitGuard = await import('../quit-guard');
+    const armSpy = vi.spyOn(quitGuard, 'armQuitGuard');
+    await boot();
+
+    const [options] = armSpy.mock.calls[0];
+    expect(options.isRestartingToUpdate).toBe(autoUpdater.isRestartingToUpdate);
+    armSpy.mockRestore();
   });
 
   it('sets up the tray with a way back to the window and to the activity view', async () => {

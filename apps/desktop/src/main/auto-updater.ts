@@ -3,6 +3,7 @@ import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-u
 import { app, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
+import { confirmInterruptingAgents } from './quit-guard';
 
 /** The IPC channel the main process pushes {@link UpdateStatus} events to the renderer on. */
 export const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -152,9 +153,9 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
       detail: 'The update will be applied when you restart the app.',
       buttons: ['Restart Now', 'Later'],
     }).then(({ response }) => {
-      if (response === 0) {
-        autoUpdater.quitAndInstall();
-      }
+      // Same path as the in-app card, so the "agents are still working"
+      // question and the window-all-closed suppression apply here too.
+      if (response === 0) void beginUpdateRestart();
     });
   });
 
@@ -254,17 +255,60 @@ export function checkForUpdatesInteractive(): void {
 }
 
 /**
+ * True from the moment `quitAndInstall()` is armed until the process goes.
+ *
+ * This exists because of one documented behaviour: `quitAndInstall()` "will
+ * close all application windows first, and automatically call `app.quit()`
+ * after all windows have been closed". The windows therefore close **before**
+ * anything quit-shaped has happened, so `window-all-closed` fires exactly as if
+ * a person had closed the last window by hand — and without this flag it did:
+ * "DorkOS is still running, so your agents keep working", complete with a Quit
+ * button, in the middle of an update restart, burning the one-time notice for
+ * good. `isQuitting()` cannot cover it; on this path `before-quit` comes after.
+ */
+let restartingToUpdate = false;
+
+/** Is an update restart in flight? Read by `window-all-closed` and the quit guard. */
+export function isRestartingToUpdate(): boolean {
+  return restartingToUpdate;
+}
+
+/**
+ * Clear the in-flight update-restart flag.
+ *
+ * @internal Exported for testing only.
+ */
+export function resetUpdateRestartState(): void {
+  restartingToUpdate = false;
+}
+
+/**
+ * Arm the installer and restart, once anything mid-run has been accounted for.
+ *
+ * The question is asked **here**, not from `before-quit`: by the time that
+ * fires, `quitAndInstall()` has already destroyed every window, so "Keep
+ * Working" would cancel the quit and leave a windowless app with a half-armed
+ * updater. Asked from here it is answered in front of the window the person
+ * clicked in, and cancelling costs nothing.
+ */
+async function beginUpdateRestart(): Promise<void> {
+  if (!(await confirmInterruptingAgents())) return;
+  restartingToUpdate = true;
+  autoUpdater.quitAndInstall();
+}
+
+/**
  * Restart the app to apply a downloaded update, driven by the renderer's
  * in-app card (the "Restart to install" button) via the `update:restart` IPC.
  *
- * Shares `autoUpdater.quitAndInstall()` with the native restart dialog, so
- * both paths tear down the server cleanly through the `before-quit` dance in
- * `index.ts`. No-ops when `!app.isPackaged`, matching {@link setupAutoUpdater}
- * — an unpackaged build has no installer to run.
+ * Shares {@link beginUpdateRestart} with the native restart dialog, so both
+ * paths ask the same question and tear the server down through the same quit
+ * sequence (`quit-guard.ts`). No-ops when `!app.isPackaged`, matching
+ * {@link setupAutoUpdater} — an unpackaged build has no installer to run.
  */
-export function restartToUpdate(): void {
+export async function restartToUpdate(): Promise<void> {
   if (!app.isPackaged) return;
-  autoUpdater.quitAndInstall();
+  await beginUpdateRestart();
 }
 
 /**

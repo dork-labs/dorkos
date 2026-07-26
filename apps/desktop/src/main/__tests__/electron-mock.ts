@@ -111,6 +111,10 @@ class MockBrowserWindowImpl {
       this.webContentsBus.on(event, listener);
       return this.webContents;
     }),
+    once: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
+      this.webContentsBus.on(event, listener);
+      return this.webContents;
+    }),
     /**
      * Captures the handler passed to `setWindowOpenHandler` so tests can
      * invoke it directly with a `HandlerDetails`-shaped object and assert on

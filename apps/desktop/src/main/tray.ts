@@ -1,6 +1,7 @@
 import { app, Menu, nativeImage, Tray } from 'electron';
 import { join } from 'node:path';
 import log from 'electron-log';
+import { TRAY_IMAGE_BY_PLATFORM } from '../shared/tray-images';
 
 /**
  * The menu-bar / system-tray presence: the proof that DorkOS is still there.
@@ -14,31 +15,6 @@ import log from 'electron-log';
  * beside the icon on macOS, the same sentence in the tooltip everywhere, and a
  * short menu. This is a control panel, not a notification farm.
  */
-
-/**
- * The tray image for each platform, resolved next to the compiled main-process
- * bundle (`dist/main`, in dev and packaged alike — `electron.vite.config.ts`
- * emits them there so `electron-builder.yml`'s `dist/**` allowlist ships them).
- *
- * macOS gets a **template** image: a black-on-transparent glyph the OS recolours
- * for light and dark menu bars. The `Template` suffix in the filename is what
- * marks it as one — do not rename it.
- *
- * Windows gets the full app mark instead, white on its own dark chip. A
- * template-style monochrome glyph would disappear into one of the two Windows
- * taskbar themes; the chip carries its own contrast, so it reads on both. It is
- * a PNG rather than the `.ico` the installer uses because Electron only decodes
- * `.ico` on Windows — a `.ico` tray asset cannot be verified anywhere else, and
- * the Windows build is not one we can confirm by hand yet.
- *
- * Linux has no entry: there is no Linux build, and a tray there needs a
- * `libappindicator` host we cannot assume. Closing the last window quits
- * instead — see `index.ts`.
- */
-const TRAY_IMAGE_BY_PLATFORM: Partial<Record<NodeJS.Platform, string>> = {
-  darwin: 'trayTemplate.png',
-  win32: 'trayIcon.png',
-};
 
 /** Options for {@link setupTray}. */
 export interface TrayOptions {
@@ -83,25 +59,38 @@ export function setupTray(options: TrayOptions): void {
   if (tray) return;
   trayOptions = options;
 
+  // The image is resolved next to the compiled main-process bundle (`dist/main`,
+  // in dev and packaged alike): `build/` is electron-builder's buildResources
+  // and is not packaged, so `electron.vite.config.ts` emits the images there
+  // instead, where the `dist/**` allowlist ships them.
   const fileName = TRAY_IMAGE_BY_PLATFORM[process.platform];
   if (!fileName) return;
 
-  const image = nativeImage.createFromPath(join(__dirname, fileName));
-  if (image.isEmpty()) {
-    log.error(`[tray] Could not read the tray icon (${fileName}); running without a tray.`);
-    return;
+  // Everything here runs inside the async `ready` handler, whose rejections
+  // Electron surfaces nowhere. A tray is a nicety; the server, the activity
+  // watch and the updater set up after it are not. Failing to a tray-less app
+  // is the same degradation an unreadable image already gets.
+  try {
+    const image = nativeImage.createFromPath(join(__dirname, fileName));
+    if (image.isEmpty()) {
+      log.error(`[tray] Could not read the tray icon (${fileName}); running without a tray.`);
+      return;
+    }
+    // The filename suffix already marks it, but a packaged path is not the
+    // filename the OS sees — say it outright.
+    if (process.platform === 'darwin') image.setTemplateImage(true);
+
+    tray = new Tray(image);
+    // macOS opens the menu on any click once a context menu is attached, so a
+    // `click` handler there would open the window *and* the menu. Windows keeps
+    // the two apart: left-click is "open it", right-click is the menu.
+    if (process.platform === 'win32') tray.on('click', () => options.showWindow());
+
+    render();
+  } catch (err) {
+    log.error('[tray] Could not create the tray; running without one.', err);
+    tray = null;
   }
-  // The filename suffix already marks it, but a packaged path is not the
-  // filename the OS sees — say it outright.
-  if (process.platform === 'darwin') image.setTemplateImage(true);
-
-  tray = new Tray(image);
-  // macOS opens the menu on any click once a context menu is attached, so a
-  // `click` handler there would open the window *and* the menu. Windows keeps
-  // the two apart: left-click is "open it", right-click is the menu.
-  if (process.platform === 'win32') tray.on('click', () => options.showWindow());
-
-  render();
 }
 
 /**
@@ -126,7 +115,7 @@ function render(): void {
   if (!tray || !trayOptions) return;
   const summary = describeActivity(activeAgents);
 
-  tray.setToolTip(`DorkOS — ${summary}`);
+  tray.setToolTip(`DorkOS: ${summary}`);
   // macOS is the only platform that shows text beside a tray icon. A bare count
   // next to the mark is the native idiom for "this is doing something", and it
   // disappears entirely when nothing is.

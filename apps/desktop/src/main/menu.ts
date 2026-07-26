@@ -132,10 +132,16 @@ export function setupMenu(
           },
           { role: 'editMenu' },
           { role: 'viewMenu' },
-          // Spelled out rather than `role: 'windowMenu'` — that role hard-wires
-          // `Close` on Cmd+W, which is exactly what has to change.
+          // The role is kept while the submenu is replaced. Dropping it and
+          // hand-building a "Window" menu costs the macOS windows menu — the
+          // role is what hands this submenu to `NSApp.setWindowsMenu:`, which
+          // is what adds the automatic list of open windows and the checkmark
+          // on the frontmost one. That matters more now, not less: this is the
+          // release where a second cockpit window became possible. Verified
+          // against a real Electron build that the custom submenu survives the
+          // role rather than being replaced by the default.
           {
-            label: 'Window',
+            role: 'windowMenu',
             submenu: [
               { role: 'minimize' },
               { role: 'zoom' },

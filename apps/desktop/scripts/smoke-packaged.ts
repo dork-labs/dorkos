@@ -1,8 +1,18 @@
 import { execFileSync, spawn, spawnSync } from 'child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'fs';
+import {
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  rmSync,
+} from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { TRAY_IMAGE_FILES } from '../src/shared/tray-images';
 
 /**
  * Packaged-runtime smoke test for the macOS desktop app.
@@ -153,6 +163,75 @@ function assertBundleIdMatchesConfig(appPath: string): string {
     );
   }
   return packaged;
+}
+
+/** One entry in an asar directory listing: a file, or a directory of more entries. */
+interface AsarEntry {
+  files?: Record<string, AsarEntry>;
+}
+
+/**
+ * Read an `app.asar`'s directory listing without unpacking it.
+ *
+ * The archive starts with two pickles: an 8-byte one holding the size of the
+ * second, and the second holding the directory as a JSON string. Both are
+ * length-prefixed, so the four `UInt32LE`s below locate the JSON exactly. This
+ * is hand-rolled for the same reason `assertBundleIdMatchesConfig` hand-rolls
+ * its regex: `@electron/asar` is only a transitive dependency here, and adding
+ * a direct one to read a header in a smoke script is not a trade worth making.
+ *
+ * @param asarPath - Absolute path to the archive.
+ * @returns The archive's root directory entry.
+ */
+function readAsarDirectory(asarPath: string): AsarEntry {
+  const fd = openSync(asarPath, 'r');
+  try {
+    const sizes = Buffer.alloc(16);
+    readSync(fd, sizes, 0, sizes.length, 0);
+    const headerStringLength = sizes.readUInt32LE(12);
+    const header = Buffer.alloc(headerStringLength);
+    readSync(fd, header, 0, headerStringLength, sizes.length);
+    return JSON.parse(header.toString('utf-8')) as AsarEntry;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Assert the tray images are actually inside `app.asar`.
+ *
+ * They are the one runtime asset that does not come from `src/`: they are
+ * authored in `build/`, which electron-builder treats as *build* resources and
+ * never packages, and reach the app only because `electron.vite.config.ts`
+ * emits them into `dist/main/`. Break that link — rename a file, add a platform
+ * to one list and not the other, tighten the `files` allowlist — and the build
+ * stays green while the shipped app comes up with no tray, which is also the
+ * app that no longer quits when you close its window.
+ *
+ * The list comes from `src/shared/tray-images.ts`, the same constant the loader
+ * and the build read, so this checks the real contract rather than a copy of it.
+ *
+ * @param appPath - Absolute path to the `.app` bundle.
+ * @throws If the archive is unreadable or any expected image is missing.
+ */
+function assertTrayImagesPackaged(appPath: string): void {
+  const asarPath = path.join(appPath, 'Contents', 'Resources', 'app.asar');
+  const packedMain = readAsarDirectory(asarPath).files?.dist?.files?.main?.files;
+  if (!packedMain) {
+    throw new Error(
+      `Could not read dist/main out of ${asarPath}. If the packaged layout changed, update ` +
+        `assertTrayImagesPackaged — do not delete the check.`
+    );
+  }
+  const missing = TRAY_IMAGE_FILES.filter((fileName) => !(fileName in packedMain));
+  if (missing.length > 0) {
+    throw new Error(
+      `Packaged app.asar is missing tray images in dist/main: ${missing.join(', ')}. They are ` +
+        `authored in build/, which is NOT packaged; electron.vite.config.ts emits them into ` +
+        `dist/main so electron-builder.yml's files allowlist ships them. Without them the app ` +
+        `runs with no tray — and an app with no tray and no window is unreachable.`
+    );
+  }
 }
 
 /**
@@ -503,6 +582,8 @@ async function main(): Promise<void> {
   ).version;
   console.log(`[1/5] Packaged app: ${appPath}`);
   console.log(`      Bundle id: ${assertBundleIdMatchesConfig(appPath)} (matches appId)`);
+  assertTrayImagesPackaged(appPath);
+  console.log(`      Tray images: all ${TRAY_IMAGE_FILES.length} present in app.asar`);
 
   // A freshly built app is not quarantined, so this is normally a no-op — but
   // when it is not, the failure it prevents (Gatekeeper's consent dialog
