@@ -69,6 +69,20 @@ server {
 
 </Tabs>
 
+<Callout type="warn">
+  **Running a proxy with login off?** Name your domain, or every API call comes back `403
+  Forbidden`. DorkOS answers only to addresses it trusts, and your proxy passes its own address
+  through. Add it:
+
+```bash
+DORKOS_TRUSTED_HOSTS=dorkos.example.com
+```
+
+  Separate several names with commas and leave the port off. Turning on login fixes it the other
+  way: DorkOS then trusts your sign-in instead of the address, and this setting stops mattering.
+  See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
+</Callout>
+
 <Callout type="info">
   Running DorkOS on your own domain, behind this proxy? Set `DORKOS_PUBLIC_URL` to that domain
   (for example `https://dorkos.example.com`). Without it, DorkOS advertises its internal bind

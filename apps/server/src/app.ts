@@ -28,6 +28,7 @@ import errorRoutes from './routes/errors.js';
 import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { hostGuard } from './middleware/host-guard.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { buildAuthRateLimiter } from './middleware/auth-rate-limit.js';
 import { resolveAgentIdentity } from './middleware/agent-identity.js';
@@ -113,6 +114,17 @@ export function createApp() {
   // credentialed requests per the fetch spec, so browsers reject it
   // regardless of this flag; that path stays wildcard for non-credentialed use.
   app.use(buildCors());
+
+  // Host allowlist on the API surface (DOR-532). CORS alone cannot stop DNS
+  // rebinding: a page at `http://evil.com:4242` that re-points `evil.com` at
+  // 127.0.0.1 is same-origin to the browser, so it sends no preflight and
+  // satisfies both the no-Origin and the same-origin branches above. The `Host`
+  // header still says `evil.com`, and this rejects it. Mounted before
+  // `express.json` so a rejected body is never parsed, and before the Better
+  // Auth handler so `/api/auth/*` is covered too. Inert when login is on (auth
+  // cookies are origin-scoped) or when the container escape hatch is set — see
+  // `middleware/host-guard.ts`.
+  app.use('/api', hostGuard);
 
   // Better Auth handler — mounted BEFORE express.json because Better Auth parses
   // its own request body (mounting after express.json breaks it). Express 5

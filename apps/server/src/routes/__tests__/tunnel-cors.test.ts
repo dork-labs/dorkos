@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: {
@@ -29,6 +29,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import { env } from '../../env.js';
+import { configManager } from '../../services/core/config-manager.js';
 import { tunnelManager } from '../../services/core/tunnel-manager.js';
 
 const app = createApp();
@@ -168,5 +169,60 @@ describe('CORS with tunnel origin', () => {
 
     expect(res.status).toBe(204);
     expect(res.headers['access-control-allow-origin']).toBe('http://localhost:9999');
+  });
+});
+
+// DOR-532. The same-origin allowance above is what a DNS-rebinding attacker
+// rides: a page at `http://evil.com:4242` that re-points `evil.com` at 127.0.0.1
+// is same-origin to the browser, so it needs no preflight and its Origin equals
+// its own Host. `Host` is the header it cannot fake, and the guard mounted in
+// `createApp()` reads it. These tests pin the wiring; the guard's own rules live
+// in `middleware/__tests__/host-guard.test.ts`.
+describe('Host guard on /api (DNS rebinding)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (tunnelManager as unknown as Record<string, unknown>).status = {
+      enabled: false,
+      connected: false,
+      url: null,
+      port: null,
+      startedAt: null,
+      authEnabled: false,
+      tokenConfigured: false,
+      domain: null,
+    };
+  });
+
+  afterEach(() => {
+    // `clearAllMocks` clears calls, NOT implementations. The login-on test below
+    // makes `configManager.get` report `auth.enabled: true`, which switches the
+    // guard off; left in place it followed the test around and turned the two
+    // 403 assertions above green whenever the order put them afterwards.
+    vi.mocked(configManager.get).mockReset();
+  });
+
+  it('rejects a rebound request whose Origin matches its own Host', async () => {
+    const res = await request(app)
+      .get('/api/health')
+      .set('Host', 'evil.com:4242')
+      .set('Origin', 'http://evil.com:4242');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('HOST_NOT_ALLOWED');
+  });
+
+  it('still allows a loopback request on a remapped port', async () => {
+    const res = await request(app).get('/api/health').set('Host', 'localhost:9999');
+
+    expect(res.status).toBe(200);
+  });
+
+  it('steps aside when login is on, because auth cookies are origin-scoped', async () => {
+    vi.mocked(configManager.get).mockImplementation(((key: string) =>
+      key === 'auth' ? { enabled: true } : undefined) as never);
+
+    const res = await request(app).get('/api/health').set('Host', 'dorkos.example.com');
+
+    expect(res.status).toBe(200);
   });
 });
