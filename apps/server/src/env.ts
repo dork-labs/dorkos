@@ -107,6 +107,19 @@ const serverEnvSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  // Q3 contention harness (DOR-500) — read ONLY by the `q3-*` test-mode
+  // scenarios (services/runtimes/test-mode/q3-contention-scenarios.ts), which
+  // are unreachable unless DORKOS_TEST_RUNTIME is true and a `q3-*` name is
+  // bound to a session. Set by `scripts/q3-contention/run.ts`, never by a real
+  // install.
+  //   - DURATION_MS: how long a q3 turn streams, so concurrent turns overlap.
+  //   - TICK_MS: gap between token yields (and between canary read-modify-writes).
+  //   - CANARY_MAP: JSON, vocabulary name → absolute shared-canary path. Absent
+  //     means the scenarios stream but touch no filesystem. Paths are guarded
+  //     against the active DORK_HOME and the real `~/.dork` at parse time.
+  DORKOS_Q3_DURATION_MS: z.coerce.number().int().min(0).default(30_000),
+  DORKOS_Q3_TICK_MS: z.coerce.number().int().min(1).default(500),
+  DORKOS_Q3_CANARY_MAP: z.string().optional(),
   // Tunnel (ngrok integration — all optional)
   TUNNEL_ENABLED: boolFlag,
   TUNNEL_PORT: z.coerce.number().int().min(1).max(65535).optional(),
