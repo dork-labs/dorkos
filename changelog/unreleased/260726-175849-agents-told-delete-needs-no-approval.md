@@ -2,6 +2,7 @@
 covers:
   - 'fix(skills): agents were told a destructive delete needs no approval (DOR-509)'
   - 'fix(skills): correct three more absolute claims found in review (DOR-509)'
+  - "fix(skills): close the destructive-set guard's block-scoping hole (DOR-509)"
 ---
 
 ### Fixed
