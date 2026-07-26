@@ -1,10 +1,10 @@
 /**
- * Shared form model for the binding (channel) dialog.
+ * Shared form model for the binding (integration) dialog.
  *
  * Holds the values type submitted by BindingDialog plus the pure mappers that
  * translate those values into the server's create/update request shapes. Kept
  * separate from the dialog component so every surface that opens the dialog
- * (topology graph, connections list, agent channels) maps values identically.
+ * (topology graph, integrations list, agent integrations) maps values identically.
  *
  * @module entities/binding/model/binding-form
  */

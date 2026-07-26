@@ -20,6 +20,22 @@ type AnySearchUpdater = (
   prev: Record<string, string | undefined>
 ) => Record<string, string | undefined>;
 
+/**
+ * Maps a retired `?settings=` tab id to its current equivalent, so a bookmark
+ * or shared link minted before a rename still opens the right tab instead of
+ * silently landing on nothing. `channels` was the Relay-adapters tab's id
+ * before it became `integrations` (DOR-523).
+ */
+const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab> = {
+  channels: 'integrations',
+};
+
+/** Resolve a raw `?settings=` value to a tab id, migrating retired ids. */
+function resolveSettingsTab(raw: string | undefined): SettingsTab | null {
+  if (!raw || raw === 'open') return null;
+  return LEGACY_SETTINGS_TAB_MAP[raw] ?? (raw as SettingsTab);
+}
+
 /** Generic shape returned by every dialog deep-link hook. */
 export interface DialogDeepLink<T extends string> {
   /** True if the dialog should be open per the URL. */
@@ -44,7 +60,7 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const navigate = useNavigate();
 
   const isOpen = !!search.settings;
-  const activeTab = isOpen && search.settings !== 'open' ? (search.settings as SettingsTab) : null;
+  const activeTab = resolveSettingsTab(search.settings);
   const section = search.settingsSection ?? null;
 
   const open = useCallback(

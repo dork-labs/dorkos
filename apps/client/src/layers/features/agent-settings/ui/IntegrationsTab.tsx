@@ -121,7 +121,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
           canReply: true,
           canReceive: true,
         });
-        toast.success('Integration connected');
+        toast.success('Integration added');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to add integration');
       }

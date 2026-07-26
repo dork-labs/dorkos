@@ -122,6 +122,14 @@ describe('useSettingsDeepLink', () => {
     expect(result.current.activeTab).toBe('tools');
   });
 
+  it('migrates the retired settings=channels bookmark to activeTab="integrations"', async () => {
+    harness = buildHarness('/?settings=channels');
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.activeTab).toBe('integrations');
+  });
+
   it('returns section when settingsSection is set', async () => {
     harness = buildHarness('/?settings=tools&settingsSection=external-mcp');
     const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
