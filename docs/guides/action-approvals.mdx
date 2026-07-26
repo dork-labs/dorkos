@@ -78,11 +78,13 @@ Each action DorkOS does cover carries a size label on its card, so you can tell 
 | **Changes things**   | Changes something you can change back.                            |
 | **Cannot be undone** | There is no undo. Removing an installed package is the one today. |
 
-## Staying anonymous does not help
+## What about an agent that does not say who it is?
 
 An agent can tell DorkOS who it is, and most do. One that doesn't is still stopped by the same question. The card simply says the request came in without an agent identity, so you know DorkOS cannot tell you who asked.
 
-This also holds for the command line. Running an agent outside DorkOS, or dropping its identity, does not get past the question.
+This also holds for `dorkos call`, which is how an agent reaches any DorkOS action from a shell. Running an agent outside DorkOS does not get past the question.
+
+There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. An agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries. But a program that deliberately drops that identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it.
 
 ## The agent that asked cannot answer
 

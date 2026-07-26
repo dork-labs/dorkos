@@ -5,8 +5,8 @@
  * `Object.keys()`, which destroys `toJSON` and sees nothing at all inside a `Set` or
  * `Map`. So `{ at: new Date(0) }` and `{ at: new Date(9e11) }` used to produce the
  * SAME digest, as did `{ s: new Set(['a']) }` and `{ s: new Set(['b']) }` — a field
- * that looks bound while being completely ignored. Nothing caught it: the
- * conformance suite's parse-idempotence check is stable over a `Date`.
+ * that looks bound while being completely ignored. Nothing caught it, because a
+ * schema-shape check cannot: parsing a `Date` twice is perfectly stable.
  *
  * These cases pin the guard AND the pairs that used to collide, so a future
  * "normalize instead of reject" change has to keep them distinct or fail here.

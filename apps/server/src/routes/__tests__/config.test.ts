@@ -25,6 +25,28 @@ function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-config-route-test-'));
 }
 
+/**
+ * Stands in for `sessionGate`'s resolved user. `PATCH /api/config` now skips the
+ * operator-only write policy only for a caller that may DECIDE approvals, and
+ * with login ON that requires an authenticated user on `res.locals` — which the
+ * real cockpit carries and a bare test app otherwise would not (DOR-467).
+ */
+let signedInUser: { userId: string } | undefined;
+
+/** Stands in for the `X-DorkOS-Agent` header an agent's CLI attaches. */
+let agentHeader: string | undefined;
+
+/** Mount the request-shaping middleware every config-route app needs. */
+function mountCallerFixture(app: express.Express): void {
+  signedInUser = { userId: 'user_cockpit' };
+  agentHeader = undefined;
+  app.use((req, res, next) => {
+    if (signedInUser) res.locals.user = signedInUser;
+    if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
+    next();
+  });
+}
+
 describe('PATCH /api/config', () => {
   let app: express.Express;
   let tmpDir: string;
@@ -40,6 +62,7 @@ describe('PATCH /api/config', () => {
     const configRouter = (await import('../config.js')).default;
     app = express();
     app.use(express.json());
+    mountCallerFixture(app);
     app.use('/api/config', configRouter);
   });
 
@@ -147,6 +170,50 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('auth.enabled')).toBe(false);
   });
 
+  it('refuses an AGENT the settings that protect the instance (DOR-467)', async () => {
+    // The door this closes. PR #469 put the operator-only write policy on the
+    // agent-facing capability, but this REST route reached the same
+    // `applyConfigPatch` with no policy check at all — and with login off
+    // `sessionGate` is a pass-through, so `curl -X PATCH /api/config` walked
+    // straight around the guard whose whole promise is that agents cannot change
+    // the settings protecting the instance.
+    agentHeader = 'agent-token';
+    signedInUser = undefined;
+
+    const refused = await request(app)
+      .patch('/api/config')
+      .send({ server: { boundary: '/' } })
+      .expect(403);
+    expect(refused.body.code).toBe('operator_only_config');
+    expect(refused.body.paths).toContain('server.boundary');
+
+    const { configManager } = await import('../../services/core/config-manager.js');
+    expect(configManager.getDot('server.boundary')).not.toBe('/');
+  });
+
+  it('refuses an agent turning login OFF, the setting approvals depend on', async () => {
+    agentHeader = 'agent-token';
+    signedInUser = undefined;
+
+    await request(app)
+      .patch('/api/config')
+      .send({ auth: { enabled: false } })
+      .expect(403);
+  });
+
+  it('still lets an agent change ordinary settings', async () => {
+    // The refusal is scoped to the policy, not to agents: an agent editing a
+    // theme is exactly what the operator surface is for.
+    agentHeader = 'agent-token';
+    signedInUser = undefined;
+
+    const ok = await request(app)
+      .patch('/api/config')
+      .send({ ui: { theme: 'dark' } })
+      .expect(200);
+    expect(ok.body.config.ui.theme).toBe('dark');
+  });
+
   it('lets a person change the other operator-only settings too', async () => {
     // The rest of the write allowlist, proven not to have leaked onto the human
     // path: exposure, the MCP endpoint's key, telemetry consent, and the boundary.
@@ -231,6 +298,7 @@ describe('GET /api/config', () => {
     const configRouter = (await import('../config.js')).default;
     app = express();
     app.use(express.json());
+    mountCallerFixture(app);
     app.use('/api/config', configRouter);
   });
 
@@ -300,6 +368,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
     const configRouter = (await import('../config.js')).default;
     app = express();
     app.use(express.json());
+    mountCallerFixture(app);
     app.use('/api/config', configRouter);
   });
 

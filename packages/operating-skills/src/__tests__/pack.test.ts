@@ -72,8 +72,29 @@ describe('OPERATING_SKILLS_PACK', () => {
  * `config_patch`, which is why these are asserted rather than trusted.
  */
 describe('the pack teaches the world as it actually is', () => {
-  it('is stamped at a version at least 3 (tiers + approvals + dorkos call)', () => {
-    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(3);
+  it('is stamped at a version at least 4 (dorkos uninstall is gated too)', () => {
+    // The stamp is what makes a correction REACH agents: `seed.ts` rewrites an
+    // unmodified seeded copy only when its stored version is lower than this. A
+    // corrected body shipped without a bump would sit in the repo while every
+    // already-seeded agent kept reading the old text (DOR-467).
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(4);
+  });
+
+  it('no longer tells agents that `dorkos uninstall` skips the approval gate', () => {
+    // Pack v3 said the CLI verb was "the person's ungated path" and that it
+    // "does NOT go through the approval gate". Both were true when written;
+    // DOR-467 closed that door. A skill that still described the hole would be
+    // teaching every agent exactly where the bypass used to be.
+    //
+    // Note this is narrower than "the word `ungated` is absent": the umbrella
+    // skill's closing rule — do not reach for an ungated path because a gated one
+    // made you wait — is advice that should stay.
+    expect(bodyOf('operating-dorkos')).not.toMatch(/ungated path: see/);
+    expect(bodyOf('using-the-marketplace')).not.toMatch(/does NOT\s+go through the approval gate/);
+
+    // …and says the true thing in its place.
+    expect(bodyOf('using-the-marketplace')).toMatch(/dorkos uninstall[\s\S]{0,160}gated/);
+    expect(bodyOf('operating-dorkos')).toMatch(/uninstall\W+ is gated/);
   });
 
   it('teaches the three permission tiers', () => {

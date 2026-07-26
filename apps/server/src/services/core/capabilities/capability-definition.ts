@@ -30,7 +30,7 @@
 import type { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
 import type { CapabilityTier, CapabilitySurfaces } from '@dorkos/shared/capabilities';
-import type { CapabilityInvocationContext } from './registry.js';
+import type { CapabilityHandlerContext } from './registry.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -66,9 +66,10 @@ export interface CapabilityDeps {
  * ordinary capabilities; that trust boundary lives in the handler.
  *
  * The `tier` gate is the separate, declarative one, and it runs OUTSIDE the
- * handler: every choke point calls `enforceCapabilityTier` before `invoke`
- * (`tier-enforcement.ts`). A handler that also gates itself reads
- * `context.approval` so the two never ask a person twice for one action.
+ * handler, inside `registry.invoke` itself (`tier-enforcement.ts`, DOR-467) — so
+ * it cannot be reached around. A handler that also gates itself reads
+ * `context.approval` (or `context.trusted`) so the two never ask a person twice
+ * for one action.
  *
  * @template In - The Zod input schema type.
  * @template Out - The Zod output schema type.
@@ -90,9 +91,9 @@ export interface CapabilityDefinition<
    */
   description: string;
   /**
-   * Permission tier. Enforced by `enforceCapabilityTier` at every choke point
-   * before this handler runs, so `destructive` really does mean "a person has to
-   * say yes first" (see `tier-enforcement.ts`).
+   * Permission tier. Enforced inside `registry.invoke` before this handler runs,
+   * so `destructive` really does mean "a person has to say yes first" (see
+   * `tier-enforcement.ts`).
    */
   tier: CapabilityTier;
   /** Zod input contract; validated before `invoke`, projected as JSON Schema. */
@@ -141,7 +142,7 @@ export interface CapabilityDefinition<
   invoke(
     deps: CapabilityDeps,
     input: z.infer<In>,
-    context: CapabilityInvocationContext
+    context: CapabilityHandlerContext
   ): Promise<z.infer<Out>>;
 }
 

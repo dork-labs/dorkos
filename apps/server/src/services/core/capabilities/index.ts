@@ -16,11 +16,17 @@ export {
   serializeCapability,
   computeCatalogVersion,
   type CapabilityRegistry,
+  type CapabilityHandlerContext,
   type CapabilityInvocationContext,
   type CapabilityInvocationObserver,
 } from './registry.js';
+export { isTrustedCaller, trustedCaller, type TrustedCaller } from './trusted-caller.js';
 export {
-  enforceCapabilityTier,
+  // `enforceCapabilityTier` is deliberately NOT re-exported: the gate is reached
+  // through `registry.invoke`, or through `authorizeCapability` by the one kind of
+  // caller that owns its own effect (DOR-467).
+  authorizeCapability,
+  CapabilityGateRefusal,
   initCapabilityTierGate,
   resetCapabilityTierGate,
   splitApprovalToken,

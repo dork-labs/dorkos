@@ -33,7 +33,7 @@ import type { CapabilityInvocationContext, CapabilityRegistry } from './registry
 import { CapabilityToolError } from './mcp-envelope.js';
 import {
   APPROVAL_TOKEN_ARGUMENT,
-  enforceCapabilityTier,
+  CapabilityGateRefusal,
   splitApprovalToken,
 } from './tier-enforcement.js';
 
@@ -141,15 +141,15 @@ function textResult(payload: unknown, isError = false): CallToolResult {
  * Invoke a capability by id through the registry and re-wrap its plain result
  * into the MCP text envelope both servers return.
  *
- * This is the MCP half of the enforcement choke point (spec `agent-trust` §3.2):
- * both MCP adapters funnel every tool call through here, so the tier gate runs
- * ONCE, here, before `registry.invoke` — an adapter cannot forget it, and no
- * capability handler can run ahead of it. A gated or refused call returns the
- * gate's structured payload as an ordinary result (not `isError`): needing an
- * approval is a step in a protocol, not a failure, which is exactly how the
- * marketplace's `requires_confirmation` result has always behaved.
+ * This is the MCP half of the enforcement path (spec `agent-trust` §3.2). Both
+ * MCP adapters funnel every tool call through here, and this function does not
+ * gate: `registry.invoke` does, from the inside, so no adapter can forget it
+ * (DOR-467). All this function adds is the two MCP-specific facts the registry
+ * cannot work out for itself — the token rides a tool ARGUMENT rather than a
+ * header, so retry instructions must name that argument — and the translation of
+ * a refusal back into the MCP envelope.
  *
- * The registry then validates the input, runs `invoke`, and returns plain data;
+ * The registry validates the input, gates, runs `invoke`, and returns plain data;
  * this function serializes that data into a text block. A
  * {@link CapabilityToolError} — the handler's `isError` path, re-raised at the
  * plain-data seam — is caught and re-wrapped into the matching `isError` envelope
@@ -182,40 +182,26 @@ export async function invokeCapabilityAsMcpResult(
       : { approvalToken: undefined, input: args };
 
   try {
-    // An unknown id has no tier to enforce; hand it to the registry so the
-    // "no capability registered" error stays the single source of that message.
-    if (capability) {
-      // Parse before gating so the approval binds to the input that will really
-      // execute, defaults and coercions included — not to the raw arguments.
-      // `registry.invoke` parses this value again, which is only safe while every
-      // destructive capability's schema is parse-idempotent. That is not left to
-      // luck: the conformance suite asserts it per destructive capability, so a
-      // schema that grows a non-idempotent `.transform()` fails there rather than
-      // silently hashing something other than what runs.
-      const parsed = capability.input.parse(input);
-      const decision = enforceCapabilityTier({
-        capability,
-        input: parsed,
-        ...(context?.identity ? { identity: context.identity } : {}),
-        ...(approvalToken ? { approvalToken } : {}),
-        retryChannel: 'mcp-argument',
-      });
-      if (decision.outcome !== 'allowed') return textResult(decision.payload);
-
-      // Build the context field by field rather than spreading the caller's
-      // object. The in-session resolver hands out ONE memoized context per
-      // session, so spreading it would forward whatever `approval` that shared
-      // object happened to carry on a call where the gate granted none. Only the
-      // adapter's own two facts may reach the handler.
-      const data = await registry.invoke(id, parsed, {
-        ...(context?.identity ? { identity: context.identity } : {}),
-        ...(decision.approval ? { approval: decision.approval } : {}),
-      });
-      return textResult(data);
-    }
-
-    return textResult(await registry.invoke(id, input, context));
+    // Build the context field by field rather than spreading the caller's object.
+    // The in-session resolver hands out ONE memoized context per session, so
+    // spreading it would forward whatever a shared object happened to carry into
+    // a call it has nothing to do with. Only the adapter's own facts may reach the
+    // registry — and note what is absent: an MCP adapter never mints a trusted
+    // marker, because everything arriving here arrived over the wire.
+    const data = await registry.invoke(id, input, {
+      ...(context?.identity ? { identity: context.identity } : {}),
+      ...(approvalToken ? { approvalToken } : {}),
+      retryChannel: 'mcp-argument',
+    });
+    return textResult(data);
   } catch (err) {
+    // A gated or refused call returns the gate's structured payload as an
+    // ordinary result (not `isError`): needing an approval is a step in a
+    // protocol, not a failure, which is exactly how the marketplace's
+    // `requires_confirmation` result has always behaved.
+    if (err instanceof CapabilityGateRefusal) {
+      return textResult(err.decision.payload);
+    }
     if (err instanceof CapabilityToolError) {
       return textResult(err.payload, true);
     }

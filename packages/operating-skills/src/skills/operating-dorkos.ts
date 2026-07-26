@@ -117,7 +117,8 @@ The operator verbs hit the running server over its local HTTP API:
 - \`dorkos version --check\` shows the current server version and the latest release.
 - \`dorkos marketplace list|add|remove|refresh|validate\` manage sources.
 - \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages.
-  \`uninstall\` is the person's ungated path: see using-the-marketplace.
+  \`uninstall\` is gated on a person's approval like every destructive path, and
+  answers with the approval payload: see using-the-marketplace.
 
 There is no \`dorkos relay\`, \`dorkos mesh\`, \`dorkos binding\`, or \`dorkos ui\`. Every
 operator verb takes \`--json\`. Exit code is \`0\` on success, non-zero when no server

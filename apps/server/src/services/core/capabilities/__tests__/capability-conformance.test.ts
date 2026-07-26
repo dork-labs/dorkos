@@ -40,7 +40,7 @@ import request from 'supertest';
 import { noopLogger } from '@dorkos/shared/logger';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { capabilityConformance } from '@dorkos/test-utils';
-import type { DestructiveGateProbeResult } from '@dorkos/test-utils';
+
 import { createTestDb } from '@dorkos/test-utils/db';
 
 // ── Mock the non-hermetic seams the operator handlers reach through ─────────
@@ -181,7 +181,7 @@ const { createCapabilitiesInvokeRouter } =
   await import('../../../../routes/capabilities-invoke.js');
 const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
-const { ApprovalService, hashApprovalInput } = await import('../../approvals/index.js');
+const { ApprovalService } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
 const PROBE_IDENTITY = {
@@ -200,11 +200,6 @@ const DESTRUCTIVE_TOOL = registry.get(DESTRUCTIVE_ID)!.surfaces.mcp!.toolName;
 /** The input every probe attempts, and that the approval would be bound to. */
 const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
 
-/** A schema-satisfying sample per destructive capability, for the idempotence check. */
-const DESTRUCTIVE_SAMPLE_INPUTS: Record<string, unknown> = {
-  [DESTRUCTIVE_ID]: DESTRUCTIVE_INPUT,
-};
-
 // Arm the gate over a real approval service on a throwaway database, exactly as
 // boot does — so the probes exercise the real request/consume path, not a stub.
 const approvalService = new ApprovalService(createTestDb());
@@ -215,8 +210,16 @@ function unwrapText(result: { content: { type: string; text?: string }[] }): unk
   return JSON.parse(result.content[0].text ?? 'null');
 }
 
+/** What one adapter path did when handed a destructive capability with no approval. */
+interface AdapterProbeResult {
+  /** Whether the capability's handler actually RAN. Must be false. */
+  sideEffectHappened: boolean;
+  /** What the adapter handed back, unwrapped to plain JSON. */
+  payload: unknown;
+}
+
 /** Run one probe with a fresh side-effect flag. */
-async function probe(run: () => Promise<unknown>): Promise<DestructiveGateProbeResult> {
+async function probe(run: () => Promise<unknown>): Promise<AdapterProbeResult> {
   uninstallReached = false;
   const payload = await run();
   return { sideEffectHappened: uninstallReached, payload };
@@ -339,17 +342,6 @@ const requesterDecideProbe = async () => {
 capabilityConformance(registry, {
   name: 'DorkOS capability registry — conformance (real registry)',
   requesterDecideProbe,
-  destructiveGateProbes: {
-    // Identified agent on each adapter path…
-    'invoke-route': routeProbe(PROBE_IDENTITY),
-    'in-session-mcp': inSessionProbe(PROBE_IDENTITY),
-    'external-mcp': externalProbe(PROBE_IDENTITY),
-    // …and the same three with NO identity, which is the shape of the bypass an
-    // agent with shell access would reach for: drop the token, keep the effect.
-    'invoke-route-anonymous': routeProbe(),
-    'in-session-mcp-anonymous': inSessionProbe(),
-    'external-mcp-anonymous': externalProbe(),
-  },
   registeredMcpToolNames: {
     'in-session': inSessionToolNames,
     external: externalToolNames,
@@ -420,30 +412,41 @@ describe('operator.config_patch refuses posture changes through the registry', (
 });
 
 /**
- * Both choke points parse the input, gate on the parsed value, and hand that same
- * value to `registry.invoke` — which parses it a second time. That is only safe
- * while a destructive capability's schema is parse-idempotent: if `parse(parse(x))`
- * ever differed from `parse(x)`, the approval would be bound to a hash of
- * something other than what actually executes, and the whole binding guarantee
- * would quietly evaporate.
+ * Regression coverage for each real adapter, kept as ordinary tests rather than as
+ * a conformance CONTRACT (DOR-467).
  *
- * True today (every destructive input is a plain `z.object` of scalars), so this
- * asserts it rather than assuming it: a schema that grows a non-idempotent
- * `.transform()` fails HERE, at the boundary that depends on the property.
+ * The conformance suite used to demand one probe per hand-listed adapter path, and
+ * that list is what failed: it could only go red for a path already on it, so the
+ * legacy marketplace routes — never listed — shipped ungated and nothing noticed.
+ * The contract is now derived from the registry (`registry.invoke` must refuse
+ * every destructive capability), which covers these three and any future adapter
+ * without anyone maintaining a list.
+ *
+ * These stay because they prove something the registry-level check cannot: that
+ * each adapter TRANSLATES a refusal correctly — a `202` on the route, an ordinary
+ * non-error result on both MCP servers — and that no handler ran.
  */
-describe('destructive capability input schemas are parse-idempotent', () => {
-  const destructive = registry.capabilities.filter((cap) => cap.tier === 'destructive');
+describe('every adapter path refuses an unapproved destructive call', () => {
+  const paths = {
+    'invoke-route': routeProbe,
+    'in-session-mcp': inSessionProbe,
+    'external-mcp': externalProbe,
+  };
 
-  it('has at least one destructive capability to check', () => {
-    expect(destructive.length).toBeGreaterThan(0);
-  });
-
-  for (const cap of destructive) {
-    it(`${cap.id}: parsing twice hashes the same as parsing once`, () => {
-      const sample = DESTRUCTIVE_SAMPLE_INPUTS[cap.id] ?? {};
-      const once = cap.input.parse(sample);
-      const twice = cap.input.parse(once);
-      expect(hashApprovalInput(twice)).toBe(hashApprovalInput(once));
-    });
+  for (const [name, make] of Object.entries(paths)) {
+    // Identified, and then with NO identity at all — which is the shape of the
+    // bypass an agent with shell access reaches for: drop the token, keep the
+    // effect. The gate keys on the capability's TIER, so both must refuse.
+    for (const [who, identity] of [
+      ['identified', PROBE_IDENTITY],
+      ['anonymous', undefined],
+    ] as const) {
+      it(`${name} (${who}): approval_required, nothing removed`, async () => {
+        const result = await make(identity)();
+        expect(result.sideEffectHappened).toBe(false);
+        expect((result.payload as { status?: string }).status).toBe('approval_required');
+        expect((result.payload as { approvalToken?: string }).approvalToken).toBeTruthy();
+      });
+    }
   }
 });

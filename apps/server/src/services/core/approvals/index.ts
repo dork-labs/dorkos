@@ -31,6 +31,7 @@ export {
 } from './approval-summary.js';
 export {
   resolveDecisionAuthority,
+  type DecisionAuthorityRequest,
   type DecisionAuthorityResult,
   type LoginEnabledLookup,
 } from './decision-authority.js';

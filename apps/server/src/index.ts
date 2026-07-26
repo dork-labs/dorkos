@@ -1514,6 +1514,10 @@ async function start() {
     app.use(
       '/api/marketplace',
       createMarketplaceRouter({
+        // Read lazily: the registry is composed further down this same boot, so
+        // a direct reference here would capture `undefined` forever. Until it
+        // exists, the marketplace mutation routes fail closed.
+        capabilityRegistry: () => capabilityRegistry,
         sourceManager: marketplaceSourceManager,
         cache: marketplaceCache,
         fetcher: marketplaceFetcher,
@@ -1643,12 +1647,13 @@ async function start() {
     createCapabilityAttributionObserver(activityService)
   );
   // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval
-  // primitive and the Activity feed exist. Every choke point — this app's invoke
-  // route, the in-session MCP adapter, the external `/mcp` adapter — calls
-  // `enforceCapabilityTier` before the registry runs anything, so a `destructive`
-  // capability reached by an identified agent needs a person's yes first. Until
-  // this call the gate refuses such invocations rather than allowing them, so a
-  // wiring mistake here fails loudly instead of silently opening the gate.
+  // primitive and the Activity feed exist. The gate runs INSIDE `registry.invoke`
+  // (DOR-467), so every surface that reaches a capability through the registry is
+  // gated by construction rather than by remembering to be; the legacy marketplace
+  // routes, which own their own effect, reach the same gate through
+  // `authorizeCapability`. Until this call the gate REFUSES destructive
+  // invocations rather than allowing them, so a wiring mistake here fails loudly
+  // instead of silently opening the gate.
   initCapabilityTierGate({
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),

@@ -25,32 +25,90 @@ import type {
   CapabilityDomain,
 } from './capability-definition.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
-import type { GrantedApproval } from './tier-enforcement.js';
+import {
+  CapabilityGateRefusal,
+  enforceCapabilityTier,
+  type ApprovalRetryChannel,
+  type GrantedApproval,
+} from './tier-enforcement.js';
+import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 
 /**
- * Request-scoped context for one capability invocation.
+ * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
  *
- * Threaded from whichever transport adapter received the call (the invoke
- * route, an MCP server) down to the registry, which is the single choke point
- * every surface funnels through — so attribution is recorded once, here, rather
- * than duplicated into every capability handler.
+ * Threaded from whichever surface received the call (the invoke route, an MCP
+ * server, a cockpit route) down to the registry, which is the single choke point
+ * every surface funnels through — so the tier gate runs once, here, and
+ * attribution is recorded once, here, rather than duplicated into every adapter.
+ *
+ * Note what this interface does NOT carry: a granted approval. That is the
+ * registry's OWN conclusion, produced by the gate it runs, and a caller supplying
+ * it would be handing the handler a person's consent nobody gave. Handlers read
+ * it off {@link CapabilityHandlerContext} instead.
  */
 export interface CapabilityInvocationContext {
   /**
    * The agent behind this call, when one presented a resolved identity token.
    * `undefined` means the human operator or an unattributed client, which is
-   * the normal case and changes nothing about how the call runs.
+   * the normal case and does not change whether the gate runs — the capability's
+   * TIER decides that (see `tier-enforcement.ts`).
    */
+  identity?: AgentIdentity;
+  /**
+   * Proof that this caller may decide approvals, and may therefore act without
+   * one — the single, unforgeable way past the gate. Only `trusted-caller.ts` can
+   * mint it, and only from the same check that guards the decide endpoint.
+   *
+   * Supplying this together with {@link identity} is a contradiction and is
+   * refused; see the module TSDoc of `trusted-caller.ts`.
+   */
+  trusted?: TrustedCaller;
+  /**
+   * The approval token the caller presented on a retry, when it presented one.
+   *
+   * It travels beside the input rather than inside it, because the approval binds
+   * to a hash of the input and a token carried as an input field would change the
+   * very hash it is checked against.
+   */
+  approvalToken?: string;
+  /**
+   * Which channel a retry should carry its approval token on, so the gate's
+   * instructions name the right field for the surface the call arrived on.
+   *
+   * Defaults to `http-header`, correct for every HTTP surface. An MCP adapter
+   * MUST pass `mcp-argument`, or it will tell a model to set a header it has no
+   * way to set.
+   */
+  retryChannel?: ApprovalRetryChannel;
+}
+
+/**
+ * What a capability's handler receives — who is calling, and what the gate
+ * already concluded about this exact call.
+ *
+ * Deliberately a different type from {@link CapabilityInvocationContext}: the
+ * fields a caller may SUPPLY and the fields a handler may TRUST are not the same
+ * set, and collapsing them is how a shared, memoized adapter context once
+ * forwarded an `approval` the gate never granted.
+ */
+export interface CapabilityHandlerContext {
+  /** The agent behind this call, when one presented a resolved identity token. */
   identity?: AgentIdentity;
   /**
    * The approval the tier gate spent to let this call through, when the call was
    * gated (`destructive` tier) and a person granted it.
    *
-   * Set by the choke point, never by a caller. A capability whose handler runs
-   * its own confirmation flow treats this as consent already given for this exact
+   * Set by the registry, never by a caller. A capability whose handler runs its
+   * own confirmation flow treats this as consent already given for this exact
    * invocation, so the operator answers one card instead of two.
    */
   approval?: GrantedApproval;
+  /**
+   * Present when the caller proved it may decide approvals. A handler running its
+   * own confirmation flow treats this exactly like {@link approval}: the person
+   * whose consent that flow would go and fetch is the one already calling.
+   */
+  trusted?: TrustedCaller;
 }
 
 /**
@@ -65,8 +123,8 @@ export interface CapabilityInvocationContext {
 export type CapabilityInvocationObserver = (event: {
   /** The capability that ran. */
   capability: CapabilityDefinition;
-  /** The context the transport adapter supplied. */
-  context: CapabilityInvocationContext;
+  /** The context the handler was invoked with. */
+  context: CapabilityHandlerContext;
   /** Whether the handler completed without throwing. */
   ok: boolean;
 }) => void;
@@ -87,17 +145,30 @@ export interface CapabilityRegistry {
    */
   get(id: string): CapabilityDefinition | undefined;
   /**
-   * Validate `input` against the capability's schema, invoke its handler with
-   * the captured dependency bag, and return the plain typed output (see the
-   * result-wrapping seam note in `capability-definition.ts`).
+   * Validate `input` against the capability's schema, ENFORCE ITS PERMISSION
+   * TIER, invoke its handler with the captured dependency bag, and return the
+   * plain typed output (see the result-wrapping seam note in
+   * `capability-definition.ts`).
+   *
+   * The gate is inside this method rather than in front of it (DOR-467). It used
+   * to sit in each transport adapter, which meant a surface was gated exactly as
+   * long as somebody remembered to gate it — and one did not: the legacy
+   * marketplace routes reached an uninstall with no tier check at all, which is
+   * the path the seeded skill pack taught agents. A new adapter now inherits the
+   * gate by calling this method, and the only way past it is a
+   * {@link TrustedCaller}, which no wire payload can mint.
    *
    * @param id - The capability id to invoke.
    * @param input - Raw input; parsed against the capability's `input` schema.
-   * @param context - Optional request-scoped context (the calling agent's
-   *   identity). Omitting it invokes exactly as before, unattributed.
+   * @param context - Optional request-scoped context: who is calling, any
+   *   approval token they presented, and whether they proved they may decide
+   *   approvals. Omitting it invokes as an unidentified, untrusted caller — which
+   *   is gated, because the TIER decides that, not the identity.
    * @returns The capability's plain output.
-   * @throws If no capability is registered under `id`, or if `input` fails
-   *   schema validation (a `ZodError`).
+   * @throws If no capability is registered under `id`; if `input` fails schema
+   *   validation (a `ZodError`); if the context carries both a trusted marker and
+   *   an agent identity; or, when the tier gate does not allow the call, a
+   *   {@link CapabilityGateRefusal} carrying the payload to return to the caller.
    */
   invoke(id: string, input: unknown, context?: CapabilityInvocationContext): Promise<unknown>;
   /**
@@ -267,10 +338,62 @@ export function composeRegistry(
       if (!capability) {
         throw new Error(`Capability registry: no capability registered for id "${id}".`);
       }
+      const supplied = context ?? {};
+
+      // A present `trusted` that is not a genuine marker is refused LOUDLY rather
+      // than quietly downgraded to untrusted. Failing closed would be safe, but
+      // silent — and the only ways to get here are a caller forging the field or
+      // a module minting it wrongly, both of which someone needs to be told about.
+      // Truthiness is NOT enough: `JSON.parse(JSON.stringify(marker))` is a
+      // truthy plain object, and reading it as trust is exactly the bypass this
+      // marker exists to prevent.
+      if (supplied.trusted !== undefined && !isTrustedCaller(supplied.trusted)) {
+        throw new Error(
+          `Capability registry: "${id}" was invoked with a \`trusted\` value that is not a ` +
+            `trusted-caller marker. Only \`trustedCaller\` can mint one; a value that merely ` +
+            `looks like it (a JSON round-trip, a hand-built object) is not trust.`
+        );
+      }
+
+      // Trusted means "no machine principal presented itself"; an identity IS a
+      // machine principal presenting itself. The pair cannot both be true, so a
+      // caller that assembled it is wrong about something — refuse rather than
+      // pick a winner, because picking trust would turn that bug into a bypass.
+      if (supplied.trusted && supplied.identity) {
+        throw new Error(
+          `Capability registry: "${id}" was invoked with both a trusted-caller marker and an agent ` +
+            `identity (${supplied.identity.agentPath}). A trusted call is one no machine principal ` +
+            `made; these cannot both hold.`
+        );
+      }
+
+      // Parse ONCE, then gate on exactly the value that will execute — defaults
+      // applied, unknown keys stripped. The approval binds to a hash of this
+      // value, so hashing anything else (the raw body, or a re-parse) would make
+      // the binding cover something other than what runs.
       const parsed = capability.input.parse(input);
+
       // Always a real object, so a handler can read `context.approval` without
       // guarding for an absent context on every call site.
-      const invocationContext = context ?? {};
+      const invocationContext: CapabilityHandlerContext = supplied.trusted
+        ? { trusted: supplied.trusted }
+        : {
+            ...(supplied.identity ? { identity: supplied.identity } : {}),
+          };
+
+      // The gate. A trusted caller skips it, having already proved it may decide
+      // the very approval this gate would ask for.
+      if (!supplied.trusted) {
+        const decision = enforceCapabilityTier({
+          capability,
+          input: parsed,
+          ...(supplied.identity ? { identity: supplied.identity } : {}),
+          ...(supplied.approvalToken ? { approvalToken: supplied.approvalToken } : {}),
+          retryChannel: supplied.retryChannel ?? 'http-header',
+        });
+        if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
+        if (decision.approval) invocationContext.approval = decision.approval;
+      }
 
       // No observer, or nothing to attribute: run the original path untouched so
       // an unattributed call stays byte-identical to before this seam existed

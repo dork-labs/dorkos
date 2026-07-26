@@ -3,9 +3,22 @@
  *
  * Every capability declares a permission tier. Until now that tier was inert
  * metadata: it shaped MCP annotation hints and nothing else. This module turns it
- * into a gate. {@link enforceCapabilityTier} is called by all three agent-facing
- * choke points — the invoke route, the in-session MCP adapter, the external MCP
- * adapter — BEFORE `registry.invoke`, so nothing runs before the tier is honored.
+ * into a gate.
+ *
+ * ## Where the gate runs, and why it moved (DOR-467)
+ *
+ * {@link enforceCapabilityTier} is called from INSIDE `registry.invoke`, so every
+ * surface that reaches a capability through the registry is gated by
+ * construction. It used to be called by each transport adapter instead, which
+ * made a surface gated exactly as long as somebody remembered to gate it. One did
+ * not: the legacy marketplace routes performed an uninstall with no tier check,
+ * and `dorkos uninstall` — the verb the seeded skill pack taught every agent —
+ * rode them. The path agents were taught was the path around the gate.
+ *
+ * A caller that owns its own effect (that route, still) reaches the same gate
+ * through {@link authorizeCapability}, whose importers are pinned by a source
+ * scan so a second one cannot appear unnoticed. The only way past the gate is a
+ * {@link TrustedCaller}, which no wire payload can mint (`trusted-caller.ts`).
  *
  * ## What each tier means once enforced
  *
@@ -78,6 +91,10 @@
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 
 import type { CapabilityDefinition } from './capability-definition.js';
+import { isTrustedCaller } from './trusted-caller.js';
+// Type-only, so the value-level dependency stays one-directional: `registry.ts`
+// imports the gate, never the reverse.
+import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import {
   hashApprovalInput,
@@ -450,9 +467,10 @@ function denied(
 /**
  * Enforce a capability's permission tier for one invocation.
  *
- * Call this at a choke point BEFORE `registry.invoke`, with the input that will
- * actually execute. Proceed only on `allowed`; otherwise return the decision's
- * payload to the caller verbatim.
+ * Called by `registry.invoke` (and, for a caller that owns its own effect, by
+ * {@link authorizeCapability}) with the input that will actually execute.
+ * Proceed only on `allowed`; otherwise return the decision's payload to the
+ * caller verbatim.
  *
  * @param request - The capability, the parsed input, the calling identity, and
  *   any approval token presented.
@@ -641,6 +659,102 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     case 'unknown':
       return ask('unknown_token');
   }
+}
+
+/**
+ * The gate said no. Thrown by `registry.invoke` so a refusal cannot be mistaken
+ * for a result, and caught by each surface to shape its own envelope.
+ *
+ * An exception rather than a union return value on purpose: `invoke` resolves to
+ * a capability's plain output, and a surface that forgot to branch on a union
+ * would hand a caller an `approval_required` payload dressed as the thing it
+ * asked for. A throw is impossible to ignore by accident.
+ */
+export class CapabilityGateRefusal extends Error {
+  /** Marks this class across module instances, so it can be duck-typed. */
+  override readonly name = 'CapabilityGateRefusal';
+
+  /**
+   * Construct the refusal.
+   *
+   * @param decision - What the gate decided; carries the payload to return to
+   *   the caller verbatim.
+   */
+  constructor(
+    readonly decision: Extract<TierEnforcementDecision, { outcome: 'approval_required' | 'denied' }>
+  ) {
+    super(decision.payload.message);
+  }
+}
+
+/**
+ * Run the tier gate for a capability a caller is about to perform ITSELF.
+ *
+ * This is the one supported way to reach the gate without going through
+ * `registry.invoke`, and it exists for exactly one shape of caller: a route that
+ * already owns the effect and its own response contract, where re-routing it
+ * through the capability handler would change what the cockpit receives. The
+ * legacy marketplace mutation routes are that caller.
+ *
+ * Every OTHER surface must use `registry.invoke`, which calls the same gate
+ * internally. Importing this function is therefore a deliberate, reviewable act:
+ * `__tests__/gate-bypass-scan.test.ts` fails when a module that is not on its
+ * short allowlist starts calling it, so a new ungated agent-facing surface cannot
+ * appear quietly — which is precisely how DOR-467 happened.
+ *
+ * The input is parsed against the capability's own schema before gating, so the
+ * approval binds to the same canonical value `dorkos call` would produce for the
+ * same action, and a token minted on one surface is honored on the other.
+ *
+ * @param registry - The composed capability registry.
+ * @param id - The capability id the caller is about to perform.
+ * @param input - Raw input; parsed against the capability's `input` schema.
+ * @param context - Who is calling, any approval token, and any trusted marker.
+ * @returns What the gate decided. Proceed only on `allowed`.
+ * @throws If no capability is registered under `id`, or if `input` fails schema
+ *   validation (a `ZodError`).
+ */
+export function authorizeCapability(
+  registry: CapabilityRegistry,
+  id: string,
+  input: unknown,
+  context: CapabilityInvocationContext
+): TierEnforcementDecision {
+  const capability = registry.get(id);
+  if (!capability) {
+    throw new Error(`Capability registry: no capability registered for id "${id}".`);
+  }
+  // The same contradiction `registry.invoke` refuses, refused in this seam too.
+  // Unreachable today — this function's only caller cannot produce the pair — but
+  // an invariant that holds in one of two entry points is not an invariant, and
+  // the next caller of this seam should inherit it rather than rediscover it.
+  if (context.trusted !== undefined && context.identity !== undefined) {
+    throw new Error(
+      `Capability gate: "${id}" was authorized with both a trusted-caller marker and an agent ` +
+        `identity (${context.identity.agentPath}). A trusted call is one no machine principal ` +
+        `made; these cannot both hold.`
+    );
+  }
+  // A trusted caller has already proved it may decide the approval this gate
+  // would ask for, so asking is redundant — see `trusted-caller.ts`. Checked by
+  // `instanceof`, never truthiness: a JSON round-trip of a real marker is a
+  // truthy plain object, and treating that as trust is the whole bypass.
+  if (context.trusted !== undefined) {
+    if (!isTrustedCaller(context.trusted)) {
+      throw new Error(
+        `Capability gate: "${id}" was authorized with a \`trusted\` value that is not a ` +
+          `trusted-caller marker. Only \`trustedCaller\` can mint one.`
+      );
+    }
+    return { outcome: 'allowed' };
+  }
+  return enforceCapabilityTier({
+    capability,
+    input: capability.input.parse(input),
+    ...(context.identity ? { identity: context.identity } : {}),
+    ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
+    retryChannel: context.retryChannel ?? 'http-header',
+  });
 }
 
 /**

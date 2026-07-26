@@ -1,9 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { activityEvents, type Db } from '@dorkos/db';
 import { ActivityService } from '../../../activity/activity-service.js';
-import { composeRegistry, defineCapability } from '../../capabilities/index.js';
+import {
+  composeRegistry,
+  defineCapability,
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+  trustedCaller,
+} from '../../capabilities/index.js';
+import { ApprovalService, hashApprovalInput } from '../../approvals/index.js';
 import type { CapabilityDeps, CapabilityRegistry } from '../../capabilities/index.js';
 import { createCapabilityAttributionObserver } from '../capability-attribution.js';
 import type { AgentIdentity } from '../agent-identity-service.js';
@@ -67,11 +74,35 @@ function buildRegistry(activityService: ActivityService): CapabilityRegistry {
 describe('capability attribution', () => {
   let db: Db;
   let registry: CapabilityRegistry;
+  let approvals: ApprovalService;
 
   beforeEach(() => {
     db = createTestDb();
     registry = buildRegistry(new ActivityService(db));
+    // The tier gate lives inside `registry.invoke` now (DOR-467), so a
+    // destructive capability needs a real granted approval to reach its handler.
+    approvals = new ApprovalService(db);
+    initCapabilityTierGate({ approvals });
   });
+
+  afterEach(() => {
+    resetCapabilityTierGate();
+  });
+
+  /**
+   * Ask for an approval on `capabilityId` with an empty input, have a person
+   * grant it, and return the token to spend — the exact sequence a caller
+   * performs, rather than a hand-built approval the gate never issued.
+   */
+  function grantedTokenFor(capabilityId: string): { token: string; approvalId: string } {
+    const ticket = approvals.request({
+      capabilityId,
+      inputHash: hashApprovalInput({}),
+      summary: `A caller wants to run "${capabilityId}"`,
+    });
+    approvals.grant(ticket.approvalId);
+    return { token: ticket.token, approvalId: ticket.approvalId };
+  }
 
   /** Activity writes are fire-and-forget; let the microtask queue drain. */
   const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -96,9 +127,10 @@ describe('capability attribution', () => {
   });
 
   it('audits a failed attempt too, and still propagates the error', async () => {
-    await expect(registry.invoke('demo.explode', {}, { identity: IDENTITY })).rejects.toThrow(
-      'boom'
-    );
+    const { token } = grantedTokenFor('demo.explode');
+    await expect(
+      registry.invoke('demo.explode', {}, { identity: IDENTITY, approvalToken: token })
+    ).rejects.toThrow('boom');
     await flush();
 
     const rows = db.select().from(activityEvents).all();
@@ -144,7 +176,12 @@ describe('capability attribution', () => {
     // identity — so an anonymous destructive call that RAN produced a
     // `capability.approval_required` line and then silence about the irreversible
     // thing that happened.
-    await registry.invoke('demo.destroy', {}, { approval: { approvalId: 'appr_1' } });
+    // The gate now lives inside `invoke` (DOR-467), so the approval has to be
+    // real: ask for one, have a person grant it, then spend it on the retry —
+    // which is exactly the sequence a caller performs.
+    const ticket = grantedTokenFor('demo.destroy');
+
+    await registry.invoke('demo.destroy', {}, { approvalToken: ticket.token });
     await flush();
 
     const rows = db.select().from(activityEvents).all();
@@ -160,12 +197,20 @@ describe('capability attribution', () => {
     expect(JSON.parse(rows[0].metadata!)).toEqual({
       capabilityId: 'demo.destroy',
       tier: 'destructive',
-      approvalId: 'appr_1',
+      approvalId: ticket.approvalId,
     });
   });
 
   it('records an anonymous DESTRUCTIVE invocation that failed', async () => {
-    await expect(registry.invoke('demo.explode', {})).rejects.toThrow('boom');
+    // A trusted caller — the person in their own cockpit — runs without an
+    // approval, and the record still has to be written: this test is about the
+    // OBSERVER not skipping an anonymous destructive call, not about the gate.
+    const trusted = trustedCaller({
+      agentIdentityPresented: false,
+      approvalTokenPresented: false,
+      loginEnabled: () => false,
+    })!;
+    await expect(registry.invoke('demo.explode', {}, { trusted })).rejects.toThrow('boom');
     await flush();
 
     const rows = db.select().from(activityEvents).all();
