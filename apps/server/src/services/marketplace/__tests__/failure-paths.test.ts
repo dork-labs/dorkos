@@ -124,6 +124,7 @@ function buildHarness(dorkHome: string): Harness {
   const extensionManager = {
     enable: extensionEnable,
     disable: vi.fn().mockResolvedValue(undefined),
+    forgetRunApproval: vi.fn().mockResolvedValue(undefined),
   };
 
   const createAgentWorkspace = vi.fn(async (input: { directory: string; name: string }) => {

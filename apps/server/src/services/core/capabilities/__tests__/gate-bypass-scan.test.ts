@@ -156,6 +156,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/tasks.ts':
         'a person approving a scheduled task, or setting how it runs, in their own cockpit (DOR-504)',
+      'routes/extensions-approval.ts':
+        'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
     },
   },

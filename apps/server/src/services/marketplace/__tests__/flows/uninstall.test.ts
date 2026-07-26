@@ -157,7 +157,10 @@ async function stageInstalledPackage(opts: {
 /** Build a UninstallFlowDeps-compatible deps object with mock managers. */
 async function buildDeps(): Promise<{
   dorkHome: string;
-  extensionManager: { disable: ReturnType<typeof vi.fn> };
+  extensionManager: {
+    disable: ReturnType<typeof vi.fn>;
+    forgetRunApproval: ReturnType<typeof vi.fn>;
+  };
   adapterManager: { removeAdapter: ReturnType<typeof vi.fn> };
   logger: Logger;
 }> {
@@ -166,6 +169,7 @@ async function buildDeps(): Promise<{
     dorkHome,
     extensionManager: {
       disable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
+      forgetRunApproval: vi.fn().mockResolvedValue(undefined),
     },
     adapterManager: {
       removeAdapter: vi.fn().mockResolvedValue(undefined),
@@ -209,6 +213,56 @@ describe('UninstallFlow', () => {
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-b');
     expect(deps.adapterManager.removeAdapter).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A load approval is keyed to the extension id and does not expire (DOR-516), so
+   * it has to be forgotten when the code behind that id goes away. Otherwise:
+   * approve `foo` v1 once, then `marketplace_install` a different `foo` later —
+   * tier `act`, always allowed, and `MarketplaceInstaller.update()` is documented
+   * as an uninstall followed by a fresh install — and the new code runs with
+   * nothing to click and nothing shown.
+   */
+  it('forgets the run approval for every extension a removed package bundled', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-approved');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-approved', extensions: ['ext-a', 'ext-b'] }),
+      extensions: [
+        { id: 'ext-a', manifest: { id: 'ext-a' } },
+        { id: 'ext-b', manifest: { id: 'ext-b' } },
+      ],
+    });
+
+    const flow = new UninstallFlow(deps);
+    await flow.uninstall({ name: 'plugin-approved' });
+
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledTimes(2);
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-b');
+  });
+
+  it('forgets it even when `purge` is false, because data is not consent', async () => {
+    // `purge: false` is the update path's setting: it preserves `.dork/data/` and
+    // `.dork/secrets.json` across the replace. Preserving a person's DATA across
+    // new code is right; preserving their APPROVAL of the old code is not.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-update');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-update', extensions: ['ext-a'] }),
+      extensions: [{ id: 'ext-a', manifest: { id: 'ext-a' } }],
+      dataFiles: [{ name: 'notes.json', content: '{"kept":true}' }],
+    });
+
+    const flow = new UninstallFlow(deps);
+    const result = await flow.uninstall({ name: 'plugin-update', purge: false });
+
+    expect(result.preservedData.length).toBeGreaterThan(0);
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a');
   });
 
   it('removes adapter package files and calls adapterManager.removeAdapter', async () => {
