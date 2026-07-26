@@ -8,6 +8,13 @@
  * into attempt 1, every ordinary run would file its transcript under a name
  * nothing else looks for, and the `transcript` pointer in `results.json` would
  * quietly stop matching what CI attaches.
+ *
+ * WHAT THIS FILE DOES NOT COVER: a retry actually firing through `runSuite`.
+ * That needs a real turn timeout, and forcing one on `test-mode` means picking a
+ * `timeoutMs` that races the subscribe gate — a flaky test about flake handling
+ * is worse than an honest gap. The retry policy itself is unit-tested against an
+ * injected attempt function in `retry.test.ts`; this file only pins that
+ * threading it through did not disturb the ordinary path.
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';

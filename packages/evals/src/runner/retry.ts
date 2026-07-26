@@ -38,9 +38,13 @@
  *
  * ## WHAT THIS CLASSIFICATION DOES AND DOES NOT BUY
  *
- * It buys ONE more attempt. It does not convert an error into a pass, it does
+ * It buys ONE more attempt. It does not convert a VERDICT into a pass, it does
  * not exempt anything from the run gate, and a second timeout is still an error
- * on the result. A case that keeps timing out is not a case that keeps getting
+ * on the result. Be exact about that first clause: if attempt 1 times out and
+ * attempt 2 passes, the recorded result IS a pass where an un-retried run would
+ * have reported an error. That is the entire point. What can never happen is a
+ * retry overriding something an oracle said, because a run that reached an
+ * oracle is not eligible for a retry at all. A case that keeps timing out is not a case that keeps getting
  * forgiven — it is a case whose result is `error` twice with `retried: true`,
  * which is what a harness bug looks like. Two of those in a row means stop and
  * fix the harness rather than keep spending (`packages/evals/README.md`).

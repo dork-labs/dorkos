@@ -164,6 +164,27 @@ describe('formatSummaryTable', () => {
     expect(table).toMatch(/not because nothing was spent/);
   });
 
+  it('shows a retry on screen, alongside the outcome and the quarantine flag', () => {
+    // The promotion rule says two infrastructure runs in a row means stop and
+    // fix the harness. A flag that lives only in results.json cannot carry a
+    // rule people are meant to act on: nobody opens the JSON to discover a
+    // question they did not know to ask.
+    const table = formatSummaryTable(
+      summary([
+        result({ id: 'plain-retry', status: 'error', retried: true }),
+        result({
+          id: 'governance-approval-granted',
+          status: 'error',
+          retried: true,
+          quarantined: true,
+        }),
+      ])
+    );
+    expect(table).toMatch(/retried:error/);
+    // Both qualifiers survive together; neither replaces the outcome.
+    expect(table).toMatch(/quarantined:retried:error/);
+  });
+
   it('renders an unmetered eval as `unmetered`, never as $0.0000', () => {
     // The two priciest runs of a measured ten printed as the cheapest rows in
     // the table. A cost cell must not state the opposite of what is known.

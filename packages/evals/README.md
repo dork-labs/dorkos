@@ -83,10 +83,11 @@ So the harness now says unknown instead of zero:
   says which of the two reasons applies: every turn died before reporting, or
   turns finished and the cost signal is broken.
 
-There is no way to estimate what an unmetered turn spent. Input and cache tokens
-are the bulk of the bill on a tool-heavy turn, and none of those counts reach the
-stream until the turn ends. Guessing from what survives would be wrong by more
-than an order of magnitude, and a confident wrong number is worse than a blank.
+There is no way to estimate what an unmetered turn spent. Per-message output
+tokens do reach the stream, but input and cache tokens are the bulk of the bill
+on a tool-heavy turn and neither of those arrives before the turn ends. An
+output-only floor would be low by roughly an order of magnitude, and a confident
+wrong number is worse than a blank.
 
 ## Answering an approval mid-run
 
@@ -131,20 +132,30 @@ or you will conclude the agent is thrashing when it made a single call.
 
 ### What ten runs actually showed
 
-The three governance cases were run ten times against a real model on
-2026-07-25. Two numbers came out of it, and they point in opposite directions:
+Ten credentialed runs against a real model on 2026-07-25, in two parts. The
+counting matters, so here it is in full:
 
-- **the oracles were 8 for 8.** Every oracle that ran returned the right answer,
-  in every run that reached one.
-- **the cases passed 6 of 8**, and the two that did not pass **never reached an
-  oracle at all**. Both times the model resolved the gated tool's schema, said in
-  its own reasoning that it would call the tool, and then searched for the schema
-  again instead. Twenty-nine tool calls later the 90-second turn guard cut the
-  turn off. The two runs stopped at 91,776ms and 91,778ms, two milliseconds
-  apart, which is a state the model falls into rather than random bad luck.
+- **2 runs were the falsifiability drill** (below): one where the model drifted,
+  one clean. Both reached oracles.
+- **8 runs were the stability sample**: 3 of `granted`, 3 of `denied`, 2 of
+  `expires`. That is the sample the table further down reports, which is why the
+  table totals 8 rather than 10.
+
+Of the 8 stability runs, **6 produced verdicts and 2 did not**. Add the 2 drill
+runs and you get **8 runs that reached an oracle, and all 8 oracle verdicts were
+correct**. That is where "8 for 8" comes from, and it is a different 8 from the
+8-run sample. Check the arithmetic rather than taking it: 6 + 2 = 8 verdicts,
+8 + 2 = 10 runs.
+
+The two runs that produced no verdict **never reached an oracle at all**. Both
+times the model resolved the gated tool's schema, said in its own reasoning that
+it would call the tool, and then searched for the schema again instead.
+Twenty-nine tool calls later the 90-second turn guard cut the turn off. The two
+runs stopped at 91,776ms and 91,778ms, two milliseconds apart, which is a state
+the model falls into rather than random bad luck.
 
 So there are two different things wearing one label. The product mechanism under
-test is stable. The model's route to it is not.
+test is stable: every oracle that ran was right. The model's route to it is not.
 
 ### The bar counts oracle verdicts, not lucky runs
 
@@ -178,15 +189,22 @@ A result is infrastructure only when all three of these hold (`runner/retry.ts`)
    trigger, a boundary 403 and a launcher fault each stay a plain error, because
    any of them can be the product breaking.
 
-This buys one more attempt and nothing else. It never turns an error into a pass,
-it never exempts a case from the run gate, and a second timeout is still an error
-on the record with `retried: true`. A product bug that hangs a turn forever costs
-one extra attempt and then reports itself as what it is.
+This buys one more attempt and nothing else. It never overrides something an
+oracle said, because a run that reached an oracle cannot be retried in the first
+place. It does not exempt a case from the run gate, and a second timeout is still
+an error on the record, shown as `retried:error`. A product bug that hangs a turn
+forever costs one extra attempt and then reports itself as what it is.
+
+Be exact about one thing: if the first attempt times out and the second passes,
+the recorded result is a pass where an un-retried run would have reported an
+error. That is what the retry is for. The claim is about verdicts, not about
+statuses.
 
 ### Where each case stands
 
-Reset on 2026-07-25 to the measured data. The counts below are runs that reached
-the oracles with everything green.
+Reset on 2026-07-25 to the 8-run stability sample above. The counts below are
+runs that reached the oracles with everything green, so they exclude the 2 drill
+runs, which tested the oracles rather than the cases.
 
 | Case                          | Green verdicts | Last recorded | Evidence                              |
 | ----------------------------- | -------------- | ------------- | ------------------------------------- |

@@ -12,7 +12,9 @@
  * 1. a quarantined eval renders as `quarantined:<status>` — the quarantine flag
  *    is reported ALONGSIDE the outcome, never INSTEAD of it. Rendering the bare
  *    word `quarantined` under a footer reading "0 failed" hid six failing cases;
- *    the outcome was dropped even though the row was not.
+ *    the outcome was dropped even though the row was not. A retried eval carries
+ *    its flag the same way (`retried:error`), so the promotion rule that keys on
+ *    repeated retries has something on screen to key on.
  * 2. the footer states how many cases could actually fail the run. A suite whose
  *    every case is quarantined exits 0 with zero gating coverage, which is
  *    indistinguishable from a real pass unless the count is on screen — so
@@ -53,12 +55,23 @@ export async function writeResults(runDir: string, summary: RunSummary): Promise
 }
 
 /**
- * The status cell for one eval. A quarantined eval reports BOTH facts —
- * `quarantined:fail` — so its outcome survives the rendering that exempts it
- * from the gate.
+ * The status cell for one eval: the outcome, prefixed by every fact that
+ * qualifies it. A quarantined eval reports BOTH facts — `quarantined:fail` — so
+ * its outcome survives the rendering that exempts it from the gate, and a
+ * retried one reports `retried:error` for the same reason.
+ *
+ * `retried` is the operational signal behind the promotion rule "two
+ * infrastructure runs in a row means stop and fix the harness"
+ * (`packages/evals/README.md`). A flag that only exists in `results.json` cannot
+ * carry a rule that people are supposed to act on: nobody opens the JSON to
+ * discover a question they did not know to ask.
  */
 function statusLabel(result: EvalResult): string {
-  return result.quarantined ? `quarantined:${result.status}` : result.status;
+  const qualifiers = [
+    ...(result.quarantined ? ['quarantined'] : []),
+    ...(result.retried ? ['retried'] : []),
+  ];
+  return [...qualifiers, result.status].join(':');
 }
 
 /**
