@@ -8,7 +8,9 @@
  * The **capture-current-arrangement** fork is the flywheel: when forking the
  * *active* Shape with `captureCurrent`, the new manifest captures the user's
  * live arrangement — the currently-enabled extensions among the Shape's
- * `activates` candidates, and the client's live chrome (`layout`) when supplied.
+ * `activates` candidates, and the client's live chrome. The chrome capture is a
+ * partial merged field-wise over the source layout, so a caller that cannot see
+ * a field (the CLI sees no chrome at all) never overwrites it.
  * Per Open Question Q2, only Shape-originated schedules are carried (exactly the
  * source manifest's `schedules`); unrelated tasks are never vacuumed in.
  *
@@ -40,10 +42,15 @@ export interface ForkShapeOptions {
   captureCurrent?: boolean;
   /**
    * The client's live chrome to snapshot when `captureCurrent`. The server
-   * cannot observe UI chrome on its own, so the route passes it through; absent,
-   * the source manifest's `layout` is kept.
+   * cannot observe UI chrome on its own, so the route passes it through.
+   *
+   * A **partial** on purpose: it is merged field-wise over the source Shape's
+   * `layout`, so a field the client leaves out keeps the source's value. A
+   * client must send only what it genuinely observed — the web cockpit has no
+   * state behind `focusDashboardSections`, and sending a whole layout would
+   * erase the source Shape's value for it.
    */
-  liveLayout?: ShapeLayout;
+  liveLayout?: Partial<ShapeLayout>;
 }
 
 /** Injected collaborators for {@link forkShape}. */
@@ -216,12 +223,37 @@ function filterEnabled(candidates: string[], enabled: string[]): string[] {
 }
 
 /**
+ * Merge a client's partial chrome capture over a Shape's declared layout,
+ * field by field.
+ *
+ * The merge contract: **an omitted field keeps the source Shape's value.** Only
+ * fields the client actually reported are overwritten. This is what makes it
+ * safe for a client to report a subset — the web cockpit observes `sidebarOpen`
+ * and `openPanels` but has no state at all behind `focusDashboardSections`, and
+ * a whole-object replace would silently blank the source Shape's value for it.
+ *
+ * @param source - The source Shape's declared layout.
+ * @param live - The client's partial capture, or `undefined` when none came.
+ * @returns The layout for the forked manifest.
+ */
+function mergeLayout(source: ShapeLayout, live: Partial<ShapeLayout> | undefined): ShapeLayout {
+  if (!live) return source;
+  return {
+    sidebarOpen: live.sidebarOpen ?? source.sidebarOpen,
+    sidebarTab: live.sidebarTab ?? source.sidebarTab,
+    openPanels: live.openPanels ?? source.openPanels,
+    focusDashboardSections: live.focusDashboardSections ?? source.focusDashboardSections,
+  };
+}
+
+/**
  * The capture-current-arrangement snapshot fields (spec §6.2):
  *
  * - `activates` narrows to the candidates currently enabled;
- * - `layout` takes the client's live chrome when supplied (the server cannot
- *   observe UI chrome on its own — until the client passes `liveLayout`, e.g.
- *   the Phase-3 switcher, the source manifest's layout is kept);
+ * - `layout` merges the client's live chrome over the source layout field-wise
+ *   (see {@link mergeLayout}) — the server cannot observe UI chrome on its own,
+ *   so whatever the client omits (or a caller that sends no `liveLayout` at all,
+ *   such as the CLI) keeps the source manifest's value;
  * - `connections` drops every `extension-secret` whose target extension left
  *   the narrowed `activates` ∪ `extensions` set. Without this, cross-field
  *   rule 3 ("a secret must target an extension the Shape turns on") correctly
@@ -230,19 +262,19 @@ function filterEnabled(candidates: string[], enabled: string[]): string[] {
  *
  * @param source - The source Shape manifest.
  * @param enabledExtensions - Currently-enabled extension ids.
- * @param liveLayout - The client's live chrome, when the caller supplied it.
+ * @param liveLayout - The client's partial live chrome, when the caller supplied it.
  * @returns The manifest fields to overlay for a capture-current fork.
  */
 function captureCurrentFields(
   source: ShapePackageManifest,
   enabledExtensions: string[],
-  liveLayout: ShapeLayout | undefined
+  liveLayout: Partial<ShapeLayout> | undefined
 ): Pick<ShapePackageManifest, 'activates' | 'layout' | 'connections'> {
   const activates = filterEnabled(source.activates, enabledExtensions);
   const stillEnabled = new Set([...activates, ...source.extensions]);
   return {
     activates,
-    layout: liveLayout ?? source.layout,
+    layout: mergeLayout(source.layout, liveLayout),
     connections: source.connections.filter(
       (c) => c.kind !== 'extension-secret' || stillEnabled.has(c.extension)
     ),

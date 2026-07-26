@@ -18,8 +18,10 @@ export interface ShapeForkArgs {
   as?: string;
   /**
    * Snapshot the live arrangement when forking the active Shape. From the CLI
-   * this captures the enabled-extension set only — live window chrome can only
-   * be captured when the client passes it (the Phase-3 switcher).
+   * this captures the enabled-extension set only — live window chrome rides
+   * along only when a client passes `liveLayout`, which the in-app Shape
+   * switcher does (DOR-402). Whatever is not passed keeps the source Shape's
+   * value.
    */
   captureCurrent?: boolean;
 }
@@ -42,8 +44,9 @@ Subcommands:
   fork <name> [--as <newName>] [--capture-current]   Fork an installed Shape
 
 Note: from the CLI, --capture-current snapshots which extensions are enabled.
-It cannot see your window layout — only the in-app switcher (coming in a later
-release) can pass the live layout along.
+It cannot see your window layout, so your copy keeps the original's. Use "Make
+your own version" in the app's Shape switcher when the layout is what you want
+to keep.
 
 Examples:
   dorkos shape fork linear-ops

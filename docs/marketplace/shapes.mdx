@@ -103,23 +103,43 @@ Applying a different Shape swaps your setup rather than stacking on top of it. D
 
 ## Make your own version
 
-Found a Shape that is close to what you want, but not quite? You can make a copy and change it, without touching the original. This is called forking.
+Found a Shape that is close to what you want, but not quite? You can make a copy and change it, without touching the original. Developers call this forking.
 
-Fork a Shape from the command line:
+Both paths make the same thing: a new Shape that is yours to edit. The copy remembers where it came from, so the switcher shows a small "forked from linear-ops@dorkos-community" note under its name. The original is left exactly as it was.
+
+### From the Shape switcher
+
+This is the way to keep the setup you are using right now. Open the Shape switcher and click **Make your own version** at the bottom, next to **Reset to defaults**. Name your copy and click **Create**.
+
+Your copy records the arrangement you are in:
+
+- the extensions you have turned on, and
+- how your workspace is arranged — whether the sidebar is open, and which panels are open.
+
+Anything the switcher cannot see stays exactly as the original Shape had it, so your copy never records a setting you did not choose. Panels close on their own when you reload the page, so if none are open when you make your copy, it keeps the original's panels rather than guessing you wanted them gone.
+
+Your copy is saved and shows up in the list right away, but DorkOS does not switch you over to it: the original stays the applied Shape. When you want to work in your copy, click it in the list like any other Shape.
+
+<Callout type="info">
+  The button copies the Shape you have applied right now — that is the only one whose arrangement
+  DorkOS can see. To copy any other Shape, use the command line.
+</Callout>
+
+### From the command line
 
 ```bash
 dorkos shape fork linear-ops --as my-ops
 ```
 
-That gives you a new Shape named `my-ops`, a copy of `linear-ops` that you own and can edit. The copy remembers where it came from, so the switcher shows a small "forked from linear-ops@dorkos-community" note under its name. The original is left exactly as it was.
+That gives you a new Shape named `my-ops`, a copy of `linear-ops` that you own and can edit. It works for any installed Shape, applied or not.
 
-If you fork the Shape you have applied right now, add `--capture-current`:
+If you are copying the Shape you have applied right now, add `--capture-current`:
 
 ```bash
 dorkos shape fork linear-ops --as my-ops --capture-current
 ```
 
-From the command line, `--capture-current` snapshots which of the Shape's extensions you have turned on right now, so your copy starts from that set instead of the original's. It cannot capture your window layout: from the command line there is no way to see how your workspace is arranged. Only the in-app switcher (coming in a later release) can carry your live layout into a fork.
+From the command line, `--capture-current` snapshots which of the Shape's extensions you have turned on right now, so your copy starts from that set instead of the original's. It cannot capture your layout: the command line has no way to see how your workspace is arranged, so your copy keeps the original's. Use the switcher when the layout is what you want to keep.
 
 <Callout type="info">
   Forking is how you save your own take on a Shape. Applying a Shape never changes the Shape itself,

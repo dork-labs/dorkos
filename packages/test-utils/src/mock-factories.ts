@@ -536,6 +536,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),
+    forkShape: vi.fn(),
     // Cloud account link (accounts-and-auth P2)
     startCloudLink: vi.fn().mockResolvedValue({
       userCode: 'ABCD-1234',

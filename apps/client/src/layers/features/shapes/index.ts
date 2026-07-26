@@ -5,5 +5,7 @@
  * @module features/shapes
  */
 export { ShapeSwitcherDialog, type ShapeSwitcherDialogProps } from './ui/ShapeSwitcherDialog';
+export { ShapeForkForm, type ShapeForkFormProps } from './ui/ShapeForkForm';
 export { useApplyShape, type ApplyShapeVars } from './model/use-apply-shape';
+export { useForkShape, type ForkShapeVars } from './model/use-fork-shape';
 export { useSwitchAgentCwd } from './model/use-switch-agent-cwd';

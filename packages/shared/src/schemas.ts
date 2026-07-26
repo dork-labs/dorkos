@@ -2621,9 +2621,69 @@ export type CreateTaskInput = z.input<typeof CreateTaskRequestSchema>;
 // === Shapes (DOR-355) ===
 
 /**
+ * The shape of a sidebar tab id: starts alphanumeric, then alphanumerics, `_`,
+ * `.`, `:`, and `-`. Bounds the widened string so an agent-issued command or a
+ * Shape manifest can't carry arbitrary garbage into localStorage or
+ * `.dork/manifest.json`. The `:` (a legacy `extId:tabId` namespace separator)
+ * stays accepted so existing Shape manifests that pinned a contributed tab keep
+ * validating, even though no host renders contributed sidebar tabs anymore.
+ *
+ * Declared here rather than beside its main consumer ({@link UiSidebarTabSchema},
+ * further down) because {@link ShapeLiveLayoutCaptureSchema} below is evaluated
+ * first and shares it.
+ *
+ * Keep in sync with the mirrors in `@dorkos/marketplace` `manifest-schema.ts`
+ * (`sidebarTab`) and the server's `openapi-registry.ts` `LocalShapeLayoutSchema`.
+ */
+const SIDEBAR_TAB_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/;
+
+/**
+ * A client's snapshot of the live workspace chrome, for a capture-current fork.
+ *
+ * Deliberately a **partial** of the Shape manifest's `layout` (not the whole
+ * thing): a client may only report the fields it can genuinely observe, and the
+ * server merges field-wise over the source Shape's layout, so an omitted field
+ * keeps the source's value. Sending a whole layout would let a client that has
+ * no state behind a field (the web cockpit has none behind
+ * `focusDashboardSections`) silently erase the source Shape's value.
+ *
+ * Field shapes mirror `ShapeLayoutSchema` in `@dorkos/marketplace`
+ * (`manifest-schema.ts`) — keep the three mirrors in sync (that one, this one,
+ * and the server's `LocalShapeLayoutSchema` in `openapi-registry.ts`).
+ */
+export const ShapeLiveLayoutCaptureSchema = z
+  .object({
+    sidebarOpen: z.boolean().optional().describe('Whether the sidebar is open right now.'),
+    sidebarTab: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(SIDEBAR_TAB_ID_PATTERN, 'Not a valid sidebar tab id')
+      .optional()
+      .describe(
+        'The selected sidebar tab. Report it only where the person picked a tab ' +
+          'from a sidebar tab strip the host renders; omit it otherwise, and the ' +
+          "source Shape's value is kept."
+      ),
+    openPanels: z
+      .array(z.enum(['settings', 'tasks', 'relay', 'picker']))
+      .optional()
+      .describe('Panels open right now.'),
+    focusDashboardSections: z
+      .array(z.string())
+      .optional()
+      .describe('Dashboard sections to order first. No client observes this today.'),
+  })
+  .openapi('ShapeLiveLayoutCapture');
+
+/** A client's partial snapshot of live workspace chrome for a fork. */
+export type ShapeLiveLayoutCapture = z.infer<typeof ShapeLiveLayoutCaptureSchema>;
+
+/**
  * Request body for `POST /api/shapes/:name/fork`. `as` names the new Shape
  * (defaults to `<name>-fork`); `captureCurrent` snapshots the live arrangement
- * when forking the active Shape.
+ * when forking the active Shape; `liveLayout` carries the chrome the server
+ * cannot see for itself.
  */
 export const ForkShapeRequestSchema = z
   .object({
@@ -2638,6 +2698,10 @@ export const ForkShapeRequestSchema = z
       .describe(
         'Snapshot the live arrangement (enabled extensions + chrome) when forking the active Shape.'
       ),
+    liveLayout: ShapeLiveLayoutCaptureSchema.optional().describe(
+      'The client’s live chrome, merged field-wise over the source Shape’s layout. ' +
+        'Only honored alongside `captureCurrent` on the active Shape.'
+    ),
   })
   .openapi('ForkShapeRequest');
 
@@ -2928,19 +2992,6 @@ export const UiPanelIdSchema = z
   .openapi('UiPanelId');
 
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
-
-/**
- * The shape of a sidebar tab id: starts alphanumeric, then alphanumerics, `_`,
- * `.`, `:`, and `-`. Bounds the widened string so an agent-issued command or a
- * Shape manifest can't carry arbitrary garbage into localStorage or
- * `.dork/manifest.json`. The `:` (a legacy `extId:tabId` namespace separator)
- * stays accepted so existing Shape manifests that pinned a contributed tab keep
- * validating, even though no host renders contributed sidebar tabs anymore.
- *
- * Keep in sync with the mirrors in `@dorkos/marketplace` `manifest-schema.ts`
- * (`sidebarTab`) and the server's `openapi-registry.ts` `LocalShapeLayoutSchema`.
- */
-const SIDEBAR_TAB_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/;
 
 /**
  * Identifies a tab in the sidebar navigation.

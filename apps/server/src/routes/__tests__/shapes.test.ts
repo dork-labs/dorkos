@@ -113,7 +113,15 @@ describe('shapes router', () => {
         setActiveShape,
       },
     };
-    const forkDeps: ForkShapeDeps = { dorkHome, logger: buildLogger() };
+    // Mirrors the production wiring (`index.ts`): the fork service reads the
+    // active Shape and the enabled extensions for itself; only the chrome has to
+    // arrive in the request body.
+    const forkDeps: ForkShapeDeps = {
+      dorkHome,
+      logger: buildLogger(),
+      getActiveShape: () => activeShape,
+      getEnabledExtensions: () => ['linear-issues'],
+    };
 
     const app = express();
     app.use(express.json());
@@ -163,6 +171,36 @@ describe('shapes router', () => {
     expect(res.body.name).toBe('my-ops');
     expect(res.body.forkedFrom).toBe('linear-ops@local');
     expect(res.body.installPath).toBe(path.join(dorkHome, 'shapes', 'my-ops'));
+  });
+
+  it('POST /api/shapes/:name/fork carries a partial liveLayout through to the forked manifest', async () => {
+    // The switcher's capture reaches the service over HTTP: the fields it
+    // reports land in the fork, and the ones it omits keep the source's values.
+    const { app } = await buildApp('linear-ops');
+    const res = await request(app)
+      .post('/api/shapes/linear-ops/fork')
+      .send({
+        as: 'my-ops',
+        captureCurrent: true,
+        liveLayout: { sidebarOpen: false, openPanels: ['tasks', 'relay'] },
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.manifest.layout).toEqual({
+      sidebarOpen: false,
+      openPanels: ['tasks', 'relay'],
+      sidebarTab: 'overview', // omitted by the client → source value kept
+      focusDashboardSections: [], // omitted by the client → source value kept
+    });
+  });
+
+  it('POST /api/shapes/:name/fork rejects a malformed liveLayout with 400', async () => {
+    const { app } = await buildApp('linear-ops');
+    const res = await request(app)
+      .post('/api/shapes/linear-ops/fork')
+      .send({ captureCurrent: true, liveLayout: { openPanels: ['not-a-panel'] } });
+
+    expect(res.status).toBe(400);
   });
 
   it('POST /api/shapes/:name/fork returns 404 for a missing source Shape', async () => {

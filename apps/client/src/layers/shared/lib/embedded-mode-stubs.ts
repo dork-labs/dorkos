@@ -82,13 +82,18 @@ import type {
   AddSourceInput,
   InstalledShapeSummary,
   ApplyShapeResult,
+  ForkShapeResult,
 } from '@dorkos/shared/marketplace-schemas';
 import type {
   CloudLinkStatus,
   CloudLinkSummary,
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
-import type { McpAppResourceRequest, McpAppResourceResponse } from '@dorkos/shared/schemas';
+import type {
+  ForkShapeRequest,
+  McpAppResourceRequest,
+  McpAppResourceResponse,
+} from '@dorkos/shared/schemas';
 
 // ---------------------------------------------------------------------------
 // Tasks scheduler stubs
@@ -637,6 +642,10 @@ export const shapeStubs = {
   },
 
   async applyShape(_name: string): Promise<ApplyShapeResult> {
+    throw new Error('Shapes are not supported in embedded mode');
+  },
+
+  async forkShape(_name: string, _request?: ForkShapeRequest): Promise<ForkShapeResult> {
     throw new Error('Shapes are not supported in embedded mode');
   },
 };

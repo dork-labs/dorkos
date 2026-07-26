@@ -11,6 +11,7 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   Shapes,
   ArrowRight,
+  Copy,
   Sparkles,
   Loader2,
   TriangleAlert,
@@ -33,6 +34,7 @@ import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
 import { useShapes } from '@/layers/entities/shapes';
 import { useApplyShape } from '../model/use-apply-shape';
 import { useSwitchAgentCwd } from '../model/use-switch-agent-cwd';
+import { ShapeForkForm } from './ShapeForkForm';
 
 /** Props for {@link ShapeSwitcherDialog} — the registry dialog contract. */
 export interface ShapeSwitcherDialogProps {
@@ -66,12 +68,15 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const [result, setResult] = useState<ApplyShapeResult | null>(null);
   // The Shape that produced `result` — labels the offer as "offered by …".
   const [appliedLabel, setAppliedLabel] = useState<string | null>(null);
+  // Whether the footer is showing the "make your own version" form.
+  const [forkOpen, setForkOpen] = useState(false);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
         setResult(null);
         setAppliedLabel(null);
+        setForkOpen(false);
       }
       onOpenChange(next);
     },
@@ -81,6 +86,10 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   const handleApply = useCallback(
     (shape: InstalledShapeSummary) => {
       const label = shapeLabel(shape);
+      // Applying moves the active Shape, and the fork form only ever targets the
+      // active one. Leaving it open would silently re-aim a half-typed name at a
+      // Shape the person never asked to copy — so close it first.
+      setForkOpen(false);
       applyShape.mutate(
         { name: shape.name, label },
         {
@@ -296,18 +305,49 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
           )}
         </div>
 
-        {/* Reset re-applies the active Shape's own defaults (idempotent). */}
+        {/*
+          Footer actions for the ACTIVE Shape only: reset it to its own defaults
+          (idempotent), or save the arrangement you are living in as your own
+          copy. Both are about the Shape you are in — copying a Shape you are not
+          using captures nothing, and stays a CLI capability.
+        */}
         {activeShape && (
           <div className="border-border border-t px-5 py-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={applyShape.isPending}
-              onClick={() => handleApply(activeShape)}
-              className="text-muted-foreground"
-            >
-              Reset {shapeLabel(activeShape)} to defaults
-            </Button>
+            {forkOpen ? (
+              // Keyed so the active Shape changing from OUTSIDE the dialog (an
+              // agent's `control_ui apply_layout`, or another client applying
+              // and this one refetching) re-seeds the suggested name. Without
+              // it the form would silently re-aim at the new Shape while the
+              // input still read the old one's name. `handleApply` covers the
+              // in-dialog path; these two guards are complementary.
+              <ShapeForkForm
+                key={activeShape.name}
+                shapeName={activeShape.name}
+                onDone={() => setForkOpen(false)}
+              />
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={applyShape.isPending}
+                  onClick={() => handleApply(activeShape)}
+                  className="text-muted-foreground"
+                >
+                  Reset {shapeLabel(activeShape)} to defaults
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={applyShape.isPending}
+                  onClick={() => setForkOpen(true)}
+                  className="text-muted-foreground"
+                >
+                  <Copy className="size-[--size-icon-xs]" />
+                  Make your own version
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>
