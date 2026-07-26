@@ -20,8 +20,9 @@ import { roomKeys } from '../api/query-keys';
  *
  * Does nothing while the room is still loading, for a reader who is not a
  * member (they have no cursor to move), or when the cursor already covers
- * everything. Each `(room, seq)` pair is sent at most once per mount, so a
- * refetch that has not yet reflected the write cannot start a loop.
+ * everything. Each `(room, seq)` pair is in flight at most once, so a refetch
+ * that has not yet reflected the write cannot start a loop — but a write that
+ * FAILS releases its marker, so the pair is retried rather than written off.
  *
  * @param room - The open room with its roster, or undefined while it loads.
  * @param entries - The room's loaded history, oldest first.
@@ -37,7 +38,24 @@ export function useMarkRoomRead(
   const mutation = useMutation({
     mutationFn: ({ roomId, seq }: { roomId: string; seq: number }) =>
       transport.setRoomReadCursor(roomId, seq),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: roomKeys.all }),
+    onSuccess: (_result, { roomId }) => {
+      // Deliberately NOT `roomKeys.all`. That is `['rooms']`, which prefix-matches
+      // `['rooms','entries',roomId]` — so every cursor write would refetch the open
+      // room's history, and an entry delivered by SSE mid-flight would be merged
+      // and then overwritten by the older snapshot the in-flight GET returns. The
+      // stream resumes from the cache and never re-delivers, so that entry would be
+      // lost until something else refetched. The history belongs to the stream;
+      // only the badge and the cursor are this mutation's to refresh.
+      void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
+    },
+    onError: () => {
+      // Release the marker so the write is not written off. The next thing that
+      // happens in the room — a new entry, a revisit, a refetch — retries it.
+      // Deliberately not self-retrying: a read cursor is not worth a retry loop
+      // against a server that is refusing.
+      sentRef.current = null;
+    },
   });
   const { mutate } = mutation;
 
@@ -45,13 +63,19 @@ export function useMarkRoomRead(
   // member is the person reading. Accounts replace this lookup, not the rule.
   const membership = room?.members.find((member) => member.author.kind === 'human');
   const newestSeq = entries.length > 0 ? entries[entries.length - 1]!.seq : 0;
+  // Deps are the three primitives this actually turns on, never the `room` or
+  // `membership` objects: a refetch hands back new object identities for the same
+  // facts, and re-running on those would send a write every time the cache
+  // refreshed — and, once a failure releases the marker, would do it in a loop.
+  const roomId = room?.id ?? null;
+  const lastReadSeq = membership?.lastReadSeq ?? null;
 
   useEffect(() => {
-    if (!room || !membership || newestSeq === 0) return;
-    if (membership.lastReadSeq >= newestSeq) return;
-    const marker = `${room.id}:${newestSeq}`;
+    if (roomId === null || lastReadSeq === null || newestSeq === 0) return;
+    if (lastReadSeq >= newestSeq) return;
+    const marker = `${roomId}:${newestSeq}`;
     if (sentRef.current === marker) return;
     sentRef.current = marker;
-    mutate({ roomId: room.id, seq: newestSeq });
-  }, [room, membership, newestSeq, mutate]);
+    mutate({ roomId, seq: newestSeq });
+  }, [roomId, lastReadSeq, newestSeq, mutate]);
 }

@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import type { RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomTimeline } from '../ui/RoomTimeline';
-import { lastSeenEntryId, toMessageAuthor, authorsById } from '../lib/room-timeline';
+import { unreadPlacement, toMessageAuthor, authorsById } from '../lib/room-timeline';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -137,23 +137,56 @@ describe('RoomTimeline', () => {
     renderTimeline({ entries: [entry(1), entry(2)], lastReadSeq: null });
     expect(screen.queryByTestId('unread-divider')).not.toBeInTheDocument();
   });
+
+  it('draws the rule above everything for a member who has read nothing', () => {
+    // The sidebar badges a member at cursor 0 with a real count, so the room has
+    // to show a line — "5 unread" beside a room with no marker is a contradiction
+    // the reader can see.
+    const { container } = renderTimeline({ entries: [entry(1), entry(2)], lastReadSeq: 0 });
+    expect(screen.getByTestId('unread-divider')).toBeInTheDocument();
+    const rows = Array.from(
+      container.querySelectorAll('[data-testid="unread-divider"], [data-testid="room-entry"]')
+    );
+    expect(rows[0]).toHaveAttribute('data-testid', 'unread-divider');
+  });
 });
 
-describe('lastSeenEntryId', () => {
-  it('is null when the reader is caught up', () => {
-    expect(lastSeenEntryId([entry(1), entry(2)], 2)).toBeNull();
+describe('unreadPlacement', () => {
+  it('draws no rule when the reader is caught up', () => {
+    expect(unreadPlacement([entry(1), entry(2)], 2)).toEqual({
+      lastSeenId: null,
+      fromStart: false,
+    });
   });
 
-  it('is null when the reader is not a member', () => {
-    expect(lastSeenEntryId([entry(1)], null)).toBeNull();
+  it('draws no rule for a non-member, matching the badge they also do not get', () => {
+    expect(unreadPlacement([entry(1)], null)).toEqual({ lastSeenId: null, fromStart: false });
   });
 
-  it('is null when the reader has read nothing at all', () => {
-    expect(lastSeenEntryId([entry(1)], 0)).toBeNull();
+  it('draws no rule in an empty room', () => {
+    expect(unreadPlacement([], 0)).toEqual({ lastSeenId: null, fromStart: false });
+  });
+
+  it('puts the rule above everything for a member who has read nothing', () => {
+    // The sidebar badges this room, so a room with no line would contradict it.
+    expect(unreadPlacement([entry(1), entry(2)], 0)).toEqual({
+      lastSeenId: null,
+      fromStart: true,
+    });
+  });
+
+  it('puts the rule above everything when the page starts past the cursor', () => {
+    expect(unreadPlacement([entry(8), entry(9)], 3)).toEqual({
+      lastSeenId: null,
+      fromStart: true,
+    });
   });
 
   it('names the newest entry at or below the cursor', () => {
-    expect(lastSeenEntryId([entry(1), entry(4), entry(7)], 5)).toBe('entry-4');
+    expect(unreadPlacement([entry(1), entry(4), entry(7)], 5)).toEqual({
+      lastSeenId: 'entry-4',
+      fromStart: false,
+    });
   });
 });
 

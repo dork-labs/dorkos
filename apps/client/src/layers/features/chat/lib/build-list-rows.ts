@@ -12,6 +12,7 @@
  * @module features/chat/lib/build-list-rows
  */
 import { buildTimelineRows, GROUP_GAP_MS } from '@/layers/shared/lib';
+import type { DayDividerRow, UnreadDividerRow } from '@/layers/shared/lib';
 import type { ChatMessage, MessageAuthor, MessageGrouping } from '@/layers/shared/model';
 
 export { GROUP_GAP_MS };
@@ -34,19 +35,11 @@ export interface MessageListRow {
   author: MessageAuthor;
 }
 
-/** A full-bleed rule marking the start of a calendar day. */
-export interface DayDividerRow {
-  kind: 'day-divider';
-  key: string;
-  /** Label shown in the divider's centered chip, e.g. "Today" or "Monday, July 21". */
-  label: string;
-}
-
-/** The "New messages" rule. At most one per list. */
-export interface UnreadDividerRow {
-  kind: 'unread-divider';
-  key: string;
-}
+// The two divider rows are the shared ones, re-exported rather than re-declared:
+// they are produced by `buildTimelineRows` and identical for chat and rooms, and
+// a second copy of the interfaces would be the drift the extraction exists to
+// prevent.
+export type { DayDividerRow, UnreadDividerRow };
 
 /** A row in the virtualized message list. */
 export type ListRow = MessageListRow | DayDividerRow | UnreadDividerRow;

@@ -5,7 +5,7 @@ import { useNow } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
-import { authorsById, lastSeenEntryId, toMessageAuthor } from '../lib/room-timeline';
+import { authorsById, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
 import { RoomEntryRow } from './RoomEntryRow';
 
 interface RoomTimelineProps {
@@ -43,18 +43,17 @@ export function RoomTimeline({
   // Ticked rather than read at render, so "Today" becomes "Yesterday" on its own
   // for a room left open across midnight.
   const now = useNow();
-  const rows = useMemo(
-    () =>
-      buildTimelineRows(
-        entries.map((entry) => ({
-          id: entry.id,
-          authorId: entry.authorId,
-          timestamp: entry.createdAt,
-        })),
-        { now, lastSeenId: lastSeenEntryId(entries, lastReadSeq) }
-      ),
-    [entries, lastReadSeq, now]
-  );
+  const rows = useMemo(() => {
+    const unread = unreadPlacement(entries, lastReadSeq);
+    return buildTimelineRows(
+      entries.map((entry) => ({
+        id: entry.id,
+        authorId: entry.authorId,
+        timestamp: entry.createdAt,
+      })),
+      { now, lastSeenId: unread.lastSeenId, unreadFromStart: unread.fromStart }
+    );
+  }, [entries, lastReadSeq, now]);
 
   if (isLoading) {
     return (

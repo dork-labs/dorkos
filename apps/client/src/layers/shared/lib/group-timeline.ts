@@ -80,6 +80,16 @@ export interface BuildTimelineRowsOptions {
    * item is no longer in the transcript — renders no rule.
    */
   lastSeenId?: string | null;
+  /**
+   * Everything here is unread, so the rule goes above the first item.
+   *
+   * Distinct from an absent `lastSeenId`, which means "no cursor at all, draw
+   * nothing": a room member who has joined but read nothing has a real cursor
+   * sitting at zero, and the sidebar badges that room. Without this the badge
+   * would say "5" while the room showed no line — a contradiction the reader
+   * can see.
+   */
+  unreadFromStart?: boolean;
 }
 
 /** Epoch ms for a timestamp, or null when it is missing or unparseable. */
@@ -142,10 +152,12 @@ export function buildTimelineRows(
   items: readonly TimelineItem[],
   options: BuildTimelineRowsOptions
 ): TimelineRow[] {
-  const { now, lastSeenId } = options;
+  const { now, lastSeenId, unreadFromStart = false } = options;
   const rows: TimelineRow[] = [];
   let lastItemRow: TimelineItemRow | null = null;
-  let cursorPassed = false;
+  // Starting "passed" puts the rule above the first item — the reader has a
+  // cursor and it sits before everything here.
+  let cursorPassed = unreadFromStart;
   let unreadPlaced = false;
   // Carried from the previous item. The author id starts null, which no author
   // matches, so the first item always opens a group. The day and time survive

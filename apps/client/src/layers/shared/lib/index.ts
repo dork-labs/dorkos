@@ -157,4 +157,4 @@ export {
 } from './filter-engine';
 export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';
 export { buildTimelineRows, GROUP_GAP_MS } from './group-timeline';
-export type { TimelineItem, TimelineRow } from './group-timeline';
+export type { TimelineItem, TimelineRow, DayDividerRow, UnreadDividerRow } from './group-timeline';

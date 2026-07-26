@@ -13,13 +13,15 @@ interface RoomEntryRowProps {
   grouping: MessageGrouping;
 }
 
-/** Short time display (HH:MM) for an entry's timestamp. */
+/**
+ * Short time display (HH:MM) for an entry's timestamp, or `''` when it is not a
+ * time at all. `toLocaleTimeString` does not throw on an unparseable date — it
+ * renders "Invalid Date" — so the guard has to be the parse, not a `try`.
+ */
 function formatTime(timestamp: string): string {
-  try {
-    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
+  const ms = Date.parse(timestamp);
+  if (Number.isNaN(ms)) return '';
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 /**

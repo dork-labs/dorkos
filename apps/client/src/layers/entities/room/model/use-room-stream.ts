@@ -81,7 +81,18 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): void {
         }
       } catch (err) {
         if (controller.signal.aborted) return;
-        console.warn('[rooms] live stream ended', { roomId, err });
+        // THIS DOES NOT RECONNECT, and the failure is silent to the reader — the
+        // deps below never change, so a dropped socket (laptop sleep, a server
+        // restart) leaves this room's messages frozen while the GLOBAL stream
+        // reconnects and keeps re-badging it in the sidebar.
+        //
+        // Deliberately deferred to R3 (DOR-526 definition-of-done), because
+        // nothing in R2 can post into a room, so there is no live traffic to
+        // miss. It has to land BEFORE the composer does, not beside it: the
+        // moment somebody can post, a dead stream is a lost message. Reuse
+        // `shared/lib/transport/sse-connection.ts` — backoff, jitter, the
+        // heartbeat watchdog and visibility handling are all already there.
+        console.warn('[rooms] live stream ended and will not reconnect', { roomId, err });
       }
     })();
 

@@ -7,8 +7,10 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
-import { useStartDirectMessage } from '@/layers/entities/room';
+import { useRoomRosters, useStartDirectMessage } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
 import { NewDirectMessageMenu, type DirectMessageCandidate } from './NewDirectMessageMenu';
@@ -23,12 +25,22 @@ interface DirectMessagesSectionProps {
   isLoading: boolean;
   /** Set when the room list could not be read. */
   error: unknown;
-  /** Disambiguated agent display names keyed by projectPath. */
+  /** Disambiguated agent display names keyed by projectPath — the menu's labels. */
   displayNames: Record<string, string>;
+  /**
+   * Agent manifests keyed by projectPath. Used for the BASE name a room's roster
+   * stores, which is not the disambiguated label above.
+   */
+  agents: Record<string, AgentManifest | null>;
   /** Which room is on screen, so the matching row reads as current. */
   activeRoomId: string | null;
   /** Open a conversation. */
   onSelectRoom: (room: RoomSummary) => void;
+}
+
+/** The name the server records for an agent author when it mints one. */
+function baseAgentName(manifest: AgentManifest | null | undefined, agentPath: string): string {
+  return getAgentDisplayName(manifest, agentPath.split('/').pop() ?? 'Agent');
 }
 
 /**
@@ -43,6 +55,7 @@ export function DirectMessagesSection({
   isLoading,
   error,
   displayNames,
+  agents,
   activeRoomId,
   onSelectRoom,
 }: DirectMessagesSectionProps) {
@@ -50,18 +63,32 @@ export function DirectMessagesSection({
   const { update } = useUpdateSidebarPrefs();
   const startDirectMessage = useStartDirectMessage();
 
-  // A DM is created titled after the agent, so the existing titles are what an
-  // already-messaged agent is filtered against. Matching on the title is exactly
-  // reversing this section's own naming rule, and the worst case if two agents
-  // ever share a display name is one missing menu entry — never a duplicate
-  // conversation opened against the wrong agent.
+  // Who you already have a conversation with is read off each DM's ROSTER, not
+  // off its title. Two reasons: a title is editable, so it can drift from who is
+  // actually in the room; and a DM whose join failed has no agent member at all,
+  // so it must not tie up the agent it happens to be named after — which is how
+  // a single failed request could hide an agent from this menu for good.
+  //
+  // The comparison is still a display name, because `AuthorRef` carries no agent
+  // reference by design (spec §3 keeps `agentPath` server-side). It compares the
+  // agent's BASE manifest name — the string the server stored when it minted the
+  // author — rather than the sidebar's disambiguated label, which is the same
+  // except in the collision case, where the disambiguated one would never match.
+  const dmRoomIds = useMemo(() => dms.map((room) => room.id), [dms]);
+  const rosters = useRoomRosters(dmRoomIds);
+
   const candidates = useMemo<DirectMessageCandidate[]>(() => {
-    const taken = new Set(dms.map((room) => room.title));
+    const taken = new Set<string>();
+    for (const members of rosters.values()) {
+      for (const member of members) {
+        if (member.author.kind === 'agent') taken.add(member.author.displayName);
+      }
+    }
     return Object.entries(displayNames)
-      .filter(([, displayName]) => !taken.has(displayName))
+      .filter(([agentPath]) => !taken.has(baseAgentName(agents[agentPath], agentPath)))
       .map(([agentPath, displayName]) => ({ agentPath, displayName }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [dms, displayNames]);
+  }, [rosters, displayNames, agents]);
 
   const handleStart = (candidate: DirectMessageCandidate) => {
     startDirectMessage.mutate(

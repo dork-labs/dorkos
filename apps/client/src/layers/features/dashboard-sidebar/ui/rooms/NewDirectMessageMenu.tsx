@@ -43,6 +43,7 @@ export function NewDirectMessageMenu({ candidates, onSelect }: NewDirectMessageM
             <button
               key={candidate.agentPath}
               type="button"
+              data-testid="dm-candidate"
               onClick={() => {
                 setOpen(false);
                 onSelect(candidate);

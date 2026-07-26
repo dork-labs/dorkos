@@ -25,11 +25,34 @@ vi.mock('@/layers/entities/config', () => ({
 }));
 
 const mockStart = vi.fn();
+/** Rosters the section reads, keyed by room id. Set per test. */
+let mockRosters = new Map<
+  string,
+  Array<{ author: { id: string; kind: string; displayName: string } }>
+>();
+
 vi.mock('@/layers/entities/room', async () => {
   const actual =
     await vi.importActual<typeof import('@/layers/entities/room')>('@/layers/entities/room');
-  return { ...actual, useStartDirectMessage: () => ({ mutate: mockStart }) };
+  return {
+    ...actual,
+    useStartDirectMessage: () => ({ mutate: mockStart }),
+    useRoomRosters: () => mockRosters,
+  };
 });
+
+/** A roster holding the human plus one agent — a DM whose join succeeded. */
+function rosterWithAgent(displayName: string) {
+  return [
+    { author: { id: 'me', kind: 'human', displayName: 'You' } },
+    { author: { id: `a-${displayName}`, kind: 'agent', displayName } },
+  ];
+}
+
+/** A resolved manifest, whose name is what the room roster stores. */
+function manifest(name: string) {
+  return { name, displayName: name } as never;
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -60,6 +83,7 @@ function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSectio
       isLoading={false}
       error={null}
       displayNames={{}}
+      agents={{}}
       activeRoomId={null}
       onSelectRoom={vi.fn()}
       {...overrides}
@@ -70,6 +94,7 @@ function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSectio
 
 beforeEach(() => {
   mockCollapsed = false;
+  mockRosters = new Map();
   mockUpdate.mockClear();
   mockStart.mockClear();
 });
@@ -112,8 +137,60 @@ describe('DirectMessagesSection', () => {
     );
   });
 
-  it('leaves out agents you already have a conversation with', () => {
-    renderSection({ dms: [dm({ title: 'Ana' })], displayNames: { '/repo/ana': 'Ana' } });
+  it('leaves out agents already on a conversation roster', () => {
+    mockRosters = new Map([['dm-1', rosterWithAgent('Ana')]]);
+    renderSection({
+      dms: [dm({ id: 'dm-1' })],
+      displayNames: { '/repo/ana': 'Ana' },
+      agents: { '/repo/ana': manifest('Ana') },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+    expect(screen.getByText(/already have a conversation with every agent/i)).toBeInTheDocument();
+  });
+
+  it('does not strand an agent behind a conversation its join never completed', () => {
+    // The room exists and is titled after the agent, but the second call failed
+    // so the roster holds only the human. Filtering on the title would hide this
+    // agent from the menu for good, with no way in this release to undo it.
+    mockRosters = new Map([
+      ['dm-1', [{ author: { id: 'me', kind: 'human', displayName: 'You' } }]],
+    ]);
+    renderSection({
+      dms: [dm({ id: 'dm-1', title: 'Ana' })],
+      displayNames: { '/repo/ana': 'Ana' },
+      agents: { '/repo/ana': manifest('Ana') },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+    // Scoped to the menu: the orphan DM's own row is also a button named "Ana".
+    fireEvent.click(screen.getByTestId('dm-candidate'));
+    expect(mockStart).toHaveBeenCalledWith(
+      { agentPath: '/repo/ana', title: 'Ana' },
+      expect.anything()
+    );
+  });
+
+  it('ignores a renamed room title and believes the roster', () => {
+    // A room's title is editable; who is in it is not. The agent is on the
+    // roster, so it stays out of the menu whatever the room ended up called.
+    mockRosters = new Map([['dm-1', rosterWithAgent('Ana')]]);
+    renderSection({
+      dms: [dm({ id: 'dm-1', title: 'Renamed by hand' })],
+      displayNames: { '/repo/ana': 'Ana' },
+      agents: { '/repo/ana': manifest('Ana') },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+    expect(screen.getByText(/already have a conversation with every agent/i)).toBeInTheDocument();
+  });
+
+  it('matches an agent by its base name, not the disambiguated sidebar label', () => {
+    // Two agents named "Ana" render as "Ana (alpha)" / "Ana (beta)" in the
+    // sidebar, but the roster stores the base manifest name.
+    mockRosters = new Map([['dm-1', rosterWithAgent('Ana')]]);
+    renderSection({
+      dms: [dm({ id: 'dm-1' })],
+      displayNames: { '/repo/alpha/ana': 'Ana (alpha)' },
+      agents: { '/repo/alpha/ana': manifest('Ana') },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
     expect(screen.getByText(/already have a conversation with every agent/i)).toBeInTheDocument();
   });

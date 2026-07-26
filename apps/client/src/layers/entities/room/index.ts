@@ -13,6 +13,8 @@ export type { RoomsByKind } from './model/use-rooms';
 export { useRoom, useRoomEntries } from './model/use-room';
 export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
 export { useRoomListStream } from './model/use-room-list-stream';
+export { useRoomRosters } from './model/use-room-rosters';
+export type { RoomRosters } from './model/use-room-rosters';
 export { useMarkRoomRead } from './model/use-mark-room-read';
 export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
 export type { StartDirectMessageInput } from './model/use-create-room';
