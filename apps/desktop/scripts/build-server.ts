@@ -1,5 +1,7 @@
-import { build, type Plugin } from 'esbuild';
+import { execFileSync } from 'child_process';
+import { build, formatMessages, type Message, type Metafile, type Plugin } from 'esbuild';
 import { cpSync, readFileSync, readdirSync, rmSync } from 'fs';
+import { isBuiltin } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -169,6 +171,260 @@ function requireExternalNativesPlugin(packages: Record<string, string[]>): Plugi
   };
 }
 
+/**
+ * The externals whose runtime resolution {@link requireExternalNativesPlugin}
+ * routes through CJS `require`: bare specifier -> the named exports its shim
+ * re-exports. Only packages that actually `dlopen` a native `.node` binary
+ * belong here — see that plugin's doc comment.
+ *
+ * Named rather than inlined at the call site because the post-build check
+ * needs the same list: a `createRequire(import.meta.url)(...)` call is opaque
+ * to esbuild, so these specifiers never appear in the metafile and would
+ * otherwise be the only runtime imports nothing verifies.
+ */
+const NATIVE_REQUIRE_EXTERNALS: Record<string, string[]> = {
+  // Named-export lists mirror `Object.keys(require(pkg))` under a healthy
+  // system-Node binary: better-sqlite3 exports a class (default import only in
+  // this module graph), node-pty is consumed as `import * as pty` so its names
+  // must be re-exported.
+  'better-sqlite3': ['SqliteError'],
+  'node-pty': ['spawn', 'fork', 'createTerminal', 'open', 'native'],
+};
+
+/**
+ * esbuild warning texts tolerated in this bundle, matched as substrings of
+ * `Message.text`.
+ *
+ * Deliberately EMPTY. esbuild reports this app's most expensive failure class
+ * — a bundle that builds green and only dies in a real packaged install — as
+ * *warnings*, not errors: an unresolvable dynamic `require`, `import.meta` in
+ * the wrong output format, an external that never resolves. Left unread (as
+ * they were until DOR-536), each of those ships.
+ *
+ * Every entry added here must quote the exact warning and say why it is safe
+ * in THIS bundle. "It's noisy" is not a reason — fix the cause instead.
+ */
+const ALLOWED_WARNING_TEXTS: readonly string[] = [];
+
+/**
+ * Fail the build on any esbuild warning outside {@link ALLOWED_WARNING_TEXTS}.
+ *
+ * @param warnings - `BuildResult.warnings` from the server bundle.
+ * @throws If any warning is not allowlisted.
+ */
+async function assertNoUnexpectedWarnings(warnings: Message[]): Promise<void> {
+  const unexpected = warnings.filter(
+    (warning) => !ALLOWED_WARNING_TEXTS.some((allowed) => warning.text.includes(allowed))
+  );
+  if (unexpected.length === 0) return;
+
+  // Reuse esbuild's own renderer so the failure reads exactly like the
+  // warnings it prints on the success path (file, line, source excerpt).
+  const rendered = await formatMessages(unexpected, {
+    kind: 'warning',
+    color: true,
+    terminalWidth: 100,
+  });
+  throw new Error(
+    `esbuild emitted ${unexpected.length} warning(s) while bundling the server; ` +
+      `refusing to ship a bundle nobody has looked at.\n\n${rendered.join('\n')}\n` +
+      `Fix the cause, or — if the warning is genuinely safe here — add it to ` +
+      `ALLOWED_WARNING_TEXTS in this file with a comment saying why.`
+  );
+}
+
+/**
+ * Source of the child process that checks every specifier the bundle will ask
+ * Node for at load time. Runs as ESM with its CWD set to the bundle's own
+ * directory, so `import.meta.resolve` starts the same walk the packaged app's
+ * `utilityProcess.fork()` of `dist/server/server-entry.mjs` starts
+ * (`dist/server/` -> `dist/` -> the desktop package's `node_modules`).
+ *
+ * It is a SUPERSET of that walk, not an equal: at build time `dist/server/`
+ * sits inside the source tree, so resolution continues past
+ * `apps/desktop/node_modules` — which also holds devDependencies electron-
+ * builder never packs — and on up to the repo root. A devDependency would
+ * therefore resolve here and still be missing from a real install. That gap is
+ * what {@link assertExternalsArePackaged} closes; the two checks are only
+ * complete together.
+ *
+ * Resolution only: `import.meta.resolve` locates a package's entry file
+ * without loading it. That is the whole point — see
+ * {@link verifyBundleLoadable} for why this must never evaluate anything.
+ * Deliberately written without template literals so it survives being embedded
+ * in one here.
+ */
+const RESOLVE_SPECIFIERS_HARNESS = `
+const specifiers = JSON.parse(process.env.DORKOS_BUNDLE_SPECIFIERS);
+const unresolved = [];
+for (const specifier of specifiers) {
+  try {
+    import.meta.resolve(specifier);
+  } catch (err) {
+    unresolved.push('  ' + specifier + ' — ' + (err && err.code ? err.code : String(err)));
+  }
+}
+if (unresolved.length > 0) {
+  console.error('Unresolvable from the emitted bundle:\\n' + unresolved.join('\\n'));
+  process.exit(1);
+}
+`;
+
+/**
+ * Specifiers the emitted bundle references but is allowed NOT to resolve.
+ *
+ * `ws` (transitively bundled, behind the terminal WebSocket channel) reaches
+ * for two optional native accelerators inside a `try`/`catch`, falling back to
+ * its pure-JS mask/UTF-8 paths when the `require` throws — which is exactly
+ * what happens here, since neither is installed. esbuild leaves such a guarded
+ * `require` alone with no diagnostic, so the bundle is correct as emitted.
+ *
+ * Only genuinely optional-at-runtime packages belong here. Anything the server
+ * cannot boot without must resolve.
+ */
+const OPTIONAL_RUNTIME_SPECIFIERS: readonly string[] = ['bufferutil', 'utf-8-validate'];
+
+/**
+ * Every bare specifier the emitted bundle resolves at runtime: the externals
+ * esbuild left in the output (authoritative — read from the metafile, so a
+ * package on the `external` list that nothing actually imports is not checked)
+ * plus the `require`-routed natives esbuild cannot see, minus
+ * {@link OPTIONAL_RUNTIME_SPECIFIERS}.
+ *
+ * Node builtins are kept in rather than filtered out: they resolve for free,
+ * and a rule for excluding them is one more thing to get wrong.
+ *
+ * @param metafile - `BuildResult.metafile` from the server bundle.
+ * @returns Sorted, de-duplicated specifiers.
+ */
+function collectRuntimeSpecifiers(metafile: Metafile): string[] {
+  const specifiers = new Set<string>(Object.keys(NATIVE_REQUIRE_EXTERNALS));
+  // Union across outputs rather than looking up one key: the bundle is the only
+  // JS output, and its metafile key is CWD-relative (so it would depend on
+  // where this script was invoked from).
+  for (const output of Object.values(metafile.outputs)) {
+    for (const imported of output.imports) {
+      if (imported.external && !OPTIONAL_RUNTIME_SPECIFIERS.includes(imported.path)) {
+        specifiers.add(imported.path);
+      }
+    }
+  }
+  return [...specifiers].sort();
+}
+
+/**
+ * The package name a specifier resolves through: `zod/v4` -> `zod`,
+ * `@scope/pkg/sub` -> `@scope/pkg`.
+ *
+ * @param specifier - A bare import specifier.
+ */
+function packageNameOf(specifier: string): string {
+  const segments = specifier.split('/');
+  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0];
+}
+
+/**
+ * Assert every package the bundle imports is one electron-builder will pack.
+ *
+ * The resolution check alone cannot see this: it runs against the source tree,
+ * where `node_modules` also contains devDependencies (see
+ * {@link RESOLVE_SPECIFIERS_HARNESS}). electron-builder copies only the
+ * PRODUCTION dependency tree into `app.asar`, so an external that is merely a
+ * devDependency resolves cleanly at build time and is simply absent from the
+ * installed app — the same `ERR_MODULE_NOT_FOUND` at fork time, from the one
+ * direction the other gate is blind to.
+ *
+ * Nothing trips this today (all externals are real dependencies); it exists so
+ * that stays true by construction rather than by luck.
+ *
+ * @param specifiers - Runtime specifiers from {@link collectRuntimeSpecifiers}.
+ * @throws If a specifier's package is not a declared runtime dependency.
+ */
+function assertExternalsArePackaged(specifiers: string[]): void {
+  const pkg = JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as {
+    dependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+  };
+  // optionalDependencies count: electron-builder packs them, and that is how
+  // the per-platform Claude Code binary ships (see electron-builder.yml).
+  const packaged = new Set([
+    ...Object.keys(pkg.dependencies ?? {}),
+    ...Object.keys(pkg.optionalDependencies ?? {}),
+  ]);
+  const missing = specifiers
+    .filter((specifier) => !isBuiltin(specifier))
+    .map(packageNameOf)
+    .filter((name) => !packaged.has(name));
+  if (missing.length === 0) return;
+  throw new Error(
+    `The bundle imports ${[...new Set(missing)].join(', ')} at runtime, but ` +
+      `apps/desktop/package.json does not list it under dependencies or ` +
+      `optionalDependencies. It resolves from the source tree (probably as a ` +
+      `devDependency or a hoisted transitive) and would be ABSENT from the packaged ` +
+      `app — electron-builder packs only the production dependency tree.`
+  );
+}
+
+/**
+ * Verify the emitted bundle would actually load, so a missing or misspelled
+ * external fails the BUILD rather than the release. Three gates:
+ *
+ * 1. `node --check` parses the output as ESM (it is `.mjs`), catching a
+ *    malformed emit before it reaches a packaged app.
+ * 2. Every specifier the bundle will hand to Node resolves from the bundle's
+ *    own directory — the failure mode this exists for (`ERR_MODULE_NOT_FOUND`
+ *    at `utilityProcess.fork()` time, i.e. a windowless app in a real install).
+ *
+ * It stops short of EVALUATING the module graph, on purpose, twice over:
+ *
+ * - Evaluating the entry runs `main()`, which imports `@dorkos/server` — that
+ *   binds a port, creates the SQLite store under `DORK_HOME`, and starts
+ *   schedulers. A build step must not do any of that. (There is no way to bail
+ *   between the two: esbuild inlines that dynamic import into this bundle.)
+ * - Evaluation would also `dlopen` better-sqlite3/node-pty through the
+ *   `createRequire` shim. A build run after `scripts/rebuild-natives.ts` would
+ *   then load an Electron-ABI binary under system Node and wedge the build —
+ *   exactly the hazard {@link requireExternalNativesPlugin} avoids by not
+ *   probing those packages. Resolution reaches a package's entry `.js`, never
+ *   its `.node` binary, so this check is ABI-blind by construction.
+ *
+ * The packaged runtime is exercised for real by the desktop-smoke workflow
+ * (`.github/workflows/desktop-smoke.yml`), which is where a boot failure
+ * belongs — not in every developer's `pnpm build`.
+ *
+ * @param outfile - Absolute path to the emitted server bundle.
+ * @param metafile - `BuildResult.metafile` from the same build.
+ * @throws If the bundle does not parse, a specifier fails to resolve, or a
+ *   specifier resolves only because of a dependency that is not packaged.
+ */
+function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
+  try {
+    execFileSync(process.execPath, ['--check', outfile], { stdio: 'inherit' });
+  } catch {
+    throw new Error(`Emitted bundle is not parseable as ESM: ${outfile} (see the error above).`);
+  }
+
+  const specifiers = collectRuntimeSpecifiers(metafile);
+  try {
+    execFileSync(process.execPath, ['--input-type=module', '-e', RESOLVE_SPECIFIERS_HARNESS], {
+      cwd: path.dirname(outfile),
+      stdio: 'inherit',
+      env: { ...process.env, DORKOS_BUNDLE_SPECIFIERS: JSON.stringify(specifiers) },
+    });
+  } catch {
+    throw new Error(
+      'The emitted bundle imports packages that do not resolve from its own directory ' +
+        '(listed above). A packaged app would die at fork() time with ERR_MODULE_NOT_FOUND. ' +
+        `Add the package to apps/desktop/package.json's dependencies, or fix the spelling in ` +
+        `this script's \`external\` list.`
+    );
+  }
+  assertExternalsArePackaged(specifiers);
+  console.log(
+    `  ✓ Bundle parses as ESM; all ${specifiers.length} runtime specifiers resolve and ship`
+  );
+}
+
 async function buildServer() {
   console.log('[1/2] Bundling server...');
   rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
@@ -197,13 +453,14 @@ async function buildServer() {
   // <desktop pkg root>/core-extensions/ respectively — both copied below —
   // exactly mirroring packages/cli/scripts/build.ts's dist/server/index.js
   // layout (DOR-245) instead of leaking build output outside the package.
-  await build({
+  const outfile = path.join(OUT, 'server/server-entry.mjs');
+  const result = await build({
     entryPoints: [path.join(DESKTOP_PKG, 'src/server-entry.ts')],
     bundle: true,
     platform: 'node',
     target: 'node20',
     format: 'esm',
-    outfile: path.join(OUT, 'server/server-entry.mjs'),
+    outfile,
     banner: {
       js: "import { createRequire as __cjsRequire } from 'module'; import { fileURLToPath as __fup } from 'url'; const require = __cjsRequire(import.meta.url); const __filename = __fup(import.meta.url);",
     },
@@ -235,18 +492,44 @@ async function buildServer() {
       dorkosSourcePlugin(),
       // Only the two externals with real native `.node` binaries — see the
       // plugin's own doc comment for why. Everything else on the external
-      // list above is pure JS and unaffected. Named-export lists mirror
-      // `Object.keys(require(pkg))` under system Node: better-sqlite3
-      // exports a class (default import only in this module graph), node-pty
-      // is consumed as `import * as pty` so its names must be re-exported.
-      requireExternalNativesPlugin({
-        'better-sqlite3': ['SqliteError'],
-        'node-pty': ['spawn', 'fork', 'createTerminal', 'open', 'native'],
-      }),
+      // list above is pure JS and unaffected.
+      requireExternalNativesPlugin(NATIVE_REQUIRE_EXTERNALS),
     ],
     define: { __CLI_VERSION__: JSON.stringify(version) },
     sourcemap: true,
+    // Consumed by verifyBundleLoadable below — the authoritative list of what
+    // the emitted bundle still resolves at runtime.
+    metafile: true,
   });
+
+  // esbuild resolves by default (logLevel 'warning') to PRINT warnings and
+  // exit 0. Everything this bundle can get wrong in a way that only shows up
+  // in a packaged install arrives as a warning, so read them.
+  //
+  // Both gates run AFTER esbuild has already written the output, so a failure
+  // must delete it: electron-builder packages whatever is in dist/, and a
+  // rejected bundle sitting there is one `pnpm --filter @dorkos/desktop pack`
+  // away from shipping. (Confirmed the hard way while building this gate — a
+  // rejected bundle got packaged and died with "module is not defined in ES
+  // module scope" at fork time, which is exactly the failure class here.)
+  try {
+    await assertNoUnexpectedWarnings(result.warnings);
+    verifyBundleLoadable(outfile, result.metafile);
+  } catch (err) {
+    // The cleanup must never be able to replace the diagnosis: `rmSync` can
+    // throw (EPERM, a file locked by another process — this build also runs on
+    // the Windows release runner), and rethrowing THAT would bury which gate
+    // actually failed. Swallow-and-report, then rethrow the original.
+    try {
+      rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
+    } catch (cleanupErr) {
+      console.error(
+        `[build-server] Could not remove the rejected bundle at ${path.join(OUT, 'server')} — ` +
+          `delete it by hand before packaging, electron-builder would ship it:\n${String(cleanupErr)}`
+      );
+    }
+    throw err;
+  }
 
   // Copy Drizzle migration files alongside the bundled server — see the
   // dist/server/ layout note above.
@@ -276,4 +559,12 @@ async function buildServer() {
   console.log('[2/2] Server bundle complete.');
 }
 
-buildServer();
+// Node ≥15 already exits non-zero on an unhandled rejection, but this build's
+// failure semantics must not rest on a runtime default that a flag or a future
+// Node can change — and the default's output (an UnhandledPromiseRejection
+// dump) buries the actual cause under a stack nobody reads.
+buildServer().catch((err: unknown) => {
+  console.error(`\n[build-server] Server bundle FAILED:\n`);
+  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+  process.exit(1);
+});

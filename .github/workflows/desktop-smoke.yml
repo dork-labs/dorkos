@@ -1,0 +1,149 @@
+name: Desktop Smoke
+
+# Packages the macOS desktop app, launches it, and proves the packaged runtime
+# actually works — the app's server answers /api/health on the port it opened,
+# and the app shuts down without orphaning that server.
+#
+# WHY THIS EXISTS: unit tests mock `electron` and never start a real app, and
+# `pnpm build` only proves the bundles emit. Everything in between — the main
+# process forking dist/server/server-entry.mjs out of app.asar, that bundle
+# dlopen'ing Electron-ABI natives from app.asar.unpacked, express.static serving
+# the unpacked renderer — is first exercised by a real launch. Multiple shipped
+# defects lived exactly there (a dead server port after a restart, a stale
+# renderer URL, wrong window state), invisible to every other gate in the repo,
+# and were found by hand after release. The build-time gates in
+# apps/desktop/scripts/build-server.ts catch the static half (esbuild warnings,
+# unresolvable externals); this catches the half only a real launch can.
+#
+# TRIGGERS — deliberately asymmetric. The job is ~6 minutes (measured), but it
+# holds a macOS runner, which is the scarcest GitHub-hosted resource: public
+# repos get a hard cap on concurrent macOS jobs, and desktop-release.yml needs
+# those same runners when a release is cut.
+#
+#   - Pull requests: only when apps/desktop/**, the lockfile, or this workflow
+#     changes. That is where packaging regressions are actually authored, and
+#     it is where a red is immediately actionable by the person who caused it.
+#   - Push to main: the wider net (server, client, workspace packages), because
+#     a change to any of them can break the packaged bundle without touching
+#     apps/desktop at all. Path-filtered, so the docs/spec/research merges that
+#     make up a large share of this repo's history cost nothing.
+#   - workflow_dispatch: on demand, e.g. before cutting a release.
+#
+# Why the wide net is NOT on pull requests: the server-bundle half of that risk
+# is already covered on PRs, cheaply and on ubuntu. cli-smoke-test.yml filters
+# on apps/server/** + apps/client/** and builds the CLI, whose esbuild server
+# bundle has the same external list and the same module graph as this app's,
+# then installs the tarball and RUNS it (bare Node 22/24 + Docker) — so a server
+# change that breaks bundling or boot goes red there first. That covers the
+# esbuild-warning class too, but only since DOR-536 put the same warning gate in
+# packages/cli/scripts/build.ts; before that the CLI build printed warnings and
+# exited 0, and this argument would have had a hole in it. Keep both gates in
+# step.
+#
+# What is left for main to catch is the genuinely desktop-only half (asar
+# layout, Electron ABI, packaged boot), where a same-day red on main still lands
+# well before a release tag is cut from main. If that ever stops holding,
+# widening the PR filter to match the push filter is a two-line change.
+#
+# NOT run here: the signed/notarized path (that needs Apple credentials and ~30+
+# minutes of notarization — desktop-release.yml owns it) and the Windows
+# installer (desktop-release.yml's verify-windows job owns that).
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/desktop-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/server/**'
+      - 'apps/client/**'
+      - 'packages/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/desktop-smoke.yml'
+  workflow_dispatch:
+
+# Opt into Node 24 for every JavaScript-based action (checkout, setup-node)
+# ahead of GitHub's Sept 2026 hard cutoff for the Node 20 runtime. See
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs on the same ref for PRs only — every push to main keeps
+# its own completed run. Matters more here than elsewhere: this job holds a
+# scarce macOS runner.
+concurrency:
+  group: desktop-smoke-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # SINGLE JOB ON PURPOSE. The native-module rebuild below flips the pnpm
+  # store's better-sqlite3/node-pty to Electron's ABI, which makes every
+  # plain-Node vitest worker in the monorepo die with a bare "Worker exited
+  # unexpectedly" (contributing/desktop-app-development.md §2). Confining it to
+  # a job that runs no tests — on a runner that is destroyed afterwards — is what
+  # keeps that blast radius at zero. Never add a test step to this job, and never
+  # move the rebuild into `pnpm build`.
+  packaged-runtime:
+    runs-on: macos-latest
+    # Baseline ~6 minutes end to end (measured): pnpm install, a cold turbo
+    # build of the desktop dependency graph, @electron/rebuild,
+    # electron-builder, then the launch — of which the launch-and-probe itself
+    # is ~8 seconds. Generous headroom for a cold pnpm cache; the point of the
+    # timeout is to bound a hung launch, not to police the happy path.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build desktop app
+        # Through turbo (not a bare pnpm --filter run) so workspace dependencies
+        # build first (^build): the renderer imports @dorkos/extension-api and
+        # friends, whose exports resolve to dist/ — absent on a fresh runner
+        # unless the dependency graph builds. This step also runs the server
+        # bundle's own gates (esbuild warnings + specifier resolution).
+        run: pnpm exec turbo build --filter=@dorkos/desktop
+
+      # Flips better-sqlite3/node-pty to Electron's ABI right before packaging
+      # (electron-builder.yml sets npmRebuild: false — see
+      # apps/desktop/scripts/rebuild-natives.ts for why its built-in rebuild is
+      # bypassed). Read the job comment above before moving this anywhere.
+      - name: Rebuild native modules for Electron
+        run: pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
+
+      # `--dir` (an unpacked .app, no dmg/zip) and CSC_IDENTITY_AUTO_DISCOVERY=false:
+      # this smoke must run on every eligible push, so it cannot depend on the
+      # Apple signing credentials that desktop-release.yml gates behind
+      # APPLE_DEVELOPER_CONFIGURED. An unsigned, freshly built app is not
+      # quarantined, so it launches without the Gatekeeper consent dialog that
+      # would otherwise block it forever (the smoke script clears extended
+      # attributes anyway — see contributing/desktop-app-development.md §6).
+      #
+      # An unsigned app can need one fixup before it launches at all: when
+      # electron-builder ad-hoc-signs each binary separately, hardened runtime's
+      # library validation makes macOS refuse to load the app's own Electron
+      # Framework. The smoke script detects and repairs that itself
+      # (`relaxAdhocLibraryValidation`), so this stays a plain pack. Observed on
+      # a local pack; NOT on this runner, where electron-builder left the
+      # Electron-signed binaries alone — hence "detects", not "always does".
+      - name: Package the app (unsigned, unpacked)
+        run: |
+          cd apps/desktop
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir --config electron-builder.yml
+
+      - name: Smoke the packaged runtime
+        run: pnpm --filter @dorkos/desktop exec tsx scripts/smoke-packaged.ts

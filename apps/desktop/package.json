@@ -11,7 +11,7 @@
     "preview": "electron-vite preview",
     "pack": "tsx scripts/rebuild-natives.ts && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
     "dist": "tsx scripts/rebuild-natives.ts && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "lint": "eslint .",
     "test": "vitest run"
   },
