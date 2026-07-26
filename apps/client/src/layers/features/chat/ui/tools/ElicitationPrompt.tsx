@@ -111,13 +111,18 @@ export function ElicitationPrompt({
   }, []);
 
   const handleOpenUrl = useCallback(() => {
-    if (url) {
-      // Always leaves the app. The server names this URL and the button
-      // promises a browser trip — `setUrlOpened` below would be a lie if this
-      // ever routed in-app or (in the router-less embed) did nothing.
-      openExternalLink(url);
-      setUrlOpened(true);
+    if (!url) return;
+    // Always leaves the app — the button promises a browser trip. Gate the
+    // "Done — I authorized" button on the link actually being dispatched: an
+    // MCP server can name a scheme the seam refuses (a `myapp://` desktop
+    // OAuth deep link, say), and offering to confirm an authorization that
+    // never opened would let someone accept a flow that never ran.
+    if (!openExternalLink(url)) {
+      setError(`Could not open ${url} — DorkOS only opens web, mail, and file links.`);
+      return;
     }
+    setError(null);
+    setUrlOpened(true);
   }, [url]);
 
   // Resolved state — compact summary

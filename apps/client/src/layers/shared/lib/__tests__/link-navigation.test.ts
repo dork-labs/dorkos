@@ -292,6 +292,17 @@ describe('link dispatch', () => {
       openLink('https://dorkos.ai');
       expect(openSpy).toHaveBeenCalled();
     });
+
+    it('reports whether the link was actually dispatched', () => {
+      expect(openLink('/tasks')).toBe(true);
+      expect(openLink('/tasks', { newTab: true })).toBe(true);
+      expect(openLink('https://dorkos.ai')).toBe(true);
+      expect(openLink('myapp://authorize')).toBe(false);
+      expect(openLink('javascript:alert(1)')).toBe(false);
+      unregister();
+      // Internal with nowhere to route it is a no-op, and must say so.
+      expect(openLink('/tasks')).toBe(false);
+    });
   });
 
   describe('openExternalLink', () => {
@@ -333,6 +344,16 @@ describe('link dispatch', () => {
       openExternalLink('javascript:alert(1)');
       expect(openSpy).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalled();
+    });
+
+    it('reports whether the link was actually dispatched', () => {
+      // Callers that tell the user something happened must gate on this.
+      // A refusal is otherwise silent, and silence reads as success.
+      expect(openExternalLink('https://dorkos.ai/docs')).toBe(true);
+      expect(openExternalLink('/session')).toBe(true);
+      expect(openExternalLink('myapp://authorize')).toBe(false);
+      expect(openExternalLink('javascript:alert(1)')).toBe(false);
+      expect(openExternalLink('http://')).toBe(false);
     });
   });
 

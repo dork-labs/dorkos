@@ -7,7 +7,9 @@
  * `window.open`; in the packaged desktop app that is our own
  * `http://localhost:<port>` origin, so the shell's window-open guard — doing
  * exactly its job — sends the cockpit to Chrome. Classification now happens
- * once, here, and every navigation call site routes through it.
+ * once, here, and every navigation the app's own code initiates routes through
+ * it. **Markdown links do not**: Streamdown renders and dispatches those under
+ * its own policy (see {@link DISPATCHABLE_PROTOCOLS}).
  *
  * What that fixes today is the in-place half: internal links move the router
  * instead of reloading the document. The new-tab half is not fixed yet — the
@@ -70,22 +72,37 @@ const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
 /**
  * The only schemes the seam will dispatch. Everything else is refused.
  *
- * An allowlist, not a denylist. This boundary is fed by surfaces we do not
- * control — gen-UI widgets an agent wrote, MCP App iframes, MCP elicitation
- * payloads — so it has to be safe against the scheme nobody has thought of yet,
- * not just the famous three. A denylist would have needed `blob:` and
- * `filesystem:` added today and something else next year.
+ * An allowlist, not a denylist — and a strict tightening of what came before,
+ * which permitted everything except `javascript:`, `data:` and `vbscript:`
+ * (so `blob:`, `filesystem:`, `dorkos:` and `app:` all passed). This boundary
+ * is fed by surfaces we do not control — gen-UI widgets an agent wrote, MCP App
+ * iframes, MCP elicitation payloads — so it has to be safe against the scheme
+ * nobody has thought of yet, not just the famous three.
  *
  * - `http:` / `https:` — nearly every link in the app.
  * - `mailto:` — inert, and a link type people expect to work.
- * - `file:` — load-bearing twice over: the canvas browser accepts `file://`
- *   targets (`classifyBrowserTarget`), so its "Open in system browser" button
- *   can hold one; and the `electron-vite preview` path loads the renderer
- *   straight off disk (`window-manager.ts`), where every relative in-app link
- *   inherits `file:`. (The packaged app itself serves the renderer over
- *   `http://localhost:<port>`, not `file://`.)
+ * - `file:` — **retained, not added**, and only a dev-path needs it: the
+ *   `electron-vite preview` fallback loads the renderer straight off disk
+ *   (`window-manager.ts`), and there every relative in-app link inherits
+ *   `file:`, so dropping it would break internal links in that mode. The
+ *   packaged app serves the renderer over `http://localhost:<port>` instead.
+ *   The canvas browser can also hold a `file://` target
+ *   (`classifyBrowserTarget` accepts one), but opening it is already a no-op on
+ *   every shipped surface — the desktop shell forwards only `http(s)` and
+ *   exposes no `openExternal` bridge, and browsers refuse `file:` from an
+ *   `http:` page. Dropping `file:` would turn that silent no-op into a warning,
+ *   nothing more; the preview path is the real reason it stays.
  *
- * Add a scheme only when something in the app actually opens one.
+ * Add a scheme only when something in the app actually opens one — and note
+ * that this list is defense in depth, not the only defense: the desktop shell's
+ * window-open handler is currently stricter still (`http(s)` only, everything
+ * else denied outright).
+ *
+ * **This policy does not govern markdown links.** Streamdown renders chat and
+ * `MarkdownContent` anchors and dispatches them itself, under `rehype-harden`'s
+ * sanitizer, which blocks `javascript:`/`data:`/`file:`/`vbscript:` but permits
+ * `blob:`, `irc:` and `xmpp:` — schemes this list refuses. The two policies are
+ * knowingly divergent; reconciling them is filed separately.
  */
 const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set([
   'http:',
@@ -240,18 +257,22 @@ export interface OpenLinkOptions {
  *
  * @param href - The link to open.
  * @param options - New-window and history intent.
+ * @returns `true` if the link was dispatched, `false` if it was refused or
+ * there was no router to route it through. **Check this before telling the user
+ * anything happened** — a refusal is silent otherwise, and a UI that reports
+ * success it did not verify is how "nothing opened" becomes "you're signed in".
  */
-export function openLink(href: string, options: OpenLinkOptions = {}): void {
+export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
   const link = classifyLink(href);
 
   if (link.kind === 'blocked') {
     console.warn(`[dorkos:link] refused to open ${link.reason} link:`, href);
-    return;
+    return false;
   }
 
   if (link.kind === 'external') {
     openInBrowser(link.url);
-    return;
+    return true;
   }
 
   if (options.newTab && supportsNewTab()) {
@@ -263,7 +284,7 @@ export function openLink(href: string, options: OpenLinkOptions = {}): void {
     // lets that handler tell "our own cockpit" from "someone else's site" when
     // it grows the check; adding `noopener` here would foreclose it.
     window.open(link.url, '_blank');
-    return;
+    return true;
   }
 
   if (!linkNavigator) {
@@ -271,30 +292,42 @@ export function openLink(href: string, options: OpenLinkOptions = {}): void {
     // never registered one. Falling back to a document load would reintroduce
     // the SPA remount this seam exists to prevent.
     console.warn('[dorkos:link] no router registered — ignoring internal link:', href);
-    return;
+    return false;
   }
 
   linkNavigator({ href: link.path, replace: options.replace });
+  return true;
 }
 
 /**
  * Open a link outside the app, whatever it points at.
  *
- * The right call for any action that promises to leave: the canvas browser's
- * "Open in system browser" button, and every link the user confirmed through
- * the `LinkSafetyModal` — that modal's contract is "this leaves what you are
- * looking at", so a target that happens to be one of our own routes must still
- * leave, not navigate the view out from under them. Works with no router
- * registered, so it behaves identically in the router-less Obsidian embed.
- * Schemes outside {@link DISPATCHABLE_PROTOCOLS} are still refused.
+ * The right call for any action that promises to leave. Its three direct call
+ * sites are the canvas browser's "Open in system browser" button and the two
+ * surfaces that render {@link LinkSafetyModal} themselves — the gen-UI widget
+ * `url` action and the MCP App iframe — plus the MCP elicitation prompt. That
+ * modal's contract is "this leaves what you are looking at", so a target that
+ * happens to be one of our own routes must still leave, not navigate the view
+ * out from under the reader. Works with no router registered, so it behaves
+ * identically in the router-less Obsidian embed.
+ *
+ * **Not every link in the product comes through here.** Markdown links in chat
+ * and in static `MarkdownContent` are rendered by Streamdown, which owns its own
+ * anchor, its own confirm handler, and its own `window.open` — see the note on
+ * {@link DISPATCHABLE_PROTOCOLS} about where the two policies diverge. Do not
+ * read this module as covering agent-authored prose links.
  *
  * @param href - The link to hand to the browser.
+ * @returns `true` if the link was handed to the browser, `false` if its scheme
+ * is outside {@link DISPATCHABLE_PROTOCOLS} or it could not be parsed. Callers
+ * that then report an outcome to the user must gate on this.
  */
-export function openExternalLink(href: string): void {
+export function openExternalLink(href: string): boolean {
   const link = classifyLink(href);
   if (link.kind === 'blocked') {
     console.warn(`[dorkos:link] refused to open ${link.reason} link:`, href);
-    return;
+    return false;
   }
   openInBrowser(link.url);
+  return true;
 }
