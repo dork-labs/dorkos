@@ -41,7 +41,7 @@ import {
 } from '@dorkos/shared/ui-widget';
 import {
   executeUiCommand,
-  openLink,
+  openExternalLink,
   TIMING,
   type CelebrationOrigin,
   type DispatcherContext,
@@ -258,7 +258,10 @@ export function WidgetActionProvider({
         isOpen={pendingUrl !== null}
         onClose={() => setPendingUrl(null)}
         onConfirm={() => {
-          if (pendingUrl) openLink(pendingUrl);
+          // Always leaves the app: the modal the user just confirmed says
+          // so, and an agent-authored href pointing at one of our own routes
+          // must not navigate the session out from under them.
+          if (pendingUrl) openExternalLink(pendingUrl);
           setPendingUrl(null);
         }}
       />

@@ -247,7 +247,7 @@ User input -> ChatPanel -> useChatSession.handleSubmit()
 - Tab content that needs to live outside the parameterless `component: ComponentType` shape
 - Custom dialog chrome that doesn't fit the `TabbedDialog` API
 
-Keyboard navigation inside the dialog is handled by `NavigationLayout`'s built-in `role="tablist"` — `Tab` into the sidebar, then `Up/Down/Home/End` to navigate between tabs. `TabbedDialog` does **not** register numeric modifier shortcuts (`⌘1-⌘9`) — those conflict with Chrome's browser-level tab-switching on macOS and with the existing session sidebar shortcuts registered in `shared/lib/shortcuts.ts`.
+Keyboard navigation inside the dialog is handled by `NavigationLayout`'s built-in `role="tablist"` — `Tab` into the sidebar, then `Up/Down/Home/End` to navigate between tabs. `TabbedDialog` does **not** register numeric modifier shortcuts (`⌘1-⌘9`) — those conflict with Chrome's browser-level tab-switching on macOS.
 
 For the underlying state-sync hook, see `useDialogTabState` in `shared/model/` (documented in `contributing/state-management.md`).
 

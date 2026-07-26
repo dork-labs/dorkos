@@ -5,8 +5,8 @@ covers:
 
 ### Fixed
 
-- DorkOS links now stay in DorkOS. In the desktop app, "Open in New Tab" in the command palette used to hand your own cockpit to Chrome; it now opens a real second DorkOS window, and every other in-app link moves you without reloading the page — so a running agent keeps streaming while you jump around (DOR-534)
-- Links that genuinely belong outside — the docs, GitHub, a sign-in page — still open in your normal browser, and links that could run code are refused outright (DOR-534)
+- Moving between DorkOS pages no longer reloads the whole app. Links that stay inside DorkOS switch pages instantly, so an agent that is mid-answer keeps streaming while you look around (DOR-534)
+- Links that belong outside DorkOS — the docs, GitHub, a sign-in page — now reliably open in your browser, including the ones an agent or a connected tool puts in front of you. DorkOS also refuses to open a link that could run code (DOR-534)
 
 ### Removed
 

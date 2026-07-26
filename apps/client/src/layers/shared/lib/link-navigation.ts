@@ -6,22 +6,30 @@
  * New Tab" built a URL from `window.location.href` and handed it to
  * `window.open`; in the packaged desktop app that is our own
  * `http://localhost:<port>` origin, so the shell's window-open guard — doing
- * exactly its job — sent the cockpit to Chrome. Classification now happens once,
- * here, and every navigation call site routes through it.
+ * exactly its job — sends the cockpit to Chrome. Classification now happens
+ * once, here, and every navigation call site routes through it.
+ *
+ * What that fixes today is the in-place half: internal links move the router
+ * instead of reloading the document. The new-tab half is not fixed yet — the
+ * shell's handler (`apps/desktop/src/main/window-manager.ts`) reads only the
+ * URL and still forwards any `http(s)` target to the system browser. Teaching
+ * it to adopt our own origin as a DorkOS window is separate work; this module
+ * keeps the call shape that lets it.
  *
  * - **Internal** — relative, hash-only, query-only, or absolute at the app's own
  *   origin *and* landing on a route the cockpit actually serves
  *   ({@link APP_ROUTE_PATHS}). Dispatched through TanStack Router, never as a
  *   document load: a full load in the desktop renderer remounts the whole SPA
  *   and drops streaming state.
- * - **External** — everything else: other origins, `mailto:`, custom schemes,
- *   and same-origin paths the router does not serve (`/api/…`, `/dev`).
- *   Dispatched with `window.open`, which is what the desktop shell's
- *   `will-navigate` / window-open guards watch for; they hand it to the system
- *   browser, which is the right home for it.
- * - **Blocked** — unparsable input and script-bearing schemes (`javascript:`,
- *   `data:`, `vbscript:`). Dispatch is a no-op. This matters because untrusted
- *   surfaces (gen-ui widgets, MCP App iframes) ask us to open links.
+ * - **External** — everything else: other origins, `mailto:`, and same-origin
+ *   paths the router does not serve (`/api/…`, `/dev`). Dispatched with
+ *   `window.open`, which is what the desktop shell's `will-navigate` /
+ *   window-open guards watch for; they hand it to the system browser, which is
+ *   the right home for it.
+ * - **Blocked** — unparsable input, and any scheme outside
+ *   {@link DISPATCHABLE_PROTOCOLS}. Dispatch is a no-op. This matters because
+ *   untrusted surfaces (gen-ui widgets, MCP App iframes, MCP elicitation) ask
+ *   us to open links.
  *
  * The router is registered once from the app entry ({@link registerLinkNavigator}).
  * The Obsidian embed deliberately mounts no router, so internal dispatch there
@@ -38,6 +46,13 @@ import { getPlatform } from './platform';
  * Kept here rather than derived from the router so classification stays a pure
  * function the tests can pin down. `app-route-paths.test.ts` builds the real
  * router and fails if the two ever drift.
+ *
+ * **Static paths only.** {@link classifyLink} matches a pathname by exact set
+ * membership, so a parameterised route (`/session/$sessionId`) cannot be
+ * represented by adding its literal here — the literal would satisfy the drift
+ * guard while `/session/abc` classified as external and got handed to the
+ * system browser. The guard rejects dynamic segments for that reason; a router
+ * that grows one needs a real matcher here, not another entry.
  */
 export const APP_ROUTE_PATHS = [
   '/',
@@ -52,15 +67,35 @@ export const APP_ROUTE_PATHS = [
 
 const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
 
-/** Schemes that can execute code if opened. Never dispatched, however they arrive. */
-const SCRIPT_BEARING_PROTOCOLS: ReadonlySet<string> = new Set([
-  'javascript:',
-  'data:',
-  'vbscript:',
+/**
+ * The only schemes the seam will dispatch. Everything else is refused.
+ *
+ * An allowlist, not a denylist. This boundary is fed by surfaces we do not
+ * control — gen-UI widgets an agent wrote, MCP App iframes, MCP elicitation
+ * payloads — so it has to be safe against the scheme nobody has thought of yet,
+ * not just the famous three. A denylist would have needed `blob:` and
+ * `filesystem:` added today and something else next year.
+ *
+ * - `http:` / `https:` — nearly every link in the app.
+ * - `mailto:` — inert, and a link type people expect to work.
+ * - `file:` — load-bearing twice over: the canvas browser accepts `file://`
+ *   targets (`classifyBrowserTarget`), so its "Open in system browser" button
+ *   can hold one; and the `electron-vite preview` path loads the renderer
+ *   straight off disk (`window-manager.ts`), where every relative in-app link
+ *   inherits `file:`. (The packaged app itself serves the renderer over
+ *   `http://localhost:<port>`, not `file://`.)
+ *
+ * Add a scheme only when something in the app actually opens one.
+ */
+const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set([
+  'http:',
+  'https:',
+  'mailto:',
+  'file:',
 ]);
 
 /** Why the seam refused a link. */
-export type BlockedLinkReason = 'unparsable' | 'unsafe-scheme';
+export type BlockedLinkReason = 'unparsable' | 'unsupported-scheme';
 
 /** A link that belongs to the cockpit and should be routed, not opened. */
 export interface InternalLink {
@@ -123,8 +158,8 @@ export function classifyLink(href: string, from: string = currentHref()): Classi
     return { kind: 'blocked', reason: 'unparsable' };
   }
 
-  if (SCRIPT_BEARING_PROTOCOLS.has(url.protocol)) {
-    return { kind: 'blocked', reason: 'unsafe-scheme' };
+  if (!DISPATCHABLE_PROTOCOLS.has(url.protocol)) {
+    return { kind: 'blocked', reason: 'unsupported-scheme' };
   }
   // Covers protocol-relative hrefs (`//evil.com`) and opaque schemes alike:
   // `mailto:`'s origin is the string "null", never our own.
@@ -220,8 +255,13 @@ export function openLink(href: string, options: OpenLinkOptions = {}): void {
   }
 
   if (options.newTab && supportsNewTab()) {
-    // Plain `_blank`, no `noopener`: this is our own cockpit, and the desktop
-    // shell's window-open handler turns it into a real DorkOS window.
+    // Plain `_blank`, no `noopener` — forward wiring. In the browser this is
+    // already a real second cockpit tab. In the desktop shell it is still
+    // forwarded to the system browser today: the window-open handler
+    // (`apps/desktop/src/main/window-manager.ts`) reads only the URL and
+    // ignores `features`/`disposition`. Keeping the shape unpolluted is what
+    // lets that handler tell "our own cockpit" from "someone else's site" when
+    // it grows the check; adding `noopener` here would foreclose it.
     window.open(link.url, '_blank');
     return;
   }
@@ -240,10 +280,13 @@ export function openLink(href: string, options: OpenLinkOptions = {}): void {
 /**
  * Open a link outside the app, whatever it points at.
  *
- * The deliberate escape hatch for actions whose whole purpose is to leave —
- * the canvas browser's "Open in system browser" button — where the target may
- * well be one of our own URLs and routing it in-app would contradict the
- * button. Script-bearing schemes are still refused.
+ * The right call for any action that promises to leave: the canvas browser's
+ * "Open in system browser" button, and every link the user confirmed through
+ * the `LinkSafetyModal` — that modal's contract is "this leaves what you are
+ * looking at", so a target that happens to be one of our own routes must still
+ * leave, not navigate the view out from under them. Works with no router
+ * registered, so it behaves identically in the router-less Obsidian embed.
+ * Schemes outside {@link DISPATCHABLE_PROTOCOLS} are still refused.
  *
  * @param href - The link to hand to the browser.
  */

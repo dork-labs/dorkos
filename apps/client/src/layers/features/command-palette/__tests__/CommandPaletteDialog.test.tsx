@@ -361,12 +361,13 @@ describe('CommandPaletteDialog', () => {
     if (newTabItem) fireEvent.click(newTabItem as Element);
 
     expect(openSpy).toHaveBeenCalledTimes(1);
-    const [target, features] = openSpy.mock.calls[0];
-    const opened = new URL(String(target));
+    // Asserting the WHOLE call pins the arity: a third argument would fail
+    // this, which is the point — `noopener` must never be added here.
+    expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
+    const opened = new URL(String(openSpy.mock.calls[0][0]));
     expect(opened.origin).toBe(window.location.origin);
     expect(opened.pathname).toBe('/');
     expect(opened.searchParams.get('dir')).toBe('/projects/current');
-    expect(features).toBe('_blank');
     expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
 
     openSpy.mockRestore();

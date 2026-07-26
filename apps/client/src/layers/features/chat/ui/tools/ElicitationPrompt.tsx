@@ -7,7 +7,7 @@
  */
 import { useState, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { cn, openLink } from '@/layers/shared/lib';
+import { cn, openExternalLink } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import type { ElicitationAction } from '@dorkos/shared/types';
@@ -112,7 +112,10 @@ export function ElicitationPrompt({
 
   const handleOpenUrl = useCallback(() => {
     if (url) {
-      openLink(url);
+      // Always leaves the app. The server names this URL and the button
+      // promises a browser trip — `setUrlOpened` below would be a lie if this
+      // ever routed in-app or (in the router-less embed) did nothing.
+      openExternalLink(url);
       setUrlOpened(true);
     }
   }, [url]);

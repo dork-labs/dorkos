@@ -99,8 +99,25 @@ describe('classifyLink', () => {
     });
   });
 
-  it('treats a custom scheme as external', () => {
-    expect(classifyLink('dorkos://session/abc', FROM)).toMatchObject({ kind: 'external' });
+  it('treats file: as external — the canvas browser and the packaged renderer both use it', () => {
+    expect(classifyLink('file:///Users/kai/notes.md', FROM)).toMatchObject({ kind: 'external' });
+  });
+
+  it('blocks a scheme nothing in the app opens', () => {
+    // Allowlist, not denylist: an unknown scheme is refused rather than
+    // forwarded, because untrusted surfaces choose these strings.
+    expect(classifyLink('dorkos://session/abc', FROM)).toEqual({
+      kind: 'blocked',
+      reason: 'unsupported-scheme',
+    });
+    expect(classifyLink('blob:http://localhost:4242/9f2c', FROM)).toEqual({
+      kind: 'blocked',
+      reason: 'unsupported-scheme',
+    });
+    expect(classifyLink('filesystem:http://localhost:4242/temporary/x', FROM)).toEqual({
+      kind: 'blocked',
+      reason: 'unsupported-scheme',
+    });
   });
 
   it('treats a same-origin path the router does not serve as external', () => {
@@ -113,15 +130,19 @@ describe('classifyLink', () => {
   it('blocks script-bearing schemes', () => {
     expect(classifyLink('javascript:alert(1)', FROM)).toEqual({
       kind: 'blocked',
-      reason: 'unsafe-scheme',
+      reason: 'unsupported-scheme',
     });
     expect(classifyLink('data:text/html,<script>alert(1)</script>', FROM)).toEqual({
       kind: 'blocked',
-      reason: 'unsafe-scheme',
+      reason: 'unsupported-scheme',
     });
     expect(classifyLink('  JavaScript:alert(1)', FROM)).toEqual({
       kind: 'blocked',
-      reason: 'unsafe-scheme',
+      reason: 'unsupported-scheme',
+    });
+    expect(classifyLink('vbscript:msgbox(1)', FROM)).toEqual({
+      kind: 'blocked',
+      reason: 'unsupported-scheme',
     });
   });
 
@@ -142,6 +163,31 @@ describe('classifyLink', () => {
   it('defaults its base to the current page', () => {
     // jsdom serves the tests from localhost, whose root path is an app route.
     expect(classifyLink('/tasks')).toMatchObject({ kind: 'internal', path: '/tasks' });
+  });
+
+  it('keeps working from a file:// base (the electron-vite preview renderer)', () => {
+    // `loadFile` puts the renderer on file://, where a relative in-app link
+    // inherits `file:`. Dropping it from the allowlist would block every
+    // internal link in that mode, so this pins it.
+    const from = 'file:///Applications/DorkOS.app/renderer/index.html';
+    expect(classifyLink('/tasks', from)).toMatchObject({ kind: 'internal', path: '/tasks' });
+    expect(classifyLink('https://dorkos.ai', from)).toMatchObject({ kind: 'external' });
+  });
+
+  it('degrades safely from an app:// base (the Obsidian embed)', () => {
+    // Obsidian's own page origin. Absolute links still classify normally; a
+    // relative one inherits `app:`, which nothing in the app opens, so it is
+    // refused rather than turned into an `app://obsidian.md/...` navigation.
+    // The embed has no router either way, so no reachable behavior is lost.
+    const from = 'app://obsidian.md/index.html';
+    expect(classifyLink('https://dorkos.ai/docs', from)).toEqual({
+      kind: 'external',
+      url: 'https://dorkos.ai/docs',
+    });
+    expect(classifyLink('/agents', from)).toEqual({
+      kind: 'blocked',
+      reason: 'unsupported-scheme',
+    });
   });
 
   it('classifies every declared app route as internal', () => {
@@ -219,6 +265,14 @@ describe('link dispatch', () => {
       expect(warnSpy).toHaveBeenCalled();
     });
 
+    it('opens an internal target with exactly two arguments — never noopener', () => {
+      // The desktop shell's window-open handler has to be able to tell our own
+      // cockpit from someone else's site; a `noopener` third argument here
+      // would forfeit that. Asserting the whole call pins the arity.
+      openLink('/tasks', { newTab: true });
+      expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
+    });
+
     it('navigates in place instead of opening a window in the embed', () => {
       setPlatformAdapter(embeddedPlatform);
       openLink('/tasks', { newTab: true });
@@ -242,12 +296,36 @@ describe('link dispatch', () => {
 
   describe('openExternalLink', () => {
     it('leaves the app even for one of our own routes', () => {
+      // The LinkSafetyModal's contract is "this leaves what you are looking
+      // at". A gen-UI widget, MCP App, or elicitation payload naming `/agents`
+      // must not navigate the session out from under the reader.
       openExternalLink('/session');
       expect(openSpy).toHaveBeenCalledWith(
         `${window.location.origin}/session`,
         '_blank',
         'noopener,noreferrer'
       );
+      expect(navigated).toEqual([]);
+    });
+
+    it('still opens with no router registered', () => {
+      // The Obsidian embed mounts no router (App.tsx). Confirmed-link opens
+      // must not fall into the internal warn-and-do-nothing branch there.
+      unregister();
+      openExternalLink('https://dorkos.ai/docs');
+      expect(openSpy).toHaveBeenCalledWith(
+        'https://dorkos.ai/docs',
+        '_blank',
+        'noopener,noreferrer'
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('still opens in the embed, router or not', () => {
+      setPlatformAdapter(embeddedPlatform);
+      unregister();
+      openExternalLink('https://dorkos.ai/docs');
+      expect(openSpy).toHaveBeenCalledTimes(1);
       expect(navigated).toEqual([]);
     });
 
