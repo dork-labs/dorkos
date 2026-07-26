@@ -32,12 +32,18 @@ name: Desktop Smoke
 # Why the wide net is NOT on pull requests: the server-bundle half of that risk
 # is already covered on PRs, cheaply and on ubuntu. cli-smoke-test.yml filters
 # on apps/server/** + apps/client/** and builds the CLI, whose esbuild server
-# bundle has the same external list and the same module graph as this app's —
-# so a server change that breaks bundling goes red there first. What is left
-# for main to catch is the genuinely desktop-only half (asar layout, Electron
-# ABI, packaged boot), where a same-day red on main still lands well before a
-# release tag is cut from main. If that ever stops holding, widening the PR
-# filter to match the push filter is a two-line change.
+# bundle has the same external list and the same module graph as this app's,
+# then installs the tarball and RUNS it (bare Node 22/24 + Docker) — so a server
+# change that breaks bundling or boot goes red there first. That covers the
+# esbuild-warning class too, but only since DOR-536 put the same warning gate in
+# packages/cli/scripts/build.ts; before that the CLI build printed warnings and
+# exited 0, and this argument would have had a hole in it. Keep both gates in
+# step.
+#
+# What is left for main to catch is the genuinely desktop-only half (asar
+# layout, Electron ABI, packaged boot), where a same-day red on main still lands
+# well before a release tag is cut from main. If that ever stops holding,
+# widening the PR filter to match the push filter is a two-line change.
 #
 # NOT run here: the signed/notarized path (that needs Apple credentials and ~30+
 # minutes of notarization — desktop-release.yml owns it) and the Windows

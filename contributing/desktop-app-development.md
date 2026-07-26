@@ -42,7 +42,9 @@ The main process spawns the Express server, not in-process:
 That bundle carries two gates, both of which fail the build (DOR-536):
 
 - **No esbuild warnings.** esbuild reports this app's most expensive failure class — a bundle that builds green and dies only in a packaged install — as _warnings_: an unresolvable dynamic `require`, `import.meta` in the wrong output format, an external that never resolves. `ALLOWED_WARNING_TEXTS` in `build-server.ts` is the allowlist and is empty; adding to it requires quoting the warning and saying why it's safe.
-- **Every runtime specifier resolves.** After a successful build the script `node --check`s the emitted `.mjs` and resolves every external the metafile says it left in the output (plus the two `require`-routed natives, which esbuild can't see) from the bundle's own directory. A package that's external but not a dependency of `apps/desktop` now fails the build instead of `ERR_MODULE_NOT_FOUND`-ing at `utilityProcess.fork()` time in a real install.
+- **Every runtime specifier resolves _and ships_.** After a successful build the script `node --check`s the emitted `.mjs`, resolves every external the metafile says it left in the output (plus the two `require`-routed natives, which esbuild can't see) from the bundle's own directory, and then checks each one's package is a declared `dependencies`/`optionalDependencies` entry. Both halves are needed: at build time `dist/server/` sits inside the source tree, so resolution also reaches devDependencies and the repo root — a devDependency would resolve happily here and be absent from the packaged app, since electron-builder packs only the production tree.
+
+The same warning gate now guards `packages/cli/scripts/build.ts` — same module graph, same external list, and it's the launch-critical surface. Keep the two copies in step.
 
 Both gates stop at resolution and never _evaluate_ the bundle — evaluating it would boot the server (port + `~/.dork`) and `dlopen` the native modules, which after a `rebuild-natives.ts` run would wedge the build under system Node. The packaged runtime is exercised for real by `scripts/smoke-packaged.ts` (§5) instead.
 
@@ -113,7 +115,16 @@ Main-process code is unit-tested against a mocked `electron` module (`vi.mock('e
 
 ### Smoke-testing the packaged runtime
 
-Everything between "the bundles emit" and "the app works" is unreachable by unit tests, and it is where the expensive bugs live (a dead server port after a restart, a stale renderer URL, a wrong window state — all shipped, all found by hand). `scripts/smoke-packaged.ts` launches the packaged app, waits for its server to answer `/api/health` on the port it actually opened (discovered via `lsof` over the app's process tree, so no log-format coupling), asserts the reported version matches `apps/desktop/package.json` (proving it's serving the bundle you just packaged), then quits it and asserts the port is released rather than orphaned. It runs the app with a throwaway `$HOME`, so it never touches your real `~/.dork`.
+Everything between "the bundles emit" and "the app works" is unreachable by unit tests, and it is where the expensive bugs live (a dead server port after a restart, a stale renderer URL, a wrong window state — all shipped, all found by hand). `scripts/smoke-packaged.ts` launches the packaged app, waits for its server to answer `/api/health` on the port it actually opened (discovered via `lsof` over the app's process tree, so no log-format coupling), asserts the reported version matches `apps/desktop/package.json` (proving it's serving the bundle you just packaged) and that the packaged bundle id matches `appId`, then quits it and asserts a clean exit 0 with the port released rather than orphaned.
+
+**It is safe to run on your own machine**, and that took care: the run boots a full production server for up to two minutes, so without isolation it would run the _packaged_ migration set against your real `~/.dork/dork.db`. Setting `HOME` is not enough — Electron's `app.getPath('home')` resolves through CoreFoundation's `NSHomeDirectory()`, which ignores `$HOME`, and `server-process.ts` builds `DORK_HOME` from it. Measured:
+
+```text
+HOME=/private/tmp/fakehome   →  getPath(home) = /Users/<you>          ← your real home
++ CFFIXED_USER_HOME=…        →  getPath(home) = /private/tmp/fakehome
+```
+
+So the script sets **both** (`HOME` steers Node's `os.homedir()`, `CFFIXED_USER_HOME` steers Electron's `getPath`) and then asserts the SQLite store really landed in the throwaway tree. Half isolation is worse than none — it looks contained while writing to the real database, and CI can't catch it because a runner's home is disposable. Don't drop either variable or the assertion.
 
 ```bash
 pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts

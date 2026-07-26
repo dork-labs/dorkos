@@ -1,4 +1,4 @@
-import { build, type Plugin } from 'esbuild';
+import { build, formatMessages, type Message, type Plugin } from 'esbuild';
 import { execSync } from 'child_process';
 import fs from 'fs/promises';
 import { cpSync, readFileSync, readdirSync } from 'fs';
@@ -150,6 +150,55 @@ function serverServicesRedirectPlugin(): Plugin {
   };
 }
 
+/**
+ * esbuild warning texts tolerated in these bundles, matched as substrings of
+ * `Message.text`.
+ *
+ * Deliberately EMPTY. esbuild reports the failure modes that survive a build
+ * and only break at a user's install as *warnings*, not errors — an
+ * unresolvable dynamic `require`, `import.meta` in the wrong output format, an
+ * external that never resolves. Both bundles here are warning-free today, so
+ * the strongest gate is also the free one.
+ *
+ * Every entry added here must quote the exact warning and say why it is safe.
+ * "It's noisy" is not a reason — fix the cause instead.
+ *
+ * Deliberately duplicated from `apps/desktop/scripts/build-server.ts` rather
+ * than shared, matching how `dorkosSourcePlugin` is already duplicated between
+ * these two scripts (see the invariant note above): they are otherwise
+ * unrelated, and a shared build-tooling package for ~20 lines would cost more
+ * than it saves. Keep the two copies in step.
+ */
+const ALLOWED_WARNING_TEXTS: readonly string[] = [];
+
+/**
+ * Fail the build on any esbuild warning outside {@link ALLOWED_WARNING_TEXTS}.
+ *
+ * @param label - Which bundle produced them, for the error message.
+ * @param warnings - `BuildResult.warnings` from that bundle.
+ * @throws If any warning is not allowlisted.
+ */
+async function assertNoUnexpectedWarnings(label: string, warnings: Message[]): Promise<void> {
+  const unexpected = warnings.filter(
+    (warning) => !ALLOWED_WARNING_TEXTS.some((allowed) => warning.text.includes(allowed))
+  );
+  if (unexpected.length === 0) return;
+
+  // Reuse esbuild's own renderer so the failure reads exactly like the
+  // warnings it prints on the success path (file, line, source excerpt).
+  const rendered = await formatMessages(unexpected, {
+    kind: 'warning',
+    color: true,
+    terminalWidth: 100,
+  });
+  throw new Error(
+    `esbuild emitted ${unexpected.length} warning(s) building the ${label} bundle; ` +
+      `refusing to publish a bundle nobody has looked at.\n\n${rendered.join('\n')}\n` +
+      `Fix the cause, or — if the warning is genuinely safe here — add it to ` +
+      `ALLOWED_WARNING_TEXTS in this file with a comment saying why.`
+  );
+}
+
 async function buildCLI() {
   // Clean
   await fs.rm(OUT, { recursive: true, force: true });
@@ -161,7 +210,7 @@ async function buildCLI() {
 
   // 2. Bundle server (esbuild) — inlines @dorkos/shared, externalizes node_modules
   console.log('[2/3] Bundling server...');
-  await build({
+  const serverBundle = await build({
     entryPoints: [path.join(ROOT, 'apps/server/src/index.ts')],
     bundle: true,
     platform: 'node',
@@ -252,8 +301,13 @@ async function buildCLI() {
   // The CLI imports ../server/services/core/config-manager.js which doesn't exist
   // relative to packages/cli/src/. The redirect plugin points it at server source;
   // the source plugin inlines every @dorkos/* import from source (see invariant).
+  // esbuild's default logLevel PRINTS warnings and exits 0. Everything this
+  // bundle can get wrong in a way that only shows up at a user's install
+  // arrives as a warning, so read them (DOR-536).
+  await assertNoUnexpectedWarnings('server', serverBundle.warnings);
+
   console.log('[3/3] Compiling CLI...');
-  await build({
+  const cliBundle = await build({
     entryPoints: [path.join(ROOT, 'packages/cli/src/cli.ts')],
     bundle: true,
     platform: 'node',
@@ -287,10 +341,26 @@ async function buildCLI() {
     banner: { js: '#!/usr/bin/env node' },
   });
 
+  await assertNoUnexpectedWarnings('CLI', cliBundle.warnings);
+
   // Make executable
   await fs.chmod(path.join(OUT, 'bin/cli.js'), 0o755);
 
   console.log('Build complete.');
 }
 
-buildCLI();
+// Node ≥15 already exits non-zero on an unhandled rejection, but this build's
+// failure semantics must not rest on a runtime default that a flag or a future
+// Node can change — and the default's output buries the cause under an
+// UnhandledPromiseRejection stack nobody reads.
+//
+// The rejected output is deleted rather than left behind: the warning gates
+// above run AFTER esbuild has written their bundles, and `dist/` here is what
+// `pnpm pack` publishes to npm. (The desktop's equivalent gate learned this the
+// hard way — a rejected bundle got packaged and died at fork time.)
+buildCLI().catch(async (err: unknown) => {
+  await fs.rm(OUT, { recursive: true, force: true });
+  console.error(`\n[cli-build] Build FAILED:\n`);
+  console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+  process.exit(1);
+});

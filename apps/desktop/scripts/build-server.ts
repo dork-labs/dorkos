@@ -1,6 +1,7 @@
 import { execFileSync } from 'child_process';
 import { build, formatMessages, type Message, type Metafile, type Plugin } from 'esbuild';
 import { cpSync, readFileSync, readdirSync, rmSync } from 'fs';
+import { isBuiltin } from 'module';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -235,9 +236,17 @@ async function assertNoUnexpectedWarnings(warnings: Message[]): Promise<void> {
 /**
  * Source of the child process that checks every specifier the bundle will ask
  * Node for at load time. Runs as ESM with its CWD set to the bundle's own
- * directory, so `import.meta.resolve` walks the same `node_modules` chain the
- * packaged app's `utilityProcess.fork()` of `dist/server/server-entry.mjs`
- * walks (`dist/server/` -> `dist/` -> the desktop package's `node_modules`).
+ * directory, so `import.meta.resolve` starts the same walk the packaged app's
+ * `utilityProcess.fork()` of `dist/server/server-entry.mjs` starts
+ * (`dist/server/` -> `dist/` -> the desktop package's `node_modules`).
+ *
+ * It is a SUPERSET of that walk, not an equal: at build time `dist/server/`
+ * sits inside the source tree, so resolution continues past
+ * `apps/desktop/node_modules` — which also holds devDependencies electron-
+ * builder never packs — and on up to the repo root. A devDependency would
+ * therefore resolve here and still be missing from a real install. That gap is
+ * what {@link assertExternalsArePackaged} closes; the two checks are only
+ * complete together.
  *
  * Resolution only: `import.meta.resolve` locates a package's entry file
  * without loading it. That is the whole point — see
@@ -304,8 +313,61 @@ function collectRuntimeSpecifiers(metafile: Metafile): string[] {
 }
 
 /**
+ * The package name a specifier resolves through: `zod/v4` -> `zod`,
+ * `@scope/pkg/sub` -> `@scope/pkg`.
+ *
+ * @param specifier - A bare import specifier.
+ */
+function packageNameOf(specifier: string): string {
+  const segments = specifier.split('/');
+  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0];
+}
+
+/**
+ * Assert every package the bundle imports is one electron-builder will pack.
+ *
+ * The resolution check alone cannot see this: it runs against the source tree,
+ * where `node_modules` also contains devDependencies (see
+ * {@link RESOLVE_SPECIFIERS_HARNESS}). electron-builder copies only the
+ * PRODUCTION dependency tree into `app.asar`, so an external that is merely a
+ * devDependency resolves cleanly at build time and is simply absent from the
+ * installed app — the same `ERR_MODULE_NOT_FOUND` at fork time, from the one
+ * direction the other gate is blind to.
+ *
+ * Nothing trips this today (all externals are real dependencies); it exists so
+ * that stays true by construction rather than by luck.
+ *
+ * @param specifiers - Runtime specifiers from {@link collectRuntimeSpecifiers}.
+ * @throws If a specifier's package is not a declared runtime dependency.
+ */
+function assertExternalsArePackaged(specifiers: string[]): void {
+  const pkg = JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as {
+    dependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+  };
+  // optionalDependencies count: electron-builder packs them, and that is how
+  // the per-platform Claude Code binary ships (see electron-builder.yml).
+  const packaged = new Set([
+    ...Object.keys(pkg.dependencies ?? {}),
+    ...Object.keys(pkg.optionalDependencies ?? {}),
+  ]);
+  const missing = specifiers
+    .filter((specifier) => !isBuiltin(specifier))
+    .map(packageNameOf)
+    .filter((name) => !packaged.has(name));
+  if (missing.length === 0) return;
+  throw new Error(
+    `The bundle imports ${[...new Set(missing)].join(', ')} at runtime, but ` +
+      `apps/desktop/package.json does not list it under dependencies or ` +
+      `optionalDependencies. It resolves from the source tree (probably as a ` +
+      `devDependency or a hoisted transitive) and would be ABSENT from the packaged ` +
+      `app — electron-builder packs only the production dependency tree.`
+  );
+}
+
+/**
  * Verify the emitted bundle would actually load, so a missing or misspelled
- * external fails the BUILD rather than the release. Two gates:
+ * external fails the BUILD rather than the release. Three gates:
  *
  * 1. `node --check` parses the output as ESM (it is `.mjs`), catching a
  *    malformed emit before it reaches a packaged app.
@@ -332,7 +394,8 @@ function collectRuntimeSpecifiers(metafile: Metafile): string[] {
  *
  * @param outfile - Absolute path to the emitted server bundle.
  * @param metafile - `BuildResult.metafile` from the same build.
- * @throws If the bundle does not parse, or any specifier fails to resolve.
+ * @throws If the bundle does not parse, a specifier fails to resolve, or a
+ *   specifier resolves only because of a dependency that is not packaged.
  */
 function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
   try {
@@ -356,7 +419,10 @@ function verifyBundleLoadable(outfile: string, metafile: Metafile): void {
         `this script's \`external\` list.`
     );
   }
-  console.log(`  ✓ Bundle parses as ESM; all ${specifiers.length} runtime specifiers resolve`);
+  assertExternalsArePackaged(specifiers);
+  console.log(
+    `  ✓ Bundle parses as ESM; all ${specifiers.length} runtime specifiers resolve and ship`
+  );
 }
 
 async function buildServer() {

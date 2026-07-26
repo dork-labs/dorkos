@@ -105,9 +105,7 @@ function findPackagedApp(): string {
 }
 
 /**
- * Read a value out of the packaged app's `Info.plist`, so the smoke asserts
- * against what was actually packaged instead of a copy of electron-builder.yml
- * that could drift from it.
+ * Read a value out of the packaged app's `Info.plist`.
  *
  * @param appPath - Absolute path to the `.app` bundle.
  * @param key - The `Info.plist` key to read (e.g. `CFBundleIdentifier`).
@@ -116,6 +114,45 @@ function readInfoPlist(appPath: string, key: string): string {
   return execFileSync('defaults', ['read', path.join(appPath, 'Contents', 'Info'), key], {
     encoding: 'utf-8',
   }).trim();
+}
+
+/**
+ * Assert the packaged bundle identifier is the one `electron-builder.yml`
+ * declares.
+ *
+ * The identity in `Info.plist` is what macOS keys everything off — the
+ * `dorkos://` protocol registration, the single-instance lock, Keychain items,
+ * the `userData` directory, and which app an auto-update replaces. If it ever
+ * silently stops matching `appId`, an update ships as a *second* app rather
+ * than replacing the first. Reading the packed plist and comparing it to the
+ * config makes that a build failure instead of a support thread.
+ *
+ * `appId` is parsed with a regex rather than a YAML dependency: it is a flat,
+ * unquoted, top-level scalar in this file, and adding a parser to a smoke
+ * script to read one line is not a trade worth making.
+ *
+ * @param appPath - Absolute path to the `.app` bundle.
+ * @returns The verified bundle identifier.
+ * @throws If the config declares an `appId` and the packaged app disagrees.
+ */
+function assertBundleIdMatchesConfig(appPath: string): string {
+  const packaged = readInfoPlist(appPath, 'CFBundleIdentifier');
+  const config = readFileSync(path.join(DESKTOP_PKG, 'electron-builder.yml'), 'utf-8');
+  const declared = /^appId:\s*(\S+)/m.exec(config)?.[1];
+  if (!declared) {
+    throw new Error(
+      `Could not read appId from electron-builder.yml. If it moved or gained quoting, update ` +
+        `assertBundleIdMatchesConfig — do not delete the check.`
+    );
+  }
+  if (packaged !== declared) {
+    throw new Error(
+      `Packaged CFBundleIdentifier is "${packaged}" but electron-builder.yml declares ` +
+        `appId "${declared}". macOS keys deep links, the single-instance lock and auto-update ` +
+        `replacement off this identity; a mismatch ships an update as a second app.`
+    );
+  }
+  return packaged;
 }
 
 /**
@@ -257,8 +294,10 @@ async function probeHealth(endpoint: Endpoint): Promise<HealthResponse | null> {
 interface LaunchedApp {
   /** pid of the app's main process. */
   pid: number;
-  /** Exit code, once the process has exited; `null` while it is running. */
+  /** Exit code, once the process has exited; `null` if a signal killed it. */
   exitCode: number | null;
+  /** Signal that killed the process, if one did. */
+  exitSignal: NodeJS.Signals | null;
   /** Whether the process has exited. */
   exited: boolean;
   /** Everything the app wrote to stdout/stderr, for failure diagnosis. */
@@ -268,12 +307,35 @@ interface LaunchedApp {
 }
 
 /**
- * Launch the packaged app with an isolated HOME.
+ * Launch the packaged app against a throwaway home directory.
  *
- * The app derives both `DORK_HOME` (`~/.dork`) and Electron's `userData` from
- * `$HOME`, so pointing it at a throwaway directory gives every run a clean
- * first-run boot and keeps the smoke from touching a real install — it has to
- * be safe to run on a developer's machine, not just a disposable runner.
+ * This has to be safe on a developer's machine, not just a disposable runner:
+ * the run boots a full production server for up to two minutes, and without
+ * isolation it would run the PACKAGED migration set against the developer's
+ * real `~/.dork/dork.db`, write a DorkBot, stage core extensions and rewrite
+ * `config.json`.
+ *
+ * **`HOME` alone does not do it.** `server-process.ts` derives `DORK_HOME` from
+ * `app.getPath('home')`, which resolves through CoreFoundation's
+ * `NSHomeDirectory()` — and that ignores `$HOME` in favour of `getpwuid`.
+ * Measured against this app's own Electron:
+ *
+ * ```text
+ * HOME=/private/tmp/fakehome  →  getPath(home)     = /Users/<real user>   ← real home
+ *                                getPath(userData) = /Users/<real user>/Library/…
+ * + CFFIXED_USER_HOME=…       →  getPath(home)     = /private/tmp/fakehome
+ *                                getPath(userData) = /private/tmp/fakehome/Library/…
+ * ```
+ *
+ * `CFFIXED_USER_HOME` is the knob CoreFoundation checks first, and it corrects
+ * `home` and `userData` together. Both vars are set because they steer
+ * different resolvers: Node's `os.homedir()` (the server child's `~/.claude`
+ * lookups) honours `HOME`, Electron's `getPath` honours `CFFIXED_USER_HOME`.
+ * Setting only one leaves the app HALF isolated — which is worse than none,
+ * because it looks contained while writing to the real database.
+ *
+ * {@link assertDataDirIsolated} proves this actually held, every run. Do not
+ * drop either variable or that assertion.
  *
  * @param appPath - Absolute path to the `.app` bundle.
  * @param home - Absolute path to the throwaway home directory.
@@ -281,13 +343,19 @@ interface LaunchedApp {
 function launchApp(appPath: string, home: string): LaunchedApp {
   const executable = path.join(appPath, 'Contents', 'MacOS', path.basename(appPath, '.app'));
   const child = spawn(executable, [], {
-    env: { ...process.env, HOME: home, ELECTRON_ENABLE_LOGGING: '1' },
+    env: {
+      ...process.env,
+      HOME: home,
+      CFFIXED_USER_HOME: home,
+      ELECTRON_ENABLE_LOGGING: '1',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
   const app: LaunchedApp = {
     pid: child.pid!,
     exitCode: null,
+    exitSignal: null,
     exited: false,
     output: [],
     terminate: (signal) => {
@@ -302,9 +370,10 @@ function launchApp(appPath: string, home: string): LaunchedApp {
   };
   child.stdout.on('data', capture);
   child.stderr.on('data', capture);
-  child.on('exit', (code) => {
+  child.on('exit', (code, signal) => {
     app.exited = true;
     app.exitCode = code;
+    app.exitSignal = signal;
   });
 
   return app;
@@ -366,6 +435,36 @@ async function quitApp(app: LaunchedApp): Promise<void> {
 }
 
 /**
+ * Assert the app actually wrote its data directory inside the throwaway home.
+ *
+ * The whole isolation argument in {@link launchApp} is an argument about how
+ * two OS-level resolvers behave. This is the part that makes it a fact: if the
+ * server's SQLite store is here, `DORK_HOME` resolved into the throwaway tree,
+ * and the developer's real `~/.dork` was not touched. It catches a dropped env
+ * var, and it would have caught the `HOME`-only version of this script — which
+ * looked isolated, read green in CI (a runner's home is disposable), and
+ * quietly migrated the real database on a developer's machine.
+ *
+ * Runs after the health probe, by which point the server has created the store
+ * and run its migrations.
+ *
+ * @param home - The throwaway home the app was launched against.
+ * @throws If the data directory is not inside `home`.
+ */
+function assertDataDirIsolated(home: string): void {
+  // apps/server/src/index.ts: `path.join(dorkHome, 'dork.db')`, where dorkHome
+  // is the DORK_HOME that server-process.ts derived from app.getPath('home').
+  const db = path.join(home, '.dork', 'dork.db');
+  if (existsSync(db)) return;
+  throw new Error(
+    `The app did not write its database inside the throwaway home — expected ${db}.\n` +
+      `That means DORK_HOME resolved somewhere else, almost certainly the real ~/.dork, and ` +
+      `this run just booted a production server against it. Check that launchApp still sets ` +
+      `BOTH HOME and CFFIXED_USER_HOME (see its comment for why neither alone is enough).`
+  );
+}
+
+/**
  * Assert the server port stops answering once the app is gone.
  *
  * This is the orphan check: `stopServer()` shuts the server child down on
@@ -403,7 +502,7 @@ async function main(): Promise<void> {
     JSON.parse(readFileSync(path.join(DESKTOP_PKG, 'package.json'), 'utf-8')) as { version: string }
   ).version;
   console.log(`[1/5] Packaged app: ${appPath}`);
-  console.log(`      Bundle id: ${readInfoPlist(appPath, 'CFBundleIdentifier')}`);
+  console.log(`      Bundle id: ${assertBundleIdMatchesConfig(appPath)} (matches appId)`);
 
   // A freshly built app is not quarantined, so this is normally a no-op — but
   // when it is not, the failure it prevents (Gatekeeper's consent dialog
@@ -420,7 +519,7 @@ async function main(): Promise<void> {
 
   const home = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-home-'));
   const app = launchApp(appPath, home);
-  console.log(`[3/5] Launched (pid ${app.pid}) with HOME=${home}`);
+  console.log(`[3/5] Launched (pid ${app.pid}) against throwaway home ${home}`);
 
   try {
     const { endpoint, health } = await waitForHealthyServer(app);
@@ -439,15 +538,34 @@ async function main(): Promise<void> {
       );
     }
 
+    assertDataDirIsolated(home);
+
     await quitApp(app);
-    if (app.exitCode !== 0 && app.exitCode !== null) {
-      throw new Error(`The app exited with code ${app.exitCode} on quit; expected a clean exit.`);
+    // Assert the (code, signal) PAIR, not the code alone. `child.on('exit')`
+    // reports `code === null` when a signal killed the process, so a check that
+    // tolerates null passes for the very outcome it should catch — a SIGTERM
+    // that killed the app outright instead of being handled.
+    //
+    // Measured against this packaged app: SIGTERM produces `code 0, signal
+    // null`, i.e. Electron runs its quit path (before-quit -> stopServer ->
+    // clean exit). So a clean exit here is a real signal that shutdown ran, not
+    // an accident of how the process happened to die.
+    if (app.exitCode !== 0 || app.exitSignal !== null) {
+      throw new Error(
+        app.exitSignal !== null
+          ? `The app was killed by ${app.exitSignal} rather than exiting on its own. It normally ` +
+              `handles SIGTERM and exits 0, so its shutdown path (before-quit -> stopServer) did ` +
+              `not run — anything it does on quit was skipped.`
+          : `The app exited with code ${app.exitCode} on quit; expected a clean 0.`
+      );
     }
     await assertPortReleased(endpoint);
     // Only on success: a failed run's throwaway home holds the DB and logs of
     // whatever went wrong, and the path is printed above.
     rmSync(home, { recursive: true, force: true });
-    console.log('[5/5] Quit cleanly, server port released. Packaged runtime smoke PASSED.');
+    console.log(
+      '[5/5] Data dir isolated, quit cleanly (exit 0), port released. Packaged smoke PASSED.'
+    );
   } catch (err) {
     // The app's own output is the only diagnosis material for a packaged
     // launch — print it before rethrowing, or CI shows a bare timeout.
