@@ -62,7 +62,6 @@ class TestAdapter extends BaseRelayAdapter {
   }
 }
 
-
 // === Tests ===
 
 describe('BaseRelayAdapter', () => {

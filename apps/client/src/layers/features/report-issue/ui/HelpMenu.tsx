@@ -8,6 +8,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/layers/shared/ui';
+import { openLink } from '@/layers/shared/lib';
 import { FeedbackDialog } from '@/layers/features/feedback';
 import { useReportIssue } from '@/layers/shared/model';
 
@@ -54,7 +55,7 @@ export function HelpMenu() {
             Request a feature on GitHub
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => window.open(DOCS_URL, '_blank', 'noopener,noreferrer')}>
+          <DropdownMenuItem onSelect={() => openLink(DOCS_URL)}>
             <BookOpen className="size-(--size-icon-sm)" />
             Documentation
           </DropdownMenuItem>

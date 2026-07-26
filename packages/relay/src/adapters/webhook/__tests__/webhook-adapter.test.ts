@@ -40,7 +40,6 @@ function buildHeaders(
   };
 }
 
-
 function makeAdapter(opts?: {
   inboundSubject?: string;
   secret?: string;

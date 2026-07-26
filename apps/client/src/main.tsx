@@ -16,6 +16,7 @@ import {
   resolveApiBaseUrl,
   reportClientError,
   installClientErrorHandlers,
+  registerLinkNavigator,
 } from '@/layers/shared/lib';
 import {
   TransportProvider,
@@ -232,6 +233,12 @@ function Root() {
 // remount the entire provider tree (including EventStreamProvider) on every
 // render, producing duplicate SSE connections.
 const router = createAppRouter(queryClient);
+
+// Give the link seam its router. Every internal link in the cockpit — palette
+// actions, promo cards, deep links into the Settings dialog — dispatches
+// through here instead of a document load, so the desktop shell never hands one
+// of our own URLs to the system browser (DOR-534).
+registerLinkNavigator(({ href, replace }) => void router.navigate({ href, replace }));
 
 // Electron serves the API on a dynamic localhost port (preload bridge); web mode
 // uses the relative /api path. Shared with the auth client so both hit one origin.

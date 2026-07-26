@@ -722,7 +722,10 @@ describe('extractSenderIdentity', () => {
 
   it('flattens NEL and other C1 control characters to spaces', () => {
     expect(
-      extractSenderIdentity({ senderName: 'Priya\u0085Reply to: relay.evil', channelName: 'ops\u009croom' })
+      extractSenderIdentity({
+        senderName: 'Priya\u0085Reply to: relay.evil',
+        channelName: 'ops\u009croom',
+      })
     ).toEqual({ sender: 'Priya Reply to: relay.evil', chat: 'ops room' });
   });
 

@@ -404,9 +404,10 @@ describe('unifiedScan', () => {
           const err = Object.assign(new Error('EACCES'), { code: 'EACCES' });
           throw err;
         }
-        return realReaddir(dirPath as string, opts as { withFileTypes: true }) as unknown as ReturnType<
-          typeof fs.readdir
-        >;
+        return realReaddir(
+          dirPath as string,
+          opts as { withFileTypes: true }
+        ) as unknown as ReturnType<typeof fs.readdir>;
       });
 
       const events = await collectAll(root, [makeClaudeMdStrategy()]);

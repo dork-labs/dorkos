@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight, X } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, openLink } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import type { PromoDefinition, PromoPlacement } from '../model/promo-types';
 import { PromoDialog } from './PromoDialog';
@@ -36,7 +36,7 @@ export function PromoCard({ promo, placement }: PromoCardProps) {
     if (promo.action.type === 'dialog' || promo.action.type === 'open-dialog') {
       setDialogOpen(true);
     } else if (promo.action.type === 'navigate') {
-      window.location.href = promo.action.to;
+      openLink(promo.action.to);
     } else if (promo.action.type === 'action') {
       promo.action.handler();
     }

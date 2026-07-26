@@ -20,7 +20,6 @@ import { ThreadParticipationTracker } from '../thread-tracker.js';
 /** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
 const testCodec = new SlackThreadIdCodec();
 
-
 function createMockClient(): WebClient & { reactions: { add: ReturnType<typeof vi.fn> } } {
   return {
     users: {

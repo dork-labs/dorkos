@@ -142,7 +142,10 @@ describe('widget actions', () => {
     expect(dialog).toHaveTextContent('https://dorkos.ai');
 
     await user.click(screen.getByRole('button', { name: /open link/i }));
-    expect(open).toHaveBeenCalledWith('https://dorkos.ai', '_blank', 'noopener,noreferrer');
+    // The link seam resolves every href to an absolute URL before dispatch, so
+    // a relative one still reaches the desktop shell's system-browser handoff
+    // intact. That resolution also canonicalizes — hence the trailing slash.
+    expect(open).toHaveBeenCalledWith('https://dorkos.ai/', '_blank', 'noopener,noreferrer');
     open.mockRestore();
   });
 

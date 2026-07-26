@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LinkSafetyModal } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
+import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useMcpAppResource } from '../model/use-mcp-app-resource';
 import {
   createMcpAppBridge,
@@ -144,7 +144,9 @@ export function McpAppFrame({
         isOpen={pendingLink !== null}
         onClose={() => setPendingLink(null)}
         onConfirm={() => {
-          if (pendingLink) window.open(pendingLink, '_blank', 'noopener,noreferrer');
+          // Always leaves the app — see the LinkSafetyModal contract. An App
+          // can name any URL, including one of our own routes.
+          if (pendingLink) openExternalLink(pendingLink);
           setPendingLink(null);
         }}
       />

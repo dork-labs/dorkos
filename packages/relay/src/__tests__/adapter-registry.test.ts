@@ -23,7 +23,6 @@ function createMockAdapter(overrides: Partial<RelayAdapter> = {}): RelayAdapter 
   };
 }
 
-
 function createMockEnvelope() {
   return {
     id: 'env-01',

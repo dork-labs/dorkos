@@ -85,7 +85,9 @@ describe('reconcile()', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     registry = createMockRegistry();
-    removeAgent = vi.fn<(entry: AgentRegistryEntry) => Promise<void>>().mockResolvedValue(undefined);
+    removeAgent = vi
+      .fn<(entry: AgentRegistryEntry) => Promise<void>>()
+      .mockResolvedValue(undefined);
     deps = {
       registry: registry as unknown as AgentRegistry,
       defaultScanRoot: '/root',

@@ -11,7 +11,7 @@ import {
   useTransport,
   type Theme,
 } from '@/layers/shared/model';
-import { cn, getPlatform, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
+import { cn, getPlatform, formatShortcutKey, openLink, SHORTCUTS } from '@/layers/shared/lib';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -119,18 +119,21 @@ export function SidebarFooterBar() {
     navigator.clipboard.writeText(info);
   }, [version]);
 
-  // Cmd/Ctrl+Shift+D opens Dev Playground in a new tab
+  // Cmd/Ctrl+Shift+D opens Dev Playground in a new tab. `/dev` mounts outside
+  // the router (see `Root` in main.tsx), so the seam gives it its own window.
+  const openDevPlayground = useCallback(() => openLink('/dev', { newTab: true }), []);
+
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
-        window.open('/dev', '_blank');
+        openDevPlayground();
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [openDevPlayground]);
 
   return (
     <div>
@@ -210,7 +213,7 @@ export function SidebarFooterBar() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side="top" align="end" className="w-52">
                     <DropdownMenuLabel>Developer Tools</DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => window.open('/dev', '_blank')}>
+                    <DropdownMenuItem onSelect={openDevPlayground}>
                       <LayoutGrid className="size-(--size-icon-sm)" />
                       Dev Playground
                       <span className="text-muted-foreground/50 ml-auto flex items-center gap-1.5">

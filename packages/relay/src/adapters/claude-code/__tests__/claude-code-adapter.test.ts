@@ -815,7 +815,7 @@ describe('ClaudeCodeAdapter', () => {
         ensureSession: vi.fn(),
         sendMessage: vi.fn().mockReturnValueOnce(hangingStream).mockReturnValueOnce(quickStream),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
-      approveTool: vi.fn(),
+        approveTool: vi.fn(),
       };
 
       const serializedAdapter = new ClaudeCodeAdapter(
@@ -876,7 +876,7 @@ describe('ClaudeCodeAdapter', () => {
         ensureSession: vi.fn(),
         sendMessage: vi.fn().mockReturnValueOnce(streamForA).mockReturnValueOnce(streamForB),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
-      approveTool: vi.fn(),
+        approveTool: vi.fn(),
       };
 
       const parallelAdapter = new ClaudeCodeAdapter(

@@ -10,8 +10,6 @@ export interface ShortcutDef {
   label: string;
   /** Category for the reference panel. */
   group: ShortcutGroup;
-  /** Where the shortcut is active. Defaults to 'global'. */
-  scope?: 'global' | 'sidebar';
 }
 
 /** Categories for grouping shortcuts in the reference panel. */
@@ -64,27 +62,6 @@ export const SHORTCUTS = {
 
   // Sessions
   NEW_SESSION: { id: 'new-session', key: 'mod+shift+n', label: 'New session', group: 'sessions' },
-  TAB_SESSIONS: {
-    id: 'tab-sessions',
-    key: 'mod+1',
-    label: 'Sessions tab',
-    group: 'sessions',
-    scope: 'sidebar',
-  },
-  TAB_SCHEDULES: {
-    id: 'tab-schedules',
-    key: 'mod+2',
-    label: 'Schedules tab',
-    group: 'sessions',
-    scope: 'sidebar',
-  },
-  TAB_CONNECTIONS: {
-    id: 'tab-connections',
-    key: 'mod+3',
-    label: 'Connections tab',
-    group: 'sessions',
-    scope: 'sidebar',
-  },
 
   // Chat (composer + interactive tool shortcuts)
   NEW_LINE: { id: 'new-line', key: 'shift+enter', label: 'New line', group: 'chat' },
