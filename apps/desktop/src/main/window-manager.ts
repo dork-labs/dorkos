@@ -263,7 +263,7 @@ export function createWindow(rendererUrl?: string): BrowserWindow {
 
   // In dev: electron-vite sets ELECTRON_RENDERER_URL for HMR.
   // In a packaged build: load the renderer via the bundled server's own
-  // localhost origin (server-process.ts sets CLIENT_DIST_PATH so the server
+  // localhost origin (server-spawn.ts sets CLIENT_DIST_PATH so the server
   // serves it) rather than file:// — the server's CORS allowlist and
   // Better Auth's trusted-origins check both need a real origin, not
   // `null`, and this makes the renderer's fetches same-origin besides.

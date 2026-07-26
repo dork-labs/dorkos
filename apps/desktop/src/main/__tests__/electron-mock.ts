@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type { Display, Rectangle } from 'electron';
+import { MockServerProcess, type SpawnOptions } from './server-child-mock';
 
 /**
  * Test double for Electron's main-process module surface.
@@ -10,8 +11,9 @@ import type { Display, Rectangle } from 'electron';
  * (including `webContents` with `send`, a unique `id`, and an `on`/`emit`
  * event bus), `ipcMain` (`on`/`handle` as inspectable `vi.fn()`s — tests
  * invoke a registered handler directly from its mock call args), `screen`,
- * `dialog`, `Menu`, and `shell` to drive the main-process code under test
- * without a real Electron runtime.
+ * `dialog`, `Menu`, `shell`, and `utilityProcess` (the production server-spawn
+ * path) to drive the main-process code under test without a real Electron
+ * runtime.
  */
 
 const DEFAULT_USER_DATA_PATH = '/tmp/dorkos-desktop-test/userData';
@@ -150,6 +152,7 @@ class MockBrowserWindowImpl {
   });
   loadURL = vi.fn();
   loadFile = vi.fn();
+  reload = vi.fn();
 }
 
 export const BrowserWindow = MockBrowserWindowImpl;
@@ -205,10 +208,26 @@ export const shell = {
   openExternal: vi.fn(),
 };
 
+/**
+ * Every child `utilityProcess.fork()` has returned, in spawn order — the
+ * production counterpart to `child-process-mock`'s `forkedChildren`.
+ */
+export const utilityProcessChildren: MockServerProcess[] = [];
+
+export const utilityProcess = {
+  fork: vi.fn((entry: string, _args: string[], options: SpawnOptions) => {
+    const child = new MockServerProcess(entry, options);
+    utilityProcessChildren.push(child);
+    return child;
+  }),
+};
+
 /** Reset all mock state between tests — call from `beforeEach`. */
 export function resetElectronMock(): void {
   MockBrowserWindowImpl.instances.length = 0;
   appBus.clear();
+  utilityProcessChildren.length = 0;
+  utilityProcess.fork.mockClear();
 
   app.isPackaged = false;
   app.requestSingleInstanceLock = vi.fn(() => true);

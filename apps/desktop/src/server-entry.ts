@@ -21,6 +21,9 @@ declare module '@dorkos/server';
 
 import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
 
+/** How often the dev child re-checks that the process that spawned it is still alive. */
+const ORPHAN_CHECK_INTERVAL_MS = 2_000;
+
 // Mark this file as a module so the ambient declaration above and the
 // top-level helpers below stay file-scoped instead of leaking into the
 // global scope of the whole program.
@@ -69,7 +72,41 @@ function onParentMessage(handler: (msg: unknown) => void): void {
   }
 }
 
+/**
+ * Shut down when the desktop shell that spawned this process goes away.
+ *
+ * Production runs inside an Electron UtilityProcess, which Electron tears down
+ * with the app — nothing to do there. Development runs under
+ * `child_process.fork`, and a forked child outlives a parent that dies without
+ * cleaning up: it is reparented to init and keeps the port, the SQLite WAL
+ * lock, and every live agent session, so the next launch starts against a
+ * directory another process still owns.
+ *
+ * Two signals, because neither is complete alone. The IPC channel closing is
+ * immediate and is what fires in practice. The parent-pid check is the
+ * backstop: POSIX reparents an orphan to pid 1, so a changed parent pid means
+ * ours is gone (Windows never reparents, which is exactly why the channel
+ * check comes first).
+ */
+function exitWhenOrphaned(): void {
+  if (process.parentPort) return;
+
+  const exit = (reason: string): void => {
+    console.error(`Shutting the server down: ${reason}.`);
+    process.exit(0);
+  };
+
+  process.on('disconnect', () => exit('the desktop app that started it is gone'));
+
+  const parentPid = process.ppid;
+  // unref'd: this watchdog must never be the reason the process stays alive.
+  setInterval(() => {
+    if (process.ppid !== parentPid) exit('its parent process is gone');
+  }, ORPHAN_CHECK_INTERVAL_MS).unref();
+}
+
 async function main() {
+  exitWhenOrphaned();
   const port = Number(process.env.DORKOS_PORT);
 
   // Import triggers server start — the server reads DORKOS_PORT and DORK_HOME from env

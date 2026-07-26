@@ -96,7 +96,7 @@ asarUnpack:
   # The SDK ships the actual `claude` executable as a per-platform optional
   # dependency (@anthropic-ai/claude-agent-sdk-darwin-arm64). It must be a real
   # file on disk — a Mach-O binary cannot execute from inside app.asar — so
-  # unpack it. server-process.ts hands the bundled server this unpacked path
+  # unpack it. server-spawn.ts hands the bundled server this unpacked path
   # via DORKOS_CLAUDE_CLI_PATH, because the server's own require.resolve can't
   # reach it (pnpm links the sibling only inside the SDK's store node_modules).
   # Keep this package version-locked to @anthropic-ai/claude-agent-sdk in
@@ -106,7 +106,7 @@ asarUnpack:
   # Windows counterpart of the darwin-arm64 binary above: the SDK ships the
   # `claude.exe` executable as the win32-x64 optional dependency. A packaged
   # Windows app can't execute it from inside app.asar either, so unpack it —
-  # server-process.ts resolves the per-platform path (…-win32-x64/claude.exe)
+  # server-spawn.ts resolves the per-platform path (…-win32-x64/claude.exe)
   # and hands it to the bundled server via DORKOS_CLAUDE_CLI_PATH.
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**'
   # express.static (app.ts's production SPA serving) cannot reliably read
