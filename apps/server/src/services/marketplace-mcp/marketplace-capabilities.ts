@@ -30,7 +30,7 @@
 import { z } from 'zod';
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
-import type { CapabilityDeps, CapabilityInvocationContext } from '../core/capabilities/index.js';
+import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
 
@@ -77,16 +77,20 @@ function requireMarketplaceDeps(deps: CapabilityDeps): MarketplaceMcpDeps {
  * from it: who asked, and whether the tier gate already got a person's yes for
  * this exact call.
  *
- * @param context - The registry's invocation context.
+ * @param context - The context the registry handed this handler.
  * @returns The handler-facing caller context.
  */
-function callerContext(context: CapabilityInvocationContext): MarketplaceConfirmationContext {
+function callerContext(context: CapabilityHandlerContext): MarketplaceConfirmationContext {
   const requestedBy = context.identity
     ? context.identity.displayName || context.identity.agentPath
     : undefined;
   return {
     ...(requestedBy ? { requestedBy } : {}),
-    ...(context.approval ? { preApproved: true } : {}),
+    // Two different proofs that this person has already said yes to this exact
+    // call, and the handler must not ask again for either: an approval the tier
+    // gate spent, or a caller that proved it may DECIDE approvals — for whom the
+    // confirmation this flow would go and fetch is its own.
+    ...(context.approval || context.trusted ? { preApproved: true } : {}),
   };
 }
 

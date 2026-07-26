@@ -43,7 +43,7 @@ Conformance gained `requesterDecideProbe`, encoding the narrower invariant it ca
 
 ## Open follow-ups (tracked)
 
-- Move enforcement inside `registry.invoke` as defense in depth so future adapters inherit it, retiring the hand-maintained choke-point list. Needs a trusted-caller concept for human-initiated internal callers.
+- ~~Move enforcement inside `registry.invoke` as defense in depth so future adapters inherit it, retiring the hand-maintained choke-point list. Needs a trusted-caller concept for human-initiated internal callers.~~ **Done (DOR-467, 2026-07-25.)** The deferral reason did not survive checking: at the time of the move `enforceCapabilityTier` had two real call sites and `registry.invoke` three, with zero internal or cockpit callers, so the trusted-caller concept cost one small module rather than a migration. Deferring was the more expensive option, and it was not free in the meantime — the gate sitting outside `invoke` is exactly why the legacy marketplace routes could perform an uninstall with no tier check, which is what `dorkos uninstall`, the verb the seeded skill pack taught every agent, rode. Trust is `resolveDecisionAuthority` (the same predicate that guards the decide endpoint) carried as an unforgeable unexported-class instance; the hand-maintained `GATED_ADAPTER_PATHS` list is retired in favour of a registry-derived check plus a call-site scan on the guarded effects themselves.
 - Promote the seven quarantined evals after a credentialed `claude-code-cheap` run.
 - Per-agent capability policies beyond the tier ceiling.
 - Fragment-gate versus curated-fragment reconciliation (workflow hygiene; hit seven times across the program).

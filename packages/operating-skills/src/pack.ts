@@ -36,8 +36,12 @@ export interface OperatingSkill {
  *   approval payload instead. Same round corrected the `config_patch` shape (the
  *   required `patch` wrapper) and the `ui.statusBar` example (a `pins` list, not
  *   per-item booleans).
+ * - 4: `dorkos uninstall` is gated too (DOR-467). Version 3 told agents the CLI
+ *   verb was "the person's ungated path" and to stay off it. That was true when
+ *   written and is not any more: the route behind it now answers to the same
+ *   approval gate, so the sentence had to stop describing a hole that is closed.
  */
-export const OPERATING_SKILLS_VERSION = 3;
+export const OPERATING_SKILLS_VERSION = 4;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

@@ -43,6 +43,14 @@ import {
 import type { UpdateFlow } from '../../services/marketplace/flows/update.js';
 import type { InstallResult, PermissionPreview } from '../../services/marketplace/types.js';
 import { createMarketplaceRouter } from '../marketplace.js';
+import { composeRegistry, initCapabilityTierGate } from '../../services/core/capabilities/index.js';
+import { marketplaceDomain } from '../../services/marketplace-mcp/marketplace-capabilities.js';
+import { ApprovalService } from '../../services/core/approvals/index.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { noopLogger } from '@dorkos/shared/logger';
+import { initConfigManager } from '../../services/core/config-manager.js';
+import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
+import type { CapabilityRegistry } from '../../services/core/capabilities/index.js';
 
 const SAMPLE_MARKETPLACE_JSON: MarketplaceJson = {
   name: 'dorkos-community',
@@ -86,6 +94,19 @@ function createFakeInstaller(): FakeInstaller {
 interface FakeUninstallFlow {
   uninstall: ReturnType<typeof vi.fn>;
 }
+
+/**
+ * The REAL marketplace capability registry, so the mutation routes are gated by
+ * the real tiers (`marketplace.install` is `act`, `marketplace.uninstall` is
+ * `destructive`) rather than by a fixture that could drift from them.
+ *
+ * The dependency bag is a stub: these routes never INVOKE a capability, they only
+ * ask the gate about one, so nothing here is reached.
+ */
+let gateRegistry: CapabilityRegistry;
+
+/** Set to make a request look like an agent's rather than the cockpit's. */
+let agentHeader: string | undefined;
 
 function createFakeUninstallFlow(): FakeUninstallFlow {
   return { uninstall: vi.fn() };
@@ -165,9 +186,26 @@ describe('Marketplace Routes', () => {
     updateFlow = createFakeUpdateFlow();
     onPluginsChanged = vi.fn();
     agentScopes = [];
+    agentHeader = undefined;
+    // The gate asks `auth.enabled` to decide whether proof of a person is even
+    // possible, and with no config manager it fails CLOSED (assumes login on).
+    // Initialize it so these tests run in the real DEFAULT posture, login off.
+    initConfigManager(dorkHome);
+    gateRegistry = composeRegistry([marketplaceDomain], {
+      logger: noopLogger,
+      marketplaceDeps: {} as MarketplaceMcpDeps,
+    });
+    initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
 
     app = express();
     app.use(express.json());
+    app.use((req, res, next) => {
+      // Stands in for the agent-identity middleware. Absent an agent header this
+      // request looks like the cockpit's, which is the caller the mutation routes
+      // let through without an approval (DOR-467).
+      if (agentHeader) req.headers['x-dorkos-agent'] = agentHeader;
+      next();
+    });
     app.use(
       '/api/marketplace',
       createMarketplaceRouter({
@@ -180,6 +218,7 @@ describe('Marketplace Routes', () => {
         dorkHome,
         onPluginsChanged,
         listAgentScopes: () => agentScopes,
+        capabilityRegistry: () => gateRegistry,
       })
     );
   });
@@ -959,6 +998,64 @@ describe('Marketplace Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.errors).toEqual(['manifest.version required']);
+    });
+  });
+
+  describe('the tier gate on the mutation routes (DOR-467)', () => {
+    it('an AGENT gets an approval request instead of an uninstall', async () => {
+      // The door this closes. `dorkos uninstall` is the verb the seeded skill
+      // pack taught every agent, and an in-session agent carries
+      // DORKOS_AGENT_TOKEN, so the CLI attaches X-DorkOS-Agent — which is how
+      // this route can tell it apart from the person in the cockpit.
+      agentHeader = 'agent-token';
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/demo-plugin/uninstall')
+        .send({ purge: true });
+
+      expect(res.status).toBe(202);
+      expect(res.body.status).toBe('approval_required');
+      expect(res.body.capabilityId).toBe('marketplace.uninstall');
+      expect(res.body.approvalToken).toBeTruthy();
+      expect(res.body.retry.field).toBe('x-dorkos-approval');
+      // The whole point: nothing was removed.
+      expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+      expect(onPluginsChanged).not.toHaveBeenCalled();
+    });
+
+    it('the person in the cockpit is not asked to approve their own click', async () => {
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'demo-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/demo-plugin/uninstall')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(uninstallFlow.uninstall).toHaveBeenCalled();
+    });
+
+    it('an agent may still INSTALL without an approval — install is tier act', async () => {
+      // Failure mode 7: gating the mutation routes must not start putting an
+      // approval card in front of an ordinary install.
+      agentHeader = 'agent-token';
+      installer.install.mockResolvedValue({
+        ok: true,
+        packageName: 'demo-plugin',
+        version: '1.0.0',
+        type: 'plugin',
+        installPath: '/tmp/demo-plugin',
+        warnings: [],
+      });
+
+      const res = await request(app).post('/api/marketplace/packages/demo-plugin/install').send({});
+
+      expect(res.status).toBe(200);
+      expect(installer.install).toHaveBeenCalled();
     });
   });
 

@@ -13,8 +13,10 @@
  * else: a `Date` loses its `toJSON`, and a `Set` or `Map` has no own enumerable
  * keys at all, so `{ s: new Set(['a']) }` and `{ s: new Set(['b']) }` hash
  * IDENTICALLY. A field like that would look bound while being ignored, which is
- * the worst possible failure for a consent primitive — and one no test could see,
- * because the conformance suite's parse-idempotence check is stable over a `Date`.
+ * the worst possible failure for a consent primitive — and one a schema-shape
+ * check cannot see, because parsing a `Date` twice is perfectly stable. (The
+ * conformance suite's parse-idempotence check, which is where that observation
+ * was first made, is gone with the double parse it guarded — DOR-467.)
  *
  * So this module refuses rather than trusts: {@link assertBindableInput} walks the
  * value and throws {@link ApprovalInputNotBindableError} on anything that is not

@@ -22,15 +22,12 @@ import { describe, expect, it } from 'vitest';
 import {
   capabilityConformance,
   checkCapabilityConformance,
-  checkDestructiveGateConformance,
-  GATED_ADAPTER_PATHS,
+  checkRegistryGateConformance,
   type CapabilityConformanceFixtures,
   type ConformanceCapability,
   type ConformanceRegistry,
   checkDecisionAuthorityConformance,
   type ApprovalDecisionProbe,
-  type DestructiveGateProbe,
-  type GatedAdapterPath,
 } from '../capability-conformance.js';
 
 /** A long-enough model-facing description so the metadata check passes by default. */
@@ -94,15 +91,43 @@ function approvalRequiredPayload() {
   };
 }
 
-/** A probe standing in for an adapter path that honors the gate. */
-const gateHonoringProbe: DestructiveGateProbe = async () => ({
-  sideEffectHappened: false,
-  payload: approvalRequiredPayload(),
-});
+/**
+ * A stand-in for the refusal `registry.invoke` throws when the gate says no.
+ * Duck-typed by `name`, exactly as the suite reads it.
+ */
+function gateRefusal(payload: unknown = approvalRequiredPayload()): Error {
+  const err = new Error('A person has to approve this first.');
+  err.name = 'CapabilityGateRefusal';
+  (err as Error & { decision: unknown }).decision = { outcome: 'approval_required', payload };
+  return err;
+}
 
-/** Probes for every adapter path, all honoring the gate. */
-function conformantProbes(): Partial<Record<GatedAdapterPath, DestructiveGateProbe>> {
-  return Object.fromEntries(GATED_ADAPTER_PATHS.map((path) => [path, gateHonoringProbe]));
+/** A destructive capability, for the gate checks. */
+function destructiveCapability(): ConformanceCapability {
+  return {
+    id: 'demo.destroy',
+    title: 'Destroy demo',
+    description: OK_DESCRIPTION,
+    tier: 'destructive',
+    approvalDisplayFields: ['name'],
+    surfaces: { mcp: { toolName: 'demo_destroy', servers: ['in-session', 'external'] } },
+  };
+}
+
+/**
+ * A registry whose `invoke` gates: it refuses the destructive capability and
+ * resolves everything else. This is what the real registry does after DOR-467.
+ */
+function gatingRegistry(refusal: () => unknown = gateRefusal): ConformanceRegistry {
+  const caps = [observeCapability(), actCapability(), destructiveCapability()];
+  return {
+    capabilities: caps,
+    invoke: async (id) => {
+      const cap = caps.find((c) => c.id === id);
+      if (cap?.tier === 'destructive') throw refusal();
+      return { ok: true };
+    },
+  };
 }
 
 /** A probe standing in for a decide endpoint that refuses the requester. */
@@ -114,7 +139,6 @@ const requesterRefusedProbe: ApprovalDecisionProbe = async () => ({
 /** Fresh conformant fixtures matching {@link conformantRegistry}. */
 function conformantFixtures(registry: ConformanceRegistry): CapabilityConformanceFixtures {
   return {
-    destructiveGateProbes: conformantProbes(),
     requesterDecideProbe: requesterRefusedProbe,
     registeredMcpToolNames: {
       'in-session': ['demo_list', 'demo_set'],
@@ -137,9 +161,16 @@ function hasCheck(
 }
 
 // The conformant baseline registers green — including the async invoke checks.
-const baseline = conformantRegistry();
+// It uses the GATING registry, because a registry with no destructive capability
+// would make the destructive-gate check vacuous and the suite would be proving
+// nothing about the thing it exists to prove.
+const baseline = gatingRegistry();
 capabilityConformance(baseline, {
   ...conformantFixtures(baseline),
+  registeredMcpToolNames: {
+    'in-session': ['demo_list', 'demo_set', 'demo_destroy'],
+    external: ['demo_list', 'demo_set', 'demo_destroy'],
+  },
   name: 'Capability conformance — conformant synthetic registry',
 });
 
@@ -282,49 +313,40 @@ describe('checkCapabilityConformance — seeded drift must fail', () => {
   });
 });
 
-describe('checkDestructiveGateConformance', () => {
-  it('passes when every adapter path returns approval_required and runs nothing', async () => {
-    expect(await checkDestructiveGateConformance(conformantProbes())).toEqual([]);
+describe('checkRegistryGateConformance', () => {
+  it('passes when registry.invoke refuses the destructive capability', async () => {
+    expect(await checkRegistryGateConformance(gatingRegistry())).toEqual([]);
   });
 
-  it('seeded drift: an adapter path that invokes the capability anyway', async () => {
-    const probes = conformantProbes();
-    // A path that "forgot" the gate: the handler ran and the caller got its output.
-    probes['external-mcp'] = async () => ({
-      sideEffectHappened: true,
-      payload: { ok: true },
-    });
-    const violations = await checkDestructiveGateConformance(probes);
+  it('seeded drift: invoke runs the destructive capability anyway', async () => {
+    // The shape of the bug DOR-467 fixed: a path reaches the effect with no gate.
+    const registry: ConformanceRegistry = {
+      capabilities: [observeCapability(), destructiveCapability()],
+      invoke: async () => ({ ok: true }),
+    };
+    const violations = await checkRegistryGateConformance(registry);
     expect(violations.length).toBeGreaterThan(0);
     expect(violations.every((v) => v.check === 'destructive-gate')).toBe(true);
-    expect(violations.some((v) => v.detail.includes('external-mcp'))).toBe(true);
-    expect(violations.some((v) => v.detail.includes('bypasses the tier gate'))).toBe(true);
+    expect(violations.some((v) => v.detail.includes('RAN a destructive capability'))).toBe(true);
   });
 
-  it('seeded drift: a path that blocks the call but returns an unusable payload', async () => {
-    const probes = conformantProbes();
-    probes['invoke-route'] = async () => ({
-      sideEffectHappened: false,
-      payload: { error: 'nope' },
-    });
-    const violations = await checkDestructiveGateConformance(probes);
-    expect(violations.some((v) => v.detail.includes('approval_required payload'))).toBe(true);
+  it('seeded drift: invoke rejects, but not with a gate refusal', async () => {
+    const violations = await checkRegistryGateConformance(
+      gatingRegistry(() => new TypeError('deps missing'))
+    );
+    expect(violations.some((v) => v.detail.includes('not with a gate refusal'))).toBe(true);
   });
 
-  it('seeded drift: an adapter path with no probe at all', async () => {
-    const probes = conformantProbes();
-    delete probes['in-session-mcp'];
-    const violations = await checkDestructiveGateConformance(probes);
-    expect(violations.some((v) => v.detail.includes('no probe supplied'))).toBe(true);
+  it('seeded drift: the gate refuses with an unusable payload', async () => {
+    const violations = await checkRegistryGateConformance(
+      gatingRegistry(() => gateRefusal({ error: 'nope' }))
+    );
+    expect(violations.some((v) => v.detail.includes('approval_required'))).toBe(true);
   });
 
-  it('seeded drift: a probe that throws', async () => {
-    const probes = conformantProbes();
-    probes['invoke-route'] = async () => {
-      throw new Error('adapter blew up');
-    };
-    const violations = await checkDestructiveGateConformance(probes);
-    expect(violations.some((v) => v.detail.includes('adapter blew up'))).toBe(true);
+  it('seeded drift: a registry with no destructive capability is not vacuously green', async () => {
+    const violations = await checkRegistryGateConformance(conformantRegistry());
+    expect(violations.some((v) => v.detail.includes('vacuously green'))).toBe(true);
   });
 });
 

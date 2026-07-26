@@ -1,0 +1,198 @@
+/**
+ * The drift gate that would have caught DOR-467, and its sibling on
+ * `PATCH /api/config`.
+ *
+ * ## Why this shape, and what the previous shape could not see
+ *
+ * Enforcement used to be proven by a hand-maintained list of adapter paths
+ * (`GATED_ADAPTER_PATHS`), each needing a probe. That list can only fail for a
+ * path somebody already thought to put on it. Both real defects were paths that
+ * were never on it: the legacy marketplace routes reached an uninstall with no
+ * tier check, and `PATCH /api/config` reached `applyConfigPatch` with none of the
+ * operator-only write policy its capability twin enforces. Nothing was missing
+ * from the list, so the list stayed green.
+ *
+ * So this scan inverts the question. Instead of "is every surface we listed
+ * gated?", it asks **"who can reach the guarded thing at all?"** — and pins that
+ * answer. Each entry below names a PROTECTED EFFECT (a function that mutates
+ * posture-bearing or irreversible state) and the exact set of production modules
+ * allowed to call it. A new route, service, or adapter that reaches one of them
+ * turns this test red and has to justify itself in review.
+ *
+ * The two halves are complementary and neither subsumes the other:
+ *
+ * - The conformance suite's `checkRegistryGateConformance` proves the gate is
+ *   INSIDE `registry.invoke`, so anything reaching a capability through the
+ *   registry is gated by construction — including adapters that do not exist yet.
+ * - This scan covers what that cannot see: code that reaches the underlying
+ *   effect WITHOUT touching the registry, which is exactly what both defects did.
+ *
+ * ## The list is the limit, and it is not complete
+ *
+ * Be honest about what this buys. It does NOT close the defect class; it narrows
+ * it from SURFACES to EFFECTS. That is a real improvement — effects are fewer,
+ * change far more slowly than the routes that reach them, and both known defects
+ * touched an effect that is listed — but a scan cannot fail for an effect nobody
+ * added, which is the same shape of hole `GATED_ADAPTER_PATHS` had one level up.
+ *
+ * A live counterexample, named here so the next reader inherits it rather than
+ * rediscovering it: `POST /api/marketplace/sources` and
+ * `DELETE /api/marketplace/sources/:name` reach `sourceManager.add` /
+ * `sourceManager.remove` and are ungated for every caller, so an agent can point
+ * this instance at a package feed somebody else controls. It is NOT covered below.
+ * Gating it needs a tier decision that is deliberately not being made in passing:
+ * there is no `marketplace.*` source capability to authorize against, adding one
+ * moves the registry count that four documented surfaces assert, and refusing
+ * agents outright would break `dorkos marketplace add`, which the seeded skill
+ * pack teaches. Tracked separately (DOR-467 review, M2).
+ *
+ * ## What it does not catch
+ *
+ * A textual scan. It sees a call spelled the way the allowlist spells it, so an
+ * alias (`const f = applyConfigPatch; f(...)`) or a dynamic dispatch slips past.
+ * That is an acceptable floor: the defect class this exists for is an honest new
+ * route calling an obvious function, twice now, not somebody smuggling one.
+ *
+ * @module services/core/capabilities/__tests__/gate-bypass-scan
+ */
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+/** `apps/server/src`, resolved from this file rather than from the cwd. */
+const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+
+/** One protected effect and the production modules allowed to reach it. */
+interface ProtectedEffect {
+  /** What the guard protects, in one line, for the failure message. */
+  what: string;
+  /** The call expression as it is written in source. */
+  call: string;
+  /** Paths relative to `apps/server/src`, each with why it is allowed. */
+  allowed: Record<string, string>;
+}
+
+const PROTECTED_EFFECTS: ProtectedEffect[] = [
+  {
+    what: 'writes user config, including the settings that decide who can reach this instance',
+    call: 'applyConfigPatch(',
+    allowed: {
+      'routes/config.ts':
+        'the cockpit REST route — refuses operator-only paths unless the caller is a trusted caller (DOR-467)',
+      'services/core/operator/operator-tool-handlers.ts':
+        'the agent capability — refuses operator-only paths unconditionally (DOR-488)',
+      'services/core/operator/config-patch.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'removes an installed package from disk, which cannot be undone',
+    call: 'uninstallFlow.uninstall(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the cockpit + CLI REST route — runs the tier gate via authorizeCapability first (DOR-467)',
+      'services/marketplace-mcp/tool-uninstall.ts':
+        'the marketplace.uninstall capability handler — reached only through registry.invoke, which gates',
+      'services/marketplace/marketplace-installer.ts':
+        'the first half of an in-place update (uninstall then install); its callers are gated, not this',
+    },
+  },
+  {
+    what: 'runs the tier gate for a caller that performs the effect itself, instead of via registry.invoke',
+    call: 'authorizeCapability(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the legacy marketplace mutation routes, which own a response contract the cockpit and CLI depend on',
+      'services/core/capabilities/tier-enforcement.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'mints the marker that skips the tier gate entirely',
+    call: 'trustedCaller(',
+    allowed: {
+      'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
+      'routes/config.ts': 'a person changing their own settings in their own cockpit',
+      'services/core/capabilities/trusted-caller.ts': 'the definition itself',
+    },
+  },
+];
+
+/** Every `.ts` file under `apps/server/src`, excluding tests and declaration files. */
+async function productionSources(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+      files.push(...(await productionSources(full)));
+    } else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
+const SOURCES = await productionSources(SERVER_SRC);
+
+/** Files that call `call`, as paths relative to `apps/server/src`. */
+async function callersOf(call: string): Promise<string[]> {
+  const hits: string[] = [];
+  for (const file of SOURCES) {
+    const text = await readFile(file, 'utf-8');
+    // Ignore the token where it only appears inside prose: a TSDoc or a `//`
+    // comment naming the function is documentation, not a call path.
+    const code = text
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+    // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
+    // call to `trustedCaller(` — a plain substring match reports the guard itself
+    // as a bypass. A leading `.` is deliberately allowed, because a receiver
+    // (`deps.uninstallFlow.uninstall(`) is still that call.
+    const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace('(', '\\(')}`);
+    if (pattern.test(code)) hits.push(path.relative(SERVER_SRC, file));
+  }
+  return hits.sort();
+}
+
+describe('no ungated path reaches a protected effect', () => {
+  it('found the server sources to scan', () => {
+    // A scan over an empty file list is vacuously green, which is the one way
+    // this test could fail to do its job without saying so.
+    expect(SOURCES.length).toBeGreaterThan(100);
+  });
+
+  for (const effect of PROTECTED_EFFECTS) {
+    it(`${effect.call} is called only by modules that gate it`, async () => {
+      const actual = await callersOf(effect.call);
+      const allowed = Object.keys(effect.allowed).sort();
+      const unexpected = actual.filter((f) => !allowed.includes(f));
+      const missing = allowed.filter((f) => !actual.includes(f));
+
+      expect(
+        unexpected,
+        unexpected.length
+          ? `\n${unexpected.join('\n')}\n\n` +
+              `These modules call ${effect.call} — which ${effect.what} — and are not on its ` +
+              `allowlist in this file.\n\n` +
+              `This is the DOR-467 defect class: a new surface reaching a guarded effect around ` +
+              `the enforcement its capability twin honors. Either route it through ` +
+              `registry.invoke (which gates), or gate it explicitly and add it here with the ` +
+              `reason it is safe. Do not add it here without gating it.`
+          : ''
+      ).toEqual([]);
+
+      // The reverse direction, so the allowlist cannot rot into a list of files
+      // that no longer call this at all and quietly stop meaning anything.
+      expect(
+        missing,
+        missing.length
+          ? `\n${missing.join('\n')}\n\nThese are allowlisted for ${effect.call} but no longer ` +
+              `call it. Remove them, so the allowlist keeps describing the real call graph.`
+          : ''
+      ).toEqual([]);
+    });
+  }
+});

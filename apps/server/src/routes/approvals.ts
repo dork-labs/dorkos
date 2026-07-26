@@ -40,10 +40,8 @@ import {
   type DecisionAuthorityResult,
   type LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
-import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import type { RequestUser } from '../services/core/auth/session-gate.js';
-import { AGENT_IDENTITY_HEADER, getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { readCallerAuthority } from '../lib/caller-authority.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
@@ -63,10 +61,10 @@ export interface ApprovalsRouterOptions {
 /**
  * Decide whether this request may record a decision.
  *
- * An agent counts as present if EITHER the middleware resolved one or the raw
- * `X-DorkOS-Agent` header is there at all: a header that did not resolve (a revoked
- * or expired agent) still means a machine is calling, and a person in the cockpit
- * never sends it.
+ * The request facts come from {@link readCallerAuthority}, shared with the two
+ * mutation routes that skip the tier gate for a person (DOR-467) — so "who counts
+ * as a person" cannot mean one thing at the endpoint that DECIDES an approval and
+ * something else at the endpoints that act without one.
  *
  * @param req - The incoming request.
  * @param res - The response carrying `sessionGate`'s resolved user.
@@ -79,13 +77,7 @@ function decisionAuthority(
   isLoginEnabled?: LoginEnabledLookup
 ): DecisionAuthorityResult {
   return resolveDecisionAuthority({
-    agentIdentityPresented:
-      getRequestAgentIdentity(res) !== undefined ||
-      req.headers[AGENT_IDENTITY_HEADER] !== undefined,
-    approvalTokenPresented: req.headers[APPROVAL_TOKEN_HEADER] !== undefined,
-    ...((res.locals.user as RequestUser | undefined)
-      ? { user: res.locals.user as RequestUser }
-      : {}),
+    ...readCallerAuthority(req, res),
     ...(isLoginEnabled ? { loginEnabled: isLoginEnabled } : {}),
   });
 }

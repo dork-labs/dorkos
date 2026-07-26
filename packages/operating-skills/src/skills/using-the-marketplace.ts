@@ -84,10 +84,10 @@ means present the same token later, and \`status: "denied"\` means stop.
 By default uninstall keeps \`.dork/data/\` and \`.dork/secrets.json\`; \`purge: true\`
 removes them, which is a bigger action and worth saying out loud.
 
-\`dorkos uninstall <name>\` also exists, but it is the PERSON's path and it does NOT
-go through the approval gate. Do not use it as an agent, and above all do not
-reach for it because the gated path asked you to wait: use one of the two gated
-paths above. \`dorkos call marketplace.uninstall\` is the shell one.
+\`dorkos uninstall <name>\` also exists. It is the person's verb, and it is gated
+for you exactly like the two paths above, so it is not a way around waiting for an
+approval. Prefer \`dorkos call marketplace.uninstall\`: it reports the approval
+payload in the shape this skill describes.
 
 ## Manage sources
 

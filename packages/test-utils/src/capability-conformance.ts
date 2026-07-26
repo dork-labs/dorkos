@@ -35,12 +35,12 @@
  * - the docs-projection registry exposes the SAME `http` surface set as the boot
  *   registry (a route can't appear in `/api/docs` that the running server never
  *   serves, or vice versa);
- * - EVERY adapter path a caller can reach a `destructive` capability through runs
- *   it past the tier gate first (spec `agent-trust` §3.2) — for an identified agent
- *   AND for a caller with no identity at all. The caller supplies one probe per
- *   entry in {@link GATED_ADAPTER_PATHS} (three adapters x identified/anonymous),
- *   and each must come back with an `approval_required` payload and no side effect.
- *   Miss a path and the gate is decoration; this is the check that says so.
+ * - EVERY `destructive` capability the registry carries is REFUSED by
+ *   `registry.invoke` itself when no approval and no trusted marker is presented
+ *   (spec `agent-trust` §3.2, DOR-467). Because the gate lives inside `invoke`,
+ *   this one registry-derived check covers every adapter at once — including
+ *   adapters that do not exist yet — where the previous hand-listed probe set
+ *   could only ever fail for a path somebody had already thought to list.
  * - a caller PRESENTING ITS RETRY TOKEN cannot decide the approval that token
  *   belongs to: {@link ApprovalDecisionProbe} drives the real invoke route to obtain
  *   a pending approval, then the real decide endpoint carrying that token, which
@@ -80,54 +80,16 @@ import {
 const MCP_SERVERS: readonly McpServerId[] = ['in-session', 'external'];
 
 /**
- * Every adapter path a caller can reach a capability through, and therefore every
- * path that must consult the tier gate before invoking one.
+ * Whether a thrown value is the registry's gate refusal — the error
+ * `registry.invoke` raises when the tier gate did not allow a call. Duck-typed by
+ * name so this suite stays free of a `@dorkos/server` import.
  *
- * Each path appears TWICE: once for an identified agent, once for a caller that
- * presents no identity at all. The gate keys on the capability's TIER, not on
- * whether the caller named itself, so a probe set that only covered the identified
- * path would pass while `env -u DORKOS_AGENT_TOKEN dorkos call …` sailed through.
- * The anonymous variants are what make that bypass a test failure.
- *
- * Named rather than counted so a new surface is a deliberate edit here — adding an
- * adapter without adding its probes should be impossible to do quietly.
+ * @param err - The thrown value.
+ * @returns True when it is a `CapabilityGateRefusal`.
  */
-export const GATED_ADAPTER_PATHS = [
-  'invoke-route',
-  'invoke-route-anonymous',
-  'in-session-mcp',
-  'in-session-mcp-anonymous',
-  'external-mcp',
-  'external-mcp-anonymous',
-] as const;
-
-/** One adapter path that must enforce the tier gate. */
-export type GatedAdapterPath = (typeof GATED_ADAPTER_PATHS)[number];
-
-/** What one adapter path did when handed a destructive capability with no approval. */
-export interface DestructiveGateProbeResult {
-  /**
-   * Whether the capability's handler actually RAN. Must be false: a gate that
-   * returns the right payload after doing the damage is not a gate.
-   */
-  sideEffectHappened: boolean;
-  /**
-   * What the adapter handed back, unwrapped to plain JSON (MCP adapters wrap
-   * results in a text envelope; unwrap before returning it here).
-   */
-  payload: unknown;
+function isGateRefusal(err: unknown): err is { decision: { payload: unknown } } {
+  return err instanceof Error && err.name === 'CapabilityGateRefusal';
 }
-
-/**
- * Drive one destructive capability through one adapter path, end to end, with NO
- * approval token — and, for an `-anonymous` path, with no identity either.
- *
- * The probe owns its own fixture: seed a `destructive` capability whose handler
- * records that it ran, compose a registry with it, and call the real adapter.
- *
- * @returns Whether the handler ran, and the payload the adapter produced.
- */
-export type DestructiveGateProbe = () => Promise<DestructiveGateProbeResult>;
 
 /** What the real decide endpoint did when the REQUESTER tried to answer itself. */
 export interface ApprovalDecisionProbeResult {
@@ -252,13 +214,6 @@ export interface CapabilityConformanceFixtures {
    * does).
    */
   docsRegistry: Pick<ConformanceRegistry, 'capabilities'>;
-  /**
-   * One probe per {@link GATED_ADAPTER_PATHS} entry, each driving a `destructive`
-   * capability through that real adapter with no approval token — identified for
-   * the plain keys, anonymous for the `-anonymous` ones. A missing key is itself a
-   * violation, so neither path can be left unproven.
-   */
-  destructiveGateProbes: Partial<Record<GatedAdapterPath, DestructiveGateProbe>>;
   /**
    * Probe proving the requester cannot decide its own approval; see
    * {@link ApprovalDecisionProbe}. Required — an absent probe is itself a
@@ -536,46 +491,75 @@ function isApprovalRequiredPayload(payload: unknown): boolean {
 }
 
 /**
- * Run every destructive-gate probe and return all violations (empty means every
- * adapter path enforces the gate). Async and separated from
- * {@link checkCapabilityConformance} because it drives real adapters, and — like
- * the structural checker — callable directly so a seeded bypass can be shown to
- * FAIL this check ("test the test").
+ * Prove that the tier gate is REACHED, for every `destructive` capability the
+ * registry carries, by the only path any surface can use to run one.
  *
- * @param probes - One probe per {@link GATED_ADAPTER_PATHS} entry.
+ * This replaced a hand-maintained list of adapter paths, each needing its own
+ * probe (DOR-467). That list could only fail for a path already ON it, so the
+ * surface that actually shipped ungated — the legacy marketplace routes — was
+ * invisible to it: it was never added, so nothing was ever missing. The check is
+ * now derived from the registry instead. Every capability the registry knows
+ * about is driven through the registry's own `invoke`, with no trusted marker and
+ * no approval, and a `destructive` one must come back refused.
+ *
+ * That covers every adapter at once, present and future, because the gate lives
+ * INSIDE `invoke`: a new surface that reaches a capability inherits it, and a new
+ * surface that does not reach a capability through `invoke` is caught by the
+ * call-site scan in the server package instead (`__tests__/gate-bypass-scan.test.ts`),
+ * which is the half a registry-shaped check cannot see.
+ *
+ * "No side effect" needs no separate probe here: a refusal is a REJECTION, so the
+ * handler never ran. A gate that returned the right payload after doing the damage
+ * would have to resolve, and would fail this check.
+ *
+ * @param registry - The composed registry under test.
+ * @param sampleInputs - Per-capability sample input, keyed by capability id.
  * @returns Every violation found.
  */
-export async function checkDestructiveGateConformance(
-  probes: Partial<Record<GatedAdapterPath, DestructiveGateProbe>>
+export async function checkRegistryGateConformance(
+  registry: ConformanceRegistry,
+  sampleInputs: Record<string, unknown> = {}
 ): Promise<ConformanceViolation[]> {
   const violations: ConformanceViolation[] = [];
   const add = (detail: string): void => void violations.push({ check: 'destructive-gate', detail });
 
-  for (const path of GATED_ADAPTER_PATHS) {
-    const probe = probes[path];
-    if (!probe) {
-      add(
-        `no probe supplied for the "${path}" adapter path, so nothing proves it enforces the tier gate`
-      );
-      continue;
-    }
+  const destructive = registry.capabilities.filter((cap) => cap.tier === 'destructive');
+  if (destructive.length === 0) {
+    add(
+      'the registry declares no `destructive` capability, so this check proves nothing — it is ' +
+        'vacuously green and would stay green with the gate removed'
+    );
+  }
 
-    let result: DestructiveGateProbeResult;
+  for (const cap of destructive) {
+    let refused = false;
+    let thrown: unknown;
     try {
-      result = await probe();
+      await registry.invoke(cap.id, sampleInputs[cap.id] ?? {});
     } catch (err) {
-      add(`${path}: probe threw instead of returning a gate decision — ${String(err)}`);
-      continue;
+      thrown = err;
+      refused = true;
     }
 
-    if (result.sideEffectHappened) {
+    if (!refused) {
       add(
-        `${path}: the destructive capability RAN without an approval — this path bypasses the tier gate`
+        `${cap.id}: registry.invoke RAN a destructive capability for an untrusted, unapproved ` +
+          `caller — the tier gate is not inside invoke, so every surface that calls it is ungated`
       );
+      continue;
     }
-    if (!isApprovalRequiredPayload(result.payload)) {
+    if (!isGateRefusal(thrown)) {
       add(
-        `${path}: expected a structured approval_required payload (status, approvalId, approvalToken, message, retry.instructions), got ${JSON.stringify(result.payload)}`
+        `${cap.id}: registry.invoke rejected, but not with a gate refusal — got ` +
+          `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : String(thrown)}`
+      );
+      continue;
+    }
+    if (!isApprovalRequiredPayload(thrown.decision.payload)) {
+      add(
+        `${cap.id}: the gate refused but its payload is not a structured approval_required ` +
+          `(status, approvalId, approvalToken, message, retry.instructions), got ` +
+          `${JSON.stringify(thrown.decision.payload)}`
       );
     }
   }
@@ -686,10 +670,10 @@ export function capabilityConformance(
     });
 
     describe('tier enforcement at every adapter path', () => {
-      it('destructive-gate: no path bypasses the gate', async () => {
-        const details = (await checkDestructiveGateConformance(fixtures.destructiveGateProbes)).map(
-          (v) => v.detail
-        );
+      it('destructive-gate: registry.invoke refuses every destructive capability', async () => {
+        const details = (
+          await checkRegistryGateConformance(registry, fixtures.sampleInputs ?? {})
+        ).map((v) => v.detail);
         expect(details, details.join('\n')).toEqual([]);
       });
 
@@ -716,7 +700,14 @@ export function capabilityConformance(
           // from missing dep plumbing, or a `ZodError` from a bad sample input)
           // is a real wiring failure. `CapabilityToolError` lives in the server
           // package, so it is duck-typed by name to keep this suite server-free.
-          const ok = error === undefined || isCapabilityToolError(error);
+          //
+          // A `destructive` capability is wired correctly and STILL does not run
+          // here: the gate inside `invoke` refuses it, which is the whole point of
+          // DOR-467 and is asserted properly in the destructive-gate check above.
+          const ok =
+            error === undefined ||
+            isCapabilityToolError(error) ||
+            (cap.tier === 'destructive' && isGateRefusal(error));
           expect(ok, error instanceof Error ? error.message : String(error)).toBe(true);
         });
       }
