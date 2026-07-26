@@ -127,10 +127,13 @@ jobs:
       # would otherwise block it forever (the smoke script clears extended
       # attributes anyway — see contributing/desktop-app-development.md §6).
       #
-      # An unsigned app does need one fixup before it can launch at all —
-      # hardened runtime + per-binary ad-hoc signatures make macOS refuse to
-      # load the app's own Electron Framework — which the smoke script applies
-      # itself (`relaxAdhocLibraryValidation`), so this stays a plain pack.
+      # An unsigned app can need one fixup before it launches at all: when
+      # electron-builder ad-hoc-signs each binary separately, hardened runtime's
+      # library validation makes macOS refuse to load the app's own Electron
+      # Framework. The smoke script detects and repairs that itself
+      # (`relaxAdhocLibraryValidation`), so this stays a plain pack. Observed on
+      # a local pack; NOT on this runner, where electron-builder left the
+      # Electron-signed binaries alone — hence "detects", not "always does".
       - name: Package the app (unsigned, unpacked)
         run: |
           cd apps/desktop

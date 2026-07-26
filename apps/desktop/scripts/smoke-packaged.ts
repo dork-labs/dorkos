@@ -124,8 +124,8 @@ function readInfoPlist(appPath: string, key: string): string {
  * `hardenedRuntime: true` turns on macOS **library validation**: every Mach-O
  * loaded into the process must share the main executable's signing identity.
  * A Developer ID build satisfies that — electron-builder signs the app, its
- * frameworks and its native modules with one identity. An unsigned build does
- * not: electron-builder ad-hoc-signs each binary separately, so the loader
+ * frameworks and its native modules with one identity. An unsigned build may
+ * not: when electron-builder ad-hoc-signs each binary separately, the loader
  * refuses the app's own Electron Framework with
  *
  * > Library not loaded: @rpath/Electron Framework.framework/Electron Framework
@@ -140,8 +140,11 @@ function readInfoPlist(appPath: string, key: string): string {
  * keeps `hardenedRuntime: true` (with the entitlements that make it work), and
  * `desktop-release.yml`'s verify-macos job is what asserts its signature.
  *
- * A build signed with a real identity is left strictly alone: re-signing one
- * would destroy the signature the release is about to notarize.
+ * Conditional, not unconditional, because it is not always needed — a local
+ * pack hit this; the same pack on a GitHub macOS runner did not (electron-
+ * builder left the Electron-signed binaries alone there). A build signed with a
+ * real identity is left strictly alone either way: re-signing one would destroy
+ * the signature the release is about to notarize.
  *
  * @param appPath - Absolute path to the `.app` bundle.
  * @returns Whether the app was re-signed.
