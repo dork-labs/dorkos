@@ -18,5 +18,14 @@ export default defineConfig([
     rules: { 'no-restricted-syntax': 'off' },
   },
 
+  // Same carve-out for the build/QA scripts, for the same reason: they compose
+  // the environment of child processes they spawn (esbuild's specifier-
+  // resolution child, the packaged app under smoke test), so process.env is the
+  // interface, not a config read that an env.ts could own.
+  {
+    files: ['scripts/**/*.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
+
   ...testConfig,
 ]);

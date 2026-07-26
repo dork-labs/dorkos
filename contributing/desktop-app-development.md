@@ -39,6 +39,13 @@ The main process spawns the Express server, not in-process:
 
 `electron-vite build` compiles **only** main/preload/renderer. It does **not** compile `src/server-entry.ts`. The desktop `build` script therefore runs `electron-vite build && tsx scripts/build-server.ts`, and `build-server.ts` (esbuild, mirroring `packages/cli/scripts/build.ts`) emits `dist/server/server-entry.mjs` with the native modules + agent SDKs marked external. Skip this and the packaged app forks a file that doesn't exist and dies windowless.
 
+That bundle carries two gates, both of which fail the build (DOR-536):
+
+- **No esbuild warnings.** esbuild reports this app's most expensive failure class — a bundle that builds green and dies only in a packaged install — as _warnings_: an unresolvable dynamic `require`, `import.meta` in the wrong output format, an external that never resolves. `ALLOWED_WARNING_TEXTS` in `build-server.ts` is the allowlist and is empty; adding to it requires quoting the warning and saying why it's safe.
+- **Every runtime specifier resolves.** After a successful build the script `node --check`s the emitted `.mjs` and resolves every external the metafile says it left in the output (plus the two `require`-routed natives, which esbuild can't see) from the bundle's own directory. A package that's external but not a dependency of `apps/desktop` now fails the build instead of `ERR_MODULE_NOT_FOUND`-ing at `utilityProcess.fork()` time in a real install.
+
+Both gates stop at resolution and never _evaluate_ the bundle — evaluating it would boot the server (port + `~/.dork`) and `dlopen` the native modules, which after a `rebuild-natives.ts` run would wedge the build under system Node. The packaged runtime is exercised for real by `scripts/smoke-packaged.ts` (§5) instead.
+
 ### The window loads from localhost, not file://
 
 In production the main window loads `http://localhost:<serverPort>` — the bundled server serves the built SPA via `express.static`. It does **not** use `loadFile('…/index.html')`. Reason: a `file://` page sends `Origin: null`, which the server's CORS allowlist rejects, so a `file://` renderer can't call its own API. Serving both SPA and API from one localhost origin makes every request same-origin (and cookie auth works exactly as in the web cockpit). See **ADR `260712-005315`**. The main process passes the server child `CLIENT_DIST_PATH` pointing at the asar-**unpacked** renderer.
@@ -51,6 +58,14 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 - `dist/renderer/**` (`express.static` can't range-read from inside asar),
 - `@anthropic-ai/claude-agent-sdk-darwin-arm64/**` (the `claude` executable — see §3),
 - `core-extensions/**` (staged into `DORK_HOME` via `fs.cp`).
+
+Unpacking is the **only** way to put a file outside the asar. Do not add a second copy via `extraResources`: the server bundle resolves `node_modules` by walking up from `app.asar/dist/server/`, so it reaches `app.asar/node_modules/<pkg>` (asar-redirected to the unpacked copy) before it could ever see `resources/node_modules/<pkg>`. A duplicate there is unreachable weight that only surfaces the day the two copies carry different ABIs and someone debugs a `NODE_MODULE_VERSION` error against a binary they didn't know existed. One such copy of `better-sqlite3` was carried from the first desktop commit until DOR-536 removed it.
+
+### What goes into app.asar
+
+`electron-builder.yml`'s `files` is an explicit allowlist: `package.json`, `dist/**`, `core-extensions/**`. Without it, electron-builder's default packs essentially the whole package directory — which used to ship `src/` (including `src/main/__tests__/`), both build `scripts/`, `.turbo/turbo-build.log` and the tsconfig/eslint/vitest/electron-vite configs to every user.
+
+`node_modules` is deliberately **not** in that list. electron-builder derives it from the production dependency tree with its own copier and reads only _negative_ patterns from `files`, so a positive entry would do nothing. **If you add a runtime read of a new top-level path, add it to `files`** — a missing entry packages green and fails only once installed. `pnpm --filter @dorkos/desktop pack` plus `npx @electron/asar list …/Resources/app.asar` is how you check.
 
 ### Native ABI rebuild happens at packaging time only
 
@@ -96,6 +111,20 @@ cd apps/desktop && npx electron-builder --mac --arm64 --dir --config electron-bu
 
 Main-process code is unit-tested against a mocked `electron` module (`vi.mock('electron', …)`), never a live Electron. Keep that harness green; there is no e2e for the main process.
 
+### Smoke-testing the packaged runtime
+
+Everything between "the bundles emit" and "the app works" is unreachable by unit tests, and it is where the expensive bugs live (a dead server port after a restart, a stale renderer URL, a wrong window state — all shipped, all found by hand). `scripts/smoke-packaged.ts` launches the packaged app, waits for its server to answer `/api/health` on the port it actually opened (discovered via `lsof` over the app's process tree, so no log-format coupling), asserts the reported version matches `apps/desktop/package.json` (proving it's serving the bundle you just packaged), then quits it and asserts the port is released rather than orphaned. It runs the app with a throwaway `$HOME`, so it never touches your real `~/.dork`.
+
+```bash
+pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
+cd apps/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --dir --config electron-builder.yml
+pnpm --filter @dorkos/desktop exec tsx scripts/smoke-packaged.ts
+
+pnpm rebuild better-sqlite3 node-pty   # ← from the repo root. Not optional. See §2.
+```
+
+In CI this is `.github/workflows/desktop-smoke.yml` — a single macOS job (unsigned `--dir` pack, so it needs no Apple credentials), running on PRs that touch `apps/desktop/**` and on pushes to `main` that touch the server, client or workspace packages. That asymmetry is deliberate: macOS runners are the scarcest GitHub-hosted resource and the job is ~25 minutes, while a main-branch red still lands well before a release tag is cut. The job runs **no tests** on purpose — it rebuilds the native modules for Electron's ABI, and that must never share a runner with vitest (§2).
+
 ## 6. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
 
 **Read this before spending an hour concluding a build is broken.** When you launch a freshly-downloaded (quarantined) **notarized** build from the terminal and it appears to hang, it is almost certainly the macOS Gatekeeper first-launch consent dialog — _"'DorkOS.app' is an app downloaded from the Internet. Are you sure you want to open it? Apple checked it for malicious software and none was detected."_ — which **blocks the launch until a human clicks Open**. Headless, that is indistinguishable from a crash/hang:
@@ -132,4 +161,4 @@ Gotchas worth knowing (details vary by machine; the setup itself lives with the 
 - **The auto-update `.zip` must be published alongside the `.dmg`** — Squirrel.Mac (electron-updater) can only install updates from the zip; a dmg-only release 404s every update check.
 - **App Store is deliberately not a target.** The app spawns shells and agent CLIs and writes across the filesystem — none of which fits the App Sandbox. It ships as a Developer-ID-signed, notarized direct download (like VS Code, Docker Desktop, iTerm). See the maintainer's notes / DOR-230 for the rationale.
 
-Verify a packaged build actually launches and runs a session (§6) before treating a release as good — static checks and unit tests pass long before the packaged runtime is exercised.
+Verify a packaged build actually launches and runs a session (§6) before treating a release as good — static checks and unit tests pass long before the packaged runtime is exercised. `desktop-smoke.yml` (§5) covers the "does it boot and serve" half automatically; running a real session in the packaged app is still a human step.
