@@ -516,7 +516,18 @@ async function buildServer() {
     await assertNoUnexpectedWarnings(result.warnings);
     verifyBundleLoadable(outfile, result.metafile);
   } catch (err) {
-    rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
+    // The cleanup must never be able to replace the diagnosis: `rmSync` can
+    // throw (EPERM, a file locked by another process — this build also runs on
+    // the Windows release runner), and rethrowing THAT would bury which gate
+    // actually failed. Swallow-and-report, then rethrow the original.
+    try {
+      rmSync(path.join(OUT, 'server'), { recursive: true, force: true });
+    } catch (cleanupErr) {
+      console.error(
+        `[build-server] Could not remove the rejected bundle at ${path.join(OUT, 'server')} — ` +
+          `delete it by hand before packaging, electron-builder would ship it:\n${String(cleanupErr)}`
+      );
+    }
     throw err;
   }
 

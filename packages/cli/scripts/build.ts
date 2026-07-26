@@ -358,9 +358,19 @@ async function buildCLI() {
 // above run AFTER esbuild has written their bundles, and `dist/` here is what
 // `pnpm pack` publishes to npm. (The desktop's equivalent gate learned this the
 // hard way — a rejected bundle got packaged and died at fork time.)
+// Order matters: PRINT the real failure first, then clean up. A cleanup that
+// throws (EPERM, a file locked by another process on Windows) must not be able
+// to replace the diagnosis with a stack about the removal — which is the exact
+// outcome this handler exists to prevent. Belt and braces: the removal is also
+// caught, so it can only ever add a line, never take one away.
 buildCLI().catch(async (err: unknown) => {
-  await fs.rm(OUT, { recursive: true, force: true });
   console.error(`\n[cli-build] Build FAILED:\n`);
   console.error(err instanceof Error ? (err.stack ?? err.message) : err);
+  await fs.rm(OUT, { recursive: true, force: true }).catch((cleanupErr: unknown) => {
+    console.error(
+      `\n[cli-build] Could not remove the rejected output at ${OUT} — delete it by hand ` +
+        `before packing, it is what \`pnpm pack\` publishes:\n${String(cleanupErr)}`
+    );
+  });
   process.exit(1);
 });
