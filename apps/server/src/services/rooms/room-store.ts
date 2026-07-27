@@ -86,6 +86,15 @@ export class RoomStore {
    * that hid rooms from the person running it would be absurd. An AGENT's
    * listing must use {@link RoomStore.listRoomsForMember} instead.
    *
+   * Recency is the only order this query imposes, on purpose. One list carries
+   * every kind, and each kind wants a different order on screen (channels read
+   * alphabetically, DMs by recency), which a single `ORDER BY` cannot say
+   * without also grouping the kinds. That split is the client's — see
+   * `useRoomsByKind` in `entities/room`. What this owes every caller is a
+   * *stable* answer, hence the id: two rooms whose `lastActivityAt` is identical
+   * (every seeded pair, since a new room's activity is its creation) would
+   * otherwise come back in whatever order SQLite felt like.
+   *
    * @param filter.kind - Restrict to one room kind.
    * @param filter.includeArchived - Include archived rooms (default false).
    */
@@ -97,7 +106,7 @@ export class RoomStore {
       .select()
       .from(rooms)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(rooms.lastActivityAt))
+      .orderBy(desc(rooms.lastActivityAt), desc(rooms.id))
       .all();
     return rows.map(toRoom);
   }
@@ -109,6 +118,9 @@ export class RoomStore {
    * the read: a room an agent is not in must never be loaded, not loaded and
    * then hidden. This is the boundary that stops an agent enumerating the
    * operator's DMs with other agents.
+   *
+   * Ordered like {@link RoomStore.listRooms}, id included — the two feed the
+   * same endpoint and must not disagree about what "newest first" means.
    *
    * @param memberAuthorId - Whose rooms to list.
    * @param filter.kind - Restrict to one room kind.
@@ -126,7 +138,7 @@ export class RoomStore {
       .from(rooms)
       .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
       .where(and(...conditions))
-      .orderBy(desc(rooms.lastActivityAt))
+      .orderBy(desc(rooms.lastActivityAt), desc(rooms.id))
       .all();
     return rows.map((row) => toRoom(row.room));
   }

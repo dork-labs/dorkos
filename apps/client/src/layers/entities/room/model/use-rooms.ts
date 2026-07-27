@@ -12,9 +12,47 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { roomName } from '../lib/room-display';
 
 /** How long a room list stays fresh before a refocus refetches it. */
 const ROOMS_STALE_TIME_MS = 30_000;
+
+/**
+ * How two channel names compare. `numeric` so `#room-2` precedes `#room-10`
+ * rather than following it, and `sensitivity: 'base'` so case never decides an
+ * order — a case-only difference is a tie, and ties are broken on the id below.
+ */
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/**
+ * Channels, alphabetically.
+ *
+ * Slack orders channels by name for one reason: the list stops moving, so you
+ * learn where things are and can hit the same row without reading it. Ordering
+ * them by recency instead — which is what the server returns — reorders the
+ * sidebar under the pointer every time anybody says anything
+ * (`research/20260727_chat-navigation-quick-switcher-patterns.md`).
+ *
+ * The id breaks a tie. Two live channels cannot share a slug, but a channel
+ * whose slug is missing falls back to its title, and two of those can collide.
+ */
+function compareChannels(a: RoomSummary, b: RoomSummary): number {
+  return byName.compare(roomName(a), roomName(b)) || a.id.localeCompare(b.id);
+}
+
+/**
+ * Direct messages, most recent first.
+ *
+ * The opposite call from channels, and deliberately: a DM is a conversation, not
+ * a place, so the one you spoke in last is the one you want at the top.
+ *
+ * `lastActivityAt` is always a UTC ISO-8601 timestamp, so comparing the strings
+ * compares the instants. The id breaks a tie descending too, which puts the
+ * newer ULID first — the same direction the sort itself runs.
+ */
+function compareDirectMessages(a: RoomSummary, b: RoomSummary): number {
+  return b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id);
+}
 
 /**
  * Fetch every room the caller may see, newest activity first.
@@ -38,18 +76,32 @@ export interface RoomsByKind {
 }
 
 /**
- * Split a room list into channels and direct messages.
+ * Split a room list into channels and direct messages, each in the order its
+ * own kind wants: channels by name, direct messages by recency.
  *
  * Threads are deliberately dropped: a thread belongs to the room it hangs off
  * and is reached from there, never from a top-level sidebar section.
+ *
+ * **Why the order is decided here and not in the query.** `GET /api/rooms`
+ * answers with every kind in one list, and a SQL `ORDER BY` can only impose one
+ * total order on that — so "channels by name, DMs by recency" would have to
+ * become a synthetic sort key that also groups the kinds, an ordering no caller
+ * asked for and one more thing to keep in step when threads (R4, DOR-527) arrive
+ * as a third kind with a third answer. The kinds are already told apart here,
+ * once; the server keeps the single honest contract it documents (recency), and
+ * ordering stays a presentation choice — which it has to be, since the command
+ * palette will want the same rooms unread-first (spec `rooms` §13.2).
+ *
+ * Both comparators end on the room id, so rows that tie never swap places
+ * between renders.
  *
  * @param rooms - The full room list, or undefined while it loads.
  */
 export function useRoomsByKind(rooms: RoomSummary[] | undefined): RoomsByKind {
   return useMemo(
     () => ({
-      channels: (rooms ?? []).filter((room) => room.kind === 'channel'),
-      dms: (rooms ?? []).filter((room) => room.kind === 'dm'),
+      channels: (rooms ?? []).filter((room) => room.kind === 'channel').sort(compareChannels),
+      dms: (rooms ?? []).filter((room) => room.kind === 'dm').sort(compareDirectMessages),
     }),
     [rooms]
   );

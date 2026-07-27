@@ -111,6 +111,53 @@ describe('RoomStore never trims the log', () => {
   }, 60_000);
 });
 
+describe('RoomStore.listRooms ordering', () => {
+  let store: RoomStore;
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+  });
+
+  /** A channel created — and so last active — at `at`. */
+  function channelAt(id: string, at: string): void {
+    store.createRoom(
+      {
+        id,
+        kind: 'channel',
+        parentId: null,
+        slug: id,
+        title: `#${id}`,
+        topic: null,
+        workspaceId: null,
+        rootEntryId: null,
+        createdAt: at,
+      },
+      []
+    );
+  }
+
+  it('answers newest activity first', () => {
+    channelAt('old', '2026-07-26T10:00:00.000Z');
+    channelAt('new', '2026-07-26T12:00:00.000Z');
+    channelAt('mid', '2026-07-26T11:00:00.000Z');
+
+    expect(store.listRooms().map((room) => room.id)).toEqual(['new', 'mid', 'old']);
+  });
+
+  it('breaks a tie on the id rather than leaving it to SQLite', () => {
+    // Ties are the common case, not the corner: a room that has never been
+    // posted in has `lastActivityAt === createdAt`, so any batch seeded in one
+    // pass ties outright. Inserted a, c, b — an untied ORDER BY hands those back
+    // in whatever order it likes, and the sidebar reshuffles on every refetch.
+    const tied = '2026-07-26T10:00:00.000Z';
+    channelAt('a', tied);
+    channelAt('c', tied);
+    channelAt('b', tied);
+
+    expect(store.listRooms().map((room) => room.id)).toEqual(['c', 'b', 'a']);
+  });
+});
+
 /**
  * The worker body. It mirrors `RoomStore.appendEntry`'s statements rather than
  * importing the store, because a worker cannot load this repo's TypeScript
