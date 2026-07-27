@@ -3,9 +3,10 @@ import { Plus, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
+  ResponsivePopover,
+  ResponsivePopoverTrigger,
+  ResponsivePopoverContent,
+  ResponsivePopoverTitle,
   SidebarGroupAction,
 } from '@/layers/shared/ui';
 
@@ -76,6 +77,26 @@ interface NewDirectMessageMenuProps {
  * pickers in this codebase use: it binds Enter to the highlighted item
  * unconditionally and always highlights the first one, so there is no state in
  * which Enter can mean "open this conversation".
+ *
+ * **A panel on a wide screen, the whole screen on a narrow one**
+ * (`ResponsivePopover`, one 768px breakpoint shared by the shell and the `md:`
+ * classes below). Picking who to talk to is a task, not a glance, and the
+ * anchored panel was the wrong shape for it on a phone twice over: the sidebar
+ * it hangs off _is_ a sheet down there, so it had to close for the panel to be
+ * seen, and what was left was a floating box drawn at `x = -17` — off the left
+ * edge of the screen. The sheet puts the field at the top where the keyboard
+ * cannot reach it, gives the list the height to be a list, and carries a close
+ * button, because a phone has no Escape key.
+ *
+ * Three flex rules carry that, and each one is load-bearing at a size the
+ * others are not. The field and the button do not shrink, so they are legible
+ * and tappable at every size. The list takes what is left, which is most of a
+ * portrait phone. And the list has a **floor** — because when a landscape
+ * phone puts its keyboard up there is under 200px of sheet to divide, and a
+ * list that only ever takes "what is left" takes nothing, leaving a search
+ * field above a blank space while you type. The floor costs a short scroll to
+ * reach the button in that one case, which is the right way round: the
+ * keyboard is up because you are still choosing, and Enter commits anyway.
  */
 export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMenuProps) {
   const [open, setOpen] = useState(false);
@@ -105,7 +126,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
     null;
   const activeIndex = active ? matches.indexOf(active) : -1;
 
-  /** Reset to a blank picker whenever the popover opens or closes. */
+  /** Reset to a blank picker whenever it opens or closes. */
   function handleOpenChange(next: boolean) {
     setOpen(next);
     setQuery('');
@@ -170,32 +191,46 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
   }
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
+    <ResponsivePopover open={open} onOpenChange={handleOpenChange} modal fullHeight>
+      <ResponsivePopoverTrigger asChild>
         <SidebarGroupAction aria-label="New direct message">
           <Plus />
         </SidebarGroupAction>
-      </PopoverTrigger>
-      <PopoverContent
+      </ResponsivePopoverTrigger>
+      <ResponsivePopoverContent
         side="right"
         align="start"
-        className="w-64 p-2"
+        // A column, so the list below can give height back when the panel is
+        // clamped: on a 844x390 window the desktop panel is capped at 70vh and
+        // a fixed-height list pushed the commit button below the fold.
+        className="flex w-64 flex-col p-2"
+        // Names the desktop panel, which is a focus-trapping `role="dialog"`
+        // and would otherwise be an unnamed one. On mobile the sheet's own
+        // heading wins, per the accname precedence rules, and says the same.
+        aria-label="New message"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           inputRef.current?.focus();
         }}
       >
+        {/* The sheet's heading, and its accessible name. Null on desktop, where
+            the panel is anchored to a "+" that already says what it does. */}
+        <ResponsivePopoverTitle>New message</ResponsivePopoverTitle>
+
         {candidates.length === 0 ? (
           <p className="text-muted-foreground px-1 py-1.5 text-xs">
             You have not added any agents yet. Add one to start a direct message with it.
           </p>
         ) : (
-          <>
-            <div className="border-input focus-within:ring-ring flex flex-wrap items-center gap-1 rounded-md border px-1.5 py-1 focus-within:ring-2">
+          // A column on both: the field and the button hold their size and the
+          // list takes whatever is left, which on a phone is most of the screen
+          // and in the desktop panel is capped so the panel stays a panel.
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="border-input focus-within:ring-ring flex shrink-0 flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 focus-within:ring-2 md:gap-1 md:px-1.5 md:py-1">
               {chosen.map((candidate) => (
                 <span
                   key={candidate.agentPath}
-                  className="bg-accent text-accent-foreground flex items-center gap-1 rounded-sm py-0.5 pr-0.5 pl-1.5 text-xs"
+                  className="bg-accent text-accent-foreground flex items-center gap-1 rounded-sm py-1 pr-1 pl-2 text-xs md:py-0.5 md:pr-0.5 md:pl-1.5"
                 >
                   {candidate.displayName}
                   <button
@@ -205,9 +240,23 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                       setChosen((prev) => prev.filter((c) => c.agentPath !== candidate.agentPath));
                       inputRef.current?.focus();
                     }}
-                    className="hover:bg-background focus-visible:ring-ring rounded-sm p-0.5 outline-hidden focus-visible:ring-2"
+                    className={cn(
+                      'hover:bg-background focus-visible:ring-ring relative rounded-sm p-2 outline-hidden focus-visible:ring-2 md:p-0.5',
+                      // Most of the touch target is real size (30px), and the
+                      // invisible part is deliberately smaller than the dead
+                      // space around it: 6px sideways into the 12px between
+                      // this button and whatever is next (`pr-1` + the row's
+                      // `gap-2`), 4px down into the 12px above the next wrapped
+                      // row. An earlier version reached 12px in every direction
+                      // and ate into the FIELD — sampling its box at 390x844
+                      // found 1.9% of it stolen at two chips and 10.6% at six,
+                      // and a tap there focused the field and silently deleted
+                      // an agent. `SidebarGroupAction` gets away with a bare
+                      // outset because nothing interactive sits next to it.
+                      'after:absolute after:-inset-x-1.5 after:-inset-y-1 md:after:hidden'
+                    )}
                   >
-                    <X className="size-3" />
+                    <X className="size-3.5 md:size-3" />
                   </button>
                 </span>
               ))}
@@ -231,7 +280,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                   setAimedAt(null);
                 }}
                 onKeyDown={handleKeyDown}
-                className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-0.5 text-sm outline-hidden"
+                className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-1 text-sm outline-hidden md:py-0.5"
               />
             </div>
 
@@ -244,7 +293,13 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                 id={listId}
                 role="listbox"
                 aria-label="Agents"
-                className="mt-1 max-h-56 overflow-y-auto"
+                // `min-h-24` is a floor, not a size: it only bites when the
+                // sheet has been squeezed — a landscape phone with the keyboard
+                // up leaves barely 180px, and a pure `flex-1` list gives all of
+                // it back to the field and the button and renders zero of the
+                // matches you are typing to find. Two rows always survive, and
+                // the sheet's scroll of last resort covers the rest.
+                className="mt-2 min-h-24 flex-1 overflow-y-auto md:mt-1 md:max-h-56 md:min-h-0"
               >
                 {matches.map((candidate, index) => (
                   // An aria-activedescendant combobox keeps DOM focus on the input, so an
@@ -263,7 +318,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                     onMouseEnter={() => setAimedAt(candidate.agentPath)}
                     onClick={() => add(candidate)}
                     className={cn(
-                      'cursor-pointer truncate rounded-sm px-2 py-1.5 text-sm',
+                      'flex min-h-11 cursor-pointer items-center truncate rounded-sm px-2 py-2 text-sm md:min-h-0 md:py-1.5',
                       index === activeIndex && 'bg-accent text-accent-foreground'
                     )}
                   >
@@ -272,7 +327,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                 ))}
               </ul>
             ) : (
-              <p className="text-muted-foreground mt-1 px-2 py-1.5 text-xs">
+              <p className="text-muted-foreground mt-2 flex-1 px-2 py-1.5 text-xs md:mt-1 md:flex-none">
                 {needle
                   ? 'No agent by that name.'
                   : 'Everyone you have added is already in this conversation.'}
@@ -284,13 +339,13 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
               size="sm"
               disabled={chosen.length === 0}
               onClick={commit}
-              className="mt-2 w-full"
+              className="mt-3 w-full shrink-0 md:mt-2"
             >
               {chosen.length > 1 ? 'Start group conversation' : 'Start conversation'}
             </Button>
-          </>
+          </div>
         )}
-      </PopoverContent>
-    </Popover>
+      </ResponsivePopoverContent>
+    </ResponsivePopover>
   );
 }

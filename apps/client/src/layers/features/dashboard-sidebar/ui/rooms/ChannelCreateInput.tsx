@@ -58,7 +58,11 @@ export function ChannelCreateInput({ onCommit, onCancel }: ChannelCreateInputPro
 
   return (
     <SidebarMenuItem>
-      <div className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5">
+      {/* 44px of row on a phone, the same as every other thing you tap in this
+          sidebar, and the same as the agent rows in the direct-message picker
+          next door. Above the breakpoint it collapses back to the dense row
+          the rest of the sidebar uses. */}
+      <div className="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-1.5 md:min-h-0">
         <Hash className="text-muted-foreground size-3.5 shrink-0" />
         <input
           ref={inputRef}
@@ -73,7 +77,8 @@ export function ChannelCreateInput({ onCommit, onCancel }: ChannelCreateInputPro
           }}
           className={cn(
             'bg-background text-foreground placeholder:text-muted-foreground/50',
-            'focus-visible:ring-ring min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs outline-none focus-visible:ring-1'
+            'focus-visible:ring-ring min-w-0 flex-1 rounded border px-1.5 py-2 text-sm outline-none focus-visible:ring-1',
+            'md:py-0.5 md:text-xs'
           )}
         />
       </div>

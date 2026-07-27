@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { AuthorRef, RoomSummary } from '@dorkos/shared/room-schemas';
@@ -10,6 +10,31 @@ import { DirectMessagesSection } from '../ui/rooms/DirectMessagesSection';
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+
+/**
+ * Which viewport the next render happens at. jsdom has no layout engine and
+ * loads no CSS, so this decides only which SHELL the picker mounts — an
+ * anchored panel or a sheet. Whether either is usable at a given width is a
+ * browser question and is answered in a browser, never here.
+ */
+let onAPhone = false;
+
+beforeAll(() => {
+  // jsdom ships no matchMedia, which is what `useIsMobile` reads.
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: onAPhone,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
 
 const mockUpdate = vi.fn<(updater: (prev: { dmsCollapsed: boolean }) => unknown) => void>();
 let mockCollapsed = false;
@@ -105,6 +130,7 @@ function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSectio
 
 beforeEach(() => {
   mockCollapsed = false;
+  onAPhone = false;
   mockUpdate.mockClear();
   mockStart.mockClear();
 });
@@ -413,5 +439,66 @@ describe('DirectMessagesSection', () => {
 
     expect(screen.queryAllByRole('option')).toHaveLength(0);
     expect(screen.getByText(/No agent by that name/i)).toBeInTheDocument();
+  });
+});
+
+/**
+ * What jsdom can honestly say about the phone: which shell mounts, that it is
+ * named, and that it can be dismissed without a keyboard. Everything about
+ * whether it FITS — the field clearing the on-screen keyboard, the list having
+ * room to scroll — needs layout and CSS, and was checked in a browser at
+ * 390×844 instead (DOR-602).
+ */
+describe('DirectMessagesSection on a phone', () => {
+  beforeEach(() => {
+    onAPhone = true;
+  });
+
+  it('opens as a named sheet rather than a panel pinned to an off-screen button', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana' } });
+    openPicker();
+
+    expect(screen.getByRole('dialog', { name: 'New message' })).toBeInTheDocument();
+  });
+
+  it('offers a way out that is not the Escape key a phone does not have', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana' } });
+    openPicker();
+
+    // Presence only. The sheet leaves on a CSS transition whose end event jsdom
+    // never fires, so nothing here — or in any vaul drawer — can watch it go;
+    // the dismissal itself was driven in a browser at 390×844.
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  it('is the same picker: typeahead, chips and one conversation at the end', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+
+    fireEvent.change(input, { target: { value: 'bo' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByRole('button', { name: 'Remove Bo' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start conversation' }));
+    expect(mockStart).toHaveBeenCalledWith(
+      { agentPaths: ['/repo/bo'], title: 'Bo' },
+      expect.anything()
+    );
+  });
+
+  it('still refuses to open anything on Enter after a typo', () => {
+    // The rung that costs an action is the one worth checking on both shells:
+    // "Kia" for "Kai" must not throw away a half-assembled conversation.
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/kai': 'Kai' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.change(input, { target: { value: 'Kia' } });
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(screen.getByRole('combobox')).toHaveValue('Kia');
   });
 });
