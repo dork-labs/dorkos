@@ -172,11 +172,16 @@ function revealLogs(): void {
 }
 
 /**
- * Point every cockpit window at a freshly restarted server, whose port is new.
+ * Point every cockpit window at the freshly restarted server.
+ *
+ * Unconditional, and not an optimisation to skip when the port came back the
+ * same (which it usually does now — see `server-port.ts`): the window is
+ * holding a connection to a process that no longer exists, so it has to be sent
+ * back to the address whatever that address turned out to be.
  *
  * All of them, not just the tracked one: a second window opened with
  * `window.open` is a full cockpit on the same origin, and leaving it pointed at
- * a dead port would strand it with no way to recover but closing it.
+ * a dead server would strand it with no way to recover but closing it.
  *
  * @param port - The port the replacement server is listening on.
  */

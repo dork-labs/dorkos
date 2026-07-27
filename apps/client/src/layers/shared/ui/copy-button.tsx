@@ -29,7 +29,9 @@ export function CopyButton({
   return (
     <button
       className={cn(
-        'text-muted-foreground hover:text-foreground rounded-sm p-1 transition-colors',
+        // `focus-ring` is opt-in: index.css clears the native outline globally,
+        // so a bare button is invisible to keyboard focus without it.
+        'text-muted-foreground hover:text-foreground focus-ring rounded-sm p-1 transition-colors',
         className
       )}
       onClick={() => copy(value)}

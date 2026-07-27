@@ -1,9 +1,9 @@
 import { app, utilityProcess } from 'electron';
 import { fork, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import net from 'node:net';
 import path from 'node:path';
 import log from 'electron-log';
+import { resolveDataDirectory } from './dork-home';
 import { createStderrTail, type StderrTail } from './server-output';
 
 /**
@@ -12,7 +12,8 @@ import { createStderrTail, type StderrTail } from './server-output';
  * This module knows how to *start* a server child — which runtime to use, what
  * entry script to run, and what environment to hand it. It deliberately knows
  * nothing about the child's lifecycle after that; supervising it (readiness,
- * crashes, shutdown) is `server-process.ts`'s job.
+ * crashes, shutdown) is `server-process.ts`'s job, and choosing the port it is
+ * handed is `server-port.ts`'s.
  */
 
 /**
@@ -93,41 +94,6 @@ function resolvePackagedClaudeBinary(): string | null {
   if (!app.isPackaged) return null;
   const candidate = path.join(process.resourcesPath, PACKAGED_CLAUDE_BINARY_SUBPATH);
   return existsSync(candidate) ? candidate : null;
-}
-
-/**
- * Reserve a free port by binding to port 0 and releasing it again.
- *
- * There is an unavoidable gap between releasing the port here and the child
- * binding it — the OS could hand the same port to another process in between.
- * Handing the listening socket to the child would close the gap, but neither
- * a UtilityProcess nor a tsx-run fork can inherit one portably. What we can
- * do is make a lost race cheap: the child fails to bind, exits immediately,
- * and the supervisor settles `startServer` on that exit (see
- * `server-process.ts`) instead of waiting out the 70-second health-poll
- * window.
- *
- * @returns A port number that was free a moment ago.
- */
-export async function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    const fail = (err: Error): void => {
-      // Close before rejecting: an open probe socket would hold the very port
-      // it just found, which is the opposite of the point.
-      server.close(() => reject(err));
-    };
-    server.once('error', fail);
-    server.listen(0, () => {
-      const address = server.address();
-      if (address === null || typeof address === 'string') {
-        fail(new Error('Could not read a port from the probe socket.'));
-        return;
-      }
-      const { port } = address;
-      server.close((err) => (err ? reject(err) : resolve(port)));
-    });
-  });
 }
 
 /**
@@ -287,8 +253,10 @@ function buildServerEnv(port: number): Record<string, string> {
   // `pnpm --filter @dorkos/desktop dev` at the real ~/.dork and ran unreleased
   // migrations against live data. Left unset, the child resolves the same
   // project-local `<cwd>/.temp/.dork` every other dev workflow here uses
-  // (under apps/desktop, since that is where electron-vite runs).
-  const dorkHome = app.isPackaged ? path.join(app.getPath('home'), '.dork') : undefined;
+  // (under apps/desktop, since that is where electron-vite runs) — which is
+  // what `resolveDataDirectory()` returns for that mode, so the directory the
+  // port scan read `config.json` out of is the one the child opens either way.
+  const dorkHome = app.isPackaged ? resolveDataDirectory() : undefined;
 
   return {
     DORKOS_PORT: String(port),

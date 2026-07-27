@@ -115,8 +115,18 @@ export function isOwnOrigin(url: string, rendererUrl?: string): boolean {
   }
 }
 
-/** Is this a link the system browser should take? */
-function isWebLink(url: string): boolean {
+/**
+ * Is this a link the system browser should take?
+ *
+ * The whole of the shell's outbound policy: `http(s)` leaves, everything else
+ * goes nowhere. Exported so the renderer's `open-external` bridge (`index.ts`)
+ * enforces the same rule the two link guards below do, rather than a second one
+ * that could drift.
+ *
+ * @param url - The URL a navigation, a `window.open`, or the renderer is asking
+ *   to open outside the app.
+ */
+export function isWebLink(url: string): boolean {
   return url.startsWith('http://') || url.startsWith('https://');
 }
 

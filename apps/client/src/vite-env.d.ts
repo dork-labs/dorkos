@@ -25,6 +25,17 @@ declare global {
     /** The current platform (darwin, win32, linux). */
     platform: NodeJS.Platform;
     /**
+     * Open a URL in the system browser.
+     *
+     * The reason the seam in `shared/lib/link-navigation.ts` prefers this over
+     * `window.open`: at the app's own `http://localhost:<port>` origin the
+     * shell turns `window.open` into a second cockpit window, so a promise to
+     * leave would not be kept. Only `http`/`https` URLs are opened.
+     *
+     * @param url - The URL to hand to the browser.
+     */
+    openExternal(url: string): Promise<void>;
+    /**
      * Subscribe to main-process navigation requests (menu items, dock menu,
      * `dorkos://` deep links — ADR 260709-210223). `cb` receives the client
      * route path to navigate to.

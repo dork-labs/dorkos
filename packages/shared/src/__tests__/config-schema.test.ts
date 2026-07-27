@@ -408,8 +408,21 @@ describe('USER_CONFIG_DEFAULTS', () => {
     expect(() => UserConfigSchema.parse(USER_CONFIG_DEFAULTS)).not.toThrow();
   });
 
-  it('has correct default port', () => {
-    expect(USER_CONFIG_DEFAULTS.server.port).toBe(4242);
+  it('keeps the default port at 4242, which another package reads as "no opinion"', () => {
+    // Not merely "there is a default": the *value* is load-bearing outside this
+    // package. `conf` writes defaults to disk, so every config.json carries this
+    // number whether or not anyone chose it, and the desktop shell tells a
+    // pinned port from an unchosen one by comparing against it. A comment on
+    // that side cannot fire when someone edits this side, so the assertion
+    // lives here, where the value that must not move actually is.
+    expect(
+      USER_CONFIG_DEFAULTS.server.port,
+      'PREFERRED_SERVER_PORT in apps/desktop/src/main/server-port.ts must equal this default. ' +
+        'It compares server.port against 4242 to tell a port someone pinned from the one `conf` ' +
+        "writes into every config.json. Change this without changing that and every install's " +
+        'written-out default reads as a deliberate pin, so the desktop app refuses to start ' +
+        'instead of stepping past a busy port (DOR-539). Update both, or neither.'
+    ).toBe(4242);
   });
 
   it('has correct default theme', () => {
