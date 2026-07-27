@@ -57,7 +57,7 @@ weak.** Rule 1 keys the fresh start on the author being a human, because a
 person re-engaging a stopped room is the behaviour we want. `resolveCaller`
 answers "is this a human" by looking for an `X-DorkOS-Agent` header, and
 `sessionGate` is a pass-through while `auth.enabled` is off — which is the
-default. So a program on the machine omits a header and *is* the human author:
+default. So a program on the machine omits a header and _is_ the human author:
 measured at 30 posts, 30 distinct cascade roots, 60 turns, max depth 0, no
 refusal notice. This is the documented DOR-505 residual (`lib/caller-authority.ts`
 names the same move) and it is not closable from the room path: with login off
@@ -111,9 +111,18 @@ completely.
 
 So the honest framing is: the budget is defence in depth against an adversary who
 is already inside, and a complete answer to the accident it was built for. **The
-actual fix for the adversary is DOR-505 — turning login on** — which is what
-restores the identity distinction every caller-asserted rule here depends on.
-A durable counter is worth adding when it is cheap, not because it closes this.
+actual fix for the adversary is login being enabled** — that is what restores the
+identity distinction every caller-asserted rule here depends on. A durable
+counter is worth adding when it is cheap, not because it closes this.
+
+An earlier draft of this section named DOR-505 as that fix. DOR-505 has since
+shipped and **the residual is still open**, so the citation would now mislead
+anyone who checked the issue and stopped there. DOR-505 closed the
+header-stripping hole on operator-only _config writes_, by way of a cookie that
+only exists once login is on; `lib/caller-authority.ts` says so in its own module
+doc — `requireOperatorCookieUnderLogin` "with login off it allows, because there
+is no cookie for anyone to present." That allow is the same one the room path
+inherits. The dependency is the posture, not the ticket.
 
 **Cross-room cascades carry their depth but not their ancestry.** An agent
 mid-turn in room A that posts into room B inherits A's `cascadeRoot` at its
