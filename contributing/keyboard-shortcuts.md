@@ -77,12 +77,47 @@ interface UseInteractiveShortcutsOptions {
 
 ### Navigation
 
-| Key                            | Action                                                       |
-| ------------------------------ | ------------------------------------------------------------ |
-| `Cmd+K` / `Ctrl+K`             | Open command palette                                         |
-| `Cmd+B` / `Ctrl+B`             | Toggle sidebar (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`) |
-| `Cmd+Shift+N` / `Ctrl+Shift+N` | New session                                                  |
-| `?`                            | Open keyboard shortcuts panel                                |
+| Key                | Action                                                       |
+| ------------------ | ------------------------------------------------------------ |
+| `Cmd+K` / `Ctrl+K` | Open command palette                                         |
+| `Cmd+B` / `Ctrl+B` | Toggle sidebar (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`) |
+| `Cmd+.` / `Ctrl+.` | Toggle the right panel                                       |
+| `Cmd+Shift+.`      | Open the Session panel                                       |
+| `Cmd+Shift+A`      | Toggle the agent hub (`use-agent-profile-shortcut.ts`)       |
+| `?`                | Open keyboard shortcuts panel (`use-shortcuts-panel.ts`)     |
+| `Cmd+Shift+D`      | Dev playground — **`import.meta.env.DEV` only**              |
+
+`Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `agent-hub` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from both `App.tsx` and `AppShell.tsx`.
+
+**It does not land on the agent hub everywhere, and the handler is not what decides.** The store write always happens, but `agent-hub`'s `visibleWhen` (`app/init-extensions.ts`) admits it only on `/session` or an explicit agent path, and never under `/marketplace`. When the requested tab is not visible, `RightPanelContainer`'s reconciler re-selects the first visible contextual contribution, falling back to the always-present global one — so on Tasks, Activity, Marketplace and the dashboard the chord opens the right panel on **Pulse**. Fix that by changing `visibleWhen`, not the shortcut.
+
+`Cmd+Shift+D` is gated at its listener (`SidebarFooterBar.tsx`: `if (!import.meta.env.DEV) return;`), so it is inert in production while still rendering in the `?` panel from the registry. That is the same registry-vs-handler gap described below, in its milder form: the registry says what is advertised, the handler says what happens.
+
+> **Verify a shortcut by its handler, not by its registry constant.** `use-agent-profile-shortcut.ts` matches the raw `KeyboardEvent` — `(e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'A'` — and never imports `SHORTCUTS.AGENT_PROFILE`; the registry entry only feeds the `?` panel's display string. Grepping for the constant therefore proves nothing about whether a chord works, **in either direction**. Search for a keydown handler on the actual key before concluding a shortcut is dead — an earlier revision of this guide called `Cmd+Shift+A` dead on exactly that bad evidence.
+
+### In-window tabs (DOR-540)
+
+Registered on `document` by `useAppTabShortcuts`
+(`features/app-tabs/model/use-app-tab-shortcuts.ts`) for as long as the shell is mounted.
+
+| Key                        | Action                                                            |
+| -------------------------- | ----------------------------------------------------------------- |
+| `Cmd+T` / `Ctrl+T`         | New tab                                                           |
+| `Cmd+1-8` / `Ctrl+1-8`     | Activate the tab at that index from the left                      |
+| `Cmd+9` / `Ctrl+9`         | Activate the **last** tab, whatever the count                     |
+| `Cmd+Shift+[` / `Ctrl+...` | Previous tab (matched on `event.code`, not `key` — Shift mangles) |
+| `Cmd+Shift+]` / `Ctrl+...` | Next tab (same)                                                   |
+
+**These are live in the desktop app only, and that is not a bug.** Chrome, Safari and Firefox bind
+every one of them — `Cmd/Ctrl+T`, `Cmd/Ctrl+1-9` **and** `Cmd/Ctrl+Shift+[`/`]` — to their own tabs
+and hand them to the page uncancellable,
+so on the browser cockpit — the launch-critical surface — the strip's `+` button and its roving
+`tablist` traversal (`Tab` to enter, arrows to move, `Home`/`End`, `Delete` to close) are the whole
+keyboard story. Do not "fix" this by trying to preventDefault harder.
+
+`Cmd/Ctrl+W` is deliberately **absent** from that hook. In the browser it belongs to the browser; on
+desktop it belongs to the shell's Window menu, which sends it back over IPC — see
+`app/use-electron-close-tab.ts` and `contributing/desktop-app-development.md` §6.
 
 ### Command Palette
 
@@ -100,23 +135,32 @@ The global command palette (`Cmd+K` / `Ctrl+K`) provides unified access to agent
 
 #### Command Palette Shortcuts
 
-| Key                        | Context                     | Action                                                    |
-| -------------------------- | --------------------------- | --------------------------------------------------------- |
-| `Enter`                    | Agent item selected         | Open agent sub-menu (drill-down into actions)             |
-| `Cmd+Enter` / `Ctrl+Enter` | Agent item selected         | Open agent in new browser tab (fast path, skips sub-menu) |
-| `Backspace`                | In sub-menu, input is empty | Go back one level to the parent page                      |
-| `Escape`                   | In sub-menu                 | Go back one level (does not close the dialog)             |
-| `Escape`                   | At root level               | Close the command palette                                 |
+| Key                        | Context                          | Action                                                 |
+| -------------------------- | -------------------------------- | ------------------------------------------------------ |
+| `Enter`                    | Agent item selected              | Open agent sub-menu (drill-down into actions)          |
+| `Cmd+Enter` / `Ctrl+Enter` | Agent selected, root or sub-menu | Open agent in a new **in-window tab** (skips sub-menu) |
+| `Backspace`                | In sub-menu, input is empty      | Go back one level to the parent page                   |
+| `Escape`                   | In sub-menu                      | Go back one level (does not close the dialog)          |
+| `Escape`                   | At root level                    | Close the command palette                              |
+
+The agent sub-menu offers three destinations, and they stay three: **Open Here**, **Open in New
+Tab** (`openLink(href, { target: 'tab' })`), **Open in New Window**
+(`openLink(href, { target: 'window' })`). "Tab" and "window" are separate `LinkTarget`s on purpose —
+folding the second into the first deletes the only way to ask for a second cockpit window. All three
+resolve the same `?session=` up front (`agentHref`), so they agree on which session an agent is on,
+and none of them inherits the `?session=` you were already reading. Where there is no second view at
+all (the Obsidian embed, `supportsNewTab() === false`) both fall back to opening here rather than
+dropping the action.
 
 #### Dynamic Keyboard Hints (PaletteFooter)
 
 The command palette displays a `PaletteFooter` bar showing context-appropriate keyboard shortcuts. Hints adapt based on navigation depth and selection state:
 
-| Context                    | Hints Shown                                                                |
-| -------------------------- | -------------------------------------------------------------------------- |
-| Root level, no selection   | `↑↓` Navigate, `esc` Close                                                 |
-| Root level, agent selected | `↑↓` Navigate, `Enter` Open, `⌘+Enter` / `Ctrl+Enter` New Tab, `esc` Close |
-| Sub-menu active            | `↑↓` Navigate, `Backspace` Back, `esc` Close                               |
+| Context                    | Hints Shown                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------- |
+| Root level, no selection   | `↑↓` Navigate, `esc` Close                                                                    |
+| Root level, agent selected | `↑↓` Navigate, `Enter` Open, `⌘Enter` / `Ctrl+Enter` New Tab, `esc` Close                     |
+| Sub-menu (`agent-actions`) | `↑↓` Navigate, `⌘Enter` / `Ctrl+Enter` New Tab, `Enter` Select, `Backspace` Back, `esc` Close |
 
 ### Streaming
 

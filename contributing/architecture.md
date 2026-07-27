@@ -750,6 +750,7 @@ apps/
       capabilities.ts       -- GET /api/capabilities (all runtime capability flags)
       discovery.ts          -- POST /api/discovery/scan (SSE agent discovery)
     middleware/
+      host-guard.ts         -- /api Host allowlist; DNS rebinding protection, login-off only
       mcp-auth.ts           -- MCP API key auth middleware
       mcp-origin.ts         -- MCP Origin header validation (DNS rebinding protection)
     index.ts                -- Express server entry

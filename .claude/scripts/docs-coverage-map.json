@@ -557,6 +557,60 @@
       "doc": "docs/marketplace/publishing.mdx",
       "description": "Marketplace package authoring + publishing",
       "patterns": ["packages/marketplace/", "marketplace-validate"]
+    },
+    {
+      "doc": "docs/getting-started/desktop-app.mdx",
+      "description": "Desktop app: tabs, background running + tray, the stable address, deep links, auto-update",
+      "patterns": ["apps/desktop/"]
+    },
+    {
+      "doc": "docs/guides/runtimes.mdx",
+      "description": "Running Claude Code, Codex, and OpenCode sessions side by side",
+      "patterns": ["services/runtimes/", "packages/shared/src/agent-runtime.ts", "runtime-registry"]
+    },
+    {
+      "doc": "docs/guides/generative-ui.mdx",
+      "description": "Agent-rendered interactive widgets, inline in chat and in the canvas",
+      "patterns": ["apps/client/src/layers/features/gen-ui/", "session-ui-action-handler"]
+    },
+    {
+      "doc": "docs/integrations/extensions.mdx",
+      "description": "Subscribing to privacy-safe session activity events from an extension",
+      "patterns": [
+        "packages/extension-api/",
+        "apps/server/src/services/extensions/",
+        "extension-events"
+      ]
+    },
+    {
+      "doc": "docs/changelog-archive.mdx",
+      "description": "Older releases aged out of the main changelog",
+      "patterns": ["CHANGELOG.md"]
+    },
+    {
+      "doc": "docs/guides/flow/what-flow-is.mdx",
+      "description": "`/flow` overview: one path from raw idea to shipped code (external plugin, see note below)",
+      "patterns": ["contributing/flow-engine.md", "apps/e2e/tests/flow/"]
+    },
+    {
+      "doc": "docs/guides/flow/how-it-works.mdx",
+      "description": "`/flow` architecture: reconciler registry, event seam, decision oracles, tracker adapter",
+      "patterns": ["contributing/flow-engine.md", "apps/e2e/tests/flow/"]
+    },
+    {
+      "doc": "docs/guides/flow/driving-it-manually.mdx",
+      "description": "Running `/flow` by hand, one stage at a time",
+      "patterns": ["contributing/flow-engine.md", "apps/e2e/tests/flow/"]
+    },
+    {
+      "doc": "docs/guides/flow/turning-on-autonomy.mdx",
+      "description": "The three ways to let `/flow` reach a review gate on its own",
+      "patterns": ["contributing/flow-engine.md", "apps/e2e/tests/flow/"]
+    },
+    {
+      "doc": "docs/guides/flow/the-dials.mdx",
+      "description": "Every `/flow` config knob, its default, and when to turn it",
+      "patterns": ["contributing/flow-engine.md", "apps/e2e/tests/flow/"]
     }
   ],
   "keywordTriggers": [
