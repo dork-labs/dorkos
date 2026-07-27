@@ -39,11 +39,18 @@ function objectLevelDefault(path: string): unknown {
  * (`install: z.boolean().default(false)`) and once as an object-level literal.
  * Parsing `{ version: 1 }` only ever fires the literal, so a per-field
  * `.default(...)` can be flipped without moving `USER_CONFIG_DEFAULTS` at all.
- * Both are live: the literal feeds a fresh install, while the per-field
- * defaults are what `z.toJSONSchema` emits and therefore what conf's Ajv
- * `useDefaults` writes into an existing file. Checking only one would miss half
- * the drift, so the guard reads both and requires them to agree with each other
- * and with the recorded verdict.
+ *
+ * Both are live, at different moments. The literal feeds a FRESH install. The
+ * per-field defaults govern what an EXISTING install observes on READ: they are
+ * what `z.toJSONSchema` emits, so conf's Ajv fills them in when a stored section
+ * is missing a key, and `get('telemetry')` on a file holding only
+ * `{"userHasDecided": true}` hands back all eight leaves. Note it is a read-time
+ * fill, not a write-back — conf's `Object.assign` shares the section object, so
+ * the `deepEqual` short-circuit means the file on disk keeps its sparse shape.
+ * That makes the per-field default the value every consumer actually sees.
+ *
+ * Checking only one source would miss half the drift, so the guard reads both
+ * and requires them to agree with each other and with the recorded verdict.
  */
 function fieldLevelDefault(path: string): unknown {
   const [section, ...rest] = path.split('.');
@@ -154,7 +161,11 @@ describe('config default verdicts cover the whole schema', () => {
  */
 const CARRYOVER_EXEMPT: Readonly<Record<string, string>> = {
   'uploads.allowedTypes':
-    'An array of MIME globs. "More protective" is a subset test the carryover directions cannot express; the size and count caps are the real bound and both default safe.',
+    'An array of MIME globs. "More protective" is a subset test the carryover directions cannot express. The size and count caps are the real bound, and both of those DO carry across a wipe.',
+  'mcp.rateLimit.windowSecs':
+    'Lower is not more protective here: a shorter window with the same request count allows MORE traffic, not less. The count (`maxPerWindow`) is the bound that carries.',
+  'scheduler.maxConcurrentRuns':
+    'Ships at its schema minimum (1), so there is nothing below the default for a person to tighten to.',
 };
 
 describe('verdicts and wipe-carryover agree', () => {
@@ -191,11 +202,44 @@ describe('verdicts and wipe-carryover agree', () => {
     ).toEqual([]);
   });
 
-  it('exempts nothing that is not actually permissive', () => {
+  /**
+   * The other half of completeness, and the half that was missing.
+   *
+   * A `safe` verdict means the default IS the protective option — but for a
+   * numeric bound that only means it is a real limit, not that it is the
+   * tightest one a person might want. `rooms.maxAgentDepth` ships at 3 and is
+   * `safe`, and someone who set it to 1 still loses that on a wipe unless a rule
+   * carries it. Iterating only PERMISSIVE_DEFAULTS could never see them, which
+   * is how `uploads.maxFileSize`, `uploads.maxFiles` and
+   * `mcp.rateLimit.maxPerWindow` were silently loosened by every recovery.
+   *
+   * Numeric-ness is read off the recorded default, so a new tightenable bound is
+   * caught by this guard rather than by a reviewer.
+   */
+  it('carries every safe numeric bound a person could have tightened', () => {
+    const carried = new Set(PROTECTIVE_CARRYOVERS.map((entry) => entry.path));
+    const unprotected = Object.entries(SAFE_DEFAULTS)
+      .filter(([, value]) => typeof value === 'number')
+      .map(([path]) => path)
+      .filter((path) => !carried.has(path) && !Object.hasOwn(CARRYOVER_EXEMPT, path));
+    expect(
+      unprotected,
+      `Numeric bound(s) with no carryover rule. A "safe" default is a real limit, but a person ` +
+        `can set a tighter one, and a config wipe would silently loosen it back. Add a ` +
+        `'lower'-direction rule to PROTECTIVE_CARRYOVERS, or record in CARRYOVER_EXEMPT why ` +
+        `lower is not more protective for this field:\n  ${unprotected.join('\n  ')}`
+    ).toEqual([]);
+  });
+
+  it('exempts nothing that is neither permissive nor a safe numeric bound', () => {
     for (const path of Object.keys(CARRYOVER_EXEMPT)) {
-      expect(verdictFor(path), `${path} is exempted but is not a permissive default`).toBe(
-        'permissive'
-      );
+      const verdict = verdictFor(path);
+      const isSafeNumber = verdict === 'safe' && typeof SAFE_DEFAULTS[path] === 'number';
+      expect(
+        verdict === 'permissive' || isSafeNumber,
+        `${path} is exempted from carryover but is neither a permissive default nor a safe ` +
+          `numeric bound, so there is nothing for the exemption to be about`
+      ).toBe(true);
     }
   });
 });

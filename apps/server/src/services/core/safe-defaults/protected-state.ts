@@ -132,11 +132,20 @@ export interface ProtectiveCarryover {
  * re-opens, or a bound the person tightened goes slack. Preferences do not
  * qualify — losing a theme is not losing a protection.
  *
- * The telemetry channels are deliberately ABSENT. They defaulted ON when this
- * list was written and each needed a rule; since ADR 260727-181825 they default
- * OFF, so a wipe lands on the protective value by itself and a rule here could
- * never fire. What still needs carrying is the opposite case — someone who chose
- * to keep sharing — and that travels as a whole decision through
+ * Two kinds of entry live here, and the second is easy to miss:
+ *
+ * 1. A default on the permissive side, where any protective value is worth
+ *    keeping (`auth.enabled`, `mcp.enabled`, the `agentContext.*` tools).
+ * 2. A default that is ALREADY a real bound but can be tightened past
+ *    (`rooms.*`, `uploads.max*`, `mcp.rateLimit.maxPerWindow`,
+ *    `approvals.trustWindowMinutes`). A `safe` verdict means the shipped value
+ *    protects, not that it is the tightest a person might want, so recovery
+ *    still has to preserve what they set.
+ *
+ * No telemetry channel appears in either kind. They default OFF since ADR
+ * 260727-182651, so a wipe lands on the protective value unaided. The case that
+ * still needs handling is the opposite one — someone who chose to keep sharing —
+ * and that travels as a whole decision through
  * {@link salvageTelemetryDecision}, not as a per-leaf comparison.
  */
 export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
@@ -188,6 +197,23 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'Harness Sync defaults ON and writes into the harness directories of projects on disk. Someone who stopped those writes should not have them resume silently.',
   },
   {
+    path: 'uploads.maxFileSize',
+    direction: 'lower',
+    reason:
+      'A tightened upload size cap. The default is a real bound, but a person can set a smaller one and a wipe must not raise it back.',
+  },
+  {
+    path: 'uploads.maxFiles',
+    direction: 'lower',
+    reason: 'A tightened cap on how many files one upload may carry.',
+  },
+  {
+    path: 'mcp.rateLimit.maxPerWindow',
+    direction: 'lower',
+    reason:
+      'A tightened request ceiling on the external /mcp endpoint. Only the count is carried; `windowSecs` is deliberately not, because a shorter window with the same count allows MORE traffic, not less.',
+  },
+  {
     path: 'approvals.standingGrantsVoidBefore',
     direction: 'later',
     reason:
@@ -216,24 +242,28 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
 ] as const;
 
 /**
- * The Tier 1 telemetry channels, and the value each takes for someone who
- * answered a consent prompt that did not yet mention the channel.
+ * The value every telemetry channel takes to protect the person: OFF.
  *
- * A person's answer is only ever as wide as the question they were asked, so a
- * channel absent from the stored file comes back OFF rather than at its
- * schema default — the same reasoning `backfillTelemetryUsageChannel` applies on
- * the upgrade path.
+ * Stated once for all of them, because the clamp in
+ * {@link salvageTelemetryDecision} has to know which side protects. It is also
+ * what an unmentioned channel falls back to: a person's answer is only ever as
+ * wide as the question they were asked, so a channel absent from the stored file
+ * comes back OFF rather than at its schema default — the same reasoning
+ * `backfillTelemetryUsageChannel` applies on the upgrade path.
+ *
+ * A future channel that did NOT protect by being off could not be clamped by
+ * this code and would need its own rule.
  */
 const PROTECTIVE_TELEMETRY_VALUE = false;
 
 /**
- * The telemetry channels, and the value each takes for someone who answered a
- * consent prompt that did not yet mention the channel.
+ * Every telemetry channel, as the clamp and the whole-decision carryover
+ * enumerate them.
  *
- * Every one of them protects by being OFF, which is what
- * {@link PROTECTIVE_TELEMETRY_VALUE} states once for all of them. A new channel
- * that did NOT have that property could not be clamped by this code and would
- * need its own rule — the drift test over this list is what surfaces one.
+ * A channel added to the schema but missed here would keep its own default
+ * through a wipe instead of being clamped, so `applyProtectedState` merges onto
+ * the fresh section rather than replacing it — that way the miss costs the
+ * clamp, never the whole block's validity.
  */
 const TELEMETRY_CHANNELS = [
   'install',
@@ -279,6 +309,16 @@ export interface SalvagedProtections {
    * default appear.
    */
   leaves: Record<string, boolean | number | string>;
+  /**
+   * Values found on the protective side that could NOT be carried, and why.
+   *
+   * Populated when a stored value is more protective than the default but fails
+   * its own schema — a hand-edited `trustWindowMinutes: 1`, a `voidBefore` that
+   * is not a real timestamp. Those are dropped rather than written, and an
+   * operator whose tightened setting was discarded has to be able to find out
+   * which one, so the caller logs these. An empty list is the normal case.
+   */
+  dropped: Array<{ path: string; reason: string }>;
 }
 
 /** Read a dot-path out of an untyped stored object. */
@@ -459,7 +499,7 @@ function moreProtective(
  * @returns The protections to re-apply on top of `fresh`.
  */
 export function salvageProtectedState(stored: unknown, fresh: unknown): SalvagedProtections {
-  const salvaged: SalvagedProtections = { leaves: {} };
+  const salvaged: SalvagedProtections = { leaves: {}, dropped: [] };
   if (stored === null || typeof stored !== 'object') return salvaged;
 
   const telemetry = salvageTelemetryDecision(stored, readPath(fresh, 'telemetry'));
@@ -483,7 +523,16 @@ export function salvageProtectedState(stored: unknown, fresh: unknown): Salvaged
         ? { ...(freshSection as Record<string, unknown>) }
         : {};
     writePath(draft, rest.join('.'), value);
-    if (!sectionSchemaAccepts(section, draft)) continue;
+    if (!sectionSchemaAccepts(section, draft)) {
+      // The person had moved this to the protective side, and we cannot honour
+      // it. Recorded so the caller can say so rather than dropping it in
+      // silence — see `SalvagedProtections.dropped`.
+      salvaged.dropped.push({
+        path: entry.path,
+        reason: `the stored value ${JSON.stringify(value)} is not valid for this setting`,
+      });
+      continue;
+    }
 
     salvaged.leaves[entry.path] = value;
   }
@@ -594,6 +643,10 @@ export function applyProtectedState(
  * The one entry point both wipe paths use, so corrupt-recovery and
  * `ConfigManager.reset()` can never drift apart on what survives.
  *
+ * Logs what was kept AND what could not be. A setting the person had tightened
+ * that we had to discard is the thing they most need told: it is silently back
+ * at a looser value, and only the log says so.
+ *
  * @param store - The freshly-defaulted store.
  * @param stored - The config as it was before the wipe, or `undefined` when it
  *   could not be read at all.
@@ -608,6 +661,11 @@ export function restoreProtectedState(
   const restored = applyProtectedState(store, salvaged);
   if (restored.length > 0) {
     logger.warn(`[Config] ${context}: kept your safer settings — ${restored.join(', ')}`);
+  }
+  for (const { path, reason } of salvaged.dropped) {
+    logger.warn(
+      `[Config] Could not keep your ${path} setting: ${reason}. It is back at the default.`
+    );
   }
 }
 

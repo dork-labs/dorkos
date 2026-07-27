@@ -11,6 +11,7 @@ import {
   PROTECTIVE_CARRYOVERS,
 } from '../protected-state.js';
 import { ConfigManager } from '../../config-manager.js';
+import { logger } from '../../../../lib/logger.js';
 import { configSchemaLeafPaths } from '../../operator/config-disclosure.js';
 
 vi.mock('../../../../lib/logger.js', () => ({
@@ -207,9 +208,9 @@ describe('salvageProtectedState', () => {
   });
 
   it('survives an unreadable input without throwing — the caller is already failing', () => {
-    expect(salvageProtectedState(undefined, fresh)).toEqual({ leaves: {} });
-    expect(salvageProtectedState('{ truncated', fresh)).toEqual({ leaves: {} });
-    expect(salvageProtectedState(null, fresh)).toEqual({ leaves: {} });
+    expect(salvageProtectedState(undefined, fresh)).toEqual({ leaves: {}, dropped: [] });
+    expect(salvageProtectedState('{ truncated', fresh)).toEqual({ leaves: {}, dropped: [] });
+    expect(salvageProtectedState(null, fresh)).toEqual({ leaves: {}, dropped: [] });
   });
 
   it('lets a carried decision own the telemetry block outright', () => {
@@ -227,6 +228,7 @@ describe('applyProtectedState', () => {
     const restored = applyProtectedState(store, {
       telemetry: OPTED_OUT,
       leaves: { 'auth.enabled': true },
+      dropped: [],
     });
     expect(store.data.telemetry).toMatchObject({ install: false, userHasDecided: true });
     expect((store.data.auth as { enabled: boolean }).enabled).toBe(true);
@@ -235,7 +237,7 @@ describe('applyProtectedState', () => {
 
   it('leaves every sibling default in the section intact', () => {
     const store = createStore(USER_CONFIG_DEFAULTS as unknown as Record<string, unknown>);
-    applyProtectedState(store, { leaves: { 'rooms.maxAgentDepth': 1 } });
+    applyProtectedState(store, { leaves: { 'rooms.maxAgentDepth': 1 }, dropped: [] });
     expect(store.data.rooms).toEqual({
       maxAgentDepth: 1,
       maxAutomaticTurnsPerRoomPerHour: 60,
@@ -245,7 +247,7 @@ describe('applyProtectedState', () => {
 
   it('writes nothing at all when there is nothing to protect', () => {
     const store = createStore(USER_CONFIG_DEFAULTS as unknown as Record<string, unknown>);
-    expect(applyProtectedState(store, { leaves: {} })).toEqual([]);
+    expect(applyProtectedState(store, { leaves: {}, dropped: [] })).toEqual([]);
   });
 });
 
@@ -404,6 +406,42 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
         expect(manager.get('rooms').maxAgentDepth).toBe(3);
       });
     }
+
+    it('keeps every bound the person tightened, across all three sections', () => {
+      // A `safe` default is a real limit, not the tightest one a person may
+      // want. Before the completeness guard reached safe numerics, all three of
+      // these were silently loosened by every recovery.
+      const { dir } = seedInvalidConfig({
+        uploads: { maxFileSize: 1024, maxFiles: 1 },
+        mcp: { rateLimit: { maxPerWindow: 5 } },
+        rooms: { maxAgentDepth: 1 },
+      });
+      const manager = new ConfigManager(dir);
+      expect(manager.get('uploads').maxFileSize).toBe(1024);
+      expect(manager.get('uploads').maxFiles).toBe(1);
+      expect(manager.get('mcp').rateLimit.maxPerWindow).toBe(5);
+      expect(manager.get('rooms').maxAgentDepth).toBe(1);
+      // A loosened bound is never carried — recovery only ever tightens.
+      expect(manager.validate()).toEqual({ valid: true });
+    });
+
+    it('does not carry a bound the person had loosened', () => {
+      const { dir } = seedInvalidConfig({ uploads: { maxFiles: 50 }, rooms: { maxAgentDepth: 9 } });
+      const manager = new ConfigManager(dir);
+      expect(manager.get('uploads').maxFiles).toBe(10);
+      expect(manager.get('rooms').maxAgentDepth).toBe(3);
+    });
+
+    it('says in the log which tightened setting it could not keep', () => {
+      // An operator whose bound was discarded has only the log to find out.
+      const warn = vi.mocked(logger.warn);
+      warn.mockClear();
+      const { dir } = seedInvalidConfig({ approvals: { trustWindowMinutes: 1 } });
+      new ConfigManager(dir);
+      const lines = warn.mock.calls.map((call) => String(call[0]));
+      expect(lines.some((line) => line.includes('approvals.trustWindowMinutes'))).toBe(true);
+      expect(lines.some((line) => line.includes('Could not keep'))).toBe(true);
+    });
 
     it('drops only the bad value and still carries the good ones', () => {
       // One unreadable field must never cost another, and the write must not
