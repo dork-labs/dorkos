@@ -56,10 +56,17 @@ export interface QuitGuardOptions {
   /** Stop the server; resolves once it is gone. */
   shutdown: () => Promise<void>;
   /**
-   * Take the update-restart token, if there is one: `true` means this quit is
-   * an update restart that already asked its own question (see
-   * `auto-updater.ts`). **Reading it clears it** — a token is good for exactly
-   * one quit, so a restart that never happens cannot silence the next one.
+   * Take the person's restart confirmation, if it is still good: `true` means
+   * this quit is an update restart they already answered for (see
+   * `auto-updater.ts`).
+   *
+   * It is their authorisation, not a flag, so it decays like one. **Reading it
+   * spends it**, and it expires on its own after about ten minutes if the
+   * restart it was given for never arrives. Both matter: the spend covers a
+   * restart that quits, the expiry covers one that silently does not. So a
+   * quit shortly after a failed restart attempt *is* still silenced — that is
+   * the deliberate cost of never asking twice about one decision, bounded to
+   * the window in which the person plainly meant it.
    *
    * Passed in rather than imported so this module stays a leaf;
    * `auto-updater.ts` imports {@link confirmInterruptingAgents} from here.
@@ -131,12 +138,6 @@ export function armQuitGuard(options: QuitGuardOptions): void {
 async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
   // An update restart already asked, back when the answer could still change
   // anything. Asking again here would be a second dialog for one decision.
-  //
-  // Taken (and cleared) before the first `await`, and on this branch `quitting`
-  // below is reached synchronously — `beginUpdateRestart` reads `isQuitting()`
-  // the moment `quitAndInstall()` returns, to tell a real restart from one that
-  // silently declined to happen. If that ordering ever breaks, the cost is one
-  // extra confirmation during an update, never a missing one.
   const preConfirmed = options.consumeUpdateRestart();
   if (!preConfirmed && !(await confirmInterruptingAgents())) return;
 

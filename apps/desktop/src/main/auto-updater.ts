@@ -306,10 +306,11 @@ const RESTART_CONFIRMED_GRACE_MS = 10 * 60_000;
  * puts the notice back in the middle of the update — the exact bug it exists to
  * prevent — via the fast-click path, which is the likely one.
  *
- * Being set too long is cheap: at worst the one-time notice does not appear
- * once. It is never allowed to stop a quit (see `index.ts`), so it cannot
- * strand anyone. It is cleared on any updater `error`, which is how a rejected
- * Squirrel update ends.
+ * Being set too long is cheap: the notice is skipped for that close and shown
+ * at the next one, because `announceBackgroundRunning` writes its ledger only
+ * on the path that actually shows the dialog. It is never allowed to stop a
+ * quit (see `index.ts`), so it cannot strand anyone. It is cleared on any
+ * updater `error`, which is how a rejected Squirrel update ends.
  */
 let restartArmed = false;
 

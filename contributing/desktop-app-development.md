@@ -240,12 +240,14 @@ The timeout is still the design, not a safety net: a person pressing Cmd+W must 
 
 **Two states, not one, because the two consumers have opposite tolerances.** One flag serving both is what broke here twice.
 
-| State                                     | Consumer              | Set too long               | Cleared too early                         |
-| ----------------------------------------- | --------------------- | -------------------------- | ----------------------------------------- |
-| `restartArmed` (`isRestartingToUpdate()`) | the background notice | notice skipped once        | **notice appears mid-update, flag burnt** |
-| the confirmation, timestamped             | the quit guard        | **agents killed silently** | one extra dialog during an update         |
+| State                                     | Consumer              | Set too long                    | Cleared too early                           |
+| ----------------------------------------- | --------------------- | ------------------------------- | ------------------------------------------- |
+| `restartArmed` (`isRestartingToUpdate()`) | the background notice | notice waits for the next close | **notice appears mid-update, and is spent** |
+| the confirmation, timestamped             | the quit guard        | **agents killed silently**      | one extra dialog during an update           |
 
-So `restartArmed` never expires on its own, and the confirmation is spent on use (`consumeUpdateRestart()`) and times out. Both clear on an updater `error`, which is how a rejected update ends.
+So `restartArmed` never expires on its own, and the confirmation is spent on use (`consumeUpdateRestart()`) and times out if it is never spent. Both clear on an updater `error`, which is how a rejected update ends.
+
+The asymmetry is only that stark because of where the ledger is written: `announceBackgroundRunning` returns _before_ writing when the notice has already been shown, so suppressing the call defers the notice rather than consuming it. Showing it at the wrong moment is what consumes it. Keep that ordering.
 
 **`quitAndInstall()` does not always quit, and "deferred" is not "did not happen".** Read `node_modules/electron-updater` before changing this:
 
@@ -255,6 +257,10 @@ So `restartArmed` never expires on its own, and the confirmation is spent on use
 Electron's own `autoUpdater` emits `before-quit-for-update` as the install-quit begins, including on the deferred branch, and that re-authorises a restart slower than the timeout. It is a refinement, never the mechanism: it is verifiable in `BaseUpdater.js` (emitted by hand) and Electron's MSIX updater, but on macOS it comes from the C++ binding and could not be verified from the repo. Nothing depends on it firing.
 
 **And never let any of it skip a quit.** `window-all-closed`'s `if (!hasTray()) app.quit()` is unconditional, because "running with no window and no tray" is the one state this design exists to prevent, and no flag may be able to produce it. The state may silence the notice; it may not stop the quit.
+
+### First paint
+
+Windows are created with `show: false` and a `backgroundColor` matching the cockpit's own, then revealed on `ready-to-show` (with a 4-second fallback, because a window that never appears is far worse than a flash). `maximize()` has to happen in that reveal, not at construction — a hidden window maximized at construction opens un-maximized on macOS.
 
 ## 7. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
 

@@ -463,6 +463,15 @@ describe('restarting to install an update (DOR-538)', () => {
     vi.resetModules();
   });
 
+  afterEach(() => {
+    // Two tests below jump the clock with `vi.setSystemTime`, which *freezes*
+    // `Date.now()` rather than offsetting it. Left unrestored it leaks to every
+    // later test in this file: nothing here reads the clock for an assertion
+    // today, so it would sit latent until someone adds a test that needs wall
+    // time to pass and silently sees zero elapsed.
+    vi.useRealTimers();
+  });
+
   /**
    * Wire the updater and the quit guard together the way `index.ts` does, with
    * `app.isPackaged` true — the restart path no-ops without it, which is why
