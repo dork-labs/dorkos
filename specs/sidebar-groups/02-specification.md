@@ -43,11 +43,18 @@ Do **not** reach for `JSON.stringify` comparison — key order is not guaranteed
 
 ### 1.3 Migration
 
-Key **`'0.58.0'`**. The package is at `0.56.0` and an unreleased `'0.57.0'` migration already exists, so a separate key runs both in order for anyone upgrading across the boundary. Never edit a shipped migration (`contributing/configuration.md`).
+**Compose a new idempotent backfill into the existing `'0.57.0'` block** in `config-manager.ts:1161`. Do not add a `'0.58.0'` key.
+
+An earlier draft of this section said `'0.58.0'`, reasoning that `'0.57.0'` already existed and shipped migrations must never be edited. That reasoning was wrong in a way that loses data, so it is worth stating rather than quietly fixing:
+
+- `'0.57.0'` is **not shipped**. `0.56.0` is the tagged version, and the comment above that block states the convention outright — DOR-452, DOR-501, DOR-516 and DOR-525 all target "the next unreleased version" and compose into one key in insertion order, because an object literal cannot repeat a key. `/system:release` reconciles the key at tag time if the real release number differs.
+- A migration keyed `'0.58.0'` **would not run on 0.57.0**, which is the release that would carry this schema. `conf` only runs migrations where `key > storedVersion && key <= projectVersion`. So every existing user would launch 0.57.0 with a schema expecting `members`, find it absent, take the Zod default of `[]`, and **silently lose every group membership they had** — with the source data still sitting in an `agentPaths` key nothing reads.
+
+The rule that matters is therefore not "never edit a migration" but **"key it to the version that actually ships the code"**. Editing a _shipped_ migration is what is forbidden; extending the next unreleased one is the established convention here.
 
 The body maps each stored string to `{ kind: 'agent', path }` across all three fields. The mapping is total and unambiguous — every string in these arrays today _is_ an agent path — so there is no data that could be misread and no ambiguous case to decide.
 
-Guard the body against absent or already-migrated data: a user who skipped the release and one who is fresh-installing both reach it, and it must be idempotent in both directions.
+Guard it against absent and already-migrated data. A fresh install, a user upgrading with groups, and a re-run must all be safe, because the composite block runs as one unit and its siblings are each independently idempotent.
 
 ---
 
