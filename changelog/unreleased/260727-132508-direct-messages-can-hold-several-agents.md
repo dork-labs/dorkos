@@ -2,6 +2,7 @@
 covers:
   - 'feat(rooms): a direct message is idempotent on its member set (DOR-571)'
   - 'feat(rooms): pick several agents for one direct message (DOR-571)'
+  - 'fix(rooms): address review on #522 — two picker defects and the create status'
 ---
 
 ### Added
