@@ -6,10 +6,17 @@ import { renderHook, cleanup } from '@testing-library/react';
 import { useAppTabsStore, type AppTab } from '@/layers/shared/model';
 import { SHORTCUTS } from '@/layers/shared/lib';
 
-const navigate = vi.fn();
+// Resolves like the real `useNavigate`; the tab actions reconcile in its
+// `.then`, so a mock returning `undefined` would not exercise the real path.
+const navigate = vi.fn((_options: { href: string }) => Promise.resolve());
+const router = {
+  navigate: (options: { href: string }) => navigate(options),
+  state: { location: { href: '/' } },
+};
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
+  useRouter: () => router,
 }));
 
 import { useAppTabShortcuts } from '../model/use-app-tab-shortcuts';

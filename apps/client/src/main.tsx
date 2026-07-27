@@ -22,11 +22,11 @@ import {
 import {
   TransportProvider,
   useAppStore,
-  useAppTabsStore,
   useExtensionRegistry,
   useThemeStore,
   EventStreamProvider,
 } from '@/layers/shared/model';
+import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { switchAgentCwd } from '@/layers/entities/session';
 import { applyShapeAction } from '@/layers/entities/shapes';
@@ -247,10 +247,7 @@ registerLinkNavigator(({ href, replace }) => void router.navigate({ href, replac
 // and navigate into it (DOR-540). Registered only in the standalone cockpit:
 // the Obsidian embed never runs this entry, so a tab request degrades there to
 // an in-place navigation, which is the only thing one pane can do.
-registerTabOpener((href) => {
-  useAppTabsStore.getState().openTab(href);
-  void router.navigate({ href });
-});
+registerTabOpener((href) => openTabAt(router, href));
 
 // Electron serves the API on a dynamic localhost port (preload bridge); web mode
 // uses the relative /api path. Shared with the auth client so both hit one origin.

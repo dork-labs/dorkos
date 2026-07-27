@@ -59,25 +59,26 @@ export function AppTabStrip({
   });
 
   return (
-    <div
-      className={cn(
-        'bg-muted/40 flex shrink-0 items-stretch gap-1 border-b px-2 py-1',
-        // Horizontal overflow scrolls inside the strip; the shell never does.
-        'overflow-x-auto',
-        className
-      )}
-    >
-      <div role="tablist" aria-label="Open tabs" className="flex items-stretch gap-1">
-        {tabs.map((tab) => (
-          <AppTabItem
-            key={tab.id}
-            tab={tab}
-            isActive={tab.id === activeId}
-            canClose={canClose}
-            tabProps={getTabProps(tab.id)}
-            onClose={onClose}
-          />
-        ))}
+    // The outer row does NOT scroll, and that is load-bearing: `className`
+    // carries the macOS traffic-light clearance, so if it sat on the scroller
+    // the first tabs would slide under the native window buttons the moment the
+    // strip overflowed and stop responding to clicks. The "+" is outside the
+    // scroller for the same reason Chrome pins it — an affordance you have to
+    // scroll to find is one you will not find.
+    <div className={cn('bg-muted/40 flex shrink-0 items-stretch border-b px-2 py-1', className)}>
+      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+        <div role="tablist" aria-label="Open tabs" className="flex items-stretch gap-1">
+          {tabs.map((tab) => (
+            <AppTabItem
+              key={tab.id}
+              tab={tab}
+              isActive={tab.id === activeId}
+              canClose={canClose}
+              tabProps={getTabProps(tab.id)}
+              onClose={onClose}
+            />
+          ))}
+        </div>
       </div>
       <button
         ref={createButtonRef}
@@ -85,7 +86,7 @@ export function AppTabStrip({
         onClick={onCreate}
         aria-label="New tab"
         title={`New tab (${formatShortcutKey(SHORTCUTS.NEW_TAB)})`}
-        className="focus-ring text-muted-foreground hover:bg-background/60 hover:text-foreground ml-0.5 flex shrink-0 items-center rounded-md px-1.5 transition-colors"
+        className="focus-ring text-muted-foreground hover:bg-background/60 hover:text-foreground ml-1 flex shrink-0 items-center rounded-md px-1.5 transition-colors"
       >
         <Plus className="size-3.5" />
       </button>

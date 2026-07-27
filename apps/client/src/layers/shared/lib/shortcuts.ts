@@ -13,18 +13,17 @@ export interface ShortcutDef {
 }
 
 /** Categories for grouping shortcuts in the reference panel. */
-export type ShortcutGroup = 'sessions' | 'navigation' | 'chat' | 'global';
+export type ShortcutGroup = 'navigation' | 'chat' | 'global';
 
 /** Group display order and labels. */
 export const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
   navigation: 'Navigation',
-  sessions: 'Sessions',
   chat: 'Chat',
   global: 'Global',
 };
 
 /** Display order for groups in the reference panel. */
-export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'sessions', 'chat', 'global'];
+export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'chat', 'global'];
 
 /** All keyboard shortcuts in the application. Single source of truth. */
 export const SHORTCUTS = {
@@ -73,9 +72,6 @@ export const SHORTCUTS = {
     group: 'navigation',
   },
   NEXT_TAB: { id: 'next-tab', key: 'mod+shift+]', label: 'Next tab', group: 'navigation' },
-
-  // Sessions
-  NEW_SESSION: { id: 'new-session', key: 'mod+shift+n', label: 'New session', group: 'sessions' },
 
   // Chat (composer + interactive tool shortcuts)
   NEW_LINE: { id: 'new-line', key: 'shift+enter', label: 'New line', group: 'chat' },

@@ -227,6 +227,7 @@ function SubMenuStates() {
               agent={MOCK_AGENTS[1]}
               onOpenHere={() => {}}
               onOpenNewTab={() => {}}
+              onOpenNewWindow={() => {}}
               onNewSession={() => {}}
               onEditSettings={() => {}}
               recentSessions={MOCK_SESSIONS}
@@ -243,6 +244,7 @@ function SubMenuStates() {
               agent={MOCK_AGENTS[2]}
               onOpenHere={() => {}}
               onOpenNewTab={() => {}}
+              onOpenNewWindow={() => {}}
               onNewSession={() => {}}
               onEditSettings={() => {}}
               recentSessions={[]}
@@ -347,6 +349,7 @@ function EdgeCases() {
               agent={MOCK_AGENTS[0]}
               onOpenHere={() => {}}
               onOpenNewTab={() => {}}
+              onOpenNewWindow={() => {}}
               onNewSession={() => {}}
               onEditSettings={() => {}}
               recentSessions={[
@@ -418,7 +421,7 @@ export function CommandPaletteShowcases() {
 
       <PlaygroundSection
         title="AgentSubMenu"
-        description="Drill-down page shown when selecting an agent. Actions (Open Here, New Tab, New Session) and recent sessions."
+        description="Drill-down page shown when selecting an agent. Actions (Open Here, New Tab, New Window, New Session) and recent sessions."
       >
         <SubMenuStates />
       </PlaygroundSection>

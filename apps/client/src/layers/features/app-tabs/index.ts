@@ -17,4 +17,5 @@ export { APP_TAB_PANEL_ID } from './ui/AppTabItem';
 export { useAppTabsSync } from './model/use-app-tabs-sync';
 export { useAppTabShortcuts } from './model/use-app-tab-shortcuts';
 export { useAppTabActions, NEW_TAB_HREF, type AppTabActions } from './model/use-app-tab-actions';
+export { openTabAt, goToActiveTab, type TabRouter } from './model/tab-navigation';
 export { parseTabHref, fallbackTabLabel, projectName, type TabTarget } from './lib/tab-target';

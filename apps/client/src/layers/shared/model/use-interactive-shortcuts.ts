@@ -53,6 +53,13 @@ export function useInteractiveShortcuts({
 
       if (respondingRef.current) return;
 
+      // Every shortcut below is an unmodified key — bare Enter, Escape, digits,
+      // arrows. A modified chord belongs to a window-level shortcut, so let it
+      // through untouched: without this, `Cmd/Ctrl+1`–`9` would both switch
+      // window tabs and toggle answer option 1, since neither handler stops
+      // propagation (DOR-540).
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (activeInteraction!.type === 'approval') {
         if (e.key === 'Enter' && e.shiftKey) {
           e.preventDefault();

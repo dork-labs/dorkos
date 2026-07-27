@@ -109,19 +109,54 @@ describe('syncLocation — the URL is the active tab', () => {
     expect(strip()).toEqual(['/', '[/agents]']);
   });
 
-  it('re-activates the tab that already holds the location (Back after a tab switch)', () => {
-    setTabs(['/session?session=a', '/session?session=b'], 1);
-    useAppTabsStore.getState().syncLocation('/session?session=a');
-    expect(strip()).toEqual(['[/session?session=a]', '/session?session=b']);
-  });
-
   it('lets the active tab adopt a location no tab holds (navigating inside a tab)', () => {
     setTabs(['/', '/agents'], 1);
     useAppTabsStore.getState().syncLocation('/tasks');
     expect(strip()).toEqual(['/', '[/tasks]']);
   });
 
-  it('lets a freshly opened tab adopt a route loader redirect', () => {
+  it('mints a tab when the window has none', () => {
+    useAppTabsStore.setState({ tabs: [], activeTabId: null });
+    useAppTabsStore.getState().syncLocation('/activity');
+    expect(strip()).toEqual(['[/activity]']);
+  });
+});
+
+describe('syncLocation — only a history traversal may move focus', () => {
+  it('re-activates the tab holding the location on Back after a tab switch', () => {
+    setTabs(['/session?session=a', '/session?session=b'], 1);
+    useAppTabsStore.getState().syncLocation('/session?session=a', { traversal: true });
+    expect(strip()).toEqual(['[/session?session=a]', '/session?session=b']);
+  });
+
+  it('keeps the active tab when two tabs share the traversed-to location', () => {
+    const tabs = setTabs(['/', '/'], 1);
+    useAppTabsStore.getState().syncLocation('/', { traversal: true });
+    expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
+  });
+
+  it('does not hand focus to a sibling on an ordinary navigation', () => {
+    // The everyday two-tabs-one-href state: Cmd+T from the dashboard makes it.
+    const tabs = setTabs(['/', '/'], 1);
+    useAppTabsStore.getState().syncLocation('/?settings=open');
+    useAppTabsStore.getState().syncLocation('/');
+    expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
+    expect(strip()).toEqual(['/', '[/]']);
+  });
+
+  it('leaves no tab parked on a dialog after a settings open/close cycle', () => {
+    // Regression: rule 2 used to fire here, jumping focus to the first tab and
+    // stranding the second on `/?settings=open` — so returning to it reopened
+    // the dialog. Every `?settings=` / `?agent=` / `?tasks=` link has this shape.
+    setTabs(['/', '/'], 1);
+    useAppTabsStore.getState().syncLocation('/?settings=open');
+    expect(strip()).toEqual(['/', '[/?settings=open]']);
+
+    useAppTabsStore.getState().syncLocation('/');
+    expect(useAppTabsStore.getState().tabs.map((tab) => tab.href)).toEqual(['/', '/']);
+  });
+
+  it('lets a freshly opened tab adopt its own loader redirect', () => {
     // `openTab('/session?dir=/api')` lands on the session the loader picked.
     setTabs(['/'], 0);
     useAppTabsStore.getState().openTab('/session?dir=%2Fapi');
@@ -129,17 +164,23 @@ describe('syncLocation — the URL is the active tab', () => {
     expect(strip()).toEqual(['/', '[/session?session=abc&dir=%2Fapi]']);
   });
 
-  it('keeps the active tab when two tabs share a location', () => {
-    // Cmd+T twice leaves two dashboards; Back must not shuffle them.
-    const tabs = setTabs(['/', '/'], 1);
-    useAppTabsStore.getState().syncLocation('/');
-    expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
-  });
+  it('keeps the new tab even when a sibling already holds the resolved session', () => {
+    // Regression (the headline path): "Open in New Tab" on an agent someone is
+    // already reading. Rule 2 used to focus the sibling and strand the new tab
+    // on `/session?dir=…`, a location its own loader redirects away from every
+    // time it is clicked — a tab that can never do anything.
+    const resolved = '/session?session=abc&dir=%2Fapi';
+    setTabs([resolved], 0);
+    useAppTabsStore.getState().openTab('/session?dir=%2Fapi');
+    const opened = useAppTabsStore.getState().activeTabId;
 
-  it('mints a tab when the window has none', () => {
-    useAppTabsStore.setState({ tabs: [], activeTabId: null });
-    useAppTabsStore.getState().syncLocation('/activity');
-    expect(strip()).toEqual(['[/activity]']);
+    useAppTabsStore.getState().syncLocation(resolved);
+
+    expect(useAppTabsStore.getState().activeTabId).toBe(opened);
+    expect(useAppTabsStore.getState().tabs.map((tab) => tab.href)).toEqual([resolved, resolved]);
+    // Two live tabs on one session is the honest outcome of "always creates";
+    // a tab stuck on a transient href is not.
+    expect(strip()).toEqual([resolved, `[${resolved}]`]);
   });
 });
 

@@ -331,12 +331,21 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
   }
 
   if (options.target === 'window' && supportsNewTab()) {
-    // Plain `_blank`, no `noopener` — forward wiring. In the browser this is
-    // already a real second cockpit window. In the desktop shell the
-    // window-open handler (`apps/desktop/src/main/window-manager.ts`) adopts
-    // our own origin as a second DorkOS window. Keeping the shape unpolluted is
-    // what lets that handler tell "our own cockpit" from "someone else's site";
-    // adding `noopener` here would foreclose it.
+    // Two arguments, never three: no `noopener`. Where this lands is decided
+    // downstream, not here, so the rule is about the call SHAPE rather than
+    // about any one shell's current behavior:
+    //
+    // - In a browser, `_blank` at our own origin is a real second cockpit
+    //   window, and `noopener` would only cost us the opener reference.
+    // - In the desktop shell, the window-open handler in
+    //   `apps/desktop/src/main/window-manager.ts` inspects the URL to tell our
+    //   own origin from someone else's site — adopting the former as a second
+    //   DorkOS window and handing the latter to the system browser. Read that
+    //   handler rather than trusting this sentence; it is the authority, and
+    //   which branch a given build takes is its business, not ours.
+    //
+    // What we owe it is an unpolluted target it can classify. `noopener` here
+    // would foreclose that permanently.
     window.open(link.url, '_blank');
     return true;
   }

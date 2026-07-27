@@ -26,9 +26,9 @@ describe('shortcuts registry', () => {
     it('accepts a ShortcutDef object', async () => {
       vi.doMock('../platform', () => ({ isMac: true }));
       const { formatShortcutKey, SHORTCUTS } = await import('../shortcuts');
-      const result = formatShortcutKey(SHORTCUTS.NEW_SESSION);
-      // mod+shift+n → ⌘⇧N (mod replaced first, then shift)
-      expect(result).toBe('\u2318\u21e7N');
+      const result = formatShortcutKey(SHORTCUTS.AGENT_PROFILE);
+      // mod+shift+a → ⌘⇧A (mod replaced first, then shift)
+      expect(result).toBe('\u2318\u21e7A');
     });
   });
 

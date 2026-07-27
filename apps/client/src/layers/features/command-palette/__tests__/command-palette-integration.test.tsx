@@ -3,10 +3,21 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+
+/**
+ * The palette resolves which session an agent should open on from the query
+ * cache, so it needs a real client. A fresh one per render keeps each case's
+ * cache empty.
+ */
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 // jsdom does not implement ResizeObserver (required by cmdk CommandList)
 globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
@@ -122,7 +133,9 @@ vi.mock('@/layers/shared/model', () => ({
 const mockSetDir = vi.fn();
 let mockSelectedCwd: string | null = '/projects/current';
 
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // Keep the real session resolver — the palette builds its hrefs with it.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => [mockSelectedCwd, mockSetDir],
 }));
 

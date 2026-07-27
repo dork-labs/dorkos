@@ -11,18 +11,46 @@
  * applied on every router location change ({@link AppTabsState.syncLocation}):
  *
  * 1. The active tab already sits at this location → nothing to do.
- * 2. Another tab sits at exactly this location → that tab becomes active.
+ * 2. **Only when the browser traversed history** (Back/Forward) and another tab
+ *    sits at exactly this location → that tab becomes active.
  * 3. Otherwise the active tab **adopts** the location, exactly like navigating
  *    inside a browser tab changes what that tab holds.
  * 4. No tabs at all (first paint) → mint one for wherever we landed.
  *
- * That rule is what makes Back/Forward coherent instead of accidental. Switching
- * tabs navigates, so it pushes a history entry; Back returns to the previous
- * tab's location, rule 2 re-activates that tab, and you are back where you were.
+ * **Rule 2 is scoped to history traversal on purpose**, and that scope is the
+ * whole correctness argument. Rule 2 exists to serve Back/Forward: after
+ * switching tabs, Back returns to the previous tab's location and rule 2
+ * re-activates that tab. Everywhere else, a location change is the active tab
+ * going somewhere, and handing focus to a sibling that happens to sit at the
+ * same href would be a teleport the operator never asked for. Two tabs sharing
+ * an href is an ordinary state — `Cmd+T` from the dashboard produces it
+ * immediately — so an unscoped rule 2 breaks two everyday paths:
+ *
+ * - **Opening a tab.** `openTab` mints a tab on a transient href
+ *   (`/session?dir=…`) that the route loader immediately resolves to
+ *   `/session?session=S&dir=…`. If any other tab already sits at the resolved
+ *   href, an unscoped rule 2 focuses that sibling and strands the new tab on a
+ *   location that can never survive its own loader — a tab that does nothing
+ *   forever, and a silent breach of {@link AppTabsState.openTab}'s contract.
+ * - **Closing a URL-backed dialog.** `?settings=open` (and `?agent=`, `?tasks=`)
+ *   is a modifier on wherever you are. Opening it moves the active tab to
+ *   `/?settings=open`; closing it returns to `/`. With a second tab sitting at
+ *   `/`, an unscoped rule 2 jumps focus there and leaves the tab you were in
+ *   parked on `/?settings=open`, so returning to it reopens the dialog.
+ *
+ * Gating on traversal fixes both with one rule rather than a special case each,
+ * and it does not lean on href equality to tell them apart — which matters,
+ * because href equality is a serialization detail that can drift.
+ *
  * Navigating **within** a tab rewrites that tab's href (rule 3), so Back rewinds
  * the tab's own content rather than teleporting between tabs. No tab state is
  * ever written into the URL — a link you copy addresses a session, never a
  * window layout.
+ *
+ * Two consequences of every tab sharing one history stack, both inherent and
+ * both worth knowing: each tab switch pushes an entry, so Back after twenty
+ * switches takes twenty presses; and Back after closing a tab makes the
+ * surviving tab adopt the closed tab's last location.
  *
  * **Only the active tab holds a session stream.** Background tabs are inert
  * href records: `StreamManager` attaches exactly one foreground session (plus an
@@ -169,8 +197,14 @@ interface AppTabsState extends PersistedTabs {
    * redirect, or Back/Forward.
    *
    * @param href - The router's current relative location.
+   * @param options - `traversal` marks a location the browser reached by moving
+   *   through history (Back/Forward) rather than by the app navigating
+   *   somewhere new. It is the only thing that lets focus move to another tab;
+   *   see the module doc for why nothing else may. Defaults to `false`, so a
+   *   caller that cannot tell gets the safe answer — the active tab keeps
+   *   focus and adopts.
    */
-  syncLocation: (href: string) => void;
+  syncLocation: (href: string, options?: { traversal?: boolean }) => void;
 }
 
 /**
@@ -204,13 +238,15 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
   selectTab: (id) =>
     set((state) => (state.tabs.some((t) => t.id === id) ? { activeTabId: id } : state)),
 
-  syncLocation: (href) =>
+  syncLocation: (href, { traversal = false } = {}) =>
     set((state) => {
       const active = state.tabs.find((t) => t.id === state.activeTabId) ?? null;
       if (active?.href === href) return state;
 
-      const match = state.tabs.find((t) => t.href === href);
-      if (match) return { activeTabId: match.id };
+      if (traversal) {
+        const match = state.tabs.find((t) => t.href === href);
+        if (match) return { activeTabId: match.id };
+      }
 
       if (active) {
         return { tabs: state.tabs.map((t) => (t.id === active.id ? { ...t, href } : t)) };

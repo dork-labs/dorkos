@@ -6,13 +6,18 @@
  * Every action follows the same order: change the tab set, then navigate to
  * whatever ended up active. The location change comes back through
  * `useAppTabsSync`, which finds the tab already sitting at that location and
- * agrees — so the round trip settles instead of ping-ponging.
+ * agrees — so the round trip settles instead of ping-ponging. When the router
+ * resolves somewhere other than we asked and that somewhere is where it already
+ * was, no location change fires at all, so {@link useAppTabActions} closes the
+ * loop itself once the navigation settles. Both paths call the same
+ * `syncLocation`: one rule, two triggers.
  *
  * @module features/app-tabs/model/use-app-tab-actions
  */
-import { useCallback, useMemo } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useMemo } from 'react';
+import { useRouter } from '@tanstack/react-router';
 import { useAppTabsStore } from '@/layers/shared/model';
+import { goToActiveTab, openTabAt } from './tab-navigation';
 
 /**
  * Where a brand-new tab lands: the dashboard, the cockpit's home. It is the one
@@ -45,18 +50,14 @@ export interface AppTabActions {
  * standalone cockpit's shell); the Obsidian embed mounts no strip.
  */
 export function useAppTabActions(): AppTabActions {
-  const navigate = useNavigate();
-
-  // Reads the store imperatively rather than through selectors: these run in
-  // event handlers, always want the state as of the click, and must read the
-  // tab set AFTER their own mutation to know where to navigate.
-  const goToActive = useCallback(() => {
-    const { tabs, activeTabId } = useAppTabsStore.getState();
-    const active = tabs.find((tab) => tab.id === activeTabId);
-    if (active) void navigate({ href: active.href });
-  }, [navigate]);
+  const router = useRouter();
 
   return useMemo<AppTabActions>(() => {
+    // Reads the store imperatively rather than through selectors: these run in
+    // event handlers, always want the state as of the click, and must read the
+    // tab set AFTER their own mutation to know where to navigate.
+    const goToActive = () => goToActiveTab(router);
+
     const activate = (id: string) => {
       useAppTabsStore.getState().selectTab(id);
       goToActive();
@@ -92,10 +93,7 @@ export function useAppTabActions(): AppTabActions {
           goToActive();
         }
       },
-      create: () => {
-        useAppTabsStore.getState().openTab(NEW_TAB_HREF);
-        goToActive();
-      },
+      create: () => openTabAt(router, NEW_TAB_HREF),
     };
-  }, [goToActive]);
+  }, [router]);
 }

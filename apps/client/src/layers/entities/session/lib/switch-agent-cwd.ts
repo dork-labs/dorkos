@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import type { Session } from '@dorkos/shared/types';
+import { resolveSessionForCwd } from './resolve-session-for-cwd';
 
 /**
  * App-store slice {@link switchAgentCwd} reads and writes. A structural subset
@@ -54,9 +54,5 @@ export function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): void {
     store.setPreviousCwd(store.selectedCwd);
   }
   store.setSelectedCwd(cwd);
-  // Reuse the most-recent cached session for the target dir, or a fresh UUID —
-  // mirrors useDirectoryState's setDir and the /session route loader.
-  const cached = queryClient.getQueryData<Session[]>(['sessions', cwd]);
-  const session = cached?.[0]?.id ?? crypto.randomUUID();
-  navigate({ dir: cwd, session });
+  navigate({ dir: cwd, session: resolveSessionForCwd(queryClient, cwd) });
 }

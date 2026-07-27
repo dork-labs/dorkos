@@ -3,14 +3,8 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useAppStore, useTransport } from '@/layers/shared/model';
-import {
-  cn,
-  getAgentDisplayName,
-  groupSessionsByTime,
-  formatShortcutKey,
-  SHORTCUTS,
-} from '@/layers/shared/lib';
-import { Button, Kbd } from '@/layers/shared/ui';
+import { cn, getAgentDisplayName, groupSessionsByTime } from '@/layers/shared/lib';
+import { Button } from '@/layers/shared/ui';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import {
   useSessions,
@@ -90,7 +84,6 @@ export function EmbedSidebar() {
         <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2" onClick={handleNewSession}>
           <Plus className="size-(--size-icon-sm)" />
           <span className="text-xs">New</span>
-          <Kbd>{formatShortcutKey(SHORTCUTS.NEW_SESSION)}</Kbd>
         </Button>
       </header>
 

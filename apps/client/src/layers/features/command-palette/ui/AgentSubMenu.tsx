@@ -1,4 +1,11 @@
-import { FolderOpen, AppWindow, Plus, Settings, MessageSquare } from 'lucide-react';
+import {
+  FolderOpen,
+  AppWindow,
+  SquareArrowOutUpRight,
+  Plus,
+  Settings,
+  MessageSquare,
+} from 'lucide-react';
 import { CommandGroup, CommandItem, CommandShortcut } from '@/layers/shared/ui';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { getAgentDisplayName, isMac } from '@/layers/shared/lib';
@@ -17,6 +24,8 @@ interface AgentSubMenuProps {
   onOpenHere: () => void;
   /** Open agent's project in a new tab of this window */
   onOpenNewTab: () => void;
+  /** Open agent's project in a second cockpit window */
+  onOpenNewWindow: () => void;
   /** Start a new session in this agent's CWD */
   onNewSession: () => void;
   /** Open agent settings dialog */
@@ -28,14 +37,18 @@ interface AgentSubMenuProps {
 /**
  * Sub-menu page for agent drill-down in the command palette.
  *
- * Displays action buttons (Open Here, Open in New Tab, New Session)
- * and a list of recent sessions for the selected agent.
+ * Displays action buttons (Open Here, Open in New Tab, Open in New Window,
+ * New Session) and a list of recent sessions for the selected agent. The three
+ * "where" choices sit together on purpose: this is the one place a person picks
+ * where an agent should land, so all three belong in the same list rather than
+ * two here and one hidden behind a gesture.
  * Rendered as a cmdk page when the user presses Enter on an agent.
  */
 export function AgentSubMenu({
   agent,
   onOpenHere,
   onOpenNewTab,
+  onOpenNewWindow,
   onNewSession,
   onEditSettings,
   recentSessions,
@@ -54,6 +67,10 @@ export function AgentSubMenu({
           <AppWindow className="size-4" />
           <span>Open in New Tab</span>
           <CommandShortcut>{modKey}Enter</CommandShortcut>
+        </CommandItem>
+        <CommandItem value="open-new-window" onSelect={onOpenNewWindow}>
+          <SquareArrowOutUpRight className="size-4" />
+          <span>Open in New Window</span>
         </CommandItem>
         <CommandItem value="new-session" onSelect={onNewSession}>
           <Plus className="size-4" />

@@ -18,6 +18,16 @@ vi.mock('@tanstack/react-router', () => ({
   }: {
     select: (s: { location: { pathname: string; href: string } }) => string;
   }) => select({ location: { pathname: mockPathname, href: mockPathname } }),
+  // The tab strip reads the router directly: `useAppTabsSync` subscribes to
+  // history for the action type (only Back/Forward may move focus between
+  // tabs), and the tab actions re-read the location once a navigation settles.
+  useRouter: () => ({
+    navigate: (_options: { href: string }) => Promise.resolve(),
+    get state() {
+      return { location: { pathname: mockPathname, href: mockPathname } };
+    },
+    history: { subscribe: () => () => {} },
+  }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
