@@ -118,6 +118,29 @@ export function useCreateSession() {
 }
 ```
 
+#### Never settle caller state from a per-call `onSuccess`/`onError`
+
+`mutate(vars, { onSuccess, onError })` **does not invoke those callbacks if the component unmounts before the mutation settles.** Measured against the installed `@tanstack/react-query` 5.101.1 (DOR-480 review): the promise built from them stays pending forever, so anything awaiting it — an undo handle, a latch, a "message delivered" signal — is stranded, along with whatever closure it retained.
+
+The mutation itself still completes in the `QueryClient`; only the per-call callbacks are skipped. So this is invisible in the happy path and in any test that does not unmount.
+
+When a caller needs to know an outcome, settle from the mutation's own promise:
+
+```typescript
+// Wrong — never settles if the component unmounts first
+const confirmed = new Promise<boolean>((resolve) => {
+  renameMutation.mutate(vars, { onSuccess: () => resolve(true), onError: () => resolve(false) });
+});
+
+// Right — the promise belongs to the mutation, not the component
+const confirmed = renameMutation.mutateAsync(vars).then(
+  () => true,
+  () => false
+);
+```
+
+Two habits that go with it: give the consumer a **rejection arm** (`.then(ok => …, () => restore())`) so an unexpected rejection restores rather than silently eats the work, and remember that a **raw `fetch` in a transport method has no timeout** unless you give it one — `fetchJSON` sets `AbortSignal.timeout(30_000)`, so anything bypassing it (to read an error body, say) silently loses that bound and can hang a caller's latch indefinitely.
+
 ### Transport Abstraction
 
 All data fetching goes through the Transport interface — never call `fetch()` directly from components:

@@ -185,6 +185,33 @@ vi.spyOn(console, 'error'); // Add mockRestore in afterEach
 await new Promise((r) => setTimeout(r, 1000)); // Wrong - use waitFor
 ```
 
+## Assertions that cannot fail
+
+A test that cannot fail is worse than no test: it reports safety it never checked, and it makes the next person trust the area less once they find out. Eleven of these were found in one day (2026-07-25) across the composer, the status line, the session endpoints and CI — every one green, every one certifying something false. The signatures repeat, so they are worth recognising on sight.
+
+**The rule:** before you write an assertion, say in one sentence _what change to the product would make this red_. If you cannot, the assertion is decoration. Then prove it — **break the behaviour and watch the test fail.** Red-then-green is the only evidence that a test discriminates; a passing test is evidence of nothing on its own.
+
+### Catalogue
+
+| Shape                                                                                  | Why it can't fail                                                                                                                                                                                                              |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `expect(el.querySelector('.x')).toBeDefined()`                                         | `querySelector` returns `null`, and only `undefined` fails `toBeDefined`. Use `.not.toBeNull()`.                                                                                                                               |
+| Asserting `input.value === ''` on a **controlled** input                               | If the `value` prop never moves, React reverts the DOM node — so it equals whatever it started as, whether or not the clear worked. Drive a controlled host and assert the value the host _received_.                          |
+| Seeding the exact cache key the reader reads                                           | The test builds the world in which the code works. Mount the real writer instead. (A banner read `['session', id]` while the app wrote `['session', id, cwd]`; its own test was the only thing that ever wrote the short key.) |
+| A parity test that pins one of the two inputs it compares                              | "The two endpoints agree" cannot fail if the fake returns the same value for every id. Vary every input the comparison spans.                                                                                                  |
+| Measuring a geometry the layout structurally pins                                      | `scrollWidth === clientWidth` can never differ inside `overflow-hidden` with `min-w-0` shrinkable children. Measure painted extent, or adjacent rects.                                                                         |
+| A probe whose selector excludes where the bug lives                                    | Querying `[data-testid^="status-item-"]` cannot see overflow **into** a sibling anchor that the selector omits.                                                                                                                |
+| A mutation test whose anchor is not unique                                             | `replace(pattern, 1)` patched a _comment_ three lines earlier, so the mutant was never applied and reported green. Assert the anchor is unique before mutating.                                                                |
+| Reproducing on a fresh **source** checkout when the hypothesis is a **build artifact** | `git checkout origin/main -- .` restores source, not dists, so it re-runs against the same stale dist and confirms the answer you already had. See gotcha 13 in the agent-gotchas memory.                                      |
+| Verifying a permission/deny rule by reading it                                         | `Read(/etc/**)` silently does not apply (needs `//`); `Grep(//etc/**)` does nothing at all. Attempt the access and observe the refusal.                                                                                        |
+| Fake timers against a platform timer they do not intercept                             | `AbortSignal.timeout` does not run on vitest's fake clock, so advancing time proves nothing. Assert the value passed instead.                                                                                                  |
+| A test that passes with **and** without the fix                                        | If you cannot make it red by reverting the change, delete it and say why rather than shipping a green check that proves nothing.                                                                                               |
+
+### Two corollaries
+
+- **jsdom reports every element as `0 × 0`.** Nothing geometric — height, overlap, truncation, animation frames — can be settled in a unit test. Say so in the test rather than asserting a proxy and implying coverage.
+- **A comment admitting an assertion is weak does not make it acceptable.** Three tests shipped carrying "browser-verified rather than asserted here"; they were vacuous, and the note is why nobody looked again.
+
 ## Mock AgentRuntime (Server Tests)
 
 Server route tests that touch session endpoints need a mock `AgentRuntime`. Use `FakeAgentRuntime` from `@dorkos/test-utils` instead of hand-rolling a mock object:

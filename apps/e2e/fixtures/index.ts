@@ -8,6 +8,8 @@ import { MeshPage } from '../pages/MeshPage';
 import { RelayPage } from '../pages/RelayPage';
 import { AuthPage } from '../pages/AuthPage';
 import { RightPanelPage } from '../pages/RightPanelPage';
+import { RoomsPage } from '../pages/RoomsPage';
+import { RoomsApi } from './rooms-api';
 
 type DorkOSFixtures = {
   basePage: BasePage;
@@ -19,6 +21,8 @@ type DorkOSFixtures = {
   relayPage: RelayPage;
   authPage: AuthPage;
   rightPanel: RightPanelPage;
+  roomsPage: RoomsPage;
+  roomsApi: RoomsApi;
 };
 
 export const test = base.extend<DorkOSFixtures>({
@@ -50,6 +54,16 @@ export const test = base.extend<DorkOSFixtures>({
   },
   rightPanel: async ({ page }, use) => {
     await use(new RightPanelPage(page));
+  },
+  roomsPage: async ({ page }, use) => {
+    await use(new RoomsPage(page));
+  },
+  // Seeds this test's rooms and agents, and puts them away again — the suite
+  // shares one server, so nothing may outlive the test that made it.
+  roomsApi: async ({ request }, use) => {
+    const api = new RoomsApi(request);
+    await use(api);
+    await api.cleanup();
   },
 });
 
