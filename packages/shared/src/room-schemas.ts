@@ -168,15 +168,25 @@ export const RoomSchema = z
 export type Room = z.infer<typeof RoomSchema>;
 
 /**
- * A room as the sidebar reads it: the room plus this viewer's unread count.
+ * A room as the sidebar reads it: the room, this viewer's unread count, and —
+ * for a direct message — who it is with.
  *
  * `unreadCount` is `null` when the viewer is not a member. Unread is a property
  * of a read cursor and a non-member has none — so there is no number to give,
  * and the honest answer is "not applicable" rather than the room's whole entry
  * count dressed up as an unread badge.
+ *
+ * `participants` is `null` on the same principle: not carried, rather than
+ * empty. See its own description for why only a DM carries one.
  */
 export const RoomSummarySchema = RoomSchema.extend({
   unreadCount: z.number().int().min(0).nullable(),
+  participants: z
+    .array(AuthorRefSchema)
+    .nullable()
+    .describe(
+      "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel or a thread, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; two authors is small enough to ride along on every list. A channel reads as `#slug` and a thread as its own glyph, so their rosters would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
+    ),
 }).openapi('RoomSummary');
 
 export type RoomSummary = z.infer<typeof RoomSummarySchema>;

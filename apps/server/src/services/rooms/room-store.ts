@@ -17,6 +17,7 @@ import {
   roomSessions,
   eq,
   and,
+  inArray,
   lt,
   gt,
   sql,
@@ -207,6 +208,25 @@ export class RoomStore {
       .from(roomMembers)
       .where(eq(roomMembers.roomId, roomId))
       .orderBy(roomMembers.joinedAt)
+      .all();
+    return rows.map(toMember);
+  }
+
+  /**
+   * The memberships of several rooms in ONE query, in join order within each
+   * room. The list endpoint resolves who is in every direct message it returns,
+   * and doing that a room at a time would put an N+1 on the server to take one
+   * off the client.
+   *
+   * @param roomIds - The rooms to read. An empty list reads nothing.
+   */
+  listMembersForRooms(roomIds: readonly string[]): RoomMember[] {
+    if (roomIds.length === 0) return [];
+    const rows = this.db
+      .select()
+      .from(roomMembers)
+      .where(inArray(roomMembers.roomId, [...new Set(roomIds)]))
+      .orderBy(roomMembers.roomId, roomMembers.joinedAt)
       .all();
     return rows.map(toMember);
   }

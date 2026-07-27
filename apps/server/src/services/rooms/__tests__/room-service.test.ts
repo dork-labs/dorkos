@@ -422,6 +422,56 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
     expect(service.listRooms(human).find((r) => r.id === room.id)?.unreadCount).toBe(1);
   });
 
+  it("carries a direct message's roster, so the sidebar can draw who it is with", () => {
+    const dm = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    const participants = service.listRooms(human).find((r) => r.id === dm.id)?.participants;
+    // Sorted, not positional: a DM's members are all stamped with one `joinedAt`
+    // at create time, so the roster's order between them is not a promise.
+    expect(participants?.map((p) => p.displayName).sort()).toEqual(['Ana', 'You']);
+    const counterpart = participants?.find((p) => p.kind === 'agent');
+    expect(counterpart?.emoji).toBe('🐙');
+    expect(counterpart?.agentRef).toBe(agentAuthorRef('/agents/ana'));
+  });
+
+  it('carries no roster for a channel — null, which is not an empty room', () => {
+    const channel = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    const listed = service.listRooms(human).find((r) => r.id === channel.id);
+    expect(listed?.participants).toBeNull();
+    // The roster is real, it is just not on the list payload.
+    expect(service.getRoom(channel.id, human)?.members).toHaveLength(2);
+  });
+
+  it('resolves every listed DM in one pass, not one read per room', () => {
+    const first = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const second = service.createRoom(
+      { kind: 'dm', title: 'Bo', members: [], agentPaths: ['/agents/bo'] },
+      human
+    );
+
+    // Keyed by id rather than compared positionally: both rooms are created in
+    // the same millisecond, so the list's `lastActivityAt` ordering between
+    // them is not something this test can claim to know.
+    const listed = new Map(
+      service
+        .listRooms(human, { kind: 'dm' })
+        .map((room) => [room.id, room.participants?.map((p) => p.displayName).sort()])
+    );
+    expect(listed.size).toBe(2);
+    expect(listed.get(first.id)).toEqual(['Ana', 'You']);
+    expect(listed.get(second.id)).toEqual(['Bo', 'You']);
+  });
+
   it('shows an agent only the rooms it belongs to', () => {
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     const mine = service.createRoom(

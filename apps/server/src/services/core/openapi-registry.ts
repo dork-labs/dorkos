@@ -2770,7 +2770,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'List rooms visible to the caller',
   description:
-    'A human sees every room; an agent presenting `X-DorkOS-Agent` sees only rooms it belongs to. `unreadCount` is null for a room the caller is not a member of.',
+    'A human sees every room; an agent presenting `X-DorkOS-Agent` sees only rooms it belongs to. `unreadCount` is null for a room the caller is not a member of, and `participants` is null for anything that is not a direct message.',
   request: { query: ListRoomsQuerySchema },
   responses: {
     200: {
@@ -2944,8 +2944,7 @@ registry.registerPath({
   path: '/api/rooms/{id}/members/{authorId}',
   tags: ['Rooms'],
   summary: 'Remove a member from a room',
-  description:
-    "Operator-only. Also drops that member's per-room session binding.",
+  description: "Operator-only. Also drops that member's per-room session binding.",
   request: { params: RoomMemberParams },
   responses: {
     204: { description: 'Member removed' },

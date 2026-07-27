@@ -154,7 +154,7 @@ describe('MessageItem', () => {
       />
     );
     expect(screen.getByText('DorkBot')).toBeDefined();
-    expect(container.querySelector('[data-slot="agent-avatar"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="message-author-avatar"]')).not.toBeNull();
   });
 
   it('renders neither name nor avatar on a continuation', () => {
@@ -174,7 +174,6 @@ describe('MessageItem', () => {
       />
     );
     expect(screen.queryByText('DorkBot')).toBeNull();
-    expect(container.querySelector('[data-slot="agent-avatar"]')).toBeNull();
     expect(container.querySelector('[data-slot="message-author-avatar"]')).toBeNull();
   });
 
@@ -553,7 +552,7 @@ describe('MessageItem', () => {
     );
     const gutter = container.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]');
     expect(gutter).not.toBeNull();
-    expect(gutter?.querySelector('[data-slot="agent-avatar"]')).toBeNull();
+    expect(gutter?.querySelector('[data-slot="message-author-avatar"]')).toBeNull();
     expect(screen.queryByText('You')).toBeNull();
   });
 

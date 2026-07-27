@@ -1,5 +1,6 @@
-import { cva, type VariantProps } from 'class-variance-authority';
+import type { VariantProps } from 'class-variance-authority';
 import { cn } from '@/layers/shared/lib';
+import { IdentityAvatar, identityAvatarVariants } from '@/layers/shared/ui';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 
 // ---------------------------------------------------------------------------
@@ -14,31 +15,10 @@ const HEALTH_RING: Record<AgentHealthStatus, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Variants
-// ---------------------------------------------------------------------------
-
-const avatarVariants = cva(
-  'relative inline-flex shrink-0 items-center justify-center rounded-full transition-[background-color] duration-500 ease-in-out',
-  {
-    variants: {
-      size: {
-        xs: 'size-5 text-xs',
-        sm: 'size-7 text-sm',
-        md: 'size-9 text-lg',
-        lg: 'size-12 text-2xl',
-      },
-    },
-    defaultVariants: {
-      size: 'sm',
-    },
-  }
-);
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export interface AgentAvatarProps extends VariantProps<typeof avatarVariants> {
+export interface AgentAvatarProps extends VariantProps<typeof identityAvatarVariants> {
   /** CSS color string (HSL or hex override). Used as the avatar background. */
   color: string;
   /** Single emoji character rendered inside the circle. */
@@ -51,28 +31,26 @@ export interface AgentAvatarProps extends VariantProps<typeof avatarVariants> {
 /**
  * Visual mark for an agent — colored circle with centered emoji.
  * The entity-layer primitive for agent identity display.
+ *
+ * The circle itself is {@link IdentityAvatar}, the one disc every identity in
+ * the cockpit is drawn as. What an agent adds on top is the only thing here
+ * that is about agents: a ring for its health, and a pulse while it is working.
  */
 export function AgentAvatar({ color, emoji, size, healthStatus, className }: AgentAvatarProps) {
   return (
-    <span
+    <IdentityAvatar
       data-slot="agent-avatar"
-      className={cn(
-        avatarVariants({ size }),
-        healthStatus && 'ring-2',
-        healthStatus && HEALTH_RING[healthStatus],
-        className
-      )}
-      style={{ backgroundColor: `color-mix(in oklch, ${color} 18%, transparent)` }}
       aria-hidden
+      color={color}
+      emoji={emoji}
+      size={size}
+      className={cn(healthStatus && 'ring-2', healthStatus && HEALTH_RING[healthStatus], className)}
     >
-      <span className="leading-none">{emoji}</span>
       {healthStatus === 'active' && (
         <span className="absolute -top-px -right-px size-2 rounded-full bg-emerald-500" aria-hidden>
           <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-40 motion-reduce:hidden" />
         </span>
       )}
-    </span>
+    </IdentityAvatar>
   );
 }
-
-export { avatarVariants as agentAvatarVariants };

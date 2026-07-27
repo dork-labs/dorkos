@@ -42,6 +42,7 @@ export {
   type OpenLinkOptions,
   type TabOpener,
 } from './link-navigation';
+export { initialOf } from './initial-of';
 export { isBypassPermissionMode } from './permission-mode';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';

@@ -52,6 +52,7 @@ function channel(overrides: Partial<RoomSummary> = {}): RoomSummary {
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     unreadCount: null,
+    participants: null,
     ...overrides,
   };
 }

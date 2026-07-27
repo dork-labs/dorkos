@@ -4956,10 +4956,21 @@
                   "null"
                 ],
                 "minimum": 0
+              },
+              "participants": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/components/schemas/AuthorRef"
+                },
+                "description": "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel or a thread, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; two authors is small enough to ride along on every list. A channel reads as `#slug` and a thread as its own glyph, so their rosters would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
               }
             },
             "required": [
-              "unreadCount"
+              "unreadCount",
+              "participants"
             ]
           }
         ]
@@ -4970,6 +4981,48 @@
           "channel",
           "dm",
           "thread"
+        ]
+      },
+      "AuthorRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Opaque author id (ULID). Stable across agent re-registration."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuthorKind"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "emoji": {
+            "type": "string",
+            "description": "Render cache: the emoji avatar, when the author has one."
+          },
+          "color": {
+            "type": "string",
+            "description": "Render cache: the identity colour, when the author has one."
+          },
+          "agentRef": {
+            "type": "string",
+            "description": "Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "displayName"
+        ]
+      },
+      "AuthorKind": {
+        "type": "string",
+        "enum": [
+          "human",
+          "agent",
+          "system"
         ]
       },
       "Room": {
@@ -5081,48 +5134,6 @@
               "author"
             ]
           }
-        ]
-      },
-      "AuthorRef": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Opaque author id (ULID). Stable across agent re-registration."
-          },
-          "kind": {
-            "$ref": "#/components/schemas/AuthorKind"
-          },
-          "displayName": {
-            "type": "string",
-            "minLength": 1
-          },
-          "emoji": {
-            "type": "string",
-            "description": "Render cache: the emoji avatar, when the author has one."
-          },
-          "color": {
-            "type": "string",
-            "description": "Render cache: the identity colour, when the author has one."
-          },
-          "agentRef": {
-            "type": "string",
-            "description": "Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name."
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "displayName"
-        ]
-      },
-      "AuthorKind": {
-        "type": "string",
-        "enum": [
-          "human",
-          "agent",
-          "system"
         ]
       },
       "RoomMember": {
@@ -12275,7 +12286,7 @@
           "Rooms"
         ],
         "summary": "List rooms visible to the caller",
-        "description": "A human sees every room; an agent presenting `X-DorkOS-Agent` sees only rooms it belongs to. `unreadCount` is null for a room the caller is not a member of.",
+        "description": "A human sees every room; an agent presenting `X-DorkOS-Agent` sees only rooms it belongs to. `unreadCount` is null for a room the caller is not a member of, and `participants` is null for anything that is not a direct message.",
         "parameters": [
           {
             "schema": {

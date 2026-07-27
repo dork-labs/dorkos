@@ -8,7 +8,7 @@ import {
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
-import { useRoomRosters, useStartDirectMessage } from '@/layers/entities/room';
+import { useStartDirectMessage } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
 import { NewDirectMessageMenu, type DirectMessageCandidate } from './NewDirectMessageMenu';
@@ -55,32 +55,38 @@ export function DirectMessagesSection({
   // actually in the room; and a DM whose join failed has no agent member at all,
   // so it must not tie up the agent it happens to be named after.
   //
+  // The roster rides along on the list (`RoomSummary.participants`), so this
+  // costs nothing. It used to be one `GET /api/rooms/:id` per direct message,
+  // fired only to answer this question.
+  //
   // The comparison is `agentRef` — the stable handle the server derives from the
   // agent's directory, which this side computes from the same directory. It used
   // to compare display names, because `AuthorRef` offered nothing better; that
   // made two agents sharing a name indistinguishable here, so opening a DM with
   // one hid both.
-  const dmRoomIds = useMemo(() => dms.map((room) => room.id), [dms]);
-  const rosters = useRoomRosters(dmRoomIds);
-
   const candidates = useMemo<DirectMessageCandidate[]>(() => {
     const taken = new Set<string>();
-    for (const members of rosters.values()) {
-      for (const member of members) {
-        if (member.author.agentRef) taken.add(member.author.agentRef);
+    for (const room of dms) {
+      for (const participant of room.participants ?? []) {
+        if (participant.agentRef) taken.add(participant.agentRef);
       }
     }
     return Object.entries(displayNames)
       .filter(([agentPath]) => !taken.has(agentAuthorRef(agentPath)))
       .map(([agentPath, displayName]) => ({ agentPath, displayName }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [rosters, displayNames]);
+  }, [dms, displayNames]);
 
   const handleStart = (candidate: DirectMessageCandidate) => {
     startDirectMessage.mutate(
       { agentPath: candidate.agentPath, title: candidate.displayName },
       {
-        onSuccess: (room) => onSelectRoom({ ...room, unreadCount: 0 }),
+        onSuccess: (room) =>
+          onSelectRoom({
+            ...room,
+            unreadCount: 0,
+            participants: room.members.map((member) => member.author),
+          }),
         onError: (err) =>
           toast.error(
             err.message || `Could not start a conversation with ${candidate.displayName}`

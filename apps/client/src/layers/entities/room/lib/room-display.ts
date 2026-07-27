@@ -3,11 +3,8 @@
  *
  * @module entities/room/lib/room-display
  */
-import type { Room, RoomSummary } from '@dorkos/shared/room-schemas';
+import type { AuthorRef, Room, RoomSummary } from '@dorkos/shared/room-schemas';
 import { hashToHslColor } from '@/layers/shared/lib';
-
-/** Glyph a display name with no letter or digit falls back to. */
-const FALLBACK_INITIAL = '?';
 
 /** A room object with just enough on it to render a title. */
 type TitleableRoom = Pick<Room, 'kind' | 'slug' | 'title'>;
@@ -26,13 +23,21 @@ export function roomDisplayTitle(room: TitleableRoom): string {
 }
 
 /**
- * First letter or digit of a name, uppercased — the letter avatar's glyph.
+ * Who a direct message is with.
  *
- * @param name - The display name to take an initial from.
+ * A DM is the operator and one agent, so the counterpart is the agent on the
+ * roster — picked by `kind` rather than by position, because join order is not
+ * a promise and matching on a rendered name never was one.
+ *
+ * @param participants - The DM's roster, as `RoomSummary.participants` carries
+ *   it. `null` (a channel, a thread, or a payload that predates the field) and
+ *   a roster with no agent on it both answer `null`, which is the caller's cue
+ *   to fall back to the room itself.
  */
-export function initialOf(name: string): string {
-  const match = /\p{L}|\p{N}/u.exec(name);
-  return match ? match[0].toUpperCase() : FALLBACK_INITIAL;
+export function dmCounterpart(
+  participants: readonly AuthorRef[] | null | undefined
+): AuthorRef | null {
+  return participants?.find((author) => author.kind === 'agent') ?? null;
 }
 
 /**

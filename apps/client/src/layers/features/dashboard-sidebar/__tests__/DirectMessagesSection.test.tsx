@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import type { AuthorRef, RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { DirectMessagesSection } from '../ui/rooms/DirectMessagesSection';
@@ -26,11 +26,6 @@ vi.mock('@/layers/entities/config', () => ({
 }));
 
 const mockStart = vi.fn();
-/** Rosters the section reads, keyed by room id. Set per test. */
-let mockRosters = new Map<
-  string,
-  Array<{ author: { id: string; kind: string; displayName: string } }>
->();
 
 vi.mock('@/layers/entities/room', async () => {
   const actual =
@@ -38,25 +33,23 @@ vi.mock('@/layers/entities/room', async () => {
   return {
     ...actual,
     useStartDirectMessage: () => ({ mutate: mockStart }),
-    useRoomRosters: () => mockRosters,
   };
 });
 
 /**
- * A roster holding the human plus the agent living at `agentPath` — a DM whose
- * join succeeded. The agent carries the same `agentRef` the server would derive
- * from that directory, which is what the menu matches on.
+ * The roster the list carries for a DM whose join succeeded: the human plus the
+ * agent living at `agentPath`. The agent carries the same `agentRef` the server
+ * derives from that directory, which is what the menu matches on.
  */
-function rosterWithAgent(agentPath: string, displayName = 'Ana') {
+function rosterWithAgent(agentPath: string, displayName = 'Ana'): AuthorRef[] {
   return [
-    { author: { id: 'me', kind: 'human', displayName: 'You' } },
+    { id: 'me', kind: 'human', displayName: 'You' },
     {
-      author: {
-        id: `a-${displayName}`,
-        kind: 'agent',
-        displayName,
-        agentRef: agentAuthorRef(agentPath),
-      },
+      id: `a-${displayName}`,
+      kind: 'agent',
+      displayName,
+      emoji: '🐙',
+      agentRef: agentAuthorRef(agentPath),
     },
   ];
 }
@@ -79,6 +72,7 @@ function dm(overrides: Partial<RoomSummary> = {}): RoomSummary {
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     unreadCount: null,
+    participants: [],
     ...overrides,
   };
 }
@@ -100,7 +94,6 @@ function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSectio
 
 beforeEach(() => {
   mockCollapsed = false;
-  mockRosters = new Map();
   mockUpdate.mockClear();
   mockStart.mockClear();
 });
@@ -120,6 +113,17 @@ describe('DirectMessagesSection', () => {
     renderSection({ dms: [dm(), dm({ id: 'dm-2', title: 'Bo' })] });
     expect(screen.getByText('Ana')).toBeInTheDocument();
     expect(screen.getByText('Bo')).toBeInTheDocument();
+  });
+
+  it("marks a conversation with the agent's own avatar, not a letter", () => {
+    renderSection({ dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/ana') })] });
+    expect(screen.getByText('🐙')).toBeInTheDocument();
+    expect(screen.queryByText('A')).not.toBeInTheDocument();
+  });
+
+  it("falls back to the room's initial when the list carries no agent", () => {
+    renderSection({ dms: [dm({ id: 'dm-1', title: 'Ana', participants: [] })] });
+    expect(screen.getByText('A')).toBeInTheDocument();
   });
 
   it('says so when the list could not be read', () => {
@@ -151,9 +155,8 @@ describe('DirectMessagesSection', () => {
   });
 
   it('leaves out agents already on a conversation roster', () => {
-    mockRosters = new Map([['dm-1', rosterWithAgent('/repo/ana')]]);
     renderSection({
-      dms: [dm({ id: 'dm-1' })],
+      dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/ana') })],
       displayNames: { '/repo/ana': 'Ana' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
@@ -164,11 +167,14 @@ describe('DirectMessagesSection', () => {
     // The room exists and is titled after the agent, but the second call failed
     // so the roster holds only the human. Filtering on the title would hide this
     // agent from the menu for good, with no way in this release to undo it.
-    mockRosters = new Map([
-      ['dm-1', [{ author: { id: 'me', kind: 'human', displayName: 'You' } }]],
-    ]);
     renderSection({
-      dms: [dm({ id: 'dm-1', title: 'Ana' })],
+      dms: [
+        dm({
+          id: 'dm-1',
+          title: 'Ana',
+          participants: [{ id: 'me', kind: 'human', displayName: 'You' }],
+        }),
+      ],
       displayNames: { '/repo/ana': 'Ana' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
@@ -183,9 +189,10 @@ describe('DirectMessagesSection', () => {
   it('ignores a renamed room title and believes the roster', () => {
     // A room's title is editable; who is in it is not. The agent is on the
     // roster, so it stays out of the menu whatever the room ended up called.
-    mockRosters = new Map([['dm-1', rosterWithAgent('/repo/ana')]]);
     renderSection({
-      dms: [dm({ id: 'dm-1', title: 'Renamed by hand' })],
+      dms: [
+        dm({ id: 'dm-1', title: 'Renamed by hand', participants: rosterWithAgent('/repo/ana') }),
+      ],
       displayNames: { '/repo/ana': 'Ana' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
@@ -196,9 +203,8 @@ describe('DirectMessagesSection', () => {
     // Two agents both named "Ana" render as "Ana (alpha)" / "Ana (beta)". Only
     // the one you already have a conversation with leaves the menu; matching on
     // the name would have hidden both.
-    mockRosters = new Map([['dm-1', rosterWithAgent('/repo/alpha/ana')]]);
     renderSection({
-      dms: [dm({ id: 'dm-1' })],
+      dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/alpha/ana') })],
       displayNames: { '/repo/alpha/ana': 'Ana (alpha)', '/repo/beta/ana': 'Ana (beta)' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));

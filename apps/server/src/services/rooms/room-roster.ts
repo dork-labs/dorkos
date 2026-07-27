@@ -146,6 +146,30 @@ export class RoomRoster {
   }
 
   /**
+   * The authors in each of several rooms, resolved — two queries for the whole
+   * set, not two per room. This is what puts a direct message's counterpart on
+   * the room list without the sidebar fetching every DM one at a time.
+   *
+   * Every id asked for comes back with an entry, so an empty array means "that
+   * room has nobody in it" and a missing key means "you did not ask about it".
+   *
+   * @param roomIds - The rooms to read.
+   */
+  authorsIn(roomIds: readonly string[]): Map<string, AuthorRef[]> {
+    const byRoom = new Map<string, AuthorRef[]>(roomIds.map((id) => [id, []]));
+    if (roomIds.length === 0) return byRoom;
+    const members = this.store.listMembersForRooms(roomIds);
+    const authors = this.authors.getMany(members.map((m) => m.authorId));
+    for (const member of members) {
+      const author = authors.get(member.authorId);
+      byRoom
+        .get(member.roomId)
+        ?.push(author ? toAuthorRef(author) : unknownAuthor(member.authorId));
+    }
+    return byRoom;
+  }
+
+  /**
    * The names each member answers to for `@` resolution: an agent's handle
    * first, then whatever it renders as.
    *
