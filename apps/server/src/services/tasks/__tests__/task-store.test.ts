@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import { pulseSchedules, pulseRuns } from '@dorkos/db';
+import { pulseSchedules, pulseRuns, pulseDispatchLog } from '@dorkos/db';
 import { eq } from 'drizzle-orm';
 
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
@@ -113,6 +113,42 @@ describe('TaskStore', () => {
 
     it('returns false when deleting nonexistent task', () => {
       expect(store.deleteTask('nope')).toBe(false);
+    });
+
+    it('deletes a task that has run history, taking its runs with it', () => {
+      const created = store.createTask(taskInput({ name: 'Has runs' }));
+      store.createRun(created.id, 'manual');
+      store.createRun(created.id, 'scheduled');
+
+      expect(() => store.deleteTask(created.id)).not.toThrow();
+      expect(store.getTasks()).toHaveLength(0);
+      expect(
+        db.select().from(pulseRuns).where(eq(pulseRuns.scheduleId, created.id)).all()
+      ).toHaveLength(0);
+    });
+
+    it('deletes the task dispatch-dedup rows too, so they cannot outlive the task', () => {
+      const created = store.createTask(taskInput({ name: 'Has dispatches' }));
+      const other = store.createTask(taskInput({ name: 'Untouched' }));
+      store.tryClaimDispatch(created.id, 1_700_000_000_000);
+      store.tryClaimDispatch(other.id, 1_700_000_000_000);
+
+      store.deleteTask(created.id);
+
+      const remaining = db.select().from(pulseDispatchLog).all();
+      expect(remaining.map((r) => r.taskId)).toEqual([other.id]);
+    });
+
+    it('leaves other tasks runs untouched', () => {
+      const doomed = store.createTask(taskInput({ name: 'Doomed' }));
+      const survivor = store.createTask(taskInput({ name: 'Survivor' }));
+      store.createRun(doomed.id, 'manual');
+      const keptRun = store.createRun(survivor.id, 'manual');
+
+      store.deleteTask(doomed.id);
+
+      expect(store.getRun(keptRun.id)).not.toBeNull();
+      expect(db.select().from(pulseRuns).all()).toHaveLength(1);
     });
   });
 

@@ -259,6 +259,104 @@ describe('Database Migrations', () => {
     }).toThrow(/UNIQUE|PRIMARY/);
   });
 
+  it('deleting a pulse_schedules row cascades to its pulse_runs', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        "INSERT INTO pulse_schedules (id, name, cron, timezone, prompt, enabled, permission_mode, status, file_path, tags_json, created_at, updated_at) VALUES ('01SCHED', 'nightly', '0 3 * * *', 'UTC', 'go', 1, 'acceptEdits', 'active', '/tmp/tasks/nightly/SKILL.md', '[]', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO pulse_runs (id, schedule_id, status, started_at, trigger, created_at) VALUES ('01RUN', '01SCHED', 'completed', '2026-01-01T03:00:00Z', 'scheduled', '2026-01-01T03:00:00Z')"
+      )
+      .run();
+
+    // Before migration 0036 this threw FOREIGN KEY constraint failed, which
+    // aborted every reconciliation pass that tried to retire an old task.
+    expect(() => {
+      raw.prepare("DELETE FROM pulse_schedules WHERE id = '01SCHED'").run();
+    }).not.toThrow();
+
+    const runs = raw.prepare('SELECT id FROM pulse_runs').all();
+    expect(runs).toEqual([]);
+  });
+
+  it('migration 0036 preserves existing pulse_runs rows across the cascade rebuild', () => {
+    // The 0036 INSERT...SELECT copies zero rows on a fresh DB, so exercise it
+    // directly: build the OLD schema (no ON DELETE action), seed rows, run the
+    // 0036 statements, and assert the history survives.
+    const db = createDb(':memory:');
+    const raw = db.$client;
+
+    raw.exec(`CREATE TABLE pulse_schedules (
+      id text PRIMARY KEY,
+      name text NOT NULL,
+      cron text NOT NULL,
+      prompt text NOT NULL,
+      file_path text NOT NULL,
+      created_at text NOT NULL,
+      updated_at text NOT NULL
+    )`);
+    raw.exec(`CREATE TABLE pulse_runs (
+      id text PRIMARY KEY,
+      schedule_id text NOT NULL,
+      status text NOT NULL,
+      started_at text NOT NULL,
+      finished_at text,
+      duration_ms integer,
+      output text,
+      error text,
+      session_id text,
+      trigger text DEFAULT 'scheduled' NOT NULL,
+      created_at text NOT NULL,
+      FOREIGN KEY (schedule_id) REFERENCES pulse_schedules(id)
+    )`);
+    raw
+      .prepare(
+        "INSERT INTO pulse_schedules (id, name, cron, prompt, file_path, created_at, updated_at) VALUES ('01SCHED', 'nightly', '0 3 * * *', 'go', '/tmp/tasks/nightly/SKILL.md', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO pulse_runs (id, schedule_id, status, started_at, finished_at, duration_ms, output, trigger, created_at) VALUES ('01RUNOLD', '01SCHED', 'completed', '2026-01-01T03:00:00Z', '2026-01-01T03:01:00Z', 60000, 'all good', 'scheduled', '2026-01-01T03:00:00Z')"
+      )
+      .run();
+
+    const migrationSql = readFileSync(
+      path.join(__dirname, '../../drizzle/0036_clever_proteus.sql'),
+      'utf-8'
+    );
+    for (const statement of migrationSql.split('--> statement-breakpoint')) {
+      raw.exec(statement);
+    }
+
+    const rows = raw
+      .prepare(
+        'SELECT id, schedule_id, status, started_at, finished_at, duration_ms, output, trigger FROM pulse_runs'
+      )
+      .all();
+    expect(rows).toEqual([
+      {
+        id: '01RUNOLD',
+        schedule_id: '01SCHED',
+        status: 'completed',
+        started_at: '2026-01-01T03:00:00Z',
+        finished_at: '2026-01-01T03:01:00Z',
+        duration_ms: 60000,
+        output: 'all good',
+        trigger: 'scheduled',
+      },
+    ]);
+
+    // And the rebuilt table now cascades.
+    raw.prepare("DELETE FROM pulse_schedules WHERE id = '01SCHED'").run();
+    expect(raw.prepare('SELECT id FROM pulse_runs').all()).toEqual([]);
+  });
+
   it('unique constraint on relay_traces.message_id is enforced', () => {
     const db = createDb(':memory:');
     runMigrations(db);

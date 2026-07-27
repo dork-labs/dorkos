@@ -83,6 +83,39 @@ describe('scanSkillDirectory', () => {
     expect(results[0].ok).toBe(true);
   });
 
+  it('skips ignoreDirs entries entirely, without reporting a missing SKILL.md', async () => {
+    // A container of skill directories: it holds skills, so it is not one
+    // itself and has no SKILL.md of its own.
+    await fs.mkdir(path.join(tmpDir, 'templates', 'starter'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, 'templates', 'starter', SKILL_FILENAME),
+      '---\nname: starter\ndescription: Starter\n---\nBody'
+    );
+    await createSkill('valid', '---\nname: valid\ndescription: Valid\n---\nBody');
+
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, {
+      ignoreDirs: ['templates'],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(true);
+  });
+
+  it('still reports other directories missing a SKILL.md when ignoreDirs is set', async () => {
+    await fs.mkdir(path.join(tmpDir, 'templates'), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, 'broken-skill'), { recursive: true });
+
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema, {
+      ignoreDirs: ['templates'],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].ok).toBe(false);
+    if (!results[0].ok) {
+      expect(results[0].error).toContain('broken-skill');
+    }
+  });
+
   it('returns empty array for non-existent directory', async () => {
     const results = await scanSkillDirectory('/nonexistent/path', SkillFrontmatterSchema);
     expect(results).toEqual([]);

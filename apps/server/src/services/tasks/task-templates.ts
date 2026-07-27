@@ -12,6 +12,32 @@ import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { logger } from '../../lib/logger.js';
 
+/**
+ * Name of the templates container inside a tasks directory.
+ *
+ * This directory holds template directories, so it is never a task itself and
+ * has no SKILL.md of its own. Anything scanning a tasks directory for tasks
+ * must skip it — see {@link RESERVED_TASK_DIRNAMES}.
+ */
+export const TASK_TEMPLATES_DIRNAME = 'templates';
+
+/**
+ * Directory names inside a tasks directory that are containers, not tasks.
+ *
+ * The task reconciler passes this to the skill scanner so a container is
+ * never mistaken for a task directory that forgot its SKILL.md.
+ */
+export const RESERVED_TASK_DIRNAMES: readonly string[] = [TASK_TEMPLATES_DIRNAME];
+
+/**
+ * Resolve the task-templates directory for a data directory.
+ *
+ * @param dorkHome - Resolved data directory path
+ */
+function resolveTemplatesDir(dorkHome: string): string {
+  return path.join(dorkHome, 'tasks', TASK_TEMPLATES_DIRNAME);
+}
+
 interface TemplateDefinition {
   slug: string;
   frontmatter: Record<string, unknown>;
@@ -106,7 +132,7 @@ Provide a brief weekly code quality report.`,
  * @param dorkHome - Resolved data directory path
  */
 export async function ensureDefaultTemplates(dorkHome: string): Promise<void> {
-  const templatesDir = path.join(dorkHome, 'tasks', 'templates');
+  const templatesDir = resolveTemplatesDir(dorkHome);
 
   try {
     const results = await scanSkillDirectory(templatesDir, TaskFrontmatterSchema);
@@ -138,7 +164,7 @@ export async function loadTemplates(dorkHome: string): Promise<
     cron: string;
   }>
 > {
-  const templatesDir = path.join(dorkHome, 'tasks', 'templates');
+  const templatesDir = resolveTemplatesDir(dorkHome);
 
   try {
     const results = await scanSkillDirectory(templatesDir, TaskFrontmatterSchema);

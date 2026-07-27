@@ -253,6 +253,13 @@
       "when": 1785113988785,
       "tag": "0035_wandering_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1785193437397,
+      "tag": "0036_clever_proteus",
+      "breakpoints": true
     }
   ]
 }
