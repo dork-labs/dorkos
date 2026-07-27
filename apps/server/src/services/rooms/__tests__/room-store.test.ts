@@ -118,7 +118,10 @@ describe('RoomStore.listRooms ordering', () => {
     store = new RoomStore(createTestDb());
   });
 
-  /** A channel created — and so last active — at `at`. */
+  /** The agent whose membership scopes {@link RoomStore.listRoomsForMember}. */
+  const ANA = 'author-ana';
+
+  /** A channel created — and so last active — at `at`, with Ana on its roster. */
   function channelAt(id: string, at: string): void {
     store.createRoom(
       {
@@ -132,7 +135,7 @@ describe('RoomStore.listRooms ordering', () => {
         rootEntryId: null,
         createdAt: at,
       },
-      []
+      [{ authorId: ANA, responseMode: 'always', joinedAt: at }]
     );
   }
 
@@ -155,6 +158,23 @@ describe('RoomStore.listRooms ordering', () => {
     channelAt('b', tied);
 
     expect(store.listRooms().map((room) => room.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('orders an agent-scoped listing identically, ties included', () => {
+    // `listRoomsForMember` is the agent-facing sibling and feeds the SAME
+    // endpoint. Asserting only `listRooms` left this half free to drift, and
+    // "the two must not disagree about what newest-first means" is the entire
+    // reason its ORDER BY was touched — so it gets the same proof, not a
+    // comment promising it.
+    const tied = '2026-07-26T10:00:00.000Z';
+    channelAt('a', tied);
+    channelAt('c', tied);
+    channelAt('b', tied);
+    channelAt('newest', '2026-07-26T12:00:00.000Z');
+
+    const scoped = store.listRoomsForMember(ANA).map((room) => room.id);
+    expect(scoped).toEqual(['newest', 'c', 'b', 'a']);
+    expect(scoped).toEqual(store.listRooms().map((room) => room.id));
   });
 });
 
