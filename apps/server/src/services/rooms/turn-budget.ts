@@ -1,5 +1,6 @@
 /**
- * A ceiling on what one room can cost, counted without asking who is calling.
+ * Two ceilings on what automatic replies can cost, counted without asking who
+ * is calling.
  *
  * ## Why this exists next to a guard that already bounds cascades
  *
@@ -16,65 +17,101 @@
  * closable from inside this domain: with login off there is genuinely nothing
  * left to tell a local program from the person at the keyboard.
  *
- * So the room path carries a second bound that does not depend on the answer to
- * "who is this". It counts **every automatic turn the room runs**, whoever
- * appeared to ask for it, and stops at the number. A caller who defeats the
- * cascade guard by claiming to be human still hits this.
+ * So the room path carries bounds that do not depend on the answer to "who is
+ * this". They count **every automatic turn**, whoever appeared to ask for it.
  *
- * Depth-and-ancestry is what keeps a healthy room from wasting calls. This is
- * what keeps a compromised one from emptying a wallet. Neither replaces the
- * other, and the reason they coexist is written here so the next reader does
- * not delete one as redundant.
+ * ## Two ceilings, because one of them is not a ceiling
+ *
+ * | Cap | Bounds |
+ * | ---------- | ------------------------------------ |
+ * | per room   | what any ONE room can cost           |
+ * | global     | what the whole install can cost      |
+ *
+ * The per-room cap alone is not a spend bound, and it is worth being exact
+ * about why rather than discovering it again. **Rooms are free.** A caller that
+ * can create rooms multiplies its budget by creating them: measured through the
+ * real mount, a cap of 2/room bought 16 turns across 8 channels. Threads are
+ * cheaper still, since a thread inherits the parent's whole roster, so five
+ * threads off one parent bought 12. Neither is a defect in the per-room cap —
+ * it does exactly what it says — it is the difference between bounding a room
+ * and bounding a wallet.
+ *
+ * The global cap is what makes "the ceiling on what this can cost you" true.
+ * The per-room cap stays because it is what keeps one runaway room from eating
+ * the whole global allowance and starving every other room.
  *
  * ## What it deliberately is not
  *
- * **In-memory, and it resets when the server restarts.** That is a real
- * limitation and it is the right trade: the loop this bounds runs in seconds,
- * so a window that survives a restart buys almost nothing, while a durable
- * counter would mean a table and a write on the hot path of every turn. The
- * durable half of the story is the cascade columns, which are on every entry.
+ * **In-memory: both windows reset when the server restarts.** For an accidental
+ * loop that costs nothing — it runs in seconds and never sees a restart. For a
+ * deliberate caller it is a real limit, and the honest statement is that it does
+ * not bound one: `POST /api/admin/restart` sits behind the same pass-through
+ * gate in this posture and is rate-limited to 3 per 5 minutes, so a caller
+ * willing to use it can clear both windows roughly 36 times an hour.
+ *
+ * Closing that needs a durable counter, which means a write on the hot path of
+ * every turn and a table to hold it. That is a deliberate follow-up rather than
+ * something smuggled into this file, and it is written down here so nobody
+ * reads "counted without asking who is calling" as "cannot be cleared".
  *
  * @module server/services/rooms/turn-budget
  */
 
-/** One hour, the window the config field is denominated in. */
+/** One hour, the window both config fields are denominated in. */
 const WINDOW_MS = 60 * 60_000;
 
 /**
  * How many rooms to keep windows for before dropping the least recently
- * touched. A room's window is at most `maxPerWindow` timestamps, so this bounds
- * the whole structure; without it, a long-lived server that visited many rooms
+ * touched. A room's window is at most its cap in timestamps, so this bounds the
+ * whole structure; without it, a long-lived server that visited many rooms
  * would hold a growing map of empty arrays.
+ *
+ * Eviction can only ever be generous — an evicted room reads as unspent — which
+ * is why the global window is NOT keyed by room and never evicted. That is the
+ * one that has to be exact.
  */
 const TRACKED_ROOMS = 256;
+
+/** Which ceiling refused a turn. */
+export type BudgetRefusalScope = 'room' | 'global';
 
 /** Outcome of asking for one automatic turn. */
 export interface BudgetDecision {
   allowed: boolean;
-  /** Turns still available in the current window, after this decision. */
+  /** Turns still available to this room in the current window. */
   remaining: number;
+  /** Set only when `allowed` is false: which cap said no. */
+  scope?: BudgetRefusalScope;
+}
+
+/** The two live caps, read per call so a change in Settings takes effect at once. */
+export interface TurnBudgetLimits {
+  /** Automatic turns any ONE room may run per window. */
+  perRoom: () => number;
+  /** Automatic turns the whole install may run per window, across every room. */
+  global: () => number;
 }
 
 /**
- * A rolling per-room count of automatic turns.
+ * A rolling count of automatic turns, per room and in total.
  *
  * Insertion-ordered `Map`, so the least recently touched room is always the
  * first key — which is what makes the eviction above one `keys().next()`.
  */
 export class RoomTurnBudget {
-  private readonly maxPerWindow: () => number;
+  private readonly limits: TurnBudgetLimits;
   private readonly now: () => number;
   private readonly windowMs: number;
-  private readonly runs = new Map<string, number[]>();
+  private readonly perRoom = new Map<string, number[]>();
+  private globalRuns: number[] = [];
 
   /**
-   * @param opts.maxPerWindow - The live cap (`rooms.maxAutomaticTurnsPerHour`).
-   *   Read per call, so raising it in Settings takes effect immediately.
+   * @param opts.limits - The two live caps.
    * @param opts.now - Clock, injectable so a test can move a window without sleeping.
    * @param opts.windowMs - Window length; defaults to one hour.
    */
-  constructor(opts: { maxPerWindow: () => number; now?: () => number; windowMs?: number }) {
-    this.maxPerWindow = opts.maxPerWindow;
+  constructor(opts: { limits: TurnBudgetLimits; now?: () => number; windowMs?: number }) {
+    this.limits = opts.limits;
     this.now = opts.now ?? (() => Date.now());
     this.windowMs = opts.windowMs ?? WINDOW_MS;
   }
@@ -83,43 +120,53 @@ export class RoomTurnBudget {
    * Claim one automatic turn for a room.
    *
    * Reserves on success, so two turns starting in the same tick cannot both
-   * spend the last unit of budget.
+   * spend the last unit. The global cap is checked FIRST: when the install is
+   * out of budget the answer is the same for every room, and reporting the room
+   * as the reason would send someone to the wrong setting.
    *
    * @param roomId - The room about to run a turn.
    */
   tryReserve(roomId: string): BudgetDecision {
-    const max = this.maxPerWindow();
-    const recent = this.recent(roomId);
+    const at = this.now();
+    const floor = at - this.windowMs;
+    this.globalRuns = this.globalRuns.filter((t) => t > floor);
+    const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor);
 
-    if (recent.length >= max) return { allowed: false, remaining: 0 };
+    if (this.globalRuns.length >= this.limits.global()) {
+      this.store(roomId, room);
+      return { allowed: false, remaining: 0, scope: 'global' };
+    }
+    if (room.length >= this.limits.perRoom()) {
+      this.store(roomId, room);
+      return { allowed: false, remaining: 0, scope: 'room' };
+    }
 
-    recent.push(this.now());
-    this.store(roomId, recent);
-    return { allowed: true, remaining: Math.max(0, max - recent.length) };
+    room.push(at);
+    this.globalRuns.push(at);
+    this.store(roomId, room);
+    return { allowed: true, remaining: Math.max(0, this.limits.perRoom() - room.length) };
   }
 
   /**
-   * Turns still available to a room in the current window, reserving nothing.
+   * Turns still available to a room, reserving nothing — the lower of what the
+   * room has left and what the install has left, since either can refuse.
    *
    * @param roomId - The room.
    */
   remaining(roomId: string): number {
-    return Math.max(0, this.maxPerWindow() - this.recent(roomId).length);
-  }
-
-  /** This room's timestamps inside the window, oldest first. */
-  private recent(roomId: string): number[] {
     const floor = this.now() - this.windowMs;
-    return (this.runs.get(roomId) ?? []).filter((at) => at > floor);
+    const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor).length;
+    const global = this.globalRuns.filter((t) => t > floor).length;
+    return Math.max(0, Math.min(this.limits.perRoom() - room, this.limits.global() - global));
   }
 
   /** Write a room's pruned window back, re-inserting it as most recently used. */
   private store(roomId: string, window: number[]): void {
-    this.runs.delete(roomId);
-    this.runs.set(roomId, window);
-    if (this.runs.size > TRACKED_ROOMS) {
-      const oldest = this.runs.keys().next().value;
-      if (oldest !== undefined) this.runs.delete(oldest);
+    this.perRoom.delete(roomId);
+    this.perRoom.set(roomId, window);
+    if (this.perRoom.size > TRACKED_ROOMS) {
+      const oldest = this.perRoom.keys().next().value;
+      if (oldest !== undefined) this.perRoom.delete(oldest);
     }
   }
 }

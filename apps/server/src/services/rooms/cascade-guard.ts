@@ -165,12 +165,19 @@ export function buildCascadeNotice(agentName: string, subjectAuthorId: string): 
  * Deliberately different words from the cascade notice, because it is a
  * different thing and the person reading it needs to act differently: the
  * cascade one means "this conversation went around enough times", and one
- * message restarts it. This one means "this room has done all the automatic
- * replying it may do for now", and another message will not.
+ * message restarts it. This one means "all the automatic replying that may
+ * happen for now has happened", and another message will not change that.
+ *
+ * @param scope - Which cap refused. The two send a reader to different
+ *   settings, and saying "this room" when the whole install is out would send
+ *   them to the wrong one.
  */
-export function buildBudgetNotice(): RoomEntryBody {
+export function buildBudgetNotice(scope: 'room' | 'global' = 'room'): RoomEntryBody {
   return {
-    text: 'This room has used up its automatic replies for the hour. It will pick up again shortly — or raise the limit in Settings if this room is meant to be this busy.',
+    text:
+      scope === 'global'
+        ? 'DorkOS has used up its automatic replies for the hour, across all your rooms. They will pick up again shortly — or raise the limit in Settings.'
+        : 'This room has used up its automatic replies for the hour. It will pick up again shortly — or raise the limit in Settings if this room is meant to be this busy.',
     notice: 'budget_reached',
   };
 }

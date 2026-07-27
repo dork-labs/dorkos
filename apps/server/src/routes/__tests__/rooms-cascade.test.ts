@@ -111,6 +111,8 @@ async function createChannel(title = 'Backend'): Promise<Record<string, never> &
 describe('/api/rooms — what a headerless caller gets', () => {
   let db: Db;
   let runner: ReturnType<typeof scriptedRunner>;
+  let perRoomCap = 1_000;
+  let globalCap = 100_000;
 
   /** Register a second agent, so a room can hold two of them. */
   function registerBo(database: Db): void {
@@ -130,16 +132,27 @@ describe('/api/rooms — what a headerless caller gets', () => {
       .run();
   }
 
-  /** Wire the subsystem with a scripted runner and a pinned budget. */
-  function wire(maxAutomaticTurnsPerHour: number): void {
+  /** Wire the subsystem with a scripted runner and pinned budgets. */
+  function wire(perRoom: number, global = 100_000): void {
     runner = scriptedRunner(() => null);
+    perRoomCap = perRoom;
+    globalCap = global;
     setRoomService(
       createRoomSubsystem({
         db,
         turns: runner,
-        budget: new RoomTurnBudget({ maxPerWindow: () => maxAutomaticTurnsPerHour }),
+        // Read through the mutable locals, so a test can raise a cap mid-run the
+        // way Settings does rather than rebuilding the service.
+        budget: new RoomTurnBudget({
+          limits: { perRoom: () => perRoomCap, global: () => globalCap },
+        }),
       }).service
     );
+  }
+
+  /** Let the live budget spend again, so the notice re-arms on the next exhaustion. */
+  function wireBudgetTo(_roomId: string): void {
+    perRoomCap = 3;
   }
 
   /** A two-agent room where both answer everything, built headerless throughout. */
@@ -248,6 +261,97 @@ describe('/api/rooms — what a headerless caller gets', () => {
       .send({ kind: 'dm', title: 'Ana', agentPaths: ['/agents/ana'] });
     await post(quiet.body.id, 'are you there?');
     expect(runner.turns.length).toBeGreaterThan(2);
+  });
+
+  it('mints ONE session when two posts land before the first reply', async () => {
+    // Every other route test here is sequential — post, settle, post — which is
+    // exactly why this survived. Fired without awaiting, both dispatches used to
+    // read a null binding, both mint a UUID, and the second lose the
+    // INSERT-OR-IGNORE race: a real session with its own projector and
+    // `session_metadata` row, bound to nothing, whose reply was produced from an
+    // empty context. Silently. Two messages in a row is the ordinary way there.
+    const roomId = await loudRoom();
+
+    await Promise.all([
+      request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'first' }),
+      request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'second' }),
+    ]);
+    await getRoomService().triggersIdle();
+
+    const perAgent = new Map<string, Set<string>>();
+    for (const turn of runner.turns) {
+      const seen = perAgent.get(turn.authorId) ?? new Set<string>();
+      seen.add(turn.sessionId ?? 'null');
+      perAgent.set(turn.authorId, seen);
+    }
+    expect(perAgent.size).toBeGreaterThan(0);
+    for (const [, sessions] of perAgent) {
+      expect(sessions.size).toBe(1);
+      expect(sessions.has('null')).toBe(false);
+    }
+  });
+
+  it('bounds the wallet even though rooms are free', async () => {
+    // The per-room cap alone is not a spend bound: a caller multiplies it by
+    // creating rooms. 2/room across 8 channels bought 16 turns before the
+    // global cap existed.
+    wire(2, 5);
+    for (let i = 0; i < 8; i++) {
+      const room = await request(app)
+        .post('/api/rooms')
+        .send({
+          kind: 'channel',
+          title: `Room ${i}`,
+          agentPaths: ['/agents/ana', '/agents/bo'],
+        });
+      for (const member of room.body.members) {
+        if (member.author.kind !== 'agent') continue;
+        await request(app)
+          .patch(`/api/rooms/${room.body.id}/members/${member.authorId}`)
+          .send({ responseMode: 'always' });
+      }
+      await post(room.body.id, 'go');
+    }
+    expect(runner.turns).toHaveLength(5);
+  });
+
+  it('bounds the wallet even though threads are free', async () => {
+    // Threads are the cheaper lever: a thread inherits the parent's whole
+    // roster, and `POST /:id/threads` is reachable headerless. Parent + 5
+    // threads bought 12 turns before the global cap existed.
+    wire(2, 3);
+    const parent = await loudRoom();
+    const seed = await request(app).post(`/api/rooms/${parent}/entries`).send({ text: 'seed' });
+    await getRoomService().triggersIdle();
+
+    for (let i = 0; i < 5; i++) {
+      const thread = await request(app)
+        .post(`/api/rooms/${parent}/threads`)
+        .send({ rootEntryId: seed.body.entryId, title: `Thread ${i}` });
+      expect(thread.status).toBe(201);
+      await post(thread.body.id, 'go');
+    }
+    expect(runner.turns).toHaveLength(3);
+  });
+
+  it('speaks again the next time a room runs dry, rather than once ever', async () => {
+    // The budget notice used to key on the room and never be cleared, so a room
+    // told once was never told again — silent refusal, which is the state the
+    // notice exists to prevent.
+    wire(1, 100);
+    const roomId = await loudRoom();
+    await post(roomId, 'one');
+    await post(roomId, 'two');
+    const first = (await entries(roomId)).filter((e) => e.kind === 'notice');
+    expect(first).toHaveLength(1);
+
+    // Raise the per-room cap so the room can spend again, which re-arms it,
+    // then exhaust it a second time.
+    wireBudgetTo(roomId);
+    await post(roomId, 'three');
+    await post(roomId, 'four');
+    const second = (await entries(roomId)).filter((e) => e.kind === 'notice');
+    expect(second.length).toBeGreaterThan(first.length);
   });
 
   it('still answers a normal message once the budget is generous', async () => {

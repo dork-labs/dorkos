@@ -10,7 +10,7 @@
  * Bounding a conversation that feeds itself is the cascade guard's job
  * (`cascade-guard.ts`), and it runs after this.
  *
- * Nothing calls this yet. R1 ships the rule and its tests; R3 wires triggering.
+ * `room-trigger.ts` is the production caller.
  *
  * @module server/services/rooms/addressing
  */

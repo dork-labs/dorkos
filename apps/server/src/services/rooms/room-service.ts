@@ -24,9 +24,12 @@
  * at the keyboard. Turning **Require login** on is what makes these gates mean
  * what they say.
  *
- * What holds regardless is `turn-budget.ts`: a per-room cap on automatic turns
- * that counts without asking who is calling. These gates shape a healthy room;
- * that cap is what bounds a dishonest one.
+ * What holds regardless is `turn-budget.ts`, which counts without asking who is
+ * calling: a per-room cap on what any ONE room may spend, and a global cap on
+ * what the whole install may. The per-room one bounds a room, not a bill —
+ * rooms and threads are free to create, so it alone can be multiplied by making
+ * more of them; the global one is the ceiling. These gates shape a healthy
+ * room; those caps are what bound a dishonest one.
  *
  * @module server/services/rooms/room-service
  */

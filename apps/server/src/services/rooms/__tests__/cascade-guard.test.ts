@@ -158,11 +158,13 @@ describe('cascade guard, wired', () => {
   it('binds one session per agent per room and resumes it next time', async () => {
     await seedAndSettle('round one');
     const firstAna = runner.turns.find((t) => t.authorId === ana);
-    expect(firstAna?.sessionId).toBeNull();
+    // Bound at claim time, so the turn already knows its session — that is what
+    // stops two posts before the first reply minting two of them.
+    expect(firstAna?.sessionId).toEqual(expect.any(String));
 
     await seedAndSettle('round two');
     const secondAna = runner.turns.filter((t) => t.authorId === ana)[1];
-    expect(secondAna?.sessionId).not.toBeNull();
+    expect(secondAna?.sessionId).toBe(firstAna?.sessionId);
   });
 
   it('does not let an agent reset the guard by posting during its own turn', async () => {
@@ -253,8 +255,21 @@ describe('cascade guard, wired', () => {
     expect(spontaneous.cascadeRoot).toBe(spontaneous.id);
     expect(spontaneous.cascadeDepth).toBe(MAX_AGENT_DEPTH);
     expect(runner.turns).toHaveLength(0);
-    // Refused visibly, not silently — that is the whole point of the notice.
-    expect(log().some((entry) => entry.kind === 'notice')).toBe(true);
+    // And it says NOTHING about it. The depth here is a stamp, not a chain that
+    // ran: nobody was triggered, no back-and-forth happened, and "Bo stopped
+    // replying — this hit its automatic-reply limit" would be three false
+    // claims plus a remedy that does nothing. Five ordinary posts by one agent
+    // used to produce five such lines, one per room-mate.
+    expect(log().filter((entry) => entry.kind === 'notice')).toEqual([]);
+  });
+
+  it('says nothing at all when an agent simply talks in a shared room', async () => {
+    for (let i = 0; i < 5; i++) {
+      service.post(room.id, { authorId: ana, text: `status ${i}` });
+      await service.triggersIdle();
+    }
+    expect(log().filter((entry) => entry.kind === 'notice')).toEqual([]);
+    expect(log().filter((entry) => entry.kind === 'post')).toHaveLength(5);
   });
 
   it('does not let an agent buy turns by posting in a loop', async () => {
@@ -356,10 +371,13 @@ describe('cascade guard, wired', () => {
     await zero.service.triggersIdle();
 
     expect(zero.runner.turns).toHaveLength(0);
+    // A ceiling of zero means "automatic replies are off". Announcing that on
+    // every message would be noise about a setting the person chose, and the
+    // refusal is against a stamp rather than an exchange that ran.
     const notices = zero.service
       .listEntries(quiet.id, zero.human, { limit: 20 })
       .filter((entry) => entry.kind === 'notice');
-    expect(notices).toHaveLength(1);
+    expect(notices).toEqual([]);
   });
 });
 

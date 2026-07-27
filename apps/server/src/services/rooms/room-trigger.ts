@@ -36,6 +36,7 @@
  *
  * @module server/services/rooms/room-trigger
  */
+import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
@@ -43,7 +44,7 @@ import type { AuthorRegistry } from './author-registry.js';
 import { buildBudgetNotice, buildCascadeNotice, evaluateCascade } from './cascade-guard.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
-import type { RoomTurnBudget } from './turn-budget.js';
+import type { BudgetRefusalScope, RoomTurnBudget } from './turn-budget.js';
 
 /** One agent turn, as the room asks for it. */
 export interface RoomTurnRequest {
@@ -145,8 +146,28 @@ export class RoomTriggerDispatcher {
    */
   private readonly claimed = new Map<string, ActiveClaim>();
 
-  /** `(room, cascade, author)` triples a refusal notice has already named. */
-  private readonly noticed = new Set<string>();
+  /**
+   * `(room, cascade, author)` triples a CASCADE refusal notice has already
+   * named. Bounded FIFO: a cascade is short-lived, so forgetting the oldest
+   * costs at most one repeated line.
+   */
+  private readonly noticedCascades = new Set<string>();
+
+  /**
+   * Rooms that have already been told they are out of budget.
+   *
+   * Separate from the set above, with a different lifetime and a different key
+   * shape, because it answers a different question. Sharing one FIFO meant
+   * budget keys were evicted non-deterministically by ordinary refusal traffic,
+   * AND — worse — a room that was told once was never told again, since nothing
+   * ever cleared the entry. A room silently refusing to reply after its first
+   * hour is exactly the state a notice exists to prevent.
+   *
+   * Cleared the moment the room can spend again ({@link
+   * RoomTriggerDispatcher.claimTargets} on a successful reserve), so the next
+   * exhaustion speaks up. No clock needed: recovery IS the re-arm.
+   */
+  private readonly noticedBudget = new Set<string>();
 
   /** In-flight dispatches, so {@link RoomTriggerDispatcher.idle} can wait them out. */
   private inFlight = 0;
@@ -234,7 +255,22 @@ export class RoomTriggerDispatcher {
       const record = records.get(authorId);
       const decision = evaluateCascade(authorId, provenance, { maxAgentDepth });
       if (!decision.allowed) {
-        this.writeRefusalNotice(room, entry, authorId, record?.displayName ?? 'An agent');
+        // Only announce a limit something actually hit. A `depth` refusal
+        // against an entry that is its OWN cascade root did not come from a
+        // back-and-forth — it comes from the ceiling `deriveCascade` synthesizes
+        // for an agent posting with no turn behind it. Announcing it said "Bo
+        // stopped replying here — this back-and-forth hit its automatic-reply
+        // limit" when Bo was never triggered, no exchange happened, and the
+        // suggested remedy does nothing. Five ordinary posts by one agent
+        // produced five such lines, one per room-mate, and the dedupe never
+        // engaged because each post is its own root.
+        //
+        // Ancestry refusals are always announced: they mean the target really
+        // is already in this cascade, so an exchange really did run.
+        const fromRealChain = entry.cascadeRoot !== entry.id;
+        if (decision.reason === 'ancestry' || fromRealChain) {
+          this.writeRefusalNotice(room, entry, authorId, record?.displayName ?? 'An agent');
+        }
         continue;
       }
       // `naturalKey` is the agentPath — the only handle the turn machinery needs
@@ -245,6 +281,9 @@ export class RoomTriggerDispatcher {
         agentPath: record.naturalKey,
         displayName: record.displayName,
         depth: decision.depth,
+        // Replaced with the real binding once the budget has been charged; a
+        // target that never becomes affordable never mints a session.
+        sessionId: '',
       });
     }
 
@@ -254,15 +293,32 @@ export class RoomTriggerDispatcher {
     // caller who reached depth 0 by claiming to be human still stops here.
     const affordable: TriggerTarget[] = [];
     for (const target of allowed) {
-      if (this.deps.budget.tryReserve(room.id).allowed) {
+      const decision = this.deps.budget.tryReserve(room.id);
+      if (decision.allowed) {
+        // Spending again means the window moved, so re-arm the notice: the next
+        // exhaustion is news, not a repeat.
+        this.noticedBudget.delete(room.id);
         affordable.push(target);
         continue;
       }
-      this.writeBudgetNotice(room, entry);
+      this.writeBudgetNotice(room, entry, decision.scope ?? 'room');
       break;
     }
 
     for (const target of affordable) {
+      // Bind the session HERE, not after the turn. Reading the binding inside
+      // `runOne` and writing it on completion left a window: two posts before
+      // the first reply both saw `null`, both minted a UUID, and the second
+      // lost the `onConflictDoNothing` race — leaving a real session with its
+      // own projector and `session_metadata` row bound to nothing, whose reply
+      // was produced from an empty context. `bindRoomSession` returns the
+      // WINNER, so claiming resolves the race to one session per (room, agent).
+      target.sessionId = this.deps.store.bindRoomSession(
+        room.id,
+        target.authorId,
+        this.deps.store.getRoomSession(room.id, target.authorId) ?? randomUUID(),
+        new Date().toISOString()
+      );
       this.claimed.set(claimKey(room.id, entry.cascadeRoot, target.authorId), {
         roomId: room.id,
         cascadeRoot: entry.cascadeRoot,
@@ -320,20 +376,10 @@ export class RoomTriggerDispatcher {
         authorId: target.authorId,
         agentPath: target.agentPath,
         displayName: target.displayName,
-        sessionId: this.deps.store.getRoomSession(room.id, target.authorId),
+        sessionId: target.sessionId,
         entry,
         authorName: author?.displayName ?? 'Someone',
       });
-
-      // Bind before posting. The binding is what the NEXT turn resumes on, and
-      // a reply that landed against a session nothing remembers would make the
-      // agent start from nothing every time it answered.
-      this.deps.store.bindRoomSession(
-        room.id,
-        target.authorId,
-        result.sessionId,
-        new Date().toISOString()
-      );
 
       const text = result.text?.trim();
       if (!text) return;
@@ -366,7 +412,7 @@ export class RoomTriggerDispatcher {
     displayName: string
   ): void {
     const key = claimKey(room.id, entry.cascadeRoot, authorId);
-    if (this.noticed.has(key)) return;
+    if (this.noticedCascades.has(key)) return;
     try {
       this.deps.writer.postNotice(room.id, buildCascadeNotice(displayName, authorId), {
         root: entry.cascadeRoot,
@@ -375,7 +421,7 @@ export class RoomTriggerDispatcher {
       // Remembered only once it is actually in the log. Marking first meant a
       // cascade whose FIRST notice threw went silent for good — precisely the
       // state the notice exists to prevent.
-      this.remember(key);
+      this.rememberCascade(key);
     } catch (err) {
       // Refusals are evaluated synchronously inside `post`, so a throw here
       // would surface as a failure of the message that was already committed —
@@ -390,22 +436,24 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * Say once, per room, that the room is out of automatic turns.
+   * Say once, per exhaustion, that the room is out of automatic turns.
    *
-   * Keyed on the ROOM rather than the cascade: the budget is a property of the
-   * room, and a caller minting a fresh cascade per message would otherwise get
-   * a fresh notice per message — turning the thing that reports a flood into
-   * part of it.
+   * Keyed on the ROOM rather than the cascade, because the budget is a property
+   * of the room: a caller minting a fresh cascade per message would otherwise
+   * get a fresh notice per message, turning the thing that reports a flood into
+   * part of it. Re-armed as soon as the room can spend again, so "once" means
+   * once per exhaustion and not once ever.
+   *
+   * @param scope - Which cap refused, so the copy points at the right setting.
    */
-  private writeBudgetNotice(room: Room, entry: RoomEntry): void {
-    const key = `budget ${room.id}`;
-    if (this.noticed.has(key)) return;
+  private writeBudgetNotice(room: Room, entry: RoomEntry, scope: BudgetRefusalScope): void {
+    if (this.noticedBudget.has(room.id)) return;
     try {
-      this.deps.writer.postNotice(room.id, buildBudgetNotice(), {
+      this.deps.writer.postNotice(room.id, buildBudgetNotice(scope), {
         root: entry.cascadeRoot,
         depth: entry.cascadeDepth,
       });
-      this.remember(key);
+      this.noticedBudget.add(room.id);
     } catch (err) {
       logger.warn('[rooms] could not write a budget notice', {
         roomId: room.id,
@@ -414,13 +462,13 @@ export class RoomTriggerDispatcher {
     }
   }
 
-  /** Record that a notice landed, evicting the oldest when the set is full. */
-  private remember(key: string): void {
-    if (this.noticed.size >= NOTICE_MEMORY) {
-      const oldest = this.noticed.values().next().value;
-      if (oldest !== undefined) this.noticed.delete(oldest);
+  /** Record that a cascade notice landed, evicting the oldest when full. */
+  private rememberCascade(key: string): void {
+    if (this.noticedCascades.size >= NOTICE_MEMORY) {
+      const oldest = this.noticedCascades.values().next().value;
+      if (oldest !== undefined) this.noticedCascades.delete(oldest);
     }
-    this.noticed.add(key);
+    this.noticedCascades.add(key);
   }
 
   /** Author ids with a turn in flight in one cascade. */
@@ -449,6 +497,8 @@ interface TriggerTarget {
   agentPath: string;
   displayName: string;
   depth: number;
+  /** The `(room, agent)` session, bound at claim time so a race resolves to one. */
+  sessionId: string;
 }
 
 /**

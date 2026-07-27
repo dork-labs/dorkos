@@ -100,28 +100,31 @@ export interface RoomHarness {
  * @param opts.maxAgentDepth - The cascade ceiling. Pinned to a literal on
  *   purpose — a test that read the same config the code reads could only prove
  *   the two agree, never that they agree on the right number.
- * @param opts.maxAutomaticTurnsPerHour - The posture-independent budget. Also a
+ * @param opts.maxAutomaticTurnsPerRoomPerHour - The per-room spend cap. Also a
  *   literal, and high enough by default that it never silently masks a cascade
  *   test — a budget refusal and a guard refusal look alike from the outside.
+ * @param opts.maxAutomaticTurnsTotalPerHour - The install-wide spend cap.
  */
 export function createRoomHarness(opts: {
   agents: RoomAgentLookup;
   runner?: ScriptedTurnRunner;
   maxAgentDepth?: number;
-  maxAutomaticTurnsPerHour?: number;
+  maxAutomaticTurnsPerRoomPerHour?: number;
+  maxAutomaticTurnsTotalPerHour?: number;
 }): RoomHarness {
   const db = createTestDb();
   const authors = new AuthorRegistry(db);
   const runner = opts.runner ?? scriptedRunner();
   const maxAgentDepth = opts.maxAgentDepth ?? 3;
-  const maxPerWindow = opts.maxAutomaticTurnsPerHour ?? 1_000;
+  const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
+  const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
   const service = new RoomService({
     store: new RoomStore(db),
     authors,
     broadcaster: new RoomBroadcaster(),
     agents: opts.agents,
     turns: runner,
-    budget: new RoomTurnBudget({ maxPerWindow: () => maxPerWindow }),
+    budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
     maxAgentDepth: () => maxAgentDepth,
   });
   return { db, service, authors, runner, human: authors.localHuman().id };

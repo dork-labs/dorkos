@@ -199,7 +199,8 @@ export const CONFIG_WRITE_POLICY = {
   // above: this bound exists precisely BECAUSE an agent can defeat the
   // identity-based one in the default posture (DOR-505), so leaving it
   // agent-writable would hand back the thing it was built to hold.
-  'rooms.maxAutomaticTurnsPerHour': 'operator-only',
+  'rooms.maxAutomaticTurnsPerRoomPerHour': 'operator-only',
+  'rooms.maxAutomaticTurnsTotalPerHour': 'operator-only',
 
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',

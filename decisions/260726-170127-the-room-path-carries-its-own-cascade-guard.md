@@ -64,12 +64,32 @@ names the same move) and it is not closable from the room path: with login off
 there is genuinely nothing left to tell a local program from the person.
 
 Because of that, the room path also carries a **posture-independent budget**
-(`turn-budget.ts`): a rolling per-room cap on automatic turns, counted without
-reference to who is calling, refusing with its own `budget_reached` notice. The
-division is deliberate — depth-and-ancestry is the precise instrument that keeps
-a healthy room from wasting calls, and the budget is the blunt one that bounds a
-dishonest caller. Neither is redundant, and deleting either on the grounds that
-the other exists reopens a case the other never covered.
+(`turn-budget.ts`), counted without reference to who is calling and refusing with
+its own `budget_reached` notice. It has two ceilings, and the distinction is
+load-bearing:
+
+- **Per room** bounds what any one room can cost. It is not a spend bound on its
+  own, because rooms are free: measured through the real mount, a cap of 2/room
+  bought 16 turns across 8 channels, and threads were cheaper still at 12 across
+  5 (a thread inherits the parent's whole roster). That is not a defect in the
+  cap; it is the difference between bounding a room and bounding a wallet.
+- **Global** bounds what the whole install can cost, whatever number of rooms or
+  threads exist. This is the one that makes "the ceiling on what this can cost
+  you" true. The per-room cap stays because it is what keeps one runaway room
+  from eating the entire global allowance and starving every other room.
+
+The division from the cascade guard is equally deliberate — depth-and-ancestry is
+the precise instrument that keeps a healthy room from wasting calls, and the
+budget is the blunt one that bounds a dishonest caller. Neither is redundant, and
+deleting either on the grounds that the other exists reopens a case the other
+never covered.
+
+Both budget windows are in-memory and reset on restart. For an accidental loop
+that costs nothing; for a deliberate caller it is a real limit, since
+`POST /api/admin/restart` sits behind the same pass-through gate and is
+rate-limited to 3 per 5 minutes — roughly 36 clearances an hour. Closing it needs
+a durable counter, which is a write on the hot path of every turn plus a table,
+and is a deliberate follow-up rather than a claim this ADR should make.
 
 **Cross-room cascades carry their depth but not their ancestry.** An agent
 mid-turn in room A that posts into room B inherits A's `cascadeRoot` at its

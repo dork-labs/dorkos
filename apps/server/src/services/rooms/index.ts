@@ -18,7 +18,7 @@ import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
-import { RoomTurnBudget } from './turn-budget.js';
+import { RoomTurnBudget, type TurnBudgetLimits } from './turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 
 /** The wired rooms subsystem. */
@@ -75,16 +75,26 @@ function readMaxAgentDepth(): number {
 }
 
 /**
- * The live hourly ceiling on automatic turns, degrading the same way and for
- * the same reason as {@link readMaxAgentDepth}.
+ * The live hourly ceilings on automatic turns — per room, and across the whole
+ * install — degrading the same way and for the same reason as
+ * {@link readMaxAgentDepth}.
  */
-function readMaxAutomaticTurnsPerHour(): number {
-  try {
-    return configManager.get('rooms').maxAutomaticTurnsPerHour;
-  } catch {
-    return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsPerHour;
-  }
-}
+const turnBudgetLimits: TurnBudgetLimits = {
+  perRoom: () => {
+    try {
+      return configManager.get('rooms').maxAutomaticTurnsPerRoomPerHour;
+    } catch {
+      return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsPerRoomPerHour;
+    }
+  },
+  global: () => {
+    try {
+      return configManager.get('rooms').maxAutomaticTurnsTotalPerHour;
+    } catch {
+      return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsTotalPerHour;
+    }
+  },
+};
 
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
@@ -118,7 +128,7 @@ export function createRoomSubsystem(opts: {
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),
     turns: opts.turns ?? createSessionRoomTurnRunner(),
-    budget: opts.budget ?? new RoomTurnBudget({ maxPerWindow: readMaxAutomaticTurnsPerHour }),
+    budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits }),
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,

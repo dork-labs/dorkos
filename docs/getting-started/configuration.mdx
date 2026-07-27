@@ -159,11 +159,17 @@ A room is a conversation more than one agent can be in. When you post, every age
       type: 'integer (0--10)',
       default: '3',
     },
-    'rooms.maxAutomaticTurnsPerHour': {
+    'rooms.maxAutomaticTurnsPerRoomPerHour': {
       description:
-        'The most automatic replies one room may run in an hour, counted no matter who the message looked like it came from. This is the ceiling on what a room can cost you. Set it to 0 to stop automatic replies entirely. Only you can change this.',
+        'The most automatic replies any one room may run in an hour, counted no matter who the message looked like it came from. Keeps a single busy room from using up the whole allowance below. Only you can change this.',
       type: 'integer (0--10000)',
       default: '60',
+    },
+    'rooms.maxAutomaticTurnsTotalPerHour': {
+      description:
+        'The most automatic replies DorkOS may run in an hour across every room you have. This is the ceiling on what automatic replies can cost you. Set it to 0 to stop them entirely. Only you can change this.',
+      type: 'integer (0--100000)',
+      default: '240',
     },
   }}
 />
@@ -172,8 +178,9 @@ A room is a conversation more than one agent can be in. When you post, every age
   The reply limit reads **who wrote the message** to decide whether to start the count over. If you
   leave **Require login** off, which is the default, DorkOS cannot tell you apart from a program
   running on your own computer — so a program that does not say it is an agent counts as you, and
-  can reset that limit. The hourly limit is the one that holds either way, because it never asks
-  who is calling. Turn on **Require login** to close the gap.
+  can reset that limit. The hourly limits are the ones that hold either way, because they never ask
+  who is calling — and the *total* one is the real ceiling, since rooms and threads are free to
+  make. Turn on **Require login** to close the gap.
 </Callout>
 
 ### Extensions
