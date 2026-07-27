@@ -23,6 +23,75 @@ const BUNDLE_SIZE_WARNING_KB = 500;
 const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * Decide whether a thrown esbuild error reflects a problem with the local
+ * environment — a missing native binary, exhausted file descriptors, disk
+ * or memory pressure — rather than the extension's own source.
+ *
+ * esbuild reports a genuine compile failure (a syntax error, an unresolved
+ * import, a type error) by rejecting with a `BuildFailure` that carries a
+ * populated `errors` array of source-mapped messages — every internal
+ * failure path builds that array with at least one entry before throwing.
+ * Every other failure — a missing `@esbuild/<platform>` package, a spawn
+ * error, a Node-level `EMFILE`/`ENOENT` while esbuild starts its helper
+ * process — rejects with a plain `Error` that has no `errors` array at
+ * all, because esbuild never got far enough to evaluate the source.
+ *
+ * That absence is the signal this function keys on: it means the failure
+ * is not a deterministic property of the extension's content hash, so
+ * caching it would brick the extension on every future start — including
+ * after the environment recovers — for a problem the extension author
+ * never had a chance to cause.
+ *
+ * @param err - The value esbuild's `build()` rejected with.
+ * @returns `true` when `err` is not a `BuildFailure` with real errors.
+ */
+function isEnvironmentFailure(err: unknown): boolean {
+  const esbuildErr = err as { errors?: unknown[] };
+  return !Array.isArray(esbuildErr.errors) || esbuildErr.errors.length === 0;
+}
+
+/**
+ * Text signatures of environment failures — a missing native binary, an
+ * install mismatch, or an OS-level resource error — that a build predating
+ * {@link isEnvironmentFailure} could have written to a `.error.json` cache
+ * file as if they were permanent compile errors.
+ */
+const LEGACY_TRANSIENT_ERROR_PATTERNS: RegExp[] = [
+  /could not be found, and is needed by esbuild/i,
+  /installed esbuild for another platform/i,
+  /\bEMFILE\b/,
+  /\bENFILE\b/,
+  /\bENOENT\b/,
+  /\bENOMEM\b/,
+  /\bENOSPC\b/,
+  /\bEACCES\b/,
+  /out of memory/i,
+];
+
+/**
+ * Detect a cached compile error, written before {@link isEnvironmentFailure}
+ * existed, that actually describes an environment problem rather than a
+ * defect in the extension's own source.
+ *
+ * Every error {@link isEnvironmentFailure} would now keep out of the cache
+ * was written the same way: a single `errors[]` entry with no `location`,
+ * wrapping a bare `Error.message` (a genuine esbuild message almost always
+ * carries a source `location`). Matching that shape against known
+ * environment-failure text is a reliable enough signal to evict a legacy
+ * cache entry — one written before this classification shipped — rather
+ * than replay it as a permanent verdict on every future start.
+ *
+ * @param cached - The parsed contents of a cached `.error.json` file.
+ * @returns `true` when the cached error looks like a stale environment
+ *   failure rather than a real, still-current compile error.
+ */
+function isLegacyTransientCachedError(cached: CompilationError): boolean {
+  return cached.errors.some(
+    (e) => !e.location && LEGACY_TRANSIENT_ERROR_PATTERNS.some((p) => p.test(e.text))
+  );
+}
+
+/**
  * Compiles TypeScript extensions with esbuild and serves pre-compiled JS extensions.
  *
  * Uses content-hash-based caching to avoid redundant compilations. Cache entries
@@ -231,8 +300,17 @@ export class ExtensionCompiler {
       const cachedError = JSON.parse(
         await fs.readFile(cachedErrorPath, 'utf-8')
       ) as CompilationError;
-      logger.debug(`[Extensions] Cached error for ${extId} (${sourceHash})`);
-      return { error: cachedError, sourceHash };
+      if (isLegacyTransientCachedError(cachedError)) {
+        logger.info(
+          `[Extensions] Discarding a stale cached error for ${extId} (${sourceHash}) — it ` +
+            `looks like an environment failure from a previous run, not a real problem with ` +
+            `the extension; recompiling`
+        );
+        await fs.unlink(cachedErrorPath).catch(() => {});
+      } else {
+        logger.debug(`[Extensions] Cached error for ${extId} (${sourceHash})`);
+        return { error: cachedError, sourceHash };
+      }
     } catch {
       // Cache miss — compile
     }
@@ -270,8 +348,17 @@ export class ExtensionCompiler {
       const cachedError = JSON.parse(
         await fs.readFile(cachedErrorPath, 'utf-8')
       ) as CompilationError;
-      logger.debug(`[Extensions] Server cached error for ${extId} (${sourceHash})`);
-      return { error: cachedError, sourceHash };
+      if (isLegacyTransientCachedError(cachedError)) {
+        logger.info(
+          `[Extensions] Discarding a stale server cached error for ${extId} (${sourceHash}) — ` +
+            `it looks like an environment failure from a previous run, not a real problem with ` +
+            `the extension; recompiling`
+        );
+        await fs.unlink(cachedErrorPath).catch(() => {});
+      } else {
+        logger.debug(`[Extensions] Server cached error for ${extId} (${sourceHash})`);
+        return { error: cachedError, sourceHash };
+      }
     } catch {
       // Cache miss — compile
     }
@@ -379,8 +466,12 @@ export class ExtensionCompiler {
   }
 
   /**
-   * Handle an esbuild compilation error by writing it to cache and returning
-   * a structured error result.
+   * Handle an esbuild compilation error: cache it and return a structured
+   * error result — unless {@link isEnvironmentFailure} says the failure
+   * describes the local environment rather than the extension's source, in
+   * which case the cache write is skipped so the next compile attempt (the
+   * next start, or the next `reload_extensions`) tries fresh instead of
+   * replaying a one-time environment hiccup forever.
    *
    * @param extId - Extension identifier
    * @param err - Error thrown by esbuild
@@ -412,6 +503,14 @@ export class ExtensionCompiler {
           : undefined,
       })) ?? [{ text: err instanceof Error ? err.message : 'Unknown compilation error' }],
     };
+
+    if (isEnvironmentFailure(err)) {
+      logger.error(
+        `[Extensions] ${prefix}Compilation failed for ${extId} (environment failure, not ` +
+          `cached — will retry next compile): ${compilationError.errors[0]?.text}`
+      );
+      return { error: compilationError, sourceHash };
+    }
 
     await fs.writeFile(cachedErrorPath, JSON.stringify(compilationError, null, 2), 'utf-8');
 
