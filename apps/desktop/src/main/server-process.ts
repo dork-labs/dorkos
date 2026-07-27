@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import log from 'electron-log';
 import { SERVER_READY_PARENT_TIMEOUT_MS } from '../shared/boot-timeouts';
-import { getFreePort, spawnServer, type ServerChild } from './server-spawn';
+import { chooseServerPort } from './server-port';
+import { spawnServer, type ServerChild } from './server-spawn';
 import { formatServerOutput } from './server-output';
 import { recoverFromCrash } from './server-crash-recovery';
 
@@ -229,10 +230,11 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
  * @param mainWindowAccessor - Point-in-time accessor for the current main
  *   window, used to anchor the crash dialog. Stored for the lifetime of the
  *   process, so a restart from that dialog keeps using it.
- * @returns The port number the server is listening on.
- * @throws If a server is already running, if the child cannot be spawned, or
- *   if it exits or stays silent before signalling readiness (within
- *   {@link SERVER_READY_PARENT_TIMEOUT_MS}).
+ * @returns The port number the server is listening on — 4242 whenever it is
+ *   free, and the next free port after it otherwise (see `server-port.ts`).
+ * @throws If a server is already running, if no port in the scanned range is
+ *   free, if the child cannot be spawned, or if it exits or stays silent before
+ *   signalling readiness (within {@link SERVER_READY_PARENT_TIMEOUT_MS}).
  */
 export async function startServer(
   mainWindowAccessor?: () => BrowserWindow | null
@@ -249,7 +251,7 @@ export async function startServer(
   expectedExit = false;
   let port: number;
   try {
-    port = await getFreePort();
+    port = await chooseServerPort();
     child = spawnServer(port);
   } catch (err) {
     state = 'dead';

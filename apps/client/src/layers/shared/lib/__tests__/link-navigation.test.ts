@@ -361,6 +361,33 @@ describe('link dispatch', () => {
       expect(warnSpy).toHaveBeenCalled();
     });
 
+    it('uses the desktop shell bridge, which is the only thing that can leave our own origin', () => {
+      // `window.open` at `http://localhost:<port>` is claimed by the shell's
+      // window-open handler and becomes a second cockpit window — right for
+      // "open in a new tab", and a broken promise for everything here. Settings
+      // → Server's "open in your browser" is exactly that URL.
+      const openExternal = vi.fn().mockResolvedValue(undefined);
+      window.electronAPI = { openExternal } as unknown as ElectronAPI;
+      try {
+        expect(openExternalLink(window.location.origin)).toBe(true);
+        expect(openExternal).toHaveBeenCalledWith(`${window.location.origin}/`);
+        expect(openSpy).not.toHaveBeenCalled();
+      } finally {
+        delete window.electronAPI;
+      }
+    });
+
+    it('refuses the same schemes whether or not the shell bridge is there', () => {
+      const openExternal = vi.fn().mockResolvedValue(undefined);
+      window.electronAPI = { openExternal } as unknown as ElectronAPI;
+      try {
+        expect(openExternalLink('javascript:alert(1)')).toBe(false);
+        expect(openExternal).not.toHaveBeenCalled();
+      } finally {
+        delete window.electronAPI;
+      }
+    });
+
     it('reports whether the link was actually dispatched', () => {
       // Callers that tell the user something happened must gate on this.
       // A refusal is otherwise silent, and silence reads as success.

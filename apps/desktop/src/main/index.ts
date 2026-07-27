@@ -1,5 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { createWindow, makeRendererUrlAccessor } from './window-manager';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
 import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
@@ -190,6 +190,21 @@ if (!gotTheLock) {
     event.returnValue = app.getVersion();
   });
 
+  // Open a URL outside the app. The renderer needs this for one address in
+  // particular: its own. `window.open` at our own origin is claimed by the
+  // window-open handler and becomes a second cockpit window — right for "open
+  // in a new tab", wrong for "open this in my browser", which is what Settings
+  // → Server offers so the cockpit can be bookmarked.
+  //
+  // Same policy as the link guards, through the same predicate: http(s) only,
+  // anything else ignored. That leaves this bridge no more powerful than the
+  // `target="_blank"` the renderer already has — it removes the own-origin
+  // exception and nothing else.
+  ipcMain.handle('open-external', async (_event, url: unknown): Promise<void> => {
+    if (typeof url !== 'string' || !isWebLink(url)) return;
+    await shell.openExternal(url);
+  });
+
   // Update surface for the renderer's in-app card (see auto-updater.ts). The
   // card triggers a restart-to-install; the updater pushes lifecycle events
   // back on the `update:status` channel and retains the last actionable status
@@ -221,8 +236,9 @@ if (!gotTheLock) {
   });
 
   app.on('ready', async () => {
-    // 1. Start Express in a UtilityProcess on a free port. A rejection here
-    // previously vanished silently — Electron doesn't surface a rejected
+    // 1. Start Express in a UtilityProcess, on 4242 whenever that is free, so
+    // the address stays the one the docs name (see server-port.ts). A rejection
+    // here previously vanished silently — Electron doesn't surface a rejected
     // async 'ready' handler anywhere — leaving the app running with zero
     // windows and no way for the user to know why. showErrorBox is
     // synchronous/blocking, so it's guaranteed to be seen before the app quits.

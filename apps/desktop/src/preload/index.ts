@@ -43,6 +43,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** The current platform (darwin, win32, linux). */
   platform: process.platform,
   /**
+   * Open a URL in the system browser.
+   *
+   * The one case the renderer cannot handle itself: `window.open` at the app's
+   * own `http://localhost:<port>` origin opens a second cockpit window, which
+   * is the opposite of leaving. Only `http`/`https` URLs are opened; anything
+   * else is ignored, matching the shell's link guards exactly.
+   *
+   * @param url - The URL to hand to the browser.
+   * @returns Resolves once the shell has been asked to open it.
+   */
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('open-external', url),
+  /**
    * Subscribe to main-process navigation requests (menu items, the dock
    * menu, and — Chunk D — `dorkos://` deep links), all funneled through the
    * single `navigate` IPC channel (ADR 260709-210223). `cb` receives the

@@ -149,7 +149,10 @@ describe('SettingsDialog', () => {
     navigateTo(/server/i);
     const version = await screen.findByText('1.0.0');
     expect(version).toBeDefined();
-    expect(screen.getByText('4242')).toBeDefined();
+    // The port is reported as the address you can act on, not as a bare number:
+    // a standalone "Port 4242" row told a desktop user nothing they could copy
+    // into an MCP client or a browser.
+    expect(screen.getByText('http://localhost:4242')).toBeDefined();
     expect(screen.getByText('/home/user/project')).toBeDefined();
   });
 

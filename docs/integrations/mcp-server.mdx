@@ -22,6 +22,14 @@ The endpoint is `/mcp` on your DorkOS server (`http://localhost:4242/mcp` by def
 Manage it from **Settings → Tools → External MCP Server**: an enable/disable toggle, the live endpoint URL, current auth mode, rate limiting, and copy-pasteable setup snippets for Claude Code, the Claude Code CLI, Cursor, and Windsurf.
 
 <Callout type="info">
+  **Copy the endpoint, don't type it.** Every example on this page uses `http://localhost:4242`,
+  which is right for the CLI and for Docker. The [desktop app](/docs/getting-started/desktop-app)
+  uses that address too, unless something else on your machine already had port 4242, in which case
+  it moves to the next free one. **Settings → Tools → External MCP Server** and **Settings →
+  Server** both show your real endpoint with a copy button, so copying from there always works.
+</Callout>
+
+<Callout type="info">
   A screenshot of the Settings → Tools → External MCP Server card would help here (toggle, endpoint
   URL, auth mode, rate limit, and snippets in one view). Flagged for the media pipeline.
 </Callout>

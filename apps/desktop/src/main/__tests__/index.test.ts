@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('electron', () => import('./electron-mock'));
-vi.mock('../window-manager', () => ({
+// Windows are stubbed, but `isWebLink` is kept real: the `open-external` tests
+// below assert that the bridge enforces the shell's actual outbound policy, and
+// a hand-written copy of it here would keep passing after the real one changed.
+vi.mock('../window-manager', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../window-manager')>()),
   createWindow: vi.fn(),
   makeRendererUrlAccessor: vi.fn(() => () => undefined),
 }));
@@ -610,6 +614,60 @@ describe('keeping DorkOS running in the background (DOR-538)', () => {
     const [options] = vi.mocked(activity.watchAgentActivity).mock.calls[0];
     expect(options.getPort()).toBe(4242);
     expect(options.onChange).toBe(tray.setTrayActivity);
+  });
+});
+
+describe('the open-external bridge', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Invoke the `open-external` handler `../index` registered. */
+  async function openExternal(url: unknown): Promise<void> {
+    const { ipcMain } = await getElectronMock();
+    const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === 'open-external');
+    if (!call) throw new Error('no ipcMain.handle registered for "open-external"');
+    const handler = call[1] as (event: unknown, url: unknown) => Promise<void>;
+    await handler({}, url);
+  }
+
+  async function loadShell(): Promise<void> {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+    await import('../index');
+  }
+
+  it("hands the app's own address to the system browser", async () => {
+    await loadShell();
+    const { shell } = await getElectronMock();
+
+    // The case the bridge exists for. `window.open` at this URL is claimed by
+    // the window-open handler and becomes a second cockpit window, so Settings
+    // → Server's "open in your browser" would not leave the app without it.
+    await openExternal('http://localhost:4242');
+
+    expect(shell.openExternal).toHaveBeenCalledWith('http://localhost:4242');
+  });
+
+  it('refuses anything the shell would not open from a link', async () => {
+    await loadShell();
+    const { shell } = await getElectronMock();
+
+    for (const url of [
+      'file:///etc/passwd',
+      'javascript:alert(1)',
+      'dorkos://agents',
+      'mailto:someone@example.com',
+      '',
+      42,
+      null,
+      undefined,
+    ]) {
+      await openExternal(url);
+    }
+
+    expect(shell.openExternal).not.toHaveBeenCalled();
   });
 });
 

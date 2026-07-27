@@ -507,6 +507,22 @@ describe('the environment handed to the server child', () => {
     vi.unstubAllEnvs();
   });
 
+  it('hands the child the port the resolver chose, not one the OS picked', async () => {
+    // The end-to-end half of `server-port.test.ts`: whatever
+    // `resolvePreferredPort` settles on has to reach `DORKOS_PORT`. Driven
+    // through DORKOS_PORT (the top of that precedence) so the assertion does
+    // not depend on 4242 being free on the machine running the suite.
+    const { findAvailablePort } = await import('../server-port');
+    const asked = await findAvailablePort(45_678, 20);
+    vi.stubEnv('DORKOS_PORT', String(asked));
+    const { startServer } = await import('../server-process');
+
+    const { port, child } = await startReadyServer(startServer);
+
+    expect(port).toBe(asked);
+    expect(child.env.DORKOS_PORT).toBe(String(asked));
+  });
+
   it('marks the server as desktop-managed so it refuses to restart itself', async () => {
     const { startServer } = await import('../server-process');
 
@@ -625,7 +641,7 @@ describe('the crash monitor', () => {
     expect(vi.mocked(dialog.showMessageBox).mock.calls[0][0]).toBe(tracked);
   });
 
-  it('restarts on request, reloads the window, and never reports a stale port', async () => {
+  it('restarts on request onto the same address, reloads the window, and reports the live port', async () => {
     const { BrowserWindow, dialog } = await getElectronMock();
     const tracked = new BrowserWindow({ width: 1200, height: 800 });
     dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
@@ -645,7 +661,13 @@ describe('the crash monitor', () => {
     await flush();
 
     const newPort = Number(replacement.env.DORKOS_PORT);
-    expect(newPort).not.toBe(port);
+    // The dead server let its port go, so the replacement asks for the same
+    // one and gets it. A bookmark, an MCP client config, and a `dorkos://`
+    // link all survive a crash because of this — before, every restart moved
+    // the app to a fresh random port.
+    expect(newPort).toBe(port);
+    // The reported port is the live child's, not a value left over from the
+    // dead one — the property that has to hold whether or not it changed.
     expect(getServerPort()).toBe(newPort);
     // Dev renderer comes from electron-vite, so it only needs a reload to
     // re-read the port over IPC.
@@ -659,9 +681,9 @@ describe('the crash monitor', () => {
       app.isPackaged = true;
       const tracked = new BrowserWindow({ width: 1200, height: 800 });
       dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-      response: 0,
-      checkboxChecked: false,
-    }));
+        response: 0,
+        checkboxChecked: false,
+      }));
       const { startServer, getServerPort } = await import('../server-process');
 
       const started = startServer(() => tracked as unknown as Electron.BrowserWindow);
@@ -674,8 +696,9 @@ describe('the crash monitor', () => {
       replacement.emitReady();
       await flush();
 
-      // A packaged renderer is served *by* the server, so it has to move to
-      // the new origin — the port changed, and a stale one strands it.
+      // A packaged renderer is served *by* the server, so it has to be sent
+      // back to the origin — its connection died with the old process, whether
+      // or not the replacement came back on the same port.
       const newPort = Number(replacement.env.DORKOS_PORT);
       expect(getServerPort()).toBe(newPort);
       expect(tracked.loadURL).toHaveBeenCalledWith(`http://localhost:${newPort}`);
