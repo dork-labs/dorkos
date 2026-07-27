@@ -38,7 +38,7 @@ export function RoomRow({ room, isActive, onSelect }: RoomRowProps) {
           unread && !isActive && 'text-foreground font-medium'
         )}
       >
-        <RoomAvatar room={room} />
+        <RoomAvatar room={room} participants={room.participants} />
         <RoomTitle room={room} className="min-w-0 flex-1" />
         {unread && (
           <span

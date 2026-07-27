@@ -1,15 +1,6 @@
-import { agentAvatarVariants } from '@/layers/entities/agent';
-import { cn, hashToHslColor } from '@/layers/shared/lib';
+import { cn, hashToHslColor, initialOf } from '@/layers/shared/lib';
+import { IdentityAvatar } from '@/layers/shared/ui';
 import { agentLabelFrom } from '../lib/agent-label';
-
-/** Glyph for a name with no letter or digit to draw an initial from. */
-const FALLBACK_INITIAL = '?';
-
-/** First letter or digit of a name, uppercased. */
-function initialOf(name: string): string {
-  const match = /\p{L}|\p{N}/u.exec(name);
-  return match ? match[0].toUpperCase() : FALLBACK_INITIAL;
-}
 
 export interface RequestingAgentProps {
   /**
@@ -42,18 +33,13 @@ export function RequestingAgent({ requestedBy, className }: RequestingAgentProps
 
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
-      <span
+      <IdentityAvatar
         data-slot="requesting-agent-avatar"
         aria-hidden
-        className={cn(agentAvatarVariants({ size: 'xs' }), 'text-[10px] font-medium')}
-        // The tint mixes a per-agent hashed color Tailwind cannot know at build
-        // time, the same reason AgentAvatar styles its background inline.
-        style={{
-          backgroundColor: `color-mix(in oklch, ${hashToHslColor(requestedBy)} 18%, transparent)`,
-        }}
-      >
-        {initialOf(label)}
-      </span>
+        size="xs"
+        color={hashToHslColor(requestedBy)}
+        fallback={initialOf(label)}
+      />
       <span className="text-muted-foreground min-w-0 truncate text-xs">{label}</span>
     </span>
   );

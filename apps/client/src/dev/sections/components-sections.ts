@@ -237,6 +237,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Data Display',
     keywords: ['scroll', 'area', 'overflow', 'scrollbar', 'custom', 'vertical', 'horizontal'],
   },
+  {
+    id: 'identityavatar',
+    title: 'IdentityAvatar',
+    page: 'components',
+    category: 'Data Display',
+    keywords: ['avatar', 'identity', 'emoji', 'initial', 'color', 'tint', 'disc', 'agent', 'room'],
+  },
   // ChatPrimitivesShowcases
   {
     id: 'collapsiblecard',

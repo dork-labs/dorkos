@@ -22,7 +22,7 @@ export { useNebulaAlpha, useIsDark } from './lib/nebula-theme';
 export type { NebulaAlpha } from './lib/nebula-theme';
 
 // UI — reusable agent display primitives
-export { AgentAvatar, agentAvatarVariants } from './ui/AgentAvatar';
+export { AgentAvatar } from './ui/AgentAvatar';
 export type { AgentAvatarProps } from './ui/AgentAvatar';
 export { AgentIdentity, agentIdentityVariants } from './ui/AgentIdentity';
 export type { AgentIdentityProps } from './ui/AgentIdentity';

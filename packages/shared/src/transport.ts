@@ -870,6 +870,9 @@ export interface Transport {
    * a member — not-applicable rather than zero. Do not coerce the two: `0`
    * means "you are in this room and caught up".
    *
+   * A direct message also carries `participants`, so a reader can draw the
+   * agent it is with without a second call; anything else carries `null`.
+   *
    * @param query - Optional `kind` / `includeArchived` filters.
    */
   listRooms(query?: ListRoomsQuery): Promise<RoomSummary[]>;

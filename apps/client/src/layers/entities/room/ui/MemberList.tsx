@@ -4,9 +4,9 @@
  * @module entities/room/ui/MemberList
  */
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { cn } from '@/layers/shared/lib';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
-import { authorColor, initialOf } from '../lib/room-display';
+import { cn, initialOf } from '@/layers/shared/lib';
+import { IdentityAvatar, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { authorColor } from '../lib/room-display';
 
 /** How many marks are drawn before the rest collapse into a `+N`. */
 const MAX_VISIBLE = 5;
@@ -18,9 +18,12 @@ export interface MemberListProps {
 }
 
 /**
- * Overlapping letter discs, one per member, with the rest counted off at the
- * end. Each disc names its member on hover and to a screen reader, so the
- * roster is readable without opening anything.
+ * Overlapping discs, one per member, with the rest counted off at the end.
+ *
+ * An agent wears the emoji and colour it wears everywhere else in the cockpit;
+ * anyone with neither — a person, the room's own voice — gets a letter on a
+ * colour hashed from their id. Each disc names its member on hover and to a
+ * screen reader, so the roster is readable without opening anything.
  */
 export function MemberList({ members, className }: MemberListProps) {
   if (members.length === 0) return null;
@@ -38,15 +41,21 @@ export function MemberList({ members, className }: MemberListProps) {
         <li key={author.id}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span
-                className="border-background inline-flex size-6 items-center justify-center rounded-full border text-[10px] font-medium"
-                style={{
-                  backgroundColor: `color-mix(in oklch, ${authorColor(author.id)} 22%, transparent)`,
-                }}
+              <IdentityAvatar
+                // Named explicitly: the tooltip trigger this stands in for
+                // would otherwise stamp its own slot onto the disc.
+                data-slot="room-member-avatar"
+                size="xs"
+                color={author.color ?? authorColor(author.id)}
+                emoji={author.emoji}
+                fallback={initialOf(author.displayName)}
+                // A roster disc is a step larger than the sidebar's, and rings
+                // itself in the page background so the overlap still reads as
+                // separate people.
+                className="border-background size-6 border"
               >
                 <span className="sr-only">{author.displayName}</span>
-                <span aria-hidden>{initialOf(author.displayName)}</span>
-              </span>
+              </IdentityAvatar>
             </TooltipTrigger>
             <TooltipContent>{author.displayName}</TooltipContent>
           </Tooltip>

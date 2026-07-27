@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { eq, roomSessions, type Db } from '@dorkos/db';
+import { eq, roomMembers, roomSessions, type Db } from '@dorkos/db';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
@@ -11,7 +11,40 @@ import { agentLookupFor, createRoomHarness } from './room-test-harness.js';
 const agentLookup = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always', emoji: '🐙' },
   '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'silent' },
+  // Two more bodies, so a roster whose order is left to chance has 120 ways to
+  // come out and cannot match the expected one by luck.
+  '/agents/cy': { name: 'cy', displayName: 'Cy', responseMode: 'silent' },
+  '/agents/di': { name: 'di', displayName: 'Di', responseMode: 'silent' },
 });
+
+/**
+ * How many statements touching `room_members` one `GET /api/rooms?kind=dm`
+ * prepares, over an install holding `dmCount` direct messages.
+ *
+ * Counted off `better-sqlite3.prepare`, because the property under test — that
+ * the roster is resolved in one pass — is invisible in the value returned. Only
+ * the roster reads are counted: `listRooms` also issues one unread count per
+ * room, which is a separate (and pre-existing) N+1 this is not measuring.
+ *
+ * @param dmCount - How many direct messages to seed first.
+ */
+function rosterReadsForListingDms(dmCount: number): number {
+  const harness = createRoomHarness({ agents: agentLookup });
+  for (let i = 0; i < dmCount; i++) {
+    harness.service.createRoom(
+      { kind: 'dm', title: `Ana ${i}`, members: [], agentPaths: ['/agents/ana'] },
+      harness.human
+    );
+  }
+  // `$client` is the better-sqlite3 connection drizzle prepares against.
+  const sqlite = (harness.db as unknown as { $client: { prepare: (sql: string) => unknown } })
+    .$client;
+  const prepare = vi.spyOn(sqlite, 'prepare');
+  harness.service.listRooms(harness.human, { kind: 'dm' });
+  const reads = prepare.mock.calls.filter(([sql]) => String(sql).includes('room_members')).length;
+  prepare.mockRestore();
+  return reads;
+}
 
 describe('RoomService', () => {
   let db: Db;
@@ -337,12 +370,13 @@ describe('RoomService', () => {
 });
 
 describe('RoomService — atomicity, slug reclaim and visibility', () => {
+  let db: Db;
   let service: RoomService;
   let authors: AuthorRegistry;
   let human: string;
 
   beforeEach(() => {
-    ({ service, authors, human } = createRoomHarness({ agents: agentLookup }));
+    ({ db, service, authors, human } = createRoomHarness({ agents: agentLookup }));
   });
 
   it('creates no room at all when a seeded member does not exist', () => {
@@ -420,6 +454,98 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
     );
     service.post(room.id, { authorId: human, text: 'one' });
     expect(service.listRooms(human).find((r) => r.id === room.id)?.unreadCount).toBe(1);
+  });
+
+  it("carries a direct message's roster, so the sidebar can draw who it is with", () => {
+    const dm = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    const participants = service.listRooms(human).find((r) => r.id === dm.id)?.participants;
+    // Sorted, not positional: a DM's members are all stamped with one `joinedAt`
+    // at create time, so the roster's order between them is not a promise.
+    expect(participants?.map((p) => p.displayName).sort()).toEqual(['Ana', 'You']);
+    const counterpart = participants?.find((p) => p.kind === 'agent');
+    expect(counterpart?.emoji).toBe('🐙');
+    expect(counterpart?.agentRef).toBe(agentAuthorRef('/agents/ana'));
+  });
+
+  it('carries no roster for a channel — null, which is not an empty room', () => {
+    const channel = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    const listed = service.listRooms(human).find((r) => r.id === channel.id);
+    expect(listed?.participants).toBeNull();
+    // The roster is real, it is just not on the list payload.
+    expect(service.getRoom(channel.id, human)?.members).toHaveLength(2);
+  });
+
+  it('resolves every listed DM in one pass, not one read per room', () => {
+    const first = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const second = service.createRoom(
+      { kind: 'dm', title: 'Bo', members: [], agentPaths: ['/agents/bo'] },
+      human
+    );
+
+    // Keyed by id rather than compared positionally: both rooms are created in
+    // the same millisecond, so the list's `lastActivityAt` ordering between
+    // them is not something this test can claim to know.
+    const listed = new Map(
+      service
+        .listRooms(human, { kind: 'dm' })
+        .map((room) => [room.id, room.participants?.map((p) => p.displayName).sort()])
+    );
+    expect(listed.size).toBe(2);
+    expect(listed.get(first.id)).toEqual(['Ana', 'You']);
+    expect(listed.get(second.id)).toEqual(['Bo', 'You']);
+  });
+
+  it('reads the roster table a fixed number of times, however many DMs there are', () => {
+    // The claim above — "one pass, not one read per room" — is not something a
+    // returned value can show: the same data comes back either way. So count
+    // the statements SQLite is actually asked to prepare, and pin that the
+    // count does not move between 2 direct messages and 25.
+    expect(rosterReadsForListingDms(2)).toBe(2);
+    expect(rosterReadsForListingDms(25)).toBe(2);
+  });
+
+  it('orders a roster deterministically, so a DM keeps naming the same agent', () => {
+    // Every member of a room created this way is stamped with ONE `joinedAt`,
+    // so the whole roster ties and the order is decided entirely by the
+    // tiebreak. Without one it falls through to whatever index the planner
+    // picked — which `ANALYZE` may change under a running install.
+    const dm = service.createRoom(
+      {
+        kind: 'dm',
+        title: 'A crowd',
+        members: [],
+        agentPaths: ['/agents/ana', '/agents/bo', '/agents/cy', '/agents/di'],
+      },
+      human
+    );
+
+    // The rule, computed from the stored rows rather than from the answer:
+    // oldest membership first, author id breaking the tie.
+    const expected = db
+      .select()
+      .from(roomMembers)
+      .where(eq(roomMembers.roomId, dm.id))
+      .all()
+      .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.authorId.localeCompare(b.authorId))
+      .map((row) => row.authorId);
+    expect(expected).toHaveLength(5);
+
+    const listed = service.listRooms(human).find((r) => r.id === dm.id)?.participants;
+    expect(listed?.map((p) => p.id)).toEqual(expected);
+    // The open room's header reads the roster by the other path. A reader who
+    // saw two different agents for one conversation would distrust both.
+    expect(service.getRoom(dm.id, human)?.members.map((m) => m.authorId)).toEqual(expected);
   });
 
   it('shows an agent only the rooms it belongs to', () => {

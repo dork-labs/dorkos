@@ -58,7 +58,8 @@ export function ChannelsSection({
   const handleCommit = (name: string) => {
     setCreating(false);
     createChannel.mutate(name, {
-      onSuccess: (room) => onSelectRoom({ ...room, unreadCount: 0 }),
+      // A channel's mark is `#`, so the list never carries its roster.
+      onSuccess: (room) => onSelectRoom({ ...room, unreadCount: 0, participants: null }),
       onError: (err) => toast.error(err.message || 'Could not create that channel'),
     });
   };

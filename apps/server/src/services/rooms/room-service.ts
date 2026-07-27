@@ -302,6 +302,11 @@ export class RoomService {
    * room's whole entry count instead would render every room the operator has
    * not joined as an alarming unread badge.
    *
+   * `participants` is carried for direct messages and is `null` for everything
+   * else, per {@link RoomSummary}. A DM's mark is whoever it is with, so the
+   * sidebar cannot draw one without the roster; resolving it here is two
+   * queries for the whole list, where asking per room was one request each.
+   *
    * @param viewerAuthorId - Whose rooms to list, and whose unread counts to compute.
    * @param filter.kind - Restrict to one room kind.
    * @param filter.includeArchived - Include archived rooms.
@@ -316,11 +321,18 @@ export class RoomService {
     const visible = this.seesEveryRoom(viewerAuthorId)
       ? this.store.listRooms(filter)
       : this.store.listRoomsForMember(viewerAuthorId, filter);
+    // Only the DMs are asked about, so a room of any other kind is simply
+    // absent from the map and reads as `null` below — "not carried" rather
+    // than "empty", which is the distinction the schema promises.
+    const participants = this.roster.authorsIn(
+      visible.filter((room) => room.kind === 'dm').map((room) => room.id)
+    );
     return visible.map((room) => {
       const cursor = cursors.get(room.id);
       return {
         ...room,
         unreadCount: cursor === undefined ? null : this.store.countUnread(room.id, cursor),
+        participants: participants.get(room.id) ?? null,
       };
     });
   }
