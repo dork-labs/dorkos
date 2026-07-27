@@ -214,6 +214,15 @@ describe('RoomTitle', () => {
     expect(spoken.textContent).toBe('#general');
   });
 
+  it('keeps the spoken name out of a copied selection and out of find-in-page', () => {
+    const { container } = render(<RoomTitle room={GENERAL} />);
+
+    // Text that exists only for assistive technology is still selectable text.
+    // Without this, dragging across the sidebar copies "#generalgeneral" and
+    // Cmd+F matches a `#general` that is nowhere on screen.
+    expect(titleOf(container).querySelector('.sr-only')).toHaveClass('select-none');
+  });
+
   it('keeps #general as the tooltip, where no mark sits beside it', () => {
     const { container } = render(<RoomTitle room={GENERAL} />);
 

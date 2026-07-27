@@ -38,7 +38,11 @@ export function RoomTitle({ room, className }: RoomTitleProps) {
         name
       ) : (
         <>
-          <span className="sr-only">{spoken}</span>
+          {/* `select-none` so the mark a screen reader hears never lands in a
+              copied selection or matches find-in-page. Without it, dragging
+              across the sidebar yields "#generalgeneral" and Cmd+F finds a
+              phantom `#general` nobody can see. */}
+          <span className="sr-only select-none">{spoken}</span>
           <span aria-hidden>{name}</span>
         </>
       )}
