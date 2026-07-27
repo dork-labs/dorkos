@@ -141,6 +141,23 @@ describe('resolvePreferredPort', () => {
     expect(resolvePreferredPort()).toEqual({ port: 4500, source: 'config.json' });
   });
 
+  it('does not read the default `conf` writes to disk as a choice somebody made', async () => {
+    // `conf` materializes defaults: `config-manager.ts` hands it both `defaults`
+    // and `migrations`, and its migration pass writes the whole defaulted tree
+    // back whenever the file differs from it. So this block is on essentially
+    // every machine that has booted DorkOS once, written by the library and
+    // typed by nobody. Reading it as a pin made the step-up branch dead for
+    // everyone and told people DorkOS was "set to use port 4242" — a setting
+    // they never made.
+    process.env.DORK_HOME = dataDirectory({
+      version: 1,
+      server: { port: 4242, cwd: null, boundary: null, open: true },
+    });
+    const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
+
+    expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
+  });
+
   it('lets DORKOS_PORT win over the pinned one, matching the CLI precedence', async () => {
     process.env.DORK_HOME = dataDirectory({ server: { port: 4500 } });
     process.env.DORKOS_PORT = '4600';
@@ -269,6 +286,26 @@ describe('chooseServerPort', () => {
 
     expect(await chooseServerPort()).toBe(free);
     expect(log.default.info).not.toHaveBeenCalled();
+  });
+
+  it('steps up rather than refusing when config.json only holds the written-out default', async () => {
+    // The regression this file exists to keep out. With `conf`'s defaults on
+    // disk and 4242 held by a `dorkos` in a terminal, opening the app refused,
+    // blamed a setting nobody had made, and sent the person to
+    // `dorkos config set server.port` — which lands them on the data-directory
+    // lock instead. Scanning is the only correct answer here.
+    process.env.DORK_HOME = dataDirectory({
+      version: 1,
+      server: { port: 4242, cwd: null, boundary: null, open: true },
+    });
+    const { chooseServerPort, PREFERRED_SERVER_PORT } = await import('../server-port');
+    const holder = await bind(PREFERRED_SERVER_PORT);
+
+    try {
+      expect(await chooseServerPort()).toBeGreaterThan(PREFERRED_SERVER_PORT);
+    } finally {
+      if (holder) await close([holder]);
+    }
   });
 
   it('moves off a busy default and records it in the log, interrupting nobody', async () => {

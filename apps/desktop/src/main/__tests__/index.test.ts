@@ -694,9 +694,36 @@ describe('server start failure', () => {
     const [title, message] = vi.mocked(dialog.showErrorBox).mock.calls[0];
     expect(title).toMatch(/couldn't start/i);
     expect(message).toContain('utility process exited');
+    // An opaque failure gets the generic advice, because trying again really
+    // may work and the log really is where to look.
+    expect(message).toMatch(/try restarting the app/i);
+    expect(message).toMatch(/Library\/Logs/);
     expect(app.quit).toHaveBeenCalledTimes(1);
     // No window, no menu/updater setup — the app must not proceed past the
     // failed server start into a half-initialized, windowless state.
     expect(windowManager.createWindow).not.toHaveBeenCalled();
+  });
+
+  it('drops the "try restarting" advice when the failure already says what to do', async () => {
+    const { app, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const { PortUnavailableError } = await import('../server-port');
+    const refusal =
+      'DorkOS is set to use port 5000, and something else on this computer already has it. ' +
+      'Quit whatever is using port 5000 and open DorkOS again.';
+    const serverProcess = await import('../server-process');
+    vi.mocked(serverProcess.startServer).mockRejectedValueOnce(new PortUnavailableError(refusal));
+
+    await import('../index');
+    await app.emit('ready');
+
+    const [, message] = vi.mocked(dialog.showErrorBox).mock.calls[0];
+    expect(message).toBe(refusal);
+    // "Try restarting the app" is not merely unhelpful for a pinned port that
+    // is still taken next launch — it contradicts the sentence underneath it,
+    // which is how people learn to stop reading these boxes.
+    expect(message).not.toMatch(/try restarting the app/i);
   });
 });

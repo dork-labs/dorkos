@@ -230,11 +230,14 @@ function reportCrash(code: number | null, output: string[], uptimeMs: number): v
  * @param mainWindowAccessor - Point-in-time accessor for the current main
  *   window, used to anchor the crash dialog. Stored for the lifetime of the
  *   process, so a restart from that dialog keeps using it.
- * @returns The port number the server is listening on — 4242 whenever it is
- *   free, and the next free port after it otherwise (see `server-port.ts`).
- * @throws If a server is already running, if no port in the scanned range is
- *   free, if the child cannot be spawned, or if it exits or stays silent before
- *   signalling readiness (within {@link SERVER_READY_PARENT_TIMEOUT_MS}).
+ * @returns The port number the server is listening on: the one someone pinned,
+ *   or 4242 and the next free port after it when nobody has (see
+ *   `server-port.ts`).
+ * @throws If a server is already running; if a pinned port is unavailable or no
+ *   port in the scanned range is free (a `PortUnavailableError`, which
+ *   `index.ts` shows without its usual "try restarting" preamble); if the child
+ *   cannot be spawned; or if it exits or stays silent before signalling
+ *   readiness (within {@link SERVER_READY_PARENT_TIMEOUT_MS}).
  */
 export async function startServer(
   mainWindowAccessor?: () => BrowserWindow | null

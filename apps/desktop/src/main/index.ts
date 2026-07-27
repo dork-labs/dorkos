@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { createWindow, isWebLink, makeRendererUrlAccessor } from './window-manager';
 import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort } from './server-process';
+import { PortUnavailableError } from './server-port';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
 import {
@@ -79,6 +80,34 @@ function getMainWindow(): BrowserWindow | null {
 function isTrackedRenderer(event: Electron.IpcMainInvokeEvent): boolean {
   const win = getMainWindow();
   return !!win && !win.isDestroyed() && event.sender.id === win.webContents.id;
+}
+
+/**
+ * What the "DorkOS couldn't start" box says.
+ *
+ * Most start-up failures are opaque (a crash, a failed migration, a spawn that
+ * never got off the ground), so the default is a generic apology plus the two
+ * things that usually help: try again, and here is where the log is.
+ *
+ * A {@link PortUnavailableError} is the exception, and it is the reason this is
+ * a function. Those messages already name the port, why it could not be had,
+ * and the setting that changes it — and "try restarting the app" is not merely
+ * unhelpful there, it contradicts them: a port someone pinned is still taken on
+ * the next launch, which is the whole premise of having refused. Leading with
+ * advice the next paragraph disproves teaches people to stop reading these
+ * boxes.
+ *
+ * @param err - Whatever `startServer` rejected with.
+ * @returns The dialog body.
+ */
+function startupFailureMessage(err: unknown): string {
+  const detail = err instanceof Error ? err.message : String(err);
+  if (err instanceof PortUnavailableError) return detail;
+  return (
+    "DorkOS couldn't start its background server, so it can't continue. " +
+    'Try restarting the app. If this keeps happening, check ~/Library/Logs/DorkOS for ' +
+    `details.\n\n${detail}`
+  );
 }
 
 /**
@@ -241,24 +270,19 @@ if (!gotTheLock) {
   });
 
   app.on('ready', async () => {
-    // 1. Start Express in a UtilityProcess, on 4242 whenever that is free, so
-    // the address stays the one the docs name (see server-port.ts). A rejection
-    // here previously vanished silently — Electron doesn't surface a rejected
-    // async 'ready' handler anywhere — leaving the app running with zero
-    // windows and no way for the user to know why. showErrorBox is
-    // synchronous/blocking, so it's guaranteed to be seen before the app quits.
+    // 1. Start Express in a UtilityProcess. On 4242 whenever that is free, so
+    // the address stays the one the docs name; on a port someone pinned, or not
+    // at all (see server-port.ts). A rejection here previously vanished
+    // silently — Electron doesn't surface a rejected async 'ready' handler
+    // anywhere — leaving the app running with zero windows and no way for the
+    // user to know why. showErrorBox is synchronous/blocking, so it's
+    // guaranteed to be seen before the app quits.
     try {
       // The accessor lets the supervisor anchor its crash dialog to whichever
       // window is current, the same way setupAutoUpdater does.
       await startServer(getMainWindow);
     } catch (err) {
-      dialog.showErrorBox(
-        "DorkOS couldn't start",
-        "DorkOS couldn't start its background server, so it can't continue. " +
-          `Try restarting the app. If this keeps happening, check ~/Library/Logs/DorkOS for details.\n\n${
-            err instanceof Error ? err.message : String(err)
-          }`
-      );
+      dialog.showErrorBox("DorkOS couldn't start", startupFailureMessage(err));
       app.quit();
       return;
     }

@@ -15,12 +15,22 @@ import { resolveDataDirectory } from './dork-home';
  *
  * **A pin and a default get opposite answers.** 4242 is a starting guess, so a
  * conflict there steps up to the next free port. A port someone *chose* —
- * `DORKOS_PORT`, or `server.port` in `config.json` — is a commitment to an
- * address other tools are already configured against, so a conflict there
- * refuses and says so, exactly as the CLI does (the `EADDRINUSE` handler in
- * `apps/server/src/index.ts`). Quietly serving a pinned-5000 install on 5001
- * would break every MCP client the person had set up, with nothing anywhere
- * reporting that anything went wrong.
+ * `DORKOS_PORT`, or a `server.port` that differs from the schema default — is a
+ * commitment to an address other tools are already configured against, so a
+ * conflict there refuses and says so, exactly as the CLI does (the `EADDRINUSE`
+ * handler in `apps/server/src/index.ts`). Quietly serving a pinned-5000 install
+ * on 5001 would break every MCP client the person had set up, with nothing
+ * anywhere reporting that anything went wrong.
+ *
+ * **Scanning on the default is a deliberate divergence from the CLI, not an
+ * inconsistency to tidy up.** The CLI is strict in both cases, and it can
+ * afford to be: someone who hits "port in use" reads it in the terminal they
+ * just typed into and retries with `--port` a second later. A desktop user gets
+ * a dialog and no app, with no equivalent affordance and often no terminal at
+ * all. So the rule is about who expressed a preference rather than about which
+ * surface you are on: when nobody has, the GUI adapts; when somebody has, both
+ * surfaces are strict. Please do not "fix" the asymmetry by making the desktop
+ * refuse on 4242.
  *
  * A random high port used to be the one thing making the desktop app harder to
  * reach than the CLI. That is no longer load-bearing: `/api` is behind a `Host`
@@ -50,6 +60,12 @@ import { resolveDataDirectory } from './dork-home';
  * `packages/cli/src/cleanup-command.ts` duplicates it: electron-vite aliases
  * that package's subpath exports for the renderer bundle only, so the main
  * process is the wrong place to depend on them resolving.
+ *
+ * **It must stay equal to `UserConfigSchema`'s `server.port` default**
+ * (`packages/shared/src/config-schema.ts`). {@link readPinnedPort} tells a
+ * chosen port from an unchosen one by comparing against this value, so if the
+ * two ever drift, every install's written-out default starts reading as a
+ * deliberate pin.
  */
 export const PREFERRED_SERVER_PORT = 4242;
 
@@ -111,6 +127,24 @@ export interface PreferredPort {
   source: PortSource;
 }
 
+/**
+ * A start-up failure this module can explain completely.
+ *
+ * Every message thrown from here names the port, why it could not be had, and
+ * the setting that changes it. The shell's generic "DorkOS couldn't start" box
+ * otherwise leads with *"Try restarting the app"*, which is true of a crash and
+ * flatly wrong here: a port someone pinned is still taken on the next launch,
+ * and the whole premise of refusing was that this will not fix itself. `index.ts`
+ * checks for this type and drops the lead-in rather than argue with the sentence
+ * printed underneath it.
+ */
+export class PortUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PortUnavailableError';
+  }
+}
+
 /** Whether `value` is a port number a server could actually listen on. */
 function isValidPort(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= MAX_PORT;
@@ -134,20 +168,42 @@ function parsePortEnv(raw: string | undefined): number | null {
 }
 
 /**
- * Read the pinned port out of the data directory's `config.json`.
+ * Read the port someone chose out of the data directory's `config.json`.
  *
  * This is the same `server.port` key the CLI reads (`packages/cli/src/cli.ts`),
  * on purpose: pinning a port is one setting with one meaning, whichever way
  * DorkOS was started. It is read straight off disk rather than through the
  * server's config manager, which lives in the child process and has not started
- * yet when the port has to be chosen — so this repeats the floor
- * `UserConfigSchema` would have applied. A value below that floor could never
- * have been written through the config manager, so it is malformed input rather
- * than a choice, and is treated the way an unparseable file is: warned about,
- * and ignored.
+ * yet when the port has to be chosen.
+ *
+ * **Present in the file is not the same as chosen.** `conf` materializes
+ * defaults to disk — `config-manager.ts` hands it both `defaults` and
+ * `migrations`, and its migration pass writes the whole defaulted tree back
+ * whenever the file differs from it — so `~/.dork/config.json` on any machine
+ * that has booted once already contains `"server": { "port": 4242, … }`,
+ * written by the library and typed by nobody. Reading that as a pin made the
+ * step-up branch below dead for essentially every install: opening the app
+ * while `dorkos` held 4242 refused, told the person DorkOS "is set to use port
+ * 4242" — a setting they never made — and sent them to
+ * `dorkos config set server.port`, which leads to the data-directory lock
+ * refusing them all over again.
+ *
+ * So a value equal to {@link PREFERRED_SERVER_PORT} is read as the absence of
+ * an opinion, because that is exactly what the schema's default means
+ * (`config-schema.ts`), and a library persisting a default is not a person
+ * making a choice. Someone who deliberately runs
+ * `dorkos config set server.port 4242` is indistinguishable from that and gets
+ * the scanning behaviour; for a GUI, starting on 4243 beats refusing to start,
+ * and 4242 is the address they asked for anyway.
+ *
+ * The 1024 floor is repeated here for the same reason the value is read here at
+ * all: `UserConfigSchema` enforces it, but nothing has applied the schema yet. A
+ * lower value could not have been written through the config manager, so it is
+ * malformed input rather than a choice, and is treated the way an unparseable
+ * file is — warned about, and ignored.
  *
  * @param dorkHome - The data directory to read from.
- * @returns The pinned port, or `null` when there is no usable one.
+ * @returns The chosen port, or `null` when nobody chose one.
  */
 function readPinnedPort(dorkHome: string): number | null {
   let port: unknown;
@@ -160,10 +216,13 @@ function readPinnedPort(dorkHome: string): number | null {
     return null;
   }
   if (typeof port !== 'number' || !isValidPort(port)) return null;
+  // The schema default, however it got onto disk: no opinion, so no pin.
+  if (port === PREFERRED_SERVER_PORT) return null;
   if (port < LOWEST_UNPRIVILEGED_PORT) {
     log.warn(
       `[server] Ignoring server.port ${port} in config.json: DorkOS cannot use a port below ` +
-        `${LOWEST_UNPRIVILEGED_PORT} without administrator rights. Using ${PREFERRED_SERVER_PORT}.`
+        `${LOWEST_UNPRIVILEGED_PORT} without administrator rights. Starting from ` +
+        `${PREFERRED_SERVER_PORT} instead.`
     );
     return null;
   }
@@ -263,13 +322,13 @@ async function claimPinnedPort({ port, source }: PreferredPort): Promise<number>
       port < LOWEST_UNPRIVILEGED_PORT
         ? `Ports below ${LOWEST_UNPRIVILEGED_PORT} need administrator rights.`
         : 'Another program on this computer may have reserved it.';
-    throw new Error(
+    throw new PortUnavailableError(
       `DorkOS is set to use port ${port}, but this computer will not let it listen there. ` +
         `${why} ${howToChangeThePort(source)}`
     );
   }
 
-  throw new Error(
+  throw new PortUnavailableError(
     `DorkOS is set to use port ${port}, and something else on this computer already has it. ` +
       'DorkOS will not quietly move to another port, because anything you pointed at this one ' +
       `would stop working. Quit whatever is using port ${port} and open DorkOS again. ` +
@@ -303,7 +362,7 @@ export async function findAvailablePort(preferred: number, attempts: number): Pr
       'computer will not let DorkOS listen on them. Free one of them and open DorkOS again.'
     : `Every port from ${preferred} to ${last} is already in use on this computer, so DorkOS has ` +
       'nowhere to listen. Quit whatever is using one of them and open DorkOS again.';
-  throw new Error(`${problem} ${howToChangeThePort('default')}`);
+  throw new PortUnavailableError(`${problem} ${howToChangeThePort('default')}`);
 }
 
 /**
