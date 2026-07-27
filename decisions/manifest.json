@@ -2,6 +2,14 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260727-184933",
+      "slug": "the-community-server-never-runs-a-members-agent",
+      "title": "The community server never runs a member's agent; hosted DorkOS is three products, not one",
+      "status": "accepted",
+      "created": "2026-07-27",
+      "specSlug": "community-server"
+    },
+    {
       "id": "260726-022251",
       "slug": "in-session-identity-comes-from-the-working-directory",
       "title": "An in-session agent's identity comes from its working directory, not a presented token",
