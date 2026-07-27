@@ -251,7 +251,7 @@ export function GroupHeader({
         )}
         <Item onClick={startRename}>
           <Pencil className="mr-2 size-4" />
-          Rename
+          Rename…
         </Item>
         {renderDisplayFilterSubmenu(slots, group.displayFilter, setFilter)}
         <Sub>

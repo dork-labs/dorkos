@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 /**
- * The two room Transport methods that can only be tested here.
+ * The room Transport methods that can only be tested here.
  *
- * `postToRoom` — its URL and method are the whole contract with
- * `POST /api/rooms/:id/entries`, and a typo in either fails only at runtime,
- * where the mock Transport every component test uses cannot see it.
+ * `postToRoom` and the settings / roster writes — their URL and method are the
+ * whole contract with `/api/rooms/*`, and a typo in either fails only at
+ * runtime, where the mock Transport every component test uses cannot see it.
+ * `removeRoomMember` additionally has to survive a `204 No Content`, which is
+ * invisible above this seam.
  *
  * `subscribeRoom`'s silence watchdog — it exists at this level precisely
  * because the server's heartbeat is an SSE comment that this method drops, so
@@ -64,6 +66,51 @@ describe('postToRoom', () => {
     );
     await expect(setup().postToRoom('room-1', { text: 'anyone still here?' })).rejects.toThrow(
       'This room is archived'
+    );
+  });
+});
+
+describe('room settings and roster writes', () => {
+  it('patches a room in place', async () => {
+    await setup().updateRoom('room-1', { title: 'Backend' });
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/rooms/room-1');
+    expect(init.method).toBe('PATCH');
+    expect(init.body).toBe(JSON.stringify({ title: 'Backend' }));
+  });
+
+  it('patches one membership, escaping the author id into the path', async () => {
+    await setup().updateRoomMember('room-1', 'author/1', { responseMode: 'silent' });
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author%2F1');
+    expect(init.method).toBe('PATCH');
+    expect(init.body).toBe(JSON.stringify({ responseMode: 'silent' }));
+  });
+
+  it('deletes a membership and reads no body back', async () => {
+    // The route answers 204. `fetchJSON` would call `res.json()` on an empty
+    // body and reject with a parse error on a request that in fact succeeded,
+    // so this path must not touch the body at all — the mock has no `json`.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 204 }));
+
+    await expect(setup().removeRoomMember('room-1', 'author-1')).resolves.toBeUndefined();
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/rooms/room-1/members/author-1');
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('still rejects with the server’s own sentence when a roster write is refused', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        json: () => Promise.resolve({ error: 'Only you can change who is in a room' }),
+      })
+    );
+    await expect(setup().removeRoomMember('room-1', 'author-1')).rejects.toThrow(
+      'Only you can change who is in a room'
     );
   });
 });

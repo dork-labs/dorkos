@@ -17,10 +17,33 @@ export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useRoomDraft, useRoomDraftStore } from './model/room-drafts';
 export { useRoomListStream } from './model/use-room-list-stream';
-export { useMarkRoomRead } from './model/use-mark-room-read';
+export { useMarkRoomRead, useMarkRoomReadNow } from './model/use-mark-room-read';
 export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
 export type { StartDirectMessageInput } from './model/use-create-room';
+export {
+  useRenameRoom,
+  useSetRoomTopic,
+  useArchiveRoom,
+  useUnarchiveRoom,
+} from './model/use-room-settings';
+export type {
+  RenameRoomInput,
+  SetRoomTopicInput,
+  UnarchiveRoomInput,
+} from './model/use-room-settings';
+export {
+  useAddRoomMember,
+  useRemoveRoomMember,
+  useSetMemberResponseMode,
+} from './model/use-room-members';
+export type {
+  AddRoomMemberInput,
+  RemoveRoomMemberInput,
+  SetResponseModeInput,
+} from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
+export { RESPONSE_MODE_OPTIONS } from './lib/response-mode';
+export type { ResponseModeOption } from './lib/response-mode';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { MemberList } from './ui/MemberList';

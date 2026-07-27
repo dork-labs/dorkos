@@ -14,6 +14,9 @@ export default defineConfig({
       'packages/relay',
       'packages/shared',
       'packages/test-utils',
+      // Repo-root scripts are outside the pnpm workspaces; `pnpm test:scripts`
+      // runs this project, and `pnpm verify` runs that.
+      'scripts',
     ],
   },
 });

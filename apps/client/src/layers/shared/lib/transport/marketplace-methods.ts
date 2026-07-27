@@ -21,7 +21,7 @@ import type {
   MarketplaceSource,
   AddSourceInput,
 } from '@dorkos/shared/marketplace-schemas';
-import { fetchJSON, buildQueryString } from './http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
 /** Create all Marketplace methods bound to a base URL. */
 export function createMarketplaceMethods(baseUrl: string) {
@@ -134,8 +134,12 @@ export function createMarketplaceMethods(baseUrl: string) {
       });
     },
 
+    /**
+     * The route answers 204, so there is no body to read back — `fetchJSON`
+     * would reject a request that in fact succeeded with a JSON parse error.
+     */
     removeMarketplaceSource(name: string): Promise<void> {
-      return fetchJSON<void>(baseUrl, `/marketplace/sources/${encodeURIComponent(name)}`, {
+      return fetchNoContent(baseUrl, `/marketplace/sources/${encodeURIComponent(name)}`, {
         method: 'DELETE',
       });
     },

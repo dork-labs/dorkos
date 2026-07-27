@@ -218,7 +218,7 @@ export class RoomStore {
    */
   updateRoom(
     id: string,
-    patch: { title?: string; topic?: string | null; archived?: boolean }
+    patch: { title?: string; slug?: string; topic?: string | null; archived?: boolean }
   ): Room | null {
     if (Object.keys(patch).length > 0) {
       this.db.update(rooms).set(patch).where(eq(rooms.id, id)).run();

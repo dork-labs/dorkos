@@ -454,6 +454,20 @@ export class RoomService {
   /**
    * Patch a room's title, topic, or archived flag.
    *
+   * **Renaming a channel moves its `#slug` with the title.** A channel's name
+   * IS its slug — it is what the sidebar draws, what a person types, and the
+   * only room name the server enforces as unique (§13.1) — so a rename that
+   * changed only `title` would land in the database and change nothing anybody
+   * could see. The new slug is derived by the same {@link slugify} creation
+   * uses, though not by the same route: creating a channel may name its slug
+   * outright, and renaming one never can.
+   *
+   * **A rename is applied before an un-archive is judged**, so a room can come
+   * back under a new name. That ordering is the difference between a channel
+   * whose old name was taken while it was away being recoverable and being
+   * stranded for good, because a slug is only reserved while its channel is
+   * live and nothing else in the product un-archives a room.
+   *
    * @param roomId - The room id.
    * @param viewerAuthorId - The caller; must be on the roster.
    * @param patch - The validated update request.
@@ -461,17 +475,22 @@ export class RoomService {
    */
   updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    // Resolved FIRST, because the slug this room is about to have is the one an
+    // un-archive has to be judged against — not the one it is leaving behind.
+    const slugPatch = this.renamedSlug(room, patch.title);
+    const nextSlug = slugPatch.slug ?? room.slug;
     // Un-archiving reclaims a slug the partial unique index released when the
     // room was archived. Somebody may have taken it since — refuse the same way
     // creating it would, rather than letting the raw UNIQUE violation surface
-    // as a 500 the caller cannot act on.
-    if (patch.archived === false && room.archived && room.kind === 'channel' && room.slug) {
-      const holder = this.store.findLiveChannelBySlug(room.slug);
+    // as a 500 the caller cannot act on. Renaming in the same patch is the way
+    // out: `{ archived: false, title: 'Backend two' }` reclaims a free slug.
+    if (patch.archived === false && room.archived && room.kind === 'channel' && nextSlug) {
+      const holder = this.store.findLiveChannelBySlug(nextSlug);
       if (holder && holder.id !== room.id) {
-        throw new RoomError('SLUG_TAKEN', `A channel called #${room.slug} already exists`);
+        throw new RoomError('SLUG_TAKEN', `A channel called #${nextSlug} already exists`);
       }
     }
-    const updated = this.store.updateRoom(roomId, patch);
+    const updated = this.store.updateRoom(roomId, { ...patch, ...slugPatch });
     if (!updated) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
     eventFanOut.broadcast('room_updated', {
       roomId: updated.id,
@@ -870,6 +889,43 @@ export class RoomService {
    */
   private withRoster(room: Room, viewerAuthorId: string): RoomWithRoster {
     return { ...room, members: this.roster.list(room.id), viewerAuthorId };
+  }
+
+  /**
+   * The `slug` half of a channel rename, as a patch fragment to spread.
+   *
+   * Empty for anything that is not a channel getting a new title — only a
+   * channel has a name people type, so only a channel has a slug to move. That
+   * guard is load-bearing: without it a direct message would be given one.
+   *
+   * Refuses a title with nothing sluggable in it, and one that slugs onto a name
+   * another LIVE channel holds. An archived channel's slug is not reserved, so
+   * it never blocks a rename; {@link updateRoom} is where that matters, because
+   * it judges an un-archive against the slug the room is about to have.
+   *
+   * @param room - The room being patched.
+   * @param title - The requested title, when the patch carries one.
+   * @returns `{ slug }` when the slug moves, otherwise `{}`.
+   */
+  private renamedSlug(room: Room, title: string | undefined): { slug?: string } {
+    if (title === undefined || room.kind !== 'channel') return {};
+    const slug = slugify(title);
+    if (!slug) {
+      throw new RoomError(
+        'INVALID_SLUG',
+        'A channel name needs at least one letter or number in it'
+      );
+    }
+    // A cosmetic rename — `#Backend` to `Backend ` — slugs to what the channel
+    // is already called. Returning early skips a lookup and a no-op write; the
+    // `holder.id !== room.id` test below would reach the same verdict, so this
+    // is an optimisation and not the guard against self-conflict.
+    if (slug === room.slug) return {};
+    const holder = this.store.findLiveChannelBySlug(slug);
+    if (holder && holder.id !== room.id) {
+      throw new RoomError('SLUG_TAKEN', `A channel called #${slug} already exists`);
+    }
+    return { slug };
   }
 }
 
