@@ -10,11 +10,32 @@ status: specified
 - **Slug:** invites
 - **Id:** 260727-161438
 - **Date:** 2026-07-27
-- **Status:** specified
-- **Tracker:** DOR-594 (B1)
+- **Status:** specified, **retargeted** — see the banner below
+- **Tracker:** DOR-594, re-parented under DOR-595 (`apps/community`)
 - **Anchors:** codebase = `7099013d2` (`origin/main` @ `19bd5def2`, plus the unpushed community-server ideation commit)
 
 Read [`01-ideation.md`](01-ideation.md) first for what is inherited from `specs/community-server/` and must not be re-argued.
+
+---
+
+> ## ⚠ Retargeted 2026-07-27 — this spec's host changed after it was written
+>
+> **D6** (`specs/community-server/01-ideation.md` §3) and ADR `260727-184933` decided that the local install stays single-user **forever**. `apps/server` never holds a second human account; the `FORBIDDEN`-on-second-signup hook is permanent. All multi-user moves to `apps/community`.
+>
+> **The title of this document is therefore wrong.** There is no "second person on one install." Everything below is still correct and still wanted — the token design, the security analysis, the role definition, the experience contract — but it describes **the community server**, not the local cockpit.
+>
+> **What changed, concretely:**
+>
+> | Section                                                                                                     | Status                                                                                                                                                                                                                                                                                                                |
+> | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+> | §1 the invite token, §2 registration, §3 roles, §5 preview, §7 landing, §10 UX, §14 security                | **Valid.** Read `apps/community` wherever it says `apps/server`.                                                                                                                                                                                                                                                      |
+> | §3.3, §14.4D, §16 Phase 1 — `roleGate`, `member-routes.ts`, the coverage test                               | **Not built, deliberately.** Removed from DOR-598 because no member can ever authenticate to the local install. The design carries forward to `apps/community` (DOR-595), including the reviewer's finding that a source-scanning coverage test must enumerate **every** file that mounts routers, not just `app.ts`. |
+> | §16 Phase 1's authorization work — `isOwnerAuthor`, `viewerAuthorId`, `resolveCaller`, the `'local'` rebind | **Shipped** as DOR-598, on a stronger justification: joining a community puts _other humans_ in the local `authors` table, so `kind === 'human'` → "operator" is already wrong on your own machine.                                                                                                                   |
+> | §2 reopening local registration                                                                             | **Deleted.** Nothing to build.                                                                                                                                                                                                                                                                                        |
+> | §3 the role model                                                                                           | **Superseded by D7** — the community server has `owner` / `admin` (many) / `member`, not two roles. §3.2's May/May-not lists need re-deciding against three roles.                                                                                                                                                    |
+> | §3.2 "may create API keys owned by her"                                                                     | **Superseded by D8.** A member brings agents by attestation from her own install; the community never executes them (ADR `260727-184933`). See `research/20260727_agent-identity-in-communities.md`.                                                                                                                  |
+>
+> §17's resolution table stands, except #4 (role name) which D7 extends rather than replaces.
 
 ---
 
