@@ -19,21 +19,32 @@ name: scripts-test
 # refuses to run when the file differs from the default branch), so this job is
 # where such a change gets checked at all.
 #
-# TWO JOBS, on purpose. `fixtures` needs only bash, jq and iconv — all present on
-# ubuntu-latest — so skipping the toolchain keeps it a few seconds, which is worth
-# preserving for the reviewer scripts it guards. `harness` covers the TypeScript
-# under scripts/ (the Q3 contention harness, DOR-500), which does need Node and
-# pnpm. Splitting them keeps the fast signal fast instead of putting a minute of
-# install in front of it.
+# The git-guard suite runs in `fixtures` for the same reason in a sharper form:
+# .claude/hooks/git-guard.mjs is a safety control, and the only thing separating
+# "refuses git stash" from "refuses nothing" is a matcher that no other test
+# touches. It also pins the ALLOW half, because a guard that blocks
+# `git checkout main` or `git stash list` gets switched off, and then it protects
+# nothing at all. That suite is why `fixtures` sets up Node: it costs a couple of
+# seconds, unlike the `pnpm install` this job still deliberately avoids, and it
+# beats inheriting whatever Node the runner image happens to ship.
 #
-# Neither job calls `pnpm test:scripts` even though that script runs both suites:
-# locally it is one command (and `pnpm verify` calls it), but in CI running it
-# from either job would re-run the other job's suite for nothing.
+# TWO JOBS, on purpose. `fixtures` needs only bash, jq, iconv and Node, so
+# skipping the pnpm toolchain keeps it a few seconds, which is worth preserving
+# for the reviewer scripts it guards. `harness` covers the TypeScript under
+# scripts/ (the Q3 contention harness, DOR-500), which does need pnpm. Splitting
+# them keeps the fast signal fast instead of putting a minute of install in front
+# of it.
+#
+# Neither job calls `pnpm test:scripts` even though that script runs all three
+# suites: locally it is one command (and `pnpm verify` calls it), but in CI
+# running it from either job would re-run the other job's suite for nothing.
 
 ### The `harness` job depends on two files OUTSIDE scripts/: the root package.json
 ### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts
 ### (registers the scripts project for path-based bare-vitest runs from the repo
 ### root; the harness job itself no longer reads it, so that entry is conservative).
+### `.claude/hooks/**` is here for the `fixtures` job, which tests the git-guard
+### hook that lives there.
 ### Without them
 ### in the filter, a PR touching only those could break this job without triggering
 ### it, and the breakage would surface later on an unrelated scripts/ PR.
@@ -43,6 +54,7 @@ on:
       - 'scripts/**'
       - 'package.json'
       - 'vitest.config.ts'
+      - '.claude/hooks/**'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
   push:
@@ -51,6 +63,7 @@ on:
       - 'scripts/**'
       - 'package.json'
       - 'vitest.config.ts'
+      - '.claude/hooks/**'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
 
@@ -72,8 +85,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Reviewer shell-script fixtures
         run: bash scripts/test-review-classifier.sh
+
+      - name: Git-guard hook fixtures
+        run: bash scripts/test-git-guard.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
