@@ -10,7 +10,9 @@
       "runCount": 4,
       "passCount": 3,
       "failCount": 1,
-      "relatedCode": ["apps/client/src/App.tsx"],
+      "relatedCode": [
+        "apps/client/src/App.tsx"
+      ],
       "lastModified": ""
     },
     "send-message": {
@@ -54,7 +56,9 @@
       "runCount": 6,
       "passCount": 5,
       "failCount": 1,
-      "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
+      "relatedCode": [
+        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"
+      ],
       "lastModified": ""
     },
     "pulse-scheduler": {
@@ -127,6 +131,58 @@
       "passCount": 0,
       "failCount": 0,
       "relatedCode": [],
+      "lastModified": ""
+    },
+    "room-conversation": {
+      "specFile": "tests/rooms/room-conversation.spec.ts",
+      "feature": "rooms",
+      "description": "create a channel from the sidebar, post to it, and read the post back, switching rooms swaps the history, the masthead and the browser tab, an arriving message does not yank a reader back from history, a room whose stream has died says so, and Reconnect brings it back",
+      "lastRun": "2026-07-27T22:33:45.864Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/widgets/room-view/ui/ChannelsPage.tsx",
+        "apps/client/src/layers/widgets/room-view/ui/RoomComposer.tsx",
+        "apps/client/src/layers/widgets/room-view/model/use-stick-to-bottom.ts",
+        "apps/client/src/layers/entities/room/model/use-room-stream.ts",
+        "apps/client/src/layers/shared/model/use-document-title.ts"
+      ],
+      "lastModified": ""
+    },
+    "direct-messages": {
+      "specFile": "tests/rooms/direct-messages.spec.ts",
+      "feature": "rooms",
+      "description": "picking one agent opens a one-to-one wearing that agent, picking several agents opens one group conversation holding all of them, a query nobody matches does not open the half-assembled conversation, asking for the same agent again opens the conversation you already have",
+      "lastRun": "2026-07-27T22:33:45.864Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/features/dashboard-sidebar/ui/rooms/NewDirectMessageMenu.tsx",
+        "apps/client/src/layers/features/dashboard-sidebar/ui/rooms/DirectMessagesSection.tsx",
+        "apps/server/src/services/rooms/room-service.ts"
+      ],
+      "lastModified": ""
+    },
+    "room-identity": {
+      "specFile": "tests/rooms/room-identity.spec.ts",
+      "feature": "rooms",
+      "description": "a channel wears its # as a mark, and spells it out only to a screen reader, an unread channel row names itself once, and stops counting once read, a direct message wears the agent it is with, not a letter standing in for one",
+      "lastRun": "2026-07-27T22:33:45.864Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/entities/room/ui/RoomTitle.tsx",
+        "apps/client/src/layers/entities/room/ui/RoomAvatar.tsx",
+        "apps/client/src/layers/entities/room/ui/MemberList.tsx",
+        "apps/client/src/layers/entities/room/lib/room-display.ts",
+        "apps/client/src/layers/features/dashboard-sidebar/ui/rooms/RoomRow.tsx"
+      ],
       "lastModified": ""
     }
   },
@@ -373,6 +429,24 @@
       "failed": 0,
       "skipped": 0,
       "duration": 20712
+    },
+    {
+      "id": "2026-07-27T21-12-39",
+      "timestamp": "2026-07-27T21:12:39.525Z",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 60787
+    },
+    {
+      "id": "2026-07-27T22-33-45",
+      "timestamp": "2026-07-27T22:33:45.864Z",
+      "total": 11,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 46274
     }
   ]
 }
