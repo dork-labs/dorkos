@@ -1,10 +1,19 @@
 /**
- * App tabs — the cockpit's in-window tab strip (DOR-540).
+ * App tabs — the desktop app's in-window tab strip (DOR-540).
  *
- * Tabs live in this one renderer rather than a view per tab: every tab points
- * at the same trusted local origin, so a process each would buy isolation we do
- * not need and pay for it in memory and duplicated app state. In exchange the
- * same feature ships to the browser cockpit, not just the desktop app.
+ * **The desktop app is the whole audience** (DOR-568). A browser already has
+ * tabs, and they are better tabs than these could ever be: bookmarkable one at
+ * a time, brought back by the browser's own session restore, draggable out into
+ * their own window. Shipping a second strip there stacked one tab bar under
+ * another and made the worse one ours. So the shell renders the strip, the
+ * shortcuts register, and the link seam opens into it — in the desktop app only;
+ * in a browser `target: 'tab'` opens a real browser tab, and the Obsidian embed
+ * is one pane where everything opens in place.
+ *
+ * Within the desktop app, tabs live in this one renderer rather than a view per
+ * tab: every tab points at the same trusted local origin, so a process each
+ * would buy isolation we do not need and pay for it in memory and duplicated
+ * app state.
  *
  * The tab list itself is `shared/model/app-tabs-store` — reachable from the
  * link seam and the command palette without either depending on this UI.

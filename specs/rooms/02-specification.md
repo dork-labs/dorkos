@@ -386,15 +386,22 @@ Nothing could post in a room before R3, so there was no evidence to decide on. T
 
 ## 10. Phasing
 
-| Phase            | Deliverable                                                                                          | Depends on |
-| ---------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
-| **R0** (DOR-523) | The Integration rename (§8)                                                                          | —          |
-| **R1** (DOR-524) | Shared schemas, five tables + migration, rooms service, REST + SSE, tests                            | —          |
-| **R2** (DOR-525) | `entities/room`, Transport methods, sidebar sections, `/channels` route, room view rendering history | R1         |
-| **R3** (DOR-526) | Posting, addressing, mentions, triggering agents, cascade guard, read cursor                         | R2         |
-| **R4** (DOR-527) | Threads: child rooms, summary rows, `conversation_context` digest                                    | R3         |
+| Phase             | Deliverable                                                                                          | Depends on |
+| ----------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
+| **R0** (DOR-523)  | The Integration rename (§8)                                                                          | —          |
+| **R1** (DOR-524)  | Shared schemas, five tables + migration, rooms service, REST + SSE, tests                            | —          |
+| **R2** (DOR-525)  | `entities/room`, Transport methods, sidebar sections, `/channels` route, room view rendering history | R1         |
+| **R3a** (DOR-526) | Addressing, mentions, triggering agents, cascade guard, turn budget                                  | R2         |
+| **R3b** (DOR-569) | Composer, stream reconnect, at-bottom scroll guard (§12.1)                                           | R3a        |
+| **R5** (DOR-570)  | Rooms use the agent avatars agents already have (§12.2)                                              | R2         |
+| **R6a** (DOR-571) | Group DMs, server-side dedupe on the member set (§12.3)                                              | R5         |
+| **R6b** (DOR-572) | Sidebar context menus, add/remove members, archive (§12.4)                                           | R6a        |
+| **R4** (DOR-527)  | Threads: child rooms, summary rows, `conversation_context` digest                                    | R3b        |
+| **R7** (DOR-565)  | User-facing docs — a concepts page and a coverage row                                                | R6b        |
 
-R0 and R1 are independent and run in parallel. Each phase is one PR, in its own worktree, reviewed by a separate agent against `REVIEW.md`.
+R0 and R1 are independent and run in parallel; so are R3b and R5. Each phase is one PR, in its own worktree, reviewed by a separate agent against `REVIEW.md`.
+
+R5, R6a and R6b were not in the original plan. They came out of operator feedback on the shipped R2+R3a surface — see §12, which is the record of what that feedback found and what was decided about it.
 
 ## 11. Testing
 
@@ -404,3 +411,116 @@ R0 and R1 are independent and run in parallel. Each phase is one PR, in its own 
 - `canonicalizeEntry` needs byte-exact fixtures.
 - Client: React Testing Library with a mock `Transport` via `TransportProvider`.
 - The sidebar sections need **browser** verification, not just jsdom — menu-to-editor focus races in this repo are invisible to jsdom.
+
+---
+
+## 12. What using it found
+
+R2 and R3a shipped, and the operator used them. Five things came back. None was a bug in what was built; four were things the plan had never covered, and one was a design mistake made in R2 and inherited since. This section records what each one is and what was decided, so the reasoning survives the phase that implements it.
+
+### 12.1 You could not post (R3b, DOR-569)
+
+`ChannelsPage.tsx:107` reads "You can read this room, but not post to it yet." It is prose, not a permission check: `POST /api/rooms/:id/entries` has worked since R3a. The composer was simply the half of R3 that was cut when the phase split. **No permission concept is being introduced** — a reader who sees that line has every right to post and always did.
+
+Two things ship with it, both of which have to land before the composer rather than after:
+
+- **The stream reconnects.** `use-room-stream.ts` is one bare `for await` that never re-subscribes; the code says so in its own comment. That was tolerable while nothing could post. It stops being tolerable the moment somebody can, because a dropped socket is then a lost message rather than a stale read.
+
+  The retry loop goes **in the hook, around `transport.subscribeRoom`** — not in `SSEConnection`. `SSEConnection` speaks HTTP directly and is not reachable through the Transport port, so binding the room stream to it would leave the Obsidian embed with no room stream at all. `session-stream-methods.ts` and `transport-stream-pump.ts` already draw exactly this line: Transport methods are contract-level with no reconnection, and resilience sits above them.
+
+- **The scroll guard.** `ChannelsPage.tsx:48-54` scrolls to the bottom on every arrival unconditionally. Reading history while an agent replies yanks the reader away from what they were reading. `features/chat/model/view/use-scroll-overlay.ts` already solves this; the room view has no virtualizer, so none of chat's measurement machinery comes with it.
+
+### 12.2 Rooms invented a second avatar for agents that already had one (R5, DOR-570)
+
+Agents carry an emoji and a colour. Rooms draw a hashed letter disc instead (`RoomAvatar`, `MemberList`, both via `authorColor(id)` + `initialOf(name)`), so the same agent reads as a coloured emoji in the agent list and an unrelated pastel letter in the room directly beside it.
+
+The data was never missing. `AuthorRef` carries optional `emoji` and `color`; `toAuthorRef` projects them and `room-roster.ts:221` populates them from the agent record. `MessageAuthorAvatar` already renders them correctly, which is why the room _timeline_ looks right and the sidebar does not.
+
+**Why the duplicate appeared is worth naming, because it will happen again.** The FSD rule forbids `entities/room` importing `entities/agent`, so room UI could not reach `AgentAvatar` at all, and a hashed disc was the path of least resistance. The fix is the one the layer rule was pointing at all along: the presentational disc belongs in `shared/ui` — three modules currently hand-roll the same `color-mix(in oklch, … 18%, transparent)` — and `AgentAvatar` becomes a thin wrapper that adds the health ring.
+
+One data change comes with it. `RoomSummary` carries no members, so the sidebar cannot know who a DM is with; `DirectMessagesSection` works around that with `useRoomRosters`, which is **one `GET /api/rooms/:id` per DM**. Putting the resolved participants on the list payload (batched through `AuthorRegistry.getMany`, not an N+1 on the server) draws the right avatar and deletes the workaround in the same move.
+
+### 12.3 A DM held exactly one agent (R6a, DOR-571)
+
+The server was ready — `CreateRoomRequest.agentPaths` is an array, added in R3a. The picker was not: `NewDirectMessageMenu` is single-select, and it filters out every agent already in a DM.
+
+Slack's shape is a multi-select: typeahead, chips for who is selected, one action to start. One agent gives a 1:1; two or more give a group conversation named from the participants.
+
+**That filter has to go, and taking it out moves a correctness rule.** Excluding agents already in a DM was how duplicate 1:1s were prevented. It is wrong once group DMs exist — Ana alone and Ana + Kai are different conversations — so the guarantee moves to where it can actually be made:
+
+> `POST /rooms` with `kind: 'dm'` returns the **existing** room when a DM with exactly that member set already exists.
+
+Server-side, because it is an idempotency property of the resource rather than a rule about a menu, and because the client would need every roster loaded to evaluate it correctly. Slack behaves the same way: re-opening a conversation with the same people opens the same conversation.
+
+### 12.4 Channels and DMs had no context menu, and no way to manage membership (R6b, DOR-572)
+
+`POST /:id/members`, `DELETE /:id/members/:authorId` and `PATCH /:id/members/:authorId` have existed since R1 and nothing in the cockpit calls them. Agent rows have had a right-click menu since well before rooms shipped; room rows have none.
+
+Both menus are built from **one pure node list**, the way `AgentRowMenuItems.tsx` already does it — `buildRowMenuNodes(model)` renders into the right-click `ContextMenu` and the "…" `DropdownMenu` through the same walk, so a hand-copied second list cannot drift out of step.
+
+|                                   | Channel | DM       |
+| --------------------------------- | ------- | -------- |
+| Mark as read _(only when unread)_ | ✓       | ✓        |
+| Mute / Unmute                     | ✓       | ✓        |
+| Add agents…                       | ✓       | ✓        |
+| Members…                          | ✓       | ✓        |
+| Agent profile                     | —       | 1:1 only |
+| Rename…                           | ✓       | ✓        |
+| Edit topic…                       | ✓       | —        |
+| Archive                           | ✓       | ✓        |
+
+Four calls in there are decisions rather than defaults:
+
+- **Adding an agent to a DM happens in place**, and the menu item says the agent will see the conversation's history. Slack forks a new conversation instead. Its reason is privacy between people who do not own each other's accounts, which does not apply when every participant is one of your own agents — and forking would strand the conversation you were in the middle of.
+- **No "Leave".** With a single human author, leaving a room you created makes it invisible with no route back. Archive is the honest verb for that intent, and it is reversible.
+- **No "Pin".** Rooms sort by recent activity and there are few of them. Pinning earns its place when the list is long enough to lose something in; adding it now would double the preference surface to solve a problem nobody has yet. Deliberate omission.
+- **Mute stays in**, despite costing a semver-keyed config migration, because a channel holding two `always`-mode agents will be noisy by construction and mute is what makes that survivable. This is the one item justified by the cascade behaviour rather than by Slack.
+
+The members panel is where `responseMode` finally becomes reachable. It is a per-room override the schema has carried since R1 (`RoomMemberSchema`) with no UI anywhere — so today an agent's behaviour in a room is fixed at join time and cannot be changed without editing the database.
+
+---
+
+## 13. What looking at it found
+
+Everything above was reasoned from source. This section is what a browser showed, plus the navigation design that follows from it. Screenshots taken against `main@3dffe652b` at 1440×900 with two seeded channels.
+
+### 13.1 Four defects that reading could not find
+
+- **Every channel renders its `#` twice.** `RoomAvatar` draws a lucide `Hash` glyph and `roomDisplayTitle` returns `` `#${slug}` ``, so a sidebar row reads `# #general` and so does the room header. Nothing asserts it; both halves are individually correct. The fix is not to strip the prefix from `roomDisplayTitle` — that string is also the tooltip, the `aria-label` and what a toast says, where `#general` is the right form. `RoomTitle` should render the bare name wherever a mark sits beside it, and every text-only caller keeps the prefixed form.
+
+- **The empty room instructs an action that has no affordance.** It says "Add the agents you want in this conversation, and everything they say will stay here." There is no way to add an agent to a room anywhere in the product (§12.4). The copy is right about the intent and wrong about the present tense; R6b is what makes it true. Until then the empty state is a promise the UI cannot keep.
+
+- **The document title ignores rooms entirely.** On `/channels` it reads `🐧 apps — DorkOS` — the _session's_ working directory. `use-document-title.ts` is keyed on `cwd` and returns the bare `'DorkOS'` when there is none, so a room you are actually reading never appears, and a backgrounded tab cannot tell you a room has activity. The machinery is already there: `buildTitle` takes a `tasksBadgeCount` rendered as `(N)` while hidden. Unread rooms belong in the same place.
+
+- **Channels sort by recency.** `room-store.ts:99` orders every kind by `lastActivityAt DESC`, so a quiet channel sinks and the list reorders under you. That is right for DMs and wrong for channels: Slack sorts channels alphabetically precisely so the list stops moving and you learn where things are. Sort DMs by recency, channels by name.
+
+### 13.2 Rooms in the command palette
+
+The palette (`features/command-palette/`) has fuzzy search, frecency, preview panels and prefix scoping — `@` for agents, `>` for commands. **Rooms are absent from all of it.** A channel is reachable only by finding it in the sidebar with a mouse.
+
+**Add `#` for rooms.** Slack and Discord both use it and it is the closest thing to universal muscle memory in this product category. Threads are child rooms, so they read as `#parent › thread title`.
+
+**DMs stay under `@`, not `#`.** This is not arbitrary: a channel is addressed by its name, a DM by who is in it. Typing `@ana` should offer _both_ "Message Ana" and "New session with Ana" — the same distinction §8.5 already draws between a session (about a directory) and a DM (about a participant). It is also where DorkOS diverges from every chat app: the entity you navigate to is also an actor you can dispatch work to, so the agent's palette row wants verbs, not just a destination.
+
+**Unread first in the zero-query state.** Rooms already carry `unreadCount`. Ranking unread above frecency turns `Cmd+K → Enter` into "go to the thing that needs me", which is what a mission-control surface should do and what a generic launcher does not. This is the single highest-value item in this section.
+
+**Contextual actions come from R6b's node list, not a second list.** When a room is open, the palette offers that room's actions — the _same_ pure `buildRoomRowMenuNodes(model)` that feeds the right-click menu and the `…` dropdown. Three surfaces, one model. Palettes drifting out of step with their equivalent right-click menus is the standard failure here, and `AgentRowMenuItems.tsx` already proves the pattern in this codebase.
+
+**Explicitly out of scope: message search.** Slack keeps navigation (`Cmd+K`) and message search (`Cmd+F`) as separate surfaces, and Teams' merged command bar is the cautionary example. We have no message index, and building one to satisfy a palette would be the tail wagging the dog.
+
+### 13.3 Unread, reachable without the mouse
+
+Unread is currently visible in exactly one place — a badge on a sidebar row — which means it is invisible whenever the sidebar is collapsed or the tab is backgrounded. That is the wrong shape for a product whose whole premise is that agents work while you are not looking.
+
+- Unread count in the document title, reusing `buildTitle`'s existing badge slot.
+- Next / previous unread room from the keyboard. Slack and Discord both bind this; `alt+↑` / `alt+↓` are free in `SHORTCUTS`.
+- `mod+shift+k` for a new direct message, matching Slack. Also free.
+
+### 13.4 Phasing
+
+| Phase   | Deliverable                                                                                                                                                           | Depends on |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| **R6c** | The four §13.1 defects                                                                                                                                                | R3b, R5    |
+| **R9**  | `#` prefix, rooms searchable, unread-first zero-query, `@agent` verbs, new-channel / new-DM actions, prefix legend in the empty state, title badge, unread navigation | R6a, R6b   |
+
+R9 lands after R6b so the contextual actions consume the node list rather than duplicating it. R6c is independent of both and only waits on the two PRs currently touching the same files.

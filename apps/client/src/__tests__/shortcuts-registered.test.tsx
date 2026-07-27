@@ -28,14 +28,20 @@
  * the registry no longer has fails the stale-entry tests. So adding a shortcut
  * forces you to either prove it or name its owner, and deleting one forces the
  * cleanup.
+ *
+ * A {@link ShortcutDef.desktopOnly} shortcut is proved on the surface it claims,
+ * with the desktop bridge installed — and then proved absent in a browser, both
+ * from the panel's list and from the keyboard. The promise is per surface, so
+ * the check is too.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { renderHook, render, cleanup } from '@testing-library/react';
-import { SHORTCUTS, type ShortcutDef } from '@/layers/shared/lib';
+import { SHORTCUTS, getShortcutsGrouped, type ShortcutDef } from '@/layers/shared/lib';
 import { useRightPanelShortcut, useAgentProfileShortcut } from '@/layers/features/right-panel';
 import { useAppTabShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
 import { SidebarProvider } from '@/layers/shared/ui';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn((_options: { href: string }) => Promise.resolve()),
@@ -62,7 +68,10 @@ beforeAll(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  leaveDesktopShell();
+});
 
 /** Fire a chord the way a keyboard would, and report whether anything took it. */
 function press(init: KeyboardEventInit): boolean {
@@ -142,8 +151,47 @@ const ALL: ShortcutDef[] = Object.values(SHORTCUTS);
 describe('shortcuts the panel advertises are really registered', () => {
   const provable = ALL.filter((shortcut) => PROVED[shortcut.id]);
 
-  it.each(provable.map((s) => [s.id, s.key, s.label] as const))('%s (%s) — "%s"', (id) => {
-    expect(PROVED[id]()).toBe(true);
+  it.each(provable.map((s) => [s.id, s.key, s.label, s.desktopOnly === true] as const))(
+    '%s (%s) — "%s"',
+    (id, _key, _label, desktopOnly) => {
+      // Prove it on the surface it claims. A desktop-only chord is not
+      // registered in a browser by design, so firing it there would prove the
+      // opposite of what this file is for.
+      if (desktopOnly) enterDesktopShell();
+      expect(PROVED[id]()).toBe(true);
+    }
+  );
+});
+
+describe('a desktop-only shortcut is neither listed nor live in a browser', () => {
+  const desktopOnly = ALL.filter((shortcut) => shortcut.desktopOnly);
+
+  it('has some — otherwise the cases below prove nothing', () => {
+    expect(desktopOnly.length).toBeGreaterThan(0);
+  });
+
+  it.each(desktopOnly.map((s) => [s.id, s.key, s.label] as const))(
+    '%s (%s) — "%s"',
+    (id, _key, label) => {
+      const listed = getShortcutsGrouped().flatMap((group) => group.shortcuts);
+      expect(listed.map((s) => s.id)).not.toContain(id);
+
+      // …and the panel is the surface a person reads, so check the label too:
+      // a row that reappears under a different id is the same broken promise.
+      expect(listed.map((s) => s.label)).not.toContain(label);
+
+      // Nothing listening means nothing cancelled — the browser's own tab keys
+      // reach the browser untouched.
+      expect(PROVED[id]?.()).toBe(false);
+    }
+  );
+
+  it('lists them again once the desktop bridge is there', () => {
+    enterDesktopShell();
+    const listed = getShortcutsGrouped().flatMap((group) => group.shortcuts);
+    for (const shortcut of desktopOnly) {
+      expect(listed.map((s) => s.id)).toContain(shortcut.id);
+    }
   });
 });
 

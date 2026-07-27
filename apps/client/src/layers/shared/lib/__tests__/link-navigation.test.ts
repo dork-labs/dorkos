@@ -10,9 +10,11 @@ import {
   registerLinkNavigator,
   registerTabOpener,
   supportsNewTab,
+  supportsSeparateWindow,
   type LinkNavigation,
 } from '../link-navigation';
 import { setPlatformAdapter } from '../platform';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 const ORIGIN = 'http://localhost:4242';
 const FROM = `${ORIGIN}/agents?view=topology`;
@@ -218,9 +220,23 @@ describe('link dispatch', () => {
   let unregister: () => void;
   let openSpy: ReturnType<typeof vi.spyOn>;
   let warnSpy: ReturnType<typeof vi.spyOn>;
+  let tabCleanups: (() => void)[];
+
+  /**
+   * Register a strip and collect what it opens. Torn down in `afterEach` rather
+   * than at the end of the test body, so a failing assertion cannot leak an
+   * opener into the next case and turn a cascade into what looks like a second
+   * detection.
+   */
+  function captureTabOpens(): string[] {
+    const opened: string[] = [];
+    tabCleanups.push(registerTabOpener((href) => opened.push(href)));
+    return opened;
+  }
 
   beforeEach(() => {
     navigated = [];
+    tabCleanups = [];
     unregister = registerLinkNavigator((navigation) => navigated.push(navigation));
     openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -229,9 +245,11 @@ describe('link dispatch', () => {
 
   afterEach(() => {
     unregister();
+    tabCleanups.forEach((clear) => clear());
     openSpy.mockRestore();
     warnSpy.mockRestore();
     setPlatformAdapter(webPlatform);
+    leaveDesktopShell();
   });
 
   describe('openLink', () => {
@@ -247,12 +265,37 @@ describe('link dispatch', () => {
     });
 
     it('opens an internal link in a second cockpit window on request', () => {
+      enterDesktopShell();
       openLink('/session?dir=%2Ftmp', { target: 'window' });
       expect(openSpy).toHaveBeenCalledWith(
         `${window.location.origin}/session?dir=%2Ftmp`,
         '_blank'
       );
       expect(navigated).toEqual([]);
+    });
+
+    it('degrades a window request in a browser to a browser tab, never to here', () => {
+      // A browser has no second window worth offering, so the palette never
+      // asks for one there — but the seam must answer honestly for anything
+      // that does. A tab is not the window that was asked for; navigating in
+      // place would take away the view the person still has.
+      openLink('/session?dir=%2Ftmp', { target: 'window' });
+      expect(openSpy).toHaveBeenCalledWith(
+        `${window.location.origin}/session?dir=%2Ftmp`,
+        '_blank'
+      );
+      expect(navigated).toEqual([]);
+    });
+
+    it('keeps a window request out of the strip, even with one registered', () => {
+      // "Put this on my other monitor" is not "give me another tab". A desktop
+      // window request must reach the shell's own-origin handler even with a
+      // strip registered, or the tab/window split is a lie told in the UI.
+      enterDesktopShell();
+      const opened = captureTabOpens();
+      openLink('/tasks', { target: 'window' });
+      expect(opened).toEqual([]);
+      expect(openSpy).toHaveBeenCalledWith(`${window.location.origin}/tasks`, '_blank');
     });
 
     it('hands an external link to the browser', () => {
@@ -285,6 +328,7 @@ describe('link dispatch', () => {
       // The desktop shell's window-open handler has to be able to tell our own
       // cockpit from someone else's site; a `noopener` third argument here
       // would forfeit that. Asserting the whole call pins the arity.
+      enterDesktopShell();
       openLink('/tasks', { target: 'window' });
       expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
     });
@@ -309,20 +353,62 @@ describe('link dispatch', () => {
       expect(openSpy).toHaveBeenCalled();
     });
 
-    it('opens an internal link in an in-window tab on request', () => {
-      const opened: string[] = [];
-      const unregisterTabs = registerTabOpener((href) => opened.push(href));
+    it('opens an internal link in an in-window tab in the desktop app', () => {
+      enterDesktopShell();
+      const opened = captureTabOpens();
       openLink('/session?dir=%2Ftmp', { target: 'tab' });
       expect(opened).toEqual(['/session?dir=%2Ftmp']);
       // A tab is not a window and not an in-place navigation.
       expect(openSpy).not.toHaveBeenCalled();
       expect(navigated).toEqual([]);
-      unregisterTabs();
+    });
+
+    it('opens a real browser tab in the browser, where no strip is registered', () => {
+      // The browser owns tabs there, so the app entry registers no opener
+      // (DOR-568) and this must reach `window.open` rather than quietly
+      // navigating in place and losing the view you asked to keep.
+      openLink('/session?dir=%2Ftmp', { target: 'tab' });
+      expect(openSpy).toHaveBeenCalledWith(
+        `${window.location.origin}/session?dir=%2Ftmp`,
+        '_blank'
+      );
+      expect(navigated).toEqual([]);
+    });
+
+    it('opens a browser tab in the browser even with a strip registered', () => {
+      // The surface decides, not who registered an adapter. `main.tsx` only
+      // registers an opener on the desktop, but that gate reads as redundant
+      // beside `registerLinkNavigator` — and if it were the only thing enforcing
+      // the surface, deleting it would turn every "Open in New Tab" in the
+      // browser into an in-place navigation into a strip nothing renders, with
+      // the whole suite still green.
+      const opened = captureTabOpens();
+      openLink('/session?dir=%2Ftmp', { target: 'tab' });
+      expect(opened).toEqual([]);
+      expect(openSpy).toHaveBeenCalledWith(
+        `${window.location.origin}/session?dir=%2Ftmp`,
+        '_blank'
+      );
+      expect(navigated).toEqual([]);
+    });
+
+    it('hands a desktop tab request to the shell when no strip is registered yet', () => {
+      // Nothing renders a strip until the app entry registers one. Until then a
+      // same-origin `window.open` reaches the shell's `setWindowOpenHandler`
+      // (`apps/desktop/src/main/window-manager.ts`), which recognises its own
+      // origin and builds a second cockpit window. Not the tab that was asked
+      // for, but a second view, and never an in-place navigation.
+      enterDesktopShell();
+      openLink('/session?dir=%2Ftmp', { target: 'tab' });
+      expect(openSpy).toHaveBeenCalledWith(
+        `${window.location.origin}/session?dir=%2Ftmp`,
+        '_blank'
+      );
+      expect(navigated).toEqual([]);
     });
 
     it('sends an external link to the browser even when a tab is asked for', () => {
-      const opened: string[] = [];
-      const unregisterTabs = registerTabOpener((href) => opened.push(href));
+      const opened = captureTabOpens();
       openLink('https://dorkos.ai/docs', { target: 'tab' });
       expect(opened).toEqual([]);
       expect(openSpy).toHaveBeenCalledWith(
@@ -330,12 +416,12 @@ describe('link dispatch', () => {
         '_blank',
         'noopener,noreferrer'
       );
-      unregisterTabs();
     });
 
-    it('falls back to navigating in place when no tab strip is registered', () => {
-      // The Obsidian embed mounts no strip. A tab request must still go
-      // somewhere rather than silently vanish.
+    it('falls back to navigating in place in the embed, the one pane with nowhere else to go', () => {
+      // The Obsidian embed mounts no strip and has no browser tabs to borrow.
+      // A tab request must still go somewhere rather than silently vanish.
+      setPlatformAdapter(embeddedPlatform);
       openLink('/tasks', { target: 'tab' });
       expect(openSpy).not.toHaveBeenCalled();
       expect(navigated).toEqual([{ href: '/tasks', replace: undefined }]);
@@ -475,6 +561,28 @@ describe('link dispatch', () => {
       expect(supportsNewTab()).toBe(true);
       setPlatformAdapter(embeddedPlatform);
       expect(supportsNewTab()).toBe(false);
+    });
+
+    it('stays true in the desktop app — a tab is a tab, whoever owns it', () => {
+      enterDesktopShell();
+      expect(supportsNewTab()).toBe(true);
+    });
+  });
+
+  describe('supportsSeparateWindow', () => {
+    it('is true in the desktop app and false in the browser', () => {
+      // A browser's "new window" is the tab "Open in New Tab" already offers,
+      // so the second row is not offered there (DOR-568).
+      expect(supportsSeparateWindow()).toBe(false);
+      enterDesktopShell();
+      expect(supportsSeparateWindow()).toBe(true);
+    });
+
+    it('is false in the embed even with a bridge in scope', () => {
+      // Both halves are load-bearing statements, not one guarding the other.
+      enterDesktopShell();
+      setPlatformAdapter(embeddedPlatform);
+      expect(supportsSeparateWindow()).toBe(false);
     });
   });
 

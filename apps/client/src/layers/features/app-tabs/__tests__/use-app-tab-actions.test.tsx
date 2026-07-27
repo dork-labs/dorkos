@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup, act } from '@testing-library/react';
 import { useAppTabsStore, type AppTab } from '@/layers/shared/model';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 // Resolves like the real `useNavigate`, which returns a promise that settles
 // once the navigation (loaders and redirects included) has completed.
@@ -63,9 +64,16 @@ beforeEach(() => {
   historySubscribers.clear();
   locationHref = '/';
   sessionStorage.clear();
+  // Tabs are a desktop-app feature (DOR-568), and `useAppTabsSync` no-ops
+  // without the shell. The browser side is proved in `use-app-tab-shortcuts`
+  // and `app-shell-slots`; this file is about the mechanics once they are on.
+  enterDesktopShell();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  leaveDesktopShell();
+});
 
 describe('useAppTabActions', () => {
   it('activating a tab navigates to what that tab holds', () => {
@@ -326,5 +334,21 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
 
     expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
     expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/']);
+  });
+
+  it('reconciles nothing in a browser, and writes no sessionStorage there', () => {
+    // There is no strip in a browser (DOR-568), so there is nothing to keep in
+    // step — and a store that never changes never persists.
+    leaveDesktopShell();
+    const tabs = setTabs(['/', '/agents'], 1);
+    locationHref = '/agents';
+    const { rerender } = renderHook(() => useAppTabsSync());
+    sessionStorage.clear();
+
+    navigateTo('/tasks', 'PUSH', rerender);
+
+    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/agents']);
+    expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
+    expect(sessionStorage.length).toBe(0);
   });
 });

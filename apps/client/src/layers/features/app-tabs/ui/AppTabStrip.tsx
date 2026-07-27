@@ -27,10 +27,12 @@ interface AppTabStripProps {
  * Keyboard-accessible per the WAI-ARIA Tabs pattern via
  * {@link useRovingTabList}: the whole strip is one Tab stop, arrow keys move
  * and switch as they go, Home/End jump to the ends, and Delete closes the
- * focused tab. That matters more here than in the terminal strip — the browser
- * claims Cmd/Ctrl+T and Cmd/Ctrl+1-9 for its own tabs before the page sees
- * them, so on the web cockpit these keys and the "+" button are the whole
- * keyboard story.
+ * focused tab. The Cmd/Ctrl chords reach the same tabs faster, and this is still
+ * not redundant beside them: a chord is invisible to sequential `Tab` focus and
+ * announces nothing, while this strip is landed on in focus order and announced
+ * as a labelled `tablist` whose tabs carry `aria-selected`. Someone using a
+ * screen reader, or who simply never found the shortcut list, reaches the tabs
+ * through this.
  *
  * The last tab keeps no close control: a window with nothing in it has nothing
  * to show, and on desktop closing the last tab is the window's job.

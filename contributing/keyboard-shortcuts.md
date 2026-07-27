@@ -98,7 +98,9 @@ interface UseInteractiveShortcutsOptions {
 ### In-window tabs (DOR-540)
 
 Registered on `document` by `useAppTabShortcuts`
-(`features/app-tabs/model/use-app-tab-shortcuts.ts`) for as long as the shell is mounted.
+(`features/app-tabs/model/use-app-tab-shortcuts.ts`) for as long as the shell is mounted **in the
+desktop app**. The hook is called unconditionally (Rules of Hooks) and returns early from its effect
+when `isDesktopShell()` is false, so in a browser no listener exists at all.
 
 | Key                        | Action                                                            |
 | -------------------------- | ----------------------------------------------------------------- |
@@ -108,12 +110,24 @@ Registered on `document` by `useAppTabShortcuts`
 | `Cmd+Shift+[` / `Ctrl+...` | Previous tab (matched on `event.code`, not `key` — Shift mangles) |
 | `Cmd+Shift+]` / `Ctrl+...` | Next tab (same)                                                   |
 
-**These are live in the desktop app only, and that is not a bug.** Chrome, Safari and Firefox bind
-every one of them — `Cmd/Ctrl+T`, `Cmd/Ctrl+1-9` **and** `Cmd/Ctrl+Shift+[`/`]` — to their own tabs
-and hand them to the page uncancellable,
-so on the browser cockpit — the launch-critical surface — the strip's `+` button and its roving
-`tablist` traversal (`Tab` to enter, arrows to move, `Home`/`End`, `Delete` to close) are the whole
-keyboard story. Do not "fix" this by trying to preventDefault harder.
+**These are live in the desktop app only, and that is the design (DOR-568).** The tab strip they
+drive is a desktop-app feature: a browser already has tabs, and a browser's tab keys are its own.
+**Do not upgrade that into "the browser already binds these four".** Which chords a browser binds is
+its business and varies by platform — `Cmd+Shift+[`/`]` is a macOS Chrome/Safari binding, while
+Chrome and Firefox on Windows and Linux step tabs with `Ctrl+PageUp`/`Ctrl+PageDown` — so on those
+two of the four do nothing at all, and that is fine. The claim we can make is the one about us: the
+browser cockpit registers nothing and cancels nothing. Do not "fix" this by `preventDefault`ing
+harder, and do not re-enable the strip in the browser to give the chords something to do — that is
+the regression this gate exists to prevent.
+
+Inside the desktop strip the roving `tablist` traversal (`Tab` to enter, arrows to move,
+`Home`/`End`, `Delete` to close) and the `+` button are the mouse-free path for anyone who does not
+reach for the chords. Both matter; neither is a fallback for the other.
+
+`SHORTCUTS.NEW_TAB`, `SELECT_TAB`, `PREVIOUS_TAB` and `NEXT_TAB` carry `desktopOnly: true`, which is
+what keeps them out of the `?` panel in a browser (`getShortcutsGrouped`). The panel is a promise;
+`src/__tests__/shortcuts-registered.test.tsx` proves each one live on desktop **and** absent from the
+list in a browser.
 
 `Cmd/Ctrl+W` is deliberately **absent** from that hook. In the browser it belongs to the browser; on
 desktop it belongs to the shell's Window menu, which sends it back over IPC — see
@@ -135,22 +149,40 @@ The global command palette (`Cmd+K` / `Ctrl+K`) provides unified access to agent
 
 #### Command Palette Shortcuts
 
-| Key                        | Context                          | Action                                                 |
-| -------------------------- | -------------------------------- | ------------------------------------------------------ |
-| `Enter`                    | Agent item selected              | Open agent sub-menu (drill-down into actions)          |
-| `Cmd+Enter` / `Ctrl+Enter` | Agent selected, root or sub-menu | Open agent in a new **in-window tab** (skips sub-menu) |
-| `Backspace`                | In sub-menu, input is empty      | Go back one level to the parent page                   |
-| `Escape`                   | In sub-menu                      | Go back one level (does not close the dialog)          |
-| `Escape`                   | At root level                    | Close the command palette                              |
+| Key                        | Context                          | Action                                        |
+| -------------------------- | -------------------------------- | --------------------------------------------- |
+| `Enter`                    | Agent item selected              | Open agent sub-menu (drill-down into actions) |
+| `Cmd+Enter` / `Ctrl+Enter` | Agent selected, root or sub-menu | Open agent in a new tab (skips sub-menu)      |
+| `Backspace`                | In sub-menu, input is empty      | Go back one level to the parent page          |
+| `Escape`                   | In sub-menu                      | Go back one level (does not close the dialog) |
+| `Escape`                   | At root level                    | Close the command palette                     |
 
-The agent sub-menu offers three destinations, and they stay three: **Open Here**, **Open in New
-Tab** (`openLink(href, { target: 'tab' })`), **Open in New Window**
-(`openLink(href, { target: 'window' })`). "Tab" and "window" are separate `LinkTarget`s on purpose —
-folding the second into the first deletes the only way to ask for a second cockpit window. All three
-resolve the same `?session=` up front (`agentHref`), so they agree on which session an agent is on,
-and none of them inherits the `?session=` you were already reading. Where there is no second view at
-all (the Obsidian embed, `supportsNewTab() === false`) both fall back to opening here rather than
-dropping the action.
+The agent sub-menu offers **Open Here**, **Open in New Tab** (`openLink(href, { target: 'tab' })`)
+and — in the desktop app only — **Open in New Window** (`openLink(href, { target: 'window' })`).
+"Tab" and "window" are separate `LinkTarget`s on purpose: folding the second into the first deletes
+the only way to ask for a second cockpit window. They resolve the same `?session=` up front
+(`agentHref`), so they agree on which session an agent is on, and neither inherits the `?session=`
+you were already reading.
+
+**Who owns "a new tab" depends on the surface** (DOR-568), and `link-navigation.ts` is what decides.
+`openLink` uses a registered `tabOpener` only when `isDesktopShell()` is true as well, so
+`target: 'tab'` reaches the in-window strip on desktop and falls through to
+`window.open(url, '_blank')` — a real browser tab — in a browser, whatever adapters happen to be in
+scope. The label is honest on both. `main.tsx` gates its `registerTabOpener` call on the same
+predicate, but that is a clarification, not the enforcement: deleting it changes nothing a person can
+see. The Obsidian embed (`supportsNewTab() === false`) has neither strip nor browser tab, so a tab
+request opens in place rather than being dropped.
+
+**A `window` request the surface cannot honour degrades to a tab, never to `here`.** `openLink` takes
+the real-second-window branch on `supportsSeparateWindow()` and otherwise lets `window` fall into the
+same branch as `tab`. Both answers are wrong in the same direction; only one of them takes away the
+view the person is already looking at. Latent while the palette is the only caller (it gates the
+row), load-bearing the moment anything else asks.
+
+**New Window is gated on `supportsSeparateWindow()`** (`supportsNewTab() && isDesktopShell()`) and
+the row is omitted, not disabled and not remapped. In a browser a `window.open` already _is_ the tab
+the row above offers; forcing a real window would need a features-string popup with no address bar,
+no reload and no bookmark — worse than dragging the tab out. **Do not add one.**
 
 #### Dynamic Keyboard Hints (PaletteFooter)
 

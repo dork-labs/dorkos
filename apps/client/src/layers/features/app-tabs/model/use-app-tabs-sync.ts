@@ -16,10 +16,17 @@
  * action type, so this reads it from the source rather than inferring it from
  * hrefs.
  *
+ * **Desktop shell only** (DOR-568). Tabs are a desktop feature — a browser
+ * already has tabs — so outside the shell there is no tab set to reconcile and
+ * this writes nothing, which also keeps the store's `sessionStorage` mirror
+ * untouched there. The shell mounts it unconditionally (Rules of Hooks); the
+ * gate is inside the effects.
+ *
  * @module features/app-tabs/model/use-app-tabs-sync
  */
 import { useEffect, useRef } from 'react';
 import { useRouter, useRouterState } from '@tanstack/react-router';
+import { isDesktopShell } from '@/layers/shared/lib';
 import { useAppTabsStore } from '@/layers/shared/model';
 
 /** Reconcile the tab set on every location change. Mounted once, by the shell. */
@@ -37,6 +44,7 @@ export function useAppTabsSync(): void {
   const traversed = useRef(false);
 
   useEffect(() => {
+    if (!isDesktopShell()) return;
     return router.history.subscribe(({ action }) => {
       // Defined as "not a new entry" rather than as a list of the traversals we
       // thought of. `@tanstack/history` reports `GO` for any popstate whose
@@ -50,6 +58,7 @@ export function useAppTabsSync(): void {
   }, [router]);
 
   useEffect(() => {
+    if (!isDesktopShell()) return;
     const traversal = traversed.current;
     traversed.current = false;
     // Read imperatively: this hook only writes, so subscribing to the store

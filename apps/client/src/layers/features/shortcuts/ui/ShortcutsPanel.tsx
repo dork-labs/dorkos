@@ -9,7 +9,13 @@ import {
 } from '@/layers/shared/ui';
 import { getShortcutsGrouped, formatShortcutKey } from '@/layers/shared/lib';
 
-/** Modal listing all keyboard shortcuts grouped by category. */
+/**
+ * Modal listing the keyboard shortcuts, grouped by category.
+ *
+ * It lists what *this* surface has: {@link getShortcutsGrouped} leaves out the
+ * desktop-only combos in a browser, so the panel never promises a key the
+ * browser has already taken for itself.
+ */
 export function ShortcutsPanel() {
   const open = useAppStore((s) => s.shortcutsPanelOpen);
   const setOpen = useAppStore((s) => s.setShortcutsPanelOpen);
