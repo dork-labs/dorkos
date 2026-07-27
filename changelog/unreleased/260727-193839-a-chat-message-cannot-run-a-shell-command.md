@@ -1,10 +1,8 @@
 ---
 covers:
-  - 'fix(runtimes): the approval gate closes on non-match, not opens (DOR-604)'
-  - 'fix(relay): a binding nobody configured prompts instead of auto-accepting (DOR-604)'
-  - 'fix(relay): a new Slack integration answers DMs by allowlist (DOR-604)'
-  - 'fix(relay): only named approvers can authorize a tool call from chat (DOR-609)'
-  - 'fix(relay): adapter config is validated before it is written (DOR-604)'
+  - 'fix(security): a chat message cannot run a shell command unasked (DOR-604)'
+  - 'fix(security): only named approvers may authorize a chat tool call (DOR-609)'
+  - 'fix(relay): validate adapter config by type, and pin the Slack approver gate'
 ---
 
 ### Security
