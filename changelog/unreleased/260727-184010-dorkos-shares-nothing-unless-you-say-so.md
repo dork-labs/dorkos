@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(telemetry)!: anonymous channels return to opt-in (ADR 260727-182651)'
+  - 'docs(telemetry): finish the opt-in copy sweep (ADR 260727-182651)'
 ---
 
 ### Changed
