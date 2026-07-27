@@ -48,7 +48,7 @@ Do **not** reach for `JSON.stringify` comparison — key order is not guaranteed
 An earlier draft of this section said `'0.58.0'`, reasoning that `'0.57.0'` already existed and shipped migrations must never be edited. That reasoning was wrong in a way that loses data, so it is worth stating rather than quietly fixing:
 
 - `'0.57.0'` is **not shipped**. `0.56.0` is the tagged version, and the comment above that block states the convention outright — DOR-452, DOR-501, DOR-516 and DOR-525 all target "the next unreleased version" and compose into one key in insertion order, because an object literal cannot repeat a key. `/system:release` reconciles the key at tag time if the real release number differs.
-- A migration keyed `'0.58.0'` **would not run on 0.57.0**, which is the release that would carry this schema. `conf` only runs migrations where `key > storedVersion && key <= projectVersion`. So every existing user would launch 0.57.0 with a schema expecting `members`, find it absent, take the Zod default of `[]`, and **silently lose every group membership they had** — with the source data still sitting in an `agentPaths` key nothing reads.
+- A migration keyed `'0.58.0'` **would not run on 0.57.0**, which is the release that would carry this schema. `conf` only runs migrations where `key > storedVersion && key <= projectVersion`. So every existing user would launch 0.57.0 with a schema expecting `items`, find it absent, take the Zod default of `[]`, and **silently lose every group membership they had** — with the source data still sitting in an `agentPaths` key nothing reads.
 
 The rule that matters is therefore not "never edit a migration" but **"key it to the version that actually ships the code"**. Editing a _shipped_ migration is what is forbidden; extending the next unreleased one is the established convention here.
 
@@ -140,7 +140,7 @@ Mappings:
 ## 4. Rendering
 
 - Group bodies dispatch on `ref.kind` to the existing `AgentListItem` or `RoomRow`. Neither is forked.
-- Sort modes over the union: `manual` reads the ordered `members` array; `name` compares `SidebarItem.name`; `recent` compares `lastActiveAt`, with `null` sorting last.
+- Sort modes over the union: `manual` reads the ordered `items` array; `name` compares `SidebarItem.name`; `recent` compares `lastActiveAt`, with `null` sorting last.
 - `displayFilter` (`all` / `active-recently` / `needs-attention`) reads the view model, so it works for rooms with no new code.
 - **Channels and Direct messages show only _ungrouped_ rooms**, matching how Agents already shows only ungrouped agents. An item lives in exactly one section.
 - Pinned stays multi-presence.
