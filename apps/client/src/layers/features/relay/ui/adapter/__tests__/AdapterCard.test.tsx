@@ -59,7 +59,7 @@ vi.mock('@dorkos/icons/adapter-logos', () => ({
   },
 }));
 
-// BindingDialog is no longer rendered inside AdapterCard — dialogs live in ConnectionsTab.
+// BindingDialog is no longer rendered inside AdapterCard — dialogs live in IntegrationsTab.
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -397,15 +397,15 @@ describe('AdapterCard', () => {
   // No-bindings state
   // -------------------------------------------------------------------------
 
-  it('shows "add channel" CTA button when connected with no bindings', () => {
+  it('shows "add integration" CTA button when connected with no bindings', () => {
     render(<AdapterCard {...defaultProps()} />);
-    expect(screen.getByRole('button', { name: /add channel/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /add integration/i })).toBeTruthy();
   });
 
-  it('does not show "add channel" CTA when disconnected', () => {
+  it('does not show "add integration" CTA when disconnected', () => {
     render(<AdapterCard {...defaultProps({ instance: disabledInstance })} />);
     // No bindings and disconnected — CTA should not appear
-    expect(screen.queryByRole('button', { name: /^add channel$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^add integration$/i })).toBeNull();
   });
 
   it('does not show "No agent bound" amber text (replaced by CTA button)', () => {
@@ -599,18 +599,18 @@ describe('AdapterCard', () => {
     expect(onShowEvents).toHaveBeenCalledWith('tg-main');
   });
 
-  it('calls onAddBinding when add channel menu item is clicked', async () => {
+  it('calls onAddBinding when add integration menu item is clicked', async () => {
     const onAddBinding = vi.fn();
     render(<AdapterCard {...defaultProps({ onAddBinding })} />);
 
     await openKebabMenu();
 
     await waitFor(() => {
-      expect(screen.getByRole('menuitem', { name: /add channel/i })).toBeTruthy();
+      expect(screen.getByRole('menuitem', { name: /add integration/i })).toBeTruthy();
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('menuitem', { name: /add channel/i }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /add integration/i }));
     });
 
     expect(onAddBinding).toHaveBeenCalledWith('tg-main', 'tg-main');

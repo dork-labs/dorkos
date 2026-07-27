@@ -275,7 +275,7 @@ export function AppShell() {
   // marketplace install/uninstall, so the command palette stays an honest
   // mirror of what the runtime recognizes (UX-12).
   useCommandsSync();
-  // Keep channel state live across clients/tabs: invalidate bindings and adapter
+  // Keep integration state live across clients/tabs: invalidate bindings and adapter
   // status when the server signals a change, instead of relying on local
   // mutations and slow polling.
   useBindingsSync();

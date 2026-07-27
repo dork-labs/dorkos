@@ -77,7 +77,7 @@ Agents can talk to each other and to you through the relay. Two controls keep th
 
 - **Budgets are enforced before delivery.** Every message passes an authoritative budget and hop check before it is delivered, so a runaway loop is stopped at the source, not just in a mailbox. Cascade depth, cycles, and per-agent call budgets are all bounded.
 - **Identity cannot be spoofed.** An agent's "from" address is resolved by the server from the session, not taken from the tool call, so one agent cannot impersonate another.
-- **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on a channel like Telegram is a per-connection setting you control.
+- **Reaching a human is a consent choice.** Whether an agent may start a conversation with you on an integration like Telegram is a per-integration setting you control.
 
 ## Marketplace package trust
 

@@ -129,42 +129,42 @@ function makeClaudeCodeEntry(overrides?: Partial<CatalogEntry['instances'][0]>):
   };
 }
 
-import { ChannelsTab } from '../ui/ChannelsTab';
+import { IntegrationsTab } from '../ui/IntegrationsTab';
 
-describe('ChannelsTab', () => {
+describe('IntegrationsTab', () => {
   it('shows relay disabled message when relay is off', () => {
     mockRelayEnabled = false;
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('Relay is disabled')).toBeInTheDocument();
     expect(
-      screen.getByText('Enable the Relay message bus to manage channels here')
+      screen.getByText('Enable the Relay message bus to manage integrations here')
     ).toBeInTheDocument();
   });
 
   it('shows loading skeletons while catalog is loading', () => {
     mockIsLoading = true;
 
-    const { container } = render(<ChannelsTab />);
+    const { container } = render(<IntegrationsTab />);
 
     // Skeleton elements are rendered (3 skeleton placeholders)
     const skeletons = container.querySelectorAll('[data-slot="skeleton"]');
     expect(skeletons.length).toBe(3);
   });
 
-  it('shows empty state when no channels are configured', () => {
+  it('shows empty state when no integrations are configured', () => {
     mockCatalogData = [];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByText('No channels configured')).toBeInTheDocument();
+    expect(screen.getByText('No integrations configured')).toBeInTheDocument();
     expect(
-      screen.getByText('Add a channel below to connect agents to external platforms')
+      screen.getByText('Add an integration below to connect agents to external platforms')
     ).toBeInTheDocument();
   });
 
-  it('renders channel rows for configured instances', () => {
+  it('renders integration rows for configured instances', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -183,12 +183,12 @@ describe('ChannelsTab', () => {
       ]),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('Bot Alpha')).toBeInTheDocument();
   });
 
-  it('stamps the relay-channels tour anchor on the active-channels list', () => {
+  it('stamps the relay-integrations tour anchor on the active-integrations list', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -207,9 +207,9 @@ describe('ChannelsTab', () => {
       ]),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByTestId(TOUR_ANCHORS.relayChannels)).toBeInTheDocument();
+    expect(screen.getByTestId(TOUR_ANCHORS.relayIntegrations)).toBeInTheDocument();
   });
 
   it('renders multiple instances from different adapter types', () => {
@@ -246,13 +246,13 @@ describe('ChannelsTab', () => {
       ]),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('TG Bot')).toBeInTheDocument();
     expect(screen.getByText('Slack Workspace')).toBeInTheDocument();
   });
 
-  it('calls toggleAdapter when a channel switch is toggled', async () => {
+  it('calls toggleAdapter when an integration switch is toggled', async () => {
     const user = userEvent.setup();
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
@@ -272,7 +272,7 @@ describe('ChannelsTab', () => {
       ]),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     const toggle = screen.getByRole('switch', { name: /my bot enabled/i });
     await user.click(toggle);
@@ -280,20 +280,20 @@ describe('ChannelsTab', () => {
     expect(mockToggleAdapter).toHaveBeenCalledWith({ id: 'tg-1', enabled: false });
   });
 
-  it('renders Available Channels section for unconfigured adapter types', () => {
+  it('renders Available Integrations section for unconfigured adapter types', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', []),
       makeCatalogEntry('slack', 'Slack', []),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByText('Available Channels')).toBeInTheDocument();
+    expect(screen.getByText('Available Integrations')).toBeInTheDocument();
     expect(screen.getByTestId('catalog-card-telegram')).toBeInTheDocument();
     expect(screen.getByTestId('catalog-card-slack')).toBeInTheDocument();
   });
 
-  it('hides Available Channels when all types are configured (non-multiInstance)', () => {
+  it('hides Available Integrations when all types are configured (non-multiInstance)', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -311,12 +311,12 @@ describe('ChannelsTab', () => {
       ]),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.queryByText('Available Channels')).not.toBeInTheDocument();
+    expect(screen.queryByText('Available Integrations')).not.toBeInTheDocument();
   });
 
-  it('shows multiInstance adapters in Available Channels even when they have instances', () => {
+  it('shows multiInstance adapters in Available Integrations even when they have instances', () => {
     mockCatalogData = [
       {
         manifest: {
@@ -345,13 +345,13 @@ describe('ChannelsTab', () => {
       },
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.getByText('Available Channels')).toBeInTheDocument();
+    expect(screen.getByText('Available Integrations')).toBeInTheDocument();
     expect(screen.getByTestId('catalog-card-webhook')).toBeInTheDocument();
   });
 
-  it('passes binding count to ChannelSettingRow', () => {
+  it('passes binding count to IntegrationSettingRow', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -390,13 +390,13 @@ describe('ChannelsTab', () => {
       },
     ] as AdapterBinding[];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
-    // The binding count is rendered in ChannelSettingRow's metadata line
+    // The binding count is rendered in IntegrationSettingRow's metadata line
     expect(screen.getByText('2 agents')).toBeInTheDocument();
   });
 
-  it('excludes internal adapters from configured channels', () => {
+  it('excludes internal adapters from configured integrations', () => {
     // useExternalAdapterCatalog pre-filters internal adapters, so the mock
     // returns only external entries — verifying that the component uses the
     // shared hook rather than raw useAdapterCatalog.
@@ -418,21 +418,21 @@ describe('ChannelsTab', () => {
       ]),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('My Bot')).toBeInTheDocument();
     // Internal adapters never reach the component — the hook filters them.
     expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
   });
 
-  it('excludes internal adapters from Available Channels', () => {
+  it('excludes internal adapters from Available Integrations', () => {
     // When only internal adapters exist, the hook returns an empty array.
-    // The component should show the empty state, not the Available Channels section.
+    // The component should show the empty state, not the Available Integrations section.
     mockCatalogData = [];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
-    expect(screen.queryByText('Available Channels')).not.toBeInTheDocument();
+    expect(screen.queryByText('Available Integrations')).not.toBeInTheDocument();
     expect(screen.queryByTestId('catalog-card-claude code')).not.toBeInTheDocument();
   });
 
@@ -441,7 +441,7 @@ describe('ChannelsTab', () => {
   it('renders the Session Delivery card when the internal claude-code instance exists', () => {
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByText('Session Delivery')).toBeInTheDocument();
     expect(screen.getByText('Deliver to Claude Code')).toBeInTheDocument();
@@ -452,7 +452,7 @@ describe('ChannelsTab', () => {
   it('hides the Session Delivery card when no internal claude-code instance exists', () => {
     mockFullCatalogData = [];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.queryByText('Session Delivery')).not.toBeInTheDocument();
   });
@@ -461,7 +461,7 @@ describe('ChannelsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry({ enabled: true })];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     await user.click(screen.getByRole('switch', { name: 'Deliver to Claude Code' }));
 
@@ -473,7 +473,7 @@ describe('ChannelsTab', () => {
       makeClaudeCodeEntry({ config: { maxConcurrent: 5, defaultTimeoutMs: 600000 } }),
     ];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     expect(screen.getByDisplayValue('5')).toBeInTheDocument();
     expect(screen.getByDisplayValue('600000')).toBeInTheDocument();
@@ -483,7 +483,7 @@ describe('ChannelsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('3');
     await user.clear(input);
@@ -500,7 +500,7 @@ describe('ChannelsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('300000');
     await user.clear(input);
@@ -517,7 +517,7 @@ describe('ChannelsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry({ config: { maxConcurrent: 5 } })];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('5');
     await user.click(input);
@@ -530,7 +530,7 @@ describe('ChannelsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry({ config: undefined })];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     // With no persisted config, the input displays the default fallback (3).
     const input = screen.getByDisplayValue('3');
@@ -543,7 +543,7 @@ describe('ChannelsTab', () => {
   it('does not call updateConfig when the value is invalid (zero, empty, or non-numeric)', () => {
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
     const input = screen.getByDisplayValue('3');
 
     fireEvent.change(input, { target: { value: '0' } });
@@ -563,7 +563,7 @@ describe('ChannelsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('3');
     await user.clear(input);
@@ -579,7 +579,7 @@ describe('ChannelsTab', () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry()];
 
-    render(<ChannelsTab />);
+    render(<IntegrationsTab />);
 
     const input = screen.getByDisplayValue('300000');
     await user.clear(input);

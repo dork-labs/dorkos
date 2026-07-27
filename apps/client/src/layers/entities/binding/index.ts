@@ -1,5 +1,5 @@
 /**
- * Binding entity — the one home for adapter↔agent binding (channel) records:
+ * Binding entity — the one home for adapter↔agent binding (integration) records:
  * lifecycle hooks, the dialog's shared form model, and the display helpers
  * (preview sentence, session-strategy labels) used across every surface that
  * manages bindings.

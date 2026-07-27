@@ -40,7 +40,7 @@ beforeAll(() => {
 
 afterEach(cleanup);
 
-import { ChannelSettingRow } from '../ui/ChannelSettingRow';
+import { IntegrationSettingRow } from '../ui/IntegrationSettingRow';
 
 function createManifest(overrides?: Partial<AdapterManifest>): AdapterManifest {
   return {
@@ -72,13 +72,13 @@ function createInstance(overrides?: Partial<CatalogInstance>): CatalogInstance {
   };
 }
 
-describe('ChannelSettingRow', () => {
+describe('IntegrationSettingRow', () => {
   it('renders the instance label as display name', () => {
     const manifest = createManifest();
     const instance = createInstance({ label: 'Production Bot' });
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}
@@ -94,7 +94,7 @@ describe('ChannelSettingRow', () => {
     const instance = createInstance({ label: undefined });
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}
@@ -121,7 +121,7 @@ describe('ChannelSettingRow', () => {
     });
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}
@@ -137,7 +137,7 @@ describe('ChannelSettingRow', () => {
     const instance = createInstance({ enabled: true });
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}
@@ -155,7 +155,7 @@ describe('ChannelSettingRow', () => {
     const instance = createInstance({ enabled: false });
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}
@@ -174,7 +174,7 @@ describe('ChannelSettingRow', () => {
     const instance = createInstance({ enabled: false });
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={onToggle}
@@ -191,7 +191,7 @@ describe('ChannelSettingRow', () => {
     const instance = createInstance({ label: 'My Telegram Bot' });
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}
@@ -209,7 +209,7 @@ describe('ChannelSettingRow', () => {
     const instance = createInstance();
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}
@@ -226,7 +226,7 @@ describe('ChannelSettingRow', () => {
     const instance = createInstance();
 
     render(
-      <ChannelSettingRow
+      <IntegrationSettingRow
         instance={instance}
         manifest={manifest}
         onToggle={vi.fn()}

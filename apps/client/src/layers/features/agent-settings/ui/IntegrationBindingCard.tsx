@@ -25,12 +25,12 @@ import { AdapterIcon, ADAPTER_STATE_DOT_CLASS } from '@/layers/features/relay';
 import { buildPreviewSentence } from '@/layers/entities/binding';
 import type { AdapterBinding, BindingTestResult } from '@dorkos/shared/relay-schemas';
 
-/** The four states exposed by ChannelBindingCard (transient states collapsed to 'connecting'). */
+/** The four states exposed by IntegrationBindingCard (transient states collapsed to 'connecting'). */
 export type CardAdapterState = 'connected' | 'disconnected' | 'error' | 'connecting';
 
 /**
  * Maps the four card-level states to dot classes.
- * 'disconnected' uses amber here — a dropped channel binding warrants attention,
+ * 'disconnected' uses amber here — a dropped integration binding warrants attention,
  * unlike the relay panel where disconnected means idle/ready (muted-foreground).
  * 'connecting' surfaces as the amber-pulsing 'starting' class — same visual meaning.
  */
@@ -53,15 +53,15 @@ function buildRestrictionDetail(binding: AdapterBinding): string {
   return parts.join(' · ');
 }
 
-interface ChannelBindingCardProps {
+interface IntegrationBindingCardProps {
   /** The binding to display. */
   binding: AdapterBinding;
-  /** Display name of the channel (adapter displayName from catalog). */
-  channelName: string;
+  /** Display name of the integration (adapter displayName from catalog). */
+  integrationName: string;
   /** Icon identifier from the adapter manifest. */
-  channelIconId?: string;
-  /** Adapter type — used as icon fallback when channelIconId is absent. */
-  channelAdapterType: string;
+  integrationIconId?: string;
+  /** Adapter type — used as icon fallback when integrationIconId is absent. */
+  integrationAdapterType: string;
   /** Current adapter connection state. Transient states (starting/stopping/reconnecting) should be passed as 'connecting'. */
   adapterState: CardAdapterState;
   /** Error message to show when adapterState === 'error'. */
@@ -81,20 +81,20 @@ interface ChannelBindingCardProps {
 }
 
 /**
- * Card displaying a single channel binding with progressive disclosure design.
+ * Card displaying a single integration binding with progressive disclosure design.
  *
- * Primary surface shows: brand icon with status-dot overlay, channel name,
+ * Primary surface shows: brand icon with status-dot overlay, integration name,
  * optional chat display name, preview sentence (or error), Restricted pill
  * when permissions deviate from defaults, and an always-visible kebab menu.
  *
  * Raw jargon (sessionStrategy, chatId, per-permission icons) is never shown
  * on this card — those details live in the edit dialog.
  */
-export function ChannelBindingCard({
+export function IntegrationBindingCard({
   binding,
-  channelName,
-  channelIconId,
-  channelAdapterType,
+  integrationName,
+  integrationIconId,
+  integrationAdapterType,
   adapterState,
   errorMessage,
   chatDisplayName,
@@ -103,7 +103,7 @@ export function ChannelBindingCard({
   onTest,
   onEdit,
   onRemove,
-}: ChannelBindingCardProps) {
+}: IntegrationBindingCardProps) {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [isTestPending, setIsTestPending] = useState(false);
 
@@ -117,8 +117,8 @@ export function ChannelBindingCard({
     return () => clearInterval(interval);
   }, [lastMessageAt, isPaused]);
 
-  // Concatenate channel name + chat display name with an em-dash when present.
-  const primaryText = chatDisplayName ? `${channelName} — ${chatDisplayName}` : channelName;
+  // Concatenate integration name + chat display name with an em-dash when present.
+  const primaryText = chatDisplayName ? `${integrationName} — ${chatDisplayName}` : integrationName;
 
   const previewSentence = buildPreviewSentence({
     sessionStrategy: binding.sessionStrategy,
@@ -157,7 +157,7 @@ export function ChannelBindingCard({
       <div className="flex items-start gap-3">
         {/* Brand icon with status-dot overlay */}
         <div className="relative shrink-0">
-          <AdapterIcon iconId={channelIconId} adapterType={channelAdapterType} size={32} />
+          <AdapterIcon iconId={integrationIconId} adapterType={integrationAdapterType} size={32} />
           <span
             className={cn(
               'ring-background absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2',
@@ -249,10 +249,10 @@ export function ChannelBindingCard({
       <AlertDialog open={showRemoveConfirm} onOpenChange={setShowRemoveConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove channel binding</AlertDialogTitle>
+            <AlertDialogTitle>Remove integration binding</AlertDialogTitle>
             <AlertDialogDescription>
-              Remove the binding to {channelName}? The agent will no longer receive messages from
-              this channel.
+              Remove the binding to {integrationName}? The agent will no longer receive messages
+              from this integration.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

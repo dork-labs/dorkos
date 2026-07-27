@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, shell } from 'electron';
 import type { MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
 import { formatServerOutput } from './server-output';
+import { isQuitting } from './quit-guard';
 
 /**
  * What the desktop shell does about a server it did not expect to lose:
@@ -44,25 +45,16 @@ const PRIMARY_BUTTON = 0;
 let consecutiveFailures = 0;
 
 /**
- * True once the app is on its way out.
+ * Whether the app is on its way out — asked of `quit-guard.ts`, which owns it.
  *
  * Cmd+Q during a still-booting restart tears the child down, which surfaces as
- * a failed restart — without this the shell would flash a dialog on the way
- * out, over an `app.quit()` that is already winning.
+ * a failed restart; without standing down, the shell would flash a dialog on
+ * the way out, over an `app.quit()` that is already winning. This used to be a
+ * `before-quit` listener of its own, which latched the moment the event fired.
+ * That was safe only while a quit could not be cancelled — now that quitting
+ * with agents mid-run asks first, a latched flag would silently disable crash
+ * recovery for the rest of the session when someone said "keep working".
  */
-let quitting = false;
-
-/** Whether the `before-quit` listener has been attached (once per process). */
-let quitGuardArmed = false;
-
-/** Notice when the app starts quitting, so recovery can stand down. */
-function armQuitGuard(): void {
-  if (quitGuardArmed) return;
-  quitGuardArmed = true;
-  app.on('before-quit', () => {
-    quitting = true;
-  });
-}
 
 /** Options for {@link recoverFromCrash}. */
 export interface CrashRecoveryOptions {
@@ -90,7 +82,6 @@ export interface CrashRecoveryOptions {
  */
 export async function recoverFromCrash(options: CrashRecoveryOptions): Promise<void> {
   const { code, output, uptimeMs, getWindow, restart } = options;
-  armQuitGuard();
 
   // Account for the server that just died before deciding anything. One that
   // served for a while was genuinely working, so this is a fresh incident; one
@@ -105,7 +96,7 @@ export async function recoverFromCrash(options: CrashRecoveryOptions): Promise<v
   let detail = crashDetail(code, output);
 
   for (;;) {
-    if (quitting) return;
+    if (isQuitting()) return;
     if (consecutiveFailures >= MAX_RESTART_FAILURES) {
       await giveUp(getWindow, detail);
       return;
@@ -124,7 +115,7 @@ export async function recoverFromCrash(options: CrashRecoveryOptions): Promise<v
     }
 
     try {
-      pointWindowAtServer(getWindow, await restart());
+      pointWindowsAtServer(await restart());
       return;
     } catch (err) {
       consecutiveFailures += 1;
@@ -181,22 +172,26 @@ function revealLogs(): void {
 }
 
 /**
- * Point the main window at a freshly restarted server, whose port is new.
+ * Point every cockpit window at a freshly restarted server, whose port is new.
  *
- * @param getWindow - Accessor for the window to move.
+ * All of them, not just the tracked one: a second window opened with
+ * `window.open` is a full cockpit on the same origin, and leaving it pointed at
+ * a dead port would strand it with no way to recover but closing it.
+ *
  * @param port - The port the replacement server is listening on.
  */
-function pointWindowAtServer(getWindow: () => BrowserWindow | null, port: number): void {
-  const win = resolveDialogWindow(getWindow);
-  if (!win || win.isDestroyed()) return;
-  // A packaged build loads the renderer *from* the server, so it has to move
-  // to the new origin. In dev the renderer comes from electron-vite and only
-  // needs a reload, which re-reads the port over IPC — navigating it to the
-  // server would strand it away from the dev server.
-  if (app.isPackaged) {
-    win.loadURL(`http://localhost:${port}`);
-  } else {
-    win.reload();
+function pointWindowsAtServer(port: number): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    // A packaged build loads the renderer *from* the server, so it has to move
+    // to the new origin. In dev the renderer comes from electron-vite and only
+    // needs a reload, which re-reads the port over IPC — navigating it to the
+    // server would strand it away from the dev server.
+    if (app.isPackaged) {
+      void win.loadURL(`http://localhost:${port}`);
+    } else {
+      win.reload();
+    }
   }
 }
 

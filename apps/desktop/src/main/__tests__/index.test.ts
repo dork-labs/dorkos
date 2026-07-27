@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('electron', () => import('./electron-mock'));
-vi.mock('../window-manager', () => ({ createWindow: vi.fn() }));
+vi.mock('../window-manager', () => ({
+  createWindow: vi.fn(),
+  makeRendererUrlAccessor: vi.fn(() => () => undefined),
+}));
+vi.mock('../window-state', () => ({ watchDisplayChanges: vi.fn() }));
 vi.mock('../server-process', () => ({
   startServer: vi.fn(async () => 4242),
   stopServer: vi.fn(async () => undefined),
@@ -11,8 +15,24 @@ vi.mock('../menu', () => ({ setupMenu: vi.fn(), setupDockMenu: vi.fn() }));
 vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
 vi.mock('../auto-updater', () => ({
   setupAutoUpdater: vi.fn(),
-  restartToUpdate: vi.fn(),
+  restartToUpdate: vi.fn(async () => undefined),
   getLastUpdateStatus: vi.fn(() => null),
+  isRestartingToUpdate: vi.fn(() => false),
+  consumeUpdateRestart: vi.fn(() => false),
+}));
+vi.mock('../tray', () => ({
+  setupTray: vi.fn(),
+  setTrayActivity: vi.fn(),
+  hasTray: vi.fn(() => true),
+}));
+// The real watcher opens a socket to a server that does not exist here; its own
+// suite covers the wire format.
+vi.mock('../agent-activity', () => ({
+  watchAgentActivity: vi.fn(() => ({ stop: vi.fn() })),
+  getActiveAgentCount: vi.fn(() => 0),
+}));
+vi.mock('../background-notice', () => ({
+  announceBackgroundRunning: vi.fn(async () => undefined),
 }));
 
 /**
@@ -462,6 +482,134 @@ describe('update IPC handlers', () => {
     });
     // A stray webContents (devtools, an auxiliary window) gets nothing.
     expect(handler({ sender: { id: 9999 } } as unknown as Electron.IpcMainInvokeEvent)).toBeNull();
+  });
+});
+
+describe('keeping DorkOS running in the background (DOR-538)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Boot the app with one tracked window and hand it back. */
+  async function boot(): Promise<{
+    app: Awaited<ReturnType<typeof getElectronMock>>['app'];
+    win: Awaited<ReturnType<typeof getElectronMock>>['BrowserWindow']['prototype'];
+  }> {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const windowManager = await import('../window-manager');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    vi.mocked(windowManager.createWindow)
+      .mockReset()
+      .mockReturnValue(win as unknown as Electron.BrowserWindow);
+
+    await import('../index');
+    await app.emit('ready');
+    return { app, win };
+  }
+
+  it('does not quit when the last window closes — there is a tray to come back from', async () => {
+    const tray = await import('../tray');
+    vi.mocked(tray.hasTray).mockReturnValue(true);
+    const notice = await import('../background-notice');
+    const { app } = await boot();
+
+    await app.emit('window-all-closed');
+
+    expect(app.quit).not.toHaveBeenCalled();
+    expect(notice.announceBackgroundRunning).toHaveBeenCalledTimes(1);
+  });
+
+  it('quits when the last window closes and there is no tray to come back from', async () => {
+    const tray = await import('../tray');
+    vi.mocked(tray.hasTray).mockReturnValue(false);
+    const notice = await import('../background-notice');
+    vi.mocked(notice.announceBackgroundRunning).mockClear();
+    const { app } = await boot();
+
+    await app.emit('window-all-closed');
+
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    // Nothing to reassure them about: the app really did go.
+    expect(notice.announceBackgroundRunning).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when quitAndInstall closes the windows on its way to an update restart', async () => {
+    // quitAndInstall() "will close all application windows first, and
+    // automatically call app.quit() after all windows have been closed" — so
+    // this event fires on the update path exactly as if a person had closed
+    // the last window. Left unguarded it showed "DorkOS is still running", with
+    // a Quit button, mid-update, and burnt the one-time notice for good.
+    const autoUpdater = await import('../auto-updater');
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(true);
+    const tray = await import('../tray');
+    vi.mocked(tray.hasTray).mockReturnValue(true);
+    const notice = await import('../background-notice');
+    vi.mocked(notice.announceBackgroundRunning).mockClear();
+    const { app } = await boot();
+
+    await app.emit('window-all-closed');
+
+    expect(notice.announceBackgroundRunning).not.toHaveBeenCalled();
+    // No quit either: quitAndInstall's own app.quit() is what finishes this.
+    expect(app.quit).not.toHaveBeenCalled();
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(false);
+  });
+
+  it('still quits with no tray, even mid-update — that state must be unreachable', async () => {
+    // The severe half of the update-restart bug: gating this branch on a flag
+    // another module owns meant a stuck flag could leave the app running with
+    // no window AND no tray. The flag may silence the notice; it may never
+    // stop the quit.
+    const autoUpdater = await import('../auto-updater');
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(true);
+    const tray = await import('../tray');
+    vi.mocked(tray.hasTray).mockReturnValue(false);
+    const { app } = await boot();
+
+    await app.emit('window-all-closed');
+
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    vi.mocked(autoUpdater.isRestartingToUpdate).mockReturnValue(false);
+  });
+
+  it('hands the quit guard a token it can spend, not a flag it can only read', async () => {
+    const autoUpdater = await import('../auto-updater');
+    const quitGuard = await import('../quit-guard');
+    const armSpy = vi.spyOn(quitGuard, 'armQuitGuard');
+    await boot();
+
+    const [options] = armSpy.mock.calls[0];
+    expect(options.consumeUpdateRestart).toBe(autoUpdater.consumeUpdateRestart);
+    armSpy.mockRestore();
+  });
+
+  it('sets up the tray with a way back to the window and to the activity view', async () => {
+    const tray = await import('../tray');
+    vi.mocked(tray.setupTray).mockClear();
+    const { win } = await boot();
+    const navigation = await import('../navigation');
+    navigation.resolvePendingNavigate(win.webContents.id);
+
+    const [options] = vi.mocked(tray.setupTray).mock.calls[0];
+    options.showWindow();
+    expect(win.focus).toHaveBeenCalledTimes(1);
+
+    options.openActivity();
+    expect(win.webContents.send).toHaveBeenCalledWith('navigate', navigation.ACTIVITY_ROUTE);
+  });
+
+  it('feeds the tray from the server event stream, reading the port through the supervisor', async () => {
+    const activity = await import('../agent-activity');
+    vi.mocked(activity.watchAgentActivity).mockClear();
+    const tray = await import('../tray');
+    await boot();
+
+    const [options] = vi.mocked(activity.watchAgentActivity).mock.calls[0];
+    expect(options.getPort()).toBe(4242);
+    expect(options.onChange).toBe(tray.setTrayActivity);
   });
 });
 

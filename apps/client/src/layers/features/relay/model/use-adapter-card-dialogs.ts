@@ -7,7 +7,7 @@ interface DialogState {
   bindingTarget: { mode: 'create' | 'edit'; adapterId: string; binding?: AdapterBinding } | null;
 }
 
-/** Manages dialog open/close state for AdapterCard actions hosted at the ConnectionsTab level. */
+/** Manages dialog open/close state for AdapterCard actions hosted at the IntegrationsTab level. */
 export function useAdapterCardDialogs() {
   const [state, setState] = useState<DialogState>({
     removeTarget: null,

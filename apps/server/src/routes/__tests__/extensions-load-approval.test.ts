@@ -26,7 +26,7 @@
  *
  * @module routes/__tests__/extensions-load-approval
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 
 /** Mutable posture + stored config the mocked config manager reports. */
 const state = vi.hoisted(() => ({
@@ -56,6 +56,48 @@ vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+/**
+ * Pins `env.DORKOS_PORT` to a literal this file controls, instead of reading
+ * whatever `DORKOS_PORT` happens to be set to in the process actually running
+ * the suite. Same pattern as `middleware/__tests__/mcp-origin.test.ts` — minus
+ * that file's `tunnel-manager` mock, which is safe to skip here: the real
+ * singleton's `status.url` defaults to `null` with no tunnel connected, so
+ * `resolveTrustedOrigins()` never adds a tunnel origin during this suite.
+ *
+ * An earlier version derived the expected port from the real `env` (`const
+ * TRUSTED_PORT = env.DORKOS_PORT`), which is correct in every environment but
+ * proves only that the route and the test AGREE on a port — never that they
+ * agree on the RIGHT one. A route that dropped the port from its origin
+ * comparison entirely, or compared only the host, would still pass every test
+ * in this file, because both sides would drift together. Controlling the
+ * input here — and asserting the adjacent, un-pinned port below is refused —
+ * makes the port a genuine part of what's under test.
+ *
+ * This is a PARTIAL stub, not a full replacement of `env`: it supplies only
+ * `DORKOS_PORT`, the one field on the path this file exercises (verified by
+ * checking every module `../extensions.js` transitively imports for a
+ * `env.js` import — only `lib/trusted-origins.ts` has one). One other field
+ * is reachable in the same module graph: `services/core/auth/index.ts` reads
+ * `env.NODE_ENV` at module scope, which resolves to `undefined` here instead
+ * of `'test'`. That's inert for this suite — both values make `isProduction`
+ * false, and its only consumers live inside `createAuth()`, which nothing
+ * here calls — but a future test that exercises `createAuth()` through this
+ * mock would need to widen the stub first.
+ */
+vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 7777 } }));
+
+/**
+ * `getStaticLocalOrigins()` (`lib/trusted-origins.ts`) composes two of its
+ * four trusted origins from `VITE_PORT` — read from the REAL `process.env`,
+ * not the mocked `env` module above, because it's a Vite-specific var
+ * deliberately outside `env.ts`'s schema. Left ambient, a route that silently
+ * stopped consulting `DORKOS_PORT` at all could still pass this entire file
+ * whenever the ambient `VITE_PORT` happened to collide with `TRUSTED_PORT` or
+ * `TRUSTED_PORT + 1` — the exact #493 failure shape (a value that only looked
+ * pinned), one environment variable over. Pin it to neither.
+ */
+vi.stubEnv('VITE_PORT', '7779');
+
 import request from 'supertest';
 import express from 'express';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
@@ -64,6 +106,14 @@ import {
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_PATHS,
 } from '../../services/core/operator/config-write-policy.js';
+
+/** The literal port `resolveTrustedOrigins()` is pinned to above. */
+const TRUSTED_PORT = 7777;
+
+/** Undo the `VITE_PORT` stub so it doesn't leak into other test files. */
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
 
 const DORK_HOME = '/tmp/dork-test';
 
@@ -318,12 +368,33 @@ describe('POST /api/extensions/:id/approve', () => {
     });
 
     it('is not fooled by a host that merely starts with a trusted one', async () => {
-      // `http://localhost:4242.evil.example` is a host the attacker owns. Exact
-      // `.includes()` membership refuses it; a prefix comparison would not, and a
-      // prefix comparison is the natural way to write this wrong.
+      // `http://localhost:<port>.evil.example` is a host the attacker owns. Exact
+      // `.includes()` membership refuses it; `some(t => origin.startsWith(t))`
+      // would not — that's this direction of "starts with" done wrong. The
+      // mirror direction, `some(t => t.startsWith(origin))`, is covered by the
+      // next test.
       const res = await request(app)
         .post('/api/extensions/my-ext/approve')
-        .set('origin', 'http://localhost:4242.evil.example')
+        .set('origin', `http://localhost:${TRUSTED_PORT}.evil.example`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
+    });
+
+    it('is not fooled by an origin that is merely a prefix of a trusted one', async () => {
+      // The mirror image of the case above: `some(t => t.startsWith(origin))`
+      // would accept any short origin that happens to be a string-prefix of a
+      // trusted one — dropping the port down to a single leading digit still
+      // "starts" the full trusted value (7777 starts with 7). Less exploitable
+      // in practice than the case above — a browser's Origin is the true origin
+      // of the page making the request, so triggering this needs an
+      // attacker-controlled service actually listening on a matching prefix
+      // port on this machine — but `startsWith` is the wrong operation in
+      // either direction, and the suite should say so in both.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', 'http://127.0.0.1:7')
         .send({});
 
       expect(res.status).toBe(403);
@@ -345,11 +416,56 @@ describe('POST /api/extensions/:id/approve', () => {
     it('lets the cockpit through on its own origin', async () => {
       const res = await request(app)
         .post('/api/extensions/my-ext/approve')
-        .set('origin', 'http://127.0.0.1:4242')
+        .set('origin', `http://127.0.0.1:${TRUSTED_PORT}`)
         .send({});
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
+    });
+
+    it('lets the cockpit through on its localhost form too', async () => {
+      // getStaticLocalOrigins() trusts both the 127.0.0.1 and localhost forms
+      // on DORKOS_PORT. `localhost` is what most operators actually see in
+      // their address bar, so it earns its own assertion rather than riding
+      // on the 127.0.0.1 case above — dropping it from the trusted set would
+      // otherwise leave this whole file green while breaking real cockpits.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', `http://localhost:${TRUSTED_PORT}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(state.extensions.approvedToRun).toEqual(['my-ext']);
+    });
+
+    it('refuses the very next port, proving the port is compared and not merely present', async () => {
+      // TRUSTED_PORT is pinned above, so this is the one case that could not
+      // pass by accident: 7778 is a real, well-formed loopback origin, one
+      // port off the one DorkOS actually trusts. Accepting it would mean the
+      // comparison ignores the port (or compares it loosely) rather than
+      // matching the exact origin the server itself composed.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', `http://127.0.0.1:${TRUSTED_PORT + 1}`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
+    });
+
+    it('refuses the trusted port on an untrusted host, proving the host is compared too', async () => {
+      // The port-only mirror of the case above: an attacker picks their own
+      // port, so if the comparison only checked the port, an attacker serving
+      // their page on port 7777 would sail through. `evil.example:7777` is
+      // exactly that — the right port, the wrong host — and it must be
+      // refused for the port-adjacency test above to mean what it claims.
+      const res = await request(app)
+        .post('/api/extensions/my-ext/approve')
+        .set('origin', `http://evil.example:${TRUSTED_PORT}`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual([]);
     });
 
     it('lets a caller with no Origin header through, because only browsers send one', async () => {

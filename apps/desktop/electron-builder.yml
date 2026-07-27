@@ -86,6 +86,37 @@ publish:
   owner: dork-labs
   repo: dorkos
 
+# Explicit allowlist of what goes into app.asar. Without it, electron-builder's
+# default packs essentially the whole package directory — which shipped `src/`
+# (the entire main-process TypeScript source AND its 8 `__tests__/` files, incl.
+# the electron mocks), both build `scripts/`, `.turbo/turbo-build.log`,
+# `electron.vite.config.ts`, `tsconfig.json`, `eslint.config.js` and
+# `vitest.config.ts` to every user. None of it is read at runtime: the app runs
+# the COMPILED output under `dist/`.
+#
+# Everything the packaged runtime actually reads, and nothing else:
+#   package.json        Electron reads `main` (dist/main/index.js) + version.
+#   dist/main, preload  The compiled shell (electron-vite output), including the
+#                       tray images the main build emits beside it from build/
+#                       — buildResources is NOT packaged, so that emit (see
+#                       electron.vite.config.ts) is what ships them.
+#   dist/renderer       The SPA, served by the bundled server (asarUnpack'd below).
+#   dist/server         The esbuild server bundle the main process forks.
+#   dist/drizzle        Migrations, resolved as `__dirname/../drizzle` from the
+#                       server bundle — see scripts/build-server.ts's layout note.
+#   core-extensions     Bundled extension source, staged into DORK_HOME on boot
+#                       (asarUnpack'd below).
+#
+# node_modules is deliberately absent: electron-builder derives it from the
+# production dependency tree through its own copier and only ever reads NEGATIVE
+# patterns from this list, so a positive entry here would do nothing. Adding a
+# runtime read of any new top-level path means adding it here too — a missing
+# entry produces an app that packages green and fails only once installed.
+files:
+  - 'package.json'
+  - 'dist/**'
+  - 'core-extensions/**'
+
 asar: true
 asarUnpack:
   - '**/node_modules/better-sqlite3/**'
@@ -120,9 +151,20 @@ asarUnpack:
   # same class of read limitation as dist/renderer above.
   - 'core-extensions/**'
 
-extraResources:
-  - from: 'node_modules/better-sqlite3'
-    to: 'node_modules/better-sqlite3'
+# NO extraResources. There used to be a second copy of better-sqlite3 here
+# (`node_modules/better-sqlite3` -> `resources/node_modules/better-sqlite3`),
+# dating from the first desktop commit, before the asarUnpack strategy above
+# existed. It was unreachable: the server bundle at
+# `resources/app.asar/dist/server/server-entry.mjs` resolves `better-sqlite3` by
+# walking up its own directory, and hits `app.asar/node_modules/better-sqlite3`
+# — which the asarUnpack glob above already makes a real file on disk — one
+# level before it would ever reach `resources/node_modules`. Verified against
+# the packed asar; nothing in the codebase references `resources/node_modules`
+# either. So it was ~12 MB of dead weight that could only ever cause harm: the
+# two copies are rebuilt independently, and the day they carry different ABIs,
+# someone debugs a NODE_MODULE_VERSION error against a binary they don't know
+# exists. If a future runtime genuinely needs a file outside the asar, unpack it
+# — don't duplicate it.
 
 # electron-builder's own automated native-module rebuild (the historical
 # default for npmRebuild: true) was observed producing a better-sqlite3

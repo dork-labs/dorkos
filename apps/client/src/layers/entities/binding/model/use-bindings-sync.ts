@@ -8,7 +8,7 @@ import { BINDINGS_QUERY_KEY } from './use-bindings';
  * The server broadcasts `relay_bindings_changed` on the unified `/api/events`
  * stream whenever a binding is created, updated, deleted, or cleaned up as an
  * orphan of a removed adapter. This hook invalidates the shared bindings query
- * so every open surface (topology graph, Connections tab, sidebar) reflects the
+ * so every open surface (topology graph, Integrations tab, sidebar) reflects the
  * change immediately instead of waiting for a local mutation.
  *
  * Mount once near the app root. In embedded mode (Obsidian) the in-process

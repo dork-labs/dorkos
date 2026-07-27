@@ -4,7 +4,7 @@
  * ## Why this is in `shared` and not next to the session entity
  *
  * A permission mode is chosen in three unrelated places — the session status
- * line, a channel binding, and a scheduled task — and each of them owes the
+ * line, an integration binding, and a scheduled task — and each of them owes the
  * person the same sentence about what the mode does and does not cover. Two of
  * those live in `features`, one in `entities/binding`, and an entity may not
  * import a sibling entity. So a definition parked in `entities/session` is

@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import type {
   Display,
   HandlerDetails,
@@ -18,9 +19,9 @@ import { MockServerProcess, type SpawnOptions } from './server-child-mock';
  * (including `webContents` with `send`, a unique `id`, and an `on`/`emit`
  * event bus), `ipcMain` (`on`/`handle` as inspectable `vi.fn()`s — tests
  * invoke a registered handler directly from its mock call args), `screen`,
- * `dialog`, `Menu`, `shell`, and `utilityProcess` (the production server-spawn
- * path) to drive the main-process code under test without a real Electron
- * runtime.
+ * `dialog`, `Menu`, `Tray`, `nativeImage`, `nativeTheme`, `shell`, and
+ * `utilityProcess` (the production server-spawn path) to drive the
+ * main-process code under test without a real Electron runtime.
  */
 
 const DEFAULT_USER_DATA_PATH = '/tmp/dorkos-desktop-test/userData';
@@ -100,11 +101,18 @@ class MockBrowserWindowImpl {
   private readonly webContentsBus = createEventBus();
   private maximized = false;
   private minimized = false;
+  private fullScreen = false;
+  /** Construction options, so tests can assert on `show`, `backgroundColor`, `webPreferences`. */
+  readonly options: Record<string, unknown>;
   bounds: Rectangle;
   webContents = {
     id: nextWebContentsId++,
     send: vi.fn<(channel: string, ...args: unknown[]) => void>(),
     on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
+      this.webContentsBus.on(event, listener);
+      return this.webContents;
+    }),
+    once: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
       this.webContentsBus.on(event, listener);
       return this.webContents;
     }),
@@ -121,6 +129,7 @@ class MockBrowserWindowImpl {
   };
 
   constructor(options: Record<string, unknown> = {}) {
+    this.options = options;
     this.bounds = {
       x: typeof options.x === 'number' ? options.x : 0,
       y: typeof options.y === 'number' ? options.y : 0,
@@ -134,6 +143,10 @@ class MockBrowserWindowImpl {
     this.bus.on(event, listener);
     return this;
   });
+  once = vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
+    this.bus.on(event, listener);
+    return this;
+  });
   off = vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
     this.bus.off(event, listener);
     return this;
@@ -142,6 +155,8 @@ class MockBrowserWindowImpl {
   emit = (event: string, ...args: unknown[]): Promise<void> => this.bus.emit(event, ...args);
 
   focus = vi.fn<() => void>();
+  show = vi.fn<() => void>();
+  close = vi.fn<() => void>();
   isDestroyed = vi.fn((): boolean => false);
   restore = vi.fn(() => {
     this.minimized = false;
@@ -152,8 +167,12 @@ class MockBrowserWindowImpl {
   maximize = vi.fn(() => {
     this.maximized = true;
   });
+  setFullScreen = vi.fn((value: boolean) => {
+    this.fullScreen = value;
+  });
   isMaximized = vi.fn((): boolean => this.maximized);
   isMinimized = vi.fn((): boolean => this.minimized);
+  isFullScreen = vi.fn((): boolean => this.fullScreen);
   getBounds = vi.fn((): Rectangle => this.bounds);
   setBounds = vi.fn((bounds: Partial<Rectangle>) => {
     this.bounds = { ...this.bounds, ...bounds };
@@ -197,10 +216,97 @@ export const ipcMain = {
   handle: vi.fn<(channel: string, listener: (...args: unknown[]) => unknown) => void>(),
 };
 
+const screenBus = createEventBus();
+
 export const screen = {
   getAllDisplays: vi.fn((): Display[] => [PRIMARY_DISPLAY]),
   getPrimaryDisplay: vi.fn((): Display => PRIMARY_DISPLAY),
+  getDisplayMatching: vi.fn((_bounds: Rectangle): Display => PRIMARY_DISPLAY),
+  on: vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
+    screenBus.on(event, listener);
+    return screen;
+  }),
+  /** Test helper — invokes every registered listener for `event`. */
+  emit: (event: string, ...args: unknown[]): Promise<void> => screenBus.emit(event, ...args),
 };
+
+/**
+ * Test double for `Tray`. `new Tray(image)` is captured in
+ * {@link trayInstances}, and `setContextMenu` records the template the real
+ * `Menu.buildFromTemplate` mock passed through — so a test can click a tray
+ * item without a real menu bar.
+ */
+class MockTrayImpl {
+  static instances: MockTrayImpl[] = [];
+
+  private readonly bus = createEventBus();
+
+  constructor(public readonly image: MockNativeImage) {
+    MockTrayImpl.instances.push(this);
+  }
+
+  setToolTip = vi.fn<(tooltip: string) => void>();
+  setTitle = vi.fn<(title: string) => void>();
+  setContextMenu = vi.fn<(menu: unknown) => void>();
+  destroy = vi.fn<() => void>();
+  on = vi.fn((event: string, listener: (...args: unknown[]) => unknown) => {
+    this.bus.on(event, listener);
+    return this;
+  });
+  /** Test helper — not part of the real Tray API. */
+  emit = (event: string, ...args: unknown[]): Promise<void> => this.bus.emit(event, ...args);
+
+  /** Test helper — the template of the most recently set context menu. */
+  contextMenuTemplate(): Electron.MenuItemConstructorOptions[] {
+    const calls = this.setContextMenu.mock.calls;
+    const last = calls[calls.length - 1]?.[0] as { template?: unknown } | undefined;
+    return (last?.template ?? []) as Electron.MenuItemConstructorOptions[];
+  }
+}
+
+export const Tray = MockTrayImpl;
+/** Alias for tests that want to inspect trays without the electron type name. */
+export type MockTray = MockTrayImpl;
+
+/** Minimal `NativeImage` stand-in: knows its source path and whether it decoded. */
+export interface MockNativeImage {
+  path: string;
+  isEmpty: () => boolean;
+  setTemplateImage: (value: boolean) => void;
+  /** Test helper — whether `setTemplateImage(true)` was called. */
+  templateImage: boolean;
+}
+
+/**
+ * File names {@link nativeImage} should pretend it cannot decode, matched
+ * against the end of the requested path (the caller builds an absolute one).
+ * Cleared by {@link resetElectronMock}.
+ */
+export const unreadableImageFiles = new Set<string>();
+
+export const nativeImage = {
+  createFromPath: vi.fn((path: string): MockNativeImage => {
+    const image: MockNativeImage = {
+      path,
+      templateImage: false,
+      isEmpty: () => [...unreadableImageFiles].some((name) => path.endsWith(name)),
+      setTemplateImage: (value: boolean) => {
+        image.templateImage = value;
+      },
+    };
+    return image;
+  }),
+};
+
+export const nativeTheme = { shouldUseDarkColors: true };
+
+/**
+ * Electron's **own** `autoUpdater` — the one behind `process._linkedBinding`,
+ * not electron-updater's wrapper (that lives in `electron-updater-mock.ts`).
+ * `before-quit-for-update` is announced here on both platforms, so
+ * `auto-updater.ts` listens on it; a test drives it with `.emit(...)`.
+ */
+export const autoUpdater = new EventEmitter();
 
 /**
  * Electron's `dialog.showMessageBox` is overloaded: anchored to a window, or
@@ -246,7 +352,10 @@ export const utilityProcess = {
 /** Reset all mock state between tests — call from `beforeEach`. */
 export function resetElectronMock(): void {
   MockBrowserWindowImpl.instances.length = 0;
+  MockTrayImpl.instances.length = 0;
   appBus.clear();
+  screenBus.clear();
+  unreadableImageFiles.clear();
   utilityProcessChildren.length = 0;
   utilityProcess.fork.mockClear();
 
@@ -264,6 +373,14 @@ export function resetElectronMock(): void {
 
   screen.getAllDisplays = vi.fn(() => [PRIMARY_DISPLAY]);
   screen.getPrimaryDisplay = vi.fn(() => PRIMARY_DISPLAY);
+  screen.getDisplayMatching = vi.fn(() => PRIMARY_DISPLAY);
+  // Recreating `screen.on` would unbind it from the bus above; clearing its
+  // call log is what tests actually need from it.
+  screen.on.mockClear();
+
+  nativeImage.createFromPath.mockClear();
+  nativeTheme.shouldUseDarkColors = true;
+  autoUpdater.removeAllListeners();
 
   dialog.showMessageBox = vi.fn<ShowMessageBox>(() =>
     Promise.resolve({ response: 0, checkboxChecked: false })

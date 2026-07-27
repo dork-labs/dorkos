@@ -28,7 +28,7 @@
  * on, and a 31- to 35-name list (depending which group was off) as soon as one was
  * off. Every name in that list then skipped the approval prompt: `binding_delete`,
  * which deletes a chat route, and `relay_disable_adapter`, which switches off a
- * connected channel, are representative of what that exposed. With every group on,
+ * connected integration, are representative of what that exposed. With every group on,
  * only the 13 names in `DORKOS_AGENT_TOOLS` auto-approved. So the toggle ran
  * backwards: switching a group off WIDENED the agent's auto-approval instead of
  * narrowing its access. Since `enabledToolGroups` is agent-writable through

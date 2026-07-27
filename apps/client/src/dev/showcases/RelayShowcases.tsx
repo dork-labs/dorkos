@@ -67,10 +67,10 @@ export function RelayShowcases() {
 
       <PlaygroundSection
         title="RelayEmptyState"
-        description="Empty state shown when no relay channels are configured."
+        description="Empty state shown when no relay integrations are configured."
       >
         <ShowcaseDemo>
-          <RelayEmptyState onAddChannel={() => {}} />
+          <RelayEmptyState onAddIntegration={() => {}} />
         </ShowcaseDemo>
       </PlaygroundSection>
     </>

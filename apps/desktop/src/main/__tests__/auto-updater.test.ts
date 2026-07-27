@@ -231,11 +231,13 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     const { restartToUpdate } = await import('../auto-updater');
 
     app.isPackaged = false;
-    restartToUpdate();
+    await restartToUpdate();
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
 
+    // With no quit guard armed there is nothing to ask about, so this goes
+    // straight through — the agent question is exercised in the DOR-538 suite.
     app.isPackaged = true;
-    restartToUpdate();
+    await restartToUpdate();
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
@@ -453,5 +455,215 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     );
     // Single-argument overload: no window as the first argument.
     expect(vi.mocked(dialog.showMessageBox).mock.calls[0]).toHaveLength(1);
+  });
+});
+
+describe('restarting to install an update (DOR-538)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    // Two tests below jump the clock with `vi.setSystemTime`, which *freezes*
+    // `Date.now()` rather than offsetting it. Left unrestored it leaks to every
+    // later test in this file: nothing here reads the clock for an assertion
+    // today, so it would sit latent until someone adds a test that needs wall
+    // time to pass and silently sees zero elapsed.
+    vi.useRealTimers();
+  });
+
+  /**
+   * Wire the updater and the quit guard together the way `index.ts` does, with
+   * `app.isPackaged` true — the restart path no-ops without it, which is why
+   * nothing reached it before.
+   */
+  async function armUpdateRestart(activeAgents = 0) {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const autoUpdaterModule = await import('../auto-updater');
+    const quitGuard = await import('../quit-guard');
+    quitGuard.resetQuitGuard();
+    autoUpdaterModule.resetUpdateRestartState();
+    const shutdown = vi.fn(() => Promise.resolve());
+    quitGuard.armQuitGuard({
+      countActiveAgents: () => activeAgents,
+      getWindow: () => null,
+      shutdown,
+      consumeUpdateRestart: autoUpdaterModule.consumeUpdateRestart,
+    });
+    return { app, autoUpdater, autoUpdaterModule, quitGuard, shutdown };
+  }
+
+  it('arms the installer and flags the restart, so window-all-closed can stay quiet', async () => {
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart();
+
+    await autoUpdaterModule.restartToUpdate();
+
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    // quitAndInstall() closes every window BEFORE calling app.quit(), so this
+    // has to be true by the time `window-all-closed` fires. `isQuitting()` is
+    // still false there — `before-quit` has not happened yet.
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(true);
+  });
+
+  it('asks about mid-run agents BEFORE arming the installer, not after the windows are gone', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(3);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+
+    await autoUpdaterModule.restartToUpdate();
+
+    const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
+      Electron.MessageBoxOptions,
+    ];
+    // A restart is not a quit. Telling someone who clicked "Restart to install"
+    // to close the window instead is advice that does not install their update,
+    // and on the native branch there is no window to close.
+    expect(options).toMatchObject({
+      title: 'Restart to Update?',
+      message: '3 agents are still working. Restart anyway?',
+      buttons: ['Keep Working', 'Restart Anyway'],
+    });
+    expect(options.detail).not.toContain('close the window');
+    // "Keep Working" here costs nothing: the installer was never armed, and the
+    // update still lands on the next ordinary quit.
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(false);
+  });
+
+  it('restarts once confirmed', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(2);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+
+    await autoUpdaterModule.restartToUpdate();
+
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(true);
+  });
+
+  it('does not ask twice: the quit that follows skips the confirmation', async () => {
+    const { app, dialog } = await getElectronMock();
+    const { autoUpdaterModule, shutdown } = await armUpdateRestart(2);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+    await autoUpdaterModule.restartToUpdate();
+    vi.mocked(dialog.showMessageBox).mockClear();
+
+    // quitAndInstall()'s own app.quit(), arriving after the windows closed.
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays armed while the restart is merely deferred, then completes it silently', async () => {
+    // The likely macOS path, and the one a previous fix broke.
+    // `MacUpdater.quitAndInstall()` quits only `if (this.squirrelDownloadedUpdate)`;
+    // otherwise it registers a deferred `update-downloaded` listener and
+    // returns with the app alive — the restart is still coming, just later. A
+    // mock that simply returns is exactly that branch.
+    const { app, dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule, shutdown } = await armUpdateRestart(2);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+
+    await autoUpdaterModule.restartToUpdate();
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Deferred is not "did not take". Disarming here is what put the
+    // background notice back in the middle of an update.
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(true);
+
+    // Squirrel finishes seconds later: the windows close, then the quit comes.
+    vi.mocked(dialog.showMessageBox).mockClear();
+    await app.emit('window-all-closed');
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // One decision, one dialog — and it was asked before any of this.
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(shutdown).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not silence a quit that is no longer the restart the person confirmed', async () => {
+    const { app, dialog } = await getElectronMock();
+    const { autoUpdaterModule } = await armUpdateRestart(2);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+    await autoUpdaterModule.restartToUpdate();
+
+    // The skip rides on "you authorised this moments ago", so that is what
+    // expires. Ten minutes on, an unrelated Cmd+Q is not that restart.
+    vi.setSystemTime(Date.now() + 11 * 60_000);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
+      Electron.MessageBoxOptions,
+    ];
+    expect(options.message).toBe('2 agents are still working. Quit anyway?');
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('re-authorises from the native updater when a deferred restart finally quits', async () => {
+    const { app, autoUpdater: nativeAutoUpdater, dialog } = await getElectronMock();
+    const { autoUpdaterModule } = await armUpdateRestart(2);
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+    await autoUpdaterModule.restartToUpdate();
+
+    // A restart slower than the grace window: without a refresh the quit it
+    // finally produces would be asked about a second time.
+    vi.setSystemTime(Date.now() + 11 * 60_000);
+    nativeAutoUpdater.emit('before-quit-for-update');
+
+    vi.mocked(dialog.showMessageBox).mockClear();
+    await app.emit('before-quit', { preventDefault: vi.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the token when the updater errors, as a rejected Squirrel update does', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(1);
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 1, checkboxChecked: false }));
+    await autoUpdaterModule.restartToUpdate();
+
+    // The macOS shape: quitAndInstall took its deferred branch, then Squirrel
+    // rejected the update it had been waiting for.
+    autoUpdater.emit('error', new Error('Could not get code signature for running application'));
+
+    expect(autoUpdaterModule.isRestartingToUpdate()).toBe(false);
+  });
+
+  it('routes the native "Restart Now" dialog through the same path', async () => {
+    const { dialog } = await getElectronMock();
+    const { autoUpdater, autoUpdaterModule } = await armUpdateRestart(1);
+    autoUpdaterModule.setupAutoUpdater(() => null);
+    // "Keep Working" on the agent question.
+    dialog.showMessageBox = vi.fn(() => Promise.resolve({ response: 0, checkboxChecked: false }));
+
+    // No window, so update-downloaded shows the native dialog; response 0 there
+    // is "Restart Now", which must reach the same confirmation.
+    autoUpdater.emit('update-downloaded', { version: '2.0.0' } as UpdateDownloadedEvent);
+
+    await vi.waitFor(() => {
+      expect(dialog.showMessageBox).toHaveBeenCalledTimes(2);
+    });
+    const [agentPrompt] = vi.mocked(dialog.showMessageBox).mock.calls[1] as [
+      Electron.MessageBoxOptions,
+    ];
+    expect(agentPrompt.message).toBe('1 agent is still working. Restart anyway?');
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 });

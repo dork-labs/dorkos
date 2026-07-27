@@ -94,9 +94,9 @@ export function AdapterCard({
         sessionStrategy: 'per-chat',
         label: '',
       });
-      toast.success('Channel connected');
+      toast.success('Integration added');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to connect channel');
+      toast.error(err instanceof Error ? err.message : 'Failed to add integration');
     }
   }
 
