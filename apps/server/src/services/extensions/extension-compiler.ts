@@ -175,6 +175,45 @@ function isLegacyTransientCachedError(cached: CompilationError): boolean {
 }
 
 /**
+ * Build the error result for a failure to read an already-discovered entry
+ * file — the plain `fs.readFile` `compile()`/`compileServer()` each do
+ * before esbuild ever runs, to compute the content hash a cache entry
+ * would be keyed by.
+ *
+ * There is no source to hash here, so the caller returns `sourceHash: ''`
+ * and — exactly like {@link resolveEntryPoint}'s own "no entry point"
+ * error — nothing is ever written to `.error.json`: there is no key to
+ * write it under. That makes this failure uncacheable by construction, not
+ * by a special case; the one thing this function does is stop it from
+ * reaching the caller as an uncaught rejection instead of a result.
+ *
+ * Reuses {@link isEnvironmentFailure} for the log framing rather than
+ * assuming: a plain Node `fs` error (`EACCES`, `EMFILE`, `ENOENT`, ...) has
+ * no `errors` array, so the shape check already classifies it as an
+ * environment failure in every realistic case — asking the question
+ * explicitly, instead of hardcoding the answer, keeps this on the same
+ * decision {@link handleEsbuildError} makes rather than a second, silently
+ * divergent one.
+ *
+ * @param extId - Extension identifier.
+ * @param err - The value the failed `fs.readFile` rejected with.
+ * @param prefix - Optional prefix for log messages (e.g. `'Server '`).
+ * @returns A structured error describing the read failure.
+ */
+function buildReadFailureError(extId: string, err: unknown, prefix = ''): CompilationError {
+  const message = err instanceof Error ? err.message : String(err);
+  const framing = isEnvironmentFailure(err) ? ' (not cached — will retry next compile)' : '';
+  logger.error(
+    `[Extensions] ${prefix}Could not read entry point for ${extId}${framing}: ${message}`
+  );
+  return {
+    code: 'compilation_failed',
+    message: `${prefix}Could not read entry point for ${extId}`,
+    errors: [{ text: message }],
+  };
+}
+
+/**
  * Compiles TypeScript extensions with esbuild and serves pre-compiled JS extensions.
  *
  * Uses content-hash-based caching to avoid redundant compilations. Cache entries
@@ -206,7 +245,12 @@ export class ExtensionCompiler {
     }
 
     const { entryPath, isPrecompiled } = entryResult;
-    const source = await fs.readFile(entryPath, 'utf-8');
+    let source: string;
+    try {
+      source = await fs.readFile(entryPath, 'utf-8');
+    } catch (err) {
+      return { error: buildReadFailureError(record.id, err), sourceHash: '' };
+    }
     const sourceHash = this.computeSourceHash(source);
 
     if (isPrecompiled) {
@@ -241,7 +285,12 @@ export class ExtensionCompiler {
       };
     }
 
-    const source = await fs.readFile(record.serverEntryPath, 'utf-8');
+    let source: string;
+    try {
+      source = await fs.readFile(record.serverEntryPath, 'utf-8');
+    } catch (err) {
+      return { error: buildReadFailureError(record.id, err, 'Server '), sourceHash: '' };
+    }
     const sourceHash = this.computeSourceHash(source);
 
     return this.handleServerCompilation(record.id, record.serverEntryPath, sourceHash);

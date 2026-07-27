@@ -548,5 +548,50 @@ describe('ExtensionManager — server lifecycle', () => {
       // Client-only extension should not have server router
       expect(manager.getServerRouter('startup-client')).toBeNull();
     });
+
+    it('does not let one extension throwing during startup stop the rest from initializing', async () => {
+      // Regression coverage: a transient failure (an EMFILE reading one
+      // extension's entry point, say) used to reject uncaught from
+      // compileServer(), which this loop did not catch — one bad extension
+      // took every extension queued after it down with it. Simulated here
+      // with a rejection from compileServer() directly, since that is the
+      // shape of "server init threw" this loop must isolate regardless of
+      // what caused it.
+      const throwsRecord = makeRecord('startup-throws', {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/startup-throws/server.ts',
+      });
+      const survivesRecord = makeRecord('startup-survives', {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/startup-survives/server.ts',
+      });
+      mockConfigGet.mockReturnValue({
+        enabled: ['startup-throws', 'startup-survives'],
+        disabled: [],
+        approvedToRun: ['startup-throws', 'startup-survives'],
+      });
+      mockDiscover.mockResolvedValue([throwsRecord, survivesRecord]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockImplementation(async (record: ExtensionRecord) => {
+        if (record.id === 'startup-throws') {
+          throw new Error('EMFILE: too many open files');
+        }
+        return { code: makeCjsModule(), sourceHash: 'srvhash' };
+      });
+
+      const { logger } = await import('../../../lib/logger.js');
+      await manager.initialize('/my/project');
+
+      // The extension after the throwing one still got initialized.
+      expect(manager.getServerRouter('startup-survives')).not.toBeNull();
+      // The failure is not silently swallowed — it is named and visible.
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('startup-throws'),
+        expect.any(Error)
+      );
+      expect(manager.getServerRouter('startup-throws')).toBeNull();
+    });
   });
 });
