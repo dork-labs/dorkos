@@ -414,7 +414,7 @@ Uploaded files (from chat, workbench, or anywhere else you attach a file) are st
 
 ### Telemetry
 
-DorkOS shares a little anonymous data by default. Two channels are on: a daily heartbeat and marketplace install counts, both genuinely anonymous (no prompts, code, paths, or session content). DorkOS shows a first-run notice and sends nothing on that first run, and you can turn it off any time with `dorkos telemetry disable`, `DO_NOT_TRACK=1`, or the Privacy & Data settings tab. Crash reporting is separate and stays off until you turn it on. See the full [telemetry contract](/docs/self-hosting/telemetry) for the exact payload.
+DorkOS sends us nothing unless you turn it on. Two anonymous channels are available, both off by default: a daily heartbeat and marketplace install counts (no prompts, code, paths, or session content). DorkOS shows a first-run notice explaining them, and you can turn them on any time with `dorkos telemetry enable` or the Privacy & Data settings tab. `DO_NOT_TRACK=1` keeps everything off no matter what the settings say. Crash reporting is separate and also stays off until you turn it on. See the full [telemetry contract](/docs/self-hosting/telemetry) for the exact payload.
 
 <TypeTable
   type={{
@@ -426,15 +426,15 @@ DorkOS shares a little anonymous data by default. Two channels are on: a daily h
     },
     'telemetry.heartbeat': {
       description:
-        'Send an anonymous daily heartbeat to dorkos.ai (version, OS, configured runtimes, and rough counts). Never prompts, code, paths, or session content. Anonymous and opt-out; a first-run notice is shown before anything sends.',
+        'Send an anonymous daily heartbeat to dorkos.ai (version, OS, configured runtimes, and rough counts). Never prompts, code, paths, or session content. Opt-in; a first-run notice is shown before anything sends.',
       type: 'boolean',
-      default: 'true',
+      default: 'false',
     },
     'telemetry.install': {
       description:
-        'Send anonymous marketplace install counts to dorkos.ai. Anonymous and opt-out; a first-run notice is shown before anything sends.',
+        'Send anonymous marketplace install counts to dorkos.ai. Opt-in; a first-run notice is shown before anything sends.',
       type: 'boolean',
-      default: 'true',
+      default: 'false',
     },
     'telemetry.errorReporting': {
       description:

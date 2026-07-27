@@ -750,13 +750,14 @@ export const UserConfigSchema = z.object({
    * Shared consent namespace for everything DorkOS can send to dorkos.ai, split
    * into two tiers (ADR 260713-143958):
    *
-   * - **Tier 1 — anonymous, opt-out:** `install` and `heartbeat` default to
-   *   `true`. These are genuinely anonymous aggregate signals (no IP, no
-   *   fingerprint, no content, no paths — only a random per-machine id), so they
-   *   collect by default, matching the Next.js/VS Code/Homebrew norm. They are
-   *   still gated by the notice-before-first-send rule (`hasTier1SendGate`): a
-   *   never-answered install sends nothing until its first-run notice has been
-   *   shown and `lastPromptedVersion` recorded.
+   * - **Tier 1 — anonymous, opt-IN:** `install`, `heartbeat` and `usage` default
+   *   to `false`. They are genuinely anonymous aggregate signals (no IP, no
+   *   fingerprint, no content, no paths — only a random per-machine id), which
+   *   is what once justified collecting them by default. They no longer are:
+   *   ADR 260727-181825 holds that a default lands on the option protecting the
+   *   person, and "anonymous" is a property of the payload, not a substitute for
+   *   an answer. The notice-before-first-send rule (`hasTier1SendGate`) still
+   *   applies on top, so nothing sends before the notice either way.
    * - **Tier 2 — identified/third-party, opt-in:** `errorReporting` defaults to
    *   `false` and never turns on without an explicit choice.
    *
@@ -774,23 +775,24 @@ export const UserConfigSchema = z.object({
        */
       userHasDecided: z.boolean().default(false),
       /**
-       * Tier 1 channel (anonymous, opt-out): send anonymous marketplace install
+       * Tier 1 channel (anonymous, opt-in): send anonymous marketplace install
        * events to dorkos.ai so we can rank packages and spot install failures.
-       * Defaults `true`; a never-answered install still sends nothing until the
-       * first-run notice has been shown (see `hasTier1SendGate`). Formerly
-       * `telemetry.enabled`. Privacy contract: https://dorkos.ai/marketplace/privacy
+       * Defaults `false` — sharing starts when a person says so (ADR
+       * 260727-181825). The notice-before-first-send gate (`hasTier1SendGate`)
+       * still applies. Formerly `telemetry.enabled`. Privacy contract:
+       * https://dorkos.ai/marketplace/privacy
        */
-      install: z.boolean().default(true),
+      install: z.boolean().default(false),
       /**
-       * Tier 1 channel (anonymous, opt-out): send a daily anonymous heartbeat to
+       * Tier 1 channel (anonymous, opt-in): send a daily anonymous heartbeat to
        * dorkos.ai (instance id, version, OS/arch, configured runtimes, tunnel +
        * cloud-link flags, and rough counts — never prompts, code, paths, or
-       * session content). Defaults `true`; a never-answered install still sends
-       * nothing until the first-run notice has been shown (see
-       * `hasTier1SendGate`). Payload documented verbatim at
+       * session content). Defaults `false` — sharing starts when a person says
+       * so (ADR 260727-181825). The notice-before-first-send gate
+       * (`hasTier1SendGate`) still applies. Payload documented verbatim at
        * https://dorkos.ai/telemetry.
        */
-      heartbeat: z.boolean().default(true),
+      heartbeat: z.boolean().default(false),
       /**
        * Tier 2 channel (opt-in): send scrubbed crash reports to DorkOS's own
        * ingest at dorkos.ai (which forwards to PostHog Error Tracking), never to
@@ -817,13 +819,13 @@ export const UserConfigSchema = z.object({
        * autocaptured, never prompts, code, paths, or session content; the exact
        * catalog lives in `@dorkos/shared/telemetry-events`.
        *
-       * Tier 1 posture (ADR 260713-143958 Phase 3): defaults to `true`, but like
-       * `heartbeat`/`install` it never sends until the first-run notice gate is
-       * satisfied (`userHasDecided` or `lastPromptedVersion` set), so a
-       * never-prompted install stays silent. Payload documented verbatim at
+       * Tier 1 posture: defaults to `false` — sharing starts when a person says
+       * so (ADR 260727-181825, superseding 260713-143958 Phase 3). Like
+       * `heartbeat`/`install` it also never sends until the first-run notice
+       * gate is satisfied. Payload documented verbatim at
        * https://dorkos.ai/telemetry.
        */
-      usage: z.boolean().default(true),
+      usage: z.boolean().default(false),
       /**
        * Tier 2 channel (opt-in): when linking this install to a DorkOS account,
        * also include the anonymous per-install telemetry `instanceId` in the
@@ -854,11 +856,11 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({
       userHasDecided: false,
-      install: true,
-      heartbeat: true,
+      install: false,
+      heartbeat: false,
       errorReporting: false,
       lastPromptedVersion: null,
-      usage: true,
+      usage: false,
       linkAnalyticsToAccount: false,
       aiMetadata: false,
     })),

@@ -2681,7 +2681,7 @@
       "id": "260713-143958",
       "slug": "two-plane-two-tier-data-collection-strategy",
       "title": "Two-plane, two-tier data collection strategy",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-13"
     },
     {
@@ -2971,6 +2971,24 @@
       "title": "One server per data directory, enforced by a corroborated lock file",
       "status": "accepted",
       "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260727-181825",
+      "slug": "user-safe-defaults",
+      "title": "Defaults, fallbacks and recovery land on the option that protects the user",
+      "status": "accepted",
+      "created": "2026-07-27",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260727-182651",
+      "slug": "tier-1-telemetry-returns-to-opt-in",
+      "title": "Tier 1 telemetry returns to opt-in",
+      "status": "accepted",
+      "created": "2026-07-27",
       "extractedFrom": null,
       "specSlug": null
     }

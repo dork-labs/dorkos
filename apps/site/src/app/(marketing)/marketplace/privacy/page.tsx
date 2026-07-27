@@ -6,17 +6,17 @@ import { rssFeedAlternateTypes, twitterFromOpenGraph } from '@/lib/metadata';
 export const metadata: Metadata = {
   title: 'Marketplace privacy — DorkOS',
   description:
-    'How DorkOS handles install telemetry. Anonymous and opt-out. No PII. Anonymous install IDs. Open source pipeline.',
+    'How DorkOS handles install telemetry. Anonymous and opt-in. No PII. Anonymous install IDs. Open source pipeline.',
   alternates: { canonical: '/marketplace/privacy', types: rssFeedAlternateTypes },
   openGraph: {
     title: 'Marketplace privacy — DorkOS',
-    description: 'How DorkOS handles install telemetry: anonymous, opt-out, no PII, anonymous IDs.',
+    description: 'How DorkOS handles install telemetry: anonymous, opt-in, no PII, anonymous IDs.',
     url: '/marketplace/privacy',
     siteName: siteConfig.name,
   },
   twitter: twitterFromOpenGraph({
     title: 'Marketplace privacy — DorkOS',
-    description: 'How DorkOS handles install telemetry: anonymous, opt-out, no PII, anonymous IDs.',
+    description: 'How DorkOS handles install telemetry: anonymous, opt-in, no PII, anonymous IDs.',
   }),
 };
 
@@ -47,9 +47,9 @@ export default function MarketplacePrivacyPage() {
               </strong>
             </li>
             <li>
-              <strong className="text-charcoal font-semibold">Anonymous and opt-out.</strong> On by
-              default, but genuinely anonymous. DorkOS shows a first-run notice and sends nothing on
-              that first run, and you can turn it off any time.
+              <strong className="text-charcoal font-semibold">Anonymous and opt-in.</strong> Off
+              until you turn it on, and genuinely anonymous when you do. DorkOS shows a first-run
+              notice explaining it, and you can turn it back off any time.
             </li>
             <li>
               <strong className="text-charcoal font-semibold">Aggregate counts only</strong>{' '}
@@ -78,11 +78,13 @@ export default function MarketplacePrivacyPage() {
         <div className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">How to turn it off</h2>
           <p className="text-warm-gray text-base leading-relaxed">
-            Install counts are on by default, but always anonymous. Turn them off any time: run{' '}
-            <span className="text-charcoal font-mono">dorkos telemetry disable</span>, set the
-            environment variable <span className="text-charcoal font-mono">DO_NOT_TRACK=1</span>, or
-            use the Privacy and Data tab in DorkOS settings. DorkOS also shows a first-run notice
-            and sends nothing on that first run.
+            Install counts are off until you turn them on, and always anonymous. Turn them on or
+            back off any time: run{' '}
+            <span className="text-charcoal font-mono">dorkos telemetry enable</span> or{' '}
+            <span className="text-charcoal font-mono">dorkos telemetry disable</span>, or use the
+            Privacy and Data tab in DorkOS settings. Setting the environment variable{' '}
+            <span className="text-charcoal font-mono">DO_NOT_TRACK=1</span> keeps everything off no
+            matter what the settings say.
           </p>
         </div>
 

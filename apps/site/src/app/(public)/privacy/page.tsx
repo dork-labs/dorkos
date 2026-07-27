@@ -77,12 +77,12 @@ export default function PrivacyPolicyPage() {
             them, under their privacy policy. DorkOS just passes it along and keeps nothing.
           </p>
           <p className="text-warm-gray leading-relaxed">
-            The app shares a little anonymous data by default so we can see roughly how many people
-            run DorkOS: a small daily heartbeat and anonymous marketplace install counts. It is
-            anonymous, not personal. It sends a random install id, the DorkOS version, your platform
-            and chip type, which runtimes you have on, whether the tunnel and cloud link are
-            enabled, and rough counts. It never sends your prompts, your code, file paths, your
-            hostname or username, or anything from your sessions.
+            The app sends us nothing unless you turn it on. If you choose to help, it can share a
+            small daily heartbeat and anonymous marketplace install counts so we can see roughly how
+            many people run DorkOS. It is anonymous, not personal. It sends a random install id, the
+            DorkOS version, your platform and chip type, which runtimes you have on, whether the
+            tunnel and cloud link are enabled, and rough counts. It never sends your prompts, your
+            code, file paths, your hostname or username, or anything from your sessions.
           </p>
           <p className="text-warm-gray leading-relaxed">
             The first time you run DorkOS, it shows a notice explaining this and sends nothing on
