@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(extensions): don't permanently cache a one-time environment failure as a compile error"
+  - 'fix(extensions): catch esbuild I/O failures that carry a populated errors array'
   - 'fix(mesh): downgrade the expected homedir-fallback skip log from warn to debug'
 ---
 
