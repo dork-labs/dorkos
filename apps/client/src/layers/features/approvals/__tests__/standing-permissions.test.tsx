@@ -31,6 +31,7 @@ vi.mock('sonner', () => ({
 
 import { toast } from 'sonner';
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { PendingApprovalsSection } from '../ui/PendingApprovalsSection';
 import { StandingPermissionsSettings } from '../ui/StandingPermissionsSettings';
 import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
@@ -115,8 +116,18 @@ function configWith(
 /** Render any tree over a mock transport. */
 function renderWith(ui: ReactNode, overrides: Partial<Transport> = {}) {
   const transport = createMockTransport(overrides);
+  // Built from the app's real config, not re-declared, so the app-wide generic
+  // error toast (MutationCache.onError in query-client.ts) is actually wired up
+  // in the test. A test that hand-rolls its own QueryClient here cannot prove
+  // "this surface never shows the generic toast" — there is no generic handler
+  // present to have been suppressed.
+  const config = createQueryClientConfig();
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    ...config,
+    defaultOptions: {
+      ...config.defaultOptions,
+      queries: { ...config.defaultOptions?.queries, retry: false, gcTime: 0 },
+    },
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return (
@@ -148,6 +159,21 @@ beforeAll(() => {
 beforeEach(() => {
   vi.mocked(useEventSubscription).mockImplementation(() => {});
 });
+
+/**
+ * Total toasts fired across every tone. Standing-decision failures must land as
+ * exactly one toast: the specific one from `useGrantApproval`/`useDenyApproval`'s
+ * own `onError`. A second, generic "Action failed" toast from the app-wide
+ * MutationCache handler means `meta.suppressErrorToast` regressed.
+ */
+function toastCallCount() {
+  return (
+    vi.mocked(toast.error).mock.calls.length +
+    vi.mocked(toast.warning).mock.calls.length +
+    vi.mocked(toast.success).mock.calls.length +
+    vi.mocked(toast.message).mock.calls.length
+  );
+}
 
 afterEach(() => {
   cleanup();
@@ -333,6 +359,9 @@ describe('the third button on an approval card', () => {
     expect(vi.mocked(toast.warning).mock.calls[0][0]).toContain('allowed this one action');
     // Not the generic toast, and not an error tone.
     expect(toast.error).not.toHaveBeenCalled();
+    // And not a second toast of any tone: the app-wide "Action failed" handler
+    // must actually have been suppressed, not merely absent from this client.
+    expect(toastCallCount()).toBe(1);
   });
 
   it("shows the server's own reason when the permission is refused", async () => {
@@ -359,6 +388,9 @@ describe('the third button on an approval card', () => {
     expect(vi.mocked(toast.error).mock.calls[0][0]).toBe(
       'Standing permissions are switched off. Turn them on in Settings, under Security, first.'
     );
+    // Exactly one toast: the specific refusal, not that plus a generic "Action
+    // failed" from the app-wide handler.
+    expect(toastCallCount()).toBe(1);
   });
 
   it('keeps "Don\'t allow" first, and the standing answer last', async () => {

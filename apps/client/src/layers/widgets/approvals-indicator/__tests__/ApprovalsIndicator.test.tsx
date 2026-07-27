@@ -335,6 +335,10 @@ describe('ApprovalsIndicator', () => {
     const marker = await screen.findByTestId('approvals-indicator');
     expect(marker).toHaveAccessibleName('1 standing permission is live. Open to see it or end it.');
     expect(marker.className).not.toContain('bg-status-warning-bg');
+    // The check-mark shield belongs to this state and only this one: live trust
+    // that was actually verified, not a read that failed.
+    expect(marker.querySelector('.lucide-shield-check')).toBeInTheDocument();
+    expect(marker.querySelector('.lucide-shield-alert')).not.toBeInTheDocument();
   });
 
   it('opens onto the permissions, with the button that ends one', async () => {
@@ -402,6 +406,11 @@ describe('ApprovalsIndicator', () => {
     expect(marker).toHaveAccessibleName(
       'DorkOS could not check which standing permissions are live. Open for details.'
     );
+    // Not the check-mark shield: that icon says "verified", the opposite of what
+    // a failed read means. A person reads this pill by silhouette far more often
+    // than by the accessible name a screen reader gets.
+    expect(marker.querySelector('.lucide-shield-alert')).toBeInTheDocument();
+    expect(marker.querySelector('.lucide-shield-check')).not.toBeInTheDocument();
 
     await userEvent.click(marker);
     // Scoped to the panel: the live region announcing the same fact is not the
