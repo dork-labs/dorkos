@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { Skeleton } from '@/layers/shared/ui';
 import { useMarkRoomRead, useRoom, useRoomEntries, useRoomStream } from '@/layers/entities/room';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
+import { useStickToBottom } from '../model/use-stick-to-bottom';
+import { RoomComposer } from './RoomComposer';
 import { RoomHeader } from './RoomHeader';
 import { RoomTimeline } from './RoomTimeline';
 
@@ -20,7 +22,7 @@ export function ChannelsPage() {
 
   const roomQuery = useRoom(roomId);
   const entriesQuery = useRoomEntries(roomId);
-  useRoomStream(roomId, entriesQuery.isSuccess);
+  const stream = useRoomStream(roomId, entriesQuery.isSuccess);
 
   const room = roomQuery.data;
   const entries = useMemo(() => entriesQuery.data ?? [], [entriesQuery.data]);
@@ -41,17 +43,8 @@ export function ChannelsPage() {
   const frozenReadSeq = useFrozenReadCursor(roomId, lastReadSeq);
   useMarkRoomRead(room, entries);
 
-  // Open a room at its newest message, the way every chat surface does — a room
-  // with a hundred lines of history would otherwise open on the oldest one.
-  // Keyed on the newest entry rather than the array, so a live arrival scrolls
-  // to itself and a re-render for any other reason does not.
-  const scrollRef = useRef<HTMLDivElement>(null);
   const newestEntryId = entries.length > 0 ? entries[entries.length - 1]!.id : null;
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || newestEntryId === null) return;
-    el.scrollTop = el.scrollHeight;
-  }, [roomId, newestEntryId]);
+  const { scrollRef, onScroll } = useStickToBottom(roomId, newestEntryId);
 
   if (roomId === null) {
     return (
@@ -93,7 +86,7 @@ export function ChannelsPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <RoomHeader room={room} />
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <RoomTimeline
           entries={entries}
           members={room.members}
@@ -102,11 +95,25 @@ export function ChannelsPage() {
           error={entriesQuery.error}
         />
       </div>
-      {/* Reading is all a room does today. Saying so beats a composer that
-          silently does nothing, and beats leaving a person to wonder. */}
-      <p className="text-muted-foreground border-t px-4 py-3 text-xs">
-        You can read this room, but not post to it yet.
-      </p>
+      {/* A room that has stopped listening looks exactly like a quiet one, so it
+          has to say so. One line, no banner — you can still read and still post,
+          and what you post still lands; you just would not see a reply. */}
+      {stream.stalled && (
+        <div
+          role="status"
+          className="text-muted-foreground flex items-center gap-2 border-t px-4 py-2 text-xs"
+        >
+          <span>New messages aren&apos;t coming through right now.</span>
+          <button
+            type="button"
+            onClick={stream.retry}
+            className="focus-ring hover:text-foreground rounded underline underline-offset-2"
+          >
+            Reconnect
+          </button>
+        </div>
+      )}
+      <RoomComposer room={room} />
     </div>
   );
 }

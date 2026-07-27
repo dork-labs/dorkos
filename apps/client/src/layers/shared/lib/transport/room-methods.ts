@@ -2,8 +2,9 @@
  * Room Transport methods factory (HTTP adapter) — channels, DMs and threads
  * (spec `rooms`). Talks to the Express `/api/rooms/*` routes.
  *
- * Only the reads and the two writes the cockpit performs today are here.
- * Posting, the read cursor and thread creation reach the client in later phases
+ * Only what the cockpit performs today is here: reading a room, posting to it,
+ * joining one, and moving the read cursor. Room settings (rename, topic,
+ * archive), roster edits and thread creation reach the client in later phases
  * of the spec; the server already serves them, so they are a factory addition
  * and not a protocol change when they land.
  *
@@ -15,6 +16,8 @@ import {
   type CreateRoomRequest,
   type ListRoomEntriesQuery,
   type ListRoomsQuery,
+  type PostToRoomRequest,
+  type PostToRoomResponse,
   type RoomEntry,
   type RoomEvent,
   type RoomMember,
@@ -52,6 +55,18 @@ export function createRoomMethods(baseUrl: string) {
       return fetchJSON<{ entries: RoomEntry[] }>(baseUrl, `/rooms/${id}/entries${qs}`).then(
         (r) => r.entries
       );
+    },
+
+    /**
+     * Post to a room. The 202 answers with the entry's identity only — the
+     * entry itself arrives on `subscribeRoom`, so nothing here writes it into
+     * the cache.
+     */
+    postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse> {
+      return fetchJSON<PostToRoomResponse>(baseUrl, `/rooms/${id}/entries`, {
+        method: 'POST',
+        body: JSON.stringify(req),
+      });
     },
 
     addRoomMember(id: string, req: AddRoomMemberRequest): Promise<RoomRosterEntry> {

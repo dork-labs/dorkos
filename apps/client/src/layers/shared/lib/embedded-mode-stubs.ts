@@ -38,6 +38,8 @@ import type {
   CreateRoomRequest,
   ListRoomEntriesQuery,
   ListRoomsQuery,
+  PostToRoomRequest,
+  PostToRoomResponse,
   RoomEntry,
   RoomEvent,
   RoomMember,
@@ -753,6 +755,10 @@ export const roomStubs = {
 
   async listRoomEntries(_id: string, _query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
     return [];
+  },
+
+  async postToRoom(_id: string, _req: PostToRoomRequest): Promise<PostToRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
   },
 
   async addRoomMember(_id: string, _req: AddRoomMemberRequest): Promise<RoomRosterEntry> {

@@ -8,11 +8,20 @@
  * this stream deliberately skips, and so would never reach the reader. An empty
  * room resumes from `0`, which the server serves as "replay nothing, go live".
  *
+ * A dropped stream is retried here, in the hook, rather than below it. The
+ * `SSEConnection` that carries the session stream's resilience speaks HTTP
+ * directly and cannot be reached through the Transport port, so wiring this to
+ * it would leave embedded mode (Obsidian's `DirectTransport`, which has no HTTP
+ * server) with the only unreliable room stream. The port stays contract-level —
+ * one subscription, no retries, the same line `session-stream-methods.ts` draws
+ * — and resilience sits above it, where both adapters inherit it.
+ *
  * @module entities/room/model/use-room-stream
  */
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 
@@ -44,15 +53,75 @@ function cursorFromCache(queryClient: QueryClient, roomId: string): number {
 }
 
 /**
+ * Full-jitter exponential backoff, the same curve `SSEConnection` retries on.
+ *
+ * @param failures - Consecutive failed attempts, starting at 1.
+ */
+function backoffMs(failures: number): number {
+  const ceiling = Math.min(
+    SSE_RESILIENCE.BACKOFF_CAP_MS,
+    SSE_RESILIENCE.BACKOFF_BASE_MS * 2 ** failures
+  );
+  return Math.random() * ceiling;
+}
+
+/** Wait `ms`, or return early the moment `signal` aborts. */
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    // An already-aborted signal never fires `abort` again, so it has to be read
+    // rather than listened for — otherwise this waits out the full backoff.
+    if (signal.aborted) return resolve();
+    const settle = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', settle);
+      resolve();
+    };
+    const timer = setTimeout(settle, ms);
+    signal.addEventListener('abort', settle, { once: true });
+  });
+}
+
+/** What the open room's live stream is doing. */
+export interface RoomStreamState {
+  /**
+   * True once the stream has dropped, been retried to the limit, and stopped —
+   * so the room on screen is no longer live. Nothing else reports this: the
+   * global stream keeps reconnecting and re-badging the room in the sidebar,
+   * which would make a frozen room look like a quiet one.
+   */
+  stalled: boolean;
+  /** Try again from the newest entry the reader holds. */
+  retry: () => void;
+}
+
+/**
  * Subscribe to a room's live entries and reflect them into the cache.
+ *
+ * Reconnects on its own: when the stream ends or throws, the cursor is
+ * recomputed from the cache — so the resume is gap-free however many entries
+ * were missed — and the subscription reopens after a jittered backoff. Attempts
+ * stop at {@link SSE_RESILIENCE.DISCONNECTED_THRESHOLD} rather than retrying
+ * forever, and a stream that stayed up longer than the stability window is
+ * forgiven its earlier failures, so a server that restarts nightly never spends
+ * the budget.
  *
  * @param roomId - The room to follow, or `null` when nothing is selected.
  * @param hydrated - Whether the room's history has loaded. The stream waits for
  *   it, because the cursor it resumes from is that read's high-water mark.
+ * @returns Whether the stream has given up, and a way to ask it to try again.
  */
-export function useRoomStream(roomId: string | null, hydrated: boolean): void {
+export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStreamState {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  // Which room gave up, not whether one did: switching rooms must not carry the
+  // dead-stream notice across to a room whose stream is perfectly alive.
+  const [stalledRoomId, setStalledRoomId] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = useCallback(() => {
+    setStalledRoomId(null);
+    setAttempt((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     if (roomId === null || !hydrated) return;
@@ -60,42 +129,48 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): void {
     const controller = new AbortController();
 
     void (async () => {
-      try {
-        const stream = transport.subscribeRoom(
-          roomId,
-          cursorFromCache(queryClient, roomId),
-          controller.signal
-        );
-        for await (const event of stream) {
-          if (controller.signal.aborted) return;
-          // Signals (typing, presence) are live-only and carry no `seq`. Nothing
-          // renders them yet, so they are read off the wire and dropped rather
-          // than parked in a store no view consumes.
-          if (event.type !== 'entry') continue;
-          // Only the history. The same post also fans out globally as
-          // `room_activity`, which `useRoomListStream` turns into the list
-          // refresh — so refreshing here too would just do it twice.
-          queryClient.setQueryData<RoomEntry[]>(roomKeys.entries(roomId), (cached) =>
-            mergeRoomEntry(cached, event.entry)
+      let failures = 0;
+      while (!controller.signal.aborted) {
+        const openedAt = Date.now();
+        try {
+          const stream = transport.subscribeRoom(
+            roomId,
+            cursorFromCache(queryClient, roomId),
+            controller.signal
           );
+          for await (const event of stream) {
+            if (controller.signal.aborted) return;
+            // Signals (typing, presence) are live-only and carry no `seq`.
+            // Nothing renders them yet, so they are read off the wire and
+            // dropped rather than parked in a store no view consumes.
+            if (event.type !== 'entry') continue;
+            // Only the history. The same post also fans out globally as
+            // `room_activity`, which `useRoomListStream` turns into the list
+            // refresh — so refreshing here too would just do it twice.
+            queryClient.setQueryData<RoomEntry[]>(roomKeys.entries(roomId), (cached) =>
+              mergeRoomEntry(cached, event.entry)
+            );
+          }
+        } catch (err) {
+          if (controller.signal.aborted) return;
+          console.warn('[rooms] live stream dropped', { roomId, err });
         }
-      } catch (err) {
         if (controller.signal.aborted) return;
-        // THIS DOES NOT RECONNECT, and the failure is silent to the reader — the
-        // deps below never change, so a dropped socket (laptop sleep, a server
-        // restart) leaves this room's messages frozen while the GLOBAL stream
-        // reconnects and keeps re-badging it in the sidebar.
-        //
-        // Deliberately deferred to R3 (DOR-526 definition-of-done), because
-        // nothing in R2 can post into a room, so there is no live traffic to
-        // miss. It has to land BEFORE the composer does, not beside it: the
-        // moment somebody can post, a dead stream is a lost message. Reuse
-        // `shared/lib/transport/sse-connection.ts` — backoff, jitter, the
-        // heartbeat watchdog and visibility handling are all already there.
-        console.warn('[rooms] live stream ended and will not reconnect', { roomId, err });
+
+        // A stream that ran for the stability window did its job; whatever went
+        // wrong after that is a fresh incident, not a continuing one.
+        if (Date.now() - openedAt >= SSE_RESILIENCE.STABILITY_WINDOW_MS) failures = 0;
+        failures += 1;
+        if (failures >= SSE_RESILIENCE.DISCONNECTED_THRESHOLD) {
+          setStalledRoomId(roomId);
+          return;
+        }
+        await wait(backoffMs(failures), controller.signal);
       }
     })();
 
     return () => controller.abort();
-  }, [roomId, hydrated, transport, queryClient]);
+  }, [roomId, hydrated, transport, queryClient, attempt]);
+
+  return { stalled: stalledRoomId !== null && stalledRoomId === roomId, retry };
 }
