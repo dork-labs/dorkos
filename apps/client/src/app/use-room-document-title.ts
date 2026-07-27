@@ -11,7 +11,13 @@
  */
 import { useMemo } from 'react';
 import { useSafePathname, useSafeSearch } from '@/layers/shared/model';
-import { hasUnread, roomDisplayTitle, useRoom, useRooms } from '@/layers/entities/room';
+import {
+  hasUnread,
+  roomDisplayTitle,
+  useRoom,
+  useRoomListStream,
+  useRooms,
+} from '@/layers/entities/room';
 
 /** The one route whose search params name an open room. */
 const ROOMS_PATHNAME = '/channels';
@@ -39,8 +45,21 @@ export interface RoomDocumentTitle {
  * thread is a room in its own right and is what renders. The count is read on
  * every route, because a tab you have left is exactly the one that needs to say
  * a room is waiting.
+ *
+ * **This hook owns the room list's live subscription, deliberately.**
+ * `useRoomListStream` used to be called by `DashboardSidebar`, which was fine
+ * while the sidebar was the only thing reading the list — it self-healed on
+ * mount. It is not always mounted: on mobile the body lives in a `SheetContent`
+ * with no `forceMount` and is gone whenever the drawer is closed (the default),
+ * and `/marketplace` swaps the whole body out for its own. A badge that only
+ * refreshes where the sidebar renders is frozen exactly where §13.3 needs it
+ * live — a backgrounded tab. So the subscription sits with the always-mounted
+ * consumer rather than one route's worth of UI, and cannot drift from it again.
+ * The query is shared, so the sidebar keeps getting fresh rows for free.
  */
 export function useRoomDocumentTitle(): RoomDocumentTitle {
+  useRoomListStream();
+
   const pathname = useSafePathname();
   const search = useSafeSearch() as { id?: string; thread?: string };
   const roomId = pathname === ROOMS_PATHNAME ? (search.thread ?? search.id ?? null) : null;

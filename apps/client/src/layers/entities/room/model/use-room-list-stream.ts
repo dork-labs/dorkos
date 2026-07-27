@@ -26,9 +26,13 @@ const ROOM_LIST_EVENTS = [
 /**
  * Refresh the room list whenever a room is created, changed, or spoken in.
  *
- * Call once, where the list is rendered. The invalidation is deliberately blunt
- * — a list row is cheap to refetch and the alternative is patching five event
- * shapes into a cache by hand, which is five chances to drift from the server.
+ * **Call once, from something that is always mounted** — today that is
+ * `useRoomDocumentTitle` in the app shell, not the sidebar. A room list read
+ * outside the caller's own subtree (the browser tab's unread badge is) goes
+ * stale the moment that caller unmounts, and the sidebar unmounts on mobile and
+ * on `/marketplace`. The invalidation is deliberately blunt — a list row is
+ * cheap to refetch and the alternative is patching five event shapes into a
+ * cache by hand, which is five chances to drift from the server.
  */
 export function useRoomListStream(): void {
   const queryClient = useQueryClient();

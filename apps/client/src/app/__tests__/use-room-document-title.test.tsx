@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
@@ -16,6 +16,13 @@ import { useRoomDocumentTitle } from '../use-room-document-title';
 let pathname = '/session';
 let search: Record<string, unknown> = {};
 
+/**
+ * Handlers the hook registered against the global `/api/events` fan-out, so a
+ * test can fire one. Stubbed rather than mounting an `EventStreamProvider`,
+ * which owns a real SSE connection.
+ */
+const streamHandlers = new Map<string, () => void>();
+
 vi.mock('@/layers/shared/model', async () => {
   const actual =
     await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');
@@ -23,6 +30,9 @@ vi.mock('@/layers/shared/model', async () => {
     ...actual,
     useSafePathname: () => pathname,
     useSafeSearch: () => search,
+    useEventSubscription: (event: string, handler: () => void) => {
+      streamHandlers.set(event, handler);
+    },
   };
 });
 
@@ -67,6 +77,7 @@ function wrapperFor(transport: Transport) {
 beforeEach(() => {
   pathname = '/session';
   search = {};
+  streamHandlers.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -144,5 +155,47 @@ describe('useRoomDocumentTitle', () => {
     const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
 
     expect(result.current).toEqual({ roomTitle: null, unreadRoomCount: 0 });
+  });
+
+  it('keeps the badge live with no sidebar mounted anywhere', async () => {
+    // The defect this guards: `useRoomListStream` used to be called only by
+    // `DashboardSidebar`, which is unmounted on mobile (closed drawer, the
+    // default) and on /marketplace. Nothing here renders a sidebar — this is
+    // the app shell's own room reading, on its own — so if the subscription
+    // ever moves back down into a feature, the count below never moves.
+    let quiet = true;
+    const listRooms = vi.fn(() =>
+      Promise.resolve([
+        summary({ id: 'a', slug: 'general', unreadCount: quiet ? 0 : 3 }),
+        summary({ id: 'b', slug: 'backend', unreadCount: quiet ? 0 : 1 }),
+      ])
+    );
+    const transport = createMockTransport({ listRooms });
+
+    const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+    await waitFor(() => expect(listRooms).toHaveBeenCalledTimes(1));
+    expect(result.current.unreadRoomCount).toBe(0);
+
+    // Somebody posts in both rooms. The server says so on the global fan-out.
+    quiet = false;
+    act(() => streamHandlers.get('room_activity')!());
+
+    // Two conversations now want you, and the tab found out without the sidebar.
+    await waitFor(() => expect(result.current.unreadRoomCount).toBe(2));
+    expect(listRooms).toHaveBeenCalledTimes(2);
+  });
+
+  it('subscribes to every event that changes what the badge should say', () => {
+    const transport = createMockTransport({ listRooms: vi.fn().mockResolvedValue([]) });
+    renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
+
+    // A room created, renamed, joined, left or spoken in all move the count.
+    expect([...streamHandlers.keys()].sort()).toEqual([
+      'room_activity',
+      'room_created',
+      'room_member_added',
+      'room_member_removed',
+      'room_updated',
+    ]);
   });
 });

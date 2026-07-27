@@ -193,6 +193,17 @@ vi.mock('@/layers/widgets/pulse', async (importOriginal) => {
   };
 });
 
+// The shell also keeps the room list live for the browser tab's unread badge
+// (`useRoomDocumentTitle` -> `useRoomListStream`) — another event-stream
+// subscription, no-op'd here for the same reason.
+vi.mock('@/layers/entities/room', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/room')>();
+  return {
+    ...actual,
+    useRoomListStream: () => {},
+  };
+});
+
 vi.mock('@/layers/entities/binding', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/binding')>();
   return {
