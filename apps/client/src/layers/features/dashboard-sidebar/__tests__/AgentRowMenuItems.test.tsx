@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
 } from '@/layers/shared/ui';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { AgentRowMenuItems, buildRowMenuNodes, type RowMenuModel } from '../ui/AgentRowMenuItems';
 import { AgentContextMenu } from '../ui/AgentContextMenu';
 import { GroupCreateInput } from '../ui/GroupCreateInput';
@@ -17,15 +18,16 @@ import { GroupCreateInput } from '../ui/GroupCreateInput';
 // Mock the config surface so rendering needs no transport/QueryClient. Two
 // groups with the agent in g1 makes the Move-to-group submenu fully populated:
 // a checked target, an unchecked target, Remove from group, and New group…
+const API_SERVER: SidebarItemRef = { kind: 'agent', path: '/agents/api-server' };
 const groups = [
-  { id: 'g1', name: 'Clients', agentPaths: ['/agents/api-server'] },
-  { id: 'g2', name: 'Experiments', agentPaths: [] },
+  { id: 'g1', name: 'Clients', members: [API_SERVER] },
+  { id: 'g2', name: 'Experiments', members: [] },
 ];
 const mockUpdate = vi.fn<(updater: (prev: unknown) => unknown) => void>();
 const moveToGroupCalls: unknown[][] = [];
-const mutePathCalls: unknown[][] = [];
-const unmutePathCalls: unknown[][] = [];
-let mockMuted: string[] = [];
+const muteItemCalls: unknown[][] = [];
+const unmuteItemCalls: unknown[][] = [];
+let mockMuted: SidebarItemRef[] = [];
 vi.mock('@/layers/entities/config', () => ({
   useSidebarPrefs: () => ({ pinned: [], groups, ungroupedSortMode: 'name', muted: mockMuted }),
   useUpdateSidebarPrefs: () => ({
@@ -34,14 +36,14 @@ vi.mock('@/layers/entities/config', () => ({
     isPending: false,
     isError: false,
   }),
-  pinPath: (p: unknown) => p,
-  unpinPath: (p: unknown) => p,
-  mutePath: (...args: unknown[]) => {
-    mutePathCalls.push(args);
+  pinItem: (p: unknown) => p,
+  unpinItem: (p: unknown) => p,
+  muteItem: (...args: unknown[]) => {
+    muteItemCalls.push(args);
     return args[0];
   },
-  unmutePath: (...args: unknown[]) => {
-    unmutePathCalls.push(args);
+  unmuteItem: (...args: unknown[]) => {
+    unmuteItemCalls.push(args);
     return args[0];
   },
   moveToGroup: (...args: unknown[]) => {
@@ -67,8 +69,8 @@ beforeAll(() => {
 beforeEach(() => {
   mockUpdate.mockReset();
   moveToGroupCalls.length = 0;
-  mutePathCalls.length = 0;
-  unmutePathCalls.length = 0;
+  muteItemCalls.length = 0;
+  unmuteItemCalls.length = 0;
   mockMuted = [];
 });
 
@@ -316,7 +318,7 @@ describe('AgentContextMenu end-to-end wiring', () => {
     expect(screen.queryByText('Move to group')).not.toBeInTheDocument();
   });
 
-  it('"Move to group → <other group>" commits moveToGroup(path, groupId)', () => {
+  it('"Move to group → <other group>" commits moveToGroup(ref, groupId)', () => {
     render(<InlineCreateHarness />);
     openRowMenu();
     openMoveToGroupSubmenu();
@@ -324,10 +326,10 @@ describe('AgentContextMenu end-to-end wiring', () => {
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     mockUpdate.mock.calls[0]![0]({ groups });
-    expect(moveToGroupCalls).toEqual([[{ groups }, '/agents/api-server', 'g2']]);
+    expect(moveToGroupCalls).toEqual([[{ groups }, API_SERVER, 'g2']]);
   });
 
-  it('"Remove from group" commits moveToGroup(path, null)', () => {
+  it('"Remove from group" commits moveToGroup(ref, null)', () => {
     render(<InlineCreateHarness />);
     openRowMenu();
     openMoveToGroupSubmenu();
@@ -335,21 +337,21 @@ describe('AgentContextMenu end-to-end wiring', () => {
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     mockUpdate.mock.calls[0]![0]({ groups });
-    expect(moveToGroupCalls).toEqual([[{ groups }, '/agents/api-server', null]]);
+    expect(moveToGroupCalls).toEqual([[{ groups }, API_SERVER, null]]);
   });
 
-  it('"Mute agent" commits mutePath(path)', () => {
+  it('"Mute agent" commits muteItem(ref)', () => {
     render(<InlineCreateHarness />);
     openRowMenu();
     fireEvent.click(screen.getByText('Mute agent'));
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     mockUpdate.mock.calls[0]![0]({ groups });
-    expect(mutePathCalls).toEqual([[{ groups }, '/agents/api-server']]);
+    expect(muteItemCalls).toEqual([[{ groups }, API_SERVER]]);
   });
 
-  it('"Unmute agent" commits unmutePath(path) when already muted', () => {
-    mockMuted = ['/agents/api-server'];
+  it('"Unmute agent" commits unmuteItem(ref) when already muted', () => {
+    mockMuted = [API_SERVER];
     render(<InlineCreateHarness />);
     openRowMenu();
     expect(screen.getByText('Unmute agent')).toBeInTheDocument();
@@ -357,6 +359,6 @@ describe('AgentContextMenu end-to-end wiring', () => {
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     mockUpdate.mock.calls[0]![0]({ groups });
-    expect(unmutePathCalls).toEqual([[{ groups }, '/agents/api-server']]);
+    expect(unmuteItemCalls).toEqual([[{ groups }, API_SERVER]]);
   });
 });

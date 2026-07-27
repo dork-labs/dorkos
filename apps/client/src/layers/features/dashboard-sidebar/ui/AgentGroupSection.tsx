@@ -14,10 +14,10 @@ interface AgentGroupSectionProps {
   /** The group to render. */
   group: SidebarGroup;
   /**
-   * Member paths, in the group's stored order — manual: `agentPaths`
-   * filtered to the known roster; smart (DOR-338): `evaluateSmartGroup`'s
-   * result against the current fleet, re-derived live as agent state
-   * changes.
+   * Member agent paths, in the group's stored order — manual: the agent
+   * members of `members`, filtered to the known roster; smart (DOR-338):
+   * `evaluateSmartGroup`'s result against the current fleet, re-derived live
+   * as agent state changes.
    */
   memberPaths: string[];
   /** Display-name + activity lookups for the group's sort mode. */
@@ -84,12 +84,18 @@ export function AgentGroupSection({
     [filtered.visible, sortMode, sortCtx]
   );
 
+  // The group's stored agent members. Rooms carry no agent attention state, so
+  // they contribute nothing to the aggregate below and are dropped here.
+  const storedAgentPaths = useMemo(
+    () => group.members.flatMap((m) => (m.kind === 'agent' ? [m.path] : [])),
+    [group.members]
+  );
   // Single aggregated subscription across ALL member paths — powers the
   // collapsed-group activity dot. Smart groups read the DERIVED memberPaths
-  // (their own `agentPaths` is the convert-to-manual materialization target,
-  // not live membership); manual groups read `agentPaths` (incl. unknown
-  // ones, which simply never match) as before.
-  const hasActivity = useAgentsAggregateStatus(isSmart ? memberPaths : group.agentPaths, {
+  // (their own `members` is the convert-to-manual materialization target,
+  // not live membership); manual groups read their stored members (incl.
+  // unknown paths, which simply never match) as before.
+  const hasActivity = useAgentsAggregateStatus(isSmart ? memberPaths : storedAgentPaths, {
     mutedPaths,
   });
 

@@ -92,7 +92,6 @@ export function DashboardSidebar() {
   const { data: config } = useConfig();
   const sidebarPrefs = useSidebarPrefs();
   const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
-  const pinnedAgentPaths = sidebarPrefs.pinned;
 
   // ── Full mesh roster (unsorted; per-section sorting is derived below) ──
   const { data: meshData } = useMeshAgentPaths();
@@ -138,36 +137,44 @@ export function DashboardSidebar() {
   // sidebar, and the individually-muted path set every section's filter and
   // rollup dot reads. ──
   const attentionMap = useAgentAttentionMap(rawPaths);
-  const mutedPathsSet = useMemo(() => new Set(sidebarPrefs.muted), [sidebarPrefs.muted]);
+  // Sections address agents by path, so the ref lists are narrowed to their
+  // agent members here — S1 renders no rooms (spec §5).
+  const mutedPathsSet = useMemo(
+    () => new Set(sidebarPrefs.muted.flatMap((m) => (m.kind === 'agent' ? [m.path] : []))),
+    [sidebarPrefs.muted]
+  );
   // Rendering (dim + glyph) reads a DIFFERENT, wider set: individual mute OR
   // membership in a muted group. Computed once so every appearance of an
   // agent — its home row AND a pinned copy — renders muted identically ("one
   // agent, one mute state"). Group mute stays a pure lens: this set is
   // derived, never written back into `ui.sidebar.muted`.
   const effectiveMutedForRender = useMemo(() => {
-    const set = new Set(sidebarPrefs.muted);
+    const set = new Set(mutedPathsSet);
     for (const g of sidebarPrefs.groups) {
       if (!g.muted) continue;
-      for (const p of g.agentPaths) set.add(p);
+      for (const m of g.members) if (m.kind === 'agent') set.add(m.path);
     }
     return set;
-  }, [sidebarPrefs.muted, sidebarPrefs.groups]);
+  }, [mutedPathsSet, sidebarPrefs.groups]);
 
   // ── Membership maps (stale paths filtered at render, never pruned on write) ──
   const knownSet = useMemo(() => new Set(rawPaths), [rawPaths]);
 
   const pinnedPaths = useMemo(
-    () => pinnedAgentPaths.filter((p) => knownSet.has(p)),
-    [pinnedAgentPaths, knownSet]
+    () =>
+      sidebarPrefs.pinned.flatMap((ref) =>
+        ref.kind === 'agent' && knownSet.has(ref.path) ? [ref.path] : []
+      ),
+    [sidebarPrefs.pinned, knownSet]
   );
 
-  // Multi-presence is structural: smart groups' own `agentPaths` stays `[]`
+  // Multi-presence is structural: smart groups' own `members` stays `[]`
   // until a "Convert to manual group", so they never contribute here — a
   // rule-matched agent still lives in its manual group / the ungrouped list.
   const groupedSet = useMemo(() => {
     const set = new Set<string>();
     for (const g of sidebarPrefs.groups) {
-      for (const p of g.agentPaths) if (knownSet.has(p)) set.add(p);
+      for (const m of g.members) if (m.kind === 'agent' && knownSet.has(m.path)) set.add(m.path);
     }
     return set;
   }, [sidebarPrefs.groups, knownSet]);
@@ -205,7 +212,7 @@ export function DashboardSidebar() {
         g.id,
         g.kind === 'smart'
           ? (smartGroupMemberPaths.get(g.id) ?? [])
-          : g.agentPaths.filter((p) => knownSet.has(p))
+          : g.members.flatMap((m) => (m.kind === 'agent' && knownSet.has(m.path) ? [m.path] : []))
       );
     }
     return map;
@@ -276,11 +283,14 @@ export function DashboardSidebar() {
     } catch {
       stored = [];
     }
-    if (pinnedAgentPaths.length === 0 && stored.length > 0) {
-      updateSidebarPrefs((prev) => ({ ...prev, pinned: [...stored] }));
+    if (sidebarPrefs.pinned.length === 0 && stored.length > 0) {
+      updateSidebarPrefs((prev) => ({
+        ...prev,
+        pinned: stored.map((path) => ({ kind: 'agent', path })),
+      }));
     }
     localStorage.removeItem(LEGACY_PINNED_STORAGE_KEY);
-  }, [config, pinnedAgentPaths.length, updateSidebarPrefs]);
+  }, [config, sidebarPrefs.pinned.length, updateSidebarPrefs]);
 
   // ── Sessions for the active agent (canonical cwd-scoped selector, DOR-203) ──
   const {
@@ -306,7 +316,7 @@ export function DashboardSidebar() {
       const pending = groupCreation?.pendingPath ?? null;
       updateSidebarPrefs((prev) => {
         const { next, id } = createGroup(prev, name);
-        return pending ? moveToGroup(next, pending, id) : next;
+        return pending ? moveToGroup(next, { kind: 'agent', path: pending }, id) : next;
       });
       setGroupCreation(null);
     },

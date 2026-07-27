@@ -16,6 +16,7 @@ import {
   backfillSidebarRoomSections,
   backfillRoomsDefaults,
   backfillSmartGroupKindDefaults,
+  migrateSidebarMembersToItemRefs,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
@@ -1373,6 +1374,217 @@ describe('backfillSmartGroupKindDefaults migration (smart-agent-groups, DOR-338)
     const store = createMockStore({ server: { port: 4242 } });
     backfillSmartGroupKindDefaults(store);
     expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', () => {
+  /** The exact `ui.sidebar` shape on disk before DOR-579: three lists of paths. */
+  function priorShapeUi() {
+    return {
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/projects/alpha', '/projects/beta'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/alpha', '/projects/gamma'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'manual',
+          },
+          {
+            id: 'g2',
+            name: 'Active now',
+            agentPaths: [],
+            sortMode: 'recent',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'smart',
+            rules: { statuses: ['active'] },
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: ['/projects/beta'],
+        ungroupedDisplayFilter: 'all',
+      },
+    };
+  }
+
+  /** The same config after conversion — every string wrapped as an agent ref. */
+  const CONVERTED_SIDEBAR = {
+    pinned: [
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/beta' },
+    ],
+    groups: [
+      {
+        id: 'g1',
+        name: 'Clients',
+        members: [
+          { kind: 'agent', path: '/projects/alpha' },
+          { kind: 'agent', path: '/projects/gamma' },
+        ],
+        sortMode: 'manual',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        kind: 'manual',
+      },
+      {
+        id: 'g2',
+        name: 'Active now',
+        members: [],
+        sortMode: 'recent',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        kind: 'smart',
+        rules: { statuses: ['active'] },
+      },
+    ],
+    ungroupedSortMode: 'name',
+    ungroupedCollapsed: false,
+    recentsCollapsed: false,
+    channelsCollapsed: false,
+    dmsCollapsed: false,
+    groupsHintDismissed: false,
+    muted: [{ kind: 'agent', path: '/projects/beta' }],
+    ungroupedDisplayFilter: 'all',
+  };
+
+  it('converts all three lists and renames agentPaths -> members', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', sidebar: CONVERTED_SIDEBAR });
+  });
+
+  it('leaves no agentPaths key behind on any group', () => {
+    // Not cosmetic: the generated JSON Schema closes each group object
+    // (`additionalProperties: false`), so a leftover key fails conf's
+    // post-migration validation and hard-fails startup.
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const groups = (store.data.ui as { sidebar: { groups: Record<string, unknown>[] } }).sidebar
+      .groups;
+    expect(groups.map((g) => 'agentPaths' in g)).toEqual([false, false]);
+  });
+
+  it('produces a shape the schema accepts verbatim', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
+    expect(parsed.ui.sidebar).toEqual(CONVERTED_SIDEBAR);
+  });
+
+  it('a second run is a no-op — same value, and no write at all', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const afterFirst = store.data.ui;
+
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', sidebar: CONVERTED_SIDEBAR });
+    // `store.set` replaces `data.ui` wholesale, so an unchanged object identity
+    // is proof the second run never wrote.
+    expect(store.data.ui).toBe(afterFirst);
+  });
+
+  it('is a no-op on a fresh install (no ui, or a ui with no sidebar)', () => {
+    const noUi = createMockStore({ server: { port: 4242 } });
+    migrateSidebarMembersToItemRefs(noUi);
+    expect(noUi.data.ui).toBeUndefined();
+
+    const noSidebar = createMockStore({ ui: { theme: 'dark' } });
+    const before = noSidebar.data.ui;
+    migrateSidebarMembersToItemRefs(noSidebar);
+    expect(noSidebar.data.ui).toBe(before);
+  });
+
+  it('is a no-op on an empty-but-present sidebar', () => {
+    const store = createMockStore({
+      ui: { theme: 'dark', sidebar: { pinned: [], groups: [], muted: [] } },
+    });
+    const before = store.data.ui;
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toBe(before);
+  });
+
+  it('still renames an EMPTY agentPaths list (the key itself must go)', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [],
+          groups: [{ id: 'g1', name: 'Empty', agentPaths: [] }],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
+      { id: 'g1', name: 'Empty', members: [] },
+    ]);
+  });
+
+  it('keeps an existing members list and drops a residual agentPaths beside it', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [],
+          groups: [
+            {
+              id: 'g1',
+              name: 'Clients',
+              members: [{ kind: 'room', roomId: 'room-1' }],
+              agentPaths: ['/projects/stale'],
+            },
+          ],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
+      { id: 'g1', name: 'Clients', members: [{ kind: 'room', roomId: 'room-1' }] },
+    ]);
+  });
+
+  it('converts a half-migrated list without duplicating the refs already in it', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [{ kind: 'agent', path: '/projects/alpha' }, '/projects/beta'],
+          groups: [],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { pinned: unknown[] } }).sidebar.pinned).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/beta' },
+    ]);
+  });
+
+  it('runs from the 0.57.0 composite — the release that ships this schema', () => {
+    // The whole point of composing into 0.57.0 rather than opening 0.58.0:
+    // `conf` only runs keys in `(storedVersion, projectVersion]`, so a 0.58.0
+    // body would not run on the 0.57.0 release carrying `members`, and every
+    // upgraded install would read the Zod default `[]` and lose its groups.
+    const store = createMockStore({ ui: priorShapeUi() });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect((store.data.ui as { sidebar: unknown }).sidebar).toMatchObject({
+      pinned: CONVERTED_SIDEBAR.pinned,
+      muted: CONVERTED_SIDEBAR.muted,
+      groups: CONVERTED_SIDEBAR.groups,
+    });
   });
 });
 

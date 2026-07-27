@@ -10,6 +10,8 @@ import {
   SIDEBAR_PREFS_DEFAULTS,
   SidebarDisplayFilterSchema,
   SmartGroupRulesSchema,
+  SidebarItemRefSchema,
+  sameSidebarItem,
 } from '../config-schema.js';
 import type { UserConfig } from '../config-schema.js';
 
@@ -734,6 +736,60 @@ describe('UserConfigSchema runtimes', () => {
   });
 });
 
+describe('SidebarItemRefSchema + sameSidebarItem (sidebar-groups, DOR-579)', () => {
+  it('parses both branches of the union', () => {
+    expect(SidebarItemRefSchema.parse({ kind: 'agent', path: '/projects/api' })).toEqual({
+      kind: 'agent',
+      path: '/projects/api',
+    });
+    expect(SidebarItemRefSchema.parse({ kind: 'room', roomId: '01JXYZ' })).toEqual({
+      kind: 'room',
+      roomId: '01JXYZ',
+    });
+  });
+
+  it('keeps an agent path containing a colon intact', () => {
+    // The reason this is a union and not an "agent:<path>" string: a colon is
+    // legal in a POSIX path, so a prefixed string would need a
+    // parse-on-first-colon rule that breaks on exactly this input.
+    const ref = SidebarItemRefSchema.parse({ kind: 'agent', path: '/projects/a:b' });
+    expect(ref).toEqual({ kind: 'agent', path: '/projects/a:b' });
+  });
+
+  it('rejects a missing discriminator, an unknown kind, and a mismatched payload', () => {
+    expect(() => SidebarItemRefSchema.parse({ path: '/a' })).toThrow();
+    expect(() => SidebarItemRefSchema.parse({ kind: 'session', id: 's1' })).toThrow();
+    expect(() => SidebarItemRefSchema.parse({ kind: 'agent', roomId: '01JXYZ' })).toThrow();
+    expect(() => SidebarItemRefSchema.parse({ kind: 'room', path: '/a' })).toThrow();
+  });
+
+  it('rejects an empty path and an empty roomId', () => {
+    expect(() => SidebarItemRefSchema.parse({ kind: 'agent', path: '' })).toThrow();
+    expect(() => SidebarItemRefSchema.parse({ kind: 'room', roomId: '' })).toThrow();
+  });
+
+  it('sameSidebarItem is true for equal refs built as separate objects', () => {
+    expect(sameSidebarItem({ kind: 'agent', path: '/a' }, { kind: 'agent', path: '/a' })).toBe(
+      true
+    );
+    expect(sameSidebarItem({ kind: 'room', roomId: 'r1' }, { kind: 'room', roomId: 'r1' })).toBe(
+      true
+    );
+  });
+
+  it('sameSidebarItem is false across kinds and across payloads', () => {
+    expect(sameSidebarItem({ kind: 'agent', path: '/a' }, { kind: 'agent', path: '/b' })).toBe(
+      false
+    );
+    expect(sameSidebarItem({ kind: 'room', roomId: 'r1' }, { kind: 'room', roomId: 'r2' })).toBe(
+      false
+    );
+    expect(sameSidebarItem({ kind: 'agent', path: 'r1' }, { kind: 'room', roomId: 'r1' })).toBe(
+      false
+    );
+  });
+});
+
 describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
   const SIDEBAR_DEFAULTS = {
     pinned: [],
@@ -766,7 +822,7 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
     expect(group).toEqual({
       id: 'g1',
       name: 'Clients',
-      agentPaths: [],
+      members: [],
       sortMode: 'manual',
       collapsed: false,
       displayFilter: 'all',
@@ -786,12 +842,18 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
 
   it('round-trips a fully-populated sidebar', () => {
     const sidebar = {
-      pinned: ['/a', '/b'],
+      pinned: [
+        { kind: 'agent', path: '/a' },
+        { kind: 'room', roomId: 'room-1' },
+      ],
       groups: [
         {
           id: 'g1',
           name: 'Clients',
-          agentPaths: ['/a'],
+          members: [
+            { kind: 'agent', path: '/a' },
+            { kind: 'room', roomId: 'room-2' },
+          ],
           sortMode: 'recent',
           collapsed: true,
           displayFilter: 'attention',
@@ -805,7 +867,7 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
       channelsCollapsed: true,
       dmsCollapsed: true,
       groupsHintDismissed: true,
-      muted: ['/b'],
+      muted: [{ kind: 'agent', path: '/b' }],
       ungroupedDisplayFilter: 'active',
     };
     const result = UserConfigSchema.parse({ version: 1, ui: { sidebar } });
@@ -850,8 +912,15 @@ describe('SidebarDisplayFilterSchema + display filter / mute fields (DOR-339)', 
 
   it('an existing (pre-DOR-339) legacy sidebar object still parses, picking up the new defaults', () => {
     const legacy = {
-      pinned: ['/a'],
-      groups: [{ id: 'g1', name: 'Clients', agentPaths: ['/a'], sortMode: 'manual' }],
+      pinned: [{ kind: 'agent', path: '/a' }],
+      groups: [
+        {
+          id: 'g1',
+          name: 'Clients',
+          members: [{ kind: 'agent', path: '/a' }],
+          sortMode: 'manual',
+        },
+      ],
       ungroupedSortMode: 'name',
       ungroupedCollapsed: false,
       recentsCollapsed: false,
@@ -863,7 +932,7 @@ describe('SidebarDisplayFilterSchema + display filter / mute fields (DOR-339)', 
     expect(result.ui.sidebar.groups[0]).toEqual({
       id: 'g1',
       name: 'Clients',
-      agentPaths: ['/a'],
+      members: [{ kind: 'agent', path: '/a' }],
       sortMode: 'manual',
       collapsed: false,
       displayFilter: 'all',
@@ -968,7 +1037,7 @@ describe('SmartGroupRulesSchema + SidebarGroupSchema kind/rules (smart-agent-gro
     const legacy = {
       id: 'g1',
       name: 'Clients',
-      agentPaths: ['/a'],
+      members: [{ kind: 'agent', path: '/a' }],
       sortMode: 'manual',
       collapsed: false,
       displayFilter: 'all',

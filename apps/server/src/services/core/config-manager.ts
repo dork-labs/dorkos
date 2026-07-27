@@ -967,6 +967,85 @@ export function backfillSmartGroupKindDefaults(store: {
 }
 
 /**
+ * Migration body: convert the three sidebar membership lists from bare agent
+ * `projectPath` strings to `SidebarItemRef` objects, and rename
+ * `groups[].agentPaths` to `groups[].members` (sidebar-groups, DOR-579).
+ *
+ * `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member list used to
+ * hold a `string[]` of agent paths, which left nowhere to reference a room (a
+ * room has a ULID, not a path). They now hold
+ * `{ kind: 'agent'; path } | { kind: 'room'; roomId }`.
+ *
+ * **The rename is not additive, so this backfill is load-bearing.** Without it
+ * an upgraded config reads back with `members` absent, takes the Zod default of
+ * `[]`, and every group silently empties while the real data sits in an
+ * `agentPaths` key nothing reads. It is keyed to the release that ships the new
+ * schema for exactly that reason.
+ *
+ * The mapping is total: every string in these arrays predates rooms in the
+ * sidebar, so all of them ARE agent paths and none can be misread. Idempotent —
+ * an entry that is already an object passes through untouched, a group that
+ * already has `members` keeps it, and a run that finds nothing to convert writes
+ * nothing. `agentPaths` is dropped rather than left beside `members`: the
+ * generated JSON Schema closes each group object, so a leftover key would fail
+ * validation on the first read after the migration.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function migrateSidebarMembersToItemRefs(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  const sidebar = (ui as { sidebar?: unknown }).sidebar;
+  if (!sidebar || typeof sidebar !== 'object') return;
+
+  const s = sidebar as Record<string, unknown>;
+  let changed = false;
+
+  /** Wrap each stored path; anything already an object is a ref and passes through. */
+  const toItemRefs = (value: unknown): unknown[] =>
+    (Array.isArray(value) ? value : []).map((entry) =>
+      typeof entry === 'string' ? { kind: 'agent', path: entry } : entry
+    );
+  /** Whether a list still holds the pre-DOR-579 shape (and so needs converting). */
+  const hasStringEntry = (value: unknown): boolean =>
+    Array.isArray(value) && value.some((entry) => typeof entry === 'string');
+
+  const next: Record<string, unknown> = { ...s };
+
+  for (const field of ['pinned', 'muted'] as const) {
+    if (!hasStringEntry(s[field])) continue;
+    next[field] = toItemRefs(s[field]);
+    changed = true;
+  }
+
+  if (Array.isArray(s.groups)) {
+    next.groups = s.groups.map((g: unknown) => {
+      if (!g || typeof g !== 'object') return g;
+      const group = g as Record<string, unknown>;
+      if (!('agentPaths' in group) && !hasStringEntry(group.members)) return group;
+      changed = true;
+      const { agentPaths, ...rest } = group;
+      return {
+        ...rest,
+        // An existing `members` wins over a leftover `agentPaths`: only a config
+        // written before DOR-579 carries the old key, so the two can never hold
+        // different truths, and preferring `members` keeps a re-run from
+        // resurrecting a list the person has since edited.
+        members: toItemRefs(group.members ?? agentPaths),
+      };
+    });
+  }
+
+  if (!changed) return;
+
+  store.set('ui', { ...(ui as Record<string, unknown>), sidebar: next });
+}
+
+/**
  * Migration body: scrub retired onboarding step ids from a persisted
  * `onboarding` block. The first-run flow was shortened, narrowing
  * `ONBOARDING_STEPS` from four values to two — `'tasks'` and `'adapters'` no
@@ -1152,12 +1231,19 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Composite: DOR-452, DOR-501, DOR-516 and DOR-525 all target "the next
-  // unreleased version" (0.56.0 is already tagged) and an object literal cannot
-  // repeat a key, so their bodies compose here in insertion order — the same
-  // convention as the 0.45.0/0.46.0/0.48.0/0.55.0 composites above. All four are
-  // independent and idempotent. /system:release reconciles the key at tag time
-  // if the real release differs.
+  // Composite: DOR-452, DOR-501, DOR-516, DOR-525, DOR-526 and DOR-579 all
+  // target "the next unreleased version" (0.56.0 is already tagged) and an
+  // object literal cannot repeat a key, so their bodies compose here in
+  // insertion order — the same convention as the 0.45.0/0.46.0/0.48.0/0.55.0
+  // composites above. All six are independent and idempotent.
+  // /system:release reconciles the key at tag time if the real release differs.
+  //
+  // Composing rather than opening a 0.58.0 key is not a style choice here.
+  // `conf` only runs a migration when `key > storedVersion && key <=
+  // projectVersion`, so a 0.58.0 body would NOT run on the 0.57.0 release that
+  // carries this schema — and DOR-579 renames a field, so skipping it empties
+  // every group a person has. The rule is "never edit a SHIPPED migration";
+  // extending the next unreleased one is the convention.
   '0.57.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -1187,6 +1273,14 @@ export const CONFIG_MIGRATIONS = {
     // Additive + idempotent; seeds the shipped defaults, so every bound is on
     // for every upgraded install.
     backfillRoomsDefaults(store);
+    // Convert `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member
+    // list from agent-path strings to `SidebarItemRef` objects, renaming
+    // `groups[].agentPaths` -> `groups[].members` (sidebar-groups, DOR-579).
+    // Idempotent, but NOT additive: this is a rename, so an install that skips
+    // it reads `members` as the schema default `[]` and loses its groups. Runs
+    // after the sidebar backfills above so it sees the same `ui.sidebar` object
+    // (order is otherwise immaterial — they touch disjoint fields).
+    migrateSidebarMembersToItemRefs(store);
   },
 } as const;
 

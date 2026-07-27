@@ -14,7 +14,7 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/layers/shared/model';
 import { useSidebarPrefs, useUpdateSidebarPrefs } from '@/layers/entities/config';
-import type { SidebarPrefs } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
 import {
   buildSidebarAnnouncements,
   classifySidebarDrop,
@@ -35,18 +35,18 @@ interface SidebarDndProps {
 /** The floating label shown under the cursor while dragging. */
 function DragOverlayContent({
   data,
-  displayNames,
+  itemName,
   groupName,
 }: {
   data: SidebarDndData;
-  displayNames: Record<string, string>;
+  itemName: (ref: SidebarItemRef) => string;
   groupName: (id: string) => string;
 }) {
   const label =
     data.type === 'group'
       ? groupName(data.groupId)
-      : data.type === 'agent'
-        ? (displayNames[data.path] ?? data.path.split('/').pop() ?? 'Agent')
+      : data.type === 'item'
+        ? itemName(data.ref)
         : '';
   return (
     <div className="bg-sidebar border-sidebar-border text-sidebar-foreground shadow-floating flex items-center rounded-md border px-2.5 py-1.5 text-xs font-medium">
@@ -88,12 +88,17 @@ export function SidebarDnd({ children, displayNames }: SidebarDndProps) {
 
   const groupName = (id: string): string =>
     prefsRef.current.groups.find((g) => g.id === id)?.name ?? 'group';
-  const agentName = (path: string): string =>
-    namesRef.current[path] ?? path.split('/').pop() ?? 'Agent';
+  // Rooms are not draggable yet — nothing in this tree builds a `room` ref, so
+  // that branch is unreachable until S3 (DOR-581) wires the room rows in and
+  // supplies a real title resolver alongside `displayNames`.
+  const itemName = (ref: SidebarItemRef): string =>
+    ref.kind === 'agent'
+      ? (namesRef.current[ref.path] ?? ref.path.split('/').pop() ?? 'Agent')
+      : ref.roomId;
 
   const announcements = buildSidebarAnnouncements(() => ({
     prefs: prefsRef.current,
-    agentName,
+    itemName,
     groupName,
   }));
 
@@ -131,11 +136,7 @@ export function SidebarDnd({ children, displayNames }: SidebarDndProps) {
         {children}
         <DragOverlay dropAnimation={null}>
           {activeData ? (
-            <DragOverlayContent
-              data={activeData}
-              displayNames={displayNames}
-              groupName={groupName}
-            />
+            <DragOverlayContent data={activeData} itemName={itemName} groupName={groupName} />
           ) : null}
         </DragOverlay>
       </DndContext>

@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
-import type { SidebarPrefs, SidebarGroup } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
+
+/** An agent member reference — `pinned`, `muted` and `members` all hold these. */
+const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -100,8 +103,8 @@ vi.mock('@/layers/entities/config', () => {
       isPending: false,
       isError: false,
     }),
-    pinPath: passthrough,
-    unpinPath: passthrough,
+    pinItem: passthrough,
+    unpinItem: passthrough,
     moveToGroup: passthrough,
     createGroup: (prev: unknown) => ({ next: prev, id: 'new-id' }),
     renameGroup: passthrough,
@@ -217,7 +220,7 @@ function group(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
     id: 'g1',
     name: 'Clients',
-    agentPaths: [],
+    members: [],
     sortMode: 'manual',
     collapsed: false,
     displayFilter: 'all',
@@ -319,8 +322,8 @@ describe('DashboardSidebar', () => {
     mockMeshPaths.mockReturnValue(['/projects/alpha', '/projects/beta', '/projects/gamma']);
     mockSidebarPrefs.mockReturnValue(
       makePrefs({
-        pinned: ['/projects/alpha'],
-        groups: [group({ agentPaths: ['/projects/beta'] })],
+        pinned: [agent('/projects/alpha')],
+        groups: [group({ members: [agent('/projects/beta')] })],
       })
     );
     renderWithProviders(<DashboardSidebar />);
@@ -338,7 +341,7 @@ describe('DashboardSidebar', () => {
   });
 
   it('renders the Pinned section when pins exist', () => {
-    mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: ['/projects/alpha'] }));
+    mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [agent('/projects/alpha')] }));
     renderWithProviders(<DashboardSidebar />);
     expect(screen.getByText('Pinned')).toBeInTheDocument();
   });
@@ -349,8 +352,8 @@ describe('DashboardSidebar', () => {
     mockMeshPaths.mockReturnValue(['/projects/alpha', '/projects/beta']);
     mockSidebarPrefs.mockReturnValue(
       makePrefs({
-        pinned: ['/projects/alpha'],
-        groups: [group({ agentPaths: ['/projects/alpha'] })],
+        pinned: [agent('/projects/alpha')],
+        groups: [group({ members: [agent('/projects/alpha')] })],
       })
     );
     renderWithProviders(<DashboardSidebar />);
@@ -361,7 +364,7 @@ describe('DashboardSidebar', () => {
   // --- Empty group ---
 
   it('renders the "Drag agents here" hint for an empty group and does not remove it', () => {
-    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ agentPaths: [] })] }));
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ members: [] })] }));
     renderWithProviders(<DashboardSidebar />);
     expect(screen.getByText('Drag agents here')).toBeInTheDocument();
     expect(screen.getByText('Clients')).toBeInTheDocument();
@@ -468,16 +471,20 @@ describe('DashboardSidebar', () => {
       localStorage.setItem(LEGACY_KEY, JSON.stringify(['/projects/beta', '/projects/alpha']));
       renderWithProviders(<DashboardSidebar />);
       expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
-      const updater = mockUpdateSidebar.mock.calls[0]![0] as (p: { pinned: string[] }) => {
-        pinned: string[];
-      };
-      expect(updater({ pinned: [] }).pinned).toEqual(['/projects/beta', '/projects/alpha']);
+      const updater = mockUpdateSidebar.mock.calls[0]![0] as (p: {
+        pinned: SidebarItemRef[];
+      }) => { pinned: SidebarItemRef[] };
+      // The legacy key held bare paths; they are seeded as agent references.
+      expect(updater({ pinned: [] }).pinned).toEqual([
+        agent('/projects/beta'),
+        agent('/projects/alpha'),
+      ]);
       expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
     });
 
     it('server wins when it already has pins: does not seed, still removes the key', () => {
       localStorage.setItem(LEGACY_KEY, JSON.stringify(['/projects/beta']));
-      mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: ['/projects/alpha'] }));
+      mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [agent('/projects/alpha')] }));
       renderWithProviders(<DashboardSidebar />);
       expect(mockUpdateSidebar).not.toHaveBeenCalled();
       expect(localStorage.getItem(LEGACY_KEY)).toBeNull();
@@ -570,7 +577,10 @@ describe('DashboardSidebar attention filters + reveal (DOR-339)', () => {
     mockSidebarPrefs.mockReturnValue(
       makePrefs({
         groups: [
-          group({ agentPaths: ['/projects/alpha', '/projects/beta'], displayFilter: 'attention' }),
+          group({
+            members: [agent('/projects/alpha'), agent('/projects/beta')],
+            displayFilter: 'attention',
+          }),
         ],
       })
     );
@@ -668,7 +678,7 @@ describe('DashboardSidebar smart groups (DOR-338)', () => {
     // evaluateSmartGroup reads the raw attention map, independent of mute.
     attentionOverride({ '/projects/alpha': 'needs-attention', '/projects/beta': 'active' });
     mockSidebarPrefs.mockReturnValue(
-      makePrefs({ groups: [smartGroup()], muted: ['/projects/alpha'] })
+      makePrefs({ groups: [smartGroup()], muted: [agent('/projects/alpha')] })
     );
     renderWithProviders(<DashboardSidebar />);
 

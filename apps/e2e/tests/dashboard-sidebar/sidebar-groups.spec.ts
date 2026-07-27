@@ -20,13 +20,17 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
   const groupName = `E2E Group ${runId}`;
   const agentDir = join(homedir(), '.dork-e2e-fixtures', `sidebar-dnd-${randomUUID()}`);
   let agentId: string | undefined;
+  /** The path the server canonicalized on registration — what `members` stores. */
+  let agentProjectPath: string | undefined;
 
   test.beforeEach(async ({ request, basePage, dashboardSidebar }) => {
     const res = await request.post('/api/mesh/agents', {
       data: { path: agentDir, overrides: { name: agentName, runtime: 'claude-code' } },
     });
     expect(res.ok(), await res.text()).toBeTruthy();
-    agentId = (await res.json()).id as string;
+    const manifest = (await res.json()) as { id: string; projectPath: string };
+    agentId = manifest.id;
+    agentProjectPath = manifest.projectPath;
 
     await basePage.goto();
     await basePage.waitForAppReady();
@@ -76,7 +80,9 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
       (g: { name: string }) => g.name === groupName
     );
     expect(persistedGroup).toBeDefined();
-    expect(persistedGroup.agentPaths).toHaveLength(1);
+    // The exact stored membership, not just its length: one agent item
+    // reference naming the agent that was dragged (sidebar-groups, DOR-579).
+    expect(persistedGroup.members).toEqual([{ kind: 'agent', path: agentProjectPath }]);
 
     // Reload — the actual persistence-across-reload proof.
     await page.reload();

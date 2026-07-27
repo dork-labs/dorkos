@@ -161,6 +161,44 @@ export const SidebarDisplayFilterSchema = z.enum(['all', 'active', 'attention'])
 export type SidebarDisplayFilter = z.infer<typeof SidebarDisplayFilterSchema>;
 
 /**
+ * A reference to one thing the sidebar can organize (sidebar-groups, DOR-579).
+ *
+ * A discriminated union rather than a `"agent:<path>"` string for two reasons:
+ * stringly-typed keys are banned outright (`.claude/rules/conventions.md`), and
+ * an agent `projectPath` can legally contain a colon on macOS and Linux, so any
+ * prefixed-string scheme needs a parse-on-first-colon rule that reads fine and
+ * breaks on the one path that has one.
+ *
+ * Rooms are referenced by ULID because a room has no `projectPath`. Sessions are
+ * deliberately not a member kind — see `specs/sidebar-groups/01-ideation.md`.
+ */
+export const SidebarItemRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('agent'), path: z.string().min(1) }),
+  z.object({ kind: z.literal('room'), roomId: z.string().min(1) }),
+]);
+
+/** A reference to one sidebar-organizable item (see {@link SidebarItemRefSchema}). */
+export type SidebarItemRef = z.infer<typeof SidebarItemRefSchema>;
+
+/**
+ * Whether two sidebar item references point at the same thing.
+ *
+ * A discriminated union has no structural identity, so every membership test
+ * over `pinned` / `muted` / `groups[].members` needs this — `includes`,
+ * `indexOf` and `===` all compare by object reference and would silently miss.
+ * Do NOT substitute a `JSON.stringify` comparison: key order is not guaranteed
+ * across the code paths that construct these.
+ *
+ * @param a - First reference.
+ * @param b - Second reference.
+ * @returns `true` when both name the same agent path or the same room id.
+ */
+export function sameSidebarItem(a: SidebarItemRef, b: SidebarItemRef): boolean {
+  if (a.kind === 'agent') return b.kind === 'agent' && a.path === b.path;
+  return b.kind === 'room' && a.roomId === b.roomId;
+}
+
+/**
  * A smart group's membership rule set (smart-agent-groups, DOR-338). Every
  * PRESENT field is an AND constraint; within a field, values are OR'd (e.g.
  * `runtimes: ['codex', 'opencode']` matches either). An absent field imposes
@@ -189,14 +227,14 @@ const SidebarGroupShapeSchema = z.object({
   /** Display name. Duplicates allowed (ids disambiguate). */
   name: z.string().trim().min(1).max(40),
   /**
-   * Ordered member agent projectPaths - the durable manual order. Ignored
-   * when `kind === 'smart'` (membership derives from `rules` instead); kept
-   * as-is so "Convert to manual group" has somewhere to materialize into.
+   * Ordered member references - the durable manual order. Ignored when
+   * `kind === 'smart'` (membership derives from `rules` instead); kept as-is
+   * so "Convert to manual group" has somewhere to materialize into.
    */
-  agentPaths: z.array(z.string()).default(() => []),
+  members: z.array(SidebarItemRefSchema).default(() => []),
   /**
    * How rows inside this group are ordered. Switching away from 'manual'
-   * never mutates agentPaths. Smart groups reject `'manual'` (see the
+   * never mutates members. Smart groups reject `'manual'` (see the
    * cross-field refine below) — derived membership has no hand-orderable
    * sequence.
    */
@@ -207,7 +245,7 @@ const SidebarGroupShapeSchema = z.object({
   /** Muted groups drop every attention signal for all members at once (DOR-339). */
   muted: z.boolean().default(false),
   /**
-   * Manual groups own `agentPaths`; smart groups derive members from `rules`
+   * Manual groups own `members`; smart groups derive membership from `rules`
    * (smart-agent-groups, DOR-338). Additive discriminator — existing groups
    * default `'manual'`, zero migration risk.
    */
@@ -248,8 +286,8 @@ export const SidebarGroupSchema = SidebarGroupShapeSchema.superRefine((group, ct
 export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
 
 export const SidebarPrefsSchema = z.object({
-  /** Ordered pinned agent projectPaths. Multi-presence references - membership in groups is unaffected. */
-  pinned: z.array(z.string()).default(() => []),
+  /** Ordered pinned item references. Multi-presence references - membership in groups is unaffected. */
+  pinned: z.array(SidebarItemRefSchema).default(() => []),
   groups: z.array(SidebarGroupSchema).default(() => []),
   /** Ungrouped section ("Agents"): no manual mode - groups are the place for manual curation. */
   ungroupedSortMode: z.enum(['name', 'recent']).default('name'),
@@ -261,11 +299,11 @@ export const SidebarPrefsSchema = z.object({
   dmsCollapsed: z.boolean().default(false),
   groupsHintDismissed: z.boolean().default(false),
   /**
-   * Muted agent projectPaths (DOR-339). Mute owns ALL attention signals for a
-   * path at once (badge, rollup-dot contribution, filter/reveal emphasis); no
+   * Muted item references (DOR-339). Mute owns ALL attention signals for an
+   * item at once (badge, rollup-dot contribution, filter/reveal emphasis); no
    * partial mute states.
    */
-  muted: z.array(z.string()).default(() => []),
+  muted: z.array(SidebarItemRefSchema).default(() => []),
   /** Display filter for the ungrouped "Agents" section (DOR-339). */
   ungroupedDisplayFilter: SidebarDisplayFilterSchema.default('all'),
 });

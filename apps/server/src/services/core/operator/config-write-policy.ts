@@ -137,7 +137,12 @@ export const CONFIG_WRITE_POLICY = {
 
   'ui.theme': 'agent-writable',
   'ui.dismissedUpgradeVersions': 'agent-writable',
-  'ui.sidebar.pinned': 'agent-writable',
+  // A sidebar item reference is a discriminated union of objects, so the `[]`
+  // descent enumerates each branch's fields (same convention as
+  // `CONFIG_DISCLOSURE`).
+  'ui.sidebar.pinned[].kind': 'agent-writable',
+  'ui.sidebar.pinned[].path': 'agent-writable',
+  'ui.sidebar.pinned[].roomId': 'agent-writable',
   // A sidebar group is an object inside an array, so each of its fields carries
   // its own verdict (the `[]` descent, same convention as `CONFIG_DISCLOSURE`).
   // A property added to a group is unclassified, so the guard fails until someone
@@ -146,7 +151,9 @@ export const CONFIG_WRITE_POLICY = {
   // harmless only because every verdict below is `agent-writable`.
   'ui.sidebar.groups[].id': 'agent-writable',
   'ui.sidebar.groups[].name': 'agent-writable',
-  'ui.sidebar.groups[].agentPaths': 'agent-writable',
+  'ui.sidebar.groups[].members[].kind': 'agent-writable',
+  'ui.sidebar.groups[].members[].path': 'agent-writable',
+  'ui.sidebar.groups[].members[].roomId': 'agent-writable',
   'ui.sidebar.groups[].sortMode': 'agent-writable',
   'ui.sidebar.groups[].collapsed': 'agent-writable',
   'ui.sidebar.groups[].displayFilter': 'agent-writable',
@@ -163,7 +170,9 @@ export const CONFIG_WRITE_POLICY = {
   'ui.sidebar.channelsCollapsed': 'agent-writable',
   'ui.sidebar.dmsCollapsed': 'agent-writable',
   'ui.sidebar.groupsHintDismissed': 'agent-writable',
-  'ui.sidebar.muted': 'agent-writable',
+  'ui.sidebar.muted[].kind': 'agent-writable',
+  'ui.sidebar.muted[].path': 'agent-writable',
+  'ui.sidebar.muted[].roomId': 'agent-writable',
   'ui.sidebar.ungroupedDisplayFilter': 'agent-writable',
   'ui.shapes.active': 'agent-writable',
   'ui.shapes.agentDefaults': 'agent-writable',
