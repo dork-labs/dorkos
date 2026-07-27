@@ -76,12 +76,13 @@ export function CommandPaletteDialog() {
 
   // Where an agent should open, as a `/session` href.
   //
-  // It resolves the session itself rather than leaving `?session=` off and
-  // letting the route loader fill it in. The loader declares no `loaderDeps`,
-  // so it does not re-run when only search params change — opening an agent
-  // from inside `/session` would land on a session-less URL where the stream
-  // never attaches and the composer stays dead. This is the same resolution
-  // "Open Here" performs, so all three actions agree.
+  // It names the session up front rather than leaving `?session=` off for the
+  // route loader to fill in. The loader would get there — it declares its
+  // inputs, so it re-runs — but only by redirecting, which costs a second
+  // navigation and a history `REPLACE` the tab reconciler then has to absorb,
+  // and leaves a frame where a new tab is named after an href it is about to
+  // lose. This is the same resolution "Open Here" performs, so all three
+  // actions agree on which session an agent is on.
   //
   // It also carries ONLY this agent's directory. Inheriting the current
   // `?session=` would aim the new view at the session you were already reading,

@@ -4,11 +4,15 @@
  * The shell's Window menu owns the accelerator; this is the renderer half.
  * Subscribing is what claims the keystroke, and the answer decides the outcome:
  * `true` means a tab closed and the window stays open, anything else means the
- * window closes. So this subscribes for the whole life of the shell and answers
- * truthfully each time, rather than subscribing only while a tab happens to be
- * closeable — the shell relabels the menu item to "Close Tab" while a
- * subscriber exists, and a subscription that came and went with the tab count
- * would make that label flicker between two names for one key.
+ * window closes.
+ *
+ * So it subscribes for the whole life of the shell and answers truthfully each
+ * time, rather than subscribing only while a tab happens to be closeable. The
+ * decision belongs in the answer, not in whether we are listening — gating the
+ * subscription on the tab count would state the last-tab rule twice, once in
+ * each place, and leave the shell's behaviour depending on which copy was
+ * right. It is also what the contract asks for in as many words: subscribe on
+ * mount, unsubscribe on unmount, nothing ambiguous in between.
  *
  * The answer has to be synchronous: the main process races the reply against a
  * backstop timeout and the window wins ties. Closing a tab is a synchronous

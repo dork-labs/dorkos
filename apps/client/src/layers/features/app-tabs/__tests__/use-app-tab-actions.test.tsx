@@ -117,6 +117,23 @@ describe('useAppTabActions', () => {
     expect(useAppTabsStore.getState().tabs).toHaveLength(1);
   });
 
+  it('still reports a closed tab when the navigation that follows throws', () => {
+    // `closeActive`'s answer decides whether the desktop shell keeps the
+    // window. Reporting `false` here would close the window on top of the tab
+    // that had already gone.
+    setTabs(['/', '/agents'], 1);
+    const { result } = renderHook(() => useAppTabActions());
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+    navigate.mockImplementationOnce(() => {
+      throw new Error('router is wedged');
+    });
+
+    expect(result.current.closeActive()).toBe(true);
+    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/']);
+
+    warn.mockRestore();
+  });
+
   it('indexes tabs from the left, and jumps to the last one', () => {
     setTabs(['/', '/agents', '/tasks'], 0);
     const { result } = renderHook(() => useAppTabActions());

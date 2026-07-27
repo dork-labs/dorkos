@@ -99,7 +99,18 @@ export function useAppTabActions(): AppTabActions {
         // `closeTab` refuses the last tab, so the count is the honest answer to
         // "did anything close?" — never the caller's own guess at the rule.
         const closed = useAppTabsStore.getState().tabs.length < before;
-        if (closed) goToActive();
+        if (closed) {
+          // The answer is about the tab set, and the tab set has already
+          // changed. A navigation that throws must not turn "I closed a tab"
+          // into "nothing to close", which would take the window down on top of
+          // the tab we just removed. The reconciler catches the URL up on the
+          // next navigation either way.
+          try {
+            goToActive();
+          } catch (error) {
+            console.error('[dorkos:tabs] could not follow a closed tab', error);
+          }
+        }
         return closed;
       },
       create: () => openTabAt(router, NEW_TAB_HREF),

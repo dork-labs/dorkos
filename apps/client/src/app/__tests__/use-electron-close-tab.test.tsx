@@ -105,9 +105,9 @@ describe('useElectronCloseTab', () => {
   });
 
   it('claims the keystroke for the whole life of the shell, not per tab count', () => {
-    // The shell relabels its menu item while a subscriber exists, so a
-    // subscription that came and went with the tab count would flicker the
-    // label between two names for one key.
+    // The last-tab rule lives in the answer, not in whether we are listening.
+    // Gating the subscription on the tab count would state it twice and leave
+    // the shell following whichever copy was right.
     setTabs(['/'], 0);
     const bridge = installBridge();
     const { rerender } = renderHook(() => useElectronCloseTab());

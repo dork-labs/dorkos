@@ -380,9 +380,8 @@ describe('CommandPaletteDialog', () => {
     const target = new URL(opened[0], window.location.origin);
     expect(target.pathname).toBe('/session');
     expect(target.searchParams.get('dir')).toBe('/projects/current');
-    // Carries a resolved session: the `/session` loader does not re-run on a
-    // search-only change, so a session-less href would open a tab whose stream
-    // never attaches.
+    // Names the session up front, so the tab lands on a real session in one
+    // navigation instead of bouncing through the loader's redirect.
     expect(target.searchParams.get('session')).toBeTruthy();
     // …and not the session of whatever tab you were already reading.
     expect(target.searchParams.get('session')).not.toBe('session-in-progress');

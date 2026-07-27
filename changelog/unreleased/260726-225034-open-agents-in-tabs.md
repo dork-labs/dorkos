@@ -3,6 +3,7 @@ covers:
   - 'feat(client): open agents in tabs instead of new windows (DOR-540)'
   - 'fix(client): only a history traversal may move focus between tabs (DOR-540)'
   - 'fix(client): answer the shell truthfully when Cmd+W closes a tab (DOR-540)'
+  - 'fix(client): correct three stale rationales and hold the close answer (DOR-540)'
 ---
 
 ### Added
