@@ -77,6 +77,11 @@ function dm(overrides: Partial<RoomSummary> = {}): RoomSummary {
   };
 }
 
+/** Open the "+" picker beside the section heading. */
+function openPicker(): void {
+  fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+}
+
 function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSection>[0]> = {}) {
   return render(
     <DirectMessagesSection
@@ -137,79 +142,175 @@ describe('DirectMessagesSection', () => {
     expect(mockUpdate.mock.calls[0]![0]({ dmsCollapsed: false })).toEqual({ dmsCollapsed: true });
   });
 
-  it('tells the person to add an agent first when the roster is empty, not that every agent is taken', () => {
+  it('tells the person to add an agent first when the roster is empty', () => {
     renderSection({ displayNames: {} });
-    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+    openPicker();
     expect(screen.getByText(/have not added any agents yet/i)).toBeInTheDocument();
-    expect(screen.queryByText(/already have a conversation/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
-  it('starts a conversation with an agent that has none yet', () => {
+  it('starts a conversation with one agent', () => {
     renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
-    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Bo' }));
+    openPicker();
+    fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start conversation' }));
+
     expect(mockStart).toHaveBeenCalledWith(
-      { agentPath: '/repo/bo', title: 'Bo' },
+      { agentPaths: ['/repo/bo'], title: 'Bo' },
       expect.anything()
     );
   });
 
-  it('leaves out agents already on a conversation roster', () => {
+  it('still offers an agent you already have a conversation with', () => {
+    // Ana alone and Ana + Kai are different conversations, so hiding Ana once
+    // she has one would make the second unreachable. The duplicate a filter used
+    // to prevent is the server's job now: it matches a DM on its member set.
     renderSection({
       dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/ana') })],
       displayNames: { '/repo/ana': 'Ana' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
-    expect(screen.getByText(/already have a conversation with every agent/i)).toBeInTheDocument();
+    openPicker();
+
+    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Ana']);
   });
 
-  it('does not strand an agent behind a conversation its join never completed', () => {
-    // The room exists and is titled after the agent, but the second call failed
-    // so the roster holds only the human. Filtering on the title would hide this
-    // agent from the menu for good, with no way in this release to undo it.
+  it('opens ONE conversation with everyone picked, titled after them', () => {
     renderSection({
-      dms: [
-        dm({
-          id: 'dm-1',
-          title: 'Ana',
-          participants: [{ id: 'me', kind: 'human', displayName: 'You' }],
-        }),
-      ],
-      displayNames: { '/repo/ana': 'Ana' },
+      displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
-    // Scoped to the menu: the orphan DM's own row is also a button named "Ana".
-    fireEvent.click(screen.getByTestId('dm-candidate'));
+    openPicker();
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Cy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start group conversation' }));
+
+    expect(mockStart).toHaveBeenCalledTimes(1);
     expect(mockStart).toHaveBeenCalledWith(
-      { agentPath: '/repo/ana', title: 'Ana' },
+      { agentPaths: ['/repo/ana', '/repo/cy'], title: 'Ana and Cy' },
       expect.anything()
     );
   });
 
-  it('ignores a renamed room title and believes the roster', () => {
-    // A room's title is editable; who is in it is not. The agent is on the
-    // roster, so it stays out of the menu whatever the room ended up called.
-    renderSection({
-      dms: [
-        dm({ id: 'dm-1', title: 'Renamed by hand', participants: rosterWithAgent('/repo/ana') }),
-      ],
-      displayNames: { '/repo/ana': 'Ana' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
-    expect(screen.getByText(/already have a conversation with every agent/i)).toBeInTheDocument();
+  it('takes an agent out of the list once it is a chip, and offers it again when removed', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Bo']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Ana', 'Bo']);
   });
 
-  it('matches on the directory, not on any rendered name', () => {
-    // Two agents both named "Ana" render as "Ana (alpha)" / "Ana (beta)". Only
-    // the one you already have a conversation with leaves the menu; matching on
-    // the name would have hidden both.
+  it('assembles and opens a conversation from the keyboard alone', () => {
+    // Type, Enter to take the match, type, Enter, then Enter on an empty field
+    // to go. Nothing is highlighted while the field is empty, which is what
+    // leaves that last Enter free to mean "open this".
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+
+    fireEvent.change(input, { target: { value: 'an' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.change(input, { target: { value: 'bo' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockStart).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(mockStart).toHaveBeenCalledWith(
+      { agentPaths: ['/repo/ana', '/repo/bo'], title: 'Ana and Bo' },
+      expect.anything()
+    );
+  });
+
+  it('takes back the last agent on Backspace in an empty field', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
+    expect(screen.getByRole('button', { name: 'Remove Bo' })).toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: 'Backspace' });
+    expect(screen.queryByRole('button', { name: 'Remove Bo' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+  });
+
+  it('leaves the chips alone when Backspace has text to delete instead', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.change(input, { target: { value: 'b' } });
+
+    fireEvent.keyDown(input, { key: 'Backspace' });
+    expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+  });
+
+  it('moves the highlight with the arrow keys', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+
+    // Nothing is highlighted until asked for, so the first ArrowDown lands on Ana.
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByRole('button', { name: 'Remove Bo' })).toBeInTheDocument();
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it('closes on Escape without starting anything', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana' } });
+    openPicker();
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it('forgets a half-assembled conversation when reopened', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+    openPicker();
+    expect(screen.queryByRole('button', { name: 'Remove Ana' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Ana', 'Bo']);
+  });
+
+  it('will not open a conversation with nobody in it', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana' } });
+    openPicker();
+    const start = screen.getByRole('button', { name: 'Start conversation' });
+    expect(start).toBeDisabled();
+
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    expect(mockStart).not.toHaveBeenCalled();
+  });
+
+  it('offers two agents that render under the same name as separate rows', () => {
+    // "Ana (alpha)" and "Ana (beta)" are one agent each. They are told apart by
+    // directory everywhere that matters; the menu just has to offer both.
     renderSection({
-      dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/alpha/ana') })],
       displayNames: { '/repo/alpha/ana': 'Ana (alpha)', '/repo/beta/ana': 'Ana (beta)' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+    openPicker();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ana' } });
 
-    const offered = screen.getAllByTestId('dm-candidate').map((el) => el.textContent);
-    expect(offered).toEqual(['Ana (beta)']);
+    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual([
+      'Ana (alpha)',
+      'Ana (beta)',
+    ]);
+  });
+
+  it('says so when nothing matches what was typed', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana' } });
+    openPicker();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'zzz' } });
+
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+    expect(screen.getByText(/No agent by that name/i)).toBeInTheDocument();
   });
 });
