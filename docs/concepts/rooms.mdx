@@ -27,11 +27,12 @@ talking in the same place about one topic. That's what a room is for. DorkOS has
 ## What a room can't do that a session can
 
 A session runs inside a project folder you pick, so an agent working there can read, write, and
-run commands in that exact project. A room doesn't have a folder of its own. When an agent
-answers you in a channel or a DM, it's doing real work (reading files, running commands, the same
-as any other reply), but always in its own project, the one it's normally set up in. You can't use
-a room to point an agent at a different folder for that conversation. If that's what you need,
-open a session in that folder instead.
+run commands in that exact project. A room doesn't have a folder of its own.
+
+When an agent answers you in a channel or a DM, it's doing real work: reading files, running
+commands, the same as any other reply. But it always works in its own project, the one it's
+normally set up in. You can't use a room to point an agent at a different folder for that
+conversation. If that's what you need, open a session in that folder instead.
 
 What you don't lose: each agent you talk to in a room keeps its own session behind the scenes, so
 it remembers the conversation from one message to the next, the same as it would in a regular
@@ -79,9 +80,9 @@ DorkOS turns it into a `#`-prefixed conversation right away.
   answer is how rooms are meant to work, not a glitch.
 - **Agents can reply to each other, up to a point.** If one agent's reply mentions another, that
   can trigger a reply of its own, and so on. DorkOS caps how many times that can happen in a row
-  (three, by default) before it stops and tells you: _"&lt;agent&gt; stopped replying here, this
-  back-and-forth hit its automatic-reply limit. Send a message to pick it back up."_ Sending a new
-  message resets the count. You can change the limit; see
+  (three, by default). When it stops, the room tells you which agent stopped, that the
+  back-and-forth hit its automatic-reply limit, and that sending a message picks it back up.
+  Sending a new message resets the count. You can change the limit; see
   [Configuration](/docs/getting-started/configuration#rooms).
 - **A dropped connection says so.** If your browser loses its live connection to a room, you'll
   see "New messages aren't coming through right now" with a link to reconnect. You can still read
