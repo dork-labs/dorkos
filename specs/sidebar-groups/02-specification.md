@@ -31,11 +31,11 @@ Do **not** reach for `JSON.stringify` comparison — key order is not guaranteed
 
 ### 1.2 What changes in `SidebarPrefs`
 
-| Field                 | Was        | Becomes                              |
-| --------------------- | ---------- | ------------------------------------ |
-| `groups[].agentPaths` | `string[]` | `groups[].members: SidebarItemRef[]` |
-| `pinned`              | `string[]` | `SidebarItemRef[]`                   |
-| `muted`               | `string[]` | `SidebarItemRef[]`                   |
+| Field                 | Was        | Becomes                            |
+| --------------------- | ---------- | ---------------------------------- |
+| `groups[].agentPaths` | `string[]` | `groups[].items: SidebarItemRef[]` |
+| `pinned`              | `string[]` | `SidebarItemRef[]`                 |
+| `muted`               | `string[]` | `SidebarItemRef[]`                 |
 
 `agentPaths` is **renamed, not kept alongside**. A parallel `roomIds` array would leave manual ordering with two lists and no defined interleaving, and would compile silently — the opposite of what we want. Every other field on `SidebarPrefs` and `SidebarGroupSchema` is unchanged.
 
@@ -56,7 +56,29 @@ The body maps each stored string to `{ kind: 'agent', path }` across all three f
 
 Guard it against absent and already-migrated data. A fresh install, a user upgrading with groups, and a re-run must all be safe, because the composite block runs as one unit and its siblings are each independently idempotent.
 
-**It must also `delete` the old `agentPaths` key rather than leaving it beside `members`.** Found empirically while implementing: the generated JSON Schema emits `additionalProperties: false` on each group object, so a leftover key hard-fails `conf`'s post-migration validation. "Leave the old key, it is harmless" is the intuitive choice here and it is the one that breaks.
+**It must also `delete` the old `agentPaths` key rather than leaving it beside `items`.** Found empirically while implementing: the generated JSON Schema emits `additionalProperties: false` on each group object, so a leftover key hard-fails `conf`'s post-migration validation. "Leave the old key, it is harmless" is the intuitive choice here and it is the one that breaks.
+
+### 1.4 Correctness must not depend on the migration running
+
+The migration being right is not enough, and this was the most serious defect the programme produced. Found in review of S1:
+
+**A skipped migration destroys the entire config file, not just the sidebar.** This is the first change here that is a _rename/retype_ rather than an additive backfill. Every prior sibling degraded safely — skip it, Zod defaults fill in, nothing breaks. This one leaves a stored shape that the new schema rejects, so `new Conf(...)` throws, and `ConfigManager`'s corrupt-recovery branch backs the file up and **replaces it with defaults**. Observed on a real boot: `telemetry.userHasDecided` went `true → false` and `install`/`heartbeat` went `false → true` — **a privacy opt-out silently reverted to opt-in**, with `mesh.scanRoots`, `approvals`, `runtimes`, `cloud` and `onboarding` reset alongside. Tracked as DOR-584 and DOR-585.
+
+Two triggers, both live: **dev trees run no migrations at all** (`SERVER_VERSION` falls back to `0.0.0`, and `conf` runs a key only when `key <= projectVersion`), and **a patch release** (`0.56.1`) skips the key for every user.
+
+Three facts that shape the fix, each verified rather than assumed:
+
+- **All three lists are independently fatal**, not just `agentPaths`. `pinned: ['/a']` alone condemns the file, because those fields changed element _type_. A fix that tolerates only the renamed key closes one hole of three.
+- **Ajv is the only validator on the read path.** `ConfigManager.getAll()` returns `this.store.store` raw; nothing runs Zod over a stored object. So a Zod `.preprocess` cannot rescue a file Ajv has already rejected — and `z.toJSONSchema` emits a pipe's **output** schema, so a preprocess would not widen what Ajv sees even if it did run.
+- **`conf` builds Ajv with `useDefaults`, and Zod marks a defaulted field `required`.** So Ajv _writes in_ `items: []` before any read-time conversion can look for `agentPaths`, and the conversion then correctly prefers the present-but-empty field. Tolerance must drop both the `default` and the `required` entry, or the two encodings are not distinguishable at all.
+
+So the tolerance goes in **`z.toJSONSchema`'s `override` hook**, not in the Zod schema. Widening `pinned` to `(string | SidebarItemRef)[]` in the schema would widen the exported type and destroy the compiler-enumerates-the-blast-radius property that makes this whole refactor safe. The override keeps exported types strict, keeps the legacy encoding out of the operator disclosure walker and the OpenAPI export, and confines the back-compat surface to one deletable function.
+
+The read-time conversion (`normalizeSidebarPrefs`) is applied where `ui.sidebar` is first interpreted semantically, returns its input unchanged when already canonical, and holds identity stable via a `WeakMap` keyed on the stored object — every consumer memoizes on `prefs.pinned` / `prefs.groups`.
+
+**Both are back-compat for exactly one release** and say so, with the removal trigger named (DOR-588).
+
+**The reason none of this was visible:** all nine migration tests go through `createMockStore`, so not one crosses the `conf`/Ajv seam where the irreversible failure lives. `UserConfigSchema.parse` cannot substitute — **Zod strips unknown keys where Ajv rejects them** — so the test literally named _"produces a shape the schema accepts verbatim"_ stays green under a mutation that deliberately leaves the legacy key behind. **Any future migration that renames or retypes needs a real-`ConfigManager` test**, and `contributing/configuration.md` now says so.
 
 ### Beyond the config file
 
