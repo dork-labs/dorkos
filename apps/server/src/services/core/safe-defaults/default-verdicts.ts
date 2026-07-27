@@ -170,8 +170,11 @@ export const SAFE_DEFAULTS: readonly string[] = [
   'mcp.rateLimit.enabled',
   'mcp.rateLimit.maxPerWindow',
   'mcp.rateLimit.windowSecs',
-  // Tier 2 telemetry is opt-in, and the notice gate starts un-shown, so a
-  // never-prompted install sends nothing (ADR 260713-143958).
+  // ALL telemetry is opt-in (ADR 260727-181825, superseding 260713-143958's
+  // Tier 1 posture), and the notice gate starts un-shown on top of that.
+  'telemetry.install',
+  'telemetry.heartbeat',
+  'telemetry.usage',
   'telemetry.userHasDecided',
   'telemetry.lastPromptedVersion',
   'telemetry.errorReporting',
@@ -202,12 +205,6 @@ export const SAFE_DEFAULTS: readonly string[] = [
  * text should be softened.
  */
 export const PERMISSIVE_DEFAULTS: Readonly<Record<string, string>> = {
-  'telemetry.install':
-    'Tier 1 anonymous opt-out (ADR 260713-143958): no IP, fingerprint, content, or paths — only a random per-machine id. Held back by the notice-before-first-send gate (`hasTier1SendGate`) until a first-run notice has been shown, and killed outright by DO_NOT_TRACK.',
-  'telemetry.heartbeat':
-    'Tier 1 anonymous opt-out (ADR 260713-143958). Same anonymisation bar, same notice gate, same env kill switches as the install channel.',
-  'telemetry.usage':
-    'Tier 1 anonymous opt-out (ADR 260713-143958). Curated named events only, never autocaptured; same notice gate and kill switches.',
   'auth.enabled':
     'Login off by default is progressive disclosure: a single-user local install shows no account concept at all. The relaxation is bounded by two other gates that read this value — `exposure-guard.ts` refuses every non-loopback bind and every tunnel start while login is off, and `host-guard.ts` runs the DNS-rebinding guard specifically in this posture — so the permissive default cannot be combined with exposure.',
   'mcp.enabled':

@@ -76,19 +76,21 @@ describe('decideTier1Boot — ordering', () => {
 });
 
 describe('formatFirstRunTelemetryNotice', () => {
-  it('states what is shared and every opt-out mechanism', () => {
+  it('states what could be shared and how to turn it on', () => {
     const notice = formatFirstRunTelemetryNotice();
 
     expect(notice).toContain('daily anonymous heartbeat');
     expect(notice).toContain('marketplace install counts');
     expect(notice).toContain('feature-usage events');
     expect(notice).toContain(TELEMETRY_PAYLOAD_DOC_URL);
-    // All three documented opt-outs.
-    expect(notice).toContain('dorkos telemetry disable');
-    expect(notice).toContain('DO_NOT_TRACK=1');
+    // Both ways in, plus the kill switch that outranks them for anyone running
+    // this on someone else's behalf.
+    expect(notice).toContain('dorkos telemetry enable');
     expect(notice).toContain('Privacy & Data');
-    // Honest about the ordering: nothing sends on this first run.
-    expect(notice).toMatch(/nothing is sent on this first run/i);
+    expect(notice).toContain('DO_NOT_TRACK=1');
+    // Honest about the posture: silence is never taken as a yes.
+    expect(notice).toMatch(/if you do nothing, nothing is ever sent/i);
+    expect(notice).not.toMatch(/sharing begins/i);
   });
 
   it('never uses an em dash (writing-for-humans)', () => {

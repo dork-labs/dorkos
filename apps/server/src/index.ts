@@ -399,9 +399,10 @@ async function start() {
   };
   const telemetryDebug = isTelemetryDebugEnabled(telemetryEnv);
 
-  // Tier 1 opt-out telemetry (ADR 260713-143958). The heartbeat, install, and
-  // feature-usage channels default ON and are genuinely anonymous, but the
-  // Homebrew ordering rule requires a first-run notice before anything sends.
+  // Anonymous telemetry (ADR 260713-143958, posture revised by 260727-182651).
+  // The heartbeat, install, and feature-usage channels default OFF; on top of
+  // that the Homebrew ordering rule requires a first-run notice before anything
+  // sends, so the gate below is a second lock, not the only one.
   // `decideTier1Boot` reads the consent snapshot ONCE, here, and captures the
   // send gate BEFORE the notice writes `lastPromptedVersion` — so nothing sends
   // on the boot that first shows the notice, and the install reporter (below),
@@ -413,7 +414,7 @@ async function start() {
   const tier1SendGate = tier1Boot.sendGate;
 
   // Register the dorkos.ai marketplace install reporter. No-op unless
-  // `config.telemetry.install` is on (default true), no env kill switch is set,
+  // `config.telemetry.install` is on (default false), no env kill switch is set,
   // AND the Tier 1 notice gate is open. The reporter forwards `InstallEvent`s
   // emitted by the marketplace install pipeline to
   // https://dorkos.ai/api/telemetry/install with a stable per-machine install ID
@@ -438,7 +439,7 @@ async function start() {
   }
 
   // Register the anonymous feature-usage reporter (DOR-315, ADR 260713-143958
-  // Phase 3). Tier 1: `telemetry.usage` defaults ON, but sends only when no env
+  // Phase 3). `telemetry.usage` defaults OFF, and sends only when no env
   // kill switch is set (`resolveTelemetryConsent`) AND the CAPTURED pre-notice
   // `tier1SendGate` above is open — the same snapshotted gate the install and
   // heartbeat senders use, never re-read after the notice writes
@@ -1823,7 +1824,7 @@ async function start() {
     });
 
     // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
-    // `config.telemetry.heartbeat` defaults ON, but the send folds in the env
+    // `config.telemetry.heartbeat` defaults OFF, and the send folds in the env
     // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
     // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
     // Payload documented at https://dorkos.ai/telemetry (DOR-293).

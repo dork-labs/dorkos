@@ -4,7 +4,7 @@
  *
  * Sends one small, anonymous JSON ping to dorkos.ai roughly once a day so the
  * project can count "known daily-active instances". It is a Tier 1 opt-out
- * channel: `config.telemetry.heartbeat` defaults to `true`, but the caller must
+ * channel: `config.telemetry.heartbeat` defaults to `false`, and the caller must
  * still fold in the notice-before-first-send gate (`hasTier1SendGate`) so a
  * never-answered install sends nothing until its first-run notice has been
  * shown. When `consent` is false — because the user turned it off, an env kill

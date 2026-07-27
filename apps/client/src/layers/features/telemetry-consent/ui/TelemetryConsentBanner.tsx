@@ -9,13 +9,14 @@ import {
 } from '@/layers/entities/config';
 
 /**
- * First-run telemetry disclosure, shown app-wide until the user makes an explicit
- * choice. DorkOS shares a small anonymous heartbeat and marketplace install
- * counts by default (Tier 1, opt-out), so this discloses that default in one
- * line and tucks the exact payload behind a "See what's sent" toggle — one click
- * away, never a wall of JSON. Turning it off is as easy as keeping it on; either
- * choice records the shared `userHasDecided` flag so the disclosure never
- * reappears. The full contract lives at https://dorkos.ai/telemetry.
+ * First-run telemetry invitation, shown app-wide until the user makes an
+ * explicit choice. Every channel is off until they say otherwise (ADR
+ * 260727-182651), so this asks rather than discloses, and tucks the exact
+ * payload behind a "See what's sent" toggle — one click away, never a wall of
+ * JSON. Declining is as easy as accepting; either choice records the shared
+ * `userHasDecided` flag so the invitation never reappears. Both actions write
+ * every channel they cover, so a "yes" is not silently narrower than it looks.
+ * The full contract lives at https://dorkos.ai/telemetry.
  */
 export function TelemetryConsentBanner() {
   const { data: config } = useConfig();
@@ -24,15 +25,15 @@ export function TelemetryConsentBanner() {
 
   if (config?.telemetry?.userHasDecided) return null;
 
-  const turnOff = () => {
+  const decline = () => {
     updateConfig.mutate({
-      telemetry: { install: false, heartbeat: false, userHasDecided: true },
+      telemetry: { install: false, heartbeat: false, usage: false, userHasDecided: true },
     });
   };
 
-  const keepSharing = () => {
+  const share = () => {
     updateConfig.mutate({
-      telemetry: { install: true, heartbeat: true, userHasDecided: true },
+      telemetry: { install: true, heartbeat: true, usage: true, userHasDecided: true },
     });
   };
 
@@ -43,18 +44,18 @@ export function TelemetryConsentBanner() {
       details={<TelemetryPayloadBlock />}
       actions={
         <>
-          <Button variant="outline" size="sm" onClick={turnOff} disabled={updateConfig.isPending}>
-            Turn off
+          <Button variant="outline" size="sm" onClick={decline} disabled={updateConfig.isPending}>
+            No thanks
           </Button>
-          <Button size="sm" onClick={keepSharing} disabled={updateConfig.isPending}>
-            Keep sharing
+          <Button size="sm" onClick={share} disabled={updateConfig.isPending}>
+            Share anonymously
           </Button>
         </>
       }
     >
       <span className="text-muted-foreground">
-        DorkOS shares a little anonymous data — a daily “I&apos;m alive” ping and install counts.
-        Never your prompts, code, or files.{' '}
+        DorkOS sends us nothing unless you say so. Want to share a daily “I&apos;m alive” ping and
+        install counts? Never your prompts, code, or files.{' '}
         <TelemetryPayloadToggle open={expanded} onToggle={() => setExpanded((v) => !v)} />{' '}
         <a
           href="https://dorkos.ai/telemetry"

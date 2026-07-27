@@ -176,14 +176,15 @@ router.get('/', async (_req, res) => {
         rateLimit: mcpConfig?.rateLimit ?? { enabled: true, maxPerWindow: 60, windowSecs: 60 },
       };
     })(),
-    // Fallback mirrors the schema defaults (Tier 1 channels on, notice-gated).
+    // Fallback mirrors the schema defaults: every channel off until a person
+    // says otherwise (ADR 260727-181825). Absence is never read as consent.
     telemetry: configManager.get('telemetry') ?? {
       userHasDecided: false,
-      install: true,
-      heartbeat: true,
+      install: false,
+      heartbeat: false,
       errorReporting: false,
       lastPromptedVersion: null,
-      usage: true,
+      usage: false,
       linkAnalyticsToAccount: false,
       aiMetadata: false,
     },

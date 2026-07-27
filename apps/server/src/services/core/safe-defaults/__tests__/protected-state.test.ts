@@ -96,18 +96,24 @@ describe('salvageTelemetryDecision', () => {
 describe('salvageProtectedState', () => {
   const fresh = USER_CONFIG_DEFAULTS;
 
-  it('keeps a channel turned off without the banner (userHasDecided never set)', () => {
+  it('needs no telemetry carryover now that the channels default off', () => {
     // `dorkos telemetry disable` / `dorkos config set` never touch
-    // `userHasDecided`, so there is no decision to carry — but "off" is still an
-    // explicit act and the value comparison preserves it.
+    // `userHasDecided`, so there is no decision to carry. Since the Tier 1
+    // channels default OFF (ADR 260727-181825) the wipe lands on the protective
+    // value by itself, so nothing needs carrying — and nothing claims to.
     const salvaged = salvageProtectedState(
-      { telemetry: { userHasDecided: false, install: false, heartbeat: false, usage: true } },
+      { telemetry: { userHasDecided: false, install: false, heartbeat: false } },
       fresh
     );
     expect(salvaged.telemetry).toBeUndefined();
-    expect(salvaged.leaves['telemetry.install']).toBe(false);
-    expect(salvaged.leaves['telemetry.heartbeat']).toBe(false);
-    expect(salvaged.leaves['telemetry.usage']).toBeUndefined();
+    expect(salvaged.leaves).toEqual({});
+  });
+
+  it('carries a decision to KEEP sharing — that is the case that can now be lost', () => {
+    // With the defaults off, the value a wipe would destroy is an explicit yes.
+    const sharing = { ...OPTED_OUT, install: true, heartbeat: true, usage: true };
+    const salvaged = salvageProtectedState({ telemetry: sharing }, fresh);
+    expect(salvaged.telemetry).toEqual(sharing);
   });
 
   it('never carries a value more permissive than a fresh install', () => {
@@ -345,12 +351,25 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-safe-reset-'));
     dirs.push(dir);
     const manager = new ConfigManager(dir);
-    manager.set('telemetry', OPTED_OUT);
+    manager.set('telemetry', { ...OPTED_OUT, install: true, heartbeat: true, usage: true });
 
     manager.reset('telemetry');
 
-    // Naming the section IS the explicit act, so it does exactly what it says.
+    // Naming the section IS the explicit act, so it does exactly what it says —
+    // and what it says now lands on the defaults, which are off.
     expect(manager.get('telemetry').userHasDecided).toBe(false);
+    expect(manager.get('telemetry').install).toBe(false);
+  });
+
+  it('keeps a decision to keep sharing across a full reset()', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-safe-reset-'));
+    dirs.push(dir);
+    const manager = new ConfigManager(dir);
+    manager.set('telemetry', { ...OPTED_OUT, install: true, heartbeat: true, usage: true });
+
+    manager.reset();
+
     expect(manager.get('telemetry').install).toBe(true);
+    expect(manager.get('telemetry').userHasDecided).toBe(true);
   });
 });

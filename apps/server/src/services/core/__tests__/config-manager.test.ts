@@ -30,6 +30,7 @@ import {
   generalizeTelemetryConsent,
   backfillTelemetryLastPromptedVersion,
   applyTier1OptOutDefaults,
+  applyTier1OptInDefaults,
   backfillTelemetryUsageChannel,
   backfillTelemetryLinkAnalyticsToAccount,
   backfillTelemetryAiMetadataChannel,
@@ -2367,10 +2368,7 @@ describe('a config written before DOR-579 survives the migration being skipped',
     const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
       ui: { sidebar: { groups: Record<string, unknown>[] } };
     };
-    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toEqual([
-      '/projects/alpha',
-      '/projects/gamma',
-    ]);
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toEqual(['/projects/alpha', '/projects/gamma']);
     expect(onDisk.ui.sidebar.groups[0]!.items).toBeUndefined();
   });
 
@@ -2433,9 +2431,7 @@ describe('a config written before DOR-579 survives the migration being skipped',
         ui: {
           sidebar: {
             pinned: [{ kind: 'agent', path: '/projects/alpha' }],
-            groups: [
-              { id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: '01JROOM' }] },
-            ],
+            groups: [{ id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: '01JROOM' }] }],
             muted: [],
           },
         },
@@ -2460,5 +2456,116 @@ describe('a config written before DOR-579 survives the migration being skipped',
     );
     new ConfigManager(dir);
     expect(fs.existsSync(configPath + '.bak')).toBe(true);
+  });
+});
+
+describe('applyTier1OptInDefaults migration', () => {
+  it('turns the Tier 1 channels off for an install that never answered', () => {
+    // The population the 0.48.0 flip enrolled by silence — including one whose
+    // first-run notice has since been shown, so it is sending today.
+    const store = createMockStore({
+      telemetry: {
+        userHasDecided: false,
+        install: true,
+        heartbeat: true,
+        usage: true,
+        lastPromptedVersion: '0.56.0',
+      },
+    });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toMatchObject({
+      install: false,
+      heartbeat: false,
+      usage: false,
+      userHasDecided: false,
+      // Not re-prompted: the consent surfaces are the way back in.
+      lastPromptedVersion: '0.56.0',
+    });
+  });
+
+  it('never overrides an explicit choice to keep sharing', () => {
+    const decidedYes = {
+      userHasDecided: true,
+      install: true,
+      heartbeat: true,
+      usage: true,
+      errorReporting: false,
+    };
+    const store = createMockStore({ telemetry: { ...decidedYes } });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toEqual(decidedYes);
+  });
+
+  it('never overrides an explicit choice to opt out', () => {
+    const decidedNo = { userHasDecided: true, install: false, heartbeat: false, usage: false };
+    const store = createMockStore({ telemetry: { ...decidedNo } });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toEqual(decidedNo);
+  });
+
+  it('is idempotent and leaves an absent block alone', () => {
+    const already = { userHasDecided: false, install: false, heartbeat: false, usage: false };
+    const store = createMockStore({ telemetry: { ...already } });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toEqual(already);
+
+    const noBlock = createMockStore({ server: { port: 4242 } });
+    applyTier1OptInDefaults(noBlock);
+    expect(noBlock.data.telemetry).toBeUndefined();
+  });
+});
+
+/**
+ * The conf/Ajv seam. A schema change is not proven by a mock store: mock stores
+ * never construct `conf`, and `UserConfigSchema.parse` strips unknown keys where
+ * Ajv rejects them.
+ */
+describe('Tier 1 opt-in defaults (real conf + Ajv)', () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function seed(stored: Record<string, unknown>): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-tier1-optin-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ version: 1, ...stored }));
+    return dir;
+  }
+
+  it('gives a brand-new install every Tier 1 channel off', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-tier1-optin-'));
+    dirs.push(dir);
+    const telemetry = new ConfigManager(dir).get('telemetry');
+    expect(telemetry).toEqual({
+      userHasDecided: false,
+      install: false,
+      heartbeat: false,
+      errorReporting: false,
+      lastPromptedVersion: null,
+      usage: false,
+      linkAnalyticsToAccount: false,
+      aiMetadata: false,
+    });
+  });
+
+  it('leaves an explicit decision to keep sharing intact through a real load', () => {
+    const dir = seed({
+      telemetry: {
+        userHasDecided: true,
+        install: true,
+        heartbeat: true,
+        errorReporting: false,
+        lastPromptedVersion: '0.56.0',
+        usage: true,
+        linkAnalyticsToAccount: false,
+        aiMetadata: false,
+      },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('telemetry').install).toBe(true);
+    expect(manager.get('telemetry').usage).toBe(true);
+    expect(manager.validate()).toEqual({ valid: true });
   });
 });

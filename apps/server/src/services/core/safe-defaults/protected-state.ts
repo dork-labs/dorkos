@@ -111,31 +111,14 @@ export interface ProtectiveCarryover {
  * re-opens, or a bound the person tightened goes slack. Preferences do not
  * qualify — losing a theme is not losing a protection.
  *
- * The telemetry channels appear here for the never-prompted case only. Someone
- * who ran `dorkos telemetry disable`, or set a channel through
- * `dorkos config set`, never touched `userHasDecided`, so
- * {@link salvageTelemetryDecision} would not see a decision to carry — but their
- * "off" is still an explicit act and is preserved by the value comparison.
+ * The telemetry channels are deliberately ABSENT. They defaulted ON when this
+ * list was written and each needed a rule; since ADR 260727-181825 they default
+ * OFF, so a wipe lands on the protective value by itself and a rule here could
+ * never fire. What still needs carrying is the opposite case — someone who chose
+ * to keep sharing — and that travels as a whole decision through
+ * {@link salvageTelemetryDecision}, not as a per-leaf comparison.
  */
 export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
-  {
-    path: 'telemetry.install',
-    direction: 'boolean',
-    protectiveValue: false,
-    reason: 'Tier 1 default is ON; an install-event opt-out must survive a wipe.',
-  },
-  {
-    path: 'telemetry.heartbeat',
-    direction: 'boolean',
-    protectiveValue: false,
-    reason: 'Tier 1 default is ON; a heartbeat opt-out must survive a wipe.',
-  },
-  {
-    path: 'telemetry.usage',
-    direction: 'boolean',
-    protectiveValue: false,
-    reason: 'Tier 1 default is ON; a usage-event opt-out must survive a wipe.',
-  },
   {
     path: 'auth.enabled',
     direction: 'boolean',

@@ -588,6 +588,49 @@ export function applyTier1OptOutDefaults(store: {
 }
 
 /**
+ * Migration body: return the Tier 1 telemetry channels (`install`, `heartbeat`,
+ * `usage`) to opt-in for every install that never answered a consent prompt
+ * (ADR 260727-181825, superseding 260713-143958's Tier 1 posture).
+ *
+ * The mirror image of {@link applyTier1OptOutDefaults}, which is shipped and
+ * therefore frozen — this reverses its effect for the population it enrolled,
+ * rather than editing it:
+ *
+ * - If `userHasDecided === true`, the person made an explicit choice (either
+ *   way) — change NOTHING. Someone who chose to keep sharing keeps sharing.
+ * - Otherwise (never answered), set all three channels `false`. That includes
+ *   installs the 0.48.0 migration enrolled and installs that have since had
+ *   their first-run notice shown, which is the point: enrolment by silence is
+ *   what this reverses.
+ *
+ * The consequence is deliberate and is the whole cost of the change: installs
+ * that are sending anonymous data today, having never been asked, stop sending
+ * it. They are not re-prompted here — `lastPromptedVersion` is untouched, so the
+ * cockpit's consent surfaces remain the way back in.
+ *
+ * Idempotent: an already-opted-out never-answered block, and any
+ * explicit-choice block, are left as-is. The whole-object-absent case is handled
+ * by the schema default on read, which now yields `false`.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function applyTier1OptInDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry == null || typeof telemetry !== 'object') return;
+  const t = telemetry as Record<string, unknown>;
+  // An explicit prior choice is never overridden — the same rule the opt-out
+  // flip honored, applied in the other direction.
+  if (t.userHasDecided === true) return;
+  // Idempotent short-circuit: already opted out, nothing to write.
+  if (t.install === false && t.heartbeat === false && t.usage === false) return;
+  store.set('telemetry', { ...t, install: false, heartbeat: false, usage: false });
+}
+
+/**
  * Migration body: backfill `telemetry.usage` (the anonymous feature-usage
  * channel, DOR-315, ADR 260713-143958 Phase 3) onto an EXISTING `telemetry`
  * block. conf merges top-level defaults SHALLOWLY, so a `telemetry` object
@@ -1284,6 +1327,11 @@ export const CONFIG_MIGRATIONS = {
     // Additive + idempotent; seeds the shipped defaults, so every bound is on
     // for every upgraded install.
     backfillRoomsDefaults(store);
+    // Return the Tier 1 telemetry channels to opt-in for every install that
+    // never answered a consent prompt (ADR 260727-181825). Reverses the 0.48.0
+    // enrolment for that population only; an explicit choice, either way, is
+    // left exactly as it stands.
+    applyTier1OptInDefaults(store);
     // Convert `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member
     // list from agent-path strings to `SidebarItemRef` objects, renaming
     // `groups[].agentPaths` -> `groups[].items` (sidebar-groups, DOR-579).

@@ -79,11 +79,11 @@ describe('UserConfigSchema', () => {
       },
       telemetry: {
         userHasDecided: false,
-        install: true,
-        heartbeat: true,
+        install: false,
+        heartbeat: false,
         errorReporting: false,
         lastPromptedVersion: null,
-        usage: true,
+        usage: false,
         linkAnalyticsToAccount: false,
         aiMetadata: false,
       },
@@ -383,11 +383,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
       },
       telemetry: {
         userHasDecided: false,
-        install: true,
-        heartbeat: true,
+        install: false,
+        heartbeat: false,
         errorReporting: false,
         lastPromptedVersion: null,
-        usage: true,
+        usage: false,
         linkAnalyticsToAccount: false,
         aiMetadata: false,
       },
@@ -591,21 +591,21 @@ describe('UserConfigSchema agents', () => {
 });
 
 describe('UserConfigSchema telemetry', () => {
-  // Tier 1 opt-out defaults (ADR 260713-143958): the anonymous install,
-  // heartbeat, and usage channels default ON (all notice-gated before any
-  // send); errorReporting (Tier 2) defaults OFF.
+  // Every channel defaults OFF (ADR 260727-181825, superseding 260713-143958's
+  // Tier 1 opt-out posture). Anonymity is a property of the payload, not a
+  // substitute for an answer; the notice-before-send gate still applies on top.
   const TIER1_DEFAULTS = {
     userHasDecided: false,
-    install: true,
-    heartbeat: true,
+    install: false,
+    heartbeat: false,
     errorReporting: false,
     lastPromptedVersion: null,
-    usage: true,
+    usage: false,
     linkAnalyticsToAccount: false,
     aiMetadata: false,
   };
 
-  it('telemetry defaults the Tier 1 channels on and errorReporting off when omitted', () => {
+  it('telemetry defaults every channel off when omitted', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.telemetry).toEqual(TIER1_DEFAULTS);
   });
@@ -626,7 +626,7 @@ describe('UserConfigSchema telemetry', () => {
       errorReporting: true,
       userHasDecided: true,
       lastPromptedVersion: null,
-      usage: true,
+      usage: false,
       linkAnalyticsToAccount: false,
       aiMetadata: false,
     });
@@ -637,7 +637,7 @@ describe('UserConfigSchema telemetry', () => {
       version: 1,
       telemetry: { errorReporting: true },
     });
-    // errorReporting overridden; Tier 1 channels keep their on-by-default value.
+    // errorReporting overridden; every other channel keeps its off default.
     expect(result.telemetry).toEqual({ ...TIER1_DEFAULTS, errorReporting: true });
   });
 
@@ -647,9 +647,10 @@ describe('UserConfigSchema telemetry', () => {
       telemetry: { userHasDecided: true },
     });
     expect(result.telemetry.userHasDecided).toBe(true);
-    // Channels keep their defaults regardless of the decision gate.
-    expect(result.telemetry.install).toBe(true);
-    expect(result.telemetry.heartbeat).toBe(true);
+    // Channels keep their defaults regardless of the decision gate. A bare
+    // decision flag must never imply consent to a channel.
+    expect(result.telemetry.install).toBe(false);
+    expect(result.telemetry.heartbeat).toBe(false);
   });
 
   it('rejects non-boolean channel values', () => {
@@ -830,10 +831,7 @@ describe('normalizeSidebarPrefs — reading a config the migration has not touch
     const prefs = normalizeSidebarPrefs(priorShape());
     expect(prefs.pinned).toEqual([agent('/projects/alpha')]);
     expect(prefs.muted).toEqual([agent('/projects/beta')]);
-    expect(prefs.groups[0]!.items).toEqual([
-      agent('/projects/alpha'),
-      agent('/projects/gamma'),
-    ]);
+    expect(prefs.groups[0]!.items).toEqual([agent('/projects/alpha'), agent('/projects/gamma')]);
   });
 
   it('drops the retired agentPaths key rather than carrying it alongside items', () => {

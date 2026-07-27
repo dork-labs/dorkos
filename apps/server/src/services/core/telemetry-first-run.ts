@@ -1,9 +1,11 @@
 /**
- * First-run Tier 1 telemetry notice + boot ordering (ADR 260713-143958, Phase 2).
+ * First-run telemetry notice + boot ordering (ADR 260713-143958 Phase 2, posture
+ * revised by 260727-182651).
  *
- * The Tier 1 channels (heartbeat, install, feature usage) are anonymous and opt-out by
- * default, but they may only start sending **after** a first-run notice has been
- * shown — the Homebrew ordering rule. This module owns two pure pieces so the
+ * The anonymous channels (heartbeat, install, feature usage) are opt-IN: they
+ * send nothing until a person turns them on. The notice still runs first, and
+ * the send gate below still holds every channel until it has been shown, so the
+ * ordering guarantee survives the posture change as a second gate. This module owns two pure pieces so the
  * boot sequence in `index.ts` stays thin and the ordering is unit-testable:
  *
  * 1. {@link decideTier1Boot} — given the telemetry consent snapshot read at
@@ -13,7 +15,7 @@
  *    so the boot that first shows the notice sends nothing; Tier 1 sends begin
  *    on the next boot at the earliest.
  * 2. {@link formatFirstRunTelemetryNotice} — the plain-language notice text
- *    (what we share, the payload doc link, and every opt-out).
+ *    (what could be shared, the payload doc link, and how to turn it on).
  *
  * @module services/core/telemetry-first-run
  */
@@ -76,8 +78,8 @@ export function decideTier1Boot(
  */
 export function formatFirstRunTelemetryNotice(): string {
   return [
-    'DorkOS shares a little anonymous data by default so we can see how many people',
-    'are running it. Three things leave your machine:',
+    'DorkOS sends nothing to us unless you turn it on. If you would like to help,',
+    'you can share three anonymous things:',
     '',
     '  - a daily anonymous heartbeat (a random install id, the version, your OS and',
     '    chip type, which runtimes you have on, and rough counts)',
@@ -85,14 +87,15 @@ export function formatFirstRunTelemetryNotice(): string {
     '  - a few named feature-usage events, like app start and new session (counts',
     '    and coarse facts only)',
     '',
-    'That is all. No prompts, no code, no file paths, no session content, ever.',
+    'That is all it would ever be. No prompts, no code, no file paths, no session',
+    'content, ever.',
     `See the exact payload, word for word: ${TELEMETRY_PAYLOAD_DOC_URL}`,
     '',
-    'Turn it off any time, three ways:',
-    '  - run: dorkos telemetry disable',
-    '  - set the environment variable DO_NOT_TRACK=1',
+    'Turn it on any time, two ways:',
+    '  - run: dorkos telemetry enable',
     '  - open Settings and use the Privacy & Data tab',
     '',
-    'Nothing is sent on this first run. If you do nothing, sharing begins next launch.',
+    'If you do nothing, nothing is ever sent. To keep it that way on a machine you',
+    'manage for someone else, set DO_NOT_TRACK=1 and no setting can switch it on.',
   ].join('\n');
 }
