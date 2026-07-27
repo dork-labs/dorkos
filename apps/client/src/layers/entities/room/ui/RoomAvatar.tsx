@@ -3,12 +3,30 @@
  *
  * @module entities/room/ui/RoomAvatar
  */
-import { cva, type VariantProps } from 'class-variance-authority';
+import { cva } from 'class-variance-authority';
 import { Hash, MessagesSquare } from 'lucide-react';
 import type { AuthorRef, Room } from '@dorkos/shared/room-schemas';
 import { cn, initialOf } from '@/layers/shared/lib';
 import { IdentityAvatar } from '@/layers/shared/ui';
 import { authorColor, dmCounterpart } from '../lib/room-display';
+
+/**
+ * How large a room's mark is drawn. A closed union rather than
+ * `VariantProps`, which admits `null` — and `null` is exactly the value that
+ * would send each variant table back to its own default again.
+ */
+type RoomAvatarSize = 'xs' | 'sm' | 'md';
+
+/**
+ * The size every room mark falls back to. Declared once and applied in the
+ * component's own signature rather than in either variant table's
+ * `defaultVariants`, because a room's mark is drawn by two different things —
+ * a lucide glyph for a channel or thread, the shared identity disc for a DM —
+ * and those two carry their own, different defaults. Left to them, an
+ * unspecified size silently gave a channel a 14px glyph and a DM a 28px disc
+ * in the same sidebar row.
+ */
+const DEFAULT_SIZE: RoomAvatarSize = 'xs';
 
 /** The channel/thread glyph scales with `size` too, so it reads at the same
  * visual weight as the disc it stands in for at that size. */
@@ -20,10 +38,9 @@ const roomAvatarIconVariants = cva('text-muted-foreground shrink-0', {
       md: 'size-6',
     },
   },
-  defaultVariants: { size: 'xs' },
 });
 
-export interface RoomAvatarProps extends VariantProps<typeof roomAvatarIconVariants> {
+export interface RoomAvatarProps {
   /** The room to draw a mark for. */
   room: Pick<Room, 'id' | 'kind' | 'title'>;
   /**
@@ -32,6 +49,8 @@ export interface RoomAvatarProps extends VariantProps<typeof roomAvatarIconVaria
    * message reads it.
    */
   participants?: readonly AuthorRef[] | null;
+  /** How large to draw the mark. Defaults to `xs`, the sidebar's size. */
+  size?: RoomAvatarSize;
   className?: string;
 }
 
@@ -48,7 +67,12 @@ export interface RoomAvatarProps extends VariantProps<typeof roomAvatarIconVaria
  * Decorative — every use sits beside the room's name in text, so the mark is
  * hidden from assistive technology.
  */
-export function RoomAvatar({ room, participants, size, className }: RoomAvatarProps) {
+export function RoomAvatar({
+  room,
+  participants,
+  size = DEFAULT_SIZE,
+  className,
+}: RoomAvatarProps) {
   if (room.kind === 'channel') {
     return (
       <Hash

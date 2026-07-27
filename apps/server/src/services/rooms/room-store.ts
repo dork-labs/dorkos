@@ -198,7 +198,16 @@ export class RoomStore {
   }
 
   /**
-   * A room's roster, in join order.
+   * A room's roster, oldest membership first, `authorId` breaking a tie.
+   *
+   * The tiebreak is load-bearing, not tidiness. A roster seeded at room
+   * creation is written with ONE `joinedAt` for every member, so ordering by
+   * that column alone leaves the whole roster tied — and a tie falls through to
+   * whatever index the query planner happened to pick, which `ANALYZE` is free
+   * to change under a running install. A reader takes the first agent in this
+   * order to decide who a direct message is with, so "unspecified" would have
+   * meant a DM could name a different counterpart on two machines holding
+   * identical data.
    *
    * @param roomId - The room.
    */
@@ -207,16 +216,22 @@ export class RoomStore {
       .select()
       .from(roomMembers)
       .where(eq(roomMembers.roomId, roomId))
-      .orderBy(roomMembers.joinedAt)
+      .orderBy(roomMembers.joinedAt, roomMembers.authorId)
       .all();
     return rows.map(toMember);
   }
 
   /**
-   * The memberships of several rooms in ONE query, in join order within each
-   * room. The list endpoint resolves who is in every direct message it returns,
-   * and doing that a room at a time would put an N+1 on the server to take one
-   * off the client.
+   * The memberships of several rooms in ONE query, grouped by room and ordered
+   * within each room exactly as {@link RoomStore.listMembers} orders one —
+   * oldest first, `authorId` breaking the tie that a seeded roster always has.
+   * The two must agree: the sidebar reads a DM's counterpart out of this and
+   * the open room's header reads it out of that, and a reader who saw two
+   * different agents for one conversation would be right to distrust both.
+   *
+   * The list endpoint resolves who is in every direct message it returns, and
+   * doing that a room at a time would put an N+1 on the server to take one off
+   * the client.
    *
    * @param roomIds - The rooms to read. An empty list reads nothing.
    */
@@ -226,7 +241,7 @@ export class RoomStore {
       .select()
       .from(roomMembers)
       .where(inArray(roomMembers.roomId, [...new Set(roomIds)]))
-      .orderBy(roomMembers.roomId, roomMembers.joinedAt)
+      .orderBy(roomMembers.roomId, roomMembers.joinedAt, roomMembers.authorId)
       .all();
     return rows.map(toMember);
   }

@@ -26,8 +26,16 @@ export function roomDisplayTitle(room: TitleableRoom): string {
  * Who a direct message is with.
  *
  * A DM is the operator and one agent, so the counterpart is the agent on the
- * roster — picked by `kind` rather than by position, because join order is not
- * a promise and matching on a rendered name never was one.
+ * roster — picked by `kind` rather than by position, because matching on a
+ * rendered name never was a promise.
+ *
+ * "The first agent" is only an answer because the server orders a roster
+ * deterministically (`RoomStore.listMembers`): oldest membership first, author
+ * id breaking the tie that every seeded roster has. Nothing here re-sorts, so
+ * the sidebar and the open room's header name the same agent. A DM holding two
+ * agents — which `POST /:id/members` permits — gets the first of them and no
+ * hint that there is a second; drawing a group is a design question, not a
+ * tiebreak, and it belongs with whoever takes it on.
  *
  * @param participants - The DM's roster, as `RoomSummary.participants` carries
  *   it. `null` (a channel, a thread, or a payload that predates the field) and

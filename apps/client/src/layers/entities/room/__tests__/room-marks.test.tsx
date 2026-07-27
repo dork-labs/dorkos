@@ -96,6 +96,12 @@ describe('MemberList', () => {
     expect(disc.getAttribute('data-state')).toBe('closed');
   });
 
+  it('draws a roster disc one step larger than the sidebar mark it sits beside', () => {
+    const { container } = renderRoster([member(ANA)]);
+
+    expect(container.querySelector('[data-slot="room-member-avatar"]')).toHaveClass('size-6');
+  });
+
   it('counts off the members past the fifth', () => {
     renderRoster(
       Array.from({ length: 7 }, (_, i) =>
@@ -137,6 +143,34 @@ describe('RoomAvatar', () => {
     const disc = container.querySelector('[data-slot="room-avatar"]') as HTMLElement;
     expect(disc.textContent).toBe('B');
     expect(disc.style.backgroundColor).toBe(tint(hashToHslColor('dm-1')));
+  });
+
+  it('draws a channel and a DM at one size in the same row, with no size given', () => {
+    // The sidebar names no size. A channel's mark is a lucide glyph and a DM's
+    // is the shared identity disc, and those two carry DIFFERENT defaults of
+    // their own — so an unspecified size has to resolve here, once, or the two
+    // marks stack up at different heights in the same list.
+    const { container: channel } = render(
+      <RoomAvatar room={{ id: 'c-1', kind: 'channel', title: '#general' }} />
+    );
+    const { container: dm } = render(
+      <RoomAvatar room={{ id: 'dm-1', kind: 'dm', title: 'Ana' }} participants={[ANA]} />
+    );
+
+    expect(channel.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-3.5');
+    expect(dm.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-5');
+  });
+
+  it('scales both marks together when a size is named', () => {
+    const { container: channel } = render(
+      <RoomAvatar room={{ id: 'c-1', kind: 'channel', title: '#general' }} size="sm" />
+    );
+    const { container: dm } = render(
+      <RoomAvatar room={{ id: 'dm-1', kind: 'dm', title: 'Ana' }} participants={[ANA]} size="sm" />
+    );
+
+    expect(channel.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-5');
+    expect(dm.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-7');
   });
 
   it('keeps the # for a channel and the branch glyph for a thread', () => {
