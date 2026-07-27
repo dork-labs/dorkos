@@ -10,11 +10,16 @@
  */
 import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { configManager } from '../core/config-manager.js';
 import { AuthorRegistry } from './author-registry.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
+import type { RoomTurnRunner } from './room-trigger.js';
+import { RoomTurnBudget, type TurnBudgetLimits } from './turn-budget.js';
+import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 
 /** The wired rooms subsystem. */
 export interface RoomSubsystem {
@@ -44,10 +49,52 @@ function createAgentLookup(db: Db): RoomAgentLookup {
         name: row.name,
         displayName: row.displayName ?? row.name,
         responseMode: behavior.success ? behavior.data.responseMode : 'always',
+        emoji: row.icon,
+        color: row.color,
       };
     },
   };
 }
+
+/**
+ * The live cascade ceiling, degrading to the shipped default rather than
+ * throwing.
+ *
+ * `RoomService.post` reads this on EVERY write, so a config manager that is not
+ * up yet — or a config file that cannot be read — must never be able to stop a
+ * room accepting messages. Degrading to the schema's own default keeps the
+ * guard ON: the failure mode is "the guard used its default", never "the guard
+ * was absent", which is the only direction it is safe to fail in.
+ */
+function readMaxAgentDepth(): number {
+  try {
+    return configManager.get('rooms').maxAgentDepth;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxAgentDepth;
+  }
+}
+
+/**
+ * The live hourly ceilings on automatic turns — per room, and across the whole
+ * install — degrading the same way and for the same reason as
+ * {@link readMaxAgentDepth}.
+ */
+const turnBudgetLimits: TurnBudgetLimits = {
+  perRoom: () => {
+    try {
+      return configManager.get('rooms').maxAutomaticTurnsPerRoomPerHour;
+    } catch {
+      return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsPerRoomPerHour;
+    }
+  },
+  global: () => {
+    try {
+      return configManager.get('rooms').maxAutomaticTurnsTotalPerHour;
+    } catch {
+      return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsTotalPerHour;
+    }
+  },
+};
 
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
@@ -63,8 +110,15 @@ function safeJson(raw: string): unknown {
  *
  * @param opts.db - The consolidated DB handle.
  * @param opts.agents - Agent lookup override; defaults to the mesh-cache reader.
+ * @param opts.turns - Turn runner override; defaults to the real session path.
+ * @param opts.budget - Turn budget override; defaults to the configured hourly cap.
  */
-export function createRoomSubsystem(opts: { db: Db; agents?: RoomAgentLookup }): RoomSubsystem {
+export function createRoomSubsystem(opts: {
+  db: Db;
+  agents?: RoomAgentLookup;
+  turns?: RoomTurnRunner;
+  budget?: RoomTurnBudget;
+}): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const authors = new AuthorRegistry(opts.db);
   const broadcaster = new RoomBroadcaster();
@@ -73,6 +127,11 @@ export function createRoomSubsystem(opts: { db: Db; agents?: RoomAgentLookup }):
     authors,
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),
+    turns: opts.turns ?? createSessionRoomTurnRunner(),
+    budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits }),
+    // Read per write, not captured once: changing the ceiling in Settings has
+    // to bound the very next cascade, not the next server start.
+    maxAgentDepth: readMaxAgentDepth,
   });
   return { service, store, authors, broadcaster };
 }
@@ -103,3 +162,5 @@ export function getRoomService(): RoomService {
 export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export type { AuthorRecord } from './author-registry.js';
+export type { RoomTurnRunner } from './room-trigger.js';
+export { RoomTurnBudget } from './turn-budget.js';

@@ -57,7 +57,7 @@ export class RoomRoster {
    * @returns The stored membership with its author resolved.
    */
   add(room: Room, input: AddMemberInput): RoomRosterEntry {
-    const author = this.resolveTarget(input);
+    const author = this.resolve(input);
     const member = this.store.addMember({
       roomId: room.id,
       authorId: author.id,
@@ -204,12 +204,24 @@ export class RoomRoster {
     return author;
   }
 
-  /** Resolve whichever of `authorId` / `agentPath` the caller supplied. */
-  private resolveTarget(input: AddMemberInput): AuthorRecord {
+  /**
+   * Resolve whichever of `authorId` / `agentPath` the caller supplied, minting
+   * the author row for an agent that has never been in a room.
+   *
+   * Public because room creation needs the SAME resolution the join path uses,
+   * before it writes anything: a DM is created and joined in one transaction,
+   * so an unregistered agent path has to fail while the room does not exist yet.
+   *
+   * @param input - Who to resolve, by author id or by agent directory.
+   */
+  resolve(input: AddMemberInput): AuthorRecord {
     if (input.agentPath) {
       const agent = this.agents.byPath(input.agentPath);
       if (!agent) throw new RoomError('AGENT_NOT_FOUND', 'No agent registered at that path');
-      return this.authors.resolveAgent(input.agentPath, agent.displayName);
+      return this.authors.resolveAgent(input.agentPath, agent.displayName, {
+        emoji: agent.emoji,
+        color: agent.color,
+      });
     }
     if (input.authorId) return this.requireAuthor(input.authorId);
     throw new RoomError('MEMBER_NOT_FOUND', 'No such author');

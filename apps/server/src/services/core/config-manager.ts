@@ -879,6 +879,55 @@ export function backfillSidebarRoomSections(store: {
 }
 
 /**
+ * Migration body: backfill the `rooms` section (the cascade ceiling agents
+ * reply within, DOR-526) for configs persisted before it existed. Additive +
+ * idempotent: only writes when the key is absent; the schema default also
+ * yields this object on read, so this just writes it through on the upgrade
+ * where it lands.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillRoomsDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const seeded = {
+    maxAgentDepth: 3,
+    maxAutomaticTurnsPerRoomPerHour: 60,
+    maxAutomaticTurnsTotalPerHour: 240,
+  };
+  const rooms = store.get('rooms');
+  if (rooms == null) {
+    store.set('rooms', seeded);
+    return;
+  }
+  // conf merges top-level defaults SHALLOWLY, so a `rooms` block already on disk
+  // never inherits a new nested field on its own. Supplying them here is what
+  // stops an upgrade landing with no spend cap at all.
+  const current = { ...(rooms as Record<string, unknown>) };
+  let changed = false;
+  for (const [key, value] of Object.entries(seeded)) {
+    if (current[key] === undefined) {
+      current[key] = value;
+      changed = true;
+    }
+  }
+  // `maxAutomaticTurnsPerHour` only ever existed on unreleased builds of this
+  // feature; it was split into the per-room and total caps before shipping.
+  // Carry its value onto the per-room cap rather than silently resetting a
+  // number somebody chose, then drop it so the schema stops rejecting it.
+  if (current.maxAutomaticTurnsPerHour !== undefined) {
+    if (typeof current.maxAutomaticTurnsPerHour === 'number') {
+      current.maxAutomaticTurnsPerRoomPerHour = current.maxAutomaticTurnsPerHour;
+    }
+    delete current.maxAutomaticTurnsPerHour;
+    changed = true;
+  }
+  if (changed) store.set('rooms', current);
+}
+
+/**
  * Migration body: backfill `kind: 'manual'` onto every EXISTING stored group
  * (smart-agent-groups, DOR-338). conf merges top-level defaults SHALLOWLY and
  * never reaches inside array elements, so a `ui.sidebar.groups` array already
@@ -1132,6 +1181,12 @@ export const CONFIG_MIGRATIONS = {
     // and Direct messages sections, DOR-525). Additive + idempotent; both seed
     // expanded so an upgrade shows the new sections rather than hiding them.
     backfillSidebarRoomSections(store);
+    // The `rooms` section (DOR-526): `maxAgentDepth`, how far agents may reply
+    // to each other before a room stops them, plus the two spend caps that hold
+    // whoever the caller claims to be — per room, and across the whole install.
+    // Additive + idempotent; seeds the shipped defaults, so every bound is on
+    // for every upgraded install.
+    backfillRoomsDefaults(store);
   },
 } as const;
 

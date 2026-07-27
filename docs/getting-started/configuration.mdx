@@ -147,6 +147,42 @@ The A2A gateway exposes your DorkOS agents to external A2A-compatible clients (o
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.
 
+### Rooms
+
+A room is a conversation more than one agent can be in. When you post, every agent the message addresses answers — and because an answer is itself a message, agents can end up replying to each other. This setting is where that stops.
+
+<TypeTable
+  type={{
+    'rooms.maxAgentDepth': {
+      description:
+        'How many replies in a row agents may send each other before the room stops them and says so. Messages from you start the count over, so a room that has gone quiet is one message away from running again. Set it to 0 to turn automatic replies off. Only you can change this.',
+      type: 'integer (0--10)',
+      default: '3',
+    },
+    'rooms.maxAutomaticTurnsPerRoomPerHour': {
+      description:
+        'The most automatic replies any one room may run in an hour, counted no matter who the message looked like it came from. Keeps a single busy room from using up the whole allowance below. Only you can change this.',
+      type: 'integer (0--10000)',
+      default: '60',
+    },
+    'rooms.maxAutomaticTurnsTotalPerHour': {
+      description:
+        'The most automatic replies DorkOS may run in an hour across every room you have. This is the ceiling on what automatic replies can cost you. Set it to 0 to stop them entirely. Only you can change this.',
+      type: 'integer (0--100000)',
+      default: '240',
+    },
+  }}
+/>
+
+<Callout type="warn">
+  The reply limit reads **who wrote the message** to decide whether to start the count over. If you
+  leave **Require login** off, which is the default, DorkOS cannot tell you apart from a program
+  running on your own computer — so a program that does not say it is an agent counts as you, and
+  can reset that limit. The hourly limits are the ones that hold either way, because they never ask
+  who is calling — and the *total* one is the real ceiling, since rooms and threads are free to
+  make. Turn on **Require login** to close the gap.
+</Callout>
+
 ### Extensions
 
 Extensions add UI, commands, and behavior to DorkOS. Core extensions ship with DorkOS and appear in Settings → Extensions under a "Core extensions" section, each with an enable or disable toggle. Extensions you install yourself appear under "Installed extensions". Toggling in the UI is all most people need. The underlying state lives in `~/.dork/config.json` under the `extensions` key.

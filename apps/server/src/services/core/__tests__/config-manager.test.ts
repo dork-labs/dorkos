@@ -14,6 +14,7 @@ import {
   migrateStatusBarToPins,
   backfillSidebarSettingsDefaults,
   backfillSidebarRoomSections,
+  backfillRoomsDefaults,
   backfillSmartGroupKindDefaults,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
@@ -1217,6 +1218,81 @@ describe('backfillSidebarRoomSections migration (rooms sidebar, DOR-525)', () =>
     const store = createMockStore({ server: { port: 4242 } });
     backfillSidebarRoomSections(store);
     expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () => {
+  it('seeds the section on a config persisted before it existed', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillRoomsDefaults(store);
+    // Pinned to the literal the release ships. Reading the default out of the
+    // schema here would only prove the migration and the schema agree, never
+    // that they agree on a number that bounds anything.
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 3,
+      maxAutomaticTurnsPerRoomPerHour: 60,
+      maxAutomaticTurnsTotalPerHour: 240,
+    });
+  });
+
+  it('is idempotent — keeps a ceiling the user already chose', () => {
+    const store = createMockStore({
+      rooms: {
+        maxAgentDepth: 1,
+        maxAutomaticTurnsPerRoomPerHour: 5,
+        maxAutomaticTurnsTotalPerHour: 9,
+      },
+    });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 1,
+      maxAutomaticTurnsPerRoomPerHour: 5,
+      maxAutomaticTurnsTotalPerHour: 9,
+    });
+  });
+
+  it('keeps an explicit zero, which is a real choice and not an absent section', () => {
+    const store = createMockStore({
+      rooms: {
+        maxAgentDepth: 0,
+        maxAutomaticTurnsPerRoomPerHour: 0,
+        maxAutomaticTurnsTotalPerHour: 0,
+      },
+    });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 0,
+      maxAutomaticTurnsPerRoomPerHour: 0,
+      maxAutomaticTurnsTotalPerHour: 0,
+    });
+  });
+
+  it('adds both spend caps to a rooms block that predates them', () => {
+    // The upgrade that matters: someone already had `rooms` from an earlier
+    // build of this feature, so conf's shallow merge would never give them the
+    // caps. Without this they would run with no posture-independent bound.
+    const store = createMockStore({ rooms: { maxAgentDepth: 1 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 1,
+      maxAutomaticTurnsPerRoomPerHour: 60,
+      maxAutomaticTurnsTotalPerHour: 240,
+    });
+  });
+
+  it('carries a chosen value across the per-hour cap rename, rather than resetting it', () => {
+    // `maxAutomaticTurnsPerHour` only existed on unreleased builds, and was split
+    // into a per-room and a total cap. Anyone running one of those builds has
+    // picked a number; silently resetting it to the default would be the kind of
+    // quiet data loss a migration is supposed to prevent, and leaving the key in
+    // place would make the schema reject the whole config.
+    const store = createMockStore({ rooms: { maxAgentDepth: 2, maxAutomaticTurnsPerHour: 7 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 2,
+      maxAutomaticTurnsPerRoomPerHour: 7,
+      maxAutomaticTurnsTotalPerHour: 240,
+    });
   });
 });
 

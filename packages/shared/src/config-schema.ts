@@ -495,6 +495,46 @@ export const UserConfigSchema = z.object({
       scanRoots: z.array(z.string()).default(() => []),
     })
     .default(() => ({ scanRoots: [] })),
+  rooms: z
+    .object({
+      /**
+       * How many replies in a row agents may send each other before the room
+       * stops them (ADR 260726-170127). Your own messages always start the
+       * count over, so a room the limit has quietened is one message away from
+       * running again. `0` turns automatic replies off entirely.
+       */
+      maxAgentDepth: z.number().int().min(0).max(10).default(3),
+      /**
+       * The most automatic replies any ONE room may run in an hour, counted
+       * whoever asked for them.
+       *
+       * The reply limit above bounds one conversation and reads who is writing
+       * to do it. With **Require login** off — the default — DorkOS cannot tell
+       * a program on your machine from you, so that reading can be sidestepped.
+       * This one cannot: it counts every automatic reply a room runs and stops
+       * at the number, whoever the message appeared to come from.
+       *
+       * It bounds a ROOM, not your bill — rooms are free to create, so this
+       * alone can be multiplied by making more of them. `maxAutomaticTurnsTotalPerHour`
+       * is the one that bounds the total. This one keeps a single busy room from
+       * eating that whole allowance.
+       */
+      maxAutomaticTurnsPerRoomPerHour: z.number().int().min(0).max(10_000).default(60),
+      /**
+       * The most automatic replies this DorkOS may run in an hour, across every
+       * room that exists.
+       *
+       * This is the ceiling on what automatic replies can cost you. It does not
+       * care how many rooms or threads exist, or who the messages appeared to
+       * come from. `0` stops automatic replies entirely.
+       */
+      maxAutomaticTurnsTotalPerHour: z.number().int().min(0).max(100_000).default(240),
+    })
+    .default(() => ({
+      maxAgentDepth: 3,
+      maxAutomaticTurnsPerRoomPerHour: 60,
+      maxAutomaticTurnsTotalPerHour: 240,
+    })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],
     skippedSteps: [],

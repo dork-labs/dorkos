@@ -14,18 +14,16 @@
  * permits N-1 wasted model calls before it fires; the ancestry rule kills
  * A→B→A at the first repeat.
  *
- * Pure — the caller supplies the provenance it read.
+ * Pure — the caller supplies the provenance it read, and the ceiling it is
+ * measuring against. There is deliberately no default ceiling here: the number
+ * lives in `rooms.maxAgentDepth` (user config), and a second copy in this file
+ * would be the one somebody edits when the real one is elsewhere.
  *
- * Wiring status, precisely: {@link deriveCascade} IS live, called by
- * `RoomService.post` to stamp every entry's provenance, because the columns
- * have to be right from the first message or the guard has nothing to read
- * later. {@link evaluateCascade} and {@link buildCascadeNotice} have no
- * production caller yet — R1 ships the rule and its tests, and R3 calls them
- * when it wires triggering.
+ * `room-trigger.ts` is the production caller.
  *
  * @module server/services/rooms/cascade-guard
  */
-import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
+import type { AuthorKind, RoomEntryBody } from '@dorkos/shared/room-schemas';
 
 /** Why a trigger was refused. */
 export type CascadeRefusalReason = 'depth' | 'ancestry';
@@ -56,30 +54,22 @@ export interface CascadeDecision {
 }
 
 /**
- * How many automatic replies deep a cascade may run.
- *
- * A server constant rather than user config for now: nothing triggers until R3,
- * and a config field a user can turn with no observable effect is worse than no
- * field at all. R3 promotes it to `UserConfigSchema` with its migration, where
- * it first means something.
- */
-export const DEFAULT_MAX_AGENT_DEPTH = 3;
-
-/**
  * Decide whether `targetAuthorId` may be triggered from an entry with this
  * provenance.
  *
  * @param targetAuthorId - The agent author the trigger would run.
  * @param provenance - The triggering entry's cascade root, depth, and prior authors.
- * @param opts.maxAgentDepth - The ceiling; defaults to {@link DEFAULT_MAX_AGENT_DEPTH}.
+ * @param opts.maxAgentDepth - How many automatic replies deep a cascade may run
+ *   (`rooms.maxAgentDepth`). Required: this module holds no default, so the
+ *   number a person can change is the only one in play.
  * @returns Whether to trigger, the depth it would carry, and the refusal reason.
  */
 export function evaluateCascade(
   targetAuthorId: string,
   provenance: CascadeProvenance,
-  opts: { maxAgentDepth?: number } = {}
+  opts: { maxAgentDepth: number }
 ): CascadeDecision {
-  const maxAgentDepth = opts.maxAgentDepth ?? DEFAULT_MAX_AGENT_DEPTH;
+  const { maxAgentDepth } = opts;
   const depth = provenance.depth + 1;
 
   if (depth > maxAgentDepth) return { allowed: false, depth, reason: 'depth' };
@@ -92,25 +82,66 @@ export function evaluateCascade(
 /**
  * Where a post's own cascade begins.
  *
- * A human's post always starts fresh — its own id at depth 0 — which is exactly
- * what lets a person re-engage a room the guard has stopped. An agent's post
- * inherits the provenance of the trigger that produced it; without a trigger
- * (an agent posting of its own accord) it starts fresh too.
+ * **Gated on who is writing, never on how the call was shaped.** Spec §6 grants
+ * a fresh cascade to a **human** post, and only to that: it is what lets a
+ * person re-engage a room the guard has stopped, and it is a person's
+ * prerogative because a person is who the budget belongs to.
+ *
+ * **What `authorKind` is worth, precisely.** It is as good as the answer to
+ * "who is calling", and in the DEFAULT posture that answer is weak: with
+ * `auth.enabled` off, `resolveCaller` reads a request carrying no
+ * `X-DorkOS-Agent` header as the local human, so a program on this machine
+ * becomes `'human'` here by *omitting* a header. That is the documented DOR-505
+ * residual (`lib/caller-authority.ts` names the same move) and it is not
+ * closable from this module — with login off there is nothing left to tell a
+ * local program from the person at the keyboard.
+ *
+ * So this rule is the precise one, not the last one. `turn-budget.ts` carries
+ * the bound that does not ask who is calling, and it is what actually caps
+ * spend in the default posture. Do not read the sentence above as a promise
+ * that an agent cannot reach depth 0; read it as the rule that holds whenever
+ * identity means anything.
+ *
+ * An earlier revision keyed the fresh start on whether a `trigger` argument was
+ * passed, which reads as the same rule and is not. `POST /api/rooms/:id/entries`
+ * passes no trigger and resolves an `X-DorkOS-Agent` bearer to that agent — and
+ * the token sits in every spawned session's environment — so any agent with a
+ * shell could mint `cascadeDepth: 0` at will. Measured: two `always` agents
+ * posting through that path ran 30 hops, 30 turns, 30 distinct cascade roots,
+ * max depth 0 and not one refusal notice. Unbounded by depth, unbounded by
+ * ancestry, invisible in the room, one model call per hop. This is the exact
+ * failure ADR 260726-170127 predicted — "a path that forgets to carry it is
+ * unguarded and looks fine in tests".
+ *
+ * So an agent writing with no provenance behind it starts a cascade that is
+ * already spent: its own id, stamped AT the ceiling. The entry is durable and
+ * readable like any other, and anything it would address is refused by the
+ * depth rule — visibly, with a notice — instead of silently costing a turn.
+ * An agent that genuinely is mid-turn passes its `trigger` and is unaffected.
  *
  * @param entryId - The id of the entry being written.
- * @param trigger - The cascade the writing turn was triggered under, if any.
+ * @param opts.trigger - The cascade the writing turn was triggered under, if any.
+ * @param opts.authorKind - Who is writing. Only `human` starts fresh.
+ * @param opts.maxAgentDepth - The ceiling an un-provenanced agent post is stamped at.
  * @returns The `cascadeRoot` / `cascadeDepth` to persist on the entry.
  */
 export function deriveCascade(
   entryId: string,
-  trigger?: { root: string; depth: number }
+  opts: {
+    trigger?: { root: string; depth: number };
+    authorKind: AuthorKind;
+    maxAgentDepth: number;
+  }
 ): { cascadeRoot: string; cascadeDepth: number } {
-  if (!trigger) return { cascadeRoot: entryId, cascadeDepth: 0 };
-  return { cascadeRoot: trigger.root, cascadeDepth: trigger.depth };
+  if (opts.trigger) {
+    return { cascadeRoot: opts.trigger.root, cascadeDepth: opts.trigger.depth };
+  }
+  if (opts.authorKind === 'human') return { cascadeRoot: entryId, cascadeDepth: 0 };
+  return { cascadeRoot: entryId, cascadeDepth: opts.maxAgentDepth };
 }
 
 /**
- * The durable `notice` a refused trigger writes into the room.
+ * The durable `notice` a cascade refusal writes into the room.
  *
  * A silently dropped trigger is indistinguishable from a broken agent, and in a
  * shared room the person who notices is not the person who configured it. So
@@ -125,5 +156,28 @@ export function buildCascadeNotice(agentName: string, subjectAuthorId: string): 
     text: `${agentName} stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.`,
     notice: 'cascade_stopped',
     subjectAuthorId,
+  };
+}
+
+/**
+ * The durable `notice` the room writes when it runs out of hourly budget.
+ *
+ * Deliberately different words from the cascade notice, because it is a
+ * different thing and the person reading it needs to act differently: the
+ * cascade one means "this conversation went around enough times", and one
+ * message restarts it. This one means "all the automatic replying that may
+ * happen for now has happened", and another message will not change that.
+ *
+ * @param scope - Which cap refused. The two send a reader to different
+ *   settings, and saying "this room" when the whole install is out would send
+ *   them to the wrong one.
+ */
+export function buildBudgetNotice(scope: 'room' | 'global' = 'room'): RoomEntryBody {
+  return {
+    text:
+      scope === 'global'
+        ? 'DorkOS has used up its automatic replies for the hour, across all your rooms. They will pick up again shortly — or raise the limit in Settings.'
+        : 'This room has used up its automatic replies for the hour. It will pick up again shortly — or raise the limit in Settings if this room is meant to be this busy.',
+    notice: 'budget_reached',
   };
 }

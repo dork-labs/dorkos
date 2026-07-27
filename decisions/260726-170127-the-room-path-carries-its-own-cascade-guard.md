@@ -47,6 +47,83 @@ A room trigger carries a provenance chain — a depth, the id of the root turn t
 
 This is knowingly a second implementation of a concept the relay already has. We are not unifying them now because the relay's version is coupled to its endpoint/subject addressing, and hoisting it would mean reshaping a shipped, working delivery pipeline to serve a path that does not exist yet. The condition for revisiting is a third caller: if anything beyond the relay and the room path needs cascade bounding, the shared abstraction has earned itself and should be extracted then.
 
+## What the guard does not cover, and what does
+
+Two limits, both found by building it (DOR-526) and both worth stating here
+rather than in a comment somebody will move.
+
+**The rules read caller-asserted identity, and in the default posture that is
+weak.** Rule 1 keys the fresh start on the author being a human, because a
+person re-engaging a stopped room is the behaviour we want. `resolveCaller`
+answers "is this a human" by looking for an `X-DorkOS-Agent` header, and
+`sessionGate` is a pass-through while `auth.enabled` is off — which is the
+default. So a program on the machine omits a header and *is* the human author:
+measured at 30 posts, 30 distinct cascade roots, 60 turns, max depth 0, no
+refusal notice. This is the documented DOR-505 residual (`lib/caller-authority.ts`
+names the same move) and it is not closable from the room path: with login off
+there is genuinely nothing left to tell a local program from the person.
+
+Because of that, the room path also carries a **posture-independent budget**
+(`turn-budget.ts`), counted without reference to who is calling and refusing with
+its own `budget_reached` notice. It has two ceilings, and the distinction is
+load-bearing:
+
+- **Per room** bounds what any one room can cost. It is not a spend bound on its
+  own, because rooms are free: measured through the real mount, a cap of 2/room
+  bought 16 turns across 8 channels, and threads were cheaper still at 12 across
+  5 (a thread inherits the parent's whole roster). That is not a defect in the
+  cap; it is the difference between bounding a room and bounding a wallet.
+- **Global** bounds what the whole install can cost, whatever number of rooms or
+  threads exist. This is the one that makes "the ceiling on what this can cost
+  you" true. The per-room cap stays because it is what keeps one runaway room
+  from eating the entire global allowance and starving every other room.
+
+The division from the cascade guard is equally deliberate — depth-and-ancestry is
+the precise instrument that keeps a healthy room from wasting calls, and the
+budget is the blunt one that bounds a dishonest caller. Neither is redundant, and
+deleting either on the grounds that the other exists reopens a case the other
+never covered.
+
+Both budget windows are in-memory and reset on restart. For an accidental loop
+that costs nothing; for a deliberate caller it is a real limit, since
+`POST /api/admin/restart` sits behind the same pass-through gate and is
+rate-limited to 3 per 5 minutes — roughly 36 clearances an hour.
+
+### Why that residual is acceptable, and what actually closes it
+
+The durable counter that would close it is a follow-up, and the reason is
+stronger than "the prose is now accurate".
+
+**A caller who can omit the header already has a shell on this machine, and a
+shell can spend the model budget directly.** It can run `claude` in a loop
+without going near a room. The rooms path therefore adds no capability that
+attacker does not already have, and hardening the room's counter against them is
+hardening one door in a building whose walls are the actual boundary. Spending
+the hot path of every turn on a durable write to slow down an attacker who has
+already won is a poor trade.
+
+What the guard genuinely buys — and this is worth having entirely on its own — is
+a bound on **accidental** loops between well-behaved agents. Two `always` agents
+in one room is a configuration a reasonable person reaches on purpose, and the
+cost of it running unbounded is a real bill for no work. That is the common case,
+it involves no attacker, and depth-plus-ancestry plus the budget bound it
+completely.
+
+So the honest framing is: the budget is defence in depth against an adversary who
+is already inside, and a complete answer to the accident it was built for. **The
+actual fix for the adversary is DOR-505 — turning login on** — which is what
+restores the identity distinction every caller-asserted rule here depends on.
+A durable counter is worth adding when it is cheap, not because it closes this.
+
+**Cross-room cascades carry their depth but not their ancestry.** An agent
+mid-turn in room A that posts into room B inherits A's `cascadeRoot` at its
+current depth (the turn's provenance follows the agent, not the room), so B's
+members trigger one deeper and A's ceiling still bounds the chain. The ancestry
+rule does not carry: `authorsInCascade` is scoped `(room_id, cascade_root)`, so
+the same author can appear once per room within one cascade. That is defensible
+— depth is doing the bounding, and per-room scoping is what keeps the query on
+an index — but it means the ancestry rule is a within-room guarantee only.
+
 ## Consequences
 
 ### Positive
@@ -62,3 +139,4 @@ This is knowingly a second implementation of a concept the relay already has. We
 - The ancestry rule is deliberately conservative and will produce false refusals: a room where A genuinely should answer B twice in one cascade hits the guard on the second pass. The ceiling is configurable, but the default will be wrong for somebody.
 - Provenance has to be threaded through every path that can trigger a turn from a room post. A path that forgets to carry it is unguarded and looks fine in tests, because the guard's absence is only visible under a cascade.
 - The refusal entry is a new durable log entry type that exists to describe an absence, which is a small but permanent widening of the room log's vocabulary.
+- **Two bounds, not one.** The budget above is a second mechanism with its own config field, its own notice code and its own tests, and a reader meeting either one alone will reasonably wonder why the other exists. The section above is the answer; keep it accurate if either changes.

@@ -92,6 +92,9 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `scheduler.timezone`                | string \| null                                                           | `null`             | Default timezone for cron expressions (`null` = system timezone)                                                                                                                                                                                                       |
 | `scheduler.retentionCount`          | integer                                                                  | `100`              | Number of completed run records to retain in the database                                                                                                                                                                                                              |
 | `mesh.scanRoots`                    | string[]                                                                 | `[]`               | Directories to scan for agent discovery                                                                                                                                                                                                                                |
+| `rooms.maxAgentDepth`               | integer (0--10)                                                          | `3`                | How many replies in a row agents may send each other in a room before it stops them. Your own messages reset the count; `0` turns automatic replies off                                                                                                                |
+| `rooms.maxAutomaticTurnsPerRoomPerHour`| integer (0--10000)                                                       | `60`               | The most automatic replies any ONE room may run per hour, counted whoever the caller claims to be                                                                                                                                                                      |
+| `rooms.maxAutomaticTurnsTotalPerHour`| integer (0--100000)                                                      | `240`              | The most automatic replies this DorkOS may run per hour across every room. The ceiling on what automatic replies can cost                                                                                                                                              |
 | `uploads.maxFileSize`               | integer                                                                  | `10485760` (10 MB) | Maximum file size in bytes per uploaded file                                                                                                                                                                                                                           |
 | `uploads.maxFiles`                  | integer (1--50)                                                          | `10`               | Maximum number of files per upload request                                                                                                                                                                                                                             |
 | `uploads.allowedTypes`              | string[]                                                                 | `["*/*"]`          | Allowed MIME types (e.g., `["image/*", "text/plain"]`)                                                                                                                                                                                                                 |
@@ -574,6 +577,39 @@ When `scanRoots` is empty (default), the reconciler scans from the server's defa
 
 ```bash
 dorkos config set mesh.scanRoots '["/home/user/projects", "/home/user/agents"]'
+```
+
+### rooms.maxAgentDepth
+
+The cascade ceiling from ADR 260726-170127. A room post triggers every agent member the message addresses; a triggered agent's reply is itself a post, so it can trigger the next agent. `maxAgentDepth` is how deep that chain may run.
+
+It is one of two rules, and the weaker one. The ancestry rule — an author already in a cascade is never triggered again by it — is what actually bounds ping-pong, and it usually fires first; a pure depth counter would permit N-1 wasted model calls before refusing anything. The ceiling exists for the shapes ancestry does not catch, such as a long chain of distinct agents.
+
+A post by a **human** always starts a fresh cascade at depth 0, so a room the guard has quietened is always one message from running again. `0` refuses every automatic reply, which is the way to turn room triggering off without leaving a room.
+
+Refusals are visible: the room writes a `notice` entry naming the agent that stopped. Operator-only — an agent that could raise its own reply ceiling could spend your model budget.
+
+```bash
+dorkos config set rooms.maxAgentDepth 5
+```
+
+### rooms.maxAutomaticTurnsPerRoomPerHour / rooms.maxAutomaticTurnsTotalPerHour
+
+Two rolling caps on automatic turns, and the **only** spend bounds that do not depend on the auth posture.
+
+`maxAgentDepth` above decides who may reset a cascade by reading the author's kind, and `resolveCaller` answers that by looking for an `X-DorkOS-Agent` header. With `auth.enabled` off — the default — `sessionGate` is a pass-through, so a local program that simply omits the header resolves as the local human and clears both the cascade reset and every `OPERATOR_ONLY` roster gate. That is the DOR-505 residual (`lib/caller-authority.ts` documents the same move) and it cannot be closed from the rooms domain.
+
+These caps do not ask. They count every automatic turn a room starts, refuse past the number, and write a `budget_reached` notice once per exhaustion.
+
+**Both exist because only one of them bounds spend.** The per-room cap bounds a *room*, and rooms are free — a caller multiplies its allowance by creating them (measured: 2/room bought 16 turns across 8 channels, and 12 across 5 threads off one parent, since a thread inherits the parent's roster). The total cap is the ceiling. The per-room cap stays because it stops a single busy room eating the whole allowance and starving the others.
+
+Set either to `0` to stop automatic replies entirely.
+
+**Known limit:** both windows are in-memory and reset when the server restarts. That costs nothing for an accidental loop, which runs in seconds. For a deliberate caller it is real: `POST /api/admin/restart` sits behind the same pass-through gate and is rate-limited to 3 per 5 minutes, so roughly 36 clearances an hour are reachable. Closing that needs a durable counter — a write on the hot path of every turn — and is tracked separately.
+
+```bash
+dorkos config set rooms.maxAutomaticTurnsPerRoomPerHour 120
+dorkos config set rooms.maxAutomaticTurnsTotalPerHour 480
 ```
 
 ### uploads

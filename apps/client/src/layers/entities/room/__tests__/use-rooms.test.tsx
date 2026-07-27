@@ -121,12 +121,13 @@ describe('useCreateChannel', () => {
       kind: 'channel',
       title: 'General',
       members: [],
+      agentPaths: [],
     });
   });
 });
 
 describe('useStartDirectMessage', () => {
-  it('creates the room, then joins the agent by its directory', async () => {
+  it('creates the room and joins the agent in one call', async () => {
     const created = { ...room({ id: 'dm-1', kind: 'dm', slug: null, title: 'Ana' }), members: [] };
     const transport = createMockTransport({
       createRoom: vi.fn().mockResolvedValue(created),
@@ -140,8 +141,10 @@ describe('useStartDirectMessage', () => {
       kind: 'dm',
       title: 'Ana',
       members: [],
+      agentPaths: ['/repo/ana'],
     });
-    expect(transport.addRoomMember).toHaveBeenCalledWith('dm-1', { agentPath: '/repo/ana' });
+    // The second call is what left a DM with nobody in it when it failed.
+    expect(transport.addRoomMember).not.toHaveBeenCalled();
   });
 });
 

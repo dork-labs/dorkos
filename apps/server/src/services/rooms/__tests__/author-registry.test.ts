@@ -110,6 +110,20 @@ describe('AuthorRegistry', () => {
 
     expect(ana.naturalKey).toBe(ANA_PATH);
     expect(JSON.stringify(ref)).not.toContain('/Users/dorian');
-    expect(Object.keys(ref).sort()).toEqual(['displayName', 'id', 'kind']);
+    // The projection is closed, not filtered: the assertion is the WHOLE key
+    // set, so a field added to `AuthorRecord` cannot ride onto the wire by
+    // being spread into the ref and nobody noticing.
+    expect(Object.keys(ref).sort()).toEqual(['agentRef', 'displayName', 'id', 'kind']);
+  });
+
+  it('gives an agent a handle derived from its path, not the path', () => {
+    const ana = registry.resolveAgent(ANA_PATH, 'Ana');
+    const renamed = registry.resolveAgent(ANA_PATH, 'Ana II');
+
+    // Same path, so the same handle — a rename does not change who this is.
+    expect(toAuthorRef(renamed).agentRef).toBe(toAuthorRef(ana).agentRef);
+    expect(toAuthorRef(ana).agentRef).not.toContain(ANA_PATH);
+    // A human has no agent to point at.
+    expect(toAuthorRef(registry.localHuman()).agentRef).toBeUndefined();
   });
 });

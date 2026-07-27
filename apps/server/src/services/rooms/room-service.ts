@@ -5,11 +5,31 @@
  * may not have a thread for a parent, a channel slug is unique while it is
  * live — and it publishes what happened to the two streams a room fans out on:
  * its own SSE stream for entries and signals, the global `/api/events` stream
- * for lifecycle. Membership lives next door in `room-roster.ts`.
+ * for lifecycle. Membership lives next door in `room-roster.ts`, and turning a
+ * committed post into agent replies lives in `room-trigger.ts`.
  *
- * It deliberately does NOT trigger agents. Addressing and the cascade guard are
- * pure modules with their own tests (`addressing.ts`, `cascade-guard.ts`); R3
- * calls them from here. Posting an entry today reaches its readers and stops.
+ * **Roster writes are the operator's — as far as identity can tell.** Adding,
+ * removing, or re-configuring a member is refused for a caller the server
+ * resolves as an agent. That was a harmless asymmetry while nothing read
+ * `responseMode`; now that a post triggers turns, an agent that could widen
+ * another agent's addressing could drive replies nobody asked for, from inside
+ * the room where it is hardest to notice.
+ *
+ * Read "an agent caller" literally: it means a request the server resolved to an
+ * agent. In the DEFAULT posture (`auth.enabled` off) a request carrying no
+ * `X-DorkOS-Agent` header resolves to the local human, so a program on this
+ * machine clears every gate in this file by omitting a header. That is the
+ * documented DOR-505 residual, not a hole this domain opened or can close —
+ * with login off there is nothing left to tell a local program from the person
+ * at the keyboard. Turning **Require login** on is what makes these gates mean
+ * what they say.
+ *
+ * What holds regardless is `turn-budget.ts`, which counts without asking who is
+ * calling: a per-room cap on what any ONE room may spend, and a global cap on
+ * what the whole install may. The per-room one bounds a room, not a bill —
+ * rooms and threads are free to create, so it alone can be multiplied by making
+ * more of them; the global one is the ceiling. These gates shape a healthy
+ * room; those caps are what bound a dishonest one.
  *
  * @module server/services/rooms/room-service
  */
@@ -29,7 +49,7 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../core/event-fan-out.js';
-import type { AuthorRegistry } from './author-registry.js';
+import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
 import { resolveMentions } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
@@ -37,6 +57,8 @@ import { RoomRoster, type AddMemberInput } from './room-roster.js';
 import type { NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
+import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
+import type { RoomTurnBudget } from './turn-budget.js';
 
 /** Everything {@link RoomService} is constructed from. */
 export interface RoomServiceDeps {
@@ -44,9 +66,15 @@ export interface RoomServiceDeps {
   authors: AuthorRegistry;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
+  /** How a triggered agent actually takes its turn. */
+  turns: RoomTurnRunner;
+  /** The per-room ceiling on automatic turns, counted whoever is calling. */
+  budget: RoomTurnBudget;
+  /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
+  maxAgentDepth(): number;
 }
 
-/** Optional provenance a post carries when a trigger produced it (R3). */
+/** Provenance a post carries when a trigger produced it. */
 export interface PostTrigger {
   root: string;
   depth: number;
@@ -58,15 +86,34 @@ export class RoomService {
   private readonly authors: AuthorRegistry;
   private readonly broadcaster: RoomBroadcaster;
   private readonly roster: RoomRoster;
+  private readonly triggers: RoomTriggerDispatcher;
+  /** The live `rooms.maxAgentDepth`. Read per write, so a change takes effect. */
+  private readonly maxAgentDepth: () => number;
 
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
+    this.maxAgentDepth = deps.maxAgentDepth;
     this.roster = new RoomRoster({
       store: deps.store,
       authors: deps.authors,
       agents: deps.agents,
+    });
+    // The dispatcher writes back through this service (a reply is a post like
+    // any other, mentions and provenance included), so it takes bound methods
+    // rather than the store. They are only ever called after construction.
+    this.triggers = new RoomTriggerDispatcher({
+      store: deps.store,
+      authors: deps.authors,
+      agents: deps.agents,
+      runner: deps.turns,
+      budget: deps.budget,
+      maxAgentDepth: deps.maxAgentDepth,
+      writer: {
+        post: (roomId, input) => this.post(roomId, input),
+        postNotice: (roomId, body, cascade) => this.postNotice(roomId, body, cascade),
+      },
     });
   }
 
@@ -80,10 +127,35 @@ export class RoomService {
     return this.authors;
   }
 
+  /**
+   * Resolve once every turn a post triggered has finished.
+   *
+   * A cascade is asynchronous by construction — posting returns before any
+   * agent has answered — so this is how a caller waits it out without sleeping.
+   */
+  triggersIdle(): Promise<void> {
+    return this.triggers.idle();
+  }
+
   // === Rooms ===
 
   /**
-   * Create a channel or a DM and seed its roster with the creator.
+   * Create a channel or a DM, seeding its roster with the creator and whoever
+   * the request names — by author id (`members`) or by agent directory
+   * (`agentPaths`).
+   *
+   * `agentPaths` is what makes a DM one call. The cockpit knows agents by
+   * directory and nothing else; author ids are minted server-side and the only
+   * surface that resolves one is `POST /:id/members`. So creating a DM used to
+   * mean create-then-join, and a failed join left a direct message with nobody
+   * in it — a room named after an agent that the agent was not in, which no
+   * amount of retrying could repair because the room already existed.
+   *
+   * Resolve-then-create: every member is resolved before `RoomStore.createRoom`
+   * is called at all, and that call writes the room and its whole roster in one
+   * transaction. So an unregistered agent path fails while the room does not
+   * exist, and the obvious retry works. (The resolution itself is not inside
+   * that transaction — it does not need to be, and saying so would be drift.)
    *
    * @param request - The validated create request.
    * @param creatorAuthorId - The author opening the room; joined automatically.
@@ -113,14 +185,30 @@ export class RoomService {
       createdAt: new Date().toISOString(),
     };
 
-    // Resolve and seed the whole roster BEFORE anything is written. An unknown
-    // author id has to fail while the room does not exist yet — otherwise the
-    // caller gets a 404 for a room that is sitting in the table holding its slug.
+    // Resolve the whole roster BEFORE anything is written. An unknown author id
+    // or an unregistered agent path has to fail while the room does not exist
+    // yet — otherwise the caller gets a 404 for a room that is sitting in the
+    // table holding its slug.
     const joinedAt = draft.createdAt;
     const seeded = { ...draft, archived: false, lastActivityAt: joinedAt };
-    const members = [...new Set([creatorAuthorId, ...request.members])].map((authorId) => ({
-      authorId,
-      responseMode: this.roster.seedResponseMode(seeded, this.roster.requireAuthor(authorId)),
+    const creator = this.roster.requireAuthor(creatorAuthorId);
+    const resolved = new Map<string, AuthorRecord>([[creator.id, creator]]);
+    for (const authorId of request.members) {
+      const author = this.roster.resolve({ authorId });
+      resolved.set(author.id, author);
+    }
+    for (const agentPath of request.agentPaths) {
+      const author = this.roster.resolve({ agentPath });
+      resolved.set(author.id, author);
+    }
+    // Opening a room is not a way around the operator-only roster rule: an agent
+    // may make itself a room (and talk to the person in it), but conscripting a
+    // second agent into one is the same amplification lever `addMember` refuses.
+    this.requireSeedingAllowed(creator, [...resolved.values()]);
+
+    const members = [...resolved.values()].map((author) => ({
+      authorId: author.id,
+      responseMode: this.roster.seedResponseMode(seeded, author),
       joinedAt,
     }));
 
@@ -155,6 +243,20 @@ export class RoomService {
     if (!rootEntry) throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
 
     const createdAt = new Date().toISOString();
+    // A thread inherits the parent's whole roster, response modes included, so
+    // opening one is a seeding operation and answers to the same rule
+    // `createRoom` does: only the operator puts a SECOND agent in a room. It is
+    // not a formality here — a thread is a new room, and `authorsInCascade` is
+    // scoped `(room_id, cascade_root)`, so an ungated `createThread` would hand
+    // an agent an unlimited supply of fresh cascade namespaces.
+    //
+    // Read ONCE and used for both the check and the insert, so what was checked
+    // is what is written rather than two reads that merely ought to agree.
+    const inherited = this.roster.inheritedFrom(parent.id, createdAt);
+    this.requireSeedingAllowed(
+      this.roster.requireAuthor(viewerAuthorId),
+      inherited.map((member) => this.roster.requireAuthor(member.authorId))
+    );
     // Same atomicity as createRoom: the thread and the roster it inherits land
     // together or not at all. A thread with no roster is a room nobody — not
     // even the person who opened it — can post into.
@@ -170,7 +272,7 @@ export class RoomService {
         rootEntryId,
         createdAt,
       },
-      this.roster.inheritedFrom(parent.id, createdAt)
+      inherited
     );
 
     eventFanOut.broadcast('room_created', {
@@ -270,23 +372,27 @@ export class RoomService {
 
   /**
    * Add a member by author id, or by agent directory when the agent has never
-   * been an author before.
+   * been an author before. **Operator-only.**
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must already be on the roster.
+   * @param viewerAuthorId - The caller; must be the local human.
    * @param input - Who to add, and optionally how they should behave.
    */
   addMember(roomId: string, viewerAuthorId: string, input: AddMemberInput): RoomRosterEntry {
-    const member = this.roster.add(this.requireVisibleRoom(roomId, viewerAuthorId), input);
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireOperator(viewerAuthorId, 'who is in a room');
+    const member = this.roster.add(room, input);
     eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
     return member;
   }
 
   /**
-   * Change one membership's per-room response mode.
+   * Change one membership's per-room response mode. **Operator-only** — this is
+   * the setting that decides when an agent answers without being addressed, so
+   * an agent able to turn it up on a room-mate could manufacture a conversation.
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param viewerAuthorId - The caller; must be the local human.
    * @param authorId - The member being changed.
    * @param responseMode - The new override.
    */
@@ -297,18 +403,21 @@ export class RoomService {
     responseMode: ResponseMode
   ): RoomRosterEntry {
     this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireOperator(viewerAuthorId, 'how an agent answers in a room');
     return this.roster.setResponseMode(roomId, authorId, responseMode);
   }
 
   /**
    * Remove a member, dropping its per-room session binding with it.
+   * **Operator-only.**
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param viewerAuthorId - The caller; must be the local human.
    * @param authorId - The member being removed.
    */
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
     this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireOperator(viewerAuthorId, 'who is in a room');
     this.roster.remove(roomId, authorId);
     eventFanOut.broadcast('room_member_removed', { roomId, authorId });
   }
@@ -355,7 +464,7 @@ export class RoomService {
    * @param input.authorId - Who is posting.
    * @param input.text - What they wrote.
    * @param input.sessionId - The session that produced it, if any.
-   * @param input.trigger - Cascade provenance, when a trigger produced this (R3).
+   * @param input.trigger - Cascade provenance, when a trigger produced this.
    * @returns The committed entry.
    */
   post(
@@ -371,6 +480,15 @@ export class RoomService {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
 
+    // Provenance follows the TURN, not the call — and where there is no turn,
+    // who is writing decides, never the shape of the call. An agent can post
+    // here directly (`POST /api/rooms/:id/entries` carries no trigger), both
+    // while its turn runs and from a shell with nothing in flight at all;
+    // `deriveCascade` refuses a fresh cascade to either. Only a human resets the
+    // count, which is what spec §6 says and what the setting's own docs promise.
+    const author = this.authors.getById(input.authorId);
+    const trigger = input.trigger ?? this.triggers.activeTurnFor(input.authorId);
+
     const id = ulid();
     const entry = this.store.appendEntry({
       roomId,
@@ -380,11 +498,23 @@ export class RoomService {
       body: { text: input.text },
       mentions: resolveMentions(input.text, this.roster.mentionCandidates(roomId)),
       sessionId: input.sessionId ?? null,
-      ...deriveCascade(id, input.trigger),
+      ...deriveCascade(id, {
+        trigger,
+        // An author row that has vanished is treated as an agent — the
+        // conservative read, since the only thing this decides is whether the
+        // writer may reset a spend limit.
+        authorKind: author?.kind ?? 'agent',
+        maxAgentDepth: this.maxAgentDepth(),
+      }),
       createdAt: new Date().toISOString(),
     });
 
     this.publishEntry(entry);
+    // Trigger-only, both ways: the post reaches its readers now, and whoever it
+    // addresses answers on their own schedule. Deliberately not awaited — the
+    // HTTP 202 must not wait on a model call, and the reply arrives on the same
+    // SSE stream as everything else when it comes.
+    this.triggers.dispatch(room, entry);
     return entry;
   }
 
@@ -403,7 +533,11 @@ export class RoomService {
     body: RoomEntryBody,
     cascade?: { root: string; depth: number }
   ): RoomEntry {
-    this.requireRoom(roomId);
+    const room = this.requireRoom(roomId);
+    // Archived means archived for the room's own voice too. `post` has always
+    // refused here; a notice that slipped past would let an archived room keep
+    // gaining entries, which is the one thing archiving promises it will not do.
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     const id = ulid();
     const entry = this.store.appendEntry({
       roomId,
@@ -543,6 +677,42 @@ export class RoomService {
   /** Human authors are the operator; nothing in a single-player cockpit hides from them. */
   private seesEveryRoom(viewerAuthorId: string): boolean {
     return this.authors.getById(viewerAuthorId)?.kind === 'human';
+  }
+
+  /**
+   * Refuse a roster write from anyone but the person running the machine.
+   *
+   * Deliberately a 403 and not a 404: the caller is already a member of a room
+   * it can see, so there is nothing left to hide, and telling an agent "you may
+   * not" is more useful than telling it a room it just read no longer exists.
+   *
+   * @param viewerAuthorId - The caller.
+   * @param what - What they tried to change, for the message.
+   */
+  private requireOperator(viewerAuthorId: string, what: string): void {
+    if (this.authors.getById(viewerAuthorId)?.kind === 'human') return;
+    throw new RoomError('OPERATOR_ONLY', `Only you can change ${what}`);
+  }
+
+  /**
+   * Refuse an agent's attempt to seed a room with a SECOND agent.
+   *
+   * An agent opening a room for itself — a DM with the operator, a scratch
+   * channel — is legitimate and stays allowed. Putting another agent in one is
+   * not: it is `addMember` by a different route, and it would let an agent
+   * assemble a room whose members then answer each other.
+   *
+   * @param creator - The author opening the room.
+   * @param seeded - Every author the new roster will hold.
+   */
+  private requireSeedingAllowed(creator: AuthorRecord, seeded: readonly AuthorRecord[]): void {
+    if (creator.kind === 'human') return;
+    const conscripted = seeded.find(
+      (author) => author.id !== creator.id && author.kind === 'agent'
+    );
+    if (conscripted) {
+      throw new RoomError('OPERATOR_ONLY', 'Only you can put another agent in a room');
+    }
   }
 
   /** Publish a committed entry to the room's readers and bump global activity. */
