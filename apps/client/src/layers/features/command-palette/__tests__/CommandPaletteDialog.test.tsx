@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import { registerTabOpener } from '@/layers/shared/lib';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 /**
@@ -50,7 +51,25 @@ beforeEach(() => {
   });
 });
 
-afterEach(cleanup);
+const tabCleanups: (() => void)[] = [];
+
+/**
+ * Register a strip and collect what it opens. Torn down in `afterEach` rather
+ * than at the end of the test body, so a failing assertion cannot leak an opener
+ * into the next case and make a cascade look like a second detection.
+ */
+function captureTabOpens(): string[] {
+  const opened: string[] = [];
+  tabCleanups.push(registerTabOpener((href) => opened.push(href)));
+  return opened;
+}
+
+afterEach(() => {
+  cleanup();
+  tabCleanups.splice(0).forEach((clear) => clear());
+  // Every test starts in a browser; the ones about the desktop app say so.
+  leaveDesktopShell();
+});
 
 // --- Router mock ---
 const mockNavigate = vi.fn();
@@ -347,12 +366,30 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    // Sub-menu should appear with all agent actions
+    // Sub-menu should appear with the agent actions
     expect(screen.getByText('Open Here')).toBeInTheDocument();
     expect(screen.getByText('Open in New Tab')).toBeInTheDocument();
-    expect(screen.getByText('Open in New Window')).toBeInTheDocument();
     expect(screen.getByText('New Session')).toBeInTheDocument();
     expect(screen.getByText('Edit Worker Settings')).toBeInTheDocument();
+  });
+
+  it('offers Open in New Window in the desktop app', () => {
+    enterDesktopShell();
+    render(<CommandPaletteDialog />);
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    expect(screen.getByText('Open in New Window')).toBeInTheDocument();
+  });
+
+  it('leaves Open in New Window out entirely in the browser', () => {
+    // Not disabled, not remapped to a tab — absent. In a browser a new window
+    // IS the tab the row above already offers, and two rows that do the same
+    // thing is a lie told in the UI (DOR-568).
+    render(<CommandPaletteDialog />);
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    expect(screen.getByText('Open in New Tab')).toBeInTheDocument();
+    expect(screen.queryByText('Open in New Window')).not.toBeInTheDocument();
   });
 
   it('shows breadcrumb when in agent sub-menu', () => {
@@ -365,10 +402,11 @@ describe('CommandPaletteDialog', () => {
 
   it('opens an in-window tab on the agent\u2019s project from Open in New Tab', () => {
     // DOR-540: this used to be a second window (and before DOR-534, a hand-off
-    // to Chrome). It is now a tab in this window, aimed at `/session` with only
-    // the agent's directory — the loader resolves which session that becomes.
-    const opened: string[] = [];
-    const unregister = registerTabOpener((href) => opened.push(href));
+    // to Chrome). In the desktop app it is now a tab in this window, aimed at
+    // `/session` with only the agent's directory — the loader resolves which
+    // session that becomes.
+    enterDesktopShell();
+    const opened = captureTabOpens();
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -390,15 +428,38 @@ describe('CommandPaletteDialog', () => {
     expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
 
     openSpy.mockRestore();
-    unregister();
+  });
+
+  it('opens a real browser tab from Open in New Tab in the browser', () => {
+    // Same row, same label, different owner (DOR-568). `main.tsx` registers no
+    // strip in a browser, so nothing is registered here either — that absence
+    // IS the browser condition, and the seam answers it with the browser's own
+    // tabs rather than a silent in-place navigation.
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<CommandPaletteDialog />);
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    const newTabItem = screen.getByText('Open in New Tab').closest('[data-slot="command-item"]');
+    if (newTabItem) fireEvent.click(newTabItem as Element);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
+    const target = new URL(String(openSpy.mock.calls[0][0]));
+    expect(target.origin).toBe(window.location.origin);
+    expect(target.pathname).toBe('/session');
+    expect(target.searchParams.get('dir')).toBe('/projects/current');
+    expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
+
+    openSpy.mockRestore();
   });
 
   it('opens a second cockpit window \u2014 not a tab \u2014 from Open in New Window', () => {
     // "Another tab" and "put this on my other monitor" are different requests,
     // so the strip must not absorb the second one. Same target as the tab
-    // action; only where it lands differs.
-    const opened: string[] = [];
-    const unregister = registerTabOpener((href) => opened.push(href));
+    // action; only where it lands differs. Desktop-only — see the browser case
+    // above, where the row does not exist at all.
+    enterDesktopShell();
+    const opened = captureTabOpens();
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -421,7 +482,6 @@ describe('CommandPaletteDialog', () => {
     expect(target.searchParams.get('session')).toBeTruthy();
 
     openSpy.mockRestore();
-    unregister();
   });
 
   it('calls recordUsage and setDir when Open Here is clicked in sub-menu', () => {

@@ -11,7 +11,7 @@ import { useElectronNavigate } from './app/use-electron-navigate';
 import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
-import { getAgentDisplayName, cn } from '@/layers/shared/lib';
+import { getAgentDisplayName, cn, isDesktopShell } from '@/layers/shared/lib';
 import {
   useSessionId,
   useDefaultCwd,
@@ -259,7 +259,8 @@ export function AppShell() {
   useRightPanelPersistence();
   // In-window tabs (DOR-540). The sync hook is the single reconciliation point
   // between the router's location and the tab set — every navigation, whatever
-  // started it, lands here.
+  // started it, lands here. Both no-op outside the desktop shell, where the
+  // strip does not exist (DOR-568).
   useAppTabsSync();
   useAppTabShortcuts();
   // Desktop shell → client navigation bridge (ADR 260709-210223). A no-op in
@@ -441,23 +442,29 @@ export function AppShell() {
                   </Sidebar>
                   <SidebarInset className="overflow-hidden">
                     {/* ── Window tabs — the inset's top band, above the page
-                          header (DOR-540). On macOS this is the strip that sits
-                          level with the traffic lights, so it carries the drag
-                          region and, when the sidebar is collapsed, the
-                          clearance the header used to need. ── */}
-                    <AppTabBar
-                      className={cn(
-                        // Literal class, not a `desktop-darwin:` variant utility — see
-                        // the `.app-drag-region` comment in index.css. Inert without the
-                        // `.desktop-darwin` ancestor class, so it's safe unconditionally.
-                        'app-drag-region',
-                        // When the sidebar is collapsed, TitlebarDragStrip's
-                        // traffic-light clearance collapses with it — pad this
-                        // strip so the first tab doesn't sit under the native
-                        // traffic lights (DOR-253).
-                        !sidebarOpen && 'desktop-darwin:pl-20'
-                      )}
-                    />
+                          header (DOR-540). Desktop app only (DOR-568): a browser
+                          already has tabs, and a second strip under the real one
+                          would be the worse of the two. On macOS this is the
+                          strip that sits level with the traffic lights, so it
+                          carries the drag region and, when the sidebar is
+                          collapsed, the clearance the header used to need. The
+                          header below keeps its own drag region, so the browser
+                          layout simply starts one band higher. ── */}
+                    {isDesktopShell() && (
+                      <AppTabBar
+                        className={cn(
+                          // Literal class, not a `desktop-darwin:` variant utility — see
+                          // the `.app-drag-region` comment in index.css. Inert without the
+                          // `.desktop-darwin` ancestor class, so it's safe unconditionally.
+                          'app-drag-region',
+                          // When the sidebar is collapsed, TitlebarDragStrip's
+                          // traffic-light clearance collapses with it — pad this
+                          // strip so the first tab doesn't sit under the native
+                          // traffic lights (DOR-253).
+                          !sidebarOpen && 'desktop-darwin:pl-20'
+                        )}
+                      />
+                    )}
                     <header
                       // `app-drag-region` is a literal class, not a
                       // `desktop-darwin:` variant utility — see the

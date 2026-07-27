@@ -269,6 +269,7 @@ import { AppShell } from '../AppShell';
 // exercise the takeover path.
 import { useExtensionRegistry } from '@/layers/shared/model/extension-registry';
 import type { SidebarBodyContribution } from '@/layers/shared/model/extension-registry';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 // ── Test setup ──
 
@@ -313,6 +314,7 @@ describe('AppShell slot integration', () => {
 
   afterEach(() => {
     cleanup();
+    leaveDesktopShell();
   });
 
   describe('sidebar slots', () => {
@@ -524,6 +526,10 @@ describe('AppShell slot integration', () => {
   });
 
   describe('window tabs (DOR-540)', () => {
+    // Tabs are a desktop-app feature (DOR-568); the browser case has its own
+    // block below.
+    beforeEach(enterDesktopShell);
+
     it('mounts the tab strip at the top of the content inset, above the header', () => {
       // The strip is the inset's top band on macOS: it carries the drag region
       // and the traffic-light clearance the header used to need, so it has to
@@ -559,6 +565,40 @@ describe('AppShell slot integration', () => {
       const panelId = active.getAttribute('aria-controls');
       expect(panelId).toBeTruthy();
       expect(document.getElementById(panelId!)).not.toBeNull();
+    });
+  });
+
+  describe('no window tabs in a browser (DOR-568)', () => {
+    it('renders no strip — the browser already has one, and a better one', () => {
+      mockPathname = '/';
+      renderAppShell();
+
+      expect(screen.queryByRole('tablist', { name: 'Open tabs' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    });
+
+    it('keeps the header, its drag region and its chrome — the inset just starts higher', () => {
+      // The strip carried the drag region and the macOS traffic-light
+      // clearance. Removing it must not take the header's own chrome with it.
+      mockPathname = '/';
+      renderAppShell();
+
+      const inset = document.querySelector('[data-slot="sidebar-inset"]');
+      const header = inset?.querySelector('header');
+      expect(header).not.toBeNull();
+      expect(header).toHaveClass('app-drag-region');
+      // The header is now the inset's first child, with nothing above it.
+      expect(inset?.firstElementChild).toBe(header);
+      // …and the routed content region the tabs pointed at is still there.
+      expect(inset?.querySelector('main')).not.toBeNull();
+    });
+
+    it('writes nothing to the tab store — no sessionStorage either', () => {
+      sessionStorage.clear();
+      mockPathname = '/agents';
+      renderAppShell();
+
+      expect(sessionStorage.length).toBe(0);
     });
   });
 

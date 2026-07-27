@@ -6,11 +6,11 @@
  * and `Cmd/Ctrl+Shift+[` / `]` to step left and right. Registered on `document`
  * like every other global shortcut in the app.
  *
- * **In the browser cockpit the browser gets these first.** Chrome, Safari and
- * Firefox all reserve Cmd/Ctrl+T and Cmd/Ctrl+1-9 for their own tabs and hand
- * them to the page for nobody to cancel, so these are live in the desktop app.
- * That is why the strip's "+" button and its arrow-key traversal are not
- * optional extras — on the web they are the whole keyboard story.
+ * **Desktop shell only** (DOR-568), because the tabs they drive are. In a
+ * browser these keys belong to the browser's own tabs and we do not touch them:
+ * nothing is registered, nothing is cancelled, `Cmd/Ctrl+T` opens a browser tab
+ * exactly as it always did. Whether a given browser would have let us cancel
+ * them is beside the point — they address someone else's tabs there.
  *
  * `Cmd/Ctrl+W` is deliberately absent here: in the browser it closes the
  * browser's tab and we must not fight that, and on desktop it belongs to the
@@ -19,6 +19,7 @@
  * @module features/app-tabs/model/use-app-tab-shortcuts
  */
 import { useEffect } from 'react';
+import { isDesktopShell } from '@/layers/shared/lib';
 import { useAppTabActions } from './use-app-tab-actions';
 
 /** Digits that address a tab. 1-8 index from the left; 9 is always the last. */
@@ -29,6 +30,8 @@ export function useAppTabShortcuts(): void {
   const actions = useAppTabActions();
 
   useEffect(() => {
+    if (!isDesktopShell()) return;
+
     const handler = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
 
