@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(rooms): context menus and a members panel for channels and DMs (DOR-572)'
+---
+
 ### Added
 
 - Channels and direct messages now have a menu, on right-click and on the "…" button beside the row: mark as read, add agents, members, rename, edit topic (channels), and archive. It matches the menu agent rows already have.
