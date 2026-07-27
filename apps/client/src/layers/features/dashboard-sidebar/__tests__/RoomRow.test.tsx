@@ -83,7 +83,11 @@ function roomWithRoster() {
 
 function renderRow(
   room: RoomSummary,
-  opts: { transport?: Transport; onOpenAgentProfile?: (path: string) => void } = {}
+  opts: {
+    transport?: Transport;
+    onOpenAgentProfile?: (path: string) => void;
+    agents?: { agentPath: string; displayName: string }[];
+  } = {}
 ) {
   const transport = opts.transport ?? createMockTransport();
   const queryClient = new QueryClient({
@@ -101,7 +105,7 @@ function renderRow(
       room={room}
       isActive={false}
       onSelect={vi.fn()}
-      agents={FLEET}
+      agents={opts.agents ?? FLEET}
       onOpenAgentProfile={opts.onOpenAgentProfile ?? vi.fn()}
     />,
     { wrapper }
@@ -235,6 +239,46 @@ describe('RoomRow surfaces opened from the menu', () => {
     expect(search).not.toHaveFocus();
     // …and focus is still inside the panel, not left behind on the sidebar.
     expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+
+  it('takes an added agent off the picker rather than offering to add it twice', async () => {
+    // The selection lives in the picker, so only a test that actually picks
+    // somebody and commits can see what happens to it afterwards — calling the
+    // panel's own add handler passes whatever the chips go on to do.
+    const [me, ana] = roomWithRoster().members;
+    let members = [me!];
+    const transport = createMockTransport({
+      getRoom: vi.fn().mockImplementation(() => Promise.resolve({ ...channel(), members })),
+      addRoomMember: vi.fn().mockImplementation(() => {
+        members = [...members, ana!];
+        return Promise.resolve(ana!);
+      }),
+    });
+    renderRow(channel(), {
+      transport,
+      agents: [...FLEET, { agentPath: '/repo/bo', displayName: 'Bo' }],
+    });
+    fireEvent.click(within(openDropdown()).getByText('Add agents…'));
+
+    // Scoped to the add half: once Ana is in the room the roster grows a
+    // "Remove Ana" of its own, and that one is a different verb entirely.
+    const picker = () => within(screen.getByRole('region', { name: 'Add agents' }));
+    fireEvent.click(await picker().findByRole('option', { name: 'Ana' }));
+    expect(picker().getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+
+    fireEvent.click(picker().getByRole('button', { name: 'Add agent' }));
+    await waitFor(() => expect(transport.addRoomMember).toHaveBeenCalledTimes(1));
+
+    // Ana lands, joins the roster, and stops being offerable — so her chip goes
+    // and the button has nothing left to commit.
+    await waitFor(() =>
+      expect(picker().queryByRole('button', { name: 'Remove Ana' })).not.toBeInTheDocument()
+    );
+    expect(picker().getByRole('button', { name: 'Add agent' })).toBeDisabled();
+    fireEvent.click(picker().getByRole('button', { name: 'Add agent' }));
+    expect(transport.addRoomMember).toHaveBeenCalledTimes(1);
+    // Bo was never picked and is still on offer.
+    expect(picker().getAllByRole('option')).toHaveLength(1);
   });
 });
 

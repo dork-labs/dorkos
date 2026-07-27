@@ -115,6 +115,15 @@ async function rosterList(): Promise<HTMLElement> {
   return within(await screen.findByRole('region', { name: 'Current members' })).findByRole('list');
 }
 
+/**
+ * The add-agents half of the panel. Scoped deliberately: a chip and a roster
+ * row both offer to "Remove Ana", and they are opposite verbs — one takes back
+ * a selection, the other takes an agent out of the room.
+ */
+function addSection() {
+  return within(screen.getByRole('region', { name: 'Add agents' }));
+}
+
 // Radix Select drives itself with pointer capture and scrolls the highlighted
 // option into view — both browser APIs jsdom does not implement at all, and
 // without them the listbox never opens.
@@ -312,6 +321,69 @@ describe('RoomMembersDialog', () => {
       agentPath: '/repo/ana',
     });
     expect(transport.addRoomMember).toHaveBeenNthCalledWith(2, 'room-1', { agentPath: '/repo/bo' });
+  });
+
+  it('keeps the chip for the agent that failed, and only that one', async () => {
+    // A partial success is progress worth keeping, so the selection empties at
+    // the rate the writes actually land: the reader is left holding the failure,
+    // and the button offers a retry rather than adding the others a second time.
+    let members = [HUMAN];
+    const transport = createMockTransport({
+      getRoom: vi.fn().mockImplementation(() => Promise.resolve(roster(members))),
+      addRoomMember: vi.fn().mockImplementation((_roomId: string, body: { agentPath: string }) => {
+        if (body.agentPath === '/repo/bo') return Promise.reject(new Error('nope'));
+        const joined = agentMember('Ana', '/repo/ana');
+        members = [...members, joined];
+        return Promise.resolve(joined);
+      }),
+    });
+    renderPanel({ transport });
+    await screen.findByText(/No agents in here yet/i);
+
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 agents' }));
+
+    await waitFor(() => expect(transport.addRoomMember).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(addSection().queryByText('Ana')).not.toBeInTheDocument());
+    expect(addSection().getByRole('button', { name: 'Remove Bo' })).toBeInTheDocument();
+    expect(addSection().getByRole('button', { name: 'Add agent' })).toBeEnabled();
+  });
+
+  it('does not put a chip back when the agent it added is removed again', async () => {
+    // The picker forgets a committed agent for good rather than deriving its
+    // chips from whoever happens to be offerable. Otherwise taking Ana back out
+    // of the room — from the same open panel — would re-select her, and the
+    // panel would offer to add somebody the reader had just removed.
+    let members = [HUMAN];
+    const transport = createMockTransport({
+      getRoom: vi.fn().mockImplementation(() => Promise.resolve(roster(members))),
+      addRoomMember: vi.fn().mockImplementation(() => {
+        const joined = agentMember('Ana', '/repo/ana');
+        members = [...members, joined];
+        return Promise.resolve(joined);
+      }),
+      removeRoomMember: vi.fn().mockImplementation(() => {
+        members = [HUMAN];
+        return Promise.resolve();
+      }),
+    });
+    renderPanel({ transport });
+    await screen.findByText(/No agents in here yet/i);
+
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add agent' }));
+    await waitFor(() => expect(addSection().queryByText('Ana')).not.toBeInTheDocument());
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Ana' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
+        name: 'Remove',
+      })
+    );
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Ana' })).toBeInTheDocument());
+    expect(addSection().queryByRole('button', { name: 'Remove Ana' })).not.toBeInTheDocument();
   });
 
   // Where focus lands is asserted in `RoomRow.test.tsx`, through the menu that

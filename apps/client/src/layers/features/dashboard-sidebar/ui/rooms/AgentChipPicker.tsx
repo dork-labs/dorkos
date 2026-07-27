@@ -12,14 +12,22 @@ export interface AgentPickerCandidate {
 }
 
 interface AgentChipPickerProps {
-  /** Every agent that may be picked, sorted by name. Nothing is filtered here. */
+  /**
+   * Every agent that may be picked, sorted by name. Nothing is filtered here.
+   *
+   * This list is also what keeps the selection honest: an agent that leaves it
+   * has nothing left to pick, so its chip goes with it — see
+   * {@link AgentChipPicker}.
+   */
   candidates: AgentPickerCandidate[];
   /**
    * Commit the selection, in the order the agents were picked.
    *
-   * The picker does not clear itself afterwards — whatever mounted it decides
-   * whether the flow is over (the DM popover closes) or continues (the members
-   * panel stays open on a room that now has more agents in it).
+   * Committing does not clear the chips, because a commit is not yet an
+   * outcome. They clear one at a time as the writes land — see
+   * {@link AgentChipPicker}. Whatever mounted this still decides whether the
+   * flow is over: the DM popover closes and takes the picker with it, while the
+   * members panel stays open on a room that now has more agents in it.
    */
   onSubmit: (chosen: AgentPickerCandidate[]) => void;
   /** The commit button's label, given how many agents are selected. */
@@ -58,6 +66,16 @@ interface AgentChipPickerProps {
  * what is offerable — the direct-message flow offers every agent however many
  * conversations it is already in, and the members panel leaves out whoever is
  * already in the room.
+ *
+ * **A chip means "still to be added", so it lives exactly as long as its agent
+ * is still offerable.** An agent that drops out of `candidates` has either had
+ * its write land — the members panel stops offering whoever is in the room — or
+ * left the fleet, and in both cases there is nothing left to add. Which is what
+ * makes the selection clear on the *outcome* rather than on the click: commit
+ * four adds, three land, and the one that failed is the one chip still there,
+ * still committable, so the button is offering a retry rather than a repeat.
+ * The direct-message flow never shrinks its list, so nothing is ever taken back
+ * from a reader mid-assembly there.
  *
  * The keyboard is the whole interaction, and Enter does one of exactly three
  * things. All three are worth stating in full, because every bug this component
@@ -114,6 +132,17 @@ export function AgentChipPicker({
   const ownRef = useRef<HTMLInputElement>(null);
   const fieldRef = inputRef ?? ownRef;
   const listId = useId();
+
+  // Take back any chip whose agent is no longer offered — the write landed, or
+  // the agent left the fleet. Done during render rather than in an effect for
+  // two reasons: an effect paints one frame of the stale chip first, and it
+  // would have to re-run on every `candidates` identity change to notice. The
+  // guard is what makes this converge — the branch is false on the re-render it
+  // causes, so there is exactly one extra pass and no loop.
+  const offered = new Set(candidates.map((c) => c.agentPath));
+  if (chosen.some((c) => !offered.has(c.agentPath))) {
+    setChosen((prev) => prev.filter((c) => offered.has(c.agentPath)));
+  }
 
   const picked = new Set(chosen.map((c) => c.agentPath));
   const needle = query.trim().toLowerCase();

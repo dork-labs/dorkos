@@ -114,6 +114,12 @@ export function RoomMembersDialog({
     // on its own rather than rolling the others back. Reporting is the shared
     // mutation toast's — the hook names the action and the server says why, and
     // raising a second toast here only ever produced two lines for one failure.
+    //
+    // Nothing is cleared here, and the panel stays open. Each agent that lands
+    // joins the roster, drops out of `candidates` above, and takes its own chip
+    // with it — so the selection empties at the rate the writes actually
+    // succeed, and after three of four the reader is left holding the one that
+    // failed rather than a button that would add the other three again.
     for (const agent of chosen) {
       addMember.mutate({ roomId: room.id, agentPath: agent.agentPath });
     }
