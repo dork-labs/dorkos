@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
-import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { useNavigate, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus } from 'lucide-react';
@@ -18,6 +18,12 @@ import {
 } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
+  useRooms,
+  useRoomListStream,
+  useRoomsByKind,
+  type RoomSummary,
+} from '@/layers/entities/room';
+import {
   useAgentSessions,
   useRenameSession,
   useRecentSessions,
@@ -33,6 +39,8 @@ import { AgentListItem } from './AgentListItem';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarNavHeader } from './SidebarNavHeader';
 import { RecentSessionsSection } from './RecentSessionsSection';
+import { ChannelsSection } from './rooms/ChannelsSection';
+import { DirectMessagesSection } from './rooms/DirectMessagesSection';
 import { PinnedSection } from './PinnedSection';
 import { AgentGroupSection } from './AgentGroupSection';
 import { UngroupedSection } from './UngroupedSection';
@@ -95,6 +103,23 @@ export function DashboardSidebar() {
   const { data: meshData } = useMeshAgentPaths();
   const rawPaths = useMemo(() => (meshData?.agents ?? []).map((a) => a.projectPath), [meshData]);
   const { data: agents } = useResolvedAgents(rawPaths);
+
+  // ── Rooms (channels + DMs, spec `rooms` §7) ──
+  // One list query, partitioned by kind, so the two sections share a request and
+  // a cache. The active room is read off the URL rather than held in state —
+  // room identity travels as a search param, matching `/session?session=`.
+  const roomsQuery = useRooms();
+  useRoomListStream();
+  const { channels, dms } = useRoomsByKind(roomsQuery.data);
+  const channelsSearch = useSearch({ strict: false }) as { id?: string; thread?: string };
+  const activeRoomId =
+    pathname === '/channels' ? (channelsSearch.thread ?? channelsSearch.id ?? null) : null;
+  const handleSelectRoom = useCallback(
+    (room: RoomSummary) => {
+      navigate({ to: '/channels', search: { id: room.id } });
+    },
+    [navigate]
+  );
 
   // ── Cross-agent recent sessions + per-agent activity (drives the "recent" sort) ──
   const recentQuery = useRecentSessions();
@@ -463,6 +488,24 @@ export function DashboardSidebar() {
               onSelectSession={handleResumeRecentSession}
             />
           )}
+
+          <ChannelsSection
+            channels={channels}
+            isLoading={roomsQuery.isLoading}
+            error={roomsQuery.error}
+            activeRoomId={activeRoomId}
+            onSelectRoom={handleSelectRoom}
+          />
+
+          <DirectMessagesSection
+            dms={dms}
+            isLoading={roomsQuery.isLoading}
+            error={roomsQuery.error}
+            displayNames={displayNamesRecord}
+            agents={agents ?? {}}
+            activeRoomId={activeRoomId}
+            onSelectRoom={handleSelectRoom}
+          />
 
           {pinnedPaths.length > 0 && (
             <PinnedSection paths={pinnedPaths} renderRow={renderAgentRow} />

@@ -118,6 +118,18 @@ import type {
   ApplyShapeResult,
   ForkShapeResult,
 } from './marketplace-schemas.js';
+import type {
+  AddRoomMemberRequest,
+  CreateRoomRequest,
+  ListRoomEntriesQuery,
+  ListRoomsQuery,
+  RoomEntry,
+  RoomEvent,
+  RoomMember,
+  RoomRosterEntry,
+  RoomSummary,
+  RoomWithRoster,
+} from './room-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackSubmission } from './telemetry-events.js';
 
@@ -849,6 +861,75 @@ export interface Transport {
   pinWorkspace(id: string, pinned: boolean): Promise<Workspace>;
   /** Remove a workspace; refuses a dirty one unless `force`. */
   removeWorkspace(id: string, force?: boolean): Promise<RemoveResult>;
+
+  // --- Rooms (channels, DMs and threads; spec `rooms`) ---
+  /**
+   * List the rooms this caller may see, newest activity first.
+   *
+   * Each summary carries `unreadCount`, which is `null` when the caller is not
+   * a member — not-applicable rather than zero. Do not coerce the two: `0`
+   * means "you are in this room and caught up".
+   *
+   * @param query - Optional `kind` / `includeArchived` filters.
+   */
+  listRooms(query?: ListRoomsQuery): Promise<RoomSummary[]>;
+  /**
+   * Create a channel or a DM. The caller joins it automatically.
+   *
+   * @param req - The room to create. A channel derives its slug from the title
+   *   unless one is given; a DM must carry a title.
+   */
+  createRoom(req: CreateRoomRequest): Promise<RoomWithRoster>;
+  /**
+   * Fetch one room with its roster.
+   *
+   * @param id - The room id. Rejects when the room does not exist or the caller
+   *   may not see it — the two are deliberately indistinguishable.
+   */
+  getRoom(id: string): Promise<RoomWithRoster>;
+  /**
+   * Read a page of a room's history, oldest-first within the page.
+   *
+   * @param id - The room id.
+   * @param query - `before` (exclusive `seq` upper bound) and `limit`.
+   */
+  listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]>;
+  /**
+   * Add a member to a room, by author id or by agent directory.
+   *
+   * @param id - The room id.
+   * @param req - Who to add, and optionally how they should behave in this room.
+   */
+  addRoomMember(id: string, req: AddRoomMemberRequest): Promise<RoomRosterEntry>;
+  /**
+   * Advance the caller's `(member, room)` read cursor.
+   *
+   * Monotonic server-side — a lower value is ignored — so a second client that
+   * is further behind can never un-read a room for the first.
+   *
+   * @param id - The room id.
+   * @param lastReadSeq - The `seq` the caller has read up to.
+   */
+  setRoomReadCursor(id: string, lastReadSeq: number): Promise<RoomMember>;
+  /**
+   * Subscribe to a room's durable event stream (`GET /rooms/:id/events`).
+   *
+   * Modeled on {@link subscribeSession}: with `sinceCursor` the server replays
+   * only entries above it, and without one the connect is cold — the server
+   * leads with a `snapshot` frame, which this skips, because a room's roster and
+   * history are already hydrated through {@link getRoom} and
+   * {@link listRoomEntries}. Ephemeral `signal` events are delivered live and
+   * never replayed.
+   *
+   * @param roomId - The room id.
+   * @param sinceCursor - The highest `seq` already held, to resume from.
+   * @param signal - Aborts the subscription and closes the connection.
+   */
+  subscribeRoom(
+    roomId: string,
+    sinceCursor?: number,
+    signal?: AbortSignal
+  ): AsyncIterable<RoomEvent>;
 
   /** Server health check. */
   health(): Promise<HealthResponse>;

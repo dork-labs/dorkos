@@ -363,6 +363,16 @@ export function setRecentsCollapsed(prev: SidebarPrefs, collapsed: boolean): Sid
   return { ...prev, recentsCollapsed: collapsed };
 }
 
+/** Set the Channels section's collapsed state (rooms, DOR-525). */
+export function setChannelsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
+  return { ...prev, channelsCollapsed: collapsed };
+}
+
+/** Set the Direct messages section's collapsed state (rooms, DOR-525). */
+export function setDmsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
+  return { ...prev, dmsCollapsed: collapsed };
+}
+
 /** Set the ungrouped ("Agents") section's sort mode (`name` or `recent`). */
 export function setUngroupedSortMode(
   prev: SidebarPrefs,

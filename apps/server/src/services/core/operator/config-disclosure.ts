@@ -133,6 +133,8 @@ export const CONFIG_DISCLOSURE = {
   'ui.sidebar.ungroupedSortMode': 'expose',
   'ui.sidebar.ungroupedCollapsed': 'expose',
   'ui.sidebar.recentsCollapsed': 'expose',
+  'ui.sidebar.channelsCollapsed': 'expose',
+  'ui.sidebar.dmsCollapsed': 'expose',
   'ui.sidebar.groupsHintDismissed': 'expose',
   'ui.sidebar.muted': 'expose',
   'ui.sidebar.ungroupedDisplayFilter': 'expose',

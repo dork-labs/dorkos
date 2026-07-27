@@ -293,6 +293,15 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     }),
     pinWorkspace: vi.fn().mockResolvedValue({}),
     removeWorkspace: vi.fn().mockResolvedValue({ removed: true }),
+    // Rooms (spec `rooms`) — every read answers empty so a component under test
+    // renders its empty state unless the test overrides it.
+    listRooms: vi.fn().mockResolvedValue([]),
+    createRoom: vi.fn(),
+    getRoom: vi.fn(),
+    listRoomEntries: vi.fn().mockResolvedValue([]),
+    addRoomMember: vi.fn(),
+    setRoomReadCursor: vi.fn().mockResolvedValue({}),
+    subscribeRoom: vi.fn(emptyAsyncIterable),
     // Models
     getModels: vi.fn().mockResolvedValue([
       { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast model' },

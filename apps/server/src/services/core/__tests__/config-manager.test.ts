@@ -13,6 +13,7 @@ import {
   backfillShapesDefaults,
   migrateStatusBarToPins,
   backfillSidebarSettingsDefaults,
+  backfillSidebarRoomSections,
   backfillSmartGroupKindDefaults,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
@@ -1146,6 +1147,75 @@ describe('backfillSidebarSettingsDefaults migration (DOR-339)', () => {
   it('is a no-op when the ui section is absent entirely', () => {
     const store = createMockStore({ server: { port: 4242 } });
     backfillSidebarSettingsDefaults(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillSidebarRoomSections migration (rooms sidebar, DOR-525)', () => {
+  it('adds both room-section collapse flags to an existing sidebar, expanded', () => {
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        sidebar: {
+          pinned: ['/a'],
+          groups: [],
+          ungroupedSortMode: 'name',
+          ungroupedCollapsed: false,
+          recentsCollapsed: true,
+          groupsHintDismissed: false,
+          muted: [],
+          ungroupedDisplayFilter: 'all',
+        },
+      },
+    });
+    backfillSidebarRoomSections(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/a'],
+        groups: [],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: true,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all',
+      },
+    });
+  });
+
+  it('is idempotent — keeps a collapse choice the user already made', () => {
+    const existing = {
+      theme: 'system',
+      sidebar: {
+        pinned: [],
+        groups: [],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        channelsCollapsed: true,
+        dmsCollapsed: true,
+        groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all',
+      },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillSidebarRoomSections(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when ui.sidebar is absent (schema default owns that case)', () => {
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    backfillSidebarRoomSections(store);
+    expect(store.data.ui).toEqual({ theme: 'dark' });
+  });
+
+  it('is a no-op when the ui section is absent entirely', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillSidebarRoomSections(store);
     expect(store.data.ui).toBeUndefined();
   });
 });

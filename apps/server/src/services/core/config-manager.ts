@@ -842,6 +842,43 @@ export function backfillSidebarSettingsDefaults(store: {
 }
 
 /**
+ * Migration body: backfill the two room-section collapse flags onto an EXISTING
+ * `ui.sidebar` — `channelsCollapsed` and `dmsCollapsed`, both `false` (rooms
+ * sidebar, DOR-525). conf merges top-level defaults SHALLOWLY, so a `ui.sidebar`
+ * already on disk never inherits new nested fields on its own; this supplies
+ * them. Additive + idempotent: only writes a field that is actually missing.
+ * The whole-section-absent case is handled by the schema default on read and by
+ * `backfillSidebarDefaults` for an existing `ui` block with no `sidebar`.
+ *
+ * Both start expanded. A person upgrading into this release should SEE the two
+ * new sections rather than have to discover two collapsed headers.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillSidebarRoomSections(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  const sidebar = (ui as { sidebar?: unknown }).sidebar;
+  if (!sidebar || typeof sidebar !== 'object') return;
+
+  const s = sidebar as Record<string, unknown>;
+  if (s.channelsCollapsed !== undefined && s.dmsCollapsed !== undefined) return;
+
+  store.set('ui', {
+    ...(ui as Record<string, unknown>),
+    sidebar: {
+      ...s,
+      channelsCollapsed: s.channelsCollapsed ?? false,
+      dmsCollapsed: s.dmsCollapsed ?? false,
+    },
+  });
+}
+
+/**
  * Migration body: backfill `kind: 'manual'` onto every EXISTING stored group
  * (smart-agent-groups, DOR-338). conf merges top-level defaults SHALLOWLY and
  * never reaches inside array elements, so a `ui.sidebar.groups` array already
@@ -1066,12 +1103,12 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Composite: DOR-452, DOR-501 and DOR-516 all target "the next unreleased
-  // version" (0.56.0 is already tagged) and an object literal cannot repeat a key,
-  // so their bodies compose here in insertion order — the same convention as the
-  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. All three are independent and
-  // idempotent. /system:release reconciles the key at tag time if the real
-  // release differs.
+  // Composite: DOR-452, DOR-501, DOR-516 and DOR-525 all target "the next
+  // unreleased version" (0.56.0 is already tagged) and an object literal cannot
+  // repeat a key, so their bodies compose here in insertion order — the same
+  // convention as the 0.45.0/0.46.0/0.48.0/0.55.0 composites above. All four are
+  // independent and idempotent. /system:release reconciles the key at tag time
+  // if the real release differs.
   '0.57.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -1091,6 +1128,10 @@ export const CONFIG_MIGRATIONS = {
     // idempotent; seeds the list EMPTY, so an upgrade never hands out an approval
     // nobody gave.
     backfillExtensionsApprovedToRun(store);
+    // `ui.sidebar.channelsCollapsed` / `ui.sidebar.dmsCollapsed` (the Channels
+    // and Direct messages sections, DOR-525). Additive + idempotent; both seed
+    // expanded so an upgrade shows the new sections rather than hiding them.
+    backfillSidebarRoomSections(store);
   },
 } as const;
 

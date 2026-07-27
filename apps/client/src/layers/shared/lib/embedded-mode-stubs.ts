@@ -34,6 +34,18 @@ import type {
   OllamaProvisionResult,
 } from '@dorkos/shared/runtime-connect';
 import type {
+  AddRoomMemberRequest,
+  CreateRoomRequest,
+  ListRoomEntriesQuery,
+  ListRoomsQuery,
+  RoomEntry,
+  RoomEvent,
+  RoomMember,
+  RoomRosterEntry,
+  RoomSummary,
+  RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
+import type {
   Workspace,
   WorkspaceWithSessions,
   EnsureWorkspaceRequest,
@@ -719,3 +731,47 @@ export const workspaceStubs = {
     throw new Error('Workspaces are not supported in embedded mode');
   },
 };
+
+/**
+ * Room stubs — rooms are a server-owned subsystem (five SQLite tables and a
+ * durable per-room stream), and the Obsidian embed is deliberately out of scope
+ * for them in v1 (spec `rooms` §9). Reads answer "no rooms" so the embed's
+ * sidebar simply has nothing to show; writes refuse.
+ */
+export const roomStubs = {
+  async listRooms(_query?: ListRoomsQuery): Promise<RoomSummary[]> {
+    return [];
+  },
+
+  async createRoom(_req: CreateRoomRequest): Promise<RoomWithRoster> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async getRoom(_id: string): Promise<RoomWithRoster> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async listRoomEntries(_id: string, _query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
+    return [];
+  },
+
+  async addRoomMember(_id: string, _req: AddRoomMemberRequest): Promise<RoomRosterEntry> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async setRoomReadCursor(_id: string, _lastReadSeq: number): Promise<RoomMember> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  subscribeRoom(
+    _roomId: string,
+    _sinceCursor?: number,
+    _signal?: AbortSignal
+  ): AsyncIterable<RoomEvent> {
+    return emptyRoomEvents();
+  },
+};
+
+/** An empty room stream — the embed has no rooms, so nothing ever arrives. */
+// eslint-disable-next-line require-yield
+async function* emptyRoomEvents(): AsyncIterable<RoomEvent> {}
