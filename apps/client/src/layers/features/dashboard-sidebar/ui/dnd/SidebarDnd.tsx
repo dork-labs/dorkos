@@ -28,8 +28,14 @@ import { SidebarDndEnabledProvider } from './SidebarDndPrimitives';
 
 interface SidebarDndProps {
   children: ReactNode;
-  /** Display names keyed by projectPath — used for the overlay and announcements. */
+  /** Agent display names keyed by projectPath — used for the overlay and announcements. */
   displayNames: Record<string, string>;
+  /**
+   * Room titles keyed by room id, for the same two surfaces. A room reference
+   * can reach them before rooms are draggable: `ui.sidebar` is agent-writable,
+   * so `config_patch` can put one in `pinned` today.
+   */
+  roomTitles: Record<string, string>;
 }
 
 /** The floating label shown under the cursor while dragging. */
@@ -66,7 +72,7 @@ function DragOverlayContent({
  * children render without a `DndContext` and every drag operation stays reachable
  * through the row/header context menus.
  */
-export function SidebarDnd({ children, displayNames }: SidebarDndProps) {
+export function SidebarDnd({ children, displayNames, roomTitles }: SidebarDndProps) {
   const isMobile = useIsMobile();
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
@@ -78,6 +84,8 @@ export function SidebarDnd({ children, displayNames }: SidebarDndProps) {
   prefsRef.current = prefs;
   const namesRef = useRef(displayNames);
   namesRef.current = displayNames;
+  const roomTitlesRef = useRef(roomTitles);
+  roomTitlesRef.current = roomTitles;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -88,13 +96,10 @@ export function SidebarDnd({ children, displayNames }: SidebarDndProps) {
 
   const groupName = (id: string): string =>
     prefsRef.current.groups.find((g) => g.id === id)?.name ?? 'group';
-  // Rooms are not draggable yet — nothing in this tree builds a `room` ref, so
-  // that branch is unreachable until S3 (DOR-581) wires the room rows in and
-  // supplies a real title resolver alongside `displayNames`.
   const itemName = (ref: SidebarItemRef): string =>
     ref.kind === 'agent'
       ? (namesRef.current[ref.path] ?? ref.path.split('/').pop() ?? 'Agent')
-      : ref.roomId;
+      : (roomTitlesRef.current[ref.roomId] ?? 'room');
 
   const announcements = buildSidebarAnnouncements(() => ({
     prefs: prefsRef.current,

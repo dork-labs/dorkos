@@ -20,7 +20,7 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
   const groupName = `E2E Group ${runId}`;
   const agentDir = join(homedir(), '.dork-e2e-fixtures', `sidebar-dnd-${randomUUID()}`);
   let agentId: string | undefined;
-  /** The path the server canonicalized on registration — what `members` stores. */
+  /** The path the server canonicalized on registration — what `items` stores. */
   let agentProjectPath: string | undefined;
 
   test.beforeEach(async ({ request, basePage, dashboardSidebar }) => {
@@ -82,7 +82,7 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     expect(persistedGroup).toBeDefined();
     // The exact stored membership, not just its length: one agent item
     // reference naming the agent that was dragged (sidebar-groups, DOR-579).
-    expect(persistedGroup.members).toEqual([{ kind: 'agent', path: agentProjectPath }]);
+    expect(persistedGroup.items).toEqual([{ kind: 'agent', path: agentProjectPath }]);
 
     // Reload — the actual persistence-across-reload proof.
     await page.reload();

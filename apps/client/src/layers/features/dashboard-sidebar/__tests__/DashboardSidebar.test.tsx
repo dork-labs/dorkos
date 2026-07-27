@@ -6,7 +6,7 @@ import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 
-/** An agent member reference — `pinned`, `muted` and `members` all hold these. */
+/** An agent member reference — `pinned`, `muted` and `items` all hold these. */
 const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
 
 // ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ function group(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
     id: 'g1',
     name: 'Clients',
-    members: [],
+    items: [],
     sortMode: 'manual',
     collapsed: false,
     displayFilter: 'all',
@@ -323,7 +323,7 @@ describe('DashboardSidebar', () => {
     mockSidebarPrefs.mockReturnValue(
       makePrefs({
         pinned: [agent('/projects/alpha')],
-        groups: [group({ members: [agent('/projects/beta')] })],
+        groups: [group({ items: [agent('/projects/beta')] })],
       })
     );
     renderWithProviders(<DashboardSidebar />);
@@ -353,7 +353,7 @@ describe('DashboardSidebar', () => {
     mockSidebarPrefs.mockReturnValue(
       makePrefs({
         pinned: [agent('/projects/alpha')],
-        groups: [group({ members: [agent('/projects/alpha')] })],
+        groups: [group({ items: [agent('/projects/alpha')] })],
       })
     );
     renderWithProviders(<DashboardSidebar />);
@@ -364,7 +364,7 @@ describe('DashboardSidebar', () => {
   // --- Empty group ---
 
   it('renders the "Drag agents here" hint for an empty group and does not remove it', () => {
-    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ members: [] })] }));
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
     renderWithProviders(<DashboardSidebar />);
     expect(screen.getByText('Drag agents here')).toBeInTheDocument();
     expect(screen.getByText('Clients')).toBeInTheDocument();
@@ -578,7 +578,7 @@ describe('DashboardSidebar attention filters + reveal (DOR-339)', () => {
       makePrefs({
         groups: [
           group({
-            members: [agent('/projects/alpha'), agent('/projects/beta')],
+            items: [agent('/projects/alpha'), agent('/projects/beta')],
             displayFilter: 'attention',
           }),
         ],

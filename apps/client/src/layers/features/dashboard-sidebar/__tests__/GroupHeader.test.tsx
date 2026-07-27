@@ -75,7 +75,7 @@ function makeGroup(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
     id: 'g1',
     name: 'Clients',
-    members: [],
+    items: [],
     sortMode: 'manual',
     collapsed: false,
     displayFilter: 'all',

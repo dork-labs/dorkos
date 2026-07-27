@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Conf, { type Schema } from 'conf';
 import { z } from 'zod';
 import * as semver from 'semver';
-import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  UserConfigSchema,
+  USER_CONFIG_DEFAULTS,
+  normalizeSidebarPrefs,
+} from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
   initConfigManager,
@@ -1429,7 +1433,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
       {
         id: 'g1',
         name: 'Clients',
-        members: [
+        items: [
           { kind: 'agent', path: '/projects/alpha' },
           { kind: 'agent', path: '/projects/gamma' },
         ],
@@ -1442,7 +1446,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
       {
         id: 'g2',
         name: 'Active now',
-        members: [],
+        items: [],
         sortMode: 'recent',
         collapsed: false,
         displayFilter: 'all',
@@ -1529,7 +1533,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
     });
     migrateSidebarMembersToItemRefs(store);
     expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
-      { id: 'g1', name: 'Empty', members: [] },
+      { id: 'g1', name: 'Empty', items: [] },
     ]);
   });
 
@@ -1542,7 +1546,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
             {
               id: 'g1',
               name: 'Clients',
-              members: [{ kind: 'room', roomId: 'room-1' }],
+              items: [{ kind: 'room', roomId: 'room-1' }],
               agentPaths: ['/projects/stale'],
             },
           ],
@@ -1552,7 +1556,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
     });
     migrateSidebarMembersToItemRefs(store);
     expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
-      { id: 'g1', name: 'Clients', members: [{ kind: 'room', roomId: 'room-1' }] },
+      { id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: 'room-1' }] },
     ]);
   });
 
@@ -1576,7 +1580,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
   it('runs from the 0.57.0 composite — the release that ships this schema', () => {
     // The whole point of composing into 0.57.0 rather than opening 0.58.0:
     // `conf` only runs keys in `(storedVersion, projectVersion]`, so a 0.58.0
-    // body would not run on the 0.57.0 release carrying `members`, and every
+    // body would not run on the 0.57.0 release carrying `items`, and every
     // upgraded install would read the Zod default `[]` and lose its groups.
     const store = createMockStore({ ui: priorShapeUi() });
     CONFIG_MIGRATIONS['0.57.0'](store);
@@ -2264,5 +2268,128 @@ describe('the posture floor is monotonic (DOR-520 review)', () => {
     manager.setDot('logging.level', 'debug');
     manager.setDot('server.port', 4300);
     expect(floor(manager)).toBeNull();
+  });
+});
+
+describe('a config written before DOR-579 survives the migration being skipped', () => {
+  // The DOR-579 rename is the first non-additive change in CONFIG_MIGRATIONS.
+  // Every additive backfill before it degrades safely when its key falls outside
+  // conf's `(storedVersion, projectVersion]` window — the field is absent and a
+  // Zod default fills in. A rename does not: the OLD encoding becomes
+  // schema-INVALID, `new Conf(...)` throws, and ConfigManager's recovery path
+  // backs the file up and replaces it with defaults. That resets the whole
+  // file, not just the sidebar.
+  //
+  // These boot a REAL ConfigManager over a real file, which is the only way to
+  // cross the conf/Ajv seam where that failure lives. The mock-store tests above
+  // cannot see it, and neither can `UserConfigSchema.parse` — Zod strips unknown
+  // keys where Ajv rejects them.
+  //
+  // SERVER_VERSION resolves to `0.0.0` here (the dev/package.json fallback), so
+  // NO migration runs at all. That is not a contrivance: it is exactly what a
+  // developer's tree does on every `pnpm dev`.
+  const priorShapeConfig = {
+    version: 1,
+    // A privacy choice, deliberately opposite to the defaults on both fields, so
+    // a silent reset is visible rather than coincidentally identical.
+    telemetry: { userHasDecided: true, install: false, heartbeat: false },
+    ui: {
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/projects/alpha'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/alpha', '/projects/gamma'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'manual',
+          },
+        ],
+        muted: ['/projects/beta'],
+      },
+    },
+  };
+
+  function bootOverPriorShape(): { dir: string; configPath: string; manager: ConfigManager } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-pre-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify(priorShapeConfig));
+    return { dir, configPath, manager: new ConfigManager(dir) };
+  }
+
+  it('is not condemned — no backup is written and the file is not replaced', () => {
+    const { configPath } = bootOverPriorShape();
+    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+  });
+
+  it('keeps every unrelated section, including a telemetry opt-out', () => {
+    const { manager } = bootOverPriorShape();
+    const telemetry = manager.get('telemetry');
+    // The exact three values the fixture chose. A wipe flips all three at once:
+    // `userHasDecided` to false and the two Tier 1 channels back on.
+    expect(telemetry.userHasDecided).toBe(true);
+    expect(telemetry.install).toBe(false);
+    expect(telemetry.heartbeat).toBe(false);
+  });
+
+  it('keeps the sidebar organization, and it reads back canonical', () => {
+    const { manager } = bootOverPriorShape();
+    // Stored as-is (nothing rewrote the file) …
+    const stored = manager.getAll().ui.sidebar;
+    // … and the read-time conversion every consumer goes through yields the
+    // canonical encoding, so the groups are intact rather than empty.
+    const prefs = normalizeSidebarPrefs(stored);
+    expect(prefs.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(prefs.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
+    expect(prefs.groups).toHaveLength(1);
+    expect(prefs.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+    expect(prefs.groups[0]!.name).toBe('Clients');
+  });
+
+  it('accepts a config already in the canonical encoding too', () => {
+    // The tolerance widens what Ajv accepts; it must not narrow it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-post-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: {
+          sidebar: {
+            pinned: [{ kind: 'agent', path: '/projects/alpha' }],
+            groups: [
+              { id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: '01JROOM' }] },
+            ],
+            muted: [],
+          },
+        },
+      })
+    );
+    const manager = new ConfigManager(dir);
+    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(manager.getAll().ui.sidebar.groups[0]!.items).toEqual([
+      { kind: 'room', roomId: '01JROOM' },
+    ]);
+  });
+
+  it('still rejects a genuinely invalid sidebar entry', () => {
+    // The widened schema accepts a legacy string or a reference — not anything.
+    // Without this, "tolerate the old encoding" could quietly become "validate
+    // nothing", and the next bad write would land unnoticed.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-invalid-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ version: 1, ui: { sidebar: { pinned: [{ kind: 'nonsense' }] } } })
+    );
+    new ConfigManager(dir);
+    expect(fs.existsSync(configPath + '.bak')).toBe(true);
   });
 });

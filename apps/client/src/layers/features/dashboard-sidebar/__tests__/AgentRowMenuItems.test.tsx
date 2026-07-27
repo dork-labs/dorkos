@@ -20,8 +20,8 @@ import { GroupCreateInput } from '../ui/GroupCreateInput';
 // a checked target, an unchecked target, Remove from group, and New group…
 const API_SERVER: SidebarItemRef = { kind: 'agent', path: '/agents/api-server' };
 const groups = [
-  { id: 'g1', name: 'Clients', members: [API_SERVER] },
-  { id: 'g2', name: 'Experiments', members: [] },
+  { id: 'g1', name: 'Clients', items: [API_SERVER] },
+  { id: 'g2', name: 'Experiments', items: [] },
 ];
 const mockUpdate = vi.fn<(updater: (prev: unknown) => unknown) => void>();
 const moveToGroupCalls: unknown[][] = [];

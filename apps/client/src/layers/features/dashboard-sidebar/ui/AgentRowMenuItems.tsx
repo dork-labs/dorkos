@@ -251,7 +251,7 @@ export function AgentRowMenuItems({
   const isPinned = prefs.pinned.some((p) => sameSidebarItem(p, ref));
   const isMuted = prefs.muted.some((m) => sameSidebarItem(m, ref));
   const currentGroupId =
-    prefs.groups.find((g) => g.members.some((m) => sameSidebarItem(m, ref)))?.id ?? null;
+    prefs.groups.find((g) => g.items.some((m) => sameSidebarItem(m, ref)))?.id ?? null;
 
   const nodes = buildRowMenuNodes({
     isPinned,

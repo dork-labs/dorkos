@@ -108,7 +108,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
             // Both branches of the item-reference union, so the projection is
             // exercised on an element that carries `path` and one that carries
             // `roomId` (each drops the other branch's field).
-            members: [
+            items: [
               { kind: 'agent', path: '/Users/me/code' },
               { kind: 'room', roomId: '01JROOM' },
             ],
@@ -462,7 +462,7 @@ describe('projectDisclosedConfig', () => {
     // And not over-redacted: the group a person configured still arrives whole.
     expect(projectedGroup.id).toBe('group-1');
     expect(projectedGroup.name).toBe('Work');
-    expect(projectedGroup.members).toEqual([
+    expect(projectedGroup.items).toEqual([
       { kind: 'agent', path: '/Users/me/code' },
       { kind: 'room', roomId: '01JROOM' },
     ]);

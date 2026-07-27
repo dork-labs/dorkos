@@ -111,7 +111,7 @@ interface GroupHeaderProps {
   showActivityDot: boolean;
   /**
    * The group's currently-derived member agent paths (smart groups only) —
-   * what "Convert to manual group" materializes into `members`. Ignored for
+   * what "Convert to manual group" materializes into `items`. Ignored for
    * manual groups. Stays paths because every smart-group rule is an agent
    * attribute, so a smart group can only ever match agents.
    */

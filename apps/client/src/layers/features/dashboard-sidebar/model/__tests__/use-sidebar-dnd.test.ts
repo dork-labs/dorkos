@@ -26,7 +26,7 @@ function grp(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
     id: 'g1',
     name: 'Clients',
-    members: [],
+    items: [],
     sortMode: 'manual',
     collapsed: false,
     displayFilter: 'all',
@@ -92,7 +92,7 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
   });
 
   it('moves an agent into a group (appended) when dropped on the group body', () => {
-    const p = prefs({ groups: [grp({ id: 'g1', members: [agent('/x')] })] });
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/x')] })] });
     const op = classifySidebarDrop(p, dragAgent('/new', UNGROUPED), dropContainer(inGroup('g1')));
     expect(op).toEqual({
       kind: 'move-to-group',
@@ -101,30 +101,30 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       toIndex: null,
     });
     const next = resolveSidebarDrop(p, dragAgent('/new', UNGROUPED), dropContainer(inGroup('g1')));
-    expect(next.groups[0]!.members).toEqual([agent('/x'), agent('/new')]);
+    expect(next.groups[0]!.items).toEqual([agent('/x'), agent('/new')]);
   });
 
   it('moves an agent into a group when dropped on its collapsed header', () => {
-    const p = prefs({ groups: [grp({ id: 'g1', collapsed: true, members: [agent('/x')] })] });
+    const p = prefs({ groups: [grp({ id: 'g1', collapsed: true, items: [agent('/x')] })] });
     const next = resolveSidebarDrop(p, dragAgent('/new', UNGROUPED), dropHeader('g1'));
-    expect(next.groups[0]!.members).toEqual([agent('/x'), agent('/new')]);
+    expect(next.groups[0]!.items).toEqual([agent('/x'), agent('/new')]);
   });
 
   it('uses the drop index when moving into a manual group over a specific row', () => {
     const p = prefs({
       groups: [
-        grp({ id: 'g1', sortMode: 'manual', members: [agent('/a'), agent('/b'), agent('/c')] }),
+        grp({ id: 'g1', sortMode: 'manual', items: [agent('/a'), agent('/b'), agent('/c')] }),
       ],
     });
     const op = classifySidebarDrop(p, dragAgent('/new', UNGROUPED), dropItem('/b', inGroup('g1')));
     expect(op).toEqual({ kind: 'move-to-group', ref: agent('/new'), groupId: 'g1', toIndex: 1 });
     const next = resolveSidebarDrop(p, dragAgent('/new', UNGROUPED), dropItem('/b', inGroup('g1')));
-    expect(next.groups[0]!.members).toEqual([agent('/a'), agent('/new'), agent('/b'), agent('/c')]);
+    expect(next.groups[0]!.items).toEqual([agent('/a'), agent('/new'), agent('/b'), agent('/c')]);
   });
 
   it('appends (ignores drop index) when moving into a non-manual group', () => {
     const p = prefs({
-      groups: [grp({ id: 'g1', sortMode: 'name', members: [agent('/a'), agent('/b')] })],
+      groups: [grp({ id: 'g1', sortMode: 'name', items: [agent('/a'), agent('/b')] })],
     });
     const op = classifySidebarDrop(p, dragAgent('/new', UNGROUPED), dropItem('/a', inGroup('g1')));
     expect(op).toEqual({
@@ -134,22 +134,22 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       toIndex: null,
     });
     const next = resolveSidebarDrop(p, dragAgent('/new', UNGROUPED), dropItem('/a', inGroup('g1')));
-    expect(next.groups[0]!.members).toEqual([agent('/a'), agent('/b'), agent('/new')]);
+    expect(next.groups[0]!.items).toEqual([agent('/a'), agent('/b'), agent('/new')]);
   });
 
   it('pins an agent (reference; home membership unchanged) when dropped on Pinned', () => {
-    const p = prefs({ groups: [grp({ id: 'g1', members: [agent('/x')] })] });
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/x')] })] });
     const op = classifySidebarDrop(p, dragAgent('/x', inGroup('g1')), dropContainer(PINNED));
     expect(op).toEqual({ kind: 'pin', ref: agent('/x') });
     const next = resolveSidebarDrop(p, dragAgent('/x', inGroup('g1')), dropContainer(PINNED));
     expect(next.pinned).toEqual([agent('/x')]);
-    expect(next.groups[0]!.members).toEqual([agent('/x')]); // still in its home group
+    expect(next.groups[0]!.items).toEqual([agent('/x')]); // still in its home group
   });
 
   it('reorders within a manual group when a member drops over a sibling', () => {
     const p = prefs({
       groups: [
-        grp({ id: 'g1', sortMode: 'manual', members: [agent('/a'), agent('/b'), agent('/c')] }),
+        grp({ id: 'g1', sortMode: 'manual', items: [agent('/a'), agent('/b'), agent('/c')] }),
       ],
     });
     const op = classifySidebarDrop(
@@ -169,12 +169,12 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       dragAgent('/a', inGroup('g1')),
       dropItem('/c', inGroup('g1'))
     );
-    expect(next.groups[0]!.members).toEqual([agent('/b'), agent('/c'), agent('/a')]);
+    expect(next.groups[0]!.items).toEqual([agent('/b'), agent('/c'), agent('/a')]);
   });
 
   it('does NOT reorder within a name/recent group (sort mode owns order)', () => {
     const p = prefs({
-      groups: [grp({ id: 'g1', sortMode: 'name', members: [agent('/a'), agent('/b')] })],
+      groups: [grp({ id: 'g1', sortMode: 'name', items: [agent('/a'), agent('/b')] })],
     });
     const op = classifySidebarDrop(
       p,
@@ -196,27 +196,27 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
   });
 
   it('unpins when a pinned row is dropped anywhere outside Pinned (home untouched)', () => {
-    const p = prefs({ pinned: [agent('/a')], groups: [grp({ id: 'g1', members: [agent('/a')] })] });
+    const p = prefs({ pinned: [agent('/a')], groups: [grp({ id: 'g1', items: [agent('/a')] })] });
     const op = classifySidebarDrop(p, dragAgent('/a', PINNED), dropContainer(UNGROUPED));
     expect(op).toEqual({ kind: 'unpin', ref: agent('/a') });
     const next = resolveSidebarDrop(p, dragAgent('/a', PINNED), dropContainer(UNGROUPED));
     expect(next.pinned).toEqual([]);
-    expect(next.groups[0]!.members).toEqual([agent('/a')]); // membership untouched
+    expect(next.groups[0]!.items).toEqual([agent('/a')]); // membership untouched
   });
 
   it('removes an agent from its group when dropped on the Agents (ungrouped) section', () => {
-    const p = prefs({ groups: [grp({ id: 'g1', members: [agent('/a'), agent('/b')] })] });
+    const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/a'), agent('/b')] })] });
     const op = classifySidebarDrop(p, dragAgent('/a', inGroup('g1')), dropContainer(UNGROUPED));
     expect(op).toEqual({ kind: 'remove-from-group', ref: agent('/a') });
     const next = resolveSidebarDrop(p, dragAgent('/a', inGroup('g1')), dropContainer(UNGROUPED));
-    expect(next.groups[0]!.members).toEqual([agent('/b')]);
+    expect(next.groups[0]!.items).toEqual([agent('/b')]);
   });
 
   it('moves an agent between two groups (disjointness preserved)', () => {
     const p = prefs({
       groups: [
-        grp({ id: 'g1', members: [agent('/a')] }),
-        grp({ id: 'g2', members: [agent('/b')] }),
+        grp({ id: 'g1', items: [agent('/a')] }),
+        grp({ id: 'g2', items: [agent('/b')] }),
       ],
     });
     const next = resolveSidebarDrop(
@@ -224,15 +224,15 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       dragAgent('/a', inGroup('g1')),
       dropContainer(inGroup('g2'))
     );
-    expect(next.groups[0]!.members).toEqual([]);
-    expect(next.groups[1]!.members).toEqual([agent('/b'), agent('/a')]);
+    expect(next.groups[0]!.items).toEqual([]);
+    expect(next.groups[1]!.items).toEqual([agent('/b'), agent('/a')]);
   });
 
   // ── The union: a room moves through the same table, on the same rules ──
 
   it('moves a room into a manual group at the hovered index, beside an agent', () => {
     const p = prefs({
-      groups: [grp({ id: 'g1', sortMode: 'manual', members: [agent('/a'), agent('/b')] })],
+      groups: [grp({ id: 'g1', sortMode: 'manual', items: [agent('/a'), agent('/b')] })],
     });
     const op = classifySidebarDrop(
       p,
@@ -245,12 +245,12 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       dragItem(room('room-1'), UNGROUPED),
       dropItem('/b', inGroup('g1'))
     );
-    expect(next.groups[0]!.members).toEqual([agent('/a'), room('room-1'), agent('/b')]);
+    expect(next.groups[0]!.items).toEqual([agent('/a'), room('room-1'), agent('/b')]);
   });
 
   it('reorders a room within a manual group when dropped over an agent sibling', () => {
     const p = prefs({
-      groups: [grp({ id: 'g1', sortMode: 'manual', members: [room('room-1'), agent('/b')] })],
+      groups: [grp({ id: 'g1', sortMode: 'manual', items: [room('room-1'), agent('/b')] })],
     });
     const op = classifySidebarDrop(
       p,
@@ -269,14 +269,14 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       dragItem(room('room-1'), inGroup('g1')),
       dropRef(agent('/b'), inGroup('g1'))
     );
-    expect(next.groups[0]!.members).toEqual([agent('/b'), room('room-1')]);
+    expect(next.groups[0]!.items).toEqual([agent('/b'), room('room-1')]);
   });
 
   // ── No-op and unknown-target cases ──
 
   it('is a no-op when a member drops onto its own position in a manual group', () => {
     const p = prefs({
-      groups: [grp({ id: 'g1', sortMode: 'manual', members: [agent('/a'), agent('/b')] })],
+      groups: [grp({ id: 'g1', sortMode: 'manual', items: [agent('/a'), agent('/b')] })],
     });
     expect(
       classifySidebarDrop(p, dragAgent('/a', inGroup('g1')), dropItem('/a', inGroup('g1')))
@@ -345,7 +345,7 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
 
   it('rejects an agent dragged from a manual group onto a smart group', () => {
     const p = prefs({
-      groups: [grp({ id: 'manual1', members: [agent('/a')] }), smartGrp({ id: 'smart1' })],
+      groups: [grp({ id: 'manual1', items: [agent('/a')] }), smartGrp({ id: 'smart1' })],
     });
     const op = classifySidebarDrop(
       p,
@@ -358,7 +358,7 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
       dragAgent('/a', inGroup('manual1')),
       dropContainer(inGroup('smart1'))
     );
-    expect(next.groups[0]!.members).toEqual([agent('/a')]); // untouched — the drop was rejected
+    expect(next.groups[0]!.items).toEqual([agent('/a')]); // untouched — the drop was rejected
   });
 
   it('still allows reordering a smart group’s own header among other sections', () => {
@@ -473,7 +473,7 @@ describe('buildSidebarAnnouncements', () => {
           id: 'g1',
           name: 'Clients',
           sortMode: 'manual',
-          members: [agent('/api'), agent('/web')],
+          items: [agent('/api'), agent('/web')],
         }),
       ],
     });

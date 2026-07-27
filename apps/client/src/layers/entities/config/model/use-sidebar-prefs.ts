@@ -14,14 +14,46 @@ import { useCallback, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
-import { SIDEBAR_PREFS_DEFAULTS, sameSidebarItem } from '@dorkos/shared/config-schema';
+import {
+  SIDEBAR_PREFS_DEFAULTS,
+  sameSidebarItem,
+  normalizeSidebarPrefs,
+} from '@dorkos/shared/config-schema';
 import { useTransport } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
-/** Resolve the sidebar prefs from a (possibly-undefined) server config. */
+/**
+ * Normalized prefs, keyed by the exact stored object they came from.
+ *
+ * {@link selectSidebar} runs on every read, and every consumer memoizes on
+ * `prefs.pinned` / `prefs.groups` identity, so converting into a fresh object
+ * each call would invalidate those memos on every render. Keying the cache on
+ * the stored object makes one config snapshot yield one normalized object for
+ * as long as anything holds it, and a `WeakMap` lets the entry go with it.
+ */
+const normalizedSidebarCache = new WeakMap<object, SidebarPrefs>();
+
+/**
+ * Resolve the sidebar prefs from a (possibly-undefined) server config, in the
+ * canonical encoding.
+ *
+ * A config written before DOR-579 stores bare agent paths and `agentPaths`
+ * instead of item references and `items`, and the migration that rewrites it is
+ * skipped whenever the app version falls outside `conf`'s migration window (a
+ * dev tree runs no migrations at all). Normalizing here is what keeps the
+ * sidebar correct on those installs rather than showing empty groups;
+ * `normalizeSidebarPrefs` returns its input unchanged once the file is
+ * canonical, so the steady state costs one `some()` per list.
+ */
 function selectSidebar(config: ServerConfig | undefined): SidebarPrefs {
-  return config?.ui?.sidebar ?? SIDEBAR_PREFS_DEFAULTS;
+  const stored = config?.ui?.sidebar;
+  if (!stored) return SIDEBAR_PREFS_DEFAULTS;
+  const cached = normalizedSidebarCache.get(stored);
+  if (cached) return cached;
+  const normalized = normalizeSidebarPrefs(stored);
+  normalizedSidebarCache.set(stored, normalized);
+  return normalized;
 }
 
 /**
@@ -162,7 +194,7 @@ export function unpinItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPrefs
 
 /**
  * Move `ref` into a group (or ungroup it). Removes `ref` from EVERY group's
- * `members` first, then appends it to the target group; `groupId === null`
+ * `items` first, then appends it to the target group; `groupId === null`
  * ungroups (removed from all, added to none). Enforces disjointness — an item
  * never appears in two groups.
  *
@@ -177,12 +209,12 @@ export function moveToGroup(
 ): SidebarPrefs {
   const groups = prev.groups.map((g) => ({
     ...g,
-    members: g.members.filter((m) => !sameSidebarItem(m, ref)),
+    items: g.items.filter((m) => !sameSidebarItem(m, ref)),
   }));
   if (groupId !== null) {
     const idx = groups.findIndex((g) => g.id === groupId);
     if (idx !== -1) {
-      groups[idx] = { ...groups[idx]!, members: [...groups[idx]!.members, ref] };
+      groups[idx] = { ...groups[idx]!, items: [...groups[idx]!.items, ref] };
     }
   }
   return { ...prev, groups };
@@ -200,7 +232,7 @@ export function createGroup(prev: SidebarPrefs, name: string): { next: SidebarPr
   const group: SidebarGroup = {
     id,
     name,
-    members: [],
+    items: [],
     sortMode: 'manual',
     collapsed: false,
     displayFilter: 'all',
@@ -230,7 +262,7 @@ export function createSmartGroup(
   const group: SidebarGroup = {
     id,
     name,
-    members: [],
+    items: [],
     sortMode: 'recent',
     collapsed: false,
     displayFilter: 'all',
@@ -243,7 +275,7 @@ export function createSmartGroup(
 
 /**
  * Convert a smart group to a manual group, materializing its currently-
- * matching members into `members` (spec §4, ideation decision 5 — the escape
+ * matching members into `items` (spec §4, ideation decision 5 — the escape
  * hatch). Keeps name/collapse/sort/mute/displayFilter untouched; drops `rules`
  * since a manual group never reads it.
  *
@@ -251,7 +283,7 @@ export function createSmartGroup(
  * @param groupId - The smart group to convert.
  * @param currentMembers - The group's currently-matching members (wrapped from
  *   `evaluateSmartGroup`, which stays agent-only), materialized verbatim into
- *   `members`.
+ *   `items`.
  */
 export function convertSmartGroupToManual(
   prev: SidebarPrefs,
@@ -261,9 +293,7 @@ export function convertSmartGroupToManual(
   return {
     ...prev,
     groups: prev.groups.map((g) =>
-      g.id === groupId
-        ? { ...g, kind: 'manual', rules: undefined, members: [...currentMembers] }
-        : g
+      g.id === groupId ? { ...g, kind: 'manual', rules: undefined, items: [...currentMembers] } : g
     ),
   };
 }
@@ -306,7 +336,7 @@ export function reorderGroup(prev: SidebarPrefs, from: number, to: number): Side
   return groups === prev.groups ? prev : { ...prev, groups };
 }
 
-/** Reorder `members` inside the group with `groupId` (bounds-checked no-op). */
+/** Reorder `items` inside the group with `groupId` (bounds-checked no-op). */
 export function reorderWithinGroup(
   prev: SidebarPrefs,
   groupId: string,
@@ -316,7 +346,7 @@ export function reorderWithinGroup(
   return {
     ...prev,
     groups: prev.groups.map((g) =>
-      g.id === groupId ? { ...g, members: moveItem(g.members, from, to) } : g
+      g.id === groupId ? { ...g, items: moveItem(g.items, from, to) } : g
     ),
   };
 }
@@ -328,7 +358,7 @@ export function reorderPinned(prev: SidebarPrefs, from: number, to: number): Sid
 }
 
 /**
- * Set a group's `sortMode`. MUST NOT touch `members` — switching away from
+ * Set a group's `sortMode`. MUST NOT touch `items` — switching away from
  * 'manual' never destroys the durable manual order.
  */
 export function setGroupSortMode(

@@ -13,6 +13,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import {
+  useSidebarPrefs,
   useUpdateSidebarPrefs,
   pinItem,
   unpinItem,
@@ -96,7 +97,7 @@ describe('sidebar prefs pure helpers', () => {
       {
         id: 'A',
         name: 'A',
-        members: [agent('/x')],
+        items: [agent('/x')],
         sortMode: 'manual' as const,
         kind: 'manual' as const,
         collapsed: false,
@@ -106,7 +107,7 @@ describe('sidebar prefs pure helpers', () => {
       {
         id: 'B',
         name: 'B',
-        members: [],
+        items: [],
         sortMode: 'manual' as const,
         kind: 'manual' as const,
         collapsed: false,
@@ -117,13 +118,13 @@ describe('sidebar prefs pure helpers', () => {
 
     it('moving an item already in group A into group B leaves it only in B', () => {
       const next = moveToGroup(prefs({ groups }), agent('/x'), 'B');
-      expect(next.groups.find((g) => g.id === 'A')!.members).toEqual([]);
-      expect(next.groups.find((g) => g.id === 'B')!.members).toEqual([agent('/x')]);
+      expect(next.groups.find((g) => g.id === 'A')!.items).toEqual([]);
+      expect(next.groups.find((g) => g.id === 'B')!.items).toEqual([agent('/x')]);
     });
 
     it('ungroup (null) removes the item from all groups', () => {
       const next = moveToGroup(prefs({ groups }), agent('/x'), null);
-      expect(next.groups.flatMap((g) => g.members)).toEqual([]);
+      expect(next.groups.flatMap((g) => g.items)).toEqual([]);
     });
 
     it('appends to the target group at the end', () => {
@@ -132,7 +133,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'A',
             name: 'A',
-            members: [agent('/x')],
+            items: [agent('/x')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -142,7 +143,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'B',
             name: 'B',
-            members: [agent('/y')],
+            items: [agent('/y')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -152,7 +153,7 @@ describe('sidebar prefs pure helpers', () => {
         ],
       });
       const next = moveToGroup(seeded, agent('/x'), 'B');
-      expect(next.groups.find((g) => g.id === 'B')!.members).toEqual([agent('/y'), agent('/x')]);
+      expect(next.groups.find((g) => g.id === 'B')!.items).toEqual([agent('/y'), agent('/x')]);
     });
 
     it('moves a room the same way it moves an agent', () => {
@@ -161,7 +162,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'A',
             name: 'A',
-            members: [agent('/x'), room('room-1')],
+            items: [agent('/x'), room('room-1')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -171,7 +172,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'B',
             name: 'B',
-            members: [],
+            items: [],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -181,8 +182,8 @@ describe('sidebar prefs pure helpers', () => {
         ],
       });
       const next = moveToGroup(seeded, room('room-1'), 'B');
-      expect(next.groups.find((g) => g.id === 'A')!.members).toEqual([agent('/x')]);
-      expect(next.groups.find((g) => g.id === 'B')!.members).toEqual([room('room-1')]);
+      expect(next.groups.find((g) => g.id === 'A')!.items).toEqual([agent('/x')]);
+      expect(next.groups.find((g) => g.id === 'B')!.items).toEqual([room('room-1')]);
     });
   });
 
@@ -194,7 +195,7 @@ describe('sidebar prefs pure helpers', () => {
       expect(next.groups[0]).toEqual({
         id,
         name: 'Clients',
-        members: [],
+        items: [],
         sortMode: 'manual',
         kind: 'manual',
         collapsed: false,
@@ -213,7 +214,7 @@ describe('sidebar prefs pure helpers', () => {
       expect(next.groups[0]).toEqual({
         id,
         name: 'Active now',
-        members: [],
+        items: [],
         sortMode: 'recent',
         kind: 'smart',
         collapsed: false,
@@ -229,7 +230,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'g1',
             name: 'Active now',
-            members: [],
+            items: [],
             sortMode: 'recent',
             kind: 'smart',
             collapsed: false,
@@ -243,7 +244,7 @@ describe('sidebar prefs pure helpers', () => {
       expect(next.groups[0]).toEqual({
         id: 'g1',
         name: 'Active now',
-        members: [agent('/x'), agent('/y')],
+        items: [agent('/x'), agent('/y')],
         sortMode: 'recent',
         kind: 'manual',
         collapsed: false,
@@ -259,7 +260,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'g1',
             name: 'Codex fleet',
-            members: [],
+            items: [],
             sortMode: 'name',
             kind: 'smart',
             collapsed: true,
@@ -276,7 +277,7 @@ describe('sidebar prefs pure helpers', () => {
       expect(g.collapsed).toBe(true);
       expect(g.displayFilter).toBe('attention');
       expect(g.muted).toBe(true);
-      expect(g.members).toEqual([]);
+      expect(g.items).toEqual([]);
     });
 
     it('setGroupRules replaces a smart group’s rules and is a no-op for a manual group', () => {
@@ -285,7 +286,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'smart1',
             name: 'Active now',
-            members: [],
+            items: [],
             sortMode: 'recent',
             kind: 'smart',
             collapsed: false,
@@ -296,7 +297,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'manual1',
             name: 'Clients',
-            members: [agent('/x')],
+            items: [agent('/x')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -327,7 +328,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'A',
             name: 'A',
-            members: [agent('/x'), agent('/y')],
+            items: [agent('/x'), agent('/y')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -339,7 +340,7 @@ describe('sidebar prefs pure helpers', () => {
       const next = deleteGroup(seeded, 'A');
       expect(next.groups).toEqual([]);
       // The members are simply no longer in any group's members list.
-      expect(next.groups.flatMap((g) => g.members)).toEqual([]);
+      expect(next.groups.flatMap((g) => g.items)).toEqual([]);
     });
   });
 
@@ -350,7 +351,7 @@ describe('sidebar prefs pure helpers', () => {
         {
           id: 'A',
           name: 'A',
-          members: [agent('/x'), agent('/y')],
+          items: [agent('/x'), agent('/y')],
           sortMode: 'manual',
           kind: 'manual',
           collapsed: false,
@@ -360,7 +361,7 @@ describe('sidebar prefs pure helpers', () => {
         {
           id: 'B',
           name: 'B',
-          members: [],
+          items: [],
           sortMode: 'manual',
           kind: 'manual',
           collapsed: false,
@@ -382,12 +383,12 @@ describe('sidebar prefs pure helpers', () => {
     });
 
     it('reorderWithinGroup reorders members, out-of-range is a no-op', () => {
-      expect(reorderWithinGroup(seeded, 'A', 0, 1).groups[0].members).toEqual([
+      expect(reorderWithinGroup(seeded, 'A', 0, 1).groups[0].items).toEqual([
         agent('/y'),
         agent('/x'),
       ]);
       const noop = reorderWithinGroup(seeded, 'A', 0, 9);
-      expect(noop.groups[0].members).toEqual([agent('/x'), agent('/y')]);
+      expect(noop.groups[0].items).toEqual([agent('/x'), agent('/y')]);
     });
   });
 
@@ -398,7 +399,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'A',
             name: 'A',
-            members: [agent('/x'), agent('/y')],
+            items: [agent('/x'), agent('/y')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -410,7 +411,7 @@ describe('sidebar prefs pure helpers', () => {
       const next = setGroupSortMode(seeded, 'A', 'recent');
       expect(next.groups[0].sortMode).toBe('recent');
       // The durable manual order is preserved when switching away from manual.
-      expect(next.groups[0].members).toEqual([agent('/x'), agent('/y')]);
+      expect(next.groups[0].items).toEqual([agent('/x'), agent('/y')]);
     });
   });
 
@@ -430,7 +431,7 @@ describe('sidebar prefs pure helpers', () => {
         {
           id: 'A',
           name: 'A',
-          members: [],
+          items: [],
           sortMode: 'manual',
           kind: 'manual',
           collapsed: false,
@@ -440,7 +441,7 @@ describe('sidebar prefs pure helpers', () => {
         {
           id: 'B',
           name: 'B',
-          members: [],
+          items: [],
           sortMode: 'manual',
           kind: 'manual',
           collapsed: false,
@@ -463,7 +464,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'A',
             name: 'A',
-            members: [],
+            items: [],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -473,7 +474,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'B',
             name: 'B',
-            members: [],
+            items: [],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -500,7 +501,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'A',
             name: 'A',
-            members: [agent('/x')],
+            items: [agent('/x')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -510,7 +511,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'B',
             name: 'B',
-            members: [agent('/y')],
+            items: [agent('/y')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -531,7 +532,7 @@ describe('sidebar prefs pure helpers', () => {
           {
             id: 'A',
             name: 'A',
-            members: [agent('/x'), agent('/y')],
+            items: [agent('/x'), agent('/y')],
             sortMode: 'manual',
             kind: 'manual',
             collapsed: false,
@@ -601,6 +602,60 @@ function createHarness(transport: Transport) {
   );
   return { queryClient, wrapper };
 }
+
+describe('useSidebarPrefs reading a config the migration has not touched', () => {
+  // `conf` runs a migration only when its key lands in
+  // `(storedVersion, projectVersion]`, so a dev tree (version `0.0.0`) runs none
+  // at all and the file keeps its pre-DOR-579 encoding. The cockpit still has to
+  // show the person's groups.
+  const legacySidebar = {
+    ...structuredClone(SIDEBAR_PREFS_DEFAULTS),
+    pinned: ['/projects/alpha'],
+    muted: ['/projects/beta'],
+    groups: [
+      {
+        id: 'g1',
+        name: 'Clients',
+        agentPaths: ['/projects/alpha'],
+        sortMode: 'manual',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        kind: 'manual',
+      },
+    ],
+  } as unknown as SidebarPrefs;
+
+  function renderPrefs(sidebar: SidebarPrefs) {
+    const transport = createMockTransport({});
+    const { queryClient, wrapper } = createHarness(transport);
+    queryClient.setQueryData(configKeys.current(), makeServerConfig(sidebar));
+    return renderHook(() => useSidebarPrefs(), { wrapper });
+  }
+
+  it('reads a legacy config back in the canonical encoding', () => {
+    const { result } = renderPrefs(legacySidebar);
+    expect(result.current.pinned).toEqual([agent('/projects/alpha')]);
+    expect(result.current.muted).toEqual([agent('/projects/beta')]);
+    expect(result.current.groups[0]!.items).toEqual([agent('/projects/alpha')]);
+  });
+
+  it('returns a referentially stable object across re-renders', () => {
+    // Every consumer memoizes on `prefs.pinned` / `prefs.groups` identity, so
+    // converting into a fresh object per read would invalidate those memos on
+    // every render.
+    const { result, rerender } = renderPrefs(legacySidebar);
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
+  it('passes an already-canonical config straight through', () => {
+    const canonical = prefs({ pinned: [agent('/projects/alpha')] });
+    const { result } = renderPrefs(canonical);
+    expect(result.current).toBe(canonical);
+  });
+});
 
 describe('useUpdateSidebarPrefs optimistic behavior', () => {
   it('onMutate applies the updater to the config cache and sends the complete section', async () => {

@@ -63,8 +63,11 @@ import {
   USER_CONFIG_DEFAULTS,
   SENSITIVE_CONFIG_KEYS,
   ONBOARDING_STEPS,
+  SidebarItemRefSchema,
+  SidebarGroupSchema,
+  toSidebarItemRef,
 } from '@dorkos/shared/config-schema';
-import type { UserConfig } from '@dorkos/shared/config-schema';
+import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 
@@ -969,7 +972,7 @@ export function backfillSmartGroupKindDefaults(store: {
 /**
  * Migration body: convert the three sidebar membership lists from bare agent
  * `projectPath` strings to `SidebarItemRef` objects, and rename
- * `groups[].agentPaths` to `groups[].members` (sidebar-groups, DOR-579).
+ * `groups[].agentPaths` to `groups[].items` (sidebar-groups, DOR-579).
  *
  * `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member list used to
  * hold a `string[]` of agent paths, which left nowhere to reference a room (a
@@ -977,7 +980,7 @@ export function backfillSmartGroupKindDefaults(store: {
  * `{ kind: 'agent'; path } | { kind: 'room'; roomId }`.
  *
  * **The rename is not additive, so this backfill is load-bearing.** Without it
- * an upgraded config reads back with `members` absent, takes the Zod default of
+ * an upgraded config reads back with `items` absent, takes the Zod default of
  * `[]`, and every group silently empties while the real data sits in an
  * `agentPaths` key nothing reads. It is keyed to the release that ships the new
  * schema for exactly that reason.
@@ -985,8 +988,8 @@ export function backfillSmartGroupKindDefaults(store: {
  * The mapping is total: every string in these arrays predates rooms in the
  * sidebar, so all of them ARE agent paths and none can be misread. Idempotent —
  * an entry that is already an object passes through untouched, a group that
- * already has `members` keeps it, and a run that finds nothing to convert writes
- * nothing. `agentPaths` is dropped rather than left beside `members`: the
+ * already has `items` keeps it, and a run that finds nothing to convert writes
+ * nothing. `agentPaths` is dropped rather than left beside `items`: the
  * generated JSON Schema closes each group object, so a leftover key would fail
  * validation on the first read after the migration.
  *
@@ -1005,10 +1008,14 @@ export function migrateSidebarMembersToItemRefs(store: {
   const s = sidebar as Record<string, unknown>;
   let changed = false;
 
-  /** Wrap each stored path; anything already an object is a ref and passes through. */
+  /**
+   * Wrap each stored path; anything already an object is a ref and passes
+   * through. Delegates to the shared {@link toSidebarItemRef} so this file and
+   * the read-time `normalizeSidebarPrefs` conversion state the rule once.
+   */
   const toItemRefs = (value: unknown): unknown[] =>
     (Array.isArray(value) ? value : []).map((entry) =>
-      typeof entry === 'string' ? { kind: 'agent', path: entry } : entry
+      toSidebarItemRef(entry as SidebarItemRef | string)
     );
   /** Whether a list still holds the pre-DOR-579 shape (and so needs converting). */
   const hasStringEntry = (value: unknown): boolean =>
@@ -1026,16 +1033,16 @@ export function migrateSidebarMembersToItemRefs(store: {
     next.groups = s.groups.map((g: unknown) => {
       if (!g || typeof g !== 'object') return g;
       const group = g as Record<string, unknown>;
-      if (!('agentPaths' in group) && !hasStringEntry(group.members)) return group;
+      if (!('agentPaths' in group) && !hasStringEntry(group.items)) return group;
       changed = true;
       const { agentPaths, ...rest } = group;
       return {
         ...rest,
-        // An existing `members` wins over a leftover `agentPaths`: only a config
+        // An existing `items` wins over a leftover `agentPaths`: only a config
         // written before DOR-579 carries the old key, so the two can never hold
-        // different truths, and preferring `members` keeps a re-run from
+        // different truths, and preferring `items` keeps a re-run from
         // resurrecting a list the person has since edited.
-        members: toItemRefs(group.members ?? agentPaths),
+        items: toItemRefs(group.items ?? agentPaths),
       };
     });
   }
@@ -1275,17 +1282,99 @@ export const CONFIG_MIGRATIONS = {
     backfillRoomsDefaults(store);
     // Convert `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member
     // list from agent-path strings to `SidebarItemRef` objects, renaming
-    // `groups[].agentPaths` -> `groups[].members` (sidebar-groups, DOR-579).
+    // `groups[].agentPaths` -> `groups[].items` (sidebar-groups, DOR-579).
     // Idempotent, but NOT additive: this is a rename, so an install that skips
-    // it reads `members` as the schema default `[]` and loses its groups. Runs
+    // it reads `items` as the schema default `[]` and loses its groups. Runs
     // after the sidebar backfills above so it sees the same `ui.sidebar` object
     // (order is otherwise immaterial — they touch disjoint fields).
     migrateSidebarMembersToItemRefs(store);
   },
 } as const;
 
+/**
+ * Widen the generated JSON Schema so conf's Ajv ACCEPTS a `ui.sidebar` written
+ * before DOR-579, instead of condemning the whole config file.
+ *
+ * ## Why this has to exist at all
+ *
+ * DOR-579 is the first change in this file's migration history that RENAMES a
+ * field rather than adding one. Every additive backfill degrades safely when its
+ * migration is skipped: the key is absent, a Zod default fills in, nothing
+ * breaks. A rename does not. Skipping it leaves `agentPaths` on a group object
+ * whose schema is now closed (`additionalProperties: false`), and bare path
+ * strings in `pinned`/`muted` where objects are now required — so a config that
+ * was valid yesterday becomes schema-INVALID, `new Conf(...)` throws, and the
+ * constructor's recovery path backs the file up and replaces it with defaults.
+ *
+ * That is not "the sidebar forgets its groups". It resets the ENTIRE file:
+ * telemetry consent (a privacy opt-out silently reverting to the opt-in
+ * defaults), `mesh.scanRoots`, `approvals`, `runtimes`, `cloud`, `onboarding`.
+ *
+ * And the migration is skipped more often than it sounds. `conf` runs a key only
+ * when `key > storedVersion && key <= projectVersion`, so: a dev tree resolves
+ * `SERVER_VERSION` to `0.0.0` and runs NO migrations at all, and shipping this
+ * schema in a patch release below the migration key would skip it for every
+ * user. Correctness must not hang on the migration running.
+ *
+ * ## Why it is here and not in the Zod schema
+ *
+ * Ajv is the ONLY validator on the config read path — nothing calls Zod on a
+ * stored object, and `z.toJSONSchema` emits a pipe's OUTPUT schema, so a Zod
+ * `.preprocess` would neither run nor widen what Ajv sees. Keying the widening
+ * off the schema identities here keeps the exported TypeScript types strict
+ * (`SidebarItemRef[]`, no legacy field), which is what makes the compiler
+ * enumerate every membership test, and keeps the legacy encoding out of the
+ * operator disclosure walker and the OpenAPI export — both of which build their
+ * own schema without this override.
+ *
+ * ## Removing it
+ *
+ * This is back-compat for ONE release: delete this function and its `override`
+ * once the DOR-579 migration has shipped, together with the read-time
+ * `normalizeSidebarPrefs` conversion. `'a config written before DOR-579 is not
+ * condemned'` in `__tests__/config-manager.test.ts` fails if it is removed
+ * early.
+ *
+ * @param ctx - The `z.toJSONSchema` override context for one schema node.
+ */
+function tolerateLegacySidebarEncoding(ctx: {
+  zodSchema: unknown;
+  jsonSchema: Record<string, unknown>;
+}): void {
+  // `pinned`, `muted` and `groups[].items` all held a bare agent projectPath.
+  if (ctx.zodSchema === SidebarItemRefSchema) {
+    ctx.jsonSchema.anyOf = [{ type: 'string', minLength: 1 }, { oneOf: ctx.jsonSchema.oneOf }];
+    delete ctx.jsonSchema.oneOf;
+    return;
+  }
+  // `groups[].items` was `groups[].agentPaths`; the group object is closed, so
+  // the retired key has to be named for Ajv to let it through.
+  if (ctx.zodSchema === SidebarGroupSchema) {
+    const properties = ctx.jsonSchema.properties as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (!properties) return;
+    properties.agentPaths = { type: 'array', items: { type: 'string' } };
+    // conf builds Ajv with `useDefaults`, so a declared `default` is WRITTEN IN
+    // during validation, and Zod marks a defaulted field `required` because its
+    // OUTPUT always has one. Left alone, an un-migrated group would gain an
+    // empty `items` before anything could read its `agentPaths`, and the
+    // read-time conversion — which treats a present `items` as authoritative —
+    // would hand back an empty group. Dropping both keeps "absent" meaning
+    // absent, so the conversion can tell the two encodings apart at all.
+    // `normalizeSidebarPrefs` supplies `[]` for a group that genuinely has
+    // neither, and the Zod default still applies wherever Zod parses.
+    delete properties.items?.default;
+    const required = ctx.jsonSchema.required;
+    if (Array.isArray(required)) {
+      ctx.jsonSchema.required = required.filter((key) => key !== 'items');
+    }
+  }
+}
+
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
+  override: tolerateLegacySidebarEncoding,
 }) as { properties?: Record<string, unknown> };
 const jsonSchemaProperties = jsonSchemaFull.properties ?? {};
 

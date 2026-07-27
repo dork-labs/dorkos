@@ -151,9 +151,9 @@ export const CONFIG_WRITE_POLICY = {
   // harmless only because every verdict below is `agent-writable`.
   'ui.sidebar.groups[].id': 'agent-writable',
   'ui.sidebar.groups[].name': 'agent-writable',
-  'ui.sidebar.groups[].members[].kind': 'agent-writable',
-  'ui.sidebar.groups[].members[].path': 'agent-writable',
-  'ui.sidebar.groups[].members[].roomId': 'agent-writable',
+  'ui.sidebar.groups[].items[].kind': 'agent-writable',
+  'ui.sidebar.groups[].items[].path': 'agent-writable',
+  'ui.sidebar.groups[].items[].roomId': 'agent-writable',
   'ui.sidebar.groups[].sortMode': 'agent-writable',
   'ui.sidebar.groups[].collapsed': 'agent-writable',
   'ui.sidebar.groups[].displayFilter': 'agent-writable',

@@ -126,9 +126,9 @@ export const CONFIG_DISCLOSURE = {
   // even if the guard were not watching.
   'ui.sidebar.groups[].id': 'expose',
   'ui.sidebar.groups[].name': 'expose',
-  'ui.sidebar.groups[].members[].kind': 'expose',
-  'ui.sidebar.groups[].members[].path': 'expose',
-  'ui.sidebar.groups[].members[].roomId': 'expose',
+  'ui.sidebar.groups[].items[].kind': 'expose',
+  'ui.sidebar.groups[].items[].path': 'expose',
+  'ui.sidebar.groups[].items[].roomId': 'expose',
   'ui.sidebar.groups[].sortMode': 'expose',
   'ui.sidebar.groups[].collapsed': 'expose',
   'ui.sidebar.groups[].displayFilter': 'expose',

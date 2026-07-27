@@ -192,7 +192,7 @@ function moveToGroupOp(
   if (group.kind === 'smart') return { kind: 'reject-smart-group', groupId, ref };
   let toIndex: number | null = null;
   if (group.sortMode === 'manual' && overRef !== undefined) {
-    const idx = indexOfRef(group.members, overRef);
+    const idx = indexOfRef(group.items, overRef);
     if (idx >= 0) toIndex = idx;
   }
   return { kind: 'move-to-group', ref, groupId, toIndex };
@@ -262,8 +262,8 @@ export function classifySidebarDrop(
     // Reorder within the same group — only when it is manually sorted.
     const group = prev.groups.find((g) => g.id === from.groupId);
     if (!group || group.sortMode !== 'manual' || overRef === undefined) return { kind: 'none' };
-    const fromIdx = indexOfRef(group.members, ref);
-    const toIdx = indexOfRef(group.members, overRef);
+    const fromIdx = indexOfRef(group.items, ref);
+    const toIdx = indexOfRef(group.items, overRef);
     if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return { kind: 'none' };
     return { kind: 'reorder-within-group', groupId: from.groupId, ref, from: fromIdx, to: toIdx };
   }
@@ -304,7 +304,7 @@ function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs
       const group = moved.groups.find((g) => g.id === op.groupId);
       if (!group) return moved;
       // `moveToGroup` appends the ref last; slot it at the requested index.
-      return reorderWithinGroup(moved, op.groupId, group.members.length - 1, op.toIndex);
+      return reorderWithinGroup(moved, op.groupId, group.items.length - 1, op.toIndex);
     }
   }
 }

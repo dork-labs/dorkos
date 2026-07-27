@@ -181,10 +181,30 @@ export const SidebarItemRefSchema = z.discriminatedUnion('kind', [
 export type SidebarItemRef = z.infer<typeof SidebarItemRefSchema>;
 
 /**
+ * Convert one STORED membership entry into a {@link SidebarItemRef}.
+ *
+ * A `ui.sidebar` written before DOR-579 holds bare agent `projectPath` strings
+ * in `pinned`, `muted` and each group's member list. Rooms did not exist in the
+ * sidebar then, so every such string IS an agent path and the mapping is total —
+ * there is no value that could be misread.
+ *
+ * This is the single statement of that rule. Both the read path
+ * ({@link normalizeSidebarPrefs}) and the config migration that rewrites the
+ * file go through it, so the two can never disagree about what a stored string
+ * means.
+ *
+ * @param entry - A stored entry: either a reference already, or a legacy path.
+ * @returns The entry as a reference; an existing reference passes through.
+ */
+export function toSidebarItemRef(entry: SidebarItemRef | string): SidebarItemRef {
+  return typeof entry === 'string' ? { kind: 'agent', path: entry } : entry;
+}
+
+/**
  * Whether two sidebar item references point at the same thing.
  *
  * A discriminated union has no structural identity, so every membership test
- * over `pinned` / `muted` / `groups[].members` needs this — `includes`,
+ * over `pinned` / `muted` / `groups[].items` needs this — `includes`,
  * `indexOf` and `===` all compare by object reference and would silently miss.
  * Do NOT substitute a `JSON.stringify` comparison: key order is not guaranteed
  * across the code paths that construct these.
@@ -231,10 +251,10 @@ const SidebarGroupShapeSchema = z.object({
    * `kind === 'smart'` (membership derives from `rules` instead); kept as-is
    * so "Convert to manual group" has somewhere to materialize into.
    */
-  members: z.array(SidebarItemRefSchema).default(() => []),
+  items: z.array(SidebarItemRefSchema).default(() => []),
   /**
    * How rows inside this group are ordered. Switching away from 'manual'
-   * never mutates members. Smart groups reject `'manual'` (see the
+   * never mutates items. Smart groups reject `'manual'` (see the
    * cross-field refine below) — derived membership has no hand-orderable
    * sequence.
    */
@@ -245,7 +265,7 @@ const SidebarGroupShapeSchema = z.object({
   /** Muted groups drop every attention signal for all members at once (DOR-339). */
   muted: z.boolean().default(false),
   /**
-   * Manual groups own `members`; smart groups derive membership from `rules`
+   * Manual groups own `items`; smart groups derive membership from `rules`
    * (smart-agent-groups, DOR-338). Additive discriminator — existing groups
    * default `'manual'`, zero migration risk.
    */
@@ -317,6 +337,71 @@ export type SidebarPrefs = z.infer<typeof SidebarPrefsSchema>;
  * always renders even before the first user write).
  */
 export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = SidebarPrefsSchema.parse({});
+
+/**
+ * One group as it may actually sit on disk before the DOR-579 migration runs.
+ *
+ * The declared {@link SidebarGroup} type says `items` is present and holds
+ * references. A file written by an earlier release says otherwise, and this
+ * type is where that gap is stated out loud instead of being cast away.
+ */
+interface StoredSidebarGroup extends Omit<SidebarGroup, 'items'> {
+  items?: readonly (SidebarItemRef | string)[];
+  /** Pre-DOR-579 name for `items`, holding bare agent paths. */
+  agentPaths?: readonly string[];
+}
+
+/**
+ * Convert one stored membership list, preserving identity when there is nothing
+ * to convert (so an already-canonical prefs object is returned unchanged).
+ */
+function normalizeItemList(list: readonly (SidebarItemRef | string)[]): SidebarItemRef[] {
+  return list.some((entry) => typeof entry === 'string')
+    ? list.map(toSidebarItemRef)
+    : (list as SidebarItemRef[]);
+}
+
+/**
+ * Bring a stored `ui.sidebar` into the canonical shape: every membership entry a
+ * {@link SidebarItemRef}, and each group's members under `items`.
+ *
+ * **Read-time conversion exists so correctness never depends on the migration
+ * having run.** `conf` only runs a migration when its key is in
+ * `(storedVersion, projectVersion]`, so the DOR-579 rewrite is skipped whenever
+ * the app version does not land in that window — most visibly in a dev tree,
+ * where the version resolves to `0.0.0` and no migration runs at all. Without
+ * this, those installs would read `items` as the schema default `[]` and show
+ * empty groups. The migration still runs where it can; it cleans the file up,
+ * and this keeps behaviour correct until it does.
+ *
+ * Returns `stored` itself when it is already canonical, so callers can rely on
+ * referential equality to skip work.
+ *
+ * @param stored - The sidebar prefs as read from config, in either encoding.
+ * @returns Canonical prefs.
+ */
+export function normalizeSidebarPrefs(stored: SidebarPrefs): SidebarPrefs {
+  const pinned = normalizeItemList(stored.pinned);
+  const muted = normalizeItemList(stored.muted);
+
+  let groupsChanged = false;
+  const groups = stored.groups.map((group) => {
+    const legacy = group as StoredSidebarGroup;
+    // An existing `items` wins over a leftover `agentPaths`: only a file written
+    // before DOR-579 carries the old key, so the two can never hold different
+    // truths, and preferring `items` keeps a half-migrated file from
+    // resurrecting a list the person has since edited.
+    const source = legacy.items ?? legacy.agentPaths ?? [];
+    const items = normalizeItemList(source);
+    if (items === legacy.items && legacy.agentPaths === undefined) return group;
+    groupsChanged = true;
+    const { agentPaths: _legacyKey, ...rest } = legacy;
+    return { ...rest, items } as SidebarGroup;
+  });
+
+  if (pinned === stored.pinned && muted === stored.muted && !groupsChanged) return stored;
+  return { ...stored, pinned, muted, groups };
+}
 
 /**
  * Person-scoped Shape state (`ui.shapes`, DOR-355). Holds the currently-applied
