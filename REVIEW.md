@@ -174,6 +174,44 @@ directly is downstream of every decision the route made — including, on
 DOR-526, the one that was wrong. **The seam an exploit uses is often the seam no
 test crosses.**
 
+## Cross the seam
+
+The single highest-yield move in this repo's reviews, measured over one day of
+them: **stop reading the diff and drive the real thing.**
+
+On DOR-579 the diff read clean, every test was green, and the migration was
+correct — when it ran. Booting a real `ConfigManager` over a real prior-shape
+`config.json` showed it **destroying the entire config file**, silently reverting
+a telemetry opt-out to opt-in. On DOR-571 the picker's logic read fine; driving
+it with a typo and pressing Enter opened the wrong conversation. On DOR-583 the
+JSX looked correct; Chromium's accessibility tree announced the channel name
+twice.
+
+None of those was visible by reading, and none needed cleverness — only
+executing the thing at the boundary a user actually reaches it from.
+
+Concretely, prefer in this order:
+
+1. **Drive the real component or class** over asserting on a mock. A mock store
+   cannot fail the way `conf` + Ajv fails; `UserConfigSchema.parse` cannot
+   substitute for it, because **Zod strips unknown keys where Ajv rejects them**.
+2. **Read the browser's accessibility tree**, not the JSX, for any naming or
+   labelling claim. jsdom loads no CSS and never blockifies flex children, so
+   accessible names differ between it and a real browser.
+3. **Reproduce the user's sequence**, not the unit's contract — switch rooms
+   mid-flight, type a typo, remove the item you had highlighted.
+
+And when a claim rests on a stored field being populated, **query the data**.
+DOR-570 shipped an avatar unification on the premise that `AuthorRef` carries the
+agent's emoji. The wiring was correct end to end and the feature was inert:
+4 of 24 agents had one stored. An author, an adversarial reviewer, and the
+orchestrator all confirmed the premise from the schema. A screenshot found it in
+seconds.
+
+**Calibration, worth knowing when weighing your own verdict:** on both PRs above,
+this repo's automated review returned "0 important, 0 nits". Nothing in those
+verdicts was wrong on its face. They just never crossed the seam.
+
 ## Verification bar
 
 Behavior claims need a `file:line` citation in the diff or surrounding code, not
