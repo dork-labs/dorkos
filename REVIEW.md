@@ -137,6 +137,43 @@ This is mechanical and cheap. Run it before concluding a deletion PR is clean.
 - `*.md`, `docs/**`, `contributing/**`: in-scope for the dangling-reference sweep;
   stale internal links are findings.
 
+## A passing test is not evidence the test works
+
+A green suite tells you the assertions held. It does not tell you they would have
+failed. Those are different claims, and the gap between them is where real
+defects live — three separate times on one PR (DOR-526), a **passing test was
+certifying a bug**:
+
+- a test asserting an untriggered post starts a fresh cascade, which was the
+  exact hole a fix had left open — so the suite pinned the bug in as intended
+  behavior;
+- `expect(notices.length).toBeGreaterThan(0)`, satisfied by a _different_
+  agent's notice than the one whose loss was the bug;
+- `expect(turns.length).toBeGreaterThan(2)` where the answer was knowably
+  exactly 3.
+
+None of these is visible by reading the diff. All three are visible in seconds
+by changing the code.
+
+So when a PR's correctness rests on a test — a guard, a limit, a security
+boundary, a race — do not report "covered". **Revert the fix and confirm the
+intended tests go red, and nothing else does.** A fix whose removal breaks
+nothing is untested; a fix whose removal breaks twenty things has a test that
+is measuring something else.
+
+Two smells worth naming, both of which produce green suites over broken code:
+
+- **A bound where a number is knowable.** `toBeGreaterThan(2)` passes for 3 and
+  for 300. If the shape under test yields exactly N, assert N.
+- **An assertion satisfied by the wrong subject.** "Some notice exists" is not
+  "this agent's notice exists"; "a row was written" is not "this row was
+  written". Name the subject.
+
+Also check _where_ a test enters the system. A test that calls a service method
+directly is downstream of every decision the route made — including, on
+DOR-526, the one that was wrong. **The seam an exploit uses is often the seam no
+test crosses.**
+
 ## Verification bar
 
 Behavior claims need a `file:line` citation in the diff or surrounding code, not

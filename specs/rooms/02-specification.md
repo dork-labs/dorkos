@@ -353,6 +353,26 @@ Run the REVIEW.md dangling-reference sweep over `docs/`, `contributing/` and `*.
 
 ---
 
+## 8.5 Open decision — sessions and DMs overlap, and someone has to choose
+
+**Not settled. Needs a product call after R3, when there is evidence rather than argument.**
+
+After R2 the sidebar reads: Recent (sessions) → Channels → Direct messages → Pinned → agent groups → Agents. So a DM with Ana and a session with Ana both exist, and both read as "my conversation with Ana." Two lists meaning nearly the same thing is the duplication that should be removed rather than shipped.
+
+The distinction that survives scrutiny is:
+
+> **A session is about a directory. A DM is about a participant.**
+
+A session is bound to a working tree — "work with Ana on `~/projects/api`". A DM has no tree of its own; Ana works wherever Ana lives, via her workspace binding.
+
+**Recommendation:** make that distinction deliberate rather than accidental. **Channels and DMs are where you talk; sessions are where work happens against a specific tree; promotion is the bridge** — the same "make this a branch" escalation threads already have in A′-policy. Over time Recent stops meaning "conversations" and starts meaning "work in progress."
+
+**The alternative** is that a DM turns out to be just "a session where you didn't have to pick a directory," in which case the two should converge and one should go.
+
+Nothing could post in a room before R3, so there was no evidence to decide on. There is now. **The outcome to avoid is shipping both permanently without deciding, which is what happens by default.**
+
+---
+
 ## 9. Explicitly out of scope
 
 - **Room-workspace cwd resolution.** `rooms.workspaceId` is stored and returned; how it composes with the `agent-workspace-binding` precedence chain belongs to that spec.
