@@ -70,6 +70,7 @@ describe('type-consolidation', () => {
       token: 'bot123:token',
       mode: 'polling',
       streaming: true,
+      approverAllowlist: [],
     };
     const shared: SharedTelegramAdapterConfig = config;
     expect(shared.token).toBe('bot123:token');

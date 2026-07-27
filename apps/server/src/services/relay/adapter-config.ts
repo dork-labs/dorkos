@@ -14,6 +14,139 @@ import type { AdapterConfig } from '@dorkos/relay';
 import { AdaptersConfigFileSchema } from '@dorkos/shared/relay-schemas';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
+import { carryForwardAdapterDefaults, warnOnOpenDmPolicy } from './safe-defaults.js';
+import { AdapterError } from './adapter-error.js';
+import { toIdList } from '@dorkos/relay';
+import {
+  AdapterConfigSchema,
+  SlackAdapterConfigSchema,
+  TelegramAdapterConfigSchema,
+  WebhookAdapterConfigSchema,
+} from '@dorkos/shared/relay-schemas';
+
+/**
+ * The schema that owns each adapter type's `config` block.
+ *
+ * `plugin` and `claude-code` are deliberately absent: a plugin's config shape is
+ * the plugin's business, so it keeps the permissive treatment.
+ */
+const CONFIG_SCHEMA_BY_TYPE = {
+  slack: SlackAdapterConfigSchema,
+  telegram: TelegramAdapterConfigSchema,
+  webhook: WebhookAdapterConfigSchema,
+} as const;
+
+/** The adapter entry minus its `config`, which is validated by type below. */
+const AdapterEnvelopeSchema = AdapterConfigSchema.omit({ config: true });
+
+/** Config keys sent as one entry per line by a `textarea`, stored as arrays. */
+const ID_LIST_FIELDS = new Set(['dmAllowlist', 'approverAllowlist']);
+
+/** Config keys sent as JSON text by a `textarea`, stored as objects. */
+const JSON_OBJECT_FIELDS = new Set(['channelOverrides']);
+
+/**
+ * Translate a setup-form payload into the shape the adapter schemas describe.
+ *
+ * The form seeds every untouched field with `''` and sends a `textarea` as text
+ * (`use-adapter-setup-form.ts`), so the wizard's own payload does not match the
+ * strict schemas. Rather than loosening the schemas — which cost them their
+ * literal types, and which would spread form concerns into the contract — the
+ * translation happens here, at the one boundary that receives form data.
+ *
+ * Dropping an empty string is what lets `.default()` fire for it: `.default()`
+ * only replaces `undefined`, so `''` used to survive as itself. That mattered
+ * most for `dmPolicy`, where `''` was neither nullish enough for the adapter's
+ * `?? 'allowlist'`, equal enough for the DM gate's `=== 'allowlist'`, nor equal
+ * enough for the warning's `=== 'open'` — open, and silent about it.
+ *
+ * @param config - The raw `config` block as the caller sent it.
+ * @returns The same config with form shapes resolved.
+ */
+function normalizeFormConfig(config: unknown): unknown {
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) return config;
+
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+    if (ID_LIST_FIELDS.has(key)) {
+      normalized[key] = toIdList(value);
+    } else if (JSON_OBJECT_FIELDS.has(key)) {
+      normalized[key] = toJsonObject(value);
+    } else if (value !== '') {
+      // An untouched form field arrives as `''`; leaving it out lets the
+      // schema's own default apply instead of persisting the blank.
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+}
+
+/** Read a JSON-object field that may arrive as text from a textarea. */
+function toJsonObject(value: unknown): unknown {
+  if (typeof value !== 'string') return value ?? {};
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Validate an adapter entry against **its own type's** schema before it reaches
+ * disk, materializing every default it declares.
+ *
+ * ## Why this cannot go through `AdapterConfigSchema` alone
+ *
+ * That schema's `config` is a union whose last arm is
+ * `z.record(z.string(), z.unknown())` — a catch-all that accepts any object and
+ * materializes nothing. So a config that failed the Slack arm did not fail at
+ * all; it fell through and persisted verbatim, which is the pre-fix behaviour
+ * with an extra step. A Slack integration would then load with no `dmPolicy`,
+ * be read as "written before the field existed", and get carried back to
+ * `'open'` (DOR-604 review).
+ *
+ * The union is also order-sensitive: a Slack config carrying a `token` key
+ * matched the Telegram arm first and had its `botToken`/`appToken`/
+ * `signingSecret` **stripped** on the way to disk. Selecting the schema by
+ * `type` removes that branch entirely.
+ *
+ * So the rule is: a Slack entry is validated by the Slack schema or it is
+ * refused. Nothing is silently swallowed. {@link normalizeFormConfig} runs first
+ * so the setup form's own payload — blanks and textareas — reaches the schema in
+ * the shape it describes, which is what makes refusal mean "genuinely broken"
+ * rather than "merely form-shaped".
+ *
+ * @param entry - The adapter entry about to be persisted.
+ * @returns The parsed entry, with every schema default materialized.
+ * @throws AdapterError `INVALID_CONFIG` when the entry does not hold.
+ */
+export function parseAdapterConfigForPersist(entry: Record<string, unknown>): AdapterConfig {
+  const envelope = AdapterEnvelopeSchema.safeParse(entry);
+  if (!envelope.success) {
+    throw new AdapterError(
+      `Invalid adapter entry: ${z.prettifyError(envelope.error)}`,
+      'INVALID_CONFIG'
+    );
+  }
+
+  const schema = CONFIG_SCHEMA_BY_TYPE[envelope.data.type as keyof typeof CONFIG_SCHEMA_BY_TYPE] as
+    | z.ZodType
+    | undefined;
+  if (!schema) {
+    return { ...envelope.data, config: entry.config } as AdapterConfig;
+  }
+
+  const config = schema.safeParse(normalizeFormConfig(entry.config));
+  if (!config.success) {
+    throw new AdapterError(
+      `Invalid ${envelope.data.type} configuration: ${z.prettifyError(config.error)}`,
+      'INVALID_CONFIG'
+    );
+  }
+  return { ...envelope.data, config: config.data } as AdapterConfig;
+}
 
 /** Chokidar stability threshold before triggering hot-reload (ms). */
 const CONFIG_STABILITY_THRESHOLD_MS = 150;
@@ -87,8 +220,11 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
     // (defense in depth) without waiting for the next save.
     await repairAdapterConfigPermissions(configPath);
     const sanitized = stripRemovedAdapterTypes(JSON.parse(raw));
-    const parsed = AdaptersConfigFileSchema.safeParse(sanitized);
+    // Stamp legacy entries before any schema default can fire — once
+    // `SlackAdapterConfigSchema` applies its own default the old value is gone.
+    const parsed = AdaptersConfigFileSchema.safeParse(carryForwardAdapterDefaults(sanitized));
     if (parsed.success) {
+      warnOnOpenDmPolicy(parsed.data.adapters);
       return parsed.data.adapters;
     } else {
       logger.warn(

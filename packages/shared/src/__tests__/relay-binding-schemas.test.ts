@@ -53,10 +53,12 @@ describe('AdapterBindingSchema', () => {
     expect(parsed.canReceive).toBe(true);
   });
 
-  it('defaults permissionMode to acceptEdits when omitted', () => {
+  // DOR-604: a binding carries messages from off this machine, so one nobody
+  // configured runs in the prompting mode rather than auto-accepting.
+  it('defaults permissionMode to the prompting mode when omitted', () => {
     const { permissionMode: _pm, ...withoutMode } = validBinding;
     const parsed = AdapterBindingSchema.parse(withoutMode);
-    expect(parsed.permissionMode).toBe('acceptEdits');
+    expect(parsed.permissionMode).toBe('default');
   });
 
   it('accepts all valid permission modes', () => {
@@ -118,7 +120,7 @@ describe('CreateBindingRequestSchema', () => {
     const parsed = CreateBindingRequestSchema.parse(input);
     expect(parsed.sessionStrategy).toBe('per-chat');
     expect(parsed.label).toBe('');
-    expect(parsed.permissionMode).toBe('acceptEdits');
+    expect(parsed.permissionMode).toBe('default');
     expect(parsed.enabled).toBe(true);
     expect(parsed.canInitiate).toBe(false);
     expect(parsed.canReply).toBe(true);

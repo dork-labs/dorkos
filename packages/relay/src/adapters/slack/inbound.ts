@@ -519,6 +519,13 @@ export async function handleInboundMessage(
   if (isDm && options?.dmPolicy === 'allowlist') {
     const allowlist = options.dmAllowlist ?? [];
     if (!allowlist.includes(event.user ?? '')) {
+      // Every other skip path here logs; this one used to drop the message in
+      // silence, which is indistinguishable from the bot being broken. An empty
+      // allowlist is the common case right after setup, so say so (DOR-604).
+      logger.debug(
+        `inbound skipped: DM from ${event.user ?? 'unknown'} is not on the DM allowlist` +
+          (allowlist.length === 0 ? ' (the allowlist is empty — no one can DM this bot yet)' : '')
+      );
       return;
     }
   }

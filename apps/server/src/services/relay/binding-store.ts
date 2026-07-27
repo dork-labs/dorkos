@@ -20,6 +20,7 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
+import { carryForwardBindingDefaults } from './safe-defaults.js';
 
 /** Loose file schema — validates structure but not individual entries. */
 const BindingsFileShellSchema = z.object({
@@ -190,7 +191,9 @@ export class BindingStore {
   private async load(): Promise<void> {
     try {
       const raw = await readFile(this.filePath, 'utf-8');
-      const json = JSON.parse(raw) as unknown;
+      // Stamp legacy entries before any schema default can fire — once
+      // `AdapterBindingSchema` applies its own default the old value is gone.
+      const json = carryForwardBindingDefaults(JSON.parse(raw) as unknown);
       const shell = BindingsFileShellSchema.safeParse(json);
       if (!shell.success) {
         logger.error('bindings.json has invalid structure, starting with empty bindings');

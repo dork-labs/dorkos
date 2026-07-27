@@ -201,3 +201,6 @@ export type {
   AdapterPluginModule,
   LoadedAdapter,
 } from './adapter-plugin-loader.js';
+
+// Approver authorization for chat-platform tool approvals (DOR-609)
+export { mayApprove, toIdList } from './adapters/approver-allowlist.js';

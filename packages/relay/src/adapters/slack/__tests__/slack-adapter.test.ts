@@ -24,15 +24,22 @@ const mockAppStop = vi.fn().mockResolvedValue(undefined);
 const mockAuthTest = vi.fn().mockResolvedValue({ user_id: 'U_BOT', user: 'dorkos_bot' });
 const mockPostMessage = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
 const mockChatUpdate = vi.fn().mockResolvedValue({ ts: 'msg-ts-1' });
+const mockPostEphemeral = vi.fn().mockResolvedValue({ ok: true });
 let capturedMessageHandler: ((args: Record<string, unknown>) => Promise<void>) | null = null;
 let capturedMentionHandler: ((args: Record<string, unknown>) => Promise<void>) | null = null;
 let capturedErrorHandler: ((error: Error) => Promise<void>) | null = null;
+/** Bolt action handlers by `action_id` — how the approve/deny buttons are driven. */
+const capturedActionHandlers = new Map<string, (args: Record<string, unknown>) => Promise<void>>();
 
 vi.mock('@slack/bolt', () => {
   class MockApp {
     client = {
       auth: { test: mockAuthTest },
-      chat: { postMessage: mockPostMessage, update: mockChatUpdate },
+      chat: {
+        postMessage: mockPostMessage,
+        update: mockChatUpdate,
+        postEphemeral: mockPostEphemeral,
+      },
     };
 
     message(handler: (args: Record<string, unknown>) => Promise<void>) {
@@ -43,8 +50,8 @@ vi.mock('@slack/bolt', () => {
       if (eventName === 'app_mention') capturedMentionHandler = handler;
     }
 
-    action(_actionId: string, _handler: (args: Record<string, unknown>) => Promise<void>) {
-      // no-op for tests — action handlers tested via integration tests
+    action(actionId: string, handler: (args: Record<string, unknown>) => Promise<void>) {
+      capturedActionHandlers.set(actionId, handler);
     }
 
     error(handler: (error: Error) => Promise<void>) {
@@ -77,6 +84,7 @@ describe('SlackAdapter', () => {
     capturedMessageHandler = null;
     capturedMentionHandler = null;
     capturedErrorHandler = null;
+    capturedActionHandlers.clear();
     adapter = new SlackAdapter(
       'slack-1',
       slackConfig({
@@ -419,6 +427,109 @@ describe('SlackAdapter', () => {
     it('typingIndicator description mentions enabled by default', () => {
       const field = fieldByKey('typingIndicator')!;
       expect(field.description).toContain('Enabled by default');
+    });
+  });
+
+  /**
+   * DOR-609. The approval card is posted into the conversation that asked for
+   * the turn, so without this gate the person who sent the triggering message
+   * could approve their own tool call with one tap. `respondedBy` recorded who
+   * acted; nothing decided who may.
+   */
+  describe('approval authorization', () => {
+    const BUTTON_VALUE = JSON.stringify({
+      toolCallId: 'toolu_1',
+      sessionId: 'sess-1',
+      agentId: 'agent-1',
+    });
+
+    /** Start the adapter and press Approve as `userId`. */
+    async function pressApproveAs(userId: string, config?: SlackAdapterConfig) {
+      if (config) {
+        await adapter.stop().catch(() => {});
+        adapter = new SlackAdapter('slack-1', config);
+      }
+      await adapter.start(mockRelay);
+      vi.mocked(mockRelay.publish).mockClear();
+
+      const handler = capturedActionHandlers.get('tool_approve');
+      expect(handler).toBeDefined();
+      const ack = vi.fn().mockResolvedValue(undefined);
+      await handler!({
+        ack,
+        action: { value: BUTTON_VALUE },
+        body: {
+          user: { id: userId },
+          channel: { id: 'C_GENERAL' },
+          message: { ts: 'msg-ts-1' },
+        },
+        client: {
+          chat: {
+            postMessage: mockPostMessage,
+            update: mockChatUpdate,
+            postEphemeral: mockPostEphemeral,
+          },
+        },
+      });
+      return { ack };
+    }
+
+    const withApprovers = (approvers: string[]) =>
+      slackConfig({
+        botToken: 'xoxb-test-token',
+        appToken: 'xapp-test-token',
+        signingSecret: 'test-signing-secret',
+        approverAllowlist: approvers,
+      });
+
+    it('refuses a user who is not on the approver list', async () => {
+      await pressApproveAs('U_ATTACKER', withApprovers(['U_OPERATOR']));
+
+      expect(mockRelay.publish).not.toHaveBeenCalled();
+      expect(mockChatUpdate).not.toHaveBeenCalled();
+      expect(mockPostEphemeral).toHaveBeenCalledWith(
+        expect.objectContaining({ user: 'U_ATTACKER' })
+      );
+    });
+
+    it('refuses everyone when no approver list is configured', async () => {
+      await pressApproveAs('U_OPERATOR');
+
+      expect(mockRelay.publish).not.toHaveBeenCalled();
+      expect(mockChatUpdate).not.toHaveBeenCalled();
+    });
+
+    it('lets a named approver through', async () => {
+      await pressApproveAs('U_OPERATOR', withApprovers(['U_OPERATOR']));
+
+      expect(mockRelay.publish).toHaveBeenCalledWith(
+        'relay.system.approval.agent-1',
+        expect.objectContaining({
+          type: 'approval_response',
+          toolCallId: 'toolu_1',
+          approved: true,
+          respondedBy: 'U_OPERATOR',
+          platform: 'slack',
+        }),
+        { from: 'slack:U_OPERATOR' }
+      );
+    });
+
+    it('refuses a deny from an unauthorized user too', async () => {
+      await adapter.stop().catch(() => {});
+      adapter = new SlackAdapter('slack-1', withApprovers(['U_OPERATOR']));
+      await adapter.start(mockRelay);
+      vi.mocked(mockRelay.publish).mockClear();
+
+      const ack = vi.fn().mockResolvedValue(undefined);
+      await capturedActionHandlers.get('tool_deny')!({
+        ack,
+        action: { value: BUTTON_VALUE },
+        body: { user: { id: 'U_ATTACKER' }, channel: { id: 'C1' }, message: { ts: 't1' } },
+        client: { chat: { update: mockChatUpdate, postEphemeral: mockPostEphemeral } },
+      });
+
+      expect(mockRelay.publish).not.toHaveBeenCalled();
     });
   });
 });
