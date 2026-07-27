@@ -226,7 +226,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
           // list takes whatever is left, which on a phone is most of the screen
           // and in the desktop panel is capped so the panel stays a panel.
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="border-input focus-within:ring-ring flex shrink-0 flex-wrap items-center gap-1 rounded-md border px-2 py-1.5 focus-within:ring-2 md:px-1.5 md:py-1">
+            <div className="border-input focus-within:ring-ring flex shrink-0 flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 focus-within:ring-2 md:gap-1 md:px-1.5 md:py-1">
               {chosen.map((candidate) => (
                 <span
                   key={candidate.agentPath}
@@ -241,12 +241,19 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                       inputRef.current?.focus();
                     }}
                     className={cn(
-                      'hover:bg-background focus-visible:ring-ring relative rounded-sm p-1 outline-hidden focus-visible:ring-2 md:p-0.5',
-                      // A chip cannot hold a 44px button, so the target grows
-                      // instead of the glyph — the pattern `SidebarGroupAction`
-                      // already uses. Off above the breakpoint, where a pointer
-                      // is precise and neighbours are close together.
-                      'after:absolute after:-inset-3 md:after:hidden'
+                      'hover:bg-background focus-visible:ring-ring relative rounded-sm p-2 outline-hidden focus-visible:ring-2 md:p-0.5',
+                      // Most of the touch target is real size (30px), and the
+                      // invisible part is deliberately smaller than the dead
+                      // space around it: 6px sideways into the 12px between
+                      // this button and whatever is next (`pr-1` + the row's
+                      // `gap-2`), 4px down into the 12px above the next wrapped
+                      // row. An earlier version reached 12px in every direction
+                      // and ate into the FIELD — sampling its box at 390x844
+                      // found 1.9% of it stolen at two chips and 10.6% at six,
+                      // and a tap there focused the field and silently deleted
+                      // an agent. `SidebarGroupAction` gets away with a bare
+                      // outset because nothing interactive sits next to it.
+                      'after:absolute after:-inset-x-1.5 after:-inset-y-1 md:after:hidden'
                     )}
                   >
                     <X className="size-3.5 md:size-3" />
