@@ -82,8 +82,9 @@ function openPicker(): void {
   fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
 }
 
-function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSection>[0]> = {}) {
-  return render(
+/** The section with everything defaulted, so a test names only what it varies. */
+function section(overrides: Partial<Parameters<typeof DirectMessagesSection>[0]> = {}) {
+  return (
     <DirectMessagesSection
       dms={[]}
       isLoading={false}
@@ -92,9 +93,14 @@ function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSectio
       activeRoomId={null}
       onSelectRoom={vi.fn()}
       {...overrides}
-    />,
-    { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> }
+    />
   );
+}
+
+function renderSection(overrides: Partial<Parameters<typeof DirectMessagesSection>[0]> = {}) {
+  return render(section(overrides), {
+    wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider>,
+  });
 }
 
 beforeEach(() => {
@@ -282,6 +288,35 @@ describe('DirectMessagesSection', () => {
 
     expect(screen.getByRole('button', { name: 'Remove Bo' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Remove Ana' })).not.toBeInTheDocument();
+  });
+
+  it('does nothing on Enter when the agent it was aimed at has left the roster', () => {
+    // A mesh rebuild can take an agent out from under an open picker. The aim
+    // then points at nobody, which everywhere else falls harmlessly through to
+    // the first match — but on an empty field that fall-through is the rung
+    // that OPENS the conversation, so "aimed at somebody who is gone" would be
+    // indistinguishable from "never aimed at anyone" at the one gate that acts.
+    const { rerender } = renderSection({
+      displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' },
+    });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { name: 'Bo' })).toHaveAttribute('aria-selected', 'true');
+
+    rerender(section({ displayNames: { '/repo/ana': 'Ana', '/repo/cy': 'Cy' } }));
+    // Cy is still offerable, so this is a vanished AIM and not an empty list.
+    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Cy']);
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(mockStart).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+    // Aiming again is all it takes to recover — nothing is stuck.
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(screen.getByRole('button', { name: 'Remove Cy' })).toBeInTheDocument();
   });
 
   it('drops a highlight that Backspace took off the list rather than sliding it', () => {

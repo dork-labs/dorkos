@@ -44,16 +44,23 @@ interface NewDirectMessageMenuProps {
  * already had a DM — now lives on the server, which matches a direct message on
  * its exact member set and answers with the one you already have.
  *
- * The keyboard is the whole interaction:
+ * The keyboard is the whole interaction, and Enter does one of exactly three
+ * things. All three are worth stating in full, because every bug this component
+ * has had was two of them collapsing into each other:
  *
- * - **Enter** adds the highlighted agent when there is one. With an EMPTY field
- *   and nothing highlighted it opens the conversation instead, so `an` `⏎` `ka`
- *   `⏎` `⏎` assembles a group and opens it without touching the mouse.
- * - **Enter on a query that matches nothing does nothing at all.** It is the one
- *   case worth stating twice: "open the conversation" is gated on the field
- *   being empty, never on "no agent is highlighted". Typing `Kia` for Kai and
- *   pressing Enter to try again must not open the half-assembled conversation
- *   and throw away the rest of it.
+ * 1. **An agent is highlighted** → add it. So `an` `⏎` `ka` `⏎` `⏎` assembles a
+ *    group and opens it without touching the mouse.
+ * 2. **Nothing is highlighted, the field is empty, and nobody was pointed at**
+ *    → open the conversation. All three, not just the first: "open this" is the
+ *    only branch that acts on its own, so it answers only to a reader who has
+ *    asked for nothing else.
+ * 3. **Anything else** → nothing at all. That covers a query nobody matches
+ *    (typing `Kia` for Kai and pressing Enter to try again must not open the
+ *    half-assembled conversation and throw the rest away) and a highlight whose
+ *    agent has since left the list — a mesh rebuild can do that under an open
+ *    picker, and "aimed at somebody who is gone" must not read as "aimed at
+ *    nobody" at the one gate where the difference costs an action.
+ *
  * - **Backspace** on an empty field takes back the last agent picked.
  * - **↓ / ↑** move the highlight; **Escape** closes without opening anything.
  *
@@ -136,10 +143,14 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
     if (event.key === 'Enter') {
       event.preventDefault();
       if (active) add(active);
-      // Gated on the FIELD being empty, not on "nothing is highlighted". A
-      // query nobody matches leaves the reader mid-correction, and opening the
-      // conversation under them would discard everyone else they had picked.
-      else if (!needle) commit();
+      // Three conditions, none of them redundant. `!needle` keeps a query
+      // nobody matches from opening the conversation under a reader who is
+      // mid-correction. `!aimedAt` keeps a highlight whose agent has since left
+      // the list — a mesh rebuild can do that under an open picker — from
+      // reading as "nobody was ever pointed at". Everywhere else a vanished aim
+      // is harmless, because it falls through to the first match or goes inert;
+      // this is the only rung that turns it into an action.
+      else if (!needle && !aimedAt) commit();
       return;
     }
     if (event.key === 'Backspace' && query === '' && chosen.length > 0) {
