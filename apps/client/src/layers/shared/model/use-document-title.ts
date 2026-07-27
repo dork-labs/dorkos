@@ -46,12 +46,21 @@ interface BuildTitleOpts {
  *
  * Three shapes, in priority order:
  *
- * 1. **A room** — `(2) #general — DorkOS`. Status prefixes stay behind with the
- *    session: `🔔 #general` would read as the channel wanting you, when what is
- *    waiting is a session you are not looking at. The badge still carries that.
+ * 1. **A room** — `(2) 🔔 #general — DorkOS`.
  * 2. **A session** — `(2) 🔔 🐧 apps — Running tests — DorkOS`, unchanged.
  * 3. **Neither** — the bare product name, still badged, because a backgrounded
  *    tab parked on `/agents` should say that a room wants you.
+ *
+ * The status prefix rides shapes 1 and 2 alike. `🔔` means "an agent is blocked
+ * on you", which is the highest-priority signal in the product and does not stop
+ * being true because you navigated to a channel — and nothing else carries it,
+ * since `useFavicon` takes only `{ cwd, isStreaming, color }`. Dropping it on
+ * `/channels` meant an agent stuck on a permission prompt showed up nowhere at
+ * all while you were reading a room. It reads as a flag, not as an adjective on
+ * the name: the badge already sits outside the prefix in shape 2, so `(2) 🔔 `
+ * has always been the tab's status column rather than part of the label.
+ *
+ * Shape 3 stays prefix-free: with no `cwd` there is no session to be waiting.
  */
 function buildTitle({
   cwd,
@@ -64,7 +73,7 @@ function buildTitle({
   isTabHidden,
 }: BuildTitleOpts): string {
   const badgePrefix = isTabHidden && badgeCount > 0 ? `(${badgeCount}) ` : '';
-  if (roomTitle) return `${badgePrefix}${roomTitle}${SUFFIX}`;
+  if (roomTitle) return `${badgePrefix}${prefix}${roomTitle}${SUFFIX}`;
   if (!cwd) return `${badgePrefix}DorkOS`;
 
   const emoji = agentEmoji ?? hashToEmoji(cwd);
@@ -89,6 +98,15 @@ function buildTitle({
  * the session — and, while it is backgrounded, how many things are waiting.
  * Tasks and unread rooms share that one `(N)`: they are both "something wants
  * you", and two separate counters in a browser tab is noise, not information.
+ *
+ * One knock-on worth stating, because it is the only behaviour change outside
+ * the cockpit: with no `cwd` the title used to be an unconditional `'DorkOS'`,
+ * and is now `'(N) DorkOS'` when something is waiting and the surface is
+ * hidden. That path is the Obsidian embed (`App.tsx`, which always passes
+ * `cwd: null`), so a minimised Obsidian window now counts pending tasks in its
+ * title where it previously said nothing. That is the badge doing its job on a
+ * surface that never had one, not a regression — but it was not asked for, so
+ * it is written down rather than left to be discovered.
  */
 export function useDocumentTitle({
   cwd,
@@ -168,8 +186,8 @@ export function useDocumentTitle({
 
   // Build title (runs on all relevant state changes)
   useEffect(() => {
-    // Compute prefix (priority: 🔔 > 🏁 > none). Only the session title wears
-    // one; `buildTitle` drops it for the other two shapes.
+    // Compute prefix (priority: 🔔 > 🏁 > none). A room title wears it too;
+    // only the bare-product shape, which has no session behind it, does not.
     let prefix = '';
     if (isWaitingForUser) {
       prefix = '🔔 ';

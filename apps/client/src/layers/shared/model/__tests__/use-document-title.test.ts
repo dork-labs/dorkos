@@ -417,7 +417,7 @@ describe('the room on screen', () => {
     expect(document.title).toBe('#general — DorkOS');
   });
 
-  it('leaves 🔔 with the session, which is the thing actually waiting', () => {
+  it('still shows 🔔 while you are reading a room', () => {
     renderHook(() =>
       useDocumentTitle({
         cwd: '/test',
@@ -427,7 +427,42 @@ describe('the room on screen', () => {
         roomTitle: '#general',
       })
     );
-    // `🔔 #general` would read as the channel wanting you. It does not.
-    expect(document.title).toBe('#general — DorkOS');
+    // An agent blocked on a permission prompt is the highest-priority signal in
+    // the product, and which route you are on is no reason to suppress it.
+    // Nothing else carries it either — useFavicon takes no isWaitingForUser.
+    expect(document.title).toBe('🔔 #general — DorkOS');
+  });
+
+  it('still shows 🏁 for a session that finished while you were away', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    const { rerender } = renderHook(
+      ({ isStreaming }) =>
+        useDocumentTitle({
+          cwd: '/test',
+          activeForm: null,
+          isStreaming,
+          isWaitingForUser: false,
+          roomTitle: '#general',
+        }),
+      { initialProps: { isStreaming: true } }
+    );
+    rerender({ isStreaming: false });
+    expect(document.title).toBe('🏁 #general — DorkOS');
+  });
+
+  it('puts the badge outside the status flag, as the session shape already does', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        isStreaming: false,
+        isWaitingForUser: true,
+        roomTitle: '#general',
+        unreadRoomCount: 2,
+      })
+    );
+    // `(2) 🔔 ` is the tab's status column — count, then flag, then the name.
+    expect(document.title).toBe('(2) 🔔 #general — DorkOS');
   });
 });
