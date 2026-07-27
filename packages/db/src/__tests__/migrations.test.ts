@@ -1,10 +1,41 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb, runMigrations } from '../index';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
+
+/**
+ * Build a throwaway migrations folder holding only migrations up to and
+ * including `idx`, so a test can stand up a database at an older schema
+ * version and then let the real {@link runMigrations} upgrade it.
+ *
+ * The migrator reads `meta/_journal.json` for the list to apply, so truncating
+ * the journal and copying just those `.sql` files is enough; snapshots are
+ * build-time input to drizzle-kit and are not read at runtime.
+ *
+ * @param idx - Highest journal index to include (e.g. 35 for a pre-0036 DB)
+ * @returns Absolute path to the temporary migrations folder
+ */
+function migrationsFolderThrough(idx: number): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'dorkos-drizzle-'));
+  mkdirSync(path.join(dir, 'meta'));
+
+  const journal = JSON.parse(
+    readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
+  ) as { entries: { idx: number; tag: string }[] };
+  journal.entries = journal.entries.filter((e) => e.idx <= idx);
+  writeFileSync(path.join(dir, 'meta/_journal.json'), JSON.stringify(journal));
+
+  for (const entry of journal.entries) {
+    copyFileSync(path.join(DRIZZLE_DIR, `${entry.tag}.sql`), path.join(dir, `${entry.tag}.sql`));
+  }
+  return dir;
+}
 
 describe('Database Migrations', () => {
   it('applies all migrations to a fresh database without errors', () => {
@@ -286,38 +317,23 @@ describe('Database Migrations', () => {
   });
 
   it('migration 0036 preserves existing pulse_runs rows across the cascade rebuild', () => {
-    // The 0036 INSERT...SELECT copies zero rows on a fresh DB, so exercise it
-    // directly: build the OLD schema (no ON DELETE action), seed rows, run the
-    // 0036 statements, and assert the history survives.
+    // Driven through the REAL runMigrations, not by exec-ing the .sql by hand.
+    // The difference is load-bearing: drizzle's migrator wraps every migration
+    // in BEGIN…COMMIT, and SQLite ignores `PRAGMA foreign_keys` inside a
+    // transaction, so 0036's leading `PRAGMA foreign_keys=OFF` is inert in
+    // production. Replaying the statements bare would leave the pragma in
+    // force and test a strictly more permissive environment than the one users
+    // get. So: migrate to 0035, seed a schedule with run history, then let
+    // runMigrations apply 0036 exactly as a real upgrade does.
     const db = createDb(':memory:');
+    const throughV35 = migrationsFolderThrough(35);
+    migrate(db, { migrationsFolder: throughV35 });
     const raw = db.$client;
 
-    raw.exec(`CREATE TABLE pulse_schedules (
-      id text PRIMARY KEY,
-      name text NOT NULL,
-      cron text NOT NULL,
-      prompt text NOT NULL,
-      file_path text NOT NULL,
-      created_at text NOT NULL,
-      updated_at text NOT NULL
-    )`);
-    raw.exec(`CREATE TABLE pulse_runs (
-      id text PRIMARY KEY,
-      schedule_id text NOT NULL,
-      status text NOT NULL,
-      started_at text NOT NULL,
-      finished_at text,
-      duration_ms integer,
-      output text,
-      error text,
-      session_id text,
-      trigger text DEFAULT 'scheduled' NOT NULL,
-      created_at text NOT NULL,
-      FOREIGN KEY (schedule_id) REFERENCES pulse_schedules(id)
-    )`);
+    // The pre-0036 FK really has no cascade: deleting the parent fails.
     raw
       .prepare(
-        "INSERT INTO pulse_schedules (id, name, cron, prompt, file_path, created_at, updated_at) VALUES ('01SCHED', 'nightly', '0 3 * * *', 'go', '/tmp/tasks/nightly/SKILL.md', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+        "INSERT INTO pulse_schedules (id, name, cron, timezone, prompt, enabled, permission_mode, status, file_path, tags_json, created_at, updated_at) VALUES ('01SCHED', 'nightly', '0 3 * * *', 'UTC', 'go', 1, 'acceptEdits', 'active', '/tmp/tasks/nightly/SKILL.md', '[]', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
       )
       .run();
     raw
@@ -325,18 +341,16 @@ describe('Database Migrations', () => {
         "INSERT INTO pulse_runs (id, schedule_id, status, started_at, finished_at, duration_ms, output, trigger, created_at) VALUES ('01RUNOLD', '01SCHED', 'completed', '2026-01-01T03:00:00Z', '2026-01-01T03:01:00Z', 60000, 'all good', 'scheduled', '2026-01-01T03:00:00Z')"
       )
       .run();
+    expect(() => {
+      raw.prepare("DELETE FROM pulse_schedules WHERE id = '01SCHED'").run();
+    }).toThrow(/FOREIGN KEY/);
 
-    const migrationSql = readFileSync(
-      path.join(__dirname, '../../drizzle/0036_clever_proteus.sql'),
-      'utf-8'
-    );
-    for (const statement of migrationSql.split('--> statement-breakpoint')) {
-      raw.exec(statement);
-    }
+    runMigrations(db);
 
+    // Every column survives the rebuild, unchanged.
     const rows = raw
       .prepare(
-        'SELECT id, schedule_id, status, started_at, finished_at, duration_ms, output, trigger FROM pulse_runs'
+        'SELECT id, schedule_id, status, started_at, finished_at, duration_ms, output, error, session_id, trigger, created_at FROM pulse_runs'
       )
       .all();
     expect(rows).toEqual([
@@ -348,11 +362,22 @@ describe('Database Migrations', () => {
         finished_at: '2026-01-01T03:01:00Z',
         duration_ms: 60000,
         output: 'all good',
+        error: null,
+        session_id: null,
         trigger: 'scheduled',
+        created_at: '2026-01-01T03:00:00Z',
       },
     ]);
 
-    // And the rebuilt table now cascades.
+    // The rebuild leaves no scaffolding behind, and the DB is self-consistent.
+    const leftovers = raw
+      .prepare("SELECT name FROM sqlite_master WHERE name LIKE '__new%'")
+      .all() as { name: string }[];
+    expect(leftovers).toEqual([]);
+    expect(raw.pragma('foreign_key_check')).toEqual([]);
+    expect(raw.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+
+    // And the same delete that failed before the migration now cascades.
     raw.prepare("DELETE FROM pulse_schedules WHERE id = '01SCHED'").run();
     expect(raw.prepare('SELECT id FROM pulse_runs').all()).toEqual([]);
   });

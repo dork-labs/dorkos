@@ -25,7 +25,7 @@ import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { slugify } from '@dorkos/skills/slug';
 import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
-import { loadTemplates } from '../services/tasks/task-templates.js';
+import { loadTemplates, RESERVED_TASK_DIRNAMES } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
@@ -162,6 +162,18 @@ export function createTasksRouter(
 
     // Resolve slug and target directory
     const slug = slugify(data.name);
+
+    // `templates/` is a container the tasks system owns, so a task cannot live
+    // at that path. Refused here rather than silently allowed: the file would
+    // be written, the watcher would create the row, and the reconciler — which
+    // skips reserved names — would then retire it as a task whose file had
+    // vanished.
+    if (RESERVED_TASK_DIRNAMES.includes(slug)) {
+      return res.status(400).json({
+        error: `"${slug}" is a reserved name in the tasks folder. Pick a different name.`,
+      });
+    }
+
     let tasksDir: string;
     let agentId: string | null = null;
 

@@ -75,34 +75,59 @@ export class TaskReconciler {
   /**
    * Run a single reconciliation pass.
    *
-   * This is a periodic safety net over many independent task files and rows, so
-   * every step that can fail is contained to the one file or row it concerns.
-   * One unreadable directory, one bad file, or one row the DB refuses to touch
-   * says nothing about the rest — and because the pass runs on a timer forever,
-   * letting a single failure escape does not retry the work, it permanently
-   * disables the safety net.
+   * A pass does two things: sync every task file it can read into the DB, then
+   * retire rows whose file is gone. The second half destroys data, so it acts
+   * only on POSITIVE evidence of deletion — a directory this pass listed
+   * successfully, in which the file was not found. Anything short of that (a
+   * directory that could not be listed, a file that could not be read, a file
+   * whose frontmatter does not parse) leaves the row exactly as it is.
+   *
+   * The distinction matters because a wrong answer here is unrecoverable: an
+   * `ON DELETE CASCADE` takes the task's entire run history with it, and the
+   * rebuilt row gets a new id. "Could not look" is not "not there".
+   *
+   * Every step that can fail is contained to the one directory, file, or row it
+   * concerns. Because the pass runs on a timer forever, letting one failure
+   * escape does not retry the work — it permanently disables the safety net,
+   * which is exactly how this ran broken for weeks.
    */
   async reconcile(): Promise<{ upserted: number; orphaned: number }> {
     let upserted = 0;
     let orphaned = 0;
     const seenFilePaths = new Set<string>();
+    // Directories this pass could not list. Nothing inside one may be retired:
+    // we have no evidence either way about any file it holds.
+    const unlistedDirs: string[] = [];
 
     for (const dir of this.directories) {
-      // `templates/` and friends are containers the tasks system owns, not
-      // tasks — scanning them as tasks reports a permanent bogus "invalid
-      // file" every pass.
-      const results = await scanSkillDirectory(dir.tasksDir, TaskFrontmatterSchema, {
-        ignoreDirs: RESERVED_TASK_DIRNAMES,
-      }).catch((err: unknown) => {
-        // A missing directory is already an empty scan, so reaching here means
-        // something genuinely went wrong reading this one.
+      let results;
+      try {
+        // `templates/` and friends are containers the tasks system owns, not
+        // tasks — scanning them as tasks reports a permanent bogus "invalid
+        // file" every pass.
+        results = await scanSkillDirectory(dir.tasksDir, TaskFrontmatterSchema, {
+          ignoreDirs: RESERVED_TASK_DIRNAMES,
+        });
+      } catch (err) {
+        // A directory that does not exist is already an empty scan, so reaching
+        // here means the directory is there and we could not read it — EACCES,
+        // or EMFILE under file-descriptor pressure. Treating that as "empty"
+        // would pause every task inside it.
         logger.error(`[TaskReconciler] Failed to scan ${dir.tasksDir}`, err);
-        return [];
-      });
+        unlistedDirs.push(dir.tasksDir);
+        continue;
+      }
 
       for (const result of results) {
         if (!result.ok) {
           logger.warn(`[TaskReconciler] Invalid file ${result.filePath}: ${result.error}`);
+          // A file that is on disk but unusable — unreadable, or frontmatter
+          // that does not parse — is NOT a deleted task. Count it as seen so
+          // the retirement pass leaves its row alone; a typo in a cron
+          // expression must never cost a task its id and run history. This
+          // matches TaskFileWatcher, which also leaves the row untouched when
+          // an edit fails to parse.
+          if (!result.fileMissing) seenFilePaths.add(result.filePath);
           continue;
         }
         // Record the file as seen BEFORE attempting the write: the file is on
@@ -123,20 +148,19 @@ export class TaskReconciler {
       }
     }
 
-    // Mark DB entries as paused if their file is gone (24h grace period)
+    // Retire rows whose file is gone: pause first, delete after a 24h grace.
     const allTasks = this.store.getTasks();
     const now = Date.now();
     for (const task of allTasks) {
       if (!task.filePath || seenFilePaths.has(task.filePath)) continue;
+      if (unlistedDirs.includes(path.dirname(path.dirname(task.filePath)))) continue;
       try {
         const updatedAt = new Date(task.updatedAt).getTime();
         if (now - updatedAt > ORPHAN_GRACE_MS) {
           this.store.deleteTask(task.id);
           orphaned++;
         } else if (task.status !== 'paused') {
-          // Derive slug from filePath: /path/to/{slug}/SKILL.md → slug
-          const dirName = path.basename(path.dirname(task.filePath));
-          this.store.markRemovedBySlug(dirName);
+          this.store.markRemovedByFilePath(task.filePath);
         }
       } catch (err) {
         logger.error(`[TaskReconciler] Failed to retire removed task ${task.id}`, err);

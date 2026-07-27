@@ -140,6 +140,22 @@ describe('Tasks routes', () => {
       expect(res.body.error).toBe('Validation failed');
     });
 
+    it('refuses a name that slugifies to the reserved templates folder', async () => {
+      const res = await request(app).post('/api/tasks').send({
+        name: 'Templates',
+        description: 'clashes with the templates container',
+        prompt: 'do stuff',
+        cron: '0 2 * * *',
+        target: 'global',
+      });
+
+      // Allowing it would write a file the reconciler skips by name, and then
+      // retire the row the watcher created for it.
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('reserved');
+      expect(store.getTasks()).toHaveLength(0);
+    });
+
     it('registers cron job for enabled active schedule', async () => {
       await request(app).post('/api/tasks').send({
         name: 'Active',
