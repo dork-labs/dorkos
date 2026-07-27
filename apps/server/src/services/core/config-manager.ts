@@ -892,8 +892,17 @@ export function backfillRoomsDefaults(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
-  if (store.get('rooms') == null) {
-    store.set('rooms', { maxAgentDepth: 3 });
+  const rooms = store.get('rooms');
+  if (rooms == null) {
+    store.set('rooms', { maxAgentDepth: 3, maxAutomaticTurnsPerHour: 60 });
+    return;
+  }
+  // conf merges top-level defaults SHALLOWLY, so a `rooms` block already on disk
+  // never inherits a new nested field on its own. Supplying it here is what
+  // stops an upgrade landing with no spend cap at all.
+  const current = rooms as Record<string, unknown>;
+  if (current.maxAutomaticTurnsPerHour === undefined) {
+    store.set('rooms', { ...current, maxAutomaticTurnsPerHour: 60 });
   }
 }
 
@@ -1151,9 +1160,11 @@ export const CONFIG_MIGRATIONS = {
     // and Direct messages sections, DOR-525). Additive + idempotent; both seed
     // expanded so an upgrade shows the new sections rather than hiding them.
     backfillSidebarRoomSections(store);
-    // `rooms.maxAgentDepth` (how far agents may reply to each other before a
-    // room stops them, DOR-526). Additive + idempotent; seeds the shipped
-    // default of 3, so the guard is on for every upgraded install.
+    // The `rooms` section (DOR-526): `maxAgentDepth`, how far agents may reply
+    // to each other before a room stops them, and `maxAutomaticTurnsPerHour`,
+    // the per-room spend cap that holds whoever the caller claims to be.
+    // Additive + idempotent; seeds the shipped defaults, so both bounds are on
+    // for every upgraded install.
     backfillRoomsDefaults(store);
   },
 } as const;

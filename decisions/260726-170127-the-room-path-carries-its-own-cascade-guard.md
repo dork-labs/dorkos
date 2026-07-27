@@ -47,6 +47,39 @@ A room trigger carries a provenance chain — a depth, the id of the root turn t
 
 This is knowingly a second implementation of a concept the relay already has. We are not unifying them now because the relay's version is coupled to its endpoint/subject addressing, and hoisting it would mean reshaping a shipped, working delivery pipeline to serve a path that does not exist yet. The condition for revisiting is a third caller: if anything beyond the relay and the room path needs cascade bounding, the shared abstraction has earned itself and should be extracted then.
 
+## What the guard does not cover, and what does
+
+Two limits, both found by building it (DOR-526) and both worth stating here
+rather than in a comment somebody will move.
+
+**The rules read caller-asserted identity, and in the default posture that is
+weak.** Rule 1 keys the fresh start on the author being a human, because a
+person re-engaging a stopped room is the behaviour we want. `resolveCaller`
+answers "is this a human" by looking for an `X-DorkOS-Agent` header, and
+`sessionGate` is a pass-through while `auth.enabled` is off — which is the
+default. So a program on the machine omits a header and *is* the human author:
+measured at 30 posts, 30 distinct cascade roots, 60 turns, max depth 0, no
+refusal notice. This is the documented DOR-505 residual (`lib/caller-authority.ts`
+names the same move) and it is not closable from the room path: with login off
+there is genuinely nothing left to tell a local program from the person.
+
+Because of that, the room path also carries a **posture-independent budget**
+(`turn-budget.ts`): a rolling per-room cap on automatic turns, counted without
+reference to who is calling, refusing with its own `budget_reached` notice. The
+division is deliberate — depth-and-ancestry is the precise instrument that keeps
+a healthy room from wasting calls, and the budget is the blunt one that bounds a
+dishonest caller. Neither is redundant, and deleting either on the grounds that
+the other exists reopens a case the other never covered.
+
+**Cross-room cascades carry their depth but not their ancestry.** An agent
+mid-turn in room A that posts into room B inherits A's `cascadeRoot` at its
+current depth (the turn's provenance follows the agent, not the room), so B's
+members trigger one deeper and A's ceiling still bounds the chain. The ancestry
+rule does not carry: `authorsInCascade` is scoped `(room_id, cascade_root)`, so
+the same author can appear once per room within one cascade. That is defensible
+— depth is doing the bounding, and per-room scoping is what keeps the query on
+an index — but it means the ancestry rule is a within-room guarantee only.
+
 ## Consequences
 
 ### Positive
@@ -62,3 +95,4 @@ This is knowingly a second implementation of a concept the relay already has. We
 - The ancestry rule is deliberately conservative and will produce false refusals: a room where A genuinely should answer B twice in one cascade hits the guard on the second pass. The ceiling is configurable, but the default will be wrong for somebody.
 - Provenance has to be threaded through every path that can trigger a turn from a room post. A path that forgets to carry it is unguarded and looks fine in tests, because the guard's absence is only visible under a cascade.
 - The refusal entry is a new durable log entry type that exists to describe an absence, which is a small but permanent widening of the room log's vocabulary.
+- **Two bounds, not one.** The budget above is a second mechanism with its own config field, its own notice code and its own tests, and a reader meeting either one alone will reasonably wonder why the other exists. The section above is the answer; keep it accurate if either changes.

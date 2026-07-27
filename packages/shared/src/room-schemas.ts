@@ -52,8 +52,15 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  * Why the room is speaking in its own voice. Kept to the cases that actually
  * write a `notice`; a new member-facing event earns a new code here rather than
  * a free-text convention.
+ *
+ * - `cascade_stopped` — the back-and-forth hit its automatic-reply depth.
+ * - `budget_reached` — the room hit its cap on automatic turns for the window.
+ *   Separate from the cascade guard on purpose: that one bounds ONE
+ *   conversation, this one bounds the room whoever the caller claims to be.
  */
-export const RoomNoticeCodeSchema = z.enum(['cascade_stopped']).openapi('RoomNoticeCode');
+export const RoomNoticeCodeSchema = z
+  .enum(['cascade_stopped', 'budget_reached'])
+  .openapi('RoomNoticeCode');
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
 

@@ -93,6 +93,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `scheduler.retentionCount`          | integer                                                                  | `100`              | Number of completed run records to retain in the database                                                                                                                                                                                                              |
 | `mesh.scanRoots`                    | string[]                                                                 | `[]`               | Directories to scan for agent discovery                                                                                                                                                                                                                                |
 | `rooms.maxAgentDepth`               | integer (0--10)                                                          | `3`                | How many replies in a row agents may send each other in a room before it stops them. Your own messages reset the count; `0` turns automatic replies off                                                                                                                |
+| `rooms.maxAutomaticTurnsPerHour`    | integer (0--10000)                                                       | `60`               | The most automatic replies one room may run per hour, counted whoever the caller claims to be. The bound that holds when login is off                                                                                                                                  |
 | `uploads.maxFileSize`               | integer                                                                  | `10485760` (10 MB) | Maximum file size in bytes per uploaded file                                                                                                                                                                                                                           |
 | `uploads.maxFiles`                  | integer (1--50)                                                          | `10`               | Maximum number of files per upload request                                                                                                                                                                                                                             |
 | `uploads.allowedTypes`              | string[]                                                                 | `["*/*"]`          | Allowed MIME types (e.g., `["image/*", "text/plain"]`)                                                                                                                                                                                                                 |
@@ -589,6 +590,20 @@ Refusals are visible: the room writes a `notice` entry naming the agent that sto
 
 ```bash
 dorkos config set rooms.maxAgentDepth 5
+```
+
+### rooms.maxAutomaticTurnsPerHour
+
+A rolling per-room cap on automatic turns, and the **only** spend bound that does not depend on the auth posture.
+
+`maxAgentDepth` above decides who may reset a cascade by reading the author's kind, and `resolveCaller` answers that by looking for an `X-DorkOS-Agent` header. With `auth.enabled` off — the default — `sessionGate` is a pass-through, so a local program that simply omits the header resolves as the local human and clears both the cascade reset and every `OPERATOR_ONLY` roster gate. That is the DOR-505 residual (`lib/caller-authority.ts` documents the same move) and it cannot be closed from the rooms domain.
+
+This cap does not ask. It counts every automatic turn a room starts, refuses past the number, and writes a `budget_reached` notice once. `0` stops automatic replies entirely.
+
+The window is in-memory and resets when the server restarts — a deliberate trade, since the loop it bounds runs in seconds and a durable counter would put a write on the hot path of every turn.
+
+```bash
+dorkos config set rooms.maxAutomaticTurnsPerHour 120
 ```
 
 ### uploads

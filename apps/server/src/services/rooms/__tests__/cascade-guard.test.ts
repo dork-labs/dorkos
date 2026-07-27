@@ -8,7 +8,7 @@
  * fails here rather than passing beside the thing it was meant to check. The
  * only stand-in is the turn runner, whose alternative is a model call.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { buildCascadeNotice, deriveCascade, evaluateCascade } from '../cascade-guard.js';
 import type { AuthorRegistry } from '../author-registry.js';
@@ -271,6 +271,79 @@ describe('cascade guard, wired', () => {
     // one thing that resets the count, which is exactly what §6 grants.
     await seedAndSettle('what do you two think?');
     expect(runner.turns.map((t) => t.authorId).sort()).toEqual([ana, bo].sort());
+  });
+
+  it('keeps trying to speak when a refusal notice fails to write', async () => {
+    // The dedupe set used to be marked BEFORE the write, so a cascade whose
+    // first notice threw was silent for that agent forever — the exact state the
+    // notice exists to prevent, reached by the code meant to prevent it.
+    //
+    // Two refusals for the same (cascade, agent) are needed to see it, so the
+    // agent both self-posts and replies: each lands in the same cascade and each
+    // dispatch refuses the room-mate that is already in it.
+    const turns: RecordedTurn[] = [];
+    let postAsAgent: (roomId: string, authorId: string, text: string) => void = () => {};
+    let selfPosts = 0;
+
+    const chatty: ScriptedTurnRunner = {
+      turns,
+      run(req) {
+        turns.push({
+          roomId: req.room.id,
+          authorId: req.authorId,
+          agentPath: req.agentPath,
+          sessionId: req.sessionId,
+          prompt: req.entry.body.text,
+        });
+        if (req.authorId === anaId && selfPosts < 1) {
+          selfPosts += 1;
+          postAsAgent(req.room.id, req.authorId, 'thinking out loud');
+        }
+        return Promise.resolve({ sessionId: 'session-1', text: 'and here is my answer' });
+      },
+    };
+
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      runner: chatty,
+      maxAgentDepth: MAX_AGENT_DEPTH,
+    });
+    postAsAgent = (roomId, authorId, text) => {
+      harness.service.post(roomId, { authorId, text });
+    };
+    const loud = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      harness.human
+    );
+    const anaId = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    const boId = harness.authors.resolveAgent('/agents/bo', 'Bo').id;
+    harness.service.updateMembership(loud.id, harness.human, anaId, 'always');
+    harness.service.updateMembership(loud.id, harness.human, boId, 'always');
+
+    // Every notice write fails once, then the store recovers.
+    const real = harness.service.postNotice.bind(harness.service);
+    let failures = 0;
+    vi.spyOn(harness.service, 'postNotice').mockImplementation((roomId, body, cascade) => {
+      if (failures === 0) {
+        failures += 1;
+        throw new Error('the log rejected that write');
+      }
+      return real(roomId, body, cascade);
+    });
+
+    harness.service.post(loud.id, { authorId: harness.human, text: 'go' });
+    await harness.service.triggersIdle();
+
+    expect(failures).toBe(1);
+    // Bo is refused twice in this cascade — once from Ana's self-post and once
+    // from Ana's reply — and the FIRST of those is the write that throws. So Bo
+    // is the agent whose notice the bug loses, and naming Bo is what makes this
+    // test fail when the set is marked before the write rather than after.
+    const subjects = harness.service
+      .listEntries(loud.id, harness.human, { limit: 200 })
+      .filter((entry) => entry.kind === 'notice')
+      .map((entry) => entry.body.subjectAuthorId);
+    expect(subjects).toContain(boId);
   });
 
   it('stops replying entirely when the ceiling is zero', async () => {

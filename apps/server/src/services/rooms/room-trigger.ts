@@ -40,9 +40,10 @@ import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas
 import { logger } from '../../lib/logger.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import type { AuthorRegistry } from './author-registry.js';
-import { buildCascadeNotice, evaluateCascade } from './cascade-guard.js';
+import { buildBudgetNotice, buildCascadeNotice, evaluateCascade } from './cascade-guard.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
+import type { RoomTurnBudget } from './turn-budget.js';
 
 /** One agent turn, as the room asks for it. */
 export interface RoomTurnRequest {
@@ -105,6 +106,12 @@ export interface RoomTriggerDeps {
   agents: RoomAgentLookup;
   runner: RoomTurnRunner;
   writer: RoomTriggerWriter;
+  /**
+   * The per-room ceiling on automatic turns, counted whoever the caller claims
+   * to be. The cascade guard reads caller-asserted identity and is therefore
+   * only as strong as the posture; this is not.
+   */
+  budget: RoomTurnBudget;
   /** The live `rooms.maxAgentDepth`, read per dispatch so a change takes effect. */
   maxAgentDepth(): number;
 }
@@ -241,7 +248,21 @@ export class RoomTriggerDispatcher {
       });
     }
 
+    // The cascade guard has allowed these on the merits. The budget is the
+    // second, blunter question — can this ROOM afford another automatic turn at
+    // all — and it is asked without reference to who wrote the entry, so a
+    // caller who reached depth 0 by claiming to be human still stops here.
+    const affordable: TriggerTarget[] = [];
     for (const target of allowed) {
+      if (this.deps.budget.tryReserve(room.id).allowed) {
+        affordable.push(target);
+        continue;
+      }
+      this.writeBudgetNotice(room, entry);
+      break;
+    }
+
+    for (const target of affordable) {
       this.claimed.set(claimKey(room.id, entry.cascadeRoot, target.authorId), {
         roomId: room.id,
         cascadeRoot: entry.cascadeRoot,
@@ -249,7 +270,7 @@ export class RoomTriggerDispatcher {
         depth: target.depth,
       });
     }
-    return allowed;
+    return affordable;
   }
 
   /**
@@ -346,16 +367,15 @@ export class RoomTriggerDispatcher {
   ): void {
     const key = claimKey(room.id, entry.cascadeRoot, authorId);
     if (this.noticed.has(key)) return;
-    if (this.noticed.size >= NOTICE_MEMORY) {
-      const oldest = this.noticed.values().next().value;
-      if (oldest !== undefined) this.noticed.delete(oldest);
-    }
-    this.noticed.add(key);
     try {
       this.deps.writer.postNotice(room.id, buildCascadeNotice(displayName, authorId), {
         root: entry.cascadeRoot,
         depth: entry.cascadeDepth,
       });
+      // Remembered only once it is actually in the log. Marking first meant a
+      // cascade whose FIRST notice threw went silent for good — precisely the
+      // state the notice exists to prevent.
+      this.remember(key);
     } catch (err) {
       // Refusals are evaluated synchronously inside `post`, so a throw here
       // would surface as a failure of the message that was already committed —
@@ -367,6 +387,40 @@ export class RoomTriggerDispatcher {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  /**
+   * Say once, per room, that the room is out of automatic turns.
+   *
+   * Keyed on the ROOM rather than the cascade: the budget is a property of the
+   * room, and a caller minting a fresh cascade per message would otherwise get
+   * a fresh notice per message — turning the thing that reports a flood into
+   * part of it.
+   */
+  private writeBudgetNotice(room: Room, entry: RoomEntry): void {
+    const key = `budget ${room.id}`;
+    if (this.noticed.has(key)) return;
+    try {
+      this.deps.writer.postNotice(room.id, buildBudgetNotice(), {
+        root: entry.cascadeRoot,
+        depth: entry.cascadeDepth,
+      });
+      this.remember(key);
+    } catch (err) {
+      logger.warn('[rooms] could not write a budget notice', {
+        roomId: room.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /** Record that a notice landed, evicting the oldest when the set is full. */
+  private remember(key: string): void {
+    if (this.noticed.size >= NOTICE_MEMORY) {
+      const oldest = this.noticed.values().next().value;
+      if (oldest !== undefined) this.noticed.delete(oldest);
+    }
+    this.noticed.add(key);
   }
 
   /** Author ids with a turn in flight in one cascade. */

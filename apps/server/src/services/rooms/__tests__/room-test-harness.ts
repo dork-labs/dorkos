@@ -16,6 +16,7 @@ import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import { RoomBroadcaster } from '../room-stream.js';
+import { RoomTurnBudget } from '../turn-budget.js';
 import type { RoomTurnRequest, RoomTurnResult, RoomTurnRunner } from '../room-trigger.js';
 
 /** One turn the dispatcher asked for, as the test sees it. */
@@ -99,22 +100,28 @@ export interface RoomHarness {
  * @param opts.maxAgentDepth - The cascade ceiling. Pinned to a literal on
  *   purpose — a test that read the same config the code reads could only prove
  *   the two agree, never that they agree on the right number.
+ * @param opts.maxAutomaticTurnsPerHour - The posture-independent budget. Also a
+ *   literal, and high enough by default that it never silently masks a cascade
+ *   test — a budget refusal and a guard refusal look alike from the outside.
  */
 export function createRoomHarness(opts: {
   agents: RoomAgentLookup;
   runner?: ScriptedTurnRunner;
   maxAgentDepth?: number;
+  maxAutomaticTurnsPerHour?: number;
 }): RoomHarness {
   const db = createTestDb();
   const authors = new AuthorRegistry(db);
   const runner = opts.runner ?? scriptedRunner();
   const maxAgentDepth = opts.maxAgentDepth ?? 3;
+  const maxPerWindow = opts.maxAutomaticTurnsPerHour ?? 1_000;
   const service = new RoomService({
     store: new RoomStore(db),
     authors,
     broadcaster: new RoomBroadcaster(),
     agents: opts.agents,
     turns: runner,
+    budget: new RoomTurnBudget({ maxPerWindow: () => maxPerWindow }),
     maxAgentDepth: () => maxAgentDepth,
   });
   return { db, service, authors, runner, human: authors.localHuman().id };

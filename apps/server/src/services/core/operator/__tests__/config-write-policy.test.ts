@@ -67,6 +67,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'providers',
       'relay.dataDir',
       'rooms.maxAgentDepth',
+      'rooms.maxAutomaticTurnsPerHour',
       'runtimes.codex.binaryPath',
       'runtimes.codex.credentialRef',
       'runtimes.opencode.baseURL',

@@ -8,11 +8,25 @@
  * for lifecycle. Membership lives next door in `room-roster.ts`, and turning a
  * committed post into agent replies lives in `room-trigger.ts`.
  *
- * **Roster writes are the operator's.** Adding, removing, or re-configuring a
- * member is refused for an agent caller. That was a harmless asymmetry while
- * nothing read `responseMode`; now that a post triggers turns, an agent that
- * could widen another agent's addressing could drive replies nobody asked for,
- * and it would do it from inside the room where it is hardest to notice.
+ * **Roster writes are the operator's — as far as identity can tell.** Adding,
+ * removing, or re-configuring a member is refused for a caller the server
+ * resolves as an agent. That was a harmless asymmetry while nothing read
+ * `responseMode`; now that a post triggers turns, an agent that could widen
+ * another agent's addressing could drive replies nobody asked for, from inside
+ * the room where it is hardest to notice.
+ *
+ * Read "an agent caller" literally: it means a request the server resolved to an
+ * agent. In the DEFAULT posture (`auth.enabled` off) a request carrying no
+ * `X-DorkOS-Agent` header resolves to the local human, so a program on this
+ * machine clears every gate in this file by omitting a header. That is the
+ * documented DOR-505 residual, not a hole this domain opened or can close —
+ * with login off there is nothing left to tell a local program from the person
+ * at the keyboard. Turning **Require login** on is what makes these gates mean
+ * what they say.
+ *
+ * What holds regardless is `turn-budget.ts`: a per-room cap on automatic turns
+ * that counts without asking who is calling. These gates shape a healthy room;
+ * that cap is what bounds a dishonest one.
  *
  * @module server/services/rooms/room-service
  */
@@ -41,6 +55,7 @@ import type { NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
 import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
+import type { RoomTurnBudget } from './turn-budget.js';
 
 /** Everything {@link RoomService} is constructed from. */
 export interface RoomServiceDeps {
@@ -50,6 +65,8 @@ export interface RoomServiceDeps {
   agents: RoomAgentLookup;
   /** How a triggered agent actually takes its turn. */
   turns: RoomTurnRunner;
+  /** The per-room ceiling on automatic turns, counted whoever is calling. */
+  budget: RoomTurnBudget;
   /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
   maxAgentDepth(): number;
 }
@@ -88,6 +105,7 @@ export class RoomService {
       authors: deps.authors,
       agents: deps.agents,
       runner: deps.turns,
+      budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,
       writer: {
         post: (roomId, input) => this.post(roomId, input),
@@ -221,19 +239,21 @@ export class RoomService {
     const rootEntry = this.store.getEntryById(parentId, rootEntryId);
     if (!rootEntry) throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
 
+    const createdAt = new Date().toISOString();
     // A thread inherits the parent's whole roster, response modes included, so
     // opening one is a seeding operation and answers to the same rule
     // `createRoom` does: only the operator puts a SECOND agent in a room. It is
     // not a formality here — a thread is a new room, and `authorsInCascade` is
     // scoped `(room_id, cascade_root)`, so an ungated `createThread` would hand
     // an agent an unlimited supply of fresh cascade namespaces.
-    const inherited = this.roster.inheritedFrom(parent.id, new Date(0).toISOString());
+    //
+    // Read ONCE and used for both the check and the insert, so what was checked
+    // is what is written rather than two reads that merely ought to agree.
+    const inherited = this.roster.inheritedFrom(parent.id, createdAt);
     this.requireSeedingAllowed(
       this.roster.requireAuthor(viewerAuthorId),
       inherited.map((member) => this.roster.requireAuthor(member.authorId))
     );
-
-    const createdAt = new Date().toISOString();
     // Same atomicity as createRoom: the thread and the roster it inherits land
     // together or not at all. A thread with no roster is a room nobody — not
     // even the person who opened it — can post into.
@@ -249,7 +269,7 @@ export class RoomService {
         rootEntryId,
         createdAt,
       },
-      this.roster.inheritedFrom(parent.id, createdAt)
+      inherited
     );
 
     eventFanOut.broadcast('room_created', {

@@ -195,6 +195,11 @@ export const CONFIG_WRITE_POLICY = {
   // budget on a conversation nobody asked for, and the whole point of the guard
   // is that it bounds a loop the participants cannot see themselves in.
   'rooms.maxAgentDepth': 'operator-only',
+  // The per-room spend cap. Operator-only for a sharper reason than the ceiling
+  // above: this bound exists precisely BECAUSE an agent can defeat the
+  // identity-based one in the default posture (DOR-505), so leaving it
+  // agent-writable would hand back the thing it was built to hold.
+  'rooms.maxAutomaticTurnsPerHour': 'operator-only',
 
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',

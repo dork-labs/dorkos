@@ -5348,7 +5348,8 @@
       "RoomNoticeCode": {
         "type": "string",
         "enum": [
-          "cascade_stopped"
+          "cascade_stopped",
+          "budget_reached"
         ]
       },
       "PostToRoomResponse": {

@@ -87,6 +87,21 @@ export function evaluateCascade(
  * person re-engage a room the guard has stopped, and it is a person's
  * prerogative because a person is who the budget belongs to.
  *
+ * **What `authorKind` is worth, precisely.** It is as good as the answer to
+ * "who is calling", and in the DEFAULT posture that answer is weak: with
+ * `auth.enabled` off, `resolveCaller` reads a request carrying no
+ * `X-DorkOS-Agent` header as the local human, so a program on this machine
+ * becomes `'human'` here by *omitting* a header. That is the documented DOR-505
+ * residual (`lib/caller-authority.ts` names the same move) and it is not
+ * closable from this module — with login off there is nothing left to tell a
+ * local program from the person at the keyboard.
+ *
+ * So this rule is the precise one, not the last one. `turn-budget.ts` carries
+ * the bound that does not ask who is calling, and it is what actually caps
+ * spend in the default posture. Do not read the sentence above as a promise
+ * that an agent cannot reach depth 0; read it as the rule that holds whenever
+ * identity means anything.
+ *
  * An earlier revision keyed the fresh start on whether a `trigger` argument was
  * passed, which reads as the same rule and is not. `POST /api/rooms/:id/entries`
  * passes no trigger and resolves an `X-DorkOS-Agent` bearer to that agent — and
@@ -126,7 +141,7 @@ export function deriveCascade(
 }
 
 /**
- * The durable `notice` a refused trigger writes into the room.
+ * The durable `notice` a cascade refusal writes into the room.
  *
  * A silently dropped trigger is indistinguishable from a broken agent, and in a
  * shared room the person who notices is not the person who configured it. So
@@ -141,5 +156,21 @@ export function buildCascadeNotice(agentName: string, subjectAuthorId: string): 
     text: `${agentName} stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.`,
     notice: 'cascade_stopped',
     subjectAuthorId,
+  };
+}
+
+/**
+ * The durable `notice` the room writes when it runs out of hourly budget.
+ *
+ * Deliberately different words from the cascade notice, because it is a
+ * different thing and the person reading it needs to act differently: the
+ * cascade one means "this conversation went around enough times", and one
+ * message restarts it. This one means "this room has done all the automatic
+ * replying it may do for now", and another message will not.
+ */
+export function buildBudgetNotice(): RoomEntryBody {
+  return {
+    text: 'This room has used up its automatic replies for the hour. It will pick up again shortly — or raise the limit in Settings if this room is meant to be this busy.',
+    notice: 'budget_reached',
   };
 }

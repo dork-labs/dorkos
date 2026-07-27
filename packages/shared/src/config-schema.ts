@@ -491,8 +491,20 @@ export const UserConfigSchema = z.object({
        * running again. `0` turns automatic replies off entirely.
        */
       maxAgentDepth: z.number().int().min(0).max(10).default(3),
+      /**
+       * The most automatic replies any one room may run in an hour, counted
+       * whoever asked for them.
+       *
+       * The reply limit above bounds one conversation and reads who is writing
+       * to do it. With **Require login** off — the default — DorkOS cannot tell
+       * a program on your machine from you, so that reading can be sidestepped.
+       * This cap cannot: it counts every automatic reply a room runs and stops
+       * at the number, no matter who the message appeared to come from. It is
+       * the ceiling on what a room can cost you.
+       */
+      maxAutomaticTurnsPerHour: z.number().int().min(0).max(10_000).default(60),
     })
-    .default(() => ({ maxAgentDepth: 3 })),
+    .default(() => ({ maxAgentDepth: 3, maxAutomaticTurnsPerHour: 60 })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],
     skippedSteps: [],

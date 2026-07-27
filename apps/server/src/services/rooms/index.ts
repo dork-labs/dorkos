@@ -18,6 +18,7 @@ import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
+import { RoomTurnBudget } from './turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 
 /** The wired rooms subsystem. */
@@ -73,6 +74,18 @@ function readMaxAgentDepth(): number {
   }
 }
 
+/**
+ * The live hourly ceiling on automatic turns, degrading the same way and for
+ * the same reason as {@link readMaxAgentDepth}.
+ */
+function readMaxAutomaticTurnsPerHour(): number {
+  try {
+    return configManager.get('rooms').maxAutomaticTurnsPerHour;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxAutomaticTurnsPerHour;
+  }
+}
+
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
   try {
@@ -88,11 +101,13 @@ function safeJson(raw: string): unknown {
  * @param opts.db - The consolidated DB handle.
  * @param opts.agents - Agent lookup override; defaults to the mesh-cache reader.
  * @param opts.turns - Turn runner override; defaults to the real session path.
+ * @param opts.budget - Turn budget override; defaults to the configured hourly cap.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
   agents?: RoomAgentLookup;
   turns?: RoomTurnRunner;
+  budget?: RoomTurnBudget;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const authors = new AuthorRegistry(opts.db);
@@ -103,6 +118,7 @@ export function createRoomSubsystem(opts: {
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),
     turns: opts.turns ?? createSessionRoomTurnRunner(),
+    budget: opts.budget ?? new RoomTurnBudget({ maxPerWindow: readMaxAutomaticTurnsPerHour }),
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,
@@ -137,3 +153,4 @@ export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export type { AuthorRecord } from './author-registry.js';
 export type { RoomTurnRunner } from './room-trigger.js';
+export { RoomTurnBudget } from './turn-budget.js';

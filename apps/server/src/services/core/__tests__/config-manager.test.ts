@@ -1228,19 +1228,32 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
     // Pinned to the literal the release ships. Reading the default out of the
     // schema here would only prove the migration and the schema agree, never
     // that they agree on a number that bounds anything.
-    expect(store.data.rooms).toEqual({ maxAgentDepth: 3 });
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 3, maxAutomaticTurnsPerHour: 60 });
   });
 
   it('is idempotent — keeps a ceiling the user already chose', () => {
-    const store = createMockStore({ rooms: { maxAgentDepth: 1 } });
+    const store = createMockStore({
+      rooms: { maxAgentDepth: 1, maxAutomaticTurnsPerHour: 5 },
+    });
     backfillRoomsDefaults(store);
-    expect(store.data.rooms).toEqual({ maxAgentDepth: 1 });
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 1, maxAutomaticTurnsPerHour: 5 });
   });
 
   it('keeps an explicit zero, which is a real choice and not an absent section', () => {
-    const store = createMockStore({ rooms: { maxAgentDepth: 0 } });
+    const store = createMockStore({
+      rooms: { maxAgentDepth: 0, maxAutomaticTurnsPerHour: 0 },
+    });
     backfillRoomsDefaults(store);
-    expect(store.data.rooms).toEqual({ maxAgentDepth: 0 });
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 0, maxAutomaticTurnsPerHour: 0 });
+  });
+
+  it('adds the spend cap to a rooms block that predates it', () => {
+    // The upgrade that matters: someone already had `rooms` from an earlier
+    // build of this feature, so conf's shallow merge would never give them the
+    // cap. Without this they would run with no posture-independent bound.
+    const store = createMockStore({ rooms: { maxAgentDepth: 1 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 1, maxAutomaticTurnsPerHour: 60 });
   });
 });
 

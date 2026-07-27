@@ -159,6 +159,7 @@ export const CONFIG_DISCLOSURE = {
   'mesh.scanRoots': 'expose',
 
   'rooms.maxAgentDepth': 'expose',
+  'rooms.maxAutomaticTurnsPerHour': 'expose',
 
   'onboarding.completedSteps': 'expose',
   'onboarding.skippedSteps': 'expose',
