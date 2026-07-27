@@ -27,8 +27,10 @@ import {
   RoomTitle,
   hasUnread,
   roomDisplayTitle,
+  useArchiveRoom,
   useMarkRoomReadNow,
-  useUpdateRoom,
+  useRenameRoom,
+  useUnarchiveRoom,
 } from '@/layers/entities/room';
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
 import { RoomRowMenuItems } from './RoomRowMenuItems';
@@ -81,10 +83,13 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
   const [topicOpen, setTopicOpen] = useState(false);
   const [membersIntent, setMembersIntent] = useState<MembersDialogIntent | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLButtonElement>(null);
   const committedRef = useRef(false);
 
   const markRead = useMarkRoomReadNow();
-  const updateRoom = useUpdateRoom();
+  const renameRoom = useRenameRoom();
+  const archiveRoom = useArchiveRoom();
+  const unarchiveRoom = useUnarchiveRoom();
 
   // "Rename…" mounts an inline editor, and the launching menu closes in a SECOND
   // commit whose focus restore would blur it — blur-cancelling the editor before
@@ -109,23 +114,36 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
     setIsRenaming(true);
   };
 
+  /**
+   * Leave the editor and put the focus back on the row it replaced.
+   *
+   * Without this the editor unmounts under the cursor and focus falls to
+   * `<body>`, which drops a keyboard reader out of the sidebar entirely — they
+   * would have to Tab back in from the top of the page to reach the row they
+   * just renamed.
+   */
+  const endRename = () => {
+    setIsRenaming(false);
+    // After the commit that swaps the editor back for the button.
+    requestAnimationFrame(() => rowRef.current?.focus());
+  };
+
   const commitRename = () => {
     // First Enter/Escape decides; everything after is a no-op — guards
     // double-Enter and the blur that follows a commit.
     if (committedRef.current) return;
     committedRef.current = true;
-    setIsRenaming(false);
+    endRename();
     const trimmed = renameValue.trim();
     if (trimmed.length === 0 || trimmed.length > MAX_NAME || trimmed === room.title) return;
-    updateRoom.mutate(
-      { roomId: room.id, patch: { title: trimmed } },
-      { onError: (err) => toast.error(err.message || `Couldn't rename ${title}`) }
-    );
+    // No per-call `onError`: the shared mutation toast names the action from
+    // the hook's `meta` and appends the server's own sentence.
+    renameRoom.mutate({ roomId: room.id, title: trimmed });
   };
 
   const cancelRename = () => {
     committedRef.current = true;
-    setIsRenaming(false);
+    endRename();
   };
 
   const handleRenameKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -140,34 +158,29 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
 
   const confirmArchive = () => {
     setArchiveOpen(false);
-    updateRoom.mutate(
-      { roomId: room.id, patch: { archived: true } },
-      {
-        // Archive is the honest verb only if it is genuinely reversible, and
-        // nothing else in the cockpit un-archives a room yet — so the undo
-        // ships with the action rather than waiting for a screen to hold it.
-        onSuccess: () =>
-          toast.success(`${title} archived`, {
-            action: {
-              label: 'Undo',
-              onClick: () =>
-                updateRoom.mutate(
-                  { roomId: room.id, patch: { archived: false } },
-                  {
-                    onError: (err) => toast.error(err.message || `Couldn't bring ${title} back`),
-                  }
-                ),
-            },
-          }),
-        onError: (err) => toast.error(err.message || `Couldn't archive ${title}`),
-      }
-    );
+    archiveRoom.mutate(room.id, {
+      // Archive is the honest verb only if it is genuinely reversible, and
+      // nothing else in the cockpit un-archives a room yet — so the undo ships
+      // with the action rather than waiting for a screen to hold it.
+      //
+      // The undo deliberately passes NO callbacks. Archiving drops this row
+      // from the sidebar, so by the time anyone can click Undo this component
+      // is unmounted and its mutation observer has no listeners — and TanStack
+      // gates per-call `onError` on exactly that, so a handler here would never
+      // run and a failure would fall through to the generic "Action failed."
+      // The hook's `meta.errorLabel` reaches the mutation cache's own handler,
+      // which is not gated, so the server's reason is what gets shown.
+      onSuccess: () =>
+        toast.success(`${title} archived`, {
+          action: {
+            label: 'Undo',
+            onClick: () => unarchiveRoom.mutate({ roomId: room.id }),
+          },
+        }),
+    });
   };
 
-  const handleMarkRead = () =>
-    markRead.mutate(room.id, {
-      onError: (err) => toast.error(err.message || `Couldn't mark ${title} as read`),
-    });
+  const handleMarkRead = () => markRead.mutate(room.id);
 
   // Only a one-to-one names an unambiguous agent. `participants` is carried for
   // direct messages and `null` for anything else, and the agent is matched on
@@ -209,6 +222,14 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
                   onChange={(e) => setRenameValue(e.target.value)}
                   onKeyDown={handleRenameKeyDown}
                   onBlur={commitRename}
+                  // The row is a context-menu trigger, and this field sits
+                  // inside it. Without this, right-clicking to paste opened the
+                  // ROOM menu, which blurred the editor and blur-committed a
+                  // half-typed name nobody confirmed. Propagation stops here so
+                  // the browser's own edit menu appears instead; the event is
+                  // deliberately not prevented, because that menu is the whole
+                  // point of right-clicking a text field.
+                  onContextMenu={(e) => e.stopPropagation()}
                   className={cn(
                     'bg-background text-foreground',
                     'focus-visible:ring-ring min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs outline-none focus-visible:ring-1'
@@ -217,6 +238,7 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
               </div>
             ) : (
               <button
+                ref={rowRef}
                 type="button"
                 onClick={onSelect}
                 aria-current={isActive ? 'page' : undefined}

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
@@ -31,11 +31,17 @@ interface AgentChipPickerProps {
   /** Disable the commit button while a write is in flight. */
   isSubmitting?: boolean;
   /**
-   * Put the cursor in the search field on mount. On for a surface that exists
-   * only to pick agents; off when the picker shares a panel with something the
-   * reader asked for instead — stealing focus would scroll that out of view.
+   * The search field, handed back so whatever holds this picker can put the
+   * cursor in it.
+   *
+   * Focus is the container's to give, not this component's to take. A popover
+   * or dialog decides where focus lands when it opens (`onOpenAutoFocus`), and
+   * it has to win that decision — a menu closing behind it restores focus to
+   * its own trigger a commit later, so a focus this component set on mount is
+   * simply overwritten. Radix's focus scope defends what the container focused;
+   * it does not defend what a child did on its own.
    */
-  takeFocus?: boolean;
+  inputRef?: RefObject<HTMLInputElement | null>;
 }
 
 /**
@@ -87,9 +93,7 @@ interface AgentChipPickerProps {
  * unconditionally and always highlights the first one, so there is no state in
  * which Enter can mean "commit this selection".
  *
- * With `takeFocus`, focuses its own field on mount. Radix's focus scope sees the
- * focus is already inside its container and stands down, so a popover or dialog
- * holding this needs no ref into it.
+ * Takes no focus of its own — see {@link AgentChipPickerProps.inputRef}.
  */
 export function AgentChipPicker({
   candidates,
@@ -98,7 +102,7 @@ export function AgentChipPicker({
   emptyRosterMessage,
   allChosenMessage,
   isSubmitting = false,
-  takeFocus = false,
+  inputRef,
 }: AgentChipPickerProps) {
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<AgentPickerCandidate[]>([]);
@@ -107,12 +111,9 @@ export function AgentChipPicker({
    * said", which is not the same as "nothing is highlighted" — see `active`.
    */
   const [aimedAt, setAimedAt] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const ownRef = useRef<HTMLInputElement>(null);
+  const fieldRef = inputRef ?? ownRef;
   const listId = useId();
-
-  useEffect(() => {
-    if (takeFocus) inputRef.current?.focus();
-  }, [takeFocus]);
 
   const picked = new Set(chosen.map((c) => c.agentPath));
   const needle = query.trim().toLowerCase();
@@ -134,7 +135,7 @@ export function AgentChipPicker({
     setChosen((prev) => [...prev, candidate]);
     setQuery('');
     setAimedAt(null);
-    inputRef.current?.focus();
+    fieldRef.current?.focus();
   }
 
   function commit() {
@@ -202,7 +203,7 @@ export function AgentChipPicker({
               aria-label={`Remove ${candidate.displayName}`}
               onClick={() => {
                 setChosen((prev) => prev.filter((c) => c.agentPath !== candidate.agentPath));
-                inputRef.current?.focus();
+                fieldRef.current?.focus();
               }}
               className="hover:bg-background focus-visible:ring-ring rounded-sm p-0.5 outline-hidden focus-visible:ring-2"
             >
@@ -211,7 +212,7 @@ export function AgentChipPicker({
           </span>
         ))}
         <input
-          ref={inputRef}
+          ref={fieldRef}
           role="combobox"
           // There is no popup to expand when nothing matches, and saying
           // otherwise advertises a list of zero options to a screen reader.

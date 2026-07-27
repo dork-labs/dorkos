@@ -17,12 +17,12 @@ vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     get: () => ({
-        getCapabilities: () => getCapabilities(),
-        acquireLock: () => true,
-        releaseLock: () => undefined,
-        sendMessage: () => undefined,
-        interruptQuery: () => Promise.resolve(false),
-        getInternalSessionId: () => undefined,
+      getCapabilities: () => getCapabilities(),
+      acquireLock: () => true,
+      releaseLock: () => undefined,
+      sendMessage: () => undefined,
+      interruptQuery: () => Promise.resolve(false),
+      getInternalSessionId: () => undefined,
     }),
     has: () => true,
     getDefaultType: () => 'claude-code',

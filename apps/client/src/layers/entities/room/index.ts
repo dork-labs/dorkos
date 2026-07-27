@@ -20,8 +20,17 @@ export { useRoomListStream } from './model/use-room-list-stream';
 export { useMarkRoomRead, useMarkRoomReadNow } from './model/use-mark-room-read';
 export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
 export type { StartDirectMessageInput } from './model/use-create-room';
-export { useUpdateRoom } from './model/use-room-settings';
-export type { UpdateRoomInput } from './model/use-room-settings';
+export {
+  useRenameRoom,
+  useSetRoomTopic,
+  useArchiveRoom,
+  useUnarchiveRoom,
+} from './model/use-room-settings';
+export type {
+  RenameRoomInput,
+  SetRoomTopicInput,
+  UnarchiveRoomInput,
+} from './model/use-room-settings';
 export {
   useAddRoomMember,
   useRemoveRoomMember,
@@ -33,7 +42,7 @@ export type {
   SetResponseModeInput,
 } from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
-export { RESPONSE_MODE_OPTIONS, responseModeLabel } from './lib/response-mode';
+export { RESPONSE_MODE_OPTIONS } from './lib/response-mode';
 export type { ResponseModeOption } from './lib/response-mode';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';

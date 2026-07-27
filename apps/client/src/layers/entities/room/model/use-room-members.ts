@@ -67,6 +67,9 @@ export function useAddRoomMember(): UseMutationResult<RoomRosterEntry, Error, Ad
     mutationFn: ({ roomId, agentPath }: AddRoomMemberInput) =>
       transport.addRoomMember(roomId, { agentPath }),
     onSuccess: (_member, { roomId }) => invalidate(roomId),
+    // The shared mutation toast reads this with the server's own sentence after
+    // it: "Couldn't add that agent — Only you can change who is in a room".
+    meta: { errorLabel: "Couldn't add that agent" },
   });
 }
 
@@ -94,6 +97,7 @@ export function useRemoveRoomMember(): UseMutationResult<void, Error, RemoveRoom
     mutationFn: ({ roomId, authorId }: RemoveRoomMemberInput) =>
       transport.removeRoomMember(roomId, authorId),
     onSuccess: (_void, { roomId }) => invalidate(roomId),
+    meta: { errorLabel: "Couldn't remove that agent" },
   });
 }
 
@@ -127,5 +131,6 @@ export function useSetMemberResponseMode(): UseMutationResult<
     mutationFn: ({ roomId, authorId, responseMode }: SetResponseModeInput) =>
       transport.updateRoomMember(roomId, authorId, { responseMode }),
     onSuccess: (_member, { roomId }) => invalidate(roomId),
+    meta: { errorLabel: "Couldn't change how that agent replies" },
   });
 }

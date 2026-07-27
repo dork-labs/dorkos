@@ -107,5 +107,6 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
       void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
       void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
     },
+    meta: { errorLabel: "Couldn't mark that room as read" },
   });
 }

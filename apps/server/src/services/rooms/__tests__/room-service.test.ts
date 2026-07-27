@@ -494,6 +494,58 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
     );
   });
 
+  it('brings an archived channel back under a new name when its old one was taken', () => {
+    // The trap this closes: archiving releases a slug (the unique index skips
+    // archived rooms), so a live channel can take it while the room is away.
+    // Judging the un-archive against the OLD slug refused the rename that was
+    // the only way out, and nothing else in the product un-archives a room —
+    // so the room was stranded for good.
+    const away = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      human
+    );
+    service.updateRoom(away.id, human, { archived: true });
+    const squatter = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      human
+    );
+    expect(squatter.slug).toBe('backend');
+
+    // Coming back under its old name is still refused — that name is taken.
+    expect(() => service.updateRoom(away.id, human, { archived: false })).toThrow(
+      expect.objectContaining({ code: 'SLUG_TAKEN' })
+    );
+
+    // Coming back under a new one works, because the rename is applied before
+    // the un-archive is judged.
+    const back = service.updateRoom(away.id, human, {
+      archived: false,
+      title: 'Backend two',
+    });
+    expect(back.archived).toBe(false);
+    expect(back.slug).toBe('backend-two');
+    // …and the channel that took the name is untouched.
+    expect(service.getRoom(squatter.id, human)?.slug).toBe('backend');
+  });
+
+  it('still refuses an un-archive whose new name is also taken', () => {
+    const away = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      human
+    );
+    service.updateRoom(away.id, human, { archived: true });
+    service.createRoom({ kind: 'channel', title: 'Backend', members: [], agentPaths: [] }, human);
+    service.createRoom({ kind: 'channel', title: 'Frontend', members: [], agentPaths: [] }, human);
+
+    expect(() =>
+      service.updateRoom(away.id, human, { archived: false, title: 'Frontend' })
+    ).toThrow(expect.objectContaining({ code: 'SLUG_TAKEN' }));
+    // Refused whole: it is still archived, and still under its own old name.
+    const untouched = service.getRoom(away.id, human);
+    expect(untouched?.archived).toBe(true);
+    expect(untouched?.slug).toBe('backend');
+  });
+
   it('renames a direct message without inventing a slug for it', () => {
     // Only a channel has a name people type; a DM is addressed by who is in it.
     const dm = service.createRoom({ kind: 'dm', title: 'Ana', members: [], agentPaths: [] }, human);

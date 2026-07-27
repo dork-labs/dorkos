@@ -21,6 +21,10 @@
       "types": "./src/transport.ts",
       "default": "./dist/transport.js"
     },
+    "./transport-rooms": {
+      "types": "./src/transport-rooms.ts",
+      "default": "./dist/transport-rooms.js"
+    },
     "./types": {
       "types": "./src/types.ts",
       "default": "./dist/types.js"

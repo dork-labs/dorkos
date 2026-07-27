@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent, SidebarGroupAction } from '@/layers/shared/ui';
 import { AgentChipPicker, type AgentPickerCandidate } from './AgentChipPicker';
@@ -33,6 +33,7 @@ interface NewDirectMessageMenuProps {
  */
 export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMenuProps) {
   const [open, setOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -45,12 +46,16 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
         side="right"
         align="start"
         className="w-64 p-2"
-        // The picker focuses its own field on mount; Radix must not race it to
-        // whatever happens to be the first tabbable element.
-        onOpenAutoFocus={(event) => event.preventDefault()}
+        // The search field, not whatever happens to be first in the DOM. The
+        // popover has to place this itself: focus set from inside the picker is
+        // overwritten a commit later by the trigger's own focus restore.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          searchRef.current?.focus();
+        }}
       >
         <AgentChipPicker
-          takeFocus
+          inputRef={searchRef}
           candidates={candidates}
           onSubmit={(chosen) => {
             setOpen(false);
@@ -64,9 +69,3 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
     </Popover>
   );
 }
-
-/**
- * The candidate shape this menu offers, re-exported under its original name so
- * existing callers keep importing one thing from one place.
- */
-export type DirectMessageCandidate = AgentPickerCandidate;

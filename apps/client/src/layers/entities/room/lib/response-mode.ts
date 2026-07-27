@@ -38,14 +38,3 @@ export const RESPONSE_MODE_OPTIONS: readonly ResponseModeOption[] = [
   { value: 'mention-only', label: 'Replies only when @mentioned' },
   { value: 'silent', label: 'Never replies on its own' },
 ] as const;
-
-/**
- * The label for one stored response mode.
- *
- * @param mode - The stored value.
- * @returns Its plain-language label, or the raw value if the enum ever grows a
- *   member this list has not caught up with.
- */
-export function responseModeLabel(mode: ResponseMode): string {
-  return RESPONSE_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
-}

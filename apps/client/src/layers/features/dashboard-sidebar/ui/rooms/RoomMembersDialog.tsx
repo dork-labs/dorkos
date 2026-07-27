@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UserMinus } from 'lucide-react';
-import { toast } from 'sonner';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import {
   agentAuthorRef,
@@ -87,6 +86,7 @@ export function RoomMembersDialog({
   /** The member whose removal is waiting to be confirmed, by author id. */
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // The confirmation takes the focus so it can be answered from the keyboard
   // without hunting for it, and so a screen reader reads what it is confirming.
@@ -110,38 +110,22 @@ export function RoomMembersDialog({
 
   const handleAdd = (chosen: AgentPickerCandidate[]) => {
     // One call per agent: the roster endpoint adds one member at a time, and a
-    // partial success is still progress worth keeping — so each failure is
-    // reported on its own rather than rolling the others back.
+    // partial success is still progress worth keeping, so a failure is reported
+    // on its own rather than rolling the others back. Reporting is the shared
+    // mutation toast's — the hook names the action and the server says why, and
+    // raising a second toast here only ever produced two lines for one failure.
     for (const agent of chosen) {
-      addMember.mutate(
-        { roomId: room.id, agentPath: agent.agentPath },
-        {
-          onError: (err) =>
-            toast.error(err.message || `Couldn't add ${agent.displayName} to ${title}`),
-        }
-      );
+      addMember.mutate({ roomId: room.id, agentPath: agent.agentPath });
     }
   };
 
   const handleModeChange = (member: RoomRosterEntry, mode: ResponseMode) => {
-    setResponseMode.mutate(
-      { roomId: room.id, authorId: member.authorId, responseMode: mode },
-      {
-        onError: (err) =>
-          toast.error(err.message || `Couldn't change how ${member.author.displayName} replies`),
-      }
-    );
+    setResponseMode.mutate({ roomId: room.id, authorId: member.authorId, responseMode: mode });
   };
 
   const confirmRemoval = (member: RoomRosterEntry) => {
     setPendingRemoval(null);
-    removeMember.mutate(
-      { roomId: room.id, authorId: member.authorId },
-      {
-        onError: (err) =>
-          toast.error(err.message || `Couldn't remove ${member.author.displayName} from ${title}`),
-      }
-    );
+    removeMember.mutate({ roomId: room.id, authorId: member.authorId });
   };
 
   /**
@@ -163,15 +147,22 @@ export function RoomMembersDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
         className="sm:max-w-md"
-        // Focus follows the entry point, and has to be taken over to do it.
-        // The picker sits at the BOTTOM of this panel but is the first
-        // tabbable thing in it while the roster is still loading, so Radix's
-        // "focus the first tabbable element" drops the cursor into a search
-        // field a reader who asked for "Members…" never wanted. Panel first;
-        // the picker focuses itself when the reader asked to add.
+        // Focus follows the entry point, and this is the only place that can
+        // place it. Radix's default — first tabbable element — is wrong in both
+        // directions here: it lands in the add-agents search field for a reader
+        // who asked for "Members…", and on the first roster control for one who
+        // asked to add. So both branches are explicit.
+        //
+        // It has to happen HERE and not inside the picker. The menu that opened
+        // this panel closes a commit later and restores focus to its own
+        // trigger — the sidebar's "…" button — so any focus the picker set on
+        // mount is simply overwritten, and the reader is left typing into a
+        // sidebar. Focus placed by the dialog is inside its focus scope, which
+        // Radix defends against exactly that.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          if (intent === 'roster') (event.currentTarget as HTMLElement | null)?.focus();
+          const target = intent === 'add' ? searchRef.current : event.currentTarget;
+          (target as HTMLElement | null)?.focus();
         }}
         onEscapeKeyDown={handleEscapeKeyDown}
       >
@@ -308,7 +299,7 @@ export function RoomMembersDialog({
               }
               allChosenMessage="Every agent you have is already in here."
               isSubmitting={addMember.isPending}
-              takeFocus={intent === 'add'}
+              inputRef={searchRef}
             />
           </section>
         </ResponsiveDialogBody>
@@ -316,6 +307,3 @@ export function RoomMembersDialog({
     </ResponsiveDialog>
   );
 }
-
-/** Re-exported so callers wire one candidate shape through both the row and the panel. */
-export type { AgentPickerCandidate };

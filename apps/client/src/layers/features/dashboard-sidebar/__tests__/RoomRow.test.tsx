@@ -51,6 +51,36 @@ function oneToOne(agentPath: string): RoomSummary {
 
 const FLEET = [{ agentPath: '/repo/ana', displayName: 'Ana' }];
 
+/** What `getRoom` answers with for the members panel: the operator plus Ana. */
+function roomWithRoster() {
+  return {
+    ...channel(),
+    members: [
+      {
+        roomId: 'room-1',
+        authorId: 'me',
+        responseMode: 'always' as const,
+        joinedAt: '2026-07-26T10:00:00.000Z',
+        lastReadSeq: 0,
+        author: { id: 'me', kind: 'human' as const, displayName: 'You' },
+      },
+      {
+        roomId: 'room-1',
+        authorId: 'author-ana',
+        responseMode: 'mention-only' as const,
+        joinedAt: '2026-07-26T10:00:00.000Z',
+        lastReadSeq: 0,
+        author: {
+          id: 'author-ana',
+          kind: 'agent' as const,
+          displayName: 'Ana',
+          agentRef: agentAuthorRef('/repo/ana'),
+        },
+      },
+    ],
+  };
+}
+
 function renderRow(
   room: RoomSummary,
   opts: { transport?: Transport; onOpenAgentProfile?: (path: string) => void } = {}
@@ -179,6 +209,35 @@ describe('RoomRow menus', () => {
   });
 });
 
+describe('RoomRow surfaces opened from the menu', () => {
+  // These cross the menu seam on purpose. A panel that places focus correctly
+  // when rendered on its own still lands in the wrong place through a menu:
+  // the menu closes in a SECOND commit and restores focus to its own trigger,
+  // overwriting whatever the panel just focused. Rendering the panel directly
+  // cannot see that, and once certified it below the seam.
+  it('puts the cursor in the search field when the reader asked to add agents', async () => {
+    renderRow(channel(), {
+      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roomWithRoster()) }),
+    });
+    fireEvent.click(within(openDropdown()).getByText('Add agents…'));
+
+    const search = await screen.findByRole('combobox', { name: 'Search agents' });
+    await waitFor(() => expect(search).toHaveFocus());
+  });
+
+  it('leaves the search field alone when the reader asked for the roster', async () => {
+    renderRow(channel(), {
+      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roomWithRoster()) }),
+    });
+    fireEvent.click(within(openDropdown()).getByText('Members…'));
+
+    const search = await screen.findByRole('combobox', { name: 'Search agents' });
+    expect(search).not.toHaveFocus();
+    // …and focus is still inside the panel, not left behind on the sidebar.
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+});
+
 describe('RoomRow rename', () => {
   it('opens an inline editor seeded with the title behind the #slug', () => {
     renderRow(channel());
@@ -211,6 +270,34 @@ describe('RoomRow rename', () => {
     expect(transport.updateRoom).not.toHaveBeenCalled();
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '#general' })).toBeInTheDocument();
+  });
+
+  it('does NOT commit when the field is right-clicked, and opens no room menu', () => {
+    // Right-click-to-paste is the ordinary gesture in a text field. It used to
+    // open the ROOM menu — the row is the context-menu trigger and the editor
+    // sits inside it — which blurred the editor and blur-committed a half-typed
+    // name nobody had confirmed.
+    const { transport } = renderRow(channel());
+    fireEvent.click(within(openDropdown()).getByText('Rename…'));
+
+    const input = screen.getByRole('textbox', { name: 'Rename #general' });
+    fireEvent.change(input, { target: { value: 'Half typed' } });
+    fireEvent.contextMenu(input);
+
+    expect(transport.updateRoom).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Rename #general' })).toHaveValue('Half typed');
+  });
+
+  it('gives the focus back to the row when the editor closes', async () => {
+    // The editor unmounts under the cursor; without handing focus back, a
+    // keyboard reader is dropped to <body> and has to Tab in from the top of
+    // the page to reach the row they just renamed.
+    renderRow(channel());
+    fireEvent.click(within(openDropdown()).getByText('Rename…'));
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Rename #general' }), { key: 'Escape' });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '#general' })).toHaveFocus());
   });
 
   it('writes nothing when the name comes back unchanged or empty', () => {

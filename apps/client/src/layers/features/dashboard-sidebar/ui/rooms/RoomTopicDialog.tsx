@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import { toast } from 'sonner';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import {
   Button,
@@ -12,7 +11,7 @@ import {
   ResponsiveDialogTitle,
   Textarea,
 } from '@/layers/shared/ui';
-import { roomDisplayTitle, useUpdateRoom } from '@/layers/entities/room';
+import { roomDisplayTitle, useSetRoomTopic } from '@/layers/entities/room';
 
 /** Longest topic the server accepts (`UpdateRoomRequestSchema.topic`). */
 const MAX_TOPIC = 500;
@@ -37,18 +36,17 @@ interface RoomTopicDialogProps {
  */
 export function RoomTopicDialog({ room, open, onOpenChange }: RoomTopicDialogProps) {
   const [value, setValue] = useState(room.topic ?? '');
-  const updateRoom = useUpdateRoom();
+  const setTopic = useSetRoomTopic();
   const title = roomDisplayTitle(room);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     const trimmed = value.trim();
-    updateRoom.mutate(
-      { roomId: room.id, patch: { topic: trimmed === '' ? null : trimmed } },
-      {
-        onSuccess: () => onOpenChange(false),
-        onError: (err) => toast.error(err.message || `Couldn't change the topic of ${title}`),
-      }
+    // Failures are the shared mutation toast's to report: the hook names the
+    // action and the server's own sentence says why.
+    setTopic.mutate(
+      { roomId: room.id, topic: trimmed === '' ? null : trimmed },
+      { onSuccess: () => onOpenChange(false) }
     );
   };
 
@@ -84,8 +82,8 @@ export function RoomTopicDialog({ room, open, onOpenChange }: RoomTopicDialogPro
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={updateRoom.isPending}>
-              {updateRoom.isPending ? 'Saving…' : 'Save topic'}
+            <Button type="submit" disabled={setTopic.isPending}>
+              {setTopic.isPending ? 'Saving…' : 'Save topic'}
             </Button>
           </ResponsiveDialogFooter>
         </form>

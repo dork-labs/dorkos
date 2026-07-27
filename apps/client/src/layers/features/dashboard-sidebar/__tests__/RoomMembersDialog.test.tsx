@@ -314,17 +314,11 @@ describe('RoomMembersDialog', () => {
     expect(transport.addRoomMember).toHaveBeenNthCalledWith(2, 'room-1', { agentPath: '/repo/bo' });
   });
 
-  it('puts the cursor in the search field only when the reader asked to add', async () => {
-    const { unmount } = renderPanel({ intent: 'add' });
-    await waitFor(() =>
-      expect(screen.getByRole('combobox', { name: 'Search agents' })).toHaveFocus()
-    );
-    unmount();
-
-    renderPanel({ intent: 'roster' });
-    await rosterList();
-    expect(screen.getByRole('combobox', { name: 'Search agents' })).not.toHaveFocus();
-  });
+  // Where focus lands is asserted in `RoomRow.test.tsx`, through the menu that
+  // opens this panel. Rendering it directly here cannot see the thing that
+  // actually breaks it: the menu closes a commit later and restores focus to
+  // its own trigger, so a panel that focuses correctly in isolation still
+  // leaves the reader typing into the sidebar.
 
   it('says there is nobody left to add rather than showing an empty picker', async () => {
     renderPanel({ agents: [{ agentPath: '/repo/ana', displayName: 'Ana' }] });

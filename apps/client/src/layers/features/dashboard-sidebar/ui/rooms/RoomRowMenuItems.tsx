@@ -29,6 +29,14 @@ type RoomRowMenuVariant = 'context' | 'dropdown';
  * already names a verb, the id is that verb (`add`, `topic`, `rename`,
  * `archive`) so a command resolves to a node without a translation table in
  * between.
+ *
+ * **`/remove` is the one §15 verb with no node of its own, and that is
+ * deliberate.** Removing a member is a per-member action, not a room-level one:
+ * there is no "remove" you can perform on a room without first saying whom. It
+ * resolves to `members`, the panel that owns removal — which keeps §15.3's
+ * invariant intact, because the invariant is that every command has a menu
+ * equivalent, not that every command has its own node. A command that needs an
+ * argument the menu would have to ask for anyway lands on the surface that asks.
  */
 export type RoomMenuActionId =
   | 'mark-read'
