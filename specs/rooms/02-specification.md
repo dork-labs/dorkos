@@ -139,6 +139,14 @@ New subpath `@dorkos/shared/room-schemas` (`packages/shared/src/room-schemas.ts`
 
 Exports, all with `.openapi()` metadata: `RoomKindSchema`, `AuthorKindSchema`, `AuthorRefSchema`, `RoomSchema`, `RoomMemberSchema`, `RoomEntrySchema`, `RoomEntryKindSchema`, `CreateRoomRequestSchema`, `PostToRoomRequestSchema`, `UpdateMembershipRequestSchema`, and the room SSE event union `RoomEventSchema`.
 
+### What an `AuthorRef` has to carry
+
+A room's roster is **the only place a client learns an author exists**, so `AuthorRef` must carry enough to render and to compare — not just a label. It carries `id`, `kind`, `displayName`, optional `emoji` and `color` (presentation), and `agentRef`, a stable handle derived from the agent's `agentPath`.
+
+`emoji`, `color` and `displayName` are a **render cache**, refreshed on resolve and never the key. `agentRef` is a derived compare handle, **not a second identity key** — the key is still `agentPath` (ADR 260726-170126).
+
+This exists because its absence already caused a defect: R2 had to filter DM candidates by comparing display _strings_, since `AuthorRef` offered nothing stabler, which meant two agents sharing a name hid each other from the menu.
+
 `responseMode` **reuses the existing enum** — import the values from `mesh-schemas.ts`, do not re-declare them. A second copy of that enum is a review-blocking finding.
 
 ### Canonical serialization (reserved for signing)
@@ -174,7 +182,7 @@ Wired in `apps/server/src/index.ts` beside `createWorkspaceSubsystem`. Routes at
 | `PATCH`  | `/api/rooms/:id`                   | Title, topic, archive.                                                                               |
 | `GET`    | `/api/rooms/:id/entries`           | Paginated history, `?before=<seq>&limit=`.                                                           |
 | `POST`   | `/api/rooms/:id/entries`           | Post. **Trigger-only, returns 202** — mirrors `POST /api/sessions/:id/messages`. Delivery rides SSE. |
-| `POST`   | `/api/rooms/:id/members`           | Add a member (agent or human).                                                                       |
+| `POST`   | `/api/rooms/:id/members`           | Add a member (agent or human). Operator-only — `403 OPERATOR_ONLY` for an agent caller.              |
 | `PATCH`  | `/api/rooms/:id/members/:authorId` | Change `responseMode`.                                                                               |
 | `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                                                                     |
 | `PUT`    | `/api/rooms/:id/read-cursor`       | Set `lastReadSeq`.                                                                                   |
@@ -226,7 +234,9 @@ On a committed `post` entry by author `A` in room `R`, for each agent member `M`
 | `direct-only`    | `R.kind === 'dm'`, or `M.authorId ∈ entry.mentions` |
 | `always`         | always                                              |
 
-Then the cascade guard (§6) may veto. Survivors are triggered on their `room_sessions` row, creating the session if absent.
+Then the cascade guard (§6) may veto. Survivors are triggered on their `room_sessions` row, creating the session if absent. **That binding is first-write-wins**, which is what makes an agent's per-room context survive across messages rather than starting fresh each time.
+
+**What the agent says becomes a post.** This is the feature, and the spec previously stopped short of saying it. The agent's turn is run through the normal `triggerTurn` path — so it is a visible session turn, not invisible work — and its reply is written back as a `post` entry authored by that agent, **carrying the triggering entry's provenance** (`cascadeRoot`, and `cascadeDepth + 1`). The cascade guard reads exactly that provenance, so a reply that does not carry it is a reply the guard cannot see.
 
 Addressing three agents and getting three answers is the intended outcome, not a pathology. `responseMode` exists to stop agents answering when they were **not** addressed; it makes no attempt to order or serialise the ones who were.
 
@@ -252,6 +262,10 @@ A refusal writes a `notice` entry into the room. The copy is the room's voice, n
 > Ana stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.
 
 A silently dropped trigger is indistinguishable from a broken agent, and in a shared room the person who notices is not the person who configured it.
+
+**One notice per agent per cascade, not per refusal.** Three `always` agents in a channel produce three refusals for one human message under the obvious reading, and a room that answers a question with six apology lines is worse than one that quietly stops. A later cascade may legitimately notice again.
+
+**Depth and ancestry are not peers, and the ordering matters.** Ancestry is the rule that actually bounds ping-pong: it fires the moment an author would repeat inside one cascade. Depth only ever fires for a chain of _distinct_ agents, or when `maxAgentDepth` is 0. Treating them as two equivalent limits — as an earlier draft of this section did — invites tuning the one that almost never fires. ADR 260726-170127 states this correctly; this section did not.
 
 ---
 
