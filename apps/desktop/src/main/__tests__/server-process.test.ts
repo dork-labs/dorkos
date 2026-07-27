@@ -201,6 +201,26 @@ function dialogDetail(dialog: ElectronMock['dialog'], index: number): string {
  */
 let originalRejectionListeners: Array<(...args: unknown[]) => void> = [];
 
+/**
+ * Pin every `startServer` in this file to a port nothing is using, so the
+ * supervisor's behaviour is what is under test and the machine's port map is
+ * not.
+ *
+ * `DORKOS_PORT` is the top of `resolvePreferredPort`'s precedence, and a pinned
+ * port is claimed strictly — no scanning (see `server-port.ts`). That is what
+ * makes this necessary: left ambient, a developer with DorkOS already running on
+ * 4242 would turn every start in this file into a refusal. Pinning also means
+ * the restart assertions below are about the supervisor reusing an address, not
+ * about whichever port the operating system felt like handing out.
+ *
+ * Found fresh per test rather than once, so a port taken part-way through a run
+ * cannot strand the rest of the file.
+ */
+async function pinFreePort(): Promise<void> {
+  const { findAvailablePort } = await import('../server-port');
+  vi.stubEnv('DORKOS_PORT', String(await findAvailablePort(45_000, 50)));
+}
+
 beforeEach(async () => {
   vi.resetModules();
   originalRejectionListeners = process.listeners('unhandledRejection') as Array<
@@ -211,10 +231,12 @@ beforeEach(async () => {
   childProcess.resetChildProcessMock();
   forkedChildren = childProcess.forkedChildren;
   (await getLogMock()).resetLogMock();
+  await pinFreePort();
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   process.removeAllListeners('unhandledRejection');
   for (const listener of originalRejectionListeners) process.on('unhandledRejection', listener);
 });
@@ -507,6 +529,52 @@ describe('the environment handed to the server child', () => {
     vi.unstubAllEnvs();
   });
 
+  it('hands the child the port the resolver chose, not one the OS picked', async () => {
+    // The end-to-end half of `server-port.test.ts`: whatever
+    // `resolvePreferredPort` settles on has to reach `DORKOS_PORT`. Driven
+    // through DORKOS_PORT (the top of that precedence) so the assertion does
+    // not depend on 4242 being free on the machine running the suite.
+    const { findAvailablePort } = await import('../server-port');
+    const asked = await findAvailablePort(45_678, 20);
+    vi.stubEnv('DORKOS_PORT', String(asked));
+    const { startServer } = await import('../server-process');
+
+    const { port, child } = await startReadyServer(startServer);
+
+    expect(port).toBe(asked);
+    expect(child.env.DORKOS_PORT).toBe(String(asked));
+  });
+
+  it("puts the server's refusal to share a data directory in front of the user", async () => {
+    // The argument this whole design rests on: the port scan is silent, so the
+    // one start-up conflict a person is ever shown is the one that actually
+    // stopped them — the single-instance lock (ADR 260726-234122), in the
+    // server's own words. That only holds if the relay works end to end, from
+    // the child's stderr to the dialog `index.ts` raises.
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+    for (const line of [
+      'Another DorkOS instance is already using this data directory (/Users/kai/.dork).',
+      'It is running as process 8123 on port 4242 (DorkOS 0.56.0).',
+      'Stop it first (`kill 8123`), or start this one against a different directory.',
+    ]) {
+      child.emitStderr(line);
+    }
+    child.emitExit(1);
+
+    const message = (await startupError(started)).message;
+    // `~/.dork`, not `/Users/kai/.dork`: the tail abbreviates home paths on its
+    // way to a dialog someone may screenshot. The actionable part survives.
+    expect(message).toContain('already using this data directory (~/.dork)');
+    expect(message).toContain('process 8123 on port 4242');
+    expect(message).toContain('kill 8123');
+    // Nothing in the relay may reframe it as a port problem: this conflict is
+    // about the directory, and the two stories must not compete.
+    expect(message).not.toMatch(/next free port|will not quietly move/i);
+  });
+
   it('marks the server as desktop-managed so it refuses to restart itself', async () => {
     const { startServer } = await import('../server-process');
 
@@ -625,7 +693,7 @@ describe('the crash monitor', () => {
     expect(vi.mocked(dialog.showMessageBox).mock.calls[0][0]).toBe(tracked);
   });
 
-  it('restarts on request, reloads the window, and never reports a stale port', async () => {
+  it('restarts on request onto the same address, reloads the window, and reports the live port', async () => {
     const { BrowserWindow, dialog } = await getElectronMock();
     const tracked = new BrowserWindow({ width: 1200, height: 800 });
     dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
@@ -645,7 +713,13 @@ describe('the crash monitor', () => {
     await flush();
 
     const newPort = Number(replacement.env.DORKOS_PORT);
-    expect(newPort).not.toBe(port);
+    // The dead server let its port go, so the replacement asks for the same
+    // one and gets it. A bookmark, an MCP client config, and a `dorkos://`
+    // link all survive a crash because of this — before, every restart moved
+    // the app to a fresh random port.
+    expect(newPort).toBe(port);
+    // The reported port is the live child's, not a value left over from the
+    // dead one — the property that has to hold whether or not it changed.
     expect(getServerPort()).toBe(newPort);
     // Dev renderer comes from electron-vite, so it only needs a reload to
     // re-read the port over IPC.
@@ -659,9 +733,9 @@ describe('the crash monitor', () => {
       app.isPackaged = true;
       const tracked = new BrowserWindow({ width: 1200, height: 800 });
       dialog.showMessageBox = vi.fn<ShowMessageBox>(async () => ({
-      response: 0,
-      checkboxChecked: false,
-    }));
+        response: 0,
+        checkboxChecked: false,
+      }));
       const { startServer, getServerPort } = await import('../server-process');
 
       const started = startServer(() => tracked as unknown as Electron.BrowserWindow);
@@ -674,8 +748,9 @@ describe('the crash monitor', () => {
       replacement.emitReady();
       await flush();
 
-      // A packaged renderer is served *by* the server, so it has to move to
-      // the new origin — the port changed, and a stale one strands it.
+      // A packaged renderer is served *by* the server, so it has to be sent
+      // back to the origin — its connection died with the old process, whether
+      // or not the replacement came back on the same port.
       const newPort = Number(replacement.env.DORKOS_PORT);
       expect(getServerPort()).toBe(newPort);
       expect(tracked.loadURL).toHaveBeenCalledWith(`http://localhost:${newPort}`);

@@ -31,6 +31,16 @@ You'll see an error like `Port 4242 is already in use.` DorkOS listens on port 4
   you set with `--port` wins over everything else for that run.
 </Callout>
 
+**In the [desktop app](/docs/getting-started/desktop-app) this usually fixes itself.** 4242 is a starting guess, so when something else has it the app takes the next free port (4243, then 4244) and **Settings → Server** shows the address it landed on. It only stops if ten ports in a row are unavailable, and the message names the range.
+
+**A port you chose is treated differently.** If you pinned one with `dorkos config set server.port` or the `DORKOS_PORT` environment variable, the app will not move off it. It stops and tells you the port is taken, because anything you already pointed at that port would break if DorkOS quietly answered somewhere else. Free the port and open the app again, or pin a different one.
+
+## "I opened the desktop app and it says another DorkOS is already running"
+
+You have `dorkos` running in a terminal, and both it and the app want the same DorkOS folder (`~/.dork`). One folder, one server: two would write over each other's sessions and agents.
+
+Quit the one in your terminal (`Ctrl+C`), then open the app again. If you'd rather keep both, start the terminal one against a folder of its own: `DORK_HOME=~/.dork-cli dorkos`.
+
 ## "It says my agent isn't ready" or "Claude Code / Codex / OpenCode won't connect"
 
 DorkOS checks two things for each agent tool: is the CLI installed, and are you logged in. When either is missing, DorkOS shows a **Connect** button instead of trying to run a session and failing partway through.
@@ -54,6 +64,8 @@ DorkOS exposes a health check you can hit directly, no login required:
 ```bash
 curl http://localhost:4242/api/health
 ```
+
+Swap in your own address if DorkOS isn't on 4242. **Settings → Server** always shows it.
 
 A healthy server answers with something like:
 

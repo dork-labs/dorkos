@@ -117,9 +117,10 @@ const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 
  *
  * From the `http:` cockpit a `file:` target is refused, because opening one is
  * a guaranteed no-op: browsers block `file:` from an `http:` page, and the
- * desktop shell forwards only `http(s)` and exposes no `openExternal` bridge.
- * Reporting success for a guaranteed no-op is how "nothing opened" becomes
- * "you're authorized" — see the return contract on {@link openExternalLink}.
+ * desktop shell forwards only `http(s)` — through its link guards and through
+ * the `openExternal` bridge alike. Reporting success for a guaranteed no-op is
+ * how "nothing opened" becomes "you're authorized" — see the return contract on
+ * {@link openExternalLink}.
  *
  * @param protocol - The target's scheme, including the colon.
  * @param base - The page the link is being opened from.
@@ -272,8 +273,33 @@ export function supportsNewTab(): boolean {
   return typeof window !== 'undefined' && !getPlatform().isEmbedded;
 }
 
-/** Hand a URL to the browser: a new tab on the web, the system browser on desktop. */
+/**
+ * Hand a URL to the browser: a new tab on the web, the system browser on desktop.
+ *
+ * The desktop shell gets its own bridge because `window.open` cannot keep the
+ * promise there for one URL in particular — our own. At
+ * `http://localhost:<port>` the window-open handler recognises its own origin
+ * and builds a second cockpit window (`window-manager.ts`), which is right for
+ * "open in a new tab" and wrong for every caller here, all of whom promised to
+ * leave. `openExternal` goes straight to `shell.openExternal`, under the same
+ * http(s)-only policy the shell's link guards apply.
+ */
 function openInBrowser(url: string): void {
+  // Feature-detect the METHOD, not the bridge, matching every other consumer of
+  // `electronAPI` (`use-desktop-updater.ts`, `api-base-url.ts`,
+  // `use-electron-navigate.ts`). A host that exposes a partial bridge would
+  // otherwise throw out of here instead of falling back to `window.open`.
+  const openExternal = typeof window === 'undefined' ? undefined : window.electronAPI?.openExternal;
+  if (openExternal) {
+    // Unlike `window.open`'s null return, this one can actually report. The
+    // caller has already been told `true`, so the only honest thing left is to
+    // say so where a bug report can find it, rather than let it surface as an
+    // unhandled rejection with no context.
+    openExternal(url).catch((err: unknown) => {
+      console.error('[dorkos:link] the desktop shell could not open', url, err);
+    });
+    return;
+  }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 

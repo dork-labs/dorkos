@@ -111,6 +111,25 @@ Same as macOS: sign in to your Claude account, or paste your Anthropic API key, 
 
 </Tabs>
 
+## Find your address
+
+The desktop app runs the same DorkOS server the CLI does, so it has a web address on your own machine. You need that address to bookmark the cockpit in a browser, to point another app at the [MCP server](/docs/integrations/mcp-server), or to run any of the `curl` examples in these docs.
+
+Open **Settings → Server**. The **Address** at the top is yours, with a button to copy it and a button to open it in your browser. The **MCP endpoint** right below it is the one to paste into Claude Code, Cursor, or Windsurf.
+
+Almost always it is `http://localhost:4242`, the same address the CLI uses, and it stays that way every time you open the app. If something else on your machine already has port 4242, DorkOS quietly moves to the next free one (4243, then 4244, and so on) and Settings shows you where it landed. It keeps that address until you quit, and asks for 4242 again the next time you open the app.
+
+<Callout type="info">
+  Want DorkOS on a port of your own? Run `dorkos config set server.port 5000`, or add `"server": {
+  "port": 5000 }` to `~/.dork/config.json` by hand, then reopen the app. The CLI reads that same
+  setting when you start it without `--port`, so both ways of running DorkOS land on the same
+  address. Pick 1024 or higher; lower ports need administrator rights.
+</Callout>
+
+A port you pick this way is one DorkOS will not move off. If it's taken when you open the app, DorkOS stops and says so instead of answering somewhere else, because anything you already pointed at that port would quietly break. That's the opposite of what it does with 4242, and on purpose: 4242 is a starting guess, and a port you chose is a promise to whatever you configured against it.
+
+Already running `dorkos` in a terminal? Opening the app then tells you so and stops, because a single DorkOS folder can only be used by one server at a time. Quit the one in your terminal and open the app again.
+
 ## Updating
 
 Nothing to do. The app checks for a new release on launch and every four hours, downloads it in the background, and shows a restart prompt (or a card in the sidebar) once it's ready.

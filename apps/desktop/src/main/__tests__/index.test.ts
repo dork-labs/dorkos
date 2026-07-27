@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('electron', () => import('./electron-mock'));
-vi.mock('../window-manager', () => ({
+// Windows are stubbed, but `isWebLink` is kept real: the `open-external` tests
+// below assert that the bridge enforces the shell's actual outbound policy, and
+// a hand-written copy of it here would keep passing after the real one changed.
+vi.mock('../window-manager', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../window-manager')>()),
   createWindow: vi.fn(),
   makeRendererUrlAccessor: vi.fn(() => () => undefined),
 }));
@@ -613,6 +617,60 @@ describe('keeping DorkOS running in the background (DOR-538)', () => {
   });
 });
 
+describe('the open-external bridge', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Invoke the `open-external` handler `../index` registered. */
+  async function openExternal(url: unknown): Promise<void> {
+    const { ipcMain } = await getElectronMock();
+    const call = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === 'open-external');
+    if (!call) throw new Error('no ipcMain.handle registered for "open-external"');
+    const handler = call[1] as (event: unknown, url: unknown) => Promise<void>;
+    await handler({}, url);
+  }
+
+  async function loadShell(): Promise<void> {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+    await import('../index');
+  }
+
+  it("hands the app's own address to the system browser", async () => {
+    await loadShell();
+    const { shell } = await getElectronMock();
+
+    // The case the bridge exists for. `window.open` at this URL is claimed by
+    // the window-open handler and becomes a second cockpit window, so Settings
+    // → Server's "open in your browser" would not leave the app without it.
+    await openExternal('http://localhost:4242');
+
+    expect(shell.openExternal).toHaveBeenCalledWith('http://localhost:4242');
+  });
+
+  it('refuses anything the shell would not open from a link', async () => {
+    await loadShell();
+    const { shell } = await getElectronMock();
+
+    for (const url of [
+      'file:///etc/passwd',
+      'javascript:alert(1)',
+      'dorkos://agents',
+      'mailto:someone@example.com',
+      '',
+      42,
+      null,
+      undefined,
+    ]) {
+      await openExternal(url);
+    }
+
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
 describe('server start failure', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -636,9 +694,36 @@ describe('server start failure', () => {
     const [title, message] = vi.mocked(dialog.showErrorBox).mock.calls[0];
     expect(title).toMatch(/couldn't start/i);
     expect(message).toContain('utility process exited');
+    // An opaque failure gets the generic advice, because trying again really
+    // may work and the log really is where to look.
+    expect(message).toMatch(/try restarting the app/i);
+    expect(message).toMatch(/Library\/Logs/);
     expect(app.quit).toHaveBeenCalledTimes(1);
     // No window, no menu/updater setup — the app must not proceed past the
     // failed server start into a half-initialized, windowless state.
     expect(windowManager.createWindow).not.toHaveBeenCalled();
+  });
+
+  it('drops the "try restarting" advice when the failure already says what to do', async () => {
+    const { app, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const { PortUnavailableError } = await import('../server-port');
+    const refusal =
+      'DorkOS is set to use port 5000, and something else on this computer already has it. ' +
+      'Quit whatever is using port 5000 and open DorkOS again.';
+    const serverProcess = await import('../server-process');
+    vi.mocked(serverProcess.startServer).mockRejectedValueOnce(new PortUnavailableError(refusal));
+
+    await import('../index');
+    await app.emit('ready');
+
+    const [, message] = vi.mocked(dialog.showErrorBox).mock.calls[0];
+    expect(message).toBe(refusal);
+    // "Try restarting the app" is not merely unhelpful for a pinned port that
+    // is still taken next launch — it contradicts the sentence underneath it,
+    // which is how people learn to stop reading these boxes.
+    expect(message).not.toMatch(/try restarting the app/i);
   });
 });

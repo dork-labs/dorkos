@@ -383,6 +383,19 @@ export const UserConfigSchema = z.object({
   version: z.literal(1),
   server: z
     .object({
+      /**
+       * **Something else depends on this exact number, not just on there being
+       * a default.** `conf` materializes defaults to disk, so every
+       * `config.json` in the world already carries this value whether or not
+       * anyone chose it. `PREFERRED_SERVER_PORT` in
+       * `apps/desktop/src/main/server-port.ts` compares against it to tell a
+       * port a person pinned from the one the library wrote — a pinned port is
+       * claimed strictly, an unchosen one steps past a conflict. Move this
+       * without moving that and every install's written-out default reads as a
+       * deliberate pin, so the desktop app refuses to start instead of stepping
+       * past a busy port. `config-schema.test.ts` fails with that explanation
+       * if the two drift.
+       */
       port: z.number().int().min(1024).max(65535).default(4242),
       cwd: z.string().nullable().default(null),
       boundary: z.string().nullable().default(null),
