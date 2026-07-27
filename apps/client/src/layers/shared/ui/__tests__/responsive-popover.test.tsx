@@ -21,8 +21,20 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
 
 // Mock Radix Popover to render simple DOM elements for testing
 vi.mock('../popover', () => ({
-  Popover: ({ children, open }: { children: React.ReactNode; open?: boolean }) =>
-    open !== false ? <div data-testid="popover-root">{children}</div> : null,
+  Popover: ({
+    children,
+    open,
+    modal,
+  }: {
+    children: React.ReactNode;
+    open?: boolean;
+    modal?: boolean;
+  }) =>
+    open !== false ? (
+      <div data-testid="popover-root" data-modal={String(modal)}>
+        {children}
+      </div>
+    ) : null,
   PopoverTrigger: ({
     children,
     ...props
@@ -44,8 +56,20 @@ vi.mock('../popover', () => ({
 
 // Mock Drawer (vaul) components to render simple DOM elements for testing
 vi.mock('../drawer', () => ({
-  Drawer: ({ children, open }: { children: React.ReactNode; open?: boolean }) =>
-    open !== false ? <div data-testid="drawer-root">{children}</div> : null,
+  Drawer: ({
+    children,
+    open,
+    modal,
+  }: {
+    children: React.ReactNode;
+    open?: boolean;
+    modal?: boolean;
+  }) =>
+    open !== false ? (
+      <div data-testid="drawer-root" data-modal={String(modal)}>
+        {children}
+      </div>
+    ) : null,
   DrawerTrigger: ({
     children,
     ...props
@@ -112,6 +136,40 @@ describe('ResponsivePopover', () => {
     );
     expect(screen.getByTestId('popover-root')).toBeInTheDocument();
     expect(screen.queryByTestId('drawer-root')).not.toBeInTheDocument();
+  });
+
+  // `modal` is the whole reason a task picker traps focus instead of letting
+  // Tab wander behind it, and it only works if it reaches the primitive. A
+  // browser pass can confirm the trap today; nothing would catch someone
+  // dropping the forward tomorrow, so pin it on both branches.
+  it('forwards modal to Popover on desktop', () => {
+    mockUseIsMobile.mockReturnValue(false);
+    render(
+      <ResponsivePopover open modal>
+        <ResponsivePopoverContent>content</ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    expect(screen.getByTestId('popover-root')).toHaveAttribute('data-modal', 'true');
+  });
+
+  it('forwards modal to Drawer on mobile', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsivePopover open modal>
+        <ResponsivePopoverContent>content</ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    expect(screen.getByTestId('drawer-root')).toHaveAttribute('data-modal', 'true');
+  });
+
+  it('leaves modal off when nobody asks for it, so existing popovers are unchanged', () => {
+    mockUseIsMobile.mockReturnValue(false);
+    render(
+      <ResponsivePopover open>
+        <ResponsivePopoverContent>content</ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    expect(screen.getByTestId('popover-root')).not.toHaveAttribute('data-modal', 'true');
   });
 
   it('renders Drawer on mobile', () => {
