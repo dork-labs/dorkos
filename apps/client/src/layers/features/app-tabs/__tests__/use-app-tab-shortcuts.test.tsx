@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 import { useAppTabsStore, type AppTab } from '@/layers/shared/model';
 import { SHORTCUTS } from '@/layers/shared/lib';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 // Resolves like the real `useNavigate`; the tab actions reconcile in its
 // `.then`, so a mock returning `undefined` would not exercise the real path.
@@ -43,9 +44,15 @@ function press(init: KeyboardEventInit & { code: string }): boolean {
 beforeEach(() => {
   navigate.mockClear();
   sessionStorage.clear();
+  // These chords are a desktop-app feature; the browser case is its own block
+  // at the bottom of this file.
+  enterDesktopShell();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  leaveDesktopShell();
+});
 
 describe('useAppTabShortcuts', () => {
   it('opens a new tab on the dashboard', () => {
@@ -150,5 +157,39 @@ describe('useAppTabShortcuts', () => {
 
     expect(SHORTCUTS.NEXT_TAB.key).toBe('mod+shift+]');
     expect(press({ key: '}', code: 'BracketRight', metaKey: true, shiftKey: true })).toBe(true);
+  });
+});
+
+describe('useAppTabShortcuts in a browser', () => {
+  beforeEach(() => {
+    leaveDesktopShell();
+  });
+
+  it('does not touch the browser’s own tab keys', () => {
+    // Cmd/Ctrl+T, Cmd/Ctrl+1-9 and Cmd/Ctrl+Shift+[/] address the BROWSER's
+    // tabs here. Cancelling one would break a key the person did not aim at us
+    // (DOR-568), so nothing is registered at all — every press comes back
+    // uncancelled.
+    setTabs(['/', '/agents'], 0);
+    renderHook(() => useAppTabShortcuts());
+
+    expect(press({ key: 't', code: 'KeyT', metaKey: true })).toBe(false);
+    expect(press({ key: '1', code: 'Digit1', metaKey: true })).toBe(false);
+    expect(press({ key: '{', code: 'BracketLeft', metaKey: true, shiftKey: true })).toBe(false);
+    expect(press({ key: '}', code: 'BracketRight', metaKey: true, shiftKey: true })).toBe(false);
+  });
+
+  it('leaves the tab set and sessionStorage alone', () => {
+    setTabs(['/', '/agents'], 1);
+    renderHook(() => useAppTabShortcuts());
+    sessionStorage.clear();
+
+    press({ key: 't', code: 'KeyT', metaKey: true });
+    press({ key: '1', code: 'Digit1', metaKey: true });
+
+    expect(useAppTabsStore.getState().tabs).toHaveLength(2);
+    expect(activeHref()).toBe('/agents');
+    expect(navigate).not.toHaveBeenCalled();
+    expect(sessionStorage.length).toBe(0);
   });
 });

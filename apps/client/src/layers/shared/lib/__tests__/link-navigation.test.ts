@@ -10,9 +10,11 @@ import {
   registerLinkNavigator,
   registerTabOpener,
   supportsNewTab,
+  supportsSeparateWindow,
   type LinkNavigation,
 } from '../link-navigation';
 import { setPlatformAdapter } from '../platform';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 const ORIGIN = 'http://localhost:4242';
 const FROM = `${ORIGIN}/agents?view=topology`;
@@ -232,6 +234,7 @@ describe('link dispatch', () => {
     openSpy.mockRestore();
     warnSpy.mockRestore();
     setPlatformAdapter(webPlatform);
+    leaveDesktopShell();
   });
 
   describe('openLink', () => {
@@ -309,7 +312,8 @@ describe('link dispatch', () => {
       expect(openSpy).toHaveBeenCalled();
     });
 
-    it('opens an internal link in an in-window tab on request', () => {
+    it('opens an internal link in an in-window tab in the desktop app', () => {
+      enterDesktopShell();
       const opened: string[] = [];
       const unregisterTabs = registerTabOpener((href) => opened.push(href));
       openLink('/session?dir=%2Ftmp', { target: 'tab' });
@@ -318,6 +322,18 @@ describe('link dispatch', () => {
       expect(openSpy).not.toHaveBeenCalled();
       expect(navigated).toEqual([]);
       unregisterTabs();
+    });
+
+    it('opens a real browser tab in the browser, where no strip is registered', () => {
+      // The browser owns tabs there, so the app entry registers no opener
+      // (DOR-568) and this must reach `window.open` rather than quietly
+      // navigating in place and losing the view you asked to keep.
+      openLink('/session?dir=%2Ftmp', { target: 'tab' });
+      expect(openSpy).toHaveBeenCalledWith(
+        `${window.location.origin}/session?dir=%2Ftmp`,
+        '_blank'
+      );
+      expect(navigated).toEqual([]);
     });
 
     it('sends an external link to the browser even when a tab is asked for', () => {
@@ -333,9 +349,10 @@ describe('link dispatch', () => {
       unregisterTabs();
     });
 
-    it('falls back to navigating in place when no tab strip is registered', () => {
-      // The Obsidian embed mounts no strip. A tab request must still go
-      // somewhere rather than silently vanish.
+    it('falls back to navigating in place in the embed, the one pane with nowhere else to go', () => {
+      // The Obsidian embed mounts no strip and has no browser tabs to borrow.
+      // A tab request must still go somewhere rather than silently vanish.
+      setPlatformAdapter(embeddedPlatform);
       openLink('/tasks', { target: 'tab' });
       expect(openSpy).not.toHaveBeenCalled();
       expect(navigated).toEqual([{ href: '/tasks', replace: undefined }]);
@@ -475,6 +492,28 @@ describe('link dispatch', () => {
       expect(supportsNewTab()).toBe(true);
       setPlatformAdapter(embeddedPlatform);
       expect(supportsNewTab()).toBe(false);
+    });
+
+    it('stays true in the desktop app — a tab is a tab, whoever owns it', () => {
+      enterDesktopShell();
+      expect(supportsNewTab()).toBe(true);
+    });
+  });
+
+  describe('supportsSeparateWindow', () => {
+    it('is true in the desktop app and false in the browser', () => {
+      // A browser's "new window" is the tab "Open in New Tab" already offers,
+      // so the second row is not offered there (DOR-568).
+      expect(supportsSeparateWindow()).toBe(false);
+      enterDesktopShell();
+      expect(supportsSeparateWindow()).toBe(true);
+    });
+
+    it('is false in the embed even with a bridge in scope', () => {
+      // Both halves are load-bearing statements, not one guarding the other.
+      enterDesktopShell();
+      setPlatformAdapter(embeddedPlatform);
+      expect(supportsSeparateWindow()).toBe(false);
     });
   });
 

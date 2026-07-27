@@ -1,5 +1,10 @@
 /**
- * The cockpit's in-window tabs (DOR-540).
+ * The desktop app's in-window tabs (DOR-540).
+ *
+ * **Written only in the desktop shell** (DOR-568): a browser owns its own tabs,
+ * so nothing there reconciles into this store and nothing there persists it. The
+ * store still exists on every surface — it is what the strip and the link seam
+ * are wired to — it simply never changes outside the desktop app.
  *
  * A tab is one **location** — a router-relative `path?search#hash`. That is the
  * whole model, and it is deliberately thin: the URL stays the single address of

@@ -22,10 +22,14 @@ interface AgentSubMenuProps {
   agent: AgentPathEntry;
   /** Switch CWD to this agent's project path */
   onOpenHere: () => void;
-  /** Open agent's project in a new tab of this window */
+  /** Open agent's project in a new tab */
   onOpenNewTab: () => void;
-  /** Open agent's project in a second cockpit window */
-  onOpenNewWindow: () => void;
+  /**
+   * Open agent's project in a second cockpit window. Omitted where a separate
+   * window is not a real destination (a browser, the Obsidian embed) — no
+   * handler, no row.
+   */
+  onOpenNewWindow?: () => void;
   /** Start a new session in this agent's CWD */
   onNewSession: () => void;
   /** Open agent settings dialog */
@@ -38,10 +42,16 @@ interface AgentSubMenuProps {
  * Sub-menu page for agent drill-down in the command palette.
  *
  * Displays action buttons (Open Here, Open in New Tab, Open in New Window,
- * New Session) and a list of recent sessions for the selected agent. The three
- * "where" choices sit together on purpose: this is the one place a person picks
- * where an agent should land, so all three belong in the same list rather than
- * two here and one hidden behind a gesture.
+ * New Session) and a list of recent sessions for the selected agent. The "where"
+ * choices sit together on purpose: this is the one place a person picks where an
+ * agent should land, so they belong in the same list rather than some here and
+ * one hidden behind a gesture.
+ *
+ * **New Window appears only where it is a different destination** — the desktop
+ * app. In a browser `onOpenNewWindow` is omitted and the row is left out
+ * entirely, rather than shown disabled or quietly remapped to a tab, because a
+ * browser's "new window" is the tab the row above already offers.
+ *
  * Rendered as a cmdk page when the user presses Enter on an agent.
  */
 export function AgentSubMenu({
@@ -68,10 +78,12 @@ export function AgentSubMenu({
           <span>Open in New Tab</span>
           <CommandShortcut>{modKey}Enter</CommandShortcut>
         </CommandItem>
-        <CommandItem value="open-new-window" onSelect={onOpenNewWindow}>
-          <SquareArrowOutUpRight className="size-4" />
-          <span>Open in New Window</span>
-        </CommandItem>
+        {onOpenNewWindow && (
+          <CommandItem value="open-new-window" onSelect={onOpenNewWindow}>
+            <SquareArrowOutUpRight className="size-4" />
+            <span>Open in New Window</span>
+          </CommandItem>
+        )}
         <CommandItem value="new-session" onSelect={onNewSession}>
           <Plus className="size-4" />
           <span>New Session</span>

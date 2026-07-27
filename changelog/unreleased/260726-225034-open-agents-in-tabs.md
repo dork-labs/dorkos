@@ -4,24 +4,27 @@ covers:
   - 'fix(client): only a history traversal may move focus between tabs (DOR-540)'
   - 'fix(client): answer the shell truthfully when Cmd+W closes a tab (DOR-540)'
   - 'fix(client): correct three stale rationales and hold the close answer (DOR-540)'
+  - 'fix(client): in a browser, use browser tabs (DOR-568)'
 ---
 
 ### Added
 
-- Open your agents in tabs, the way you already work in a browser or an editor. The tab strip runs
-  across the top of the window. The `+` button opens another tab, and "Open in New Tab" in the
-  command palette now opens a tab instead of a whole new window (DOR-540)
+- Open your agents in tabs in the desktop app, the way you already work in a browser or an editor.
+  The tab strip runs across the top of the window, and the `+` button opens another one (DOR-540)
 - Tabs tell you what your agents are doing while you are looking somewhere else. A tab lights up
   when its agent starts working, needs an answer from you, or hits a problem. You can leave five
   agents running and glance at the strip to see which one wants you
-- The command palette also has "Open in New Window", which opens a second DorkOS window on the
-  agent you picked. Handy for a second screen
-- Keyboard shortcuts for tabs in the desktop app: `Cmd/Ctrl+T` opens a tab, `Cmd/Ctrl+1` through `9`
-  jump to one, and `Cmd/Ctrl+Shift+[` and `]` step between them. `Cmd/Ctrl+W` closes the tab you are
-  on, and closes the window once it is the last tab. Web browsers keep most of these keys for their
-  own tabs, so in the browser use the strip instead. Press `Tab` to reach it, arrow keys to move
-  between tabs, and `Delete` to close one. The `×` on a tab closes it anywhere
+- Keyboard shortcuts for tabs: `Cmd/Ctrl+T` opens a tab, `Cmd/Ctrl+1` through `9` jump to one, and
+  `Cmd/Ctrl+Shift+[` and `]` step between them. `Cmd/Ctrl+W` closes the tab you are on, and closes
+  the window once it is the last tab. You can also reach the strip with `Tab`, move with the arrow
+  keys, and close a tab with `Delete`. The `×` on a tab closes it too
 - Your tabs come back after a reload, and each window keeps its own set
+- "Open in New Tab" in the command palette opens an agent without losing the one you were reading.
+  In the desktop app that is a DorkOS tab; in a browser it is a browser tab, which you can bookmark
+  or drag onto a second screen yourself
+- The desktop app's command palette also has "Open in New Window", which opens a second DorkOS
+  window on the agent you picked. Handy for a second screen. A browser has no separate answer to
+  that, so the choice is not offered there
 
 ### Changed
 

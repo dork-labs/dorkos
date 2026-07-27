@@ -12,11 +12,17 @@
  * its own policy (see {@link DISPATCHABLE_PROTOCOLS}).
  *
  * An internal link can land in three places, chosen by
- * {@link OpenLinkOptions.target}: in place (the default), in a new in-window
- * tab (DOR-540), or in a second cockpit window. `tab` and `window` stay
- * separate on purpose — "another tab" and "another window" are different
- * requests, and the tab strip must not quietly eat the only way to ask for the
- * second one.
+ * {@link OpenLinkOptions.target}: in place (the default), in another tab, or in
+ * a second cockpit window. `tab` and `window` stay separate on purpose —
+ * "another tab" and "another window" are different requests, and the tab strip
+ * must not quietly eat the only way to ask for the second one.
+ *
+ * **Who owns a tab depends on the surface** (DOR-568). In the desktop app the
+ * cockpit owns its own strip and `tab` opens one of those ({@link
+ * registerTabOpener}). In a browser the browser owns tabs, so `tab` opens a real
+ * browser tab — bookmarkable, restored by session restore, draggable into its
+ * own window, none of which ours could be. The Obsidian embed is one pane, so a
+ * tab request lands in place.
  *
  * - **Internal** — relative, hash-only, query-only, or absolute at the app's own
  *   origin *and* landing on a route the cockpit actually serves
@@ -40,7 +46,7 @@
  *
  * @module shared/lib/link-navigation
  */
-import { getPlatform } from './platform';
+import { getPlatform, isDesktopShell } from './platform';
 
 /**
  * Every path the cockpit's router serves — the definition of "internal".
@@ -224,7 +230,7 @@ export interface LinkNavigation {
 /** The router adapter the seam drives for internal links. */
 export type LinkNavigator = (navigation: LinkNavigation) => void;
 
-/** The tab adapter the seam drives for `target: 'tab'` (DOR-540). */
+/** The in-window tab adapter the seam drives for `target: 'tab'` (DOR-540). */
 export type TabOpener = (href: string) => void;
 
 let linkNavigator: LinkNavigator | null = null;
@@ -248,10 +254,11 @@ export function registerLinkNavigator(navigate: LinkNavigator): () => void {
  * Register the in-window tab strip that `target: 'tab'` links open into. Called
  * once from the app entry, alongside {@link registerLinkNavigator}.
  *
- * Registered only where a tab strip actually exists — the standalone cockpit.
- * The Obsidian embed is one pane inside someone else's app and mounts no strip,
- * so nothing registers there and {@link openLink} degrades a tab request to
- * an in-place navigation.
+ * Registered only where a tab strip actually exists — **the desktop shell**
+ * (DOR-568). In a browser nothing registers, and {@link openLink} opens a real
+ * browser tab instead, which is the better tab in every way that matters. The
+ * Obsidian embed is one pane inside someone else's app, so a tab request there
+ * lands in place.
  *
  * @param open - Adapter that adds a tab for `href` and focuses it.
  * @returns An unregister function (idempotent; only clears its own adapter).
@@ -264,13 +271,38 @@ export function registerTabOpener(open: TabOpener): () => void {
 }
 
 /**
- * Whether this surface can show the cockpit somewhere other than in place —
- * an in-window tab, or a second window.
+ * Whether this surface can show the cockpit somewhere other than in place.
  *
- * False in the Obsidian embed, which is one pane inside someone else's app.
+ * False in the Obsidian embed, which is one pane inside someone else's app —
+ * and true everywhere else, which is what it has always meant. "A new tab" is
+ * meaningful on the desktop and in a browser alike; only the owner of the tab
+ * differs (see {@link registerTabOpener}).
  */
 export function supportsNewTab(): boolean {
   return typeof window !== 'undefined' && !getPlatform().isEmbedded;
+}
+
+/**
+ * Whether this surface can put the cockpit in a **separate window** — a real
+ * second window, not another tab. The gate for offering "Open in New Window".
+ *
+ * Desktop only, and deliberately so. In the shell a same-origin `window.open`
+ * is recognised by `setWindowOpenHandler` and built as a proper second cockpit
+ * window, so the promise is kept. In a browser it is not a distinct destination
+ * at all: a plain `window.open` already yields a tab, which is exactly what
+ * "Open in New Tab" offers, and forcing a real window would take a
+ * features-string popup — no address bar, no reload, no bookmark, worse than
+ * the tab a person can drag out themselves in one gesture. Two menu items that
+ * do the same thing is a lie told in the UI, so the browser is offered one.
+ *
+ * Composed of both halves on purpose. The embed has no bridge, so
+ * {@link isDesktopShell} alone would already answer `false` there — naming
+ * {@link supportsNewTab} as well is what records that "one pane inside someone
+ * else's app" and "the browser owns windows here" are two different reasons for
+ * the same answer, and that losing either one is not a simplification.
+ */
+export function supportsSeparateWindow(): boolean {
+  return supportsNewTab() && isDesktopShell();
 }
 
 /**
@@ -307,11 +339,15 @@ function openInBrowser(url: string): void {
  * Where an internal link should land.
  *
  * - `here` (default) — navigate the current view through the router.
- * - `tab` — a new tab in this window ({@link registerTabOpener}). Falls back to
- *   `here` where no tab strip exists (the Obsidian embed).
+ * - `tab` — another tab, opened by whoever owns tabs on this surface: the
+ *   cockpit's own strip in the desktop app ({@link registerTabOpener}), a real
+ *   browser tab in a browser. Falls back to `here` in the Obsidian embed, the
+ *   one surface with no second place to put anything.
  * - `window` — a second cockpit window. Deliberately kept distinct from `tab`:
  *   "put this on my other monitor" is a different request from "give me another
- *   tab", and collapsing the two would delete the only way to ask for it.
+ *   tab", and collapsing the two would delete the only way to ask for it. Only
+ *   worth offering where it is a distinct destination — see
+ *   {@link supportsSeparateWindow}, which is the gate the UI asks.
  */
 export type LinkTarget = 'here' | 'tab' | 'window';
 
@@ -326,8 +362,8 @@ export interface OpenLinkOptions {
 /**
  * Open a link the right way for wherever it points.
  *
- * Internal links navigate in place through the router, into a new in-window tab,
- * or into a second cockpit window, per {@link OpenLinkOptions.target}; external
+ * Internal links navigate in place through the router, into another tab, or
+ * into a second cockpit window, per {@link OpenLinkOptions.target}; external
  * links go to the browser; blocked links go nowhere. This is the default entry
  * point — reach for it unless the action's whole point is to leave the app,
  * which is {@link openExternalLink}.
@@ -352,9 +388,23 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
     return true;
   }
 
-  if (options.target === 'tab' && tabOpener) {
-    tabOpener(link.path);
-    return true;
+  if (options.target === 'tab') {
+    // The desktop shell registered a strip, so this is one of its tabs.
+    if (tabOpener) {
+      tabOpener(link.path);
+      return true;
+    }
+    // No strip: in a browser the browser owns tabs, and `_blank` at our own
+    // origin is a real one of those — bookmarkable, restored on reopen,
+    // draggable into its own window. Two arguments for the same reason the
+    // `window` branch below gives: a plain, classifiable same-origin target.
+    // Asking for a tab and silently getting an in-place navigation would lose
+    // the view you asked to keep, so only the embed — which has nowhere else to
+    // put it — falls through.
+    if (supportsNewTab()) {
+      window.open(link.url, '_blank');
+      return true;
+    }
   }
 
   if (options.target === 'window' && supportsNewTab()) {

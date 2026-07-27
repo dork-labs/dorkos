@@ -53,10 +53,11 @@ These shortcuts work from anywhere in DorkOS. What the last one opens depends on
 Keep several agents open in one window and switch between them.
 
 <Callout type="info">
-  **These keys work in the desktop app.** In a web browser they all belong to the browser's own
-  tabs, so none of them reach DorkOS. Use the tab strip instead: press `Tab` to reach it, arrow keys
-  to move between tabs, `Home` and `End` to jump to either end, and `Delete` to close the one in
-  focus. The `+` button opens a tab, and the `×` on a tab closes it, anywhere.
+  **These keys are for the [desktop app](/docs/getting-started/desktop-app), which has its own tab
+  strip.** In a web browser you use the browser's own tabs, and these same keys already do the right
+  thing there. DorkOS leaves them alone. Inside the desktop strip you can also press `Tab` to reach
+  it, arrow keys to move between tabs, `Home` and `End` to jump to either end, and `Delete` to close
+  the one in focus. The `+` button opens a tab, and the `×` on a tab closes it.
 </Callout>
 
 <TypeTable
@@ -162,7 +163,8 @@ Press `⌘K` / `Ctrl+K` from anywhere to jump to an agent, a command, or a quick
       type: 'key',
     },
     '⌘Enter / Ctrl+Enter': {
-      description: 'Open the selected agent in a new DorkOS tab (skips the sub-menu).',
+      description:
+        'Open the selected agent in a new tab (skips the sub-menu). A DorkOS tab in the desktop app, a browser tab in a browser.',
       type: 'key',
     },
     Backspace: {
@@ -185,7 +187,7 @@ Prefix shortcuts in the palette search field:
 - Type `@` to scope search to agents only
 - Type `>` to scope search to commands only
 
-Pick an agent and its sub-menu asks where you want it: **Open Here**, **Open in New Tab**, or **Open in New Window**. In the desktop app, New Window gives you a second DorkOS window, which is what you want for a second screen. In a browser it opens a new browser tab.
+Pick an agent and its sub-menu asks where you want it: **Open Here** or **Open in New Tab**. In the desktop app you also get **Open in New Window**, which gives you a second DorkOS window for a second screen. A browser has no separate answer to that, so the choice isn't offered there. **Open in New Tab** opens a real browser tab, which you can bookmark or drag onto another screen yourself.
 
 ## Tool Approval
 

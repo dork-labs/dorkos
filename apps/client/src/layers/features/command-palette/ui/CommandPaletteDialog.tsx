@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import { resolveSessionForCwd } from '@/layers/entities/session';
-import { cn, openLink, supportsNewTab } from '@/layers/shared/lib';
+import { cn, openLink, supportsNewTab, supportsSeparateWindow } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -97,9 +97,11 @@ export function CommandPaletteDialog() {
     [queryClient]
   );
 
-  // "Open in New Tab" — this agent in a new tab of this window (DOR-540). Where
-  // there is no second view to open (the Obsidian embed), open the agent here
-  // rather than dropping the action.
+  // "Open in New Tab" — this agent in another tab (DOR-540). The seam picks
+  // whose tab: the cockpit's own strip in the desktop app, a real browser tab in
+  // a browser, so the label is honest on both. Where there is no second view at
+  // all (the Obsidian embed), open the agent here rather than dropping the
+  // action.
   const openAgentInNewTab = useCallback(
     (agent: AgentPathEntry) => {
       if (!supportsNewTab()) {
@@ -117,20 +119,22 @@ export function CommandPaletteDialog() {
   // of a tab. Kept as its own action rather than a modifier on the tab one:
   // parking an agent on a second monitor is a different intent from wanting
   // another tab, and this list is where a person already chooses where an agent
-  // lands. In the embed there is no second window, so it falls back like the
-  // tab action does.
+  // lands. It needs no surface fallback of its own — the row exists only where
+  // a separate window is a real destination (see `canOpenSeparateWindow`).
   const openAgentInNewWindow = useCallback(
     (agent: AgentPathEntry) => {
-      if (!supportsNewTab()) {
-        handleAgentSelect(agent);
-        return;
-      }
       openLink(agentHref(agent), { target: 'window' });
       recordUsage(agent.id);
       closePalette();
     },
-    [agentHref, handleAgentSelect, recordUsage, closePalette]
+    [agentHref, recordUsage, closePalette]
   );
+
+  // Whether to offer the "New Window" choice at all. In a browser it is not a
+  // distinct destination — a window.open there is just another tab, which the
+  // row above already offers — so the row is left out rather than shown greyed
+  // or quietly remapped. Two rows that do the same thing is a lie (DOR-568).
+  const canOpenSeparateWindow = supportsSeparateWindow();
 
   const {
     recentAgents,
@@ -413,7 +417,11 @@ export function CommandPaletteDialog() {
                         agent={subMenuAgent}
                         onOpenHere={() => handleAgentSelect(subMenuAgent)}
                         onOpenNewTab={() => openAgentInNewTab(subMenuAgent)}
-                        onOpenNewWindow={() => openAgentInNewWindow(subMenuAgent)}
+                        onOpenNewWindow={
+                          canOpenSeparateWindow
+                            ? () => openAgentInNewWindow(subMenuAgent)
+                            : undefined
+                        }
                         onNewSession={() => {
                           setDir(subMenuAgent.projectPath);
                           recordUsage(subMenuAgent.id);

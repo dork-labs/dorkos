@@ -20,6 +20,7 @@ export {
   setPlatformAdapter,
   isMac,
   isDesktopDarwin,
+  isDesktopShell,
   localDeviceNoun,
   type PlatformAdapter,
 } from './platform';
@@ -31,6 +32,7 @@ export {
   registerLinkNavigator,
   registerTabOpener,
   supportsNewTab,
+  supportsSeparateWindow,
   type BlockedLink,
   type BlockedLinkReason,
   type ClassifiedLink,

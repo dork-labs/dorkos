@@ -16,6 +16,7 @@ import {
   resolveApiBaseUrl,
   reportClientError,
   installClientErrorHandlers,
+  isDesktopShell,
   registerLinkNavigator,
   registerTabOpener,
 } from '@/layers/shared/lib';
@@ -242,12 +243,16 @@ const router = createAppRouter(queryClient);
 // of our own URLs to the system browser (DOR-534).
 registerLinkNavigator(({ href, replace }) => void router.navigate({ href, replace }));
 
-// …and its tab strip. `target: 'tab'` links — the palette's "Open in New Tab",
-// anything that wants a second view without losing the first — add a tab here
-// and navigate into it (DOR-540). Registered only in the standalone cockpit:
-// the Obsidian embed never runs this entry, so a tab request degrades there to
-// an in-place navigation, which is the only thing one pane can do.
-registerTabOpener((href) => openTabAt(router, href));
+// …and, in the desktop app only, its tab strip. `target: 'tab'` links — the
+// palette's "Open in New Tab", anything that wants a second view without losing
+// the first — add a tab here and navigate into it (DOR-540). The strip is a
+// desktop feature: a browser already owns tabs, so leaving this unregistered
+// there is what lets the seam open a real browser tab instead (DOR-568). The
+// Obsidian embed never runs this entry at all, and a tab request degrades there
+// to an in-place navigation, which is the only thing one pane can do.
+if (isDesktopShell()) {
+  registerTabOpener((href) => openTabAt(router, href));
+}
 
 // Electron serves the API on a dynamic localhost port (preload bridge); web mode
 // uses the relative /api path. Shared with the auth client so both hit one origin.
