@@ -361,6 +361,45 @@ describe('cascade guard, wired', () => {
     expect(subjects).toContain(boId);
   });
 
+  it('charges the budget before the model call, not after', async () => {
+    // The ordering is the whole point of a spend cap. Charged on completion,
+    // every refused turn would already have cost the model call it was meant to
+    // prevent — the cap would report a limit it never enforced.
+    const capped = createRoomHarness({
+      agents: alwaysAgents,
+      maxAgentDepth: MAX_AGENT_DEPTH,
+      maxAutomaticTurnsPerRoomPerHour: 1,
+    });
+    const room2 = capped.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      capped.human
+    );
+    for (const path of ['/agents/ana', '/agents/bo']) {
+      const id = capped.authors.resolveAgent(path, path.endsWith('ana') ? 'Ana' : 'Bo').id;
+      capped.service.updateMembership(room2.id, capped.human, id, 'always');
+    }
+
+    // Two agents are addressed and one unit of budget exists.
+    capped.service.post(room2.id, { authorId: capped.human, text: 'both of you' });
+    await capped.service.triggersIdle();
+    expect(capped.runner.turns).toHaveLength(1);
+  });
+
+  it('speaks for an ancestry refusal even while staying silent for a synthesized one', async () => {
+    // The two live side by side and must not collapse into one rule. An agent
+    // posting with nothing behind it is refused against a STAMP — silent. A
+    // room-mate already in the cascade is refused against a chain that really
+    // ran — announced.
+    service.post(room.id, { authorId: ana, text: 'just talking' });
+    await service.triggersIdle();
+    expect(log().filter((e) => e.kind === 'notice')).toEqual([]);
+
+    await seedAndSettle('what do you two think?');
+    const notices = log().filter((e) => e.kind === 'notice');
+    expect(notices.length).toBeGreaterThan(0);
+    expect(notices.every((n) => n.body.notice === 'cascade_stopped')).toBe(true);
+  });
+
   it('stops replying entirely when the ceiling is zero', async () => {
     const zero = createRoomHarness({ agents: alwaysAgents, maxAgentDepth: 0 });
     const quiet = zero.service.createRoom(

@@ -24,15 +24,6 @@ describe('RoomTurnBudget', () => {
     expect(budget.tryReserve('room-1').allowed).toBe(false);
   });
 
-  it('reports what is left, so the caller never has to count', () => {
-    const { budget } = budgetOf(3);
-    expect(budget.remaining('room-1')).toBe(3);
-    expect(budget.tryReserve('room-1').remaining).toBe(2);
-    budget.tryReserve('room-1');
-    budget.tryReserve('room-1');
-    expect(budget.remaining('room-1')).toBe(0);
-  });
-
   it('reserves on success, so two turns cannot spend the same last unit', () => {
     const { budget } = budgetOf(1);
     expect(budget.tryReserve('room-1').allowed).toBe(true);
@@ -72,7 +63,6 @@ describe('RoomTurnBudget', () => {
   it('refuses everything at a cap of zero — the way to turn automatic replies off', () => {
     const { budget } = budgetOf(0);
     expect(budget.tryReserve('room-1').allowed).toBe(false);
-    expect(budget.remaining('room-1')).toBe(0);
   });
 
   it('reads the cap per call, so raising it in Settings takes effect at once', () => {
@@ -88,12 +78,13 @@ describe('RoomTurnBudget', () => {
   });
 
   it('stays bounded across many rooms rather than growing forever', () => {
-    const { budget } = budgetOf(1);
+    const { budget } = budgetOf(1, 60_000, 100_000);
     for (let i = 0; i < 600; i++) budget.tryReserve(`room-${i}`);
-    // The oldest rooms were evicted, so their budget reads as fresh. That is the
-    // deliberate trade: bounded memory, and eviction can only ever be generous.
-    expect(budget.remaining('room-0')).toBe(1);
-    expect(budget.remaining('room-599')).toBe(0);
+    // The oldest rooms were evicted, so their per-room window reads as fresh.
+    // That is the deliberate trade: bounded memory, and eviction can only ever
+    // be generous — which is exactly why the GLOBAL window is never evicted.
+    expect(budget.tryReserve('room-0').allowed).toBe(true);
+    expect(budget.tryReserve('room-599').allowed).toBe(false);
   });
 });
 
@@ -131,13 +122,6 @@ describe('RoomTurnBudget — the global cap', () => {
 
     advance(60_001);
     expect(budget.tryReserve('room-2').allowed).toBe(true);
-  });
-
-  it('reports the lower of the two as what a room has left', () => {
-    const { budget } = budgetOf(10, 60_000, 2);
-    expect(budget.remaining('room-1')).toBe(2);
-    budget.tryReserve('room-1');
-    expect(budget.remaining('room-2')).toBe(1);
   });
 
   it('refuses everything at a global cap of zero', () => {

@@ -5,6 +5,7 @@ covers:
   - 'fix(rooms): only a person starts a fresh cascade, and threads answer the roster rule (DOR-526)'
   - 'fix(rooms): bound room spend without asking who is calling (DOR-526)'
   - 'fix(rooms): cap total spend, bind sessions at claim, and stop the false notices (DOR-526)'
+  - 'docs(rooms): say what the spend caps bound, and why the residual is acceptable (DOR-526)'
 ---
 
 ### Added
@@ -20,7 +21,11 @@ covers:
 
 ### Security
 
-- Worth knowing if you leave **Require login** off, which is the default. The two rules above that ask *who is writing* — the reply limit that only your messages reset, and the rule that only you change a room's members — depend on DorkOS being able to tell you from a program on your own computer, and with login off it cannot. A program that simply does not say it is an agent looks exactly like you. So treat those two as shaping how a room behaves, not as a guarantee about what it can spend. The hourly limits are what hold either way: they count every automatic reply regardless of who appeared to ask for it, and the total one is the real ceiling since rooms are free to make. Turning on **Require login** is what closes the gap (DOR-526, DOR-505)
+- Worth knowing if you leave **Require login** off, which is the default. Two of the rules above work out *who is writing*: the reply limit that your messages reset, and the rule that only you change who is in a room. Both need DorkOS to tell you apart from a program running on your own computer, and with login off it cannot — a program that simply does not mention it is an agent looks exactly like you. Read those two as shaping how a room behaves, not as limits on what it can spend.
+
+  **The hourly limits are the ones that hold either way**, because they never ask who is calling. The per-room limit caps what any one room runs; on its own that is not a cap on your bill, because a program that keeps making new rooms gets a fresh allowance each time. The total limit is the real ceiling: 240 automatic replies an hour across everything, however many rooms exist. Both reset if DorkOS restarts.
+
+  None of this gives a program on your machine anything it did not already have — anything that can send these messages can run an agent directly. What these limits are really for is stopping well-behaved agents from talking each other in circles by accident, which is the common case and worth having on its own. Turning on **Require login** is what tells you and a program apart (DOR-526, DOR-505)
 
 ### Fixed
 

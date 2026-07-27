@@ -50,9 +50,17 @@
  * willing to use it can clear both windows roughly 36 times an hour.
  *
  * Closing that needs a durable counter, which means a write on the hot path of
- * every turn and a table to hold it. That is a deliberate follow-up rather than
- * something smuggled into this file, and it is written down here so nobody
- * reads "counted without asking who is calling" as "cannot be cleared".
+ * every turn and a table to hold it. It is a deliberate follow-up, and the
+ * reason is stronger than the cost: **a caller who can omit the header already
+ * has a shell on this machine, and a shell can spend the model budget directly**
+ * without going near a room. Hardening this counter against them hardens one
+ * door in a building whose walls are elsewhere; DOR-505 (turning login on) is
+ * the actual fix.
+ *
+ * What these caps completely bound is the case with no attacker in it: two
+ * `always` agents talking each other in circles, which is a configuration a
+ * reasonable person reaches on purpose and which costs real money for no work.
+ * That is the common case and worth having on its own. See ADR 260726-170127.
  *
  * @module server/services/rooms/turn-budget
  */
@@ -75,11 +83,17 @@ const TRACKED_ROOMS = 256;
 /** Which ceiling refused a turn. */
 export type BudgetRefusalScope = 'room' | 'global';
 
-/** Outcome of asking for one automatic turn. */
+/**
+ * Outcome of asking for one automatic turn.
+ *
+ * Deliberately does NOT carry a headroom number. The obvious candidate — "turns
+ * still available" — is zero at exactly the moment anything would want to read
+ * it, because that is what a refusal means, so it would be a field that is
+ * either uninteresting or constant. What a reader of the notice actually needs
+ * is WHICH cap refused, since the two send them to different settings.
+ */
 export interface BudgetDecision {
   allowed: boolean;
-  /** Turns still available to this room in the current window. */
-  remaining: number;
   /** Set only when `allowed` is false: which cap said no. */
   scope?: BudgetRefusalScope;
 }
@@ -134,30 +148,17 @@ export class RoomTurnBudget {
 
     if (this.globalRuns.length >= this.limits.global()) {
       this.store(roomId, room);
-      return { allowed: false, remaining: 0, scope: 'global' };
+      return { allowed: false, scope: 'global' };
     }
     if (room.length >= this.limits.perRoom()) {
       this.store(roomId, room);
-      return { allowed: false, remaining: 0, scope: 'room' };
+      return { allowed: false, scope: 'room' };
     }
 
     room.push(at);
     this.globalRuns.push(at);
     this.store(roomId, room);
-    return { allowed: true, remaining: Math.max(0, this.limits.perRoom() - room.length) };
-  }
-
-  /**
-   * Turns still available to a room, reserving nothing — the lower of what the
-   * room has left and what the install has left, since either can refuse.
-   *
-   * @param roomId - The room.
-   */
-  remaining(roomId: string): number {
-    const floor = this.now() - this.windowMs;
-    const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor).length;
-    const global = this.globalRuns.filter((t) => t > floor).length;
-    return Math.max(0, Math.min(this.limits.perRoom() - room, this.limits.global() - global));
+    return { allowed: true };
   }
 
   /** Write a room's pruned window back, re-inserting it as most recently used. */

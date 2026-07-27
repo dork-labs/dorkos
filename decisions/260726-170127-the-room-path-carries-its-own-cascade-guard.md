@@ -87,9 +87,33 @@ never covered.
 Both budget windows are in-memory and reset on restart. For an accidental loop
 that costs nothing; for a deliberate caller it is a real limit, since
 `POST /api/admin/restart` sits behind the same pass-through gate and is
-rate-limited to 3 per 5 minutes — roughly 36 clearances an hour. Closing it needs
-a durable counter, which is a write on the hot path of every turn plus a table,
-and is a deliberate follow-up rather than a claim this ADR should make.
+rate-limited to 3 per 5 minutes — roughly 36 clearances an hour.
+
+### Why that residual is acceptable, and what actually closes it
+
+The durable counter that would close it is a follow-up, and the reason is
+stronger than "the prose is now accurate".
+
+**A caller who can omit the header already has a shell on this machine, and a
+shell can spend the model budget directly.** It can run `claude` in a loop
+without going near a room. The rooms path therefore adds no capability that
+attacker does not already have, and hardening the room's counter against them is
+hardening one door in a building whose walls are the actual boundary. Spending
+the hot path of every turn on a durable write to slow down an attacker who has
+already won is a poor trade.
+
+What the guard genuinely buys — and this is worth having entirely on its own — is
+a bound on **accidental** loops between well-behaved agents. Two `always` agents
+in one room is a configuration a reasonable person reaches on purpose, and the
+cost of it running unbounded is a real bill for no work. That is the common case,
+it involves no attacker, and depth-plus-ancestry plus the budget bound it
+completely.
+
+So the honest framing is: the budget is defence in depth against an adversary who
+is already inside, and a complete answer to the accident it was built for. **The
+actual fix for the adversary is DOR-505 — turning login on** — which is what
+restores the identity distinction every caller-asserted rule here depends on.
+A durable counter is worth adding when it is cheap, not because it closes this.
 
 **Cross-room cascades carry their depth but not their ancestry.** An agent
 mid-turn in room A that posts into room B inherits A's `cascadeRoot` at its

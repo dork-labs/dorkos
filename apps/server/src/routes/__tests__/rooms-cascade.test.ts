@@ -100,13 +100,6 @@ function registerAna(db: Db): void {
     .run();
 }
 
-/** Create a channel and return its body. */
-async function createChannel(title = 'Backend'): Promise<Record<string, never> & { id: string }> {
-  const res = await request(app).post('/api/rooms').send({ kind: 'channel', title });
-  expect(res.status).toBe(201);
-  return res.body;
-}
-
 
 describe('/api/rooms — what a headerless caller gets', () => {
   let db: Db;
@@ -260,7 +253,10 @@ describe('/api/rooms — what a headerless caller gets', () => {
       .post('/api/rooms')
       .send({ kind: 'dm', title: 'Ana', agentPaths: ['/agents/ana'] });
     await post(quiet.body.id, 'are you there?');
-    expect(runner.turns.length).toBeGreaterThan(2);
+    // Two from the flooded room's cap plus exactly one from the DM's single
+    // agent. `toBeGreaterThan(2)` would also pass if the DM ran five turns,
+    // which is the failure this test exists to notice.
+    expect(runner.turns).toHaveLength(3);
   });
 
   it('mints ONE session when two posts land before the first reply', async () => {
