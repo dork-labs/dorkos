@@ -165,6 +165,39 @@ describe('useRoomStream', () => {
     expect(transport.subscribeRoom).toHaveBeenCalledTimes(5);
   });
 
+  it('forgives the earlier failures of a stream that stayed up', async () => {
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    // A clock this test moves by hand, so "this stream stayed up for the
+    // stability window" is a fact rather than a wait.
+    let clock = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => clock);
+
+    let attempts = 0;
+    transport.subscribeRoom = vi.fn().mockImplementation(() => {
+      attempts += 1;
+      // Attempts 1-3 die on contact. The 4th connects, runs past the stability
+      // window, and only then drops — the nightly-server-restart shape.
+      if (attempts !== 4) return dropsImmediately();
+      return (async function* (): AsyncIterable<RoomEvent> {
+        clock += SSE_RESILIENCE.STABILITY_WINDOW_MS;
+        throw new Error('dropped after a long, healthy run');
+      })();
+    });
+
+    const { result } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    await waitFor(() => expect(result.current.stalled).toBe(true));
+    // 8, not 5. The healthy 4th run reset the count, so the budget restarts
+    // from it: three more drops after that one, and the fifth consecutive
+    // failure is attempt 8. Without the reset this room would have been
+    // declared dead at attempt 5, on the strength of failures it had already
+    // recovered from.
+    expect(transport.subscribeRoom).toHaveBeenCalledTimes(8);
+  });
+
   it('tries again on request, from the newest entry the reader holds', async () => {
     const transport = createMockTransport();
     const queryClient = makeQueryClient();
@@ -190,7 +223,7 @@ describe('useRoomStream', () => {
     expect(result.current.stalled).toBe(false);
   });
 
-  it('does not carry one room’s dead-stream notice over to the next room', async () => {
+  it('does not carry a dead-stream notice to the next room, or back to a revived one', async () => {
     const transport = createMockTransport();
     const queryClient = makeQueryClient();
     transport.subscribeRoom = vi.fn().mockImplementation(() => dropsImmediately());
@@ -201,12 +234,23 @@ describe('useRoomStream', () => {
     );
     await waitFor(() => expect(result.current.stalled).toBe(true));
 
-    transport.subscribeRoom = vi
+    const healthy = vi
       .fn()
       .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) => staysOpen(signal));
+    transport.subscribeRoom = healthy;
     rerender({ roomId: 'room-2' });
 
-    await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(healthy).toHaveBeenCalledTimes(1));
+    expect(result.current.stalled).toBe(false);
+
+    // The return trip. room-1's server is back, so coming back opens a healthy
+    // stream — and the notice has to go with the stream it was about. Recording
+    // the stall against the room alone made it permanent: messages arriving,
+    // banner still saying nothing was.
+    rerender({ roomId: 'room-1' });
+
+    await waitFor(() => expect(healthy).toHaveBeenCalledTimes(2));
+    expect(healthy).toHaveBeenLastCalledWith('room-1', 0, expect.any(AbortSignal) as AbortSignal);
     expect(result.current.stalled).toBe(false);
   });
 

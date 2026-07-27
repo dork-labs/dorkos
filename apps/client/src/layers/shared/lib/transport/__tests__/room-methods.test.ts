@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
 /**
- * `postToRoom` — the room write. Its URL and method are the whole contract with
+ * The two room Transport methods that can only be tested here.
+ *
+ * `postToRoom` — its URL and method are the whole contract with
  * `POST /api/rooms/:id/entries`, and a typo in either fails only at runtime,
  * where the mock Transport every component test uses cannot see it.
+ *
+ * `subscribeRoom`'s silence watchdog — it exists at this level precisely
+ * because the server's heartbeat is an SSE comment that this method drops, so
+ * no consumer above it can tell a dead socket from a quiet room. A test above
+ * the seam cannot see the heartbeat either.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { RoomEvent } from '@dorkos/shared/room-schemas';
+import { SSE_RESILIENCE } from '../../constants';
 import { createRoomMethods } from '../room-methods';
 
 function setup() {
@@ -56,5 +65,123 @@ describe('postToRoom', () => {
     await expect(setup().postToRoom('room-1', { text: 'anyone still here?' })).rejects.toThrow(
       'This room is archived'
     );
+  });
+});
+
+/**
+ * A live SSE response whose body is fed by hand, the way a real one is fed by
+ * the network — including erroring the body when the request aborts, which is
+ * what turns an abort into a thrown iteration rather than a hang.
+ */
+function openStream() {
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      source = controller;
+    },
+  });
+  const push = (chunk: string) => source.enqueue(new TextEncoder().encode(chunk));
+  const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+    init.signal?.addEventListener(
+      'abort',
+      () => source.error(new DOMException('The operation was aborted.', 'AbortError')),
+      { once: true }
+    );
+    return Promise.resolve({ ok: true, status: 200, body } as unknown as Response);
+  });
+  return { push, fetchMock };
+}
+
+/** Watch a promise without waiting on it (and without an unhandled rejection). */
+function watch(promise: Promise<unknown>): () => 'pending' | 'settled' {
+  let state: 'pending' | 'settled' = 'pending';
+  const mark = () => {
+    state = 'settled';
+  };
+  void promise.then(mark, mark);
+  return () => state;
+}
+
+describe('subscribeRoom silence watchdog', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('gives up on a socket that has gone silent, so the caller can reconnect', async () => {
+    vi.useFakeTimers();
+    const { push, fetchMock } = openStream();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    // The rejection handler goes on NOW, before the clock moves: advancing
+    // fake timers runs real macrotasks, so a rejection with nothing attached
+    // yet would surface as an unhandled rejection and fail the file.
+    const failure = iterator.next().catch((err: unknown) => err);
+
+    // Let the fetch resolve and the reader start, then send the server's
+    // connect comment — after which this socket says nothing ever again.
+    await vi.advanceTimersByTimeAsync(0);
+    push(': connected\n\n');
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS + 1);
+
+    expect((await failure) as Error).toBeInstanceOf(Error);
+    expect(((await failure) as Error).message).toMatch(/heard nothing for 45000ms/);
+  });
+
+  it('counts the keepalive comment as a sign of life', async () => {
+    vi.useFakeTimers();
+    const { push, fetchMock } = openStream();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    const next = iterator.next();
+    const outcome = watch(next);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Three heartbeats at 30s — well past the 45s timeout in total, never
+    // more than 30s apart. A room can be silent for hours and still be alive;
+    // only the SERVER going quiet counts, and only this level can see it.
+    for (let beat = 0; beat < 3; beat += 1) {
+      await vi.advanceTimersByTimeAsync(30_000);
+      push(': keepalive\n\n');
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    expect(outcome()).toBe('pending');
+  });
+
+  it('still delivers entries, and keeps the watchdog fed with them', async () => {
+    vi.useFakeTimers();
+    const { push, fetchMock } = openStream();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    const next = iterator.next();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const event: RoomEvent = {
+      type: 'entry',
+      seq: 4,
+      entry: {
+        roomId: 'room-1',
+        seq: 4,
+        id: 'entry-4',
+        authorId: 'ana',
+        kind: 'post',
+        body: { text: 'line 4' },
+        mentions: [],
+        sessionId: null,
+        cascadeRoot: 'entry-4',
+        cascadeDepth: 0,
+        signature: null,
+        createdAt: '2026-07-26T10:00:00.000Z',
+      },
+    };
+    push(`event: entry\ndata: ${JSON.stringify(event)}\n\n`);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect((await next).value).toEqual(event);
   });
 });

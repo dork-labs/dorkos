@@ -26,8 +26,9 @@ export function useRoom(roomId: string | null): UseQueryResult<RoomWithRoster> {
 /**
  * Fetch the trailing page of a room's history, oldest-first.
  *
- * The server's default page size is the whole hydration this view needs;
- * scrolling further back is `?before=`, which arrives with the composer.
+ * The server's default page size is the whole hydration this view needs.
+ * Scrolling further back than that page is `?before=`, which the server serves
+ * and no client surface asks for yet.
  *
  * @param roomId - The room to read, or `null` when nothing is selected.
  */

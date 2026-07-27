@@ -25,6 +25,7 @@ import {
   type RoomSummary,
   type RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
+import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
 
@@ -94,6 +95,17 @@ export function createRoomMethods(baseUrl: string) {
      *
      * Malformed frames are dropped with a warning rather than tearing the
      * stream down, matching the session stream's validation semantics.
+     *
+     * A silence watchdog runs here rather than in the consuming hook, and it is
+     * the one piece of resilience that has to. The server heartbeats with an
+     * SSE COMMENT (`: keepalive`), and comments are dropped a few lines below —
+     * so above this seam "the socket is dead" and "the room is quiet" look
+     * identical, and rooms are quiet nearly all the time. Down here the
+     * heartbeat is visible: any frame at all resets the timer, and silence past
+     * {@link SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS} (3x the server's interval)
+     * aborts the connection so the iterable throws. That is what a half-open
+     * socket — a slept laptop's — produces instead of an error, and the caller's
+     * retry loop already knows what to do with a throw.
      */
     async *subscribeRoom(
       roomId: string,
@@ -105,18 +117,33 @@ export function createRoomMethods(baseUrl: string) {
         if (signal.aborted) controller.abort();
         else signal.addEventListener('abort', () => controller.abort(), { once: true });
       }
-      const qs = buildQueryString({ after: sinceCursor });
-      const response = await fetch(`${baseUrl}/rooms/${roomId}/events${qs}`, {
-        headers: { Accept: 'text/event-stream' },
-        credentials: 'include',
-        signal: controller.signal,
-      });
-      if (!response.ok || !response.body) {
-        controller.abort();
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
+
+      let wentSilent = false;
+      let watchdog: ReturnType<typeof setTimeout> | undefined;
+      /** Restart the silence countdown. Called for every frame, comments too. */
+      const heard = () => {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(() => {
+          wentSilent = true;
+          controller.abort();
+        }, SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS);
+      };
+
       try {
+        // Armed before the fetch: a connect that hangs without answering is as
+        // dead as one that stops mid-stream, and this call has no other timeout.
+        heard();
+        const qs = buildQueryString({ after: sinceCursor });
+        const response = await fetch(`${baseUrl}/rooms/${roomId}/events${qs}`, {
+          headers: { Accept: 'text/event-stream' },
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         for await (const frame of parseSSEStream(response.body.getReader())) {
+          heard();
           if (frame.comment || frame.type === 'snapshot') continue;
           const parsed = RoomEventSchema.safeParse(frame.data);
           if (!parsed.success) {
@@ -128,7 +155,17 @@ export function createRoomMethods(baseUrl: string) {
           }
           yield parsed.data;
         }
+      } catch (err) {
+        // The abort the watchdog fired surfaces as a generic AbortError, which
+        // reads in a log like a caller who simply left. Say what happened.
+        if (wentSilent) {
+          throw new Error(
+            `Room stream heard nothing for ${SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS}ms — treating it as dropped`
+          );
+        }
+        throw err;
       } finally {
+        clearTimeout(watchdog);
         controller.abort();
       }
     },

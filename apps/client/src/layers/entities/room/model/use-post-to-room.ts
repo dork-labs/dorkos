@@ -35,5 +35,9 @@ export function usePostToRoom(): UseMutationResult<PostToRoomResponse, Error, Po
 
   return useMutation({
     mutationFn: ({ roomId, text }: PostToRoomInput) => transport.postToRoom(roomId, { text }),
+    // The composer shows the server's own sentence. Without this the global
+    // `MutationCache.onError` also fires, so a refusal lands as two toasts —
+    // the generic "Action failed. Please try again." first, then the real one.
+    meta: { suppressErrorToast: true },
   });
 }

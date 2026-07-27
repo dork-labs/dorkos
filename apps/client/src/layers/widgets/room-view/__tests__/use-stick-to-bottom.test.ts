@@ -3,13 +3,34 @@ import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
 
+/** Total content height and viewport height of the stand-in container. */
+const SCROLL_HEIGHT = 1000;
+const CLIENT_HEIGHT = 300;
+/** The largest `scrollTop` a browser will hold for that geometry. */
+const MAX_SCROLL_TOP = SCROLL_HEIGHT - CLIENT_HEIGHT;
+
 /**
  * A stand-in for the scroll container. jsdom lays nothing out, so `scrollHeight`
  * and `clientHeight` are 0 on every real element — the geometry has to be
  * stated, not rendered.
+ *
+ * The setter clamps, because a browser does: `scrollTop = scrollHeight` is the
+ * idiom for "go to the bottom" only because the assignment is clamped to
+ * {@link MAX_SCROLL_TOP}. A fixture that stored 1000 verbatim would let these
+ * tests assert a position no browser ever reports.
  */
-function scrollContainer(scrollTop: number): HTMLDivElement {
-  return { scrollHeight: 1000, clientHeight: 300, scrollTop } as HTMLDivElement;
+function scrollContainer(initialScrollTop: number): HTMLDivElement {
+  let scrollTop = initialScrollTop;
+  return {
+    scrollHeight: SCROLL_HEIGHT,
+    clientHeight: CLIENT_HEIGHT,
+    get scrollTop() {
+      return scrollTop;
+    },
+    set scrollTop(next: number) {
+      scrollTop = Math.max(0, Math.min(next, MAX_SCROLL_TOP));
+    },
+  } as HTMLDivElement;
 }
 
 /** Mount the hook against a container already scrolled to `scrollTop`. */
@@ -28,11 +49,11 @@ function mountWith(scrollTop: number, roomId = 'room-1') {
 describe('useStickToBottom', () => {
   it('follows a new entry when the reader is already at the bottom', () => {
     // 1000 - 700 - 300 = 0px from the bottom.
-    const { el, rerender } = mountWith(700);
+    const { el, rerender } = mountWith(MAX_SCROLL_TOP);
 
     rerender({ room: 'room-1', newest: 'entry-2' });
 
-    expect(el.scrollTop).toBe(1000);
+    expect(el.scrollTop).toBe(MAX_SCROLL_TOP);
   });
 
   it('still follows within the slack — a part-rendered row is not "scrolled up"', () => {
@@ -41,7 +62,7 @@ describe('useStickToBottom', () => {
 
     rerender({ room: 'room-1', newest: 'entry-2' });
 
-    expect(el.scrollTop).toBe(1000);
+    expect(el.scrollTop).toBe(MAX_SCROLL_TOP);
   });
 
   it('leaves a reader who has scrolled up exactly where they are', () => {
@@ -68,14 +89,14 @@ describe('useStickToBottom', () => {
 
     rerender({ room: 'room-2', newest: 'entry-9' });
 
-    expect(el.scrollTop).toBe(1000);
+    expect(el.scrollTop).toBe(MAX_SCROLL_TOP);
   });
 
   it('scrolls nowhere while a room is still loading its history', () => {
-    const { el, rerender } = mountWith(700);
+    const { el, rerender } = mountWith(MAX_SCROLL_TOP);
 
     rerender({ room: 'room-2', newest: null });
 
-    expect(el.scrollTop).toBe(700);
+    expect(el.scrollTop).toBe(MAX_SCROLL_TOP);
   });
 });

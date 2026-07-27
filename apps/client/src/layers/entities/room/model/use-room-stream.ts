@@ -16,6 +16,12 @@
  * one subscription, no retries, the same line `session-stream-methods.ts` draws
  * — and resilience sits above it, where both adapters inherit it.
  *
+ * With one deliberate exception, in the other direction: DETECTING a dead
+ * socket lives in the HTTP adapter's `subscribeRoom`, because the server's
+ * heartbeat is an SSE comment the adapter drops. Up here a silent socket and a
+ * quiet room are the same thing. The adapter turns silence into a throw; this
+ * loop turns a throw into a reconnect.
+ *
  * @module entities/room/model/use-room-stream
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -118,10 +124,9 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
   const [stalledRoomId, setStalledRoomId] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
-  const retry = useCallback(() => {
-    setStalledRoomId(null);
-    setAttempt((n) => n + 1);
-  }, []);
+  // Re-running the effect is the whole of a retry: the cycle below clears the
+  // stall itself, so there is nothing to reset here.
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
     if (roomId === null || !hydrated) return;
@@ -129,6 +134,12 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     const controller = new AbortController();
 
     void (async () => {
+      // A fresh subscription cycle is starting, so no room is dead right now.
+      // Without this the notice is sticky: leaving a stalled room and coming
+      // back opens a healthy stream under a banner still saying nothing is
+      // coming through. Clearing on the way IN also covers the retry button and
+      // a re-hydrate, which are the only other ways a cycle begins.
+      setStalledRoomId(null);
       let failures = 0;
       while (!controller.signal.aborted) {
         const openedAt = Date.now();

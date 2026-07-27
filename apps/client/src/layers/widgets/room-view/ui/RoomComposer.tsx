@@ -17,31 +17,48 @@ interface RoomComposerProps {
  *
  * The message round-trips: nothing is drawn until the server's copy arrives on
  * the room's stream, which is also the only way a second reader — or the agents
- * the post triggers — would ever see it. Two consequences a person can feel:
- * the field clears only once the post is accepted, and a post that fails leaves
- * every word of it where they typed it.
+ * the post triggers — would ever see it. The field still empties the moment you
+ * press Enter, the way session chat's does, so the next sentence can be typed
+ * into an empty box while the first is in the air. A refusal puts the words
+ * back rather than swallowing them.
+ *
+ * Mount one per room (`key={room.id}`). The draft and the in-flight latch are
+ * local state, and a draft belongs to the room it was typed in.
  */
 export function RoomComposer({ room }: RoomComposerProps) {
   const [text, setText] = useState('');
   const post = usePostToRoom();
-  // The latch that actually stops a double send. `post.isPending` is state, and
-  // state is a render behind: two Enters in the same tick both read it as false
-  // and both post. Measured — it sent the message twice.
-  const inFlightRef = useRef(false);
+  // What is in the air, not merely THAT something is. Both guards against a
+  // double send — `post.isPending` and the cleared field — are state, and state
+  // is a render behind: two Enters before that render both read the same stale
+  // text and both post it. Measured; it sent the message twice.
+  //
+  // Holding the body rather than a boolean is what keeps this from swallowing a
+  // real message: someone typing a second sentence while the first is still in
+  // flight is sending something different, and a bare in-flight flag would drop
+  // it with no toast, no clear and no send.
+  const inFlightTextRef = useRef<string | null>(null);
 
   const handleSubmit = () => {
     const body = text.trim();
-    if (body === '' || room.archived || inFlightRef.current) return;
-    inFlightRef.current = true;
+    if (body === '' || room.archived || body === inFlightTextRef.current) return;
+    inFlightTextRef.current = body;
+    // Empty the box now, not on the 202. Clearing on success wipes whatever is
+    // in the field at THAT moment, which is the follow-up sentence typed during
+    // the round trip, not the message that was sent.
+    setText('');
     post.mutate(
       { roomId: room.id, text: body },
       {
-        onSuccess: () => setText(''),
-        // The draft stays put. Whatever the server refused for — an archived
-        // room, a dropped connection — retyping the message is not part of it.
-        onError: (err) => toast.error(err.message || 'Could not send that message'),
+        onError: (err) => {
+          // Give the words back. If a follow-up is already in the box, put the
+          // refused message above it rather than picking which of the two to
+          // destroy — nothing typed here is ever thrown away by this composer.
+          setText((current) => (current === '' ? body : `${body}\n${current}`));
+          toast.error(err.message || 'Could not send that message');
+        },
         onSettled: () => {
-          inFlightRef.current = false;
+          if (inFlightTextRef.current === body) inFlightTextRef.current = null;
         },
       }
     );
@@ -54,11 +71,12 @@ export function RoomComposer({ room }: RoomComposerProps) {
         onChange={setText}
         onSubmit={handleSubmit}
         isStreaming={false}
-        // Greys the Send button while the post is in flight; the latch above is
-        // what makes one Enter one message. The text stays typeable throughout:
-        // the round trip is short, and taking the field away mid-sentence would
-        // cost keystrokes.
-        canSubmit={!room.archived && !post.isPending}
+        // Deliberately NOT gated on the post being in flight. Sending is a
+        // fire-and-forget 202, and closing the submit path for its duration
+        // would block the second sentence of anyone who types faster than the
+        // network — silently, since a refused submit says nothing. The latch
+        // above is what makes one Enter one message.
+        canSubmit={!room.archived}
         canSubmitReason={
           room.archived
             ? 'This conversation is archived. You can read it, but not add to it.'

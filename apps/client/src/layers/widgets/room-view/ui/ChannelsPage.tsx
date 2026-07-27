@@ -113,7 +113,12 @@ export function ChannelsPage() {
           </button>
         </div>
       )}
-      <RoomComposer room={room} />
+      {/* Keyed on the room: the composer holds its draft — and its in-flight
+          latch — in local state, and switching to an already-read room takes
+          none of the early returns above, so React would otherwise reuse the
+          instance. A DM's half-typed sentence would follow you into a channel
+          with Enter still armed. */}
+      <RoomComposer key={room.id} room={room} />
     </div>
   );
 }
