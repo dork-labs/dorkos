@@ -131,6 +131,10 @@ describe('resolvePreferredPort', () => {
     const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
 
     expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
+    // The desktop half of a coupling `packages/shared`'s config-schema test
+    // holds the other half of, with the full explanation: this number has to
+    // equal `UserConfigSchema`'s `server.port` default, or the check below
+    // ("not a choice somebody made") stops recognising the value `conf` writes.
     expect(PREFERRED_SERVER_PORT).toBe(4242);
   });
 

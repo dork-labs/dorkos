@@ -2,6 +2,7 @@
 covers:
   - 'feat(desktop): a stable address you can bookmark and point tools at (DOR-539)'
   - 'fix(desktop): honour a pinned port strictly, and stop the Server tab going blank (DOR-539)'
+  - 'fix(desktop): a written-out default is not a pin (DOR-539)'
 ---
 
 ### Added
