@@ -123,6 +123,8 @@ import type {
   CreateRoomRequest,
   ListRoomEntriesQuery,
   ListRoomsQuery,
+  PostToRoomRequest,
+  PostToRoomResponse,
   RoomEntry,
   RoomEvent,
   RoomMember,
@@ -897,6 +899,20 @@ export interface Transport {
    * @param query - `before` (exclusive `seq` upper bound) and `limit`.
    */
   listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]>;
+  /**
+   * Post to a room. Trigger-only, exactly as {@link sendMessage} is: the 202
+   * carries the new entry's identity, while the entry itself reaches every
+   * reader — the poster included — over {@link subscribeRoom}. So a caller
+   * inserts nothing of its own; it waits for the stream, which is also what
+   * every agent reply the post triggers arrives on.
+   *
+   * The author is resolved from the caller server-side and is never part of the
+   * request. Rejects when the room is archived.
+   *
+   * @param id - The room id.
+   * @param req - What to say, and the session that produced it when one did.
+   */
+  postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse>;
   /**
    * Add a member to a room, by author id or by agent directory.
    *
