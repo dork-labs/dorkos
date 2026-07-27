@@ -113,11 +113,12 @@ export function ChannelsPage() {
           </button>
         </div>
       )}
-      {/* Keyed on the room: the composer holds its draft — and its in-flight
-          latch — in local state, and switching to an already-read room takes
-          none of the early returns above, so React would otherwise reuse the
-          instance. A DM's half-typed sentence would follow you into a channel
-          with Enter still armed. */}
+      {/* Keyed on the room so opening a conversation gives you a composer that
+          is focused and freshly sized for that room's draft. Switching to an
+          already-read room takes none of the early returns above, so without
+          this React reuses the instance and the input's own internals — focus,
+          height, a part-typed IME composition — carry across. The DRAFT is safe
+          either way; it belongs to the room, not to this element. */}
       <RoomComposer key={room.id} room={room} />
     </div>
   );

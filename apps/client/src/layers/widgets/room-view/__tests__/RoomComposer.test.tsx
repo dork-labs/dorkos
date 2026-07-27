@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { PostToRoomResponse, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { RoomComposer } from '../ui/RoomComposer';
@@ -34,6 +35,8 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   toastError.mockClear();
+  // Drafts outlive components on purpose, which means they also outlive tests.
+  useRoomDraftStore.setState({ drafts: {} });
 });
 
 function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
@@ -56,9 +59,9 @@ function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
 
 function renderComposer(transport: Transport, room: RoomWithRoster = roomWith()) {
   // The app's real cache configuration, retries off. A bare `new QueryClient()`
-  // has no MutationCache, so the global error toast this surface deliberately
-  // suppresses would not exist to be asserted about — the test would pass
-  // whether or not the suppression was there.
+  // has no MutationCache — and the MutationCache is where a failed post's toast
+  // now comes from, so a re-declared config would leave these assertions with
+  // nothing to assert against.
   const config = createQueryClientConfig();
   const queryClient = new QueryClient({
     ...config,
@@ -193,12 +196,29 @@ describe('RoomComposer', () => {
     fireEvent.keyDown(field, { key: 'Enter' });
 
     await waitFor(() => expect(field.value).toBe('the message I do not want to retype'));
-    // One toast, carrying the server's sentence. The QueryClient here is the
-    // app's real one, whose MutationCache toasts every unsuppressed failure —
-    // so a missing `suppressErrorToast` shows up as a second, generic toast
-    // landing FIRST and burying the reason.
+    // One toast, naming the action and carrying the server's own reason. It
+    // comes from the shared MutationCache rather than from this component,
+    // because this component is not always still here when a refusal lands.
     expect(toastError).toHaveBeenCalledTimes(1);
-    expect(toastError).toHaveBeenCalledWith('This room is archived');
+    expect(toastError).toHaveBeenCalledWith("Couldn't send your message — This room is archived");
+  });
+
+  it('sends the same words twice when that is what was asked for', async () => {
+    // "ok", "+1", "ping" — the messages people genuinely repeat. A latch that
+    // recognised a duplicate by comparing bodies dropped the second one
+    // silently whenever the first was still in flight.
+    const transport = createMockTransport({ postToRoom: vi.fn(() => neverSettles()) });
+    const field = renderComposer(transport);
+
+    type(field, 'ok');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    type(field, 'ok');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(2));
+    expect(transport.postToRoom).toHaveBeenNthCalledWith(1, 'room-1', { text: 'ok' });
+    expect(transport.postToRoom).toHaveBeenNthCalledWith(2, 'room-1', { text: 'ok' });
+    expect(field.value).toBe('');
   });
 
   it('puts a refused message back above a follow-up instead of destroying one', async () => {
@@ -246,9 +266,10 @@ describe('RoomComposer', () => {
 
     type(field, 'ship it');
     // Both keydowns inside ONE act scope, which is the race this guards: React
-    // batches, so no render happens between them and BOTH handlers read the
-    // pre-send `text`. Two separate `fireEvent` calls each flush a render, so
-    // the second would find an empty field and prove nothing about the latch.
+    // batches, so no render happens between them and both handlers close over
+    // the same pre-send text. Only a live read of the draft store tells them
+    // apart. Two separate `fireEvent` calls each flush a render, so the second
+    // would find an empty field and prove nothing.
     await act(async () => {
       field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));

@@ -184,3 +184,115 @@ describe('ChannelsPage room switching', () => {
     expect(transport.postToRoom).toHaveBeenCalledWith('room-2', { text: 'hello #random' });
   });
 });
+
+/**
+ * The two ways a refusal arrives with nobody listening.
+ *
+ * TanStack dispatches per-call `mutate(…, { onError })` callbacks only while
+ * the observer still has listeners (`mutationObserver.js:77`), and both of
+ * these detach it — leaving the room unmounts the composer, and a second
+ * `mutate()` removes the observer from the first mutation (`:56-58`). Handling
+ * a refusal at the call site therefore loses it completely: no words, no toast.
+ */
+describe('ChannelsPage — a refusal nobody is listening for', () => {
+  it('gives the words back to the room even after the reader has left it', async () => {
+    let refuse: (err: Error) => void = () => {};
+    const { transport, openRoom } = renderPage({
+      postToRoom: vi.fn(
+        () =>
+          new Promise<PostToRoomResponse>((_resolve, reject) => {
+            refuse = reject;
+          })
+      ),
+    });
+
+    await openRoom('room-1');
+    await openRoom('room-2');
+    const dmField = await openRoom('room-1');
+
+    fireEvent.change(dmField, { target: { value: 'the message that will fail' } });
+    fireEvent.keyDown(dmField, { key: 'Enter' });
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+
+    // Leave before the server answers. The composer that sent it is now gone.
+    const channelField = await openRoom('room-2');
+    refuse(new Error('This room is archived'));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Couldn't send your message — This room is archived")
+    );
+    expect(toastError).toHaveBeenCalledTimes(1);
+    // The room the reader is standing in is untouched...
+    expect(channelField.value).toBe('');
+    // ...and the words are waiting in the room they were written for.
+    const restored = await openRoom('room-1');
+    expect(restored.value).toBe('the message that will fail');
+  });
+
+  it('gives the words back when a second message supersedes the first', async () => {
+    const settlers: Array<(err: Error) => void> = [];
+    const { transport, openRoom } = renderPage({
+      postToRoom: vi.fn(
+        () =>
+          new Promise<PostToRoomResponse>((_resolve, reject) => {
+            settlers.push(reject);
+          })
+      ),
+    });
+
+    const field = await openRoom('room-1');
+
+    fireEvent.change(field, { target: { value: 'first' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+
+    // The second `mutate()` detaches the observer from the first mutation.
+    fireEvent.change(field, { target: { value: 'second' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(2));
+
+    // The server refuses the FIRST one, which nothing is watching any more.
+    settlers[0]!(new Error('Not a member of this room'));
+
+    await waitFor(() => expect(field.value).toBe('first'));
+    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError).toHaveBeenCalledWith(
+      "Couldn't send your message — Not a member of this room"
+    );
+  });
+
+  it('stacks a refusal above whatever was typed while it was in the air', async () => {
+    let refuse: (err: Error) => void = () => {};
+    const { transport, openRoom } = renderPage({
+      postToRoom: vi.fn(
+        () =>
+          new Promise<PostToRoomResponse>((_resolve, reject) => {
+            refuse = reject;
+          })
+      ),
+    });
+
+    const field = await openRoom('room-1');
+    fireEvent.change(field, { target: { value: 'the refused one' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(field, { target: { value: 'typed while waiting' } });
+    refuse(new Error('offline'));
+
+    await waitFor(() => expect(field.value).toBe('the refused one\ntyped while waiting'));
+  });
+
+  it('keeps a draft while you read another room, and hands it back on return', async () => {
+    const { openRoom } = renderPage();
+
+    await openRoom('room-1');
+    const dmField = await openRoom('room-2');
+    fireEvent.change(dmField, { target: { value: 'half a thought' } });
+
+    await openRoom('room-1');
+    const returned = await openRoom('room-2');
+
+    expect(returned.value).toBe('half a thought');
+  });
+});

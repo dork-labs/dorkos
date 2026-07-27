@@ -15,6 +15,7 @@ export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
 export type { RoomStreamState } from './model/use-room-stream';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
+export { useRoomDraft, useRoomDraftStore } from './model/room-drafts';
 export { useRoomListStream } from './model/use-room-list-stream';
 export { useRoomRosters } from './model/use-room-rosters';
 export type { RoomRosters } from './model/use-room-rosters';

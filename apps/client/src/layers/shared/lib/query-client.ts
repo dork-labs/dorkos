@@ -5,12 +5,20 @@
  * Error handling strategy:
  * - QueryCache.onError: Logs all query errors for telemetry. Shows toast only
  *   when the query opts in via `meta.showToastOnError`.
- * - MutationCache.onError: Shows a generic toast for all failed mutations,
- *   unless the mutation opts out via `meta.suppressErrorToast`. A mutation's own
- *   `onError` does NOT replace this one — TanStack awaits the cache handler and
- *   then the mutation's, so both fire. Opt out via `meta` when the surface
- *   already renders the failure itself (e.g. an inline form error), or the user
- *   sees the same problem reported twice in two different voices.
+ * - MutationCache.onError: Shows a toast for all failed mutations, unless the
+ *   mutation opts out via `meta.suppressErrorToast`. A mutation's own `onError`
+ *   does NOT replace this one — TanStack awaits the cache handler and then the
+ *   mutation's, so both fire. Opt out via `meta` when the surface already
+ *   renders the failure itself (e.g. an inline form error), or the user sees
+ *   the same problem reported twice in two different voices.
+ *
+ *   Prefer `meta.errorLabel` over opting out. This handler is the only failure
+ *   report that always reaches the user: it runs on the mutation itself
+ *   (`mutation.js:148`), whereas a `mutate(…, { onError })` callback is
+ *   dispatched only while the observer still has listeners
+ *   (`mutationObserver.js:77`) — so it is skipped when the component unmounted
+ *   or a second `mutate()` superseded the first. A surface that opts out and
+ *   handles the error at the call site is a surface that can fail in silence.
  *
  * throwOnError is NOT set globally — it's opt-in per query:
  * - Background/polling queries: never throw (stale data > crashed page)
@@ -59,7 +67,12 @@ export function createQueryClientConfig(): QueryClientConfig {
       onError: (error, _variables, _onMutateResult, mutation) => {
         console.error('[dorkos:mutation-error]', { error: error.message });
         if (mutation.meta?.suppressErrorToast) return;
-        toast.error('Action failed. Please try again.');
+        // `errorLabel` names the action in the user's terms; the server's own
+        // sentence says why. Together they read like a person explaining what
+        // went wrong — "Couldn't send your message — This room is archived" —
+        // which is what the generic line below can never do.
+        const label = mutation.meta?.errorLabel as string | undefined;
+        toast.error(label ? `${label} — ${error.message}` : 'Action failed. Please try again.');
       },
     }),
     defaultOptions: {
