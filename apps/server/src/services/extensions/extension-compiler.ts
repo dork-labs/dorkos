@@ -23,40 +23,56 @@ const BUNDLE_SIZE_WARNING_KB = 500;
 const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Decide whether a thrown esbuild error reflects a problem with the local
- * environment — a missing native binary, exhausted file descriptors, disk
- * or memory pressure — rather than the extension's own source.
+ * The prose esbuild's native binary writes when it fails to READ a file
+ * because of the local environment, rather than anything about the
+ * extension's source. esbuild formats every one of these identically —
+ * `Cannot read file %q: %s`, where `%s` is Go's raw `strerror()` text for
+ * the underlying OS error — so it never uses an OS errno symbol
+ * (`EMFILE`, `ENOSPC`, ...) in a message, only the human text it maps to.
  *
- * esbuild reports a genuine compile failure (a syntax error, an unresolved
- * import, a type error) by rejecting with a `BuildFailure` that carries a
- * populated `errors` array of source-mapped messages — every internal
- * failure path builds that array with at least one entry before throwing.
- * Every other failure — a missing `@esbuild/<platform>` package, a spawn
- * error, a Node-level `EMFILE`/`ENOENT` while esbuild starts its helper
- * process — rejects with a plain `Error` that has no `errors` array at
- * all, because esbuild never got far enough to evaluate the source.
+ * Verified against esbuild 0.25.12 two ways, both reproduced in
+ * `__tests__/extension-compiler-real-esbuild.test.ts`:
  *
- * That absence is the signal this function keys on: it means the failure
- * is not a deterministic property of the extension's content hash, so
- * caching it would brick the extension on every future start — including
- * after the environment recovers — for a problem the extension author
- * never had a chance to cause.
+ * - An unreadable ENTRY point (`chmod 000`) rejects with a `BuildFailure`
+ *   carrying a populated, single-entry `errors[]` with `location: null` —
+ *   there is nothing to point at, since esbuild never got to open the file
+ *   that would anchor a position.
+ * - An unreadable file the entry point IMPORTS rejects with the same text
+ *   template, but this time `location` points at the `import` statement in
+ *   the (perfectly readable) file that referenced it — esbuild has a real
+ *   source position for *that* failure, it just can't read what's on the
+ *   other end.
  *
- * @param err - The value esbuild's `build()` rejected with.
- * @returns `true` when `err` is not a `BuildFailure` with real errors.
+ * So `location` is present in one case and absent in the other for the
+ * identical underlying problem: matching MUST NOT require its absence, or
+ * the second case — a transient failure reached while resolving any file
+ * the extension imports, not just its own entry point — quietly falls
+ * through to being cached as a permanent compile error, which is exactly
+ * the defect this pattern exists to close.
  */
-function isEnvironmentFailure(err: unknown): boolean {
-  const esbuildErr = err as { errors?: unknown[] };
-  return !Array.isArray(esbuildErr.errors) || esbuildErr.errors.length === 0;
-}
+const ESBUILD_IO_FAILURE_PATTERNS: RegExp[] = [
+  /Cannot read file .*: (too many open files( in system)?|permission denied|no space left on device|cannot allocate memory|input\/output error)/,
+];
 
 /**
- * Text signatures of environment failures — a missing native binary, an
- * install mismatch, or an OS-level resource error — that a build predating
- * {@link isEnvironmentFailure} could have written to a `.error.json` cache
- * file as if they were permanent compile errors.
+ * Text a *Node-thrown* error (not esbuild's own `BuildFailure`) could have
+ * carried before {@link isEnvironmentFailure} existed and this file always
+ * cached whatever it caught. Node's own errors — a failed `spawn()` when
+ * launching esbuild's helper process, `generateBinPath()`'s "package could
+ * not be found" when `@esbuild/<platform>` is missing — use OS errno
+ * symbols and different prose than esbuild's Go binary does.
+ *
+ * These never fire on a *live* classification: a Node-thrown error has no
+ * `errors` array at all, so {@link isEnvironmentFailure}'s shape check
+ * already keeps it out of the cache before any text is examined. They
+ * exist solely to evict a `.error.json` a pre-fix build wrote for one of
+ * these — the file has no shape signal left once serialized to JSON, only
+ * text. Unlike {@link ESBUILD_IO_FAILURE_PATTERNS}, matching still requires
+ * an absent `location`: a raw errno symbol like `EMFILE` is common enough
+ * in arbitrary text that a genuine compile error's source position is
+ * worth keeping as a corroborating signal here.
  */
-const LEGACY_TRANSIENT_ERROR_PATTERNS: RegExp[] = [
+const LEGACY_NODE_THROWN_ERROR_PATTERNS: RegExp[] = [
   /could not be found, and is needed by esbuild/i,
   /installed esbuild for another platform/i,
   /\bEMFILE\b/,
@@ -65,29 +81,96 @@ const LEGACY_TRANSIENT_ERROR_PATTERNS: RegExp[] = [
   /\bENOMEM\b/,
   /\bENOSPC\b/,
   /\bEACCES\b/,
-  /out of memory/i,
 ];
+
+/**
+ * Test a set of esbuild-shaped error entries for a message matching any of
+ * `patterns`, irrespective of `location`.
+ *
+ * @param errors - Error entries from either a raw esbuild rejection or a
+ *   parsed `.error.json` cache file.
+ * @param patterns - Regexes to test each entry's text against.
+ * @returns `true` when at least one entry matches.
+ */
+function hasTextMatch(errors: Array<{ text: string }>, patterns: RegExp[]): boolean {
+  return errors.some((e) => patterns.some((p) => p.test(e.text)));
+}
+
+/**
+ * Test a set of esbuild-shaped error entries for a LOCATION-LESS message
+ * matching any of `patterns`.
+ *
+ * @param errors - Error entries from either a raw esbuild rejection or a
+ *   parsed `.error.json` cache file.
+ * @param patterns - Regexes to test each location-less entry's text against.
+ * @returns `true` when at least one entry matches.
+ */
+function hasLocationlessTextMatch(
+  errors: Array<{ text: string; location?: unknown }>,
+  patterns: RegExp[]
+): boolean {
+  return errors.some((e) => !e.location && patterns.some((p) => p.test(e.text)));
+}
+
+/**
+ * Decide whether a thrown esbuild error reflects a problem with the local
+ * environment — a missing native binary, exhausted file descriptors, a
+ * full disk, an out-of-memory condition, a permission error — rather than
+ * the extension's own source.
+ *
+ * This is a two-part test, because esbuild surfaces environment failures
+ * two different ways depending on *when* they happen:
+ *
+ * 1. **Before esbuild's binary even starts** (the `@esbuild/<platform>`
+ *    package is missing, `child_process.spawn` itself fails): rejects with
+ *    a plain `Error` that has no `errors` array at all. Caught by the
+ *    shape check below.
+ * 2. **While esbuild's binary is running but can't read a file** — the
+ *    entry point itself, or anything it imports — because of `EMFILE`,
+ *    `ENOSPC`, `ENOMEM`, `EACCES`, or similar: rejects with a real
+ *    `BuildFailure` carrying a POPULATED `errors[]` — the same shape a
+ *    genuine compile error has, with or without a `location` depending on
+ *    which file could not be read (see {@link ESBUILD_IO_FAILURE_PATTERNS}).
+ *    Shape alone cannot tell this apart from a real error; only the
+ *    message text can.
+ *
+ * Either way, the failure is not a deterministic property of the
+ * extension's content hash, so caching it would brick the extension on
+ * every future start — including after the environment recovers — for a
+ * problem the extension author never had a chance to cause.
+ *
+ * @param err - The value esbuild's `build()` rejected with.
+ * @returns `true` when `err` describes the environment, not the source.
+ */
+function isEnvironmentFailure(err: unknown): boolean {
+  const esbuildErr = err as { errors?: Array<{ text: string; location?: unknown }> };
+  if (!Array.isArray(esbuildErr.errors) || esbuildErr.errors.length === 0) {
+    return true;
+  }
+  return hasTextMatch(esbuildErr.errors, ESBUILD_IO_FAILURE_PATTERNS);
+}
 
 /**
  * Detect a cached compile error, written before {@link isEnvironmentFailure}
  * existed, that actually describes an environment problem rather than a
  * defect in the extension's own source.
  *
- * Every error {@link isEnvironmentFailure} would now keep out of the cache
- * was written the same way: a single `errors[]` entry with no `location`,
- * wrapping a bare `Error.message` (a genuine esbuild message almost always
- * carries a source `location`). Matching that shape against known
- * environment-failure text is a reliable enough signal to evict a legacy
- * cache entry — one written before this classification shipped — rather
- * than replay it as a permanent verdict on every future start.
+ * Checks the cached entries' text against both pattern sets
+ * {@link isEnvironmentFailure} would now classify live —
+ * {@link ESBUILD_IO_FAILURE_PATTERNS}, for the file-read-failure case a
+ * plain shape check cannot catch even on a *live* classification — plus
+ * {@link LEGACY_NODE_THROWN_ERROR_PATTERNS} for the Node-thrown case,
+ * whose shape signal (no `errors` array) does not survive being written to
+ * and re-read from JSON.
  *
  * @param cached - The parsed contents of a cached `.error.json` file.
  * @returns `true` when the cached error looks like a stale environment
  *   failure rather than a real, still-current compile error.
  */
 function isLegacyTransientCachedError(cached: CompilationError): boolean {
-  return cached.errors.some(
-    (e) => !e.location && LEGACY_TRANSIENT_ERROR_PATTERNS.some((p) => p.test(e.text))
+  return (
+    hasTextMatch(cached.errors, ESBUILD_IO_FAILURE_PATTERNS) ||
+    hasLocationlessTextMatch(cached.errors, LEGACY_NODE_THROWN_ERROR_PATTERNS)
   );
 }
 

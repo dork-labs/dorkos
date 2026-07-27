@@ -85,6 +85,26 @@ function genuineBuildFailure(text: string): Error {
   });
 }
 
+/**
+ * What esbuild's `build()` rejects with when its own binary can't READ a
+ * file because of the local environment — a `BuildFailure` with a
+ * POPULATED `errors[]`, the same shape a genuine compile error has. This
+ * is the exact shape the classifier missed before it also checked message
+ * text: an unreadable entry point carries `location: null` (nothing to
+ * point at); an unreadable file the entry point *imports* carries a real
+ * `location` pointing at the `import` statement. Both are reproduced for
+ * real (no mock) in `extension-compiler-real-esbuild.test.ts`.
+ */
+function esbuildIoFailure(
+  text: string,
+  location: { file: string; line: number; column: number } | null = null
+): Error {
+  return Object.assign(new Error(`Build failed with 1 error:\n${text}`), {
+    errors: [{ text, location }],
+    warnings: [],
+  });
+}
+
 /** What esbuild's `build()` resolves with on a successful compile (`write: false`). */
 function buildSuccess(text: string): BuildResult {
   return {
@@ -159,6 +179,65 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
       expect(mockBuild).toHaveBeenCalledTimes(2);
     });
 
+    it('does not cache an esbuild read failure with no location (unreadable entry point)', async () => {
+      const extDir = path.join(tmpDir, 'io-fail-no-location-ext');
+      await fs.mkdir(extDir, { recursive: true });
+      await fs.writeFile(path.join(extDir, 'index.ts'), 'export function activate() {}');
+
+      mockBuild.mockRejectedValue(
+        esbuildIoFailure('Cannot read file "index.ts": permission denied', null)
+      );
+
+      const result = await compiler.compile(makeRecord('io-fail-no-location-ext', extDir));
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        const cachedErrorPath = path.join(
+          tmpDir,
+          'cache',
+          'extensions',
+          `io-fail-no-location-ext.${result.sourceHash}.error.json`
+        );
+        await expect(fs.access(cachedErrorPath)).rejects.toThrow();
+      }
+
+      await compiler.compile(makeRecord('io-fail-no-location-ext', extDir));
+      expect(mockBuild).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not cache an esbuild read failure WITH a location (unreadable import)', async () => {
+      // The regression this guards: a populated errors[] entry that DOES
+      // carry a location (esbuild points at the `import` statement that
+      // referenced the unreadable file) must still be recognized as an
+      // environment failure by its text, not dismissed because it has a
+      // location a genuine compile error would also have.
+      const extDir = path.join(tmpDir, 'io-fail-with-location-ext');
+      await fs.mkdir(extDir, { recursive: true });
+      await fs.writeFile(path.join(extDir, 'index.ts'), 'import "./helper.js";');
+
+      mockBuild.mockRejectedValue(
+        esbuildIoFailure('Cannot read file "helper.ts": permission denied', {
+          file: 'index.ts',
+          line: 1,
+          column: 7,
+        })
+      );
+
+      const result = await compiler.compile(makeRecord('io-fail-with-location-ext', extDir));
+      expect('error' in result).toBe(true);
+      if ('error' in result) {
+        const cachedErrorPath = path.join(
+          tmpDir,
+          'cache',
+          'extensions',
+          `io-fail-with-location-ext.${result.sourceHash}.error.json`
+        );
+        await expect(fs.access(cachedErrorPath)).rejects.toThrow();
+      }
+
+      await compiler.compile(makeRecord('io-fail-with-location-ext', extDir));
+      expect(mockBuild).toHaveBeenCalledTimes(2);
+    });
+
     it('still caches a genuine compile error and replays it without recompiling', async () => {
       const extDir = path.join(tmpDir, 'genuine-fail-ext');
       await fs.mkdir(extDir, { recursive: true });
@@ -215,6 +294,41 @@ describe('ExtensionCompiler — environment vs. genuine compile errors', () => {
 
       // The stale cache was discarded and esbuild ran fresh instead of
       // replaying the years-old environment failure forever.
+      expect(mockBuild).toHaveBeenCalledTimes(1);
+      expect('code' in result).toBe(true);
+    });
+
+    it('evicts a legacy cached esbuild I/O failure even when it carries a location', async () => {
+      const extDir = path.join(tmpDir, 'legacy-io-with-location-ext');
+      await fs.mkdir(extDir, { recursive: true });
+      const source = 'import "./helper.js";';
+      await fs.writeFile(path.join(extDir, 'index.ts'), source);
+
+      const sourceHash = contentHash(source);
+      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
+      await fs.mkdir(cacheDir, { recursive: true });
+      const cachedErrorPath = path.join(
+        cacheDir,
+        `legacy-io-with-location-ext.${sourceHash}.error.json`
+      );
+      await fs.writeFile(
+        cachedErrorPath,
+        JSON.stringify({
+          code: 'compilation_failed',
+          message: 'Compilation failed for legacy-io-with-location-ext',
+          errors: [
+            {
+              text: 'Cannot read file "helper.ts": permission denied',
+              location: { file: 'index.ts', line: 1, column: 7 },
+            },
+          ],
+        })
+      );
+
+      mockBuild.mockResolvedValue(buildSuccess(source));
+
+      const result = await compiler.compile(makeRecord('legacy-io-with-location-ext', extDir));
+
       expect(mockBuild).toHaveBeenCalledTimes(1);
       expect('code' in result).toBe(true);
     });
