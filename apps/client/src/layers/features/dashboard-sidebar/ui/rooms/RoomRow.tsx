@@ -1,7 +1,7 @@
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { cn } from '@/layers/shared/lib';
 import { SidebarMenuItem } from '@/layers/shared/ui';
-import { RoomAvatar, RoomTitle, hasUnread, roomDisplayTitle } from '@/layers/entities/room';
+import { RoomAvatar, RoomTitle, hasUnread } from '@/layers/entities/room';
 
 interface RoomRowProps {
   /** The room this row opens. */
@@ -19,10 +19,13 @@ interface RoomRowProps {
  * The badge reads `unreadCount` strictly: `null` means "you are not in this
  * room", which is not the same as `0` ("you are in it and caught up"), so a
  * room the operator has never joined shows no badge rather than a zero.
+ *
+ * The row's accessible name is built from its parts — `RoomTitle` contributes
+ * `#general`, the badge contributes `3 unread` — so no part names the room a
+ * second time.
  */
 export function RoomRow({ room, isActive, onSelect }: RoomRowProps) {
   const unread = hasUnread(room);
-  const name = roomDisplayTitle(room);
 
   return (
     <SidebarMenuItem>
@@ -43,7 +46,11 @@ export function RoomRow({ room, isActive, onSelect }: RoomRowProps) {
         {unread && (
           <span
             className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
-            aria-label={`${room.unreadCount} unread in ${name}`}
+            // The room is NOT named again here. This label joins the row's own
+            // name to make it, so repeating the room turned every unread row
+            // into "#general 3 unread in #general" — the same name twice, which
+            // is the defect this row was just fixed for.
+            aria-label={`${room.unreadCount} unread`}
           >
             {room.unreadCount}
           </span>

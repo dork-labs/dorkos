@@ -9,6 +9,7 @@ import {
 } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
 import { useElectronCloseTab } from './app/use-electron-close-tab';
+import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { getAgentDisplayName, cn, isDesktopShell } from '@/layers/shared/lib';
@@ -238,6 +239,9 @@ export function AppShell() {
   const tasksBadgeCount = useAppStore((s) => s.tasksBadgeCount);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
+  // The tab names the room you are reading when there is one, and counts the
+  // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
+  const { roomTitle, unreadRoomCount } = useRoomDocumentTitle();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,
@@ -251,6 +255,8 @@ export function AppShell() {
     agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
     agentEmoji: currentAgent ? agentVisual.emoji : undefined,
     tasksBadgeCount,
+    roomTitle,
+    unreadRoomCount,
   });
 
   useShortcutsPanel();

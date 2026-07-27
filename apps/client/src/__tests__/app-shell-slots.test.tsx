@@ -31,6 +31,9 @@ vi.mock('@tanstack/react-router', () => ({
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
+  // The shell reads `?id=` to name the open room in the document title
+  // (`useRoomDocumentTitle`). No route under test carries one.
+  useSearch: () => ({}),
 }));
 
 // ── Mock child components with identifiable test markers ──
@@ -187,6 +190,17 @@ vi.mock('@/layers/widgets/pulse', async (importOriginal) => {
   return {
     ...actual,
     usePulseFreshness: () => {},
+  };
+});
+
+// The shell also keeps the room list live for the browser tab's unread badge
+// (`useRoomDocumentTitle` -> `useRoomListStream`) — another event-stream
+// subscription, no-op'd here for the same reason.
+vi.mock('@/layers/entities/room', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/room')>();
+  return {
+    ...actual,
+    useRoomListStream: () => {},
   };
 });
 

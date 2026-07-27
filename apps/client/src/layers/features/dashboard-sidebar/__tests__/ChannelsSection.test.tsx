@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -88,10 +88,18 @@ describe('ChannelsSection', () => {
     expect(screen.getByText(/No channels yet/i)).toBeInTheDocument();
   });
 
-  it('renders each channel by its #slug', () => {
+  it('writes each channel name once, beside the mark that supplies its #', () => {
     renderSection({ channels: [channel(), channel({ id: 'room-2', slug: 'backend' })] });
-    expect(screen.getByText('#general')).toBeInTheDocument();
-    expect(screen.getByText('#backend')).toBeInTheDocument();
+
+    // A row is `#` (a glyph) then `general` — never `# #general`. Asserting the
+    // row merely *contains* `#general` would pass on the doubled version too,
+    // so the two halves are named apart: what the row draws, and what it says.
+    const general = screen.getByRole('button', { name: '#general' });
+    expect(general.querySelector('svg.lucide-hash')).not.toBeNull();
+    expect(within(general).getByText('general')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(general).getByText('#general')).toHaveClass('sr-only');
+
+    expect(screen.getByRole('button', { name: '#backend' })).toBeInTheDocument();
   });
 
   it('shows skeletons, not an empty state, while the first list loads', () => {
@@ -112,16 +120,39 @@ describe('ChannelsSection', () => {
         channel({ id: 'c', slug: 'not-a-member', unreadCount: null }),
       ],
     });
-    expect(screen.getByLabelText('3 unread in #unread')).toHaveTextContent('3');
+    expect(screen.getByLabelText('3 unread')).toHaveTextContent('3');
     // 0 means "in it and caught up"; null means "not in it". Neither is a badge.
     expect(screen.queryByText('0')).not.toBeInTheDocument();
+  });
+
+  it('names an UNREAD row once too — the badge does not repeat the room', () => {
+    // The read row was already asserted above, which is why the doubled name on
+    // this one went unseen: the badge's own label used to end "in #general", so
+    // the row read "#general 3 unread in #general" — the same defect as the
+    // doubled `#`, one element further along.
+    renderSection({ channels: [channel({ unreadCount: 3 })] });
+
+    // How an accessible name's parts are joined is the environment's call —
+    // jsdom loads no CSS, so it never blockifies the flex children a browser
+    // does, and inserts no separator. So this asserts the parts, not the joins.
+    let observed = '';
+    screen.getByRole('button', {
+      name: (accessibleName: string) => {
+        if (!accessibleName.includes('unread')) return false;
+        observed = accessibleName;
+        return true;
+      },
+    });
+
+    expect(observed).toMatch(/3 unread/);
+    expect(observed.match(/#general/g)).toHaveLength(1);
   });
 
   it('opens the room a row names', () => {
     const onSelectRoom = vi.fn();
     const room = channel();
     renderSection({ channels: [room], onSelectRoom });
-    fireEvent.click(screen.getByText('#general'));
+    fireEvent.click(screen.getByRole('button', { name: '#general' }));
     expect(onSelectRoom).toHaveBeenCalledWith(room);
   });
 
@@ -137,7 +168,7 @@ describe('ChannelsSection', () => {
   it('hides its rows when collapsed but keeps the header reachable', () => {
     mockCollapsed = true;
     renderSection({ channels: [channel()] });
-    expect(screen.queryByText('#general')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '#general' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /channels/i })).toHaveAttribute(
       'aria-expanded',
       'false'

@@ -17,12 +17,7 @@ import {
   setGroupsHintDismissed,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import {
-  useRooms,
-  useRoomListStream,
-  useRoomsByKind,
-  type RoomSummary,
-} from '@/layers/entities/room';
+import { useRooms, useRoomsByKind, type RoomSummary } from '@/layers/entities/room';
 import {
   useAgentSessions,
   useRenameSession,
@@ -108,8 +103,11 @@ export function DashboardSidebar() {
   // One list query, partitioned by kind, so the two sections share a request and
   // a cache. The active room is read off the URL rather than held in state —
   // room identity travels as a search param, matching `/session?session=`.
+  // Read-only: the list's live subscription belongs to the app shell, which is
+  // always mounted. This body is not — mobile keeps it in a closed drawer and
+  // /marketplace swaps it out — so a subscription here would stop refreshing
+  // the browser tab's unread badge the moment either happened.
   const roomsQuery = useRooms();
-  useRoomListStream();
   const { channels, dms } = useRoomsByKind(roomsQuery.data);
   const channelsSearch = useSearch({ strict: false }) as { id?: string; thread?: string };
   const activeRoomId =

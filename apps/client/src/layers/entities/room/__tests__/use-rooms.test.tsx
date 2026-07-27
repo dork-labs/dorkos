@@ -88,6 +88,71 @@ describe('useRoomsByKind', () => {
     const { result } = renderHook(() => useRoomsByKind(undefined));
     expect(result.current).toEqual({ channels: [], dms: [] });
   });
+
+  it('orders channels by name, not by the recency the server sent', () => {
+    // Handed over in recency order, which is what `GET /api/rooms` answers with.
+    const { result } = renderHook(() =>
+      useRoomsByKind([
+        room({ id: 'c1', slug: 'zulu', lastActivityAt: '2026-07-26T13:00:00.000Z' }),
+        room({ id: 'c2', slug: 'room-10', lastActivityAt: '2026-07-26T12:00:00.000Z' }),
+        room({ id: 'c3', slug: 'alpha', lastActivityAt: '2026-07-26T11:00:00.000Z' }),
+        room({ id: 'c4', slug: 'room-2', lastActivityAt: '2026-07-26T10:00:00.000Z' }),
+      ])
+    );
+
+    // Alphabetical, so a quiet channel keeps its place — and `room-2` sorts
+    // before `room-10` the way a person reads them, not the way bytes do.
+    expect(result.current.channels.map((r) => r.slug)).toEqual([
+      'alpha',
+      'room-2',
+      'room-10',
+      'zulu',
+    ]);
+  });
+
+  it('orders direct messages by recency — the opposite call, on purpose', () => {
+    /** A DM last spoken in at `at`. */
+    const dm = (id: string, title: string, at: string) =>
+      room({ id, kind: 'dm', slug: null, title, lastActivityAt: at });
+
+    const { result } = renderHook(() =>
+      useRoomsByKind([
+        dm('d1', 'Ana', '2026-07-26T10:00:00.000Z'),
+        dm('d2', 'Bo', '2026-07-26T13:00:00.000Z'),
+        dm('d3', 'Cy', '2026-07-26T11:00:00.000Z'),
+      ])
+    );
+
+    expect(result.current.dms.map((r) => r.title)).toEqual(['Bo', 'Cy', 'Ana']);
+  });
+
+  it('breaks a tie on the room id, so tied rows never swap places', () => {
+    // Two channels that cannot be told apart by name (no slug, same title), and
+    // two DMs created in the same millisecond — the seeded shape exactly. Ids
+    // are ULID-shaped here, so `02` is the later-minted room.
+    const tied = '2026-07-26T10:00:00.000Z';
+    const { result } = renderHook(() =>
+      useRoomsByKind([
+        room({ id: 'c02', kind: 'channel', slug: null, title: 'Ops' }),
+        room({ id: 'c01', kind: 'channel', slug: null, title: 'Ops' }),
+        room({ id: 'd01', kind: 'dm', slug: null, title: 'Ana', lastActivityAt: tied }),
+        room({ id: 'd02', kind: 'dm', slug: null, title: 'Bo', lastActivityAt: tied }),
+      ])
+    );
+
+    // Channels ascend with their sort; DMs descend with theirs, so the newer
+    // room stays on top of a tie rather than under it.
+    expect(result.current.channels.map((r) => r.id)).toEqual(['c01', 'c02']);
+    expect(result.current.dms.map((r) => r.id)).toEqual(['d02', 'd01']);
+  });
+
+  it('leaves the cached array it was handed exactly as it found it', () => {
+    // The list belongs to the query cache; sorting it in place would reorder
+    // every other reader's copy of it.
+    const cached = [room({ id: 'c1', slug: 'zulu' }), room({ id: 'c2', slug: 'alpha' })];
+    renderHook(() => useRoomsByKind(cached));
+    expect(cached.map((r) => r.slug)).toEqual(['zulu', 'alpha']);
+  });
 });
 
 describe('useRoom / useRoomEntries', () => {
