@@ -1,7 +1,7 @@
 ---
 covers:
-  - "fix(rooms): the DM picker gets the screen on a phone (DOR-602)"
-  - "fix(rooms): the picker survives a landscape phone with the keyboard up (DOR-602)"
+  - 'fix(rooms): the DM picker gets the screen on a phone (DOR-602)'
+  - 'fix(rooms): the picker survives a landscape phone with the keyboard up (DOR-602)'
   - "fix(rooms): the chip's remove target stops stealing taps from the field (DOR-602)"
 ---
 

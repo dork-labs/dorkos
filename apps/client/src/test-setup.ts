@@ -13,6 +13,28 @@ if (!('ResizeObserver' in globalThis)) {
   } as unknown as typeof ResizeObserver;
 }
 
+// jsdom declares `window.matchMedia` and leaves it undefined — `'matchMedia' in
+// window` is true and calling it throws — so anything that asks the viewport a
+// question (`useIsMobile`, reduced motion) dies on mount. The check is therefore
+// on the VALUE, not the key. Defaults to the desktop answer; a test that cares
+// about the mobile branch redefines this itself.
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 // Motion-specific props to strip so they don't leak to the DOM.
 const MOTION_PROPS = new Set([
   'initial',

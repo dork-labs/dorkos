@@ -157,7 +157,7 @@ describe('GroupHeader', () => {
   it('renames inline: Rename swaps to an input, Enter commits via renameGroup', () => {
     renderHeader();
     openContextMenu();
-    fireEvent.click(screen.getByText('Rename'));
+    fireEvent.click(screen.getByText('Rename…'));
 
     const input = screen.getByLabelText('Group name');
     expect(input).toHaveValue('Clients');
@@ -173,7 +173,7 @@ describe('GroupHeader', () => {
   it('rename Esc cancels without writing', () => {
     renderHeader();
     openContextMenu();
-    fireEvent.click(screen.getByText('Rename'));
+    fireEvent.click(screen.getByText('Rename…'));
     const input = screen.getByLabelText('Group name');
     fireEvent.change(input, { target: { value: 'Different' } });
     fireEvent.keyDown(input, { key: 'Escape' });
@@ -184,7 +184,7 @@ describe('GroupHeader', () => {
   it('rename does not write when the name is unchanged or empty', () => {
     renderHeader();
     openContextMenu();
-    fireEvent.click(screen.getByText('Rename'));
+    fireEvent.click(screen.getByText('Rename…'));
     const input = screen.getByLabelText('Group name');
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -285,7 +285,7 @@ describe('GroupHeader', () => {
     renderHeader();
     // Context menu items
     openContextMenu();
-    for (const label of ['Rename', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
+    for (const label of ['Rename…', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -293,7 +293,7 @@ describe('GroupHeader', () => {
     // "…" dropdown items
     fireEvent.pointerDown(screen.getByLabelText('Clients group actions'));
     fireEvent.click(screen.getByLabelText('Clients group actions'));
-    for (const label of ['Rename', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
+    for (const label of ['Rename…', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
