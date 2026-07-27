@@ -94,6 +94,16 @@ sends nothing to dorkos.ai until a person says it may.
   the README.
 - We give up the "matches the industry norm" defence. That was a genuine argument, and reasonable
   people will think this is the wrong trade for a pre-launch product.
+- **An install already at `0.57.0` keeps sending.** `conf` runs a migration only when
+  `key > storedVersion`, so an install that has already recorded `0.57.0` and later upgrades to
+  `0.58.0` never runs `applyTier1OptInDefaults` and keeps `install`/`heartbeat`/`usage` at `true`.
+  The window is narrow — `0.57.0` is unreleased as of this ADR, so only pre-release builds are
+  affected — but it is real, and it is the price of composing into an existing key rather than
+  opening one that would not run at all.
+- **A dev tree runs no migrations.** `SERVER_VERSION` resolves to `0.0.0` in a checkout, so no
+  migration key is ever greater than the stored version and DorkOS developers keep sending on
+  configs written before this change. Tracked as DOR-585. Contributors who want it off now should
+  set `DO_NOT_TRACK=1` or answer the prompt.
 
 ## Alternatives considered
 

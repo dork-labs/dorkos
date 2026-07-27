@@ -74,7 +74,7 @@ Two events ship today:
 
 Each event is wrapped in the same anonymous envelope as everything else: your random `instanceId`, a timestamp, and your DorkOS version. Like the heartbeat, it never includes your prompts, your code, file paths, your hostname or username, or anything from your sessions.
 
-Like the heartbeat and install counts, this channel is on by default, in line with how tools like VS Code and Homebrew count usage. Two things still protect you: nothing sends until after DorkOS has shown you the first-run notice, and you can turn it off three ways, the same as every other channel:
+Like the heartbeat and install counts, this channel is off until you turn it on. Two things still hold once you do: nothing sends until after DorkOS has shown you the first-run notice, and you can turn it back off three ways, the same as every other channel:
 
 - Flip `telemetry.usage` to `false` in `~/.dork/config.json` (or use the **Privacy & Data** tab, or `dorkos telemetry disable --channel usage`).
 - Set `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` to silence this and every other channel at once.
@@ -198,12 +198,13 @@ The first time you open DorkOS, a banner discloses that it shares anonymous data
 }
 ```
 
-Set a value to `false` to turn a channel off, or `true` to turn it on. The three anonymous channels default to `true`; error reporting and AI run metadata default to `false`, and each one's flag is the only switch it needs.
+Set a value to `true` to turn a channel on, or `false` to turn it off. Every channel defaults to `false`, and each one's flag is the only switch it needs.
 
 <Callout type="info">
-  Anonymous by default is the norm for developer tools, from Next.js to VS Code to Homebrew. We keep
-  it genuinely anonymous, show you the whole payload, and make turning it off a one-liner. Your code
-  and your chats with the AI never leave your machine, default or not.
+  Plenty of developer tools collect anonymous usage by default. We decided not to: nothing leaves
+  your machine unless you say so. When you do turn a channel on, we keep it genuinely anonymous and
+  show you the whole payload. Your code and your chats with the AI never leave your machine either
+  way.
 </Callout>
 
 ## When this changes
