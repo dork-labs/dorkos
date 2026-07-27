@@ -56,24 +56,34 @@ The body maps each stored string to `{ kind: 'agent', path }` across all three f
 
 Guard it against absent and already-migrated data. A fresh install, a user upgrading with groups, and a re-run must all be safe, because the composite block runs as one unit and its siblings are each independently idempotent.
 
+**It must also `delete` the old `agentPaths` key rather than leaving it beside `members`.** Found empirically while implementing: the generated JSON Schema emits `additionalProperties: false` on each group object, so a leftover key hard-fails `conf`'s post-migration validation. "Leave the old key, it is harmless" is the intuitive choice here and it is the one that breaks.
+
+### Beyond the config file
+
+A schema change of this shape is not only a migration. `CONFIG_DISCLOSURE` and `CONFIG_WRITE_POLICY` (`apps/server/src/services/core/operator/`) carry a drift guard that fails the build until **every** schema leaf has a verdict, and the union turns three leaf paths into nine (`kind` / `path` / `roomId` across three lists). The disclosure test's dot-path reader also has to descend _every_ array element rather than element zero — with a union, an exposed path lives in some element, not all of them.
+
 ---
 
 ## 2. The pure layer
 
 ### 2.1 Prefs helpers
 
-`entities/config/model/use-sidebar-prefs.ts` exports **27 helpers**, of which those taking a `path: string` take a `ref: SidebarItemRef` instead: `pinPath`, `unpinPath`, `moveToGroup`, `reorderWithinGroup`, `reorderPinned`, `mutePath`, `unmutePath`. Rename them off `…Path` — `pinItem`, `muteItem` — since the name is now wrong.
+`entities/config/model/use-sidebar-prefs.ts` exports **27 helpers**, of which those taking a `path: string` take a `ref: SidebarItemRef` instead: `pinPath`, `unpinPath`, `moveToGroup`, `mutePath`, `unmutePath`. Rename them off `…Path` — `pinItem`, `muteItem` — since the name is now wrong.
+
+`reorderWithinGroup(groupId, from, to)` and `reorderPinned(from, to)` are **index-based and keep their signatures** — only their bodies retype. An earlier draft listed them among the path-takers; that was wrong. `convertSmartGroupToManual` does change, though the earlier draft missed it: its `currentMembers` parameter becomes `SidebarItemRef[]`, and `GroupHeader` wraps `evaluateSmartGroup`'s paths at the call site, which is where §1.2 says the wrapping belongs.
 
 The retype is the safety mechanism. Every `includes`, `indexOf`, `filter` and `===` against these arrays stops compiling, so the compiler enumerates the blast radius rather than leaving a silent behaviour change. Fix each with `sameSidebarItem`; do not reintroduce a string key to make the errors go away.
 
 ### 2.2 The drag reducer
 
-`use-sidebar-dnd.ts` is a pure reducer with three exported entry points — `classifySidebarDrop`, `applySidebarDropOp`, `buildSidebarAnnouncements` — and its descriptors carry `path: string`. They carry a `SidebarItemRef` instead. `AgentContainer` becomes `SidebarContainer` (`pinned` / `group` / `ungrouped`), unchanged in shape.
+`use-sidebar-dnd.ts` is a pure reducer whose exported entry points are `classifySidebarDrop`, `resolveSidebarDrop` and `buildSidebarAnnouncements`, plus the node-data converters. Their descriptors carry `path: string`; they carry a `SidebarItemRef` instead. `AgentContainer` becomes `SidebarContainer` (`pinned` / `group` / `ungrouped`), unchanged in shape.
+
+`applySidebarDropOp` is **module-private** and stays that way — an earlier draft called it an exported entry point. Exporting it to match a spec sentence would add public surface with no caller, which `knip` would flag as dead.
 
 Two things must not regress:
 
 - **The announcements are derived from the same descriptors**, which is what stops spoken feedback drifting from what the reducer did. Keep that; announcements now have to name a room as well as an agent, and "moved to Ship" must say _what_ moved.
-- **`smart-group-target`** already exists as a deliberate no-op op so the UI can hint instead of silently swallowing a drop. A room dropped on a smart group resolves to it unchanged — this is reuse, not a new case.
+- **`reject-smart-group`** already exists as a deliberate no-op op so the UI can hint instead of silently swallowing a drop. A room dropped on a smart group resolves to it unchanged — this is reuse, not a new case. (An earlier draft called it `smart-group-target`; that name is not in the code.)
 
 ---
 
@@ -121,7 +131,7 @@ Mappings:
 
 | Phase            | Deliverable                                                                                                            | Depends on |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------- |
-| **S1** (DOR-579) | `SidebarItemRef`, the `'0.58.0'` migration, prefs helpers and the drag reducer retyped. **No visible change.**         | —          |
+| **S1** (DOR-579) | `SidebarItemRef`, the `'0.57.0'` migration, prefs helpers and the drag reducer retyped. **No visible change.**         | —          |
 | **S2** (DOR-580) | The view model, mixed group rendering, sorts and filters over the union, default sections showing only ungrouped items | S1         |
 | **S3** (DOR-581) | Rooms draggable into groups, "Move to group ▸" in the room menu, room mute through the generalised list                | S2         |
 
