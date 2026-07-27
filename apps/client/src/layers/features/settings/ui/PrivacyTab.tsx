@@ -9,7 +9,7 @@ import { useConfig, useUpdateConfig, TelemetryPayloadDisclosure } from '@/layers
  * explicit choice and the first-run consent notice never reappears.
  *
  * Post Tier 1 flip (ADR 260713-143958): the three anonymous channels (install
- * counts, daily heartbeat, feature-usage events) are ON by default, gated on a
+ * counts, daily heartbeat, feature-usage events) are OFF until you turn them on, gated on a
  * first-run notice before anything sends, and anonymous by construction. Crash
  * reports stay opt-in. The full contract lives at https://dorkos.ai/telemetry.
  */

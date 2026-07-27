@@ -71,24 +71,27 @@ import {
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
 
 /**
- * The later of two posture-floor instants, treating a missing one as "no floor".
+ * Read a config file that `conf` just refused, so its protections can be
+ * salvaged before the file is replaced.
  *
- * Both values are `Date.prototype.toISOString()` output — fixed-width UTC — so
- * ordering them as text orders them as instants, the same property the grant
- * store's own comparison relies on. The schema pins the format
- * (`standingGrantsVoidBefore` is `z.string().datetime().nullable()`), so a value that
- * reaches here through any validated path is comparable this way.
+ * Best-effort by design and never throws. A file that fails schema validation
+ * usually still parses as JSON — that is the whole reason salvage is possible —
+ * but a genuinely truncated file does not, and the caller is already handling a
+ * failure. An unreadable file simply yields `undefined` and the recovery
+ * proceeds on defaults, exactly as it did before.
  *
- * @param a - One instant, or `null`.
- * @param b - The other instant, or `null`.
- * @returns The later of the two, or `null` when both are absent.
+ * @param configPath - Absolute path to the config file being replaced.
+ * @returns The parsed contents, or `undefined` when they cannot be read.
  */
-function latestInstant(a: string | null, b: string | null): string | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  return a > b ? a : b;
+function readStoredConfigForSalvage(configPath: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -582,6 +585,49 @@ export function applyTier1OptOutDefaults(store: {
   // Idempotent short-circuit: already enrolled, nothing to write.
   if (t.install === true && t.heartbeat === true) return;
   store.set('telemetry', { ...t, install: true, heartbeat: true });
+}
+
+/**
+ * Migration body: return the Tier 1 telemetry channels (`install`, `heartbeat`,
+ * `usage`) to opt-in for every install that never answered a consent prompt
+ * (ADR 260727-181825, superseding 260713-143958's Tier 1 posture).
+ *
+ * The mirror image of {@link applyTier1OptOutDefaults}, which is shipped and
+ * therefore frozen — this reverses its effect for the population it enrolled,
+ * rather than editing it:
+ *
+ * - If `userHasDecided === true`, the person made an explicit choice (either
+ *   way) — change NOTHING. Someone who chose to keep sharing keeps sharing.
+ * - Otherwise (never answered), set all three channels `false`. That includes
+ *   installs the 0.48.0 migration enrolled and installs that have since had
+ *   their first-run notice shown, which is the point: enrolment by silence is
+ *   what this reverses.
+ *
+ * The consequence is deliberate and is the whole cost of the change: installs
+ * that are sending anonymous data today, having never been asked, stop sending
+ * it. They are not re-prompted here — `lastPromptedVersion` is untouched, so the
+ * cockpit's consent surfaces remain the way back in.
+ *
+ * Idempotent: an already-opted-out never-answered block, and any
+ * explicit-choice block, are left as-is. The whole-object-absent case is handled
+ * by the schema default on read, which now yields `false`.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function applyTier1OptInDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry == null || typeof telemetry !== 'object') return;
+  const t = telemetry as Record<string, unknown>;
+  // An explicit prior choice is never overridden — the same rule the opt-out
+  // flip honored, applied in the other direction.
+  if (t.userHasDecided === true) return;
+  // Idempotent short-circuit: already opted out, nothing to write.
+  if (t.install === false && t.heartbeat === false && t.usage === false) return;
+  store.set('telemetry', { ...t, install: false, heartbeat: false, usage: false });
 }
 
 /**
@@ -1281,6 +1327,11 @@ export const CONFIG_MIGRATIONS = {
     // Additive + idempotent; seeds the shipped defaults, so every bound is on
     // for every upgraded install.
     backfillRoomsDefaults(store);
+    // Return the Tier 1 telemetry channels to opt-in for every install that
+    // never answered a consent prompt (ADR 260727-181825). Reverses the 0.48.0
+    // enrolment for that population only; an explicit choice, either way, is
+    // left exactly as it stands.
+    applyTier1OptInDefaults(store);
     // Convert `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member
     // list from agent-path strings to `SidebarItemRef` objects, renaming
     // `groups[].agentPaths` -> `groups[].items` (sidebar-groups, DOR-579).
@@ -1308,8 +1359,14 @@ export const CONFIG_MIGRATIONS = {
  * constructor's recovery path backs the file up and replaces it with defaults.
  *
  * That is not "the sidebar forgets its groups". It resets the ENTIRE file:
- * telemetry consent (a privacy opt-out silently reverting to the opt-in
- * defaults), `mesh.scanRoots`, `approvals`, `runtimes`, `cloud`, `onboarding`.
+ * `mesh.scanRoots`, `approvals`, `runtimes`, `cloud`, `onboarding`.
+ *
+ * It no longer takes the person's privacy choice with it —
+ * `safe-defaults/protected-state.ts` salvages that (and every other protective
+ * value) before the file is replaced, which is what DOR-584 closed. Do not read
+ * that as making this widening optional: salvage keeps protections, not
+ * preferences, and it needs the doomed file to still parse as JSON. Not
+ * condemning the file in the first place is still the goal.
  *
  * And the migration is skipped more often than it sounds. `conf` runs a key only
  * when `key > storedVersion && key <= projectVersion`, so: a dev tree resolves
@@ -1442,7 +1499,14 @@ export class ConfigManager {
       this.store = new Conf<UserConfig>(confOptions);
       logger.info(`[Config] Loaded from ${configPath} (first run: ${this._isFirstRun})`);
     } catch (_error) {
+      // Read the doomed file BEFORE deleting it. The common failure is a file
+      // that parses as JSON but no longer satisfies the schema (a skipped
+      // rename, a narrowed enum, a hand edit), so the person's privacy and
+      // permission choices are sitting right there, perfectly readable, in the
+      // file we are about to replace. Losing state must not lose a protection.
+      let stored: unknown;
       if (fs.existsSync(configPath)) {
+        stored = readStoredConfigForSalvage(configPath);
         const backupPath = configPath + '.bak';
         fs.copyFileSync(configPath, backupPath);
         fs.unlinkSync(configPath);
@@ -1452,6 +1516,7 @@ export class ConfigManager {
       // Reuse the exact same options so the recovered store still has the
       // migration chain wired up.
       this.store = new Conf<UserConfig>(confOptions);
+      restoreProtectedState(this.store, stored, 'Recovered a damaged config');
     }
   }
 
@@ -1543,15 +1608,31 @@ export class ConfigManager {
     return ui === config.ui ? config : { ...config, ui };
   }
 
-  /** Reset a specific key or all keys to defaults */
+  /**
+   * Reset a specific key, or every key, to defaults.
+   *
+   * A whole-config reset keeps the settings a person moved to the protective
+   * side — their telemetry answer, a login gate they switched on, a bound they
+   * tightened (see `safe-defaults/protected-state.ts`). "Reset my preferences" is not
+   * consent to start sharing again, and this is the verb the operator's own
+   * phrasing was about: the safe option has to win *in case things get reset*.
+   *
+   * Resetting one key is the escape hatch and stays literal: `reset('telemetry')`
+   * really does put the telemetry block back to its defaults, because naming the
+   * section IS the explicit act that the blanket reset lacks.
+   *
+   * @param key - The top-level section to reset, or omitted for all of them.
+   */
   reset(key?: string): void {
     const licensedBefore = this.standingGrantsLicensed();
     const floorBefore = this.standingGrantVoidFloor();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
+      const stored = this.store.store;
       this.store.clear();
       this.store.set(USER_CONFIG_DEFAULTS);
+      restoreProtectedState(this.store, stored, 'Reset your config');
     }
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
   }

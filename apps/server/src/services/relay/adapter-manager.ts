@@ -33,6 +33,7 @@ import {
   watchAdapterConfig,
   maskSensitiveFields,
   mergeWithPasswordPreservation,
+  parseAdapterConfigForPersist,
 } from './adapter-config.js';
 import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
 import {
@@ -618,14 +619,14 @@ export class AdapterManager {
       }
     }
 
-    const adapterConfig = {
+    const adapterConfig = parseAdapterConfigForPersist({
       id,
       type,
       enabled,
       builtin: false, // User-created instances are never builtin
       ...(label ? { label } : {}),
       config,
-    } as AdapterConfig;
+    });
     this.configs.push(adapterConfig);
     await this.persistConfigs();
     logger.debug('[AdapterManager] config saved', { id });
@@ -754,7 +755,11 @@ export class AdapterManager {
       manifest
     );
 
-    existing.config = mergedConfig;
+    // Re-parse the whole entry rather than assigning the merged record straight
+    // in: the merge can drop a key the incoming config omitted, and an
+    // unvalidated write is what let an entry reach disk with no `dmPolicy`
+    // (see `parseForPersist`).
+    existing.config = parseAdapterConfigForPersist({ ...existing, config: mergedConfig }).config;
 
     // Promote label from config to top-level if present (client embeds it in config)
     if (typeof mergedConfig.label === 'string' && mergedConfig.label) {

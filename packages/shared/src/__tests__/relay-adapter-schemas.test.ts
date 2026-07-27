@@ -269,11 +269,13 @@ describe('SlackAdapterConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('defaults dmPolicy to open', () => {
+  // DOR-604: a DM starts an agent turn on the operator's machine, so an
+  // unconfigured integration answers nobody rather than the whole workspace.
+  it('defaults dmPolicy to allowlist', () => {
     const result = SlackAdapterConfigSchema.safeParse(baseConfig);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.dmPolicy).toBe('open');
+      expect(result.data.dmPolicy).toBe('allowlist');
     }
   });
 
@@ -343,7 +345,7 @@ describe('SlackAdapterConfigSchema', () => {
     if (result.success) {
       expect(result.data.typingIndicator).toBe('none');
       expect(result.data.respondMode).toBe('thread-aware');
-      expect(result.data.dmPolicy).toBe('open');
+      expect(result.data.dmPolicy).toBe('allowlist');
       expect(result.data.dmAllowlist).toEqual([]);
       expect(result.data.channelOverrides).toEqual({});
     }

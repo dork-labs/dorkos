@@ -1,6 +1,6 @@
 /**
  * `POST /api/telemetry/heartbeat` — anonymous daily heartbeat sink (DOR-293;
- * Tier 1 opt-out per ADR 260713-143958).
+ * opt-in per ADR 260727-182651, which supersedes 260713-143958's Tier 1 posture).
  *
  * Runs as a Vercel Edge Function. Validates the incoming heartbeat with Zod,
  * then **upserts** a single row into `instance_heartbeats` keyed on

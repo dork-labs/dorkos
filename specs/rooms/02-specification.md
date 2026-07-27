@@ -621,6 +621,91 @@ These apply beyond rooms and should be treated as standing guidance for this sur
 
 **Reach it from the command palette, and deep-link into it.** Anything worth a menu item is worth a palette entry — the palette is the only surface that works identically on every viewport and with no pointer. §13.2 already specifies `#` for rooms and the contextual-action model; this extends it: **new channel, new DM, add agents, and members should all be palette-reachable and openable by URL**, so an agent can hand a person a link that opens the right panel.
 
-**Slash commands in rooms.** Sessions have them; rooms do not. The room composer should carry at least the room-scoped verbs — invite, leave, rename, topic, archive — because a person who types `/` in a chat box expects something, and today gets nothing. Which set, and whether agent-defined commands appear in rooms at all, needs its own decision; the gap is recorded here rather than designed.
+**Slash commands in rooms.** Sessions have them; rooms do not. A person who types `/` in a chat box expects something and today gets nothing. **Designed in §15** (DOR-603).
 
 **Use the visual companion.** UI/UX work on this surface should go through the `visual-companion` skill rather than being assessed from source. Two defects this programme shipped — a channel rendering `# #general`, and DM rows showing letters where agent faces belong — were invisible to every test and obvious in a screenshot.
+
+## 15. Slash commands in rooms (DOR-603)
+
+§14.5 recorded this as a gap "recorded rather than designed." This designs it. The
+answer falls out of §14.4 without needing new invention: **a slash command needs
+whatever the thing it acts on is anchored to.**
+
+### 15.1 There are two kinds, and they are different in kind
+
+|                    | Acts on  | Needs a working tree | Where it works                   |
+| ------------------ | -------- | -------------------- | -------------------------------- |
+| **Room commands**  | the room | no                   | every room                       |
+| **Agent commands** | an agent | yes                  | wherever an agent is unambiguous |
+
+**Room commands** — `/add`, `/remove`, `/topic`, `/rename`, `/archive` — change the
+room itself. A room is anchored to a participant or a topic, never to a directory,
+so these need no tree and always work.
+
+**Agent commands** are the ones a session already has: plugin commands and skills
+like `/flow:specify`. These need a tree. §14.4: **a DM has no `cwd`.** So a room
+can never run one _itself_ — it resolves the command **through an agent**, which
+does have a workspace binding, and the command runs there.
+
+That gives the rule, and it is not a compromise — it is the only thing §14.4
+permits:
+
+- **In a 1:1 DM the agent is unambiguous**, so agent commands just work. They run
+  in that agent's own workspace. This is the single most useful case and it needs
+  no extra syntax.
+- **In a group DM or a channel the agent is ambiguous**, so an agent command
+  requires an address: `@kai /flow:specify`. Typing a bare agent command in a
+  multi-agent room is not an error to punish — the composer asks which agent, the
+  same way §14.1's menus ask before doing something irreversible.
+
+### 15.2 The human is always in the room
+
+Slack's `/join` and `/leave` have no counterpart here, and copying them would be
+mimicry rather than design. In DorkOS the operator is not a member of a room —
+they _are_ the room's other side. **Membership is about agents.** Every membership
+verb therefore takes an agent, and there is no verb for the person.
+
+This is worth stating because it is the point where the Slack analogy stops
+paying, and it retires a whole class of features nobody needs.
+
+### 15.3 One model, three renderers
+
+The room verbs are exactly R6b's context-menu items (§14.1) and exactly §14.5's
+palette entries. **They must be one list, not three.**
+
+This repo already has the pattern: `AgentRowMenuItems.tsx` builds one pure
+`buildRowMenuNodes(model)` and renders it into both a ContextMenu and a
+DropdownMenu through a single walk. Extend that to a third renderer rather than
+authoring a parallel slash-command table. The invariant to hold, and the reason
+this matters more than it looks:
+
+> **Every room command has a menu equivalent, and every menu item has a command.
+> A capability that exists in only one of the three is a bug in whichever two are
+> missing it.**
+
+Without this, the three lists drift within one release — the menu grows an item,
+the palette does not, and the slash command silently does the old thing.
+
+### 15.4 The failure everyone ships
+
+An unrecognized `/foo` must **never** be silently swallowed, and must never be
+silently sent as chat text either. Both are the same defect wearing different
+clothes: the person's intent was a command and the system pretended otherwise.
+
+Unrecognized input stays in the composer with the reason visible, before send.
+The `/` menu filters as you type, so an unrecognized command is a state the
+person can see coming rather than a result they discover afterwards.
+
+Note also that §13.2's palette prefix for rooms is `#`, which is the channel
+sigil — `/` in the composer and `#` in the palette are different namespaces and
+must not be conflated.
+
+### 15.5 Scope for DOR-603
+
+Ship room commands and the 1:1-DM agent-command path. The addressed form
+(`@agent /command`) in multi-agent rooms depends on §5's addressing work and can
+follow, provided the bare form in a multi-agent room asks rather than guesses —
+**guessing which agent runs a command is the one outcome that is not acceptable**,
+because it silently does work in a tree the person did not choose.
+
+Blocked behind R6b (DOR-572), which builds the pure list §15.3 requires.

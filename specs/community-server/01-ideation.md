@@ -40,7 +40,7 @@ Two absences matter as much as the presences:
 - **No invites spec was ever written.** `accounts-and-auth` P3 lists "invites + viewer/operator roles" as deferred; `apps/server/src/services/core/auth/index.ts:14` promises "a future invites spec"; that spec does not exist. Greenfield.
 - **No keypair exists anywhere.** Not local, not cloud. Both `apikey` tables hold bearer tokens, not keypairs. The "invisible keypair" in the research doc is a proposal, never built.
 
-## 3) The five decisions
+## 3) The decisions
 
 ### D1 — Postgres on the community server; SQLite stays local
 
@@ -122,6 +122,53 @@ Read-only is the resolution. It is small, it is real (point it at a live relay, 
 
 A4's estimate rises by roughly one point (generate/persist a key, implement the NIP-42 challenge-response). The sequencing decision is unaffected, and the spike's four mismatches (§7 Q1) vindicate it.
 
+### D6 — Your own install stays single-user. All multi-user lives in `apps/community`
+
+Decided 2026-07-27. There are two servers with two jobs, and they were being conflated:
+
+|             | **Local install** (`apps/server`)    | **Community server** (`apps/community`) |
+| ----------- | ------------------------------------ | --------------------------------------- |
+| Whose       | Your machine                         | A shared space                          |
+| Holds       | Your agents, filesystem, credentials | Roster, channels, history               |
+| Humans      | **You, and only ever you**           | Many                                    |
+| Roles about | Nothing — it is yours                | Invite, moderate, create channels       |
+
+So the `FORBIDDEN`-on-second-signup hook in `auth/index.ts:162` **stays**. Nobody else ever holds an account on the machine that runs your agents and spends your model quota — which is ADR-0320's trust-domain argument taken to its conclusion rather than half-way.
+
+**This retires most of Track B as originally specced.** `specs/invites/` (`260727-161438`) designed invites, registration reopening, and a local `member` role for a person who does not exist in this architecture. Invites belong to the community server. The spec is kept, not deleted — its token design, security analysis, and experience contract all transfer — but its _host_ changes.
+
+**What survives, with a better justification than it was given.** DOR-598 replaces "human means operator" with "is this the owner account". That was sold as future-proofing for a second local account. The real reason is stronger and applies today: **once you join a community, your local database will hold other humans as authors** — remote members whose messages you have cached. Any code reading `kind === 'human'` and concluding "operator" is then wrong on your own machine, with no second account anywhere.
+
+### D7 — Community roles are `owner` / `admin` / `member`
+
+One **owner** — whoever deployed it. Irreducible: they hold the database. Many **admins** — invite, moderate, create and archive channels, remove people, eject agents. Many **members** — join channels, post, and bring their own agents.
+
+A community with exactly one administrator stops working the week that person goes on holiday. This is the model everyone already knows from Slack and Discord, and it is deliberately _not_ a permission system: three named roles, no per-resource grants. Per-channel roles are much easier to add later than to remove.
+
+Note this is a **different role model from the local install**, which has exactly one person and therefore no roles at all.
+
+### D8 — A member adds their own agents; admins can eject them
+
+No approval step. A member adds an agent to any channel they belong to, and it is the whole point of the product rather than a feature to gate.
+
+The mechanism is Buzz's shape minus the keypair (`research/20260727_agent-identity-in-communities.md`): the agent gets **its own identity in the community, vouched for by the member who brought it**. Three properties follow, and all three matter:
+
+- **Removing the human removes their agents**, automatically, because the attestation is what admits them. Buzz's own implementation fails this — nothing there can even enumerate "agents of this owner" — and that is the specific hole not to copy.
+- **The agent inherits none of its owner's powers.** A member's admin-less agent is not an admin's agent. Capability does not flow owner → agent.
+- **Admins can eject an agent** or bar it from a channel, without removing its owner.
+
+Quotas must be **aggregated per owner**, not per identity. Buzz's are inverted — agents get 120 msg/min against a human's 60 on independent counters, so N agents buy `60 + 120N`. That is the unbounded-spend gap `specs/invites/` §14.6 already admits, and it should be closed at the community server rather than inherited.
+
+### D9 — The community server never executes a member's agent
+
+Promoted to **ADR `260727-184933`**, because it is the constraint most likely to erode one pull request at a time.
+
+Hosted DorkOS is three products, not one: (1) remote access to your own install — **already shipped** via the tunnel and ADR-0320's exposure guard; (2) a hosted community server with a browser client, which is this program; (3) hosted agent execution — a real future product with its own economics, and not merely "our apps on a server."
+
+Agents run on their members' own machines and connect in. A community holds the conversation; it does not hold compute.
+
+**Presence follows the install.** If a member's computer is off, that member _and their agents_ are offline, the way a person who is asleep is offline. v1 does not queue for absent members and does not promise a later reply. Accepted deliberately.
+
 ## 4) The experience this is all for
 
 The design principle, stated so later work can be measured against it:
@@ -157,9 +204,15 @@ Refused: email required to preview an invite; "install the app to continue"; any
 - `requireOperator()` grants on the same test, so a second human can rewrite **any** roster.
 - The client has the matching assumption: `ChannelsPage.tsx` and `use-mark-room-read.ts` both locate the viewer via `members.find((m) => m.author.kind === 'human')`. With two humans, `find` returns whoever sorts first, so one person reads and advances the other's cursor. The code names this itself: _"v1 mints exactly one human author… there will not be one until accounts land."_
 
-None of this is exploitable today — there is only ever one human — but all of it activates the instant a second one exists. **Replacing the human-equals-operator model is part of Track B, not a follow-up**, and it is why invites must ship as a self-contained phase rather than as a hook change.
+None of this is exploitable today — there is only ever one human — but all of it activates the instant a second one exists.
 
-The tracks are largely independent and converge at `apps/community`.
+**Superseded later the same day by D6.** Track B is no longer "multi-user auth on one install", because D6 decided the local install never holds a second account. What remains of it:
+
+- **Ships now** — the authorization hardening (DOR-598), on D6's stronger justification: joining a community puts _other humans_ in your local `authors` table, so "human means operator" is wrong on your own machine today, with no second account anywhere.
+- **Moves to the community server** — invite tokens, registration, and the `member` role. `specs/invites/` is kept rather than deleted; its token design, security analysis and experience contract transfer to `apps/community` unchanged. Only the host moves.
+- **Deleted** — reopening local registration. The `FORBIDDEN` hook stays forever.
+
+The tracks converge at `apps/community`.
 
 ## 6) Out of scope
 
