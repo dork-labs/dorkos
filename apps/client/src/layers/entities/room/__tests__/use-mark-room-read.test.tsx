@@ -26,7 +26,7 @@ function entry(seq: number): RoomEntry {
   };
 }
 
-function roomWith(members: RoomWithRoster['members']): RoomWithRoster {
+function roomWith(members: RoomWithRoster['members'], viewerAuthorId = 'me'): RoomWithRoster {
   return {
     id: 'room-1',
     kind: 'channel',
@@ -40,17 +40,22 @@ function roomWith(members: RoomWithRoster['members']): RoomWithRoster {
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members,
+    viewerAuthorId,
   };
 }
 
-function human(lastReadSeq: number): RoomWithRoster['members'][number] {
+function human(
+  lastReadSeq: number,
+  id = 'me',
+  displayName = 'You'
+): RoomWithRoster['members'][number] {
   return {
     roomId: 'room-1',
-    authorId: 'me',
+    authorId: id,
     responseMode: 'always',
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq,
-    author: { id: 'me', kind: 'human', displayName: 'You' },
+    author: { id, kind: 'human', displayName },
   };
 }
 
@@ -83,6 +88,39 @@ describe('useMarkRoomRead', () => {
       wrapper: wrapperFor(transport),
     });
     await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 4));
+  });
+
+  it('reads the viewer’s own cursor when two people are in the room', async () => {
+    // Dorian is ahead (9) and sorts first; Priya, the viewer, is behind (1).
+    // `find(kind === 'human')` returned Dorian, read his cursor as caught up,
+    // and said nothing — leaving Priya’s badge sitting there with nothing
+    // in the product able to clear it.
+    const transport = createMockTransport();
+    renderHook(
+      () =>
+        useMarkRoomRead(
+          roomWith([human(9, 'dorian', 'Dorian'), human(1, 'priya', 'Priya')], 'priya'),
+          [entry(1), entry(4)]
+        ),
+      { wrapper: wrapperFor(transport) }
+    );
+    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 4));
+  });
+
+  it('stays quiet when the viewer is caught up and the OTHER person is behind', async () => {
+    // The same bug in the other direction: reading Priya’s cursor would have
+    // sent a write on Dorian’s behalf that he did not need.
+    const transport = createMockTransport();
+    renderHook(
+      () =>
+        useMarkRoomRead(
+          roomWith([human(1, 'priya', 'Priya'), human(9, 'dorian', 'Dorian')], 'dorian'),
+          [entry(4)]
+        ),
+      { wrapper: wrapperFor(transport) }
+    );
+    await act(async () => {});
+    expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
   });
 
   it('says nothing when the reader is already caught up', async () => {

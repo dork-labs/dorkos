@@ -17,12 +17,12 @@ vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
     get: () => ({
-        getCapabilities: () => getCapabilities(),
-        acquireLock: () => true,
-        releaseLock: () => undefined,
-        sendMessage: () => undefined,
-        interruptQuery: () => Promise.resolve(false),
-        getInternalSessionId: () => undefined,
+      getCapabilities: () => getCapabilities(),
+      acquireLock: () => true,
+      releaseLock: () => undefined,
+      sendMessage: () => undefined,
+      interruptQuery: () => Promise.resolve(false),
+      getInternalSessionId: () => undefined,
     }),
     has: () => true,
     getDefaultType: () => 'claude-code',
@@ -62,6 +62,7 @@ function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],
+    viewerAuthorId: 'human',
   } satisfies RoomWithRoster;
   const entry: RoomEntry = {
     roomId: room.id,

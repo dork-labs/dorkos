@@ -59,9 +59,12 @@ export function useMarkRoomRead(
   });
   const { mutate } = mutation;
 
-  // v1 mints exactly one human author (spec `rooms` §2), so the roster's human
-  // member is the person reading. Accounts replace this lookup, not the rule.
-  const membership = room?.members.find((member) => member.author.kind === 'human');
+  // `viewerAuthorId` is who the SERVER resolved this request as, so it is the
+  // one cursor this client is entitled to move. The old lookup matched on
+  // `kind === 'human'`, which found whichever human sorted first — with two
+  // people in a room, reading it would have advanced somebody else's cursor and
+  // cleared their unread badge.
+  const membership = room?.members.find((member) => member.author.id === room.viewerAuthorId);
   const newestSeq = entries.length > 0 ? entries[entries.length - 1]!.seq : 0;
   // Deps are the three primitives this actually turns on, never the `room` or
   // `membership` objects: a refetch hands back new object identities for the same
