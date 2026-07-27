@@ -135,6 +135,32 @@ Mappings:
 
 **FSD placement matters.** The producers read `entities/agent` and `entities/room`, which may not import each other. The view model therefore lives at the **feature** layer (`features/dashboard-sidebar/model/`), where both entities are legal imports — the same constraint that produced the duplicate avatar system in the rooms work (`specs/rooms/02-specification.md` §12.2). Do not solve it by moving room code into the agent entity.
 
+### 3.1 The view model carries the face, and that is how DOR-582 gets fixed
+
+The shape above has no visual field, which would leave **DOR-582 unfixed** — a DM row still showing a letter where the agent's face belongs. Add one:
+
+```ts
+type SidebarItemVisual =
+  | { kind: 'identity'; visual: AgentVisual } // agent row, 1:1 DM
+  | { kind: 'stack'; visuals: AgentVisual[] } // group DM
+  | { kind: 'sigil' }; // channel — '#', never a face
+```
+
+The reason this belongs here and nowhere else is the root cause of DOR-582 itself. **Agent emoji and colour are a client-side hash** (`resolveAgentVisual`, `shared/lib`): only 4 of 24 agents have `icon`/`color` stored, so anything read from the server is `null` for the other 20. The rooms work shipped an avatar unification on the premise that `AuthorRef` carries the emoji; the wiring was correct end to end and the feature was inert.
+
+So the visual must be **resolved client-side from the id**, and the view model is the only layer that can do it for both kinds — exactly the same reason the view model exists at all. Resolving it in two places is how the second avatar system got built the first time.
+
+| Row      | Face                                               |
+| -------- | -------------------------------------------------- |
+| Agent    | `resolveAgentVisual(agent)`                        |
+| 1:1 DM   | `resolveAgentVisual` of the single agent particip. |
+| Group DM | the participants' visuals, as a stack              |
+| Channel  | the `#` sigil                                      |
+
+A channel gets a sigil rather than a face because a channel is anchored to a **topic**, not a participant (`specs/rooms/02-specification.md` §14.4). Giving it a face would be the same category error as giving it a `cwd`.
+
+**Verify this in a browser, not in jsdom.** DOR-582 was confirmed by a screenshot after an author, an adversarial reviewer and the orchestrator had all confirmed the opposite from the schema. Count the faces on screen; do not infer that a field is populated from the code that would populate it.
+
 ---
 
 ## 4. Rendering
@@ -161,7 +187,13 @@ S1 shipping with **no visible change** is deliberate: agents-only behaviour must
 
 ### Interaction with the rooms programme
 
-**DOR-572 (R6b) now depends on S3.** Its room context menu needs "Move to group ▸", and its mute must be the generalised one. Building R6b first means a second room-only mute list and a second migration to unify them later. The room programme reorders: R6a → S1 → S2 → S3 → R6b → R9.
+This originally read **"DOR-572 (R6b) now depends on S3"**, on the grounds that its room context menu needs "Move to group ▸" and its mute must be the generalised one. **That has been superseded: R6b was split instead, and ships first.**
+
+The dependency was real but it applied to only two of R6b's eight menu items. Holding the whole menu — mark as read, add agents, members, rename, edit topic, archive, agent profile, and the members panel with per-member remove and the per-room `responseMode` override that no UI has ever reached — behind a drag-and-drop feature was the wrong trade. So R6b ships **without** Mute/Unmute and **without** Move to group ▸, and **S3 adds exactly those two nodes** to the list R6b builds.
+
+The constraint that made the original note right is still binding and is now R6b's hardest rule: **R6b must not create a room-only mute list.** Muting has to be one concept across agents and rooms, so a rooms-only store, key or config field would buy a second migration to unify later — precisely the cost the dependency was there to avoid. R6b builds no mute at all; S3 generalises the existing one.
+
+Order in effect: R6a → S1 → **R6b** → S2 → S3 → R9. R6b and S2 both touch `features/dashboard-sidebar`, so they are sequential rather than parallel — R6b lands first and S2 rebases onto it.
 
 ---
 
