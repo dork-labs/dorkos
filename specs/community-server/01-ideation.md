@@ -138,7 +138,7 @@ The MVP experience:
 
 Two cheap commitments:
 
-- **Ownership visible, not configurable.** One unobtrusive line: _"This community runs on Dorian's server."_ Not a settings panel.
+- **Ownership visible, not configurable.** One unobtrusive line: _"Dorian runs this community."_ Not a settings panel. (Corrected 2026-07-27: this line originally read _"This community runs on Dorian's server"_ — which contains the exact word this section forbids a joining member from having to read. Caught by `specs/invites/`.)
 - **The exit is real.** Leave a community and your local copy goes with you. `cloud-account-management` already shipped GDPR export and hard-delete; that pattern carries over.
 
 Refused: email required to preview an invite; "install the app to continue"; any screen containing the word "server" that a joining member has to read.
@@ -147,7 +147,15 @@ Refused: email required to preview an invite; "install the app to continue"; any
 
 **Track A — architecture.** D5's five steps. Independent of accounts.
 
-**Track B — product.** Invites and multi-user auth on one install. Today `apps/server`'s `databaseHooks.user.create.before` throws `FORBIDDEN` once any user exists (`auth/index.ts:162`), so a second person cannot sign up. The schema is already multi-user-capable; the hook, an invite-token table, and a second role are what's missing. This is the `accounts-and-auth` P3 fast-follow that was deferred and never written, and it proves multi-user end to end on rooms that already work — with zero distributed-systems risk.
+**Track B — product.** Invites and multi-user auth on one install. Today `apps/server`'s `databaseHooks.user.create.before` throws `FORBIDDEN` once any user exists (`auth/index.ts:162`), so a second person cannot sign up. This is the `accounts-and-auth` P3 fast-follow that was deferred and never written, and it proves multi-user end to end on rooms that already work — with zero distributed-systems risk.
+
+**Corrected 2026-07-27** — the sentence that stood here said the schema is already multi-user-capable and only "the hook, an invite-token table, and a second role" are missing. That **understated the work**, and `specs/invites/` (`260727-161438`) found why. The room authorization model does not merely lack a second role; it equates _human_ with _operator_:
+
+- `room-service.ts` `seesEveryRoom()` returns true for any author with `kind === 'human'` — its own docstring reads _"Human authors are the operator; nothing in a single-player cockpit hides from them."_ A second human author therefore reads **every room**, including the owner's agent DMs.
+- `requireOperator()` grants on the same test, so a second human can rewrite **any** roster.
+- The client has the matching assumption: `ChannelsPage.tsx` and `use-mark-room-read.ts` both locate the viewer via `members.find((m) => m.author.kind === 'human')`. With two humans, `find` returns whoever sorts first, so one person reads and advances the other's cursor. The code names this itself: _"v1 mints exactly one human author… there will not be one until accounts land."_
+
+None of this is exploitable today — there is only ever one human — but all of it activates the instant a second one exists. **Replacing the human-equals-operator model is part of Track B, not a follow-up**, and it is why invites must ship as a self-contained phase rather than as a hook change.
 
 The tracks are largely independent and converge at `apps/community`.
 
