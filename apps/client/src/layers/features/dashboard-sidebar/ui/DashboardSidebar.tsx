@@ -17,7 +17,12 @@ import {
   setGroupsHintDismissed,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { useRooms, useRoomsByKind, type RoomSummary } from '@/layers/entities/room';
+import {
+  useRooms,
+  useRoomsByKind,
+  roomDisplayTitle,
+  type RoomSummary,
+} from '@/layers/entities/room';
 import {
   useAgentSessions,
   useRenameSession,
@@ -27,7 +32,7 @@ import {
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
-import { evaluateSmartGroup, type SmartGroupCandidate } from '@dorkos/shared/smart-groups';
+import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
@@ -51,6 +56,14 @@ import {
   DISABLED_SORTABLE_BINDINGS,
 } from './dnd/SidebarDndPrimitives';
 import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
+import {
+  agentPathsOf,
+  effectiveMutedAgentPaths,
+  groupedAgentPaths,
+  evaluateSmartGroups,
+  groupMemberPaths,
+  individuallyMutedAgentPaths,
+} from '../model/sidebar-membership';
 import {
   meetsSmartGroupDisclosureThreshold,
   activeNowPreset,
@@ -92,7 +105,6 @@ export function DashboardSidebar() {
   const { data: config } = useConfig();
   const sidebarPrefs = useSidebarPrefs();
   const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
-  const pinnedAgentPaths = sidebarPrefs.pinned;
 
   // ── Full mesh roster (unsorted; per-section sorting is derived below) ──
   const { data: meshData } = useMeshAgentPaths();
@@ -109,6 +121,13 @@ export function DashboardSidebar() {
   // the browser tab's unread badge the moment either happened.
   const roomsQuery = useRooms();
   const { channels, dms } = useRoomsByKind(roomsQuery.data);
+  // Room titles for the drag layer's overlay and ARIA announcements. Rooms are
+  // not draggable until S3, but `ui.sidebar` is agent-writable, so a room
+  // reference can already arrive there via `config_patch`.
+  const roomTitles = useMemo(
+    () => Object.fromEntries((roomsQuery.data ?? []).map((r) => [r.id, roomDisplayTitle(r)])),
+    [roomsQuery.data]
+  );
   const channelsSearch = useSearch({ strict: false }) as { id?: string; thread?: string };
   const activeRoomId =
     pathname === '/channels' ? (channelsSearch.thread ?? channelsSearch.id ?? null) : null;
@@ -138,39 +157,24 @@ export function DashboardSidebar() {
   // sidebar, and the individually-muted path set every section's filter and
   // rollup dot reads. ──
   const attentionMap = useAgentAttentionMap(rawPaths);
-  const mutedPathsSet = useMemo(() => new Set(sidebarPrefs.muted), [sidebarPrefs.muted]);
-  // Rendering (dim + glyph) reads a DIFFERENT, wider set: individual mute OR
-  // membership in a muted group. Computed once so every appearance of an
-  // agent — its home row AND a pinned copy — renders muted identically ("one
-  // agent, one mute state"). Group mute stays a pure lens: this set is
-  // derived, never written back into `ui.sidebar.muted`.
-  const effectiveMutedForRender = useMemo(() => {
-    const set = new Set(sidebarPrefs.muted);
-    for (const g of sidebarPrefs.groups) {
-      if (!g.muted) continue;
-      for (const p of g.agentPaths) set.add(p);
-    }
-    return set;
-  }, [sidebarPrefs.muted, sidebarPrefs.groups]);
+  // Sections address agents by path, so the stored reference lists are narrowed
+  // to their agent members — see `../model/sidebar-membership` for each rule.
+  const mutedPathsSet = useMemo(() => individuallyMutedAgentPaths(sidebarPrefs), [sidebarPrefs]);
+  const effectiveMutedForRender = useMemo(
+    () => effectiveMutedAgentPaths(sidebarPrefs, mutedPathsSet),
+    [sidebarPrefs, mutedPathsSet]
+  );
 
   // ── Membership maps (stale paths filtered at render, never pruned on write) ──
   const knownSet = useMemo(() => new Set(rawPaths), [rawPaths]);
-
   const pinnedPaths = useMemo(
-    () => pinnedAgentPaths.filter((p) => knownSet.has(p)),
-    [pinnedAgentPaths, knownSet]
+    () => agentPathsOf(sidebarPrefs.pinned, knownSet),
+    [sidebarPrefs.pinned, knownSet]
   );
-
-  // Multi-presence is structural: smart groups' own `agentPaths` stays `[]`
-  // until a "Convert to manual group", so they never contribute here — a
-  // rule-matched agent still lives in its manual group / the ungrouped list.
-  const groupedSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const g of sidebarPrefs.groups) {
-      for (const p of g.agentPaths) if (knownSet.has(p)) set.add(p);
-    }
-    return set;
-  }, [sidebarPrefs.groups, knownSet]);
+  const groupedSet = useMemo(
+    () => groupedAgentPaths(sidebarPrefs, knownSet),
+    [sidebarPrefs, knownSet]
+  );
 
   // ── Smart groups (DOR-338): rule-derived membership, re-evaluated live ──
   // Candidates are built ONCE per render from data the sidebar already holds;
@@ -187,29 +191,15 @@ export function DashboardSidebar() {
       })),
     [rawPaths, agents, attentionMap, agentActivity]
   );
-  const smartGroupMemberPaths = useMemo(() => {
-    const map = new Map<string, string[]>();
-    const now = Date.now();
-    for (const g of sidebarPrefs.groups) {
-      if (g.kind === 'smart' && g.rules) {
-        map.set(g.id, evaluateSmartGroup(g.rules, smartGroupCandidates, now));
-      }
-    }
-    return map;
-  }, [sidebarPrefs.groups, smartGroupCandidates]);
+  const smartGroupMemberPaths = useMemo(
+    () => evaluateSmartGroups(sidebarPrefs, smartGroupCandidates, Date.now()),
+    [sidebarPrefs, smartGroupCandidates]
+  );
 
-  const knownGroupMembers = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const g of sidebarPrefs.groups) {
-      map.set(
-        g.id,
-        g.kind === 'smart'
-          ? (smartGroupMemberPaths.get(g.id) ?? [])
-          : g.agentPaths.filter((p) => knownSet.has(p))
-      );
-    }
-    return map;
-  }, [sidebarPrefs.groups, knownSet, smartGroupMemberPaths]);
+  const knownGroupMembers = useMemo(
+    () => groupMemberPaths(sidebarPrefs, knownSet, smartGroupMemberPaths),
+    [sidebarPrefs, knownSet, smartGroupMemberPaths]
+  );
 
   // ── Smart-group create/edit chrome (DOR-338 spec §4-5) ──
   const runtimeOptions = useMemo(() => {
@@ -276,11 +266,14 @@ export function DashboardSidebar() {
     } catch {
       stored = [];
     }
-    if (pinnedAgentPaths.length === 0 && stored.length > 0) {
-      updateSidebarPrefs((prev) => ({ ...prev, pinned: [...stored] }));
+    if (sidebarPrefs.pinned.length === 0 && stored.length > 0) {
+      updateSidebarPrefs((prev) => ({
+        ...prev,
+        pinned: stored.map((path) => ({ kind: 'agent', path })),
+      }));
     }
     localStorage.removeItem(LEGACY_PINNED_STORAGE_KEY);
-  }, [config, pinnedAgentPaths.length, updateSidebarPrefs]);
+  }, [config, sidebarPrefs.pinned.length, updateSidebarPrefs]);
 
   // ── Sessions for the active agent (canonical cwd-scoped selector, DOR-203) ──
   const {
@@ -306,7 +299,7 @@ export function DashboardSidebar() {
       const pending = groupCreation?.pendingPath ?? null;
       updateSidebarPrefs((prev) => {
         const { next, id } = createGroup(prev, name);
-        return pending ? moveToGroup(next, pending, id) : next;
+        return pending ? moveToGroup(next, { kind: 'agent', path: pending }, id) : next;
       });
       setGroupCreation(null);
     },
@@ -475,7 +468,7 @@ export function DashboardSidebar() {
       <SidebarNavHeader />
 
       <SidebarContent className="p-3">
-        <SidebarDnd displayNames={displayNamesRecord}>
+        <SidebarDnd displayNames={displayNamesRecord} roomTitles={roomTitles}>
           {showRecent && (
             <RecentSessionsSection
               sessions={recentSessions}

@@ -28,7 +28,7 @@ vi.mock('@/layers/entities/config', () => ({
 
 function Row() {
   return (
-    <SidebarDnd displayNames={{ '/a': 'alpha' }}>
+    <SidebarDnd displayNames={{ '/a': 'alpha' }} roomTitles={{}}>
       <Sortable id="ungrouped::/a" data={agentDndData('ungrouped', '/a')}>
         {(b) => (
           <div ref={b.setNodeRef} {...b.handleProps} data-testid="row">

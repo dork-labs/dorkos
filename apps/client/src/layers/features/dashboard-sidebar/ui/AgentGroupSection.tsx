@@ -9,22 +9,27 @@ import type { RuntimeOption } from './SmartGroupRuleDialog';
 import { Droppable, Sortable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
 import { sortAgentPaths, type SortAgentsContext, type AgentSortMode } from '../model/sort-agents';
 import { filterSectionAgents } from '../model/filter-agents';
+import { storedAgentPaths } from '../model/sidebar-membership';
 
 interface AgentGroupSectionProps {
   /** The group to render. */
   group: SidebarGroup;
   /**
-   * Member paths, in the group's stored order — manual: `agentPaths`
-   * filtered to the known roster; smart (DOR-338): `evaluateSmartGroup`'s
-   * result against the current fleet, re-derived live as agent state
-   * changes.
+   * Member agent paths, in the group's stored order — manual: the agent
+   * members of `items`, filtered to the known roster; smart (DOR-338):
+   * `evaluateSmartGroup`'s result against the current fleet, re-derived live
+   * as agent state changes.
    */
   memberPaths: string[];
   /** Display-name + activity lookups for the group's sort mode. */
   sortCtx: SortAgentsContext;
   /** Attention state per agent path (from `useAgentAttentionMap`, computed once for the whole sidebar). */
   attention: Record<string, AttentionState>;
-  /** Individually-muted agent paths (`ui.sidebar.muted`), independent of this group's own mute flag. */
+  /**
+   * Agent paths that are individually muted — the agent members of
+   * `ui.sidebar.muted`, narrowed to paths by `DashboardSidebar`. Independent of
+   * this group's own mute flag.
+   */
   mutedPaths: ReadonlySet<string>;
   /**
    * Render one agent row. The third argument disables the drag handle — used
@@ -84,12 +89,15 @@ export function AgentGroupSection({
     [filtered.visible, sortMode, sortCtx]
   );
 
+  // The group's stored agent members. Rooms carry no agent attention state, so
+  // they contribute nothing to the aggregate below and are dropped here.
+  const memberAgentPaths = useMemo(() => storedAgentPaths(group), [group]);
   // Single aggregated subscription across ALL member paths — powers the
   // collapsed-group activity dot. Smart groups read the DERIVED memberPaths
-  // (their own `agentPaths` is the convert-to-manual materialization target,
-  // not live membership); manual groups read `agentPaths` (incl. unknown
-  // ones, which simply never match) as before.
-  const hasActivity = useAgentsAggregateStatus(isSmart ? memberPaths : group.agentPaths, {
+  // (their own `items` is the convert-to-manual materialization target,
+  // not live membership); manual groups read their stored members (incl.
+  // unknown paths, which simply never match) as before.
+  const hasActivity = useAgentsAggregateStatus(isSmart ? memberPaths : memberAgentPaths, {
     mutedPaths,
   });
 

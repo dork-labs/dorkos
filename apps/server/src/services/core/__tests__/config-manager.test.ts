@@ -16,6 +16,7 @@ import {
   backfillSidebarRoomSections,
   backfillRoomsDefaults,
   backfillSmartGroupKindDefaults,
+  migrateSidebarMembersToItemRefs,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
@@ -34,6 +35,7 @@ import {
   backfillTelemetryAiMetadataChannel,
   scrubRetiredOnboardingSteps,
 } from '../config-manager.js';
+import { applyConfigPatch } from '../operator/config-patch.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -1376,6 +1378,217 @@ describe('backfillSmartGroupKindDefaults migration (smart-agent-groups, DOR-338)
   });
 });
 
+describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', () => {
+  /** The exact `ui.sidebar` shape on disk before DOR-579: three lists of paths. */
+  function priorShapeUi() {
+    return {
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/projects/alpha', '/projects/beta'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/alpha', '/projects/gamma'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'manual',
+          },
+          {
+            id: 'g2',
+            name: 'Active now',
+            agentPaths: [],
+            sortMode: 'recent',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'smart',
+            rules: { statuses: ['active'] },
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: ['/projects/beta'],
+        ungroupedDisplayFilter: 'all',
+      },
+    };
+  }
+
+  /** The same config after conversion — every string wrapped as an agent ref. */
+  const CONVERTED_SIDEBAR = {
+    pinned: [
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/beta' },
+    ],
+    groups: [
+      {
+        id: 'g1',
+        name: 'Clients',
+        items: [
+          { kind: 'agent', path: '/projects/alpha' },
+          { kind: 'agent', path: '/projects/gamma' },
+        ],
+        sortMode: 'manual',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        kind: 'manual',
+      },
+      {
+        id: 'g2',
+        name: 'Active now',
+        items: [],
+        sortMode: 'recent',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        kind: 'smart',
+        rules: { statuses: ['active'] },
+      },
+    ],
+    ungroupedSortMode: 'name',
+    ungroupedCollapsed: false,
+    recentsCollapsed: false,
+    channelsCollapsed: false,
+    dmsCollapsed: false,
+    groupsHintDismissed: false,
+    muted: [{ kind: 'agent', path: '/projects/beta' }],
+    ungroupedDisplayFilter: 'all',
+  };
+
+  it('converts all three lists and renames agentPaths -> members', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', sidebar: CONVERTED_SIDEBAR });
+  });
+
+  it('leaves no agentPaths key behind on any group', () => {
+    // Not cosmetic: the generated JSON Schema closes each group object
+    // (`additionalProperties: false`), so a leftover key fails conf's
+    // post-migration validation and hard-fails startup.
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const groups = (store.data.ui as { sidebar: { groups: Record<string, unknown>[] } }).sidebar
+      .groups;
+    expect(groups.map((g) => 'agentPaths' in g)).toEqual([false, false]);
+  });
+
+  it('produces a shape the schema accepts verbatim', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
+    expect(parsed.ui.sidebar).toEqual(CONVERTED_SIDEBAR);
+  });
+
+  it('a second run is a no-op — same value, and no write at all', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const afterFirst = store.data.ui;
+
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', sidebar: CONVERTED_SIDEBAR });
+    // `store.set` replaces `data.ui` wholesale, so an unchanged object identity
+    // is proof the second run never wrote.
+    expect(store.data.ui).toBe(afterFirst);
+  });
+
+  it('is a no-op on a fresh install (no ui, or a ui with no sidebar)', () => {
+    const noUi = createMockStore({ server: { port: 4242 } });
+    migrateSidebarMembersToItemRefs(noUi);
+    expect(noUi.data.ui).toBeUndefined();
+
+    const noSidebar = createMockStore({ ui: { theme: 'dark' } });
+    const before = noSidebar.data.ui;
+    migrateSidebarMembersToItemRefs(noSidebar);
+    expect(noSidebar.data.ui).toBe(before);
+  });
+
+  it('is a no-op on an empty-but-present sidebar', () => {
+    const store = createMockStore({
+      ui: { theme: 'dark', sidebar: { pinned: [], groups: [], muted: [] } },
+    });
+    const before = store.data.ui;
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toBe(before);
+  });
+
+  it('still renames an EMPTY agentPaths list (the key itself must go)', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [],
+          groups: [{ id: 'g1', name: 'Empty', agentPaths: [] }],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
+      { id: 'g1', name: 'Empty', items: [] },
+    ]);
+  });
+
+  it('keeps an existing members list and drops a residual agentPaths beside it', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [],
+          groups: [
+            {
+              id: 'g1',
+              name: 'Clients',
+              items: [{ kind: 'room', roomId: 'room-1' }],
+              agentPaths: ['/projects/stale'],
+            },
+          ],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
+      { id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: 'room-1' }] },
+    ]);
+  });
+
+  it('converts a half-migrated list without duplicating the refs already in it', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [{ kind: 'agent', path: '/projects/alpha' }, '/projects/beta'],
+          groups: [],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { pinned: unknown[] } }).sidebar.pinned).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/beta' },
+    ]);
+  });
+
+  it('runs from the 0.57.0 composite — the release that ships this schema', () => {
+    // The whole point of composing into 0.57.0 rather than opening 0.58.0:
+    // `conf` only runs keys in `(storedVersion, projectVersion]`, so a 0.58.0
+    // body would not run on the 0.57.0 release carrying `items`, and every
+    // upgraded install would read the Zod default `[]` and lose its groups.
+    const store = createMockStore({ ui: priorShapeUi() });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect((store.data.ui as { sidebar: unknown }).sidebar).toMatchObject({
+      pinned: CONVERTED_SIDEBAR.pinned,
+      muted: CONVERTED_SIDEBAR.muted,
+      groups: CONVERTED_SIDEBAR.groups,
+    });
+  });
+});
+
 describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
   // Bit once before (0.47.0 -> 0.48.0, see config-manager.ts around the
   // '0.48.0' entry) and again on this very branch (a '0.54.0' key drafted as
@@ -2052,5 +2265,200 @@ describe('the posture floor is monotonic (DOR-520 review)', () => {
     manager.setDot('logging.level', 'debug');
     manager.setDot('server.port', 4300);
     expect(floor(manager)).toBeNull();
+  });
+});
+
+describe('a config written before DOR-579 survives the migration being skipped', () => {
+  // The DOR-579 rename is the first non-additive change in CONFIG_MIGRATIONS.
+  // Every additive backfill before it degrades safely when its key falls outside
+  // conf's `(storedVersion, projectVersion]` window — the field is absent and a
+  // Zod default fills in. A rename does not: the OLD encoding becomes
+  // schema-INVALID, `new Conf(...)` throws, and ConfigManager's recovery path
+  // backs the file up and replaces it with defaults. That resets the whole
+  // file, not just the sidebar.
+  //
+  // These boot a REAL ConfigManager over a real file, which is the only way to
+  // cross the conf/Ajv seam where that failure lives. The mock-store tests above
+  // cannot see it, and neither can `UserConfigSchema.parse` — Zod strips unknown
+  // keys where Ajv rejects them.
+  //
+  // SERVER_VERSION resolves to `0.0.0` here (the dev/package.json fallback), so
+  // NO migration runs at all. That is not a contrivance: it is exactly what a
+  // developer's tree does on every `pnpm dev`.
+  const priorShapeConfig = {
+    version: 1,
+    // A privacy choice, deliberately opposite to the defaults on both fields, so
+    // a silent reset is visible rather than coincidentally identical.
+    telemetry: { userHasDecided: true, install: false, heartbeat: false },
+    ui: {
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/projects/alpha'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/alpha', '/projects/gamma'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'manual',
+          },
+        ],
+        muted: ['/projects/beta'],
+      },
+    },
+  };
+
+  function bootOverPriorShape(): { dir: string; configPath: string; manager: ConfigManager } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-pre-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify(priorShapeConfig));
+    return { dir, configPath, manager: new ConfigManager(dir) };
+  }
+
+  it('is not condemned — no backup is written and the file is not replaced', () => {
+    const { configPath } = bootOverPriorShape();
+    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+  });
+
+  it('keeps every unrelated section, including a telemetry opt-out', () => {
+    const { manager } = bootOverPriorShape();
+    const telemetry = manager.get('telemetry');
+    // The exact three values the fixture chose. A wipe flips all three at once:
+    // `userHasDecided` to false and the two Tier 1 channels back on.
+    expect(telemetry.userHasDecided).toBe(true);
+    expect(telemetry.install).toBe(false);
+    expect(telemetry.heartbeat).toBe(false);
+  });
+
+  it('reads the sidebar back canonical, with the groups intact', () => {
+    const { manager } = bootOverPriorShape();
+    // ConfigManager is the server's read boundary: every consumer sees the
+    // canonical encoding, so the groups are intact rather than empty.
+    const prefs = manager.getAll().ui.sidebar;
+    expect(prefs.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(prefs.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
+    expect(prefs.groups).toHaveLength(1);
+    expect(prefs.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+    expect(prefs.groups[0]!.name).toBe('Clients');
+  });
+
+  it('normalizes the ui section read on its own, not just the whole config', () => {
+    // `GET /api/config` reads `configManager.get('ui')`, a different path from
+    // `getAll()`. Both are read boundaries and both have to convert.
+    const { manager } = bootOverPriorShape();
+    const sidebar = manager.get('ui').sidebar;
+    expect(sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(sidebar.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+  });
+
+  it('converts on READ without rewriting the file', () => {
+    // The conversion is a read boundary, not a hidden migration: the bytes on
+    // disk keep the old encoding until something actually writes.
+    const { configPath } = bootOverPriorShape();
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { groups: Record<string, unknown>[] } };
+    };
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toEqual([
+      '/projects/alpha',
+      '/projects/gamma',
+    ]);
+    expect(onDisk.ui.sidebar.groups[0]!.items).toBeUndefined();
+  });
+
+  // ── The write path (applyConfigPatch) ──
+  //
+  // `applyConfigPatch` reads the current config, deep-merges the patch, and
+  // re-validates the WHOLE result with Zod — which is strict, and deliberately
+  // never widened the way conf's Ajv schema was. So the read boundary above is
+  // what keeps writes working at all on an un-migrated install; without it a
+  // legacy `pinned` refuses every write (the merge carries the untouched
+  // `ui.sidebar` into validation), and a legacy `agentPaths` is silently
+  // stripped by Zod and persisted as an empty group.
+
+  it('accepts a patch that has nothing to do with the sidebar', () => {
+    const { dir } = bootOverPriorShape();
+    initConfigManager(dir);
+    const result = applyConfigPatch({ logging: { level: 'debug' } });
+    expect(result.ok, JSON.stringify('details' in result ? result.details : result)).toBe(true);
+  });
+
+  it('keeps the groups when a patch touches the ui section', () => {
+    // The assertion that matters: `ok: true` alone would still pass if the
+    // groups had been silently emptied on the way through.
+    const { dir } = bootOverPriorShape();
+    const manager = initConfigManager(dir);
+    const result = applyConfigPatch({ ui: { theme: 'dark' } });
+    expect(result.ok).toBe(true);
+    const groups = manager.getAll().ui.sidebar.groups;
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+    expect(manager.getAll().ui.theme).toBe('dark');
+  });
+
+  it('converges the file to the canonical encoding on the first write', () => {
+    const { dir, configPath } = bootOverPriorShape();
+    initConfigManager(dir);
+    expect(applyConfigPatch({ ui: { theme: 'dark' } }).ok).toBe(true);
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { pinned: unknown; groups: Record<string, unknown>[] } };
+    };
+    expect(onDisk.ui.sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toBeUndefined();
+    expect(onDisk.ui.sidebar.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+  });
+
+  it('accepts a config already in the canonical encoding too', () => {
+    // The tolerance widens what Ajv accepts; it must not narrow it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-post-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: {
+          sidebar: {
+            pinned: [{ kind: 'agent', path: '/projects/alpha' }],
+            groups: [
+              { id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: '01JROOM' }] },
+            ],
+            muted: [],
+          },
+        },
+      })
+    );
+    const manager = new ConfigManager(dir);
+    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(manager.getAll().ui.sidebar.groups[0]!.items).toEqual([
+      { kind: 'room', roomId: '01JROOM' },
+    ]);
+  });
+
+  it('still rejects a genuinely invalid sidebar entry', () => {
+    // The widened schema accepts a legacy string or a reference — not anything.
+    // Without this, "tolerate the old encoding" could quietly become "validate
+    // nothing", and the next bad write would land unnoticed.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-invalid-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ version: 1, ui: { sidebar: { pinned: [{ kind: 'nonsense' }] } } })
+    );
+    new ConfigManager(dir);
+    expect(fs.existsSync(configPath + '.bak')).toBe(true);
   });
 });

@@ -58,7 +58,8 @@
  *
  * Absolute paths (`server.cwd`, `server.boundary`, `mesh.scanRoots`,
  * `workspace.rootPath`, `runtimes.*.binaryPath`, `relay.dataDir`,
- * `agents.defaultDirectory`, and the agent `projectPath`s inside `ui.sidebar`)
+ * `agents.defaultDirectory`, and the agent `projectPath`s inside the
+ * `ui.sidebar` item references)
  * stay exposed **on purpose**. They are how the operator surface addresses work:
  * `update_agent` targets an agent by `cwd`, and an agent that cannot see its
  * boundary cannot tell what it is allowed to touch. Withholding them would also
@@ -111,7 +112,13 @@ export const CONFIG_DISCLOSURE = {
 
   'ui.theme': 'expose',
   'ui.dismissedUpgradeVersions': 'expose',
-  'ui.sidebar.pinned': 'expose',
+  // A sidebar item reference is a discriminated union of objects, so the `[]`
+  // descent enumerates each branch's fields: `kind` plus the agent branch's
+  // `path` or the room branch's `roomId`. An element only ever carries one of
+  // the two payload fields, and the projection drops whichever is absent.
+  'ui.sidebar.pinned[].kind': 'expose',
+  'ui.sidebar.pinned[].path': 'expose',
+  'ui.sidebar.pinned[].roomId': 'expose',
   // A sidebar group is an object inside an array, so each of its fields carries
   // its own verdict. That is the point of the `[]` descent: a credential-shaped
   // property added to a group is unclassified, so the guard fails, and the
@@ -119,7 +126,9 @@ export const CONFIG_DISCLOSURE = {
   // even if the guard were not watching.
   'ui.sidebar.groups[].id': 'expose',
   'ui.sidebar.groups[].name': 'expose',
-  'ui.sidebar.groups[].agentPaths': 'expose',
+  'ui.sidebar.groups[].items[].kind': 'expose',
+  'ui.sidebar.groups[].items[].path': 'expose',
+  'ui.sidebar.groups[].items[].roomId': 'expose',
   'ui.sidebar.groups[].sortMode': 'expose',
   'ui.sidebar.groups[].collapsed': 'expose',
   'ui.sidebar.groups[].displayFilter': 'expose',
@@ -136,7 +145,9 @@ export const CONFIG_DISCLOSURE = {
   'ui.sidebar.channelsCollapsed': 'expose',
   'ui.sidebar.dmsCollapsed': 'expose',
   'ui.sidebar.groupsHintDismissed': 'expose',
-  'ui.sidebar.muted': 'expose',
+  'ui.sidebar.muted[].kind': 'expose',
+  'ui.sidebar.muted[].path': 'expose',
+  'ui.sidebar.muted[].roomId': 'expose',
   'ui.sidebar.ungroupedDisplayFilter': 'expose',
   'ui.shapes.active': 'expose',
   // An open record (see EXPOSED_RECORD_PATHS): agent projectPath -> Shape name.

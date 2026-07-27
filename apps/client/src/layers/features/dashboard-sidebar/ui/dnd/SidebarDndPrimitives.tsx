@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
 import type { SidebarDndData } from '../../model/use-sidebar-dnd';
 
@@ -173,7 +174,13 @@ export function SortableList({ items, children }: SortableListProps) {
   );
 }
 
-/** Build the dnd id for an agent row from its section key prefix + path. */
+/**
+ * Build the dnd id for an agent row from its section key prefix + path.
+ *
+ * This is an ephemeral DOM identity dnd-kit requires as a string — never a
+ * membership key. Membership is compared with `sameSidebarItem` over the
+ * `SidebarItemRef` in the node's data.
+ */
 export function agentRowDndId(keyPrefix: string, path: string): string {
   return `${keyPrefix}::${path}`;
 }
@@ -184,7 +191,8 @@ export function agentRowDndId(keyPrefix: string, path: string): string {
  * reducer reads back as the drag source or hovered target.
  */
 export function agentDndData(keyPrefix: string, path: string): SidebarDndData {
-  if (keyPrefix === 'pinned') return { type: 'agent', path, container: { kind: 'pinned' } };
-  if (keyPrefix === 'ungrouped') return { type: 'agent', path, container: { kind: 'ungrouped' } };
-  return { type: 'agent', path, container: { kind: 'group', groupId: keyPrefix } };
+  const ref: SidebarItemRef = { kind: 'agent', path };
+  if (keyPrefix === 'pinned') return { type: 'item', ref, container: { kind: 'pinned' } };
+  if (keyPrefix === 'ungrouped') return { type: 'item', ref, container: { kind: 'ungrouped' } };
+  return { type: 'item', ref, container: { kind: 'group', groupId: keyPrefix } };
 }

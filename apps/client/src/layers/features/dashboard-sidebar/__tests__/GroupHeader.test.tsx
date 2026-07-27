@@ -75,7 +75,7 @@ function makeGroup(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   return {
     id: 'g1',
     name: 'Clients',
-    agentPaths: [],
+    items: [],
     sortMode: 'manual',
     collapsed: false,
     displayFilter: 'all',
@@ -367,7 +367,19 @@ describe('GroupHeader', () => {
       fireEvent.click(screen.getByText('Convert to manual group'));
       const calls = applyLatestUpdater();
       expect(calls).toEqual([
-        { name: 'convertSmartGroupToManual', args: [PREV, 'g1', ['/a', '/b']] },
+        // The caller wraps `evaluateSmartGroup`'s paths into member references —
+        // the evaluator itself stays agent-only.
+        {
+          name: 'convertSmartGroupToManual',
+          args: [
+            PREV,
+            'g1',
+            [
+              { kind: 'agent', path: '/a' },
+              { kind: 'agent', path: '/b' },
+            ],
+          ],
+        },
       ]);
     });
 

@@ -3,11 +3,15 @@
  *
  * The heart of the sidebar's drag layer is a PURE reducer: given what is being
  * dragged and what it was dropped on, {@link classifySidebarDrop} names the
- * operation and {@link applySidebarDropOp} maps it to the existing
- * `entities/config` prefs helpers. Keeping the semantics pure means every row of
- * the drop table is unit-testable without synthetic pointer events (repo rule),
- * and the live dnd-kit wiring in `SidebarDnd` stays a thin adapter that only
- * converts drag events into these descriptors.
+ * operation and `applySidebarDropOp` maps it to the existing `entities/config`
+ * prefs helpers. Keeping the semantics pure means every row of the drop table is
+ * unit-testable without synthetic pointer events (repo rule), and the live
+ * dnd-kit wiring in `SidebarDnd` stays a thin adapter that only converts drag
+ * events into these descriptors.
+ *
+ * Every descriptor carries a `SidebarItemRef` rather than an agent path
+ * (sidebar-groups, DOR-579), so the same reducer covers rooms once they become
+ * draggable — the rules below never look at what kind of item they are moving.
  *
  * The same descriptors drive per-operation ARIA announcements
  * ({@link buildSidebarAnnouncements}) so the spoken feedback can never drift
@@ -15,18 +19,19 @@
  *
  * @module features/dashboard-sidebar/model/use-sidebar-dnd
  */
-import type { SidebarPrefs } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
+import { sameSidebarItem } from '@dorkos/shared/config-schema';
 import {
-  pinPath,
-  unpinPath,
+  pinItem,
+  unpinItem,
   moveToGroup,
   reorderGroup,
   reorderWithinGroup,
   reorderPinned,
 } from '@/layers/entities/config';
 
-/** Where an agent row lives — its home section during a drag, or a drop target. */
-export type AgentContainer =
+/** Where a sidebar row lives — its home section during a drag, or a drop target. */
+export type SidebarContainer =
   | { kind: 'pinned' }
   | { kind: 'group'; groupId: string }
   | { kind: 'ungrouped' };
@@ -38,48 +43,63 @@ export type AgentContainer =
  * ({@link SidebarDropDescriptor}) depending on which role fired.
  */
 export type SidebarDndData =
-  | { type: 'agent'; path: string; container: AgentContainer }
+  | { type: 'item'; ref: SidebarItemRef; container: SidebarContainer }
   | { type: 'group'; groupId: string }
-  | { type: 'container'; container: AgentContainer };
+  | { type: 'container'; container: SidebarContainer };
 
 /** Normalized description of what is being dragged. */
 export type SidebarDragDescriptor =
-  | { type: 'agent'; path: string; from: AgentContainer }
+  | { type: 'item'; ref: SidebarItemRef; from: SidebarContainer }
   | { type: 'group'; groupId: string };
 
 /** Normalized description of what a drag was dropped onto. */
 export type SidebarDropDescriptor =
-  | { type: 'agent-item'; path: string; container: AgentContainer }
+  | { type: 'item'; ref: SidebarItemRef; container: SidebarContainer }
   | { type: 'group-header'; groupId: string }
-  | { type: 'container'; container: AgentContainer };
+  | { type: 'container'; container: SidebarContainer };
 
 /** The named operation a drop resolves to (also the announcement subject). */
 type SidebarDropOp =
   | { kind: 'none' }
   | { kind: 'reorder-group'; groupId: string; from: number; to: number }
-  | { kind: 'move-to-group'; path: string; groupId: string; toIndex: number | null }
-  | { kind: 'pin'; path: string }
-  | { kind: 'unpin'; path: string }
-  | { kind: 'remove-from-group'; path: string }
-  | { kind: 'reorder-within-group'; groupId: string; path: string; from: number; to: number }
-  | { kind: 'reorder-pinned'; path: string; from: number; to: number }
+  | { kind: 'move-to-group'; ref: SidebarItemRef; groupId: string; toIndex: number | null }
+  | { kind: 'pin'; ref: SidebarItemRef }
+  | { kind: 'unpin'; ref: SidebarItemRef }
+  | { kind: 'remove-from-group'; ref: SidebarItemRef }
+  | {
+      kind: 'reorder-within-group';
+      groupId: string;
+      ref: SidebarItemRef;
+      from: number;
+      to: number;
+    }
+  | { kind: 'reorder-pinned'; ref: SidebarItemRef; from: number; to: number }
   /**
    * A drop targeted a smart group's body/header (smart-agent-groups,
    * DOR-338). Applying this op is a no-op — smart-group membership is
    * rule-derived, never a valid drop target — but the distinct kind lets
-   * `SidebarDnd` surface a hint instead of silently doing nothing.
+   * `SidebarDnd` surface a hint instead of silently doing nothing. A room
+   * dropped on a smart group resolves here unchanged.
    */
-  | { kind: 'reject-smart-group'; groupId: string; path: string };
+  | { kind: 'reject-smart-group'; groupId: string; ref: SidebarItemRef };
 
 // ---------------------------------------------------------------------------
 // Node-data ↔ descriptor conversion (used by the live dnd adapter + tests)
 // ---------------------------------------------------------------------------
 
-function isAgentContainer(value: unknown): value is AgentContainer {
+function isSidebarContainer(value: unknown): value is SidebarContainer {
   if (typeof value !== 'object' || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
   if (kind === 'pinned' || kind === 'ungrouped') return true;
   return kind === 'group' && typeof (value as { groupId?: unknown }).groupId === 'string';
+}
+
+/** Narrow an arbitrary value to a {@link SidebarItemRef} (both union branches). */
+function isSidebarItemRef(value: unknown): value is SidebarItemRef {
+  if (typeof value !== 'object' || value === null) return false;
+  const kind = (value as { kind?: unknown }).kind;
+  if (kind === 'agent') return typeof (value as { path?: unknown }).path === 'string';
+  return kind === 'room' && typeof (value as { roomId?: unknown }).roomId === 'string';
 }
 
 /**
@@ -92,11 +112,11 @@ function isAgentContainer(value: unknown): value is AgentContainer {
 export function readSidebarDndData(data: unknown): SidebarDndData | null {
   if (typeof data !== 'object' || data === null) return null;
   const type = (data as { type?: unknown }).type;
-  if (type === 'agent') {
-    const path = (data as { path?: unknown }).path;
+  if (type === 'item') {
+    const ref = (data as { ref?: unknown }).ref;
     const container = (data as { container?: unknown }).container;
-    if (typeof path === 'string' && isAgentContainer(container)) {
-      return { type: 'agent', path, container };
+    if (isSidebarItemRef(ref) && isSidebarContainer(container)) {
+      return { type: 'item', ref, container };
     }
     return null;
   }
@@ -106,7 +126,7 @@ export function readSidebarDndData(data: unknown): SidebarDndData | null {
   }
   if (type === 'container') {
     const container = (data as { container?: unknown }).container;
-    return isAgentContainer(container) ? { type: 'container', container } : null;
+    return isSidebarContainer(container) ? { type: 'container', container } : null;
   }
   return null;
 }
@@ -114,7 +134,7 @@ export function readSidebarDndData(data: unknown): SidebarDndData | null {
 /** Interpret a node's data as a drag source (containers are never draggable). */
 export function toDragDescriptor(data: SidebarDndData | null): SidebarDragDescriptor | null {
   if (data === null) return null;
-  if (data.type === 'agent') return { type: 'agent', path: data.path, from: data.container };
+  if (data.type === 'item') return { type: 'item', ref: data.ref, from: data.container };
   if (data.type === 'group') return { type: 'group', groupId: data.groupId };
   return null;
 }
@@ -123,8 +143,8 @@ export function toDragDescriptor(data: SidebarDndData | null): SidebarDragDescri
 export function toDropDescriptor(data: SidebarDndData | null): SidebarDropDescriptor | null {
   if (data === null) return null;
   switch (data.type) {
-    case 'agent':
-      return { type: 'agent-item', path: data.path, container: data.container };
+    case 'item':
+      return { type: 'item', ref: data.ref, container: data.container };
     case 'group':
       return { type: 'group-header', groupId: data.groupId };
     case 'container':
@@ -138,17 +158,22 @@ export function toDropDescriptor(data: SidebarDndData | null): SidebarDropDescri
 
 /** A drop target resolved to its container plus the row hovered over (if any). */
 function resolveTarget(drop: SidebarDropDescriptor): {
-  container: AgentContainer;
-  overPath?: string;
+  container: SidebarContainer;
+  overRef?: SidebarItemRef;
 } {
   switch (drop.type) {
     case 'container':
       return { container: drop.container };
-    case 'agent-item':
-      return { container: drop.container, overPath: drop.path };
+    case 'item':
+      return { container: drop.container, overRef: drop.ref };
     case 'group-header':
       return { container: { kind: 'group', groupId: drop.groupId } };
   }
+}
+
+/** Index of `ref` in a member/pinned list, or `-1`. Union equality, never `===`. */
+function indexOfRef(list: readonly SidebarItemRef[], ref: SidebarItemRef): number {
+  return list.findIndex((entry) => sameSidebarItem(entry, ref));
 }
 
 /**
@@ -158,36 +183,36 @@ function resolveTarget(drop: SidebarDropDescriptor): {
  */
 function moveToGroupOp(
   prev: SidebarPrefs,
-  path: string,
+  ref: SidebarItemRef,
   groupId: string,
-  overPath: string | undefined
+  overRef: SidebarItemRef | undefined
 ): SidebarDropOp {
   const group = prev.groups.find((g) => g.id === groupId);
   if (!group) return { kind: 'none' };
-  if (group.kind === 'smart') return { kind: 'reject-smart-group', groupId, path };
+  if (group.kind === 'smart') return { kind: 'reject-smart-group', groupId, ref };
   let toIndex: number | null = null;
-  if (group.sortMode === 'manual' && overPath !== undefined) {
-    const idx = group.agentPaths.indexOf(overPath);
+  if (group.sortMode === 'manual' && overRef !== undefined) {
+    const idx = indexOfRef(group.items, overRef);
     if (idx >= 0) toIndex = idx;
   }
-  return { kind: 'move-to-group', path, groupId, toIndex };
+  return { kind: 'move-to-group', ref, groupId, toIndex };
 }
 
 /**
  * Classify a drop into a named {@link SidebarDropOp}. Pure and index-complete —
  * every reorder op carries the concrete `from`/`to`/`toIndex` computed from
- * `prev`, so {@link applySidebarDropOp} needs no further lookups and tests can
- * assert the operation directly.
+ * `prev`, so `applySidebarDropOp` needs no further lookups and tests can assert
+ * the operation directly.
  *
  * Implements the full drop-semantics table:
  * - group header → group header: reorder groups
- * - agent → group body/header: move to group (append, or drop index if manual)
- * - agent → Pinned: pin (reference; home membership untouched)
- * - agent in a manual group → same group: reorder within group
- * - agent in a name/recent group → same group: no reorder (sort owns order)
+ * - item → group body/header: move to group (append, or drop index if manual)
+ * - item → Pinned: pin (reference; home membership untouched)
+ * - item in a manual group → same group: reorder within group
+ * - item in a name/recent group → same group: no reorder (sort owns order)
  * - pinned row → within Pinned: reorder pinned
  * - pinned row → a non-pinned container (Agents or a group): unpin
- * - agent in a group → Agents (ungrouped): remove from group
+ * - item in a group → Agents (ungrouped): remove from group
  *
  * A `null`/void drop (released with no valid target) is always a no-op — unpin
  * fires only when a pinned row actually lands on a non-pinned container, never
@@ -213,39 +238,39 @@ export function classifySidebarDrop(
     return { kind: 'reorder-group', groupId: drag.groupId, from, to };
   }
 
-  // ── Agent row ──
-  const { path, from } = drag;
-  const { container, overPath } = resolveTarget(drop);
+  // ── Item row ──
+  const { ref, from } = drag;
+  const { container, overRef } = resolveTarget(drop);
 
   // Source: a pinned reference.
   if (from.kind === 'pinned') {
-    if (container.kind !== 'pinned') return { kind: 'unpin', path }; // Finder drag-out.
-    if (overPath === undefined) return { kind: 'none' };
-    const fromIdx = prev.pinned.indexOf(path);
-    const toIdx = prev.pinned.indexOf(overPath);
+    if (container.kind !== 'pinned') return { kind: 'unpin', ref }; // Finder drag-out.
+    if (overRef === undefined) return { kind: 'none' };
+    const fromIdx = indexOfRef(prev.pinned, ref);
+    const toIdx = indexOfRef(prev.pinned, overRef);
     if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return { kind: 'none' };
-    return { kind: 'reorder-pinned', path, from: fromIdx, to: toIdx };
+    return { kind: 'reorder-pinned', ref, from: fromIdx, to: toIdx };
   }
 
   // Source: inside a group.
   if (from.kind === 'group') {
-    if (container.kind === 'pinned') return { kind: 'pin', path };
-    if (container.kind === 'ungrouped') return { kind: 'remove-from-group', path };
+    if (container.kind === 'pinned') return { kind: 'pin', ref };
+    if (container.kind === 'ungrouped') return { kind: 'remove-from-group', ref };
     if (container.groupId !== from.groupId) {
-      return moveToGroupOp(prev, path, container.groupId, overPath);
+      return moveToGroupOp(prev, ref, container.groupId, overRef);
     }
     // Reorder within the same group — only when it is manually sorted.
     const group = prev.groups.find((g) => g.id === from.groupId);
-    if (!group || group.sortMode !== 'manual' || overPath === undefined) return { kind: 'none' };
-    const fromIdx = group.agentPaths.indexOf(path);
-    const toIdx = group.agentPaths.indexOf(overPath);
+    if (!group || group.sortMode !== 'manual' || overRef === undefined) return { kind: 'none' };
+    const fromIdx = indexOfRef(group.items, ref);
+    const toIdx = indexOfRef(group.items, overRef);
     if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return { kind: 'none' };
-    return { kind: 'reorder-within-group', groupId: from.groupId, path, from: fromIdx, to: toIdx };
+    return { kind: 'reorder-within-group', groupId: from.groupId, ref, from: fromIdx, to: toIdx };
   }
 
   // Source: ungrouped.
-  if (container.kind === 'pinned') return { kind: 'pin', path };
-  if (container.kind === 'group') return moveToGroupOp(prev, path, container.groupId, overPath);
+  if (container.kind === 'pinned') return { kind: 'pin', ref };
+  if (container.kind === 'group') return moveToGroupOp(prev, ref, container.groupId, overRef);
   return { kind: 'none' }; // ungrouped → ungrouped has no manual order.
 }
 
@@ -264,22 +289,22 @@ function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs
     case 'reorder-group':
       return reorderGroup(prev, op.from, op.to);
     case 'pin':
-      return pinPath(prev, op.path);
+      return pinItem(prev, op.ref);
     case 'unpin':
-      return unpinPath(prev, op.path);
+      return unpinItem(prev, op.ref);
     case 'remove-from-group':
-      return moveToGroup(prev, op.path, null);
+      return moveToGroup(prev, op.ref, null);
     case 'reorder-within-group':
       return reorderWithinGroup(prev, op.groupId, op.from, op.to);
     case 'reorder-pinned':
       return reorderPinned(prev, op.from, op.to);
     case 'move-to-group': {
-      const moved = moveToGroup(prev, op.path, op.groupId);
+      const moved = moveToGroup(prev, op.ref, op.groupId);
       if (op.toIndex === null) return moved;
       const group = moved.groups.find((g) => g.id === op.groupId);
       if (!group) return moved;
-      // `moveToGroup` appends the path last; slot it at the requested index.
-      return reorderWithinGroup(moved, op.groupId, group.agentPaths.length - 1, op.toIndex);
+      // `moveToGroup` appends the ref last; slot it at the requested index.
+      return reorderWithinGroup(moved, op.groupId, group.items.length - 1, op.toIndex);
     }
   }
 }
@@ -308,8 +333,8 @@ export function resolveSidebarDrop(
 interface SidebarDndAnnounceContext {
   /** Current prefs (so a drag-over can be classified live). */
   prefs: SidebarPrefs;
-  /** Resolve an agent projectPath to its display name. */
-  agentName: (path: string) => string;
+  /** Resolve a sidebar item reference to its display name. */
+  itemName: (ref: SidebarItemRef) => string;
   /** Resolve a group id to its display name. */
   groupName: (groupId: string) => string;
 }
@@ -321,7 +346,7 @@ function describeSidebarPickup(
 ): string {
   return drag.type === 'group'
     ? `Picked up group ${ctx.groupName(drag.groupId)}.`
-    : `Picked up ${ctx.agentName(drag.path)}.`;
+    : `Picked up ${ctx.itemName(drag.ref)}.`;
 }
 
 /** Announce the result of a drop, worded per operation. */
@@ -330,19 +355,19 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
     case 'reorder-group':
       return `Moved group ${ctx.groupName(op.groupId)}.`;
     case 'move-to-group':
-      return `Moved ${ctx.agentName(op.path)} to group ${ctx.groupName(op.groupId)}.`;
+      return `Moved ${ctx.itemName(op.ref)} to group ${ctx.groupName(op.groupId)}.`;
     case 'pin':
-      return `Pinned ${ctx.agentName(op.path)}.`;
+      return `Pinned ${ctx.itemName(op.ref)}.`;
     case 'unpin':
-      return `Unpinned ${ctx.agentName(op.path)}.`;
+      return `Unpinned ${ctx.itemName(op.ref)}.`;
     case 'remove-from-group':
-      return `Moved ${ctx.agentName(op.path)} to Agents.`;
+      return `Moved ${ctx.itemName(op.ref)} to Agents.`;
     case 'reorder-within-group':
-      return `Reordered ${ctx.agentName(op.path)} in group ${ctx.groupName(op.groupId)}.`;
+      return `Reordered ${ctx.itemName(op.ref)} in group ${ctx.groupName(op.groupId)}.`;
     case 'reorder-pinned':
-      return `Reordered ${ctx.agentName(op.path)} in Pinned.`;
+      return `Reordered ${ctx.itemName(op.ref)} in Pinned.`;
     case 'reject-smart-group':
-      return `Can't move ${ctx.agentName(op.path)} into ${ctx.groupName(op.groupId)} — membership is rule-based. Edit rules instead.`;
+      return `Can't move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)} — membership is rule-based. Edit rules instead.`;
     case 'none':
       return '';
   }
@@ -415,8 +440,8 @@ export function buildSidebarAnnouncements(
     onDragCancel: (event) => {
       const d = drag(event);
       if (!d) return undefined;
-      const subject =
-        d.type === 'group' ? getContext().groupName(d.groupId) : getContext().agentName(d.path);
+      const ctx = getContext();
+      const subject = d.type === 'group' ? ctx.groupName(d.groupId) : ctx.itemName(d.ref);
       return `Movement cancelled. ${subject} returned to its place.`;
     },
   };
