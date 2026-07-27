@@ -353,9 +353,15 @@ Run the REVIEW.md dangling-reference sweep over `docs/`, `contributing/` and `*.
 
 ---
 
-## 8.5 Open decision — sessions and DMs overlap, and someone has to choose
+## 8.5 Sessions and DMs overlap — RESOLVED in §14.4
 
-**Not settled. Needs a product call after R3, when there is evidence rather than argument.**
+**Settled 2026-07-27.** The operator asked for the distinction to be articulated and documented; §14.4 is the answer and this section is kept for the reasoning that led there.
+
+The short form: **a session is about a directory, a DM is about who you are talking to, and a channel is about what you are talking about.** All three stay. The outcome this section warned against — shipping all three permanently _without deciding_ — is avoided by writing the distinction down, not by removing one of them.
+
+The original text follows.
+
+---
 
 After R2 the sidebar reads: Recent (sessions) → Channels → Direct messages → Pinned → agent groups → Agents. So a DM with Ana and a session with Ana both exist, and both read as "my conversation with Ana." Two lists meaning nearly the same thing is the duplication that should be removed rather than shipped.
 
@@ -532,3 +538,89 @@ Sources and the full comparison: `research/20260727_chat-navigation-quick-switch
 | **R9**  | `#` prefix, rooms searchable, unread-first zero-query, `@agent` verbs, new-channel / new-DM actions, prefix legend in the empty state, title badge, unread navigation | R6a, R6b   |
 
 R9 lands after R6b so the contextual actions consume the node list rather than duplicating it. R6c is independent of both and only waits on the two PRs currently touching the same files.
+
+---
+
+## 14. The second operator round
+
+Everything above §13 came from building or from looking. This came from **using it for an afternoon**. Five asks, one of which was already shipped, and four cross-cutting UI/UX principles that apply beyond rooms.
+
+### 14.1 Everything in the sidebar gets a context menu — including the headers
+
+> "I think EVERYTHING in the sidebar should have a context menu. This includes, but is not limited to channels, dms, and all headers."
+
+R6b (DOR-572) covers channel and DM rows. This widens it to **section headers** and to every other row type the sidebar carries.
+
+The constraint that makes this tractable is the one already chosen: `AgentRowMenuItems.tsx` builds one pure node list and renders it into both the right-click `ContextMenu` and the `…` `DropdownMenu`. Every new menu follows that shape. **Consistency is the deliverable, not the menus** — the same verb must mean the same thing and sit in the same position everywhere it appears.
+
+| Surface                      | Items                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| **Channels header**          | New channel… · Mark all channels read · Collapse / Expand · Sort ▸            |
+| **Direct messages header**   | New message… · Mark all read · Collapse / Expand                              |
+| **Agents header**            | New agent… · New group… · Sort ▸ · Display ▸ (all / active / needs attention) |
+| **Group header**             | already has one — audit it first and align the others to it                   |
+| **Recent (sessions) header** | New session… · Collapse / Expand                                              |
+
+Audit the existing agent-row and group-header menus **before** writing new ones, and reconcile: where a verb exists, reuse its exact label and position; where a new verb is genuinely new, put it in the same relative slot across every menu that has it. Mismatched labels for the same action across two menus is the failure this section exists to prevent.
+
+`Sort ▸` and `Display ▸` already exist as per-section state (`ungroupedSortMode`, `ungroupedDisplayFilter`, per-group `sortMode`/`displayFilter`) with **no menu affordance** — the header menu is where they become reachable.
+
+### 14.2 Adding agents belongs in the channel-creation flow
+
+> "I can't figure out how to add agents to channels… The fact that I can't figure it out means the UI/UX could be better. I'll ALWAYS want to add someone to a channel, so this should be part of the flow that we use to create channels."
+
+This is the sharpest finding of the round, and the empty state already admits it: a new channel says _"Add the agents you want in this conversation"_ and **no affordance to do so exists anywhere in the product**. `ChannelCreateInput` takes a name and nothing else, so every channel is born empty and stays empty.
+
+**A channel with no agents in it does nothing.** Creation must therefore include membership, not offer it afterwards:
+
+- The create flow takes a name **and** an agent selection, in one pass. Reuse R6a's chip picker — it already does typeahead, chips, keyboard selection and a commit action, and reusing it makes the two flows feel like one product rather than two features.
+- Creating with nobody selected stays possible, but it is the deliberate path, not the default one.
+- **§14.3 covers adding afterwards**, which is a different need with a different surface.
+
+The inline sidebar input cannot hold a picker at usable width. This is the concrete case for §14.5's responsive modal.
+
+### 14.3 Adding agents afterwards
+
+> "I should also be able to add agents to channels anytime afterwards."
+
+Three entry points, all reaching one shared surface — the members panel from R6b:
+
+1. **"Add agents…"** in the row context menu (§14.1).
+2. **The room header's member list**, which today renders avatars and is not interactive. It is the obvious place to click and currently the most disappointing.
+3. **The empty state's own copy**, which promises this and should be the button that does it.
+
+The panel is also where per-member **remove** and the per-room `responseMode` override become reachable — a field the schema has carried since R1 that no UI has ever touched, so an agent's behaviour in a room is currently fixed at join time and changeable only by editing the database.
+
+### 14.4 What a channel, a DM and a session actually are
+
+> "Think through what the real difference is between channels, DMs, and chatting with an agent session directly, and let's articulate and document that distinction."
+
+This **resolves §8.5**, which recorded it as an open decision awaiting evidence. The evidence is now in: all three exist, and the distinction that survives contact is about **what the conversation is anchored to**.
+
+|             | Anchored to        | Holds                                  | Ends when                     |
+| ----------- | ------------------ | -------------------------------------- | ----------------------------- |
+| **Session** | a **working tree** | one agent, one runtime                 | the work does                 |
+| **DM**      | a **participant**  | one or more agents, no tree of its own | never — it is a standing line |
+| **Channel** | a **topic**        | any number of agents, by name          | you archive it                |
+
+The one-liner, which belongs in the docs verbatim: **a session is about a directory, a DM is about who you are talking to, and a channel is about what you are talking about.**
+
+Consequences worth stating, because they are what make the distinction real rather than decorative:
+
+- A session **binds to a runtime at first write** (ADR-0255), so it can never be multiplexed across agents. A room holds several agents precisely because it is _not_ a session — three agents in a room are three sessions on one stream (ADR 260726-170125).
+- A DM has no `cwd`. Ask an agent to do work in a DM and it works wherever that agent lives, via its workspace binding — which is why "promote this to a session" is the bridge, not a synonym.
+- A channel is the only one with a **name people type**. That is why it has a slug and the others do not.
+
+**Where this goes:** R7 (DOR-565) is the user-facing docs page, and this table is its spine. §8.5's "outcome to avoid" — shipping all three permanently without deciding — is avoided by writing this down, not by removing one of them.
+
+### 14.5 Four cross-cutting principles
+
+These apply beyond rooms and should be treated as standing guidance for this surface.
+
+**Popovers do not work on mobile.** The DM picker is a `Popover` anchored to a sidebar button; on a phone the sidebar is a drawer that must close for the popover to be visible. Use the responsive modal (`shared/ui`) for anything that is a _task_ rather than a _glance_. The channel-create picker in §14.2 lands here too.
+
+**Reach it from the command palette, and deep-link into it.** Anything worth a menu item is worth a palette entry — the palette is the only surface that works identically on every viewport and with no pointer. §13.2 already specifies `#` for rooms and the contextual-action model; this extends it: **new channel, new DM, add agents, and members should all be palette-reachable and openable by URL**, so an agent can hand a person a link that opens the right panel.
+
+**Slash commands in rooms.** Sessions have them; rooms do not. The room composer should carry at least the room-scoped verbs — invite, leave, rename, topic, archive — because a person who types `/` in a chat box expects something, and today gets nothing. Which set, and whether agent-defined commands appear in rooms at all, needs its own decision; the gap is recorded here rather than designed.
+
+**Use the visual companion.** UI/UX work on this surface should go through the `visual-companion` skill rather than being assessed from source. Two defects this programme shipped — a channel rendering `# #general`, and DM rows showing letters where agent faces belong — were invisible to every test and obvious in a screenshot.
