@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -88,10 +88,18 @@ describe('ChannelsSection', () => {
     expect(screen.getByText(/No channels yet/i)).toBeInTheDocument();
   });
 
-  it('renders each channel by its #slug', () => {
+  it('writes each channel name once, beside the mark that supplies its #', () => {
     renderSection({ channels: [channel(), channel({ id: 'room-2', slug: 'backend' })] });
-    expect(screen.getByText('#general')).toBeInTheDocument();
-    expect(screen.getByText('#backend')).toBeInTheDocument();
+
+    // A row is `#` (a glyph) then `general` — never `# #general`. Asserting the
+    // row merely *contains* `#general` would pass on the doubled version too,
+    // so the two halves are named apart: what the row draws, and what it says.
+    const general = screen.getByRole('button', { name: '#general' });
+    expect(general.querySelector('svg.lucide-hash')).not.toBeNull();
+    expect(within(general).getByText('general')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(general).getByText('#general')).toHaveClass('sr-only');
+
+    expect(screen.getByRole('button', { name: '#backend' })).toBeInTheDocument();
   });
 
   it('shows skeletons, not an empty state, while the first list loads', () => {
@@ -121,7 +129,7 @@ describe('ChannelsSection', () => {
     const onSelectRoom = vi.fn();
     const room = channel();
     renderSection({ channels: [room], onSelectRoom });
-    fireEvent.click(screen.getByText('#general'));
+    fireEvent.click(screen.getByRole('button', { name: '#general' }));
     expect(onSelectRoom).toHaveBeenCalledWith(room);
   });
 
@@ -137,7 +145,7 @@ describe('ChannelsSection', () => {
   it('hides its rows when collapsed but keeps the header reachable', () => {
     mockCollapsed = true;
     renderSection({ channels: [channel()] });
-    expect(screen.queryByText('#general')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '#general' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /channels/i })).toHaveAttribute(
       'aria-expanded',
       'false'

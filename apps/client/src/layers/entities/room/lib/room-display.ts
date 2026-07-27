@@ -10,7 +10,22 @@ import { hashToHslColor } from '@/layers/shared/lib';
 type TitleableRoom = Pick<Room, 'kind' | 'slug' | 'title'>;
 
 /**
- * What a room is called on screen.
+ * A room's bare name, with no mark in front of it.
+ *
+ * This is the form to render wherever a {@link RoomAvatar} sits beside the name
+ * — the mark already draws the `#`, and printing it again gives you `# #general`.
+ * Anywhere the name stands alone in text, use {@link roomDisplayTitle}.
+ *
+ * @param room - The room to name.
+ */
+export function roomName(room: TitleableRoom): string {
+  if (room.kind === 'channel' && room.slug) return room.slug;
+  return room.title;
+}
+
+/**
+ * What a room is called in prose — a tooltip, an `aria-label`, a toast, the
+ * browser tab.
  *
  * A channel reads as its `#slug`, because that is the name people type and the
  * one the server enforces as unique. Everything else reads as its title.
@@ -18,8 +33,8 @@ type TitleableRoom = Pick<Room, 'kind' | 'slug' | 'title'>;
  * @param room - The room to name.
  */
 export function roomDisplayTitle(room: TitleableRoom): string {
-  if (room.kind === 'channel' && room.slug) return `#${room.slug}`;
-  return room.title;
+  const name = roomName(room);
+  return room.kind === 'channel' && room.slug ? `#${name}` : name;
 }
 
 /**

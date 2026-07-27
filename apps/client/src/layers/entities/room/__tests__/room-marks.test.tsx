@@ -6,6 +6,7 @@ import type { AuthorRef, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { hashToHslColor } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomAvatar } from '../ui/RoomAvatar';
+import { RoomTitle } from '../ui/RoomTitle';
 import { MemberList } from '../ui/MemberList';
 
 // ---------------------------------------------------------------------------
@@ -183,5 +184,58 @@ describe('RoomAvatar', () => {
 
     expect(channel.querySelector('svg.lucide-hash')).not.toBeNull();
     expect(thread.querySelector('svg.lucide-messages-square')).not.toBeNull();
+  });
+});
+
+describe('RoomTitle', () => {
+  /** A channel as the server stores one: a sluggable name, and the slug. */
+  const GENERAL = { kind: 'channel', slug: 'general', title: 'General' } as const;
+
+  /** The `[data-slot="room-title"]` element itself. */
+  function titleOf(container: HTMLElement): HTMLElement {
+    return container.querySelector('[data-slot="room-title"]') as HTMLElement;
+  }
+
+  it('shows a channel name with no # of its own, because RoomAvatar drew one', () => {
+    const { container } = render(<RoomTitle room={GENERAL} />);
+
+    // The visible run of text is `general`. `#general` here is what renders as
+    // `# #general` in a row, which is the whole defect.
+    const visible = titleOf(container).querySelector('[aria-hidden="true"]') as HTMLElement;
+    expect(visible.textContent).toBe('general');
+  });
+
+  it('still speaks the # to anyone who cannot see the glyph', () => {
+    const { container } = render(<RoomTitle room={GENERAL} />);
+
+    // The mark is decorative, so losing it here would leave a screen reader
+    // calling a channel `general` — a name nobody types and nothing enforces.
+    const spoken = titleOf(container).querySelector('.sr-only') as HTMLElement;
+    expect(spoken.textContent).toBe('#general');
+  });
+
+  it('keeps #general as the tooltip, where no mark sits beside it', () => {
+    const { container } = render(<RoomTitle room={GENERAL} />);
+
+    expect(titleOf(container)).toHaveAttribute('title', '#general');
+  });
+
+  it('writes a direct message as one text node — no mark, nothing to split', () => {
+    const { container } = render(<RoomTitle room={{ kind: 'dm', slug: null, title: 'Ana' }} />);
+
+    const title = titleOf(container);
+    expect(title.textContent).toBe('Ana');
+    expect(title.querySelectorAll('span')).toHaveLength(0);
+  });
+
+  it('names a channel with no slug by its title, and marks nothing', () => {
+    // `slug` is nullable in the schema, and a title is not a `#name`.
+    const { container } = render(
+      <RoomTitle room={{ kind: 'channel', slug: null, title: 'Untitled' }} />
+    );
+
+    const title = titleOf(container);
+    expect(title.textContent).toBe('Untitled');
+    expect(title).toHaveAttribute('title', 'Untitled');
   });
 });
