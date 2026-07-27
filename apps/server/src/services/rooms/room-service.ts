@@ -140,8 +140,8 @@ export class RoomService {
   // === Rooms ===
 
   /**
-   * Create a channel or a DM, seeding its roster with the creator and whoever
-   * the request names — by author id (`members`) or by agent directory
+   * Open a channel or a DM, seeding its roster with the creator and whoever the
+   * request names — by author id (`members`) or by agent directory
    * (`agentPaths`).
    *
    * `agentPaths` is what makes a DM one call. The cockpit knows agents by
@@ -157,9 +157,36 @@ export class RoomService {
    * exist, and the obvious retry works. (The resolution itself is not inside
    * that transaction — it does not need to be, and saying so would be drift.)
    *
+   * **A DM is idempotent on its member set.** Ask for a direct message with
+   * people you already have one with and you get that conversation back, not a
+   * second one beside it. A DM is identified by WHO IS IN IT, so two rooms
+   * holding the same authors are the same room told twice — the failure mode
+   * Teams ships, where duplicate chats are real and you are told to rename them
+   * apart. Slack behaves the way this does.
+   *
+   * It has to be decided here rather than in the picker for two reasons. It is
+   * an idempotency property of the resource, so every caller gets it — the
+   * cockpit, an MCP client, a shell. And a client could only evaluate it by
+   * holding every DM's roster, which is exactly the per-room fetch R5 deleted.
+   *
+   * Three consequences worth stating, because none of them is obvious:
+   *
+   * - **An archived match is un-archived and returned.** Archive is this
+   *   product's reversible "put it away" (spec §12.4 — there is no Leave), so
+   *   re-opening a conversation is what asking for it again means. Minting a
+   *   parallel room would strand the history in the archived one.
+   * - **The existing room keeps its own title.** A request that matched is
+   *   asking for a conversation, not renaming one; silently retitling a room
+   *   somebody had named would be a side effect nobody asked for. Rename is its
+   *   own verb (`PATCH /api/rooms/:id`).
+   * - **The 201 stands on the idempotent path.** Nothing new was written, but
+   *   the caller's request was satisfied in full and the body is the same shape
+   *   — replaying the original answer, which is what an idempotent create does.
+   *
    * @param request - The validated create request.
    * @param creatorAuthorId - The author opening the room; joined automatically.
-   * @returns The new room with its roster.
+   * @returns The room with its roster — new, or the one that already held these
+   *   exact members.
    */
   createRoom(request: CreateRoomRequest, creatorAuthorId: string): RoomWithRoster {
     const slug = request.kind === 'channel' ? (request.slug ?? slugify(request.title ?? '')) : null;
@@ -205,6 +232,23 @@ export class RoomService {
     // may make itself a room (and talk to the person in it), but conscripting a
     // second agent into one is the same amplification lever `addMember` refuses.
     this.requireSeedingAllowed(creator, [...resolved.values()]);
+
+    // Deliberately AFTER that gate, not before. A caller the gate refuses gets
+    // the same 403 whether or not the room it named exists, so this stays a
+    // create path that sometimes answers with an existing room and never a way
+    // to probe for one.
+    if (request.kind === 'dm') {
+      const existing = this.store.findDmByMemberSet([...resolved.keys()]);
+      if (existing) {
+        // `updateRoom` re-checks visibility and broadcasts `room_updated`, which
+        // is what a sidebar holding a stale list needs to hear. Its slug-reclaim
+        // branch is channel-only, so it is inert here.
+        if (existing.archived) {
+          return this.updateRoom(existing.id, creatorAuthorId, { archived: false });
+        }
+        return this.withRoster(existing);
+      }
+    }
 
     const members = [...resolved.values()].map((author) => ({
       authorId: author.id,

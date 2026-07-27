@@ -185,7 +185,7 @@ export const RoomSummarySchema = RoomSchema.extend({
     .array(AuthorRefSchema)
     .nullable()
     .describe(
-      "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel or a thread, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; two authors is small enough to ride along on every list. A channel reads as `#slug` and a thread as its own glyph, so their rosters would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
+      "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel or a thread, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; a DM's roster is whoever one person assembled by hand, which is small enough to ride along on every list. A channel reads as `#slug` and a thread as its own glyph, so their rosters would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
     ),
 }).openapi('RoomSummary');
 
@@ -297,7 +297,7 @@ export const CreateRoomRequestSchema = z
       .array(z.string().min(1))
       .default([])
       .describe(
-        'Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The cockpit knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it.'
+        'Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The cockpit knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group.'
       ),
   })
   .refine((v) => v.title !== undefined || v.slug !== undefined, {

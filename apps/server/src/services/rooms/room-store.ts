@@ -132,6 +132,57 @@ export class RoomStore {
   }
 
   /**
+   * The direct message whose roster is EXACTLY this set of authors, or `null`.
+   *
+   * "Exactly" is the whole point and every word of it is load-bearing:
+   *
+   * - **The whole set, human included.** A DM is identified by who is in it, and
+   *   the operator is in it. Matching on the agents alone would collapse two
+   *   different conversations the moment a second human author exists.
+   * - **Order-independent.** `[me, ana]` and `[ana, me]` are one conversation.
+   *   The `IN` test does not care, and neither should a caller.
+   * - **Not a superset, not a subset.** `COUNT(*)` pins the roster's size and
+   *   the `SUM` pins how many of it were asked for; requiring both to equal the
+   *   set's size is what makes "contains these agents" fail to match. A DM with
+   *   Ana and Kai is not the DM with Ana.
+   *
+   * Archived DMs are matched too, and deliberately: the caller decides what to
+   * do with one (`RoomService.createRoom` un-archives it), and a store that hid
+   * them would leave the only way to reach that conversation being to mint a
+   * second room with the same people in it.
+   *
+   * Ordering settles a tie that only pre-existing data can produce — nothing
+   * creates a duplicate once `createRoom` consults this — so a live room is
+   * preferred over an archived one and the oldest wins after that, rather than
+   * leaving the answer to whichever index the planner picked.
+   *
+   * @param authorIds - The exact member set to match. Duplicates are collapsed.
+   * @returns The matching DM, or `null` when no room holds exactly these authors.
+   */
+  findDmByMemberSet(authorIds: readonly string[]): Room | null {
+    const wanted = [...new Set(authorIds)];
+    if (wanted.length === 0) return null;
+    const row = this.db
+      .select({ room: rooms })
+      .from(rooms)
+      .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
+      .where(eq(rooms.kind, 'dm'))
+      .groupBy(rooms.id)
+      .having(
+        and(
+          eq(count(), wanted.length),
+          eq(
+            sql<number>`SUM(CASE WHEN ${inArray(roomMembers.authorId, wanted)} THEN 1 ELSE 0 END)`,
+            wanted.length
+          )
+        )
+      )
+      .orderBy(rooms.archived, rooms.createdAt)
+      .get();
+    return row ? toRoom(row.room) : null;
+  }
+
+  /**
    * The live (non-archived) channel holding a slug, if any. Archiving a channel
    * releases its slug, which is what the partial unique index encodes.
    *

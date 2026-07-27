@@ -2785,13 +2785,14 @@ registry.registerPath({
   method: 'post',
   path: '/api/rooms',
   tags: ['Rooms'],
-  summary: 'Create a channel or a DM',
+  summary: 'Open a channel or a DM',
   description:
-    'The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. Threads are created via `POST /api/rooms/{id}/threads`.',
+    'The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. A DM may name any number of agents; one gives a one-to-one conversation and several give a group. **Creating a DM is idempotent on its member set**: when a direct message already holds exactly these authors (the creator included, order irrelevant, neither a superset nor a subset), that room is returned instead of a second one being minted, and an archived match is un-archived first. The existing room keeps its own title. Threads are created via `POST /api/rooms/{id}/threads`.',
   request: { body: { content: { 'application/json': { schema: CreateRoomRequestSchema } } } },
   responses: {
     201: {
-      description: 'The new room with its roster',
+      description:
+        'The room with its roster — newly created, or the direct message that already held exactly these members',
       content: { 'application/json': { schema: RoomWithRosterSchema } },
     },
     400: roomValidationError,
