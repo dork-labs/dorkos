@@ -159,6 +159,114 @@ describe('TaskReconciler', () => {
     });
   });
 
+  describe('a file that is on disk is never treated as deleted', () => {
+    /** Age every row so the next pass is past the 24h grace period. */
+    function expireGracePeriod(): void {
+      db.update(pulseSchedules)
+        .set({ updatedAt: new Date(Date.now() - 2 * DAY_MS).toISOString() })
+        .run();
+    }
+
+    it('keeps a task whose frontmatter stopped parsing, with its run history', async () => {
+      const filePath = await writeTask('typo-task', 'typo-task');
+      await reconciler.reconcile();
+      const created = store.getTasks()[0];
+      store.createRun(created.id, 'scheduled');
+
+      // The user hand-edits SKILL.md and fat-fingers a boolean.
+      await fs.writeFile(
+        filePath,
+        `---\nname: typo-task\ndescription: Broken\nenabled: yes-please\n---\nBody`,
+        'utf-8'
+      );
+      expireGracePeriod();
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+
+      // Same row, same id, history intact — the file is right there.
+      const after = store.getTask(created.id);
+      expect(after).not.toBeNull();
+      expect(after?.status).not.toBe('paused');
+      expect(store.countRuns(created.id)).toBe(1);
+    });
+
+    it('recovers a task that was paused while its file was missing', async () => {
+      const filePath = await writeTask('flaky-file', 'flaky-file');
+      await reconciler.reconcile();
+      const created = store.getTasks()[0];
+
+      await fs.rm(filePath);
+      await reconciler.reconcile();
+      expect(store.getTask(created.id)?.status).toBe('paused');
+      expect(store.getTask(created.id)?.enabled).toBe(false);
+
+      // The file comes back before the grace period expires.
+      await writeTask('flaky-file', 'flaky-file');
+      await reconciler.reconcile();
+
+      // Both gates the scheduler checks must be restored, or the task looks
+      // live in the UI and silently never fires.
+      expect(store.getTask(created.id)?.status).toBe('active');
+      expect(store.getTask(created.id)?.enabled).toBe(true);
+    });
+
+    // Root ignores file permissions, so the chmod setup only works non-root.
+    it.skipIf(process.getuid?.() === 0)(
+      'leaves every task alone when its directory cannot be listed',
+      async () => {
+        await writeTask('alpha', 'alpha');
+        await writeTask('beta', 'beta');
+        await reconciler.reconcile();
+        expect(store.getTasks()).toHaveLength(2);
+
+        // Simulates EACCES, and equally the EMFILE a file-descriptor squeeze
+        // produces — the scan cannot look, which is not evidence of deletion.
+        await fs.chmod(tasksDir, 0o000);
+        expireGracePeriod();
+        try {
+          await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+        } finally {
+          await fs.chmod(tasksDir, 0o755);
+        }
+
+        expect(store.getTasks()).toHaveLength(2);
+        expect(store.getTasks().every((t) => t.status === 'active')).toBe(true);
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.stringContaining(tasksDir),
+          expect.any(Error)
+        );
+      }
+    );
+  });
+
+  describe('same slug in two directories', () => {
+    it('pauses only the task whose own file is gone', async () => {
+      // Two projects, each with a task called flow-drain — the exact shape
+      // found on real data.
+      const projectDir = path.join(dorkHome, 'project', '.dork', 'tasks');
+      await fs.mkdir(path.join(projectDir, 'flow-drain'), { recursive: true });
+      const projectFile = path.join(projectDir, 'flow-drain', 'SKILL.md');
+      await fs.writeFile(projectFile, skillFile('flow-drain'), 'utf-8');
+      reconciler.addDirectory(projectDir, 'project', path.join(dorkHome, 'project'));
+
+      const globalFile = path.join(tasksDir, 'flow-drain', 'SKILL.md');
+      store.createTask({
+        name: 'flow-drain',
+        description: 'global copy whose file is gone',
+        prompt: 'gone',
+        filePath: globalFile,
+      });
+
+      await reconciler.reconcile();
+
+      const project = store.getTasks().find((t) => t.filePath === projectFile);
+      const global = store.getTasks().find((t) => t.filePath === globalFile);
+      expect(project?.status).toBe('active');
+      expect(project?.enabled).toBe(true);
+      expect(global?.status).toBe('paused');
+    });
+  });
+
   describe('scan resilience', () => {
     it('keeps a task that failed to sync out of the orphan set', async () => {
       const filePath = await writeTask('flaky', 'flaky');

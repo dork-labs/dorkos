@@ -577,6 +577,15 @@ export class TaskStore {
           enabled: def.meta.enabled,
           maxRuntime: maxRuntimeMs,
           permissionMode: def.meta.permissions,
+          // A `paused` row whose file is back is un-paused here, because
+          // nothing else ever will: the scheduler requires `enabled` AND
+          // `status === 'active'`, and restoring only `enabled` leaves a task
+          // that looks live and never fires. `paused` is written exclusively by
+          // this service (file gone, agent unregistered) — a person pausing a
+          // task sets `enabled: false`, which the line above re-reads from the
+          // file — so this can never override someone's own choice.
+          // `pending_approval` is untouched: that gate is a person's to clear.
+          ...(existing.status === 'paused' ? { status: 'active' as const } : {}),
           tags: '[]',
           updatedAt: now,
         })
@@ -612,20 +621,23 @@ export class TaskStore {
   }
 
   /**
-   * Mark a task as paused by its directory slug.
+   * Pause the one task whose file lived at `filePath`, because it is gone.
    *
-   * Matches tasks whose `filePath` ends with `/{slug}/SKILL.md`.
-   * Used when a task directory is removed from disk.
+   * Matched on the exact absolute path, never on the directory slug. Slugs are
+   * only unique within one tasks directory, and DorkOS watches several at once
+   * (the global one plus every registered agent's), so a slug match pauses a
+   * live task in another project that happens to share the name — observed on
+   * real data with two `flow-drain` tasks in different checkouts.
    *
-   * @param slug - Kebab-case directory name
-   * @returns The number of tasks marked as paused
+   * @param filePath - Absolute path to the SKILL.md that is no longer on disk
+   * @returns The number of tasks marked as paused (0 or 1)
    */
-  markRemovedBySlug(slug: string): number {
+  markRemovedByFilePath(filePath: string): number {
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseSchedules)
       .set({ enabled: false, status: 'paused', updatedAt: now })
-      .where(like(pulseSchedules.filePath, `%/${slug}/${SKILL_FILENAME}`))
+      .where(eq(pulseSchedules.filePath, filePath))
       .run();
     return result.changes;
   }

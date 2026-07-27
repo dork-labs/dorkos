@@ -121,6 +121,59 @@ describe('scanSkillDirectory', () => {
     expect(results).toEqual([]);
   });
 
+  it('tags a missing SKILL.md with fileMissing, and a malformed one without it', async () => {
+    await fs.mkdir(path.join(tmpDir, 'gone'), { recursive: true });
+    await createSkill('malformed', '---\nname: WRONG-NAME\ndescription: Bad\n---\nBody');
+
+    const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema);
+    const byDir = (slug: string) => results.find((r) => !r.ok && r.filePath.includes(`/${slug}/`));
+
+    const gone = byDir('gone');
+    expect(gone?.ok).toBe(false);
+    if (gone && !gone.ok) expect(gone.fileMissing).toBe(true);
+
+    // The file is right there; only its frontmatter is wrong. A caller that
+    // retires rows for missing files must not touch this one.
+    const malformed = byDir('malformed');
+    expect(malformed?.ok).toBe(false);
+    if (malformed && !malformed.ok) expect(malformed.fileMissing).toBeUndefined();
+  });
+
+  // Root ignores file permissions, so a chmod-based unreadable setup only
+  // works for non-root runs.
+  it.skipIf(process.getuid?.() === 0)(
+    'reports an unreadable SKILL.md as present-but-broken, never as missing',
+    async () => {
+      await createSkill('locked', '---\nname: locked\ndescription: Locked\n---\nBody');
+      await fs.chmod(path.join(tmpDir, 'locked', SKILL_FILENAME), 0o000);
+
+      const results = await scanSkillDirectory(tmpDir, SkillFrontmatterSchema);
+      expect(results).toHaveLength(1);
+      expect(results[0].ok).toBe(false);
+      if (!results[0].ok) {
+        expect(results[0].fileMissing).toBeUndefined();
+        expect(results[0].error).toContain('Failed to read');
+      }
+    }
+  );
+
+  it.skipIf(process.getuid?.() === 0)(
+    'throws when the directory exists but cannot be listed, rather than reporting it empty',
+    async () => {
+      await createSkill('one', '---\nname: one\ndescription: One\n---\nBody');
+      const locked = path.join(tmpDir, 'locked-dir');
+      await fs.mkdir(locked);
+      await fs.mkdir(path.join(locked, 'inner'));
+      await fs.chmod(locked, 0o000);
+
+      // "Could not look" must never be reported as "nothing is there" — a
+      // caller treating [] as truth would conclude every skill was deleted.
+      await expect(scanSkillDirectory(locked, SkillFrontmatterSchema)).rejects.toThrow();
+
+      await fs.chmod(locked, 0o755);
+    }
+  );
+
   it('includes both successes and failures in results', async () => {
     await createSkill('valid', '---\nname: valid\ndescription: Valid\n---\nBody');
     await createSkill('invalid', '---\nname: INVALID\ndescription: Bad name\n---\nBody');

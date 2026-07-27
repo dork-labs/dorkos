@@ -121,9 +121,11 @@ export class TaskFileWatcher {
   }
 
   private handleFileRemove(filePath: string): void {
-    // Derive slug from the parent directory name (e.g., /tasks/daily-check/SKILL.md → "daily-check")
+    // Pause by exact path, not by slug: the same slug can exist in the global
+    // tasks directory and in any number of project ones, and only this file
+    // was removed.
+    this.store.markRemovedByFilePath(filePath);
     const dirName = path.basename(path.dirname(filePath));
-    this.store.markRemovedBySlug(dirName);
     this.onTaskChange(dirName);
     logger.info(`[TaskFileWatcher] Task file removed: ${dirName}`);
   }

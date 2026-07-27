@@ -83,12 +83,24 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  * are included in the results as `{ ok: false }` entries so callers
  * have full visibility into what was skipped and why.
  *
+ * Two failure shapes are deliberately distinguished, because callers act on
+ * the difference:
+ *
+ * - **Absent** — `dir` itself does not exist, so the scan is empty; or a
+ *   subdirectory has no SKILL.md, so its failure carries `fileMissing: true`.
+ *   These mean "nothing is there".
+ * - **Unreachable** — the read failed for any other reason (EACCES, EMFILE,
+ *   EIO). An unreadable `dir` THROWS; an unreadable SKILL.md is a failure
+ *   without `fileMissing`. These mean "could not look", which is never
+ *   evidence of absence.
+ *
  * @param dir - Parent directory to scan (e.g., `.dork/tasks/`)
  * @param schema - Zod schema to validate frontmatter
  * @param options - Optional settings
  * @param options.includeMissing - If true (default), include `ok: false` entries
  *   for subdirectories that lack a SKILL.md. Set to false for the old
- *   behavior of silently skipping them.
+ *   behavior of silently skipping them. Suppresses absent skills only —
+ *   an unreadable SKILL.md is still reported.
  * @param options.withUiTemplates - If true, also scan each skill's `ui/`
  *   subdirectory and populate `uiTemplates` on the parsed result. Off by
  *   default so callers that never read templates (e.g. the task reconciler)
@@ -108,6 +120,8 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  *   such a container reads as a skill that forgot its SKILL.md. Defaults to
  *   none, so every subdirectory is treated as a skill.
  * @returns Array of parse results (both successes and failures)
+ * @throws If `dir` exists but cannot be listed. A caller that reads absence as
+ *   deletion must let this propagate rather than degrade it to an empty scan.
  */
 export async function scanSkillDirectory<T>(
   dir: string,
@@ -129,9 +143,14 @@ export async function scanSkillDirectory<T>(
   let entries: Dirent[];
   try {
     entries = await fsPromises.readdir(dir, { withFileTypes: true });
-  } catch {
-    // Directory doesn't exist — return empty, not an error
-    return results;
+  } catch (err) {
+    // A directory that isn't there is genuinely empty. Anything else — EACCES,
+    // EMFILE under fd pressure, EIO — means we could not LOOK, which is not the
+    // same answer as looking and finding nothing. Returning `[]` for those
+    // would tell a caller that every skill it expected has been deleted, so
+    // they are thrown and the caller decides.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return results;
+    throw err;
   }
 
   for (const entry of entries) {
@@ -144,15 +163,29 @@ export async function scanSkillDirectory<T>(
     let content: string;
     try {
       content = await fsPromises.readFile(skillPath, 'utf-8');
-    } catch {
-      // No SKILL.md in this directory
-      if (includeMissing) {
-        results.push({
-          ok: false,
-          error: `No ${SKILL_FILENAME} found in directory "${entry.name}"`,
-          filePath: skillPath,
-        });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        // No SKILL.md in this directory — the one failure that means "gone".
+        if (includeMissing) {
+          results.push({
+            ok: false,
+            error: `No ${SKILL_FILENAME} found in directory "${entry.name}"`,
+            filePath: skillPath,
+            fileMissing: true,
+          });
+        }
+        continue;
       }
+      // The file is there, we just could not read it. Report it as a failure
+      // WITHOUT `fileMissing`, so nobody mistakes it for a deletion. Reported
+      // even under `includeMissing: false`, which suppresses absent skills —
+      // an unreadable one is a real problem, not an absent one.
+      results.push({
+        ok: false,
+        error: `Failed to read ${SKILL_FILENAME} in directory "${entry.name}": ${(err as Error).message}`,
+        filePath: skillPath,
+      });
       continue;
     }
 
