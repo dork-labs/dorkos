@@ -900,7 +900,7 @@ export interface Transport {
    */
   listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]>;
   /**
-   * Post to a room. Trigger-only, exactly as {@link sendMessage} is: the 202
+   * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
    * carries the new entry's identity, while the entry itself reaches every
    * reader — the poster included — over {@link subscribeRoom}. So a caller
    * inserts nothing of its own; it waits for the stream, which is also what
