@@ -1,10 +1,23 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { createWindow } from './window-manager';
+import { createWindow, makeRendererUrlAccessor } from './window-manager';
+import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort } from './server-process';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
-import { setupAutoUpdater, restartToUpdate, getLastUpdateStatus } from './auto-updater';
 import {
+  setupAutoUpdater,
+  restartToUpdate,
+  getLastUpdateStatus,
+  isRestartingToUpdate,
+  consumeUpdateRestart,
+} from './auto-updater';
+import { hasTray, setTrayActivity, setupTray } from './tray';
+import { getActiveAgentCount, watchAgentActivity } from './agent-activity';
+import { announceBackgroundRunning } from './background-notice';
+import { armQuitGuard } from './quit-guard';
+import { setupCloseTab } from './close-tab';
+import {
+  ACTIVITY_ROUTE,
   findDeepLinkArg,
   parseDeepLink,
   registerReadinessReset,
@@ -18,20 +31,21 @@ const DEEP_LINK_PROTOCOL = 'dorkos';
 let mainWindow: BrowserWindow | null = null;
 
 /**
- * Create the main window and track its lifecycle. On macOS the app keeps
- * running after the window closes, so the reference is nulled on 'closed'
- * to prevent later handlers (second-instance, activate) from touching a
- * destroyed BrowserWindow.
+ * The app's own origin, re-read on every use. The port comes from the
+ * supervisor rather than a local copy: a crash and restart gives the server a
+ * new one, and a window built around the old port would treat the app's own
+ * pages as foreign links.
+ */
+const getRendererUrl = makeRendererUrlAccessor(getServerPort);
+
+/**
+ * Create the main window and track its lifecycle. The app keeps running after
+ * the window closes (there is a tray to get back from), so the reference is
+ * nulled on 'closed' to prevent later handlers (second-instance, activate)
+ * from touching a destroyed BrowserWindow.
  */
 function createTrackedWindow(): void {
-  // The renderer only loads via the server's localhost origin in a packaged
-  // build — dev keeps loading through electron-vite's ELECTRON_RENDERER_URL
-  // (createWindow checks that first regardless of this argument). The port
-  // comes from the supervisor every time rather than a local copy: a crash
-  // and restart gives the server a new port.
-  const serverPort = getServerPort();
-  const rendererUrl = app.isPackaged && serverPort ? `http://localhost:${serverPort}` : undefined;
-  mainWindow = createWindow(rendererUrl);
+  mainWindow = createWindow({ getRendererUrl, role: 'primary' });
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -53,9 +67,14 @@ function getMainWindow(): BrowserWindow | null {
 /**
  * Whether an `invoke` came from the tracked main window's renderer. Guards the
  * read-once/replay handlers (`get-pending-navigate`, `get-update-status`) so a
- * stray invoke (devtools, a future auxiliary window) can't steal state meant
+ * stray invoke (devtools, a second cockpit window) can't steal state meant
  * for the primary renderer. `webContents.id` is unique per instance, so this
  * naturally rejects a destroyed-then-recreated window's old id.
+ *
+ * This is what scopes deep links and the update card to the primary window: a
+ * second window opened with `window.open` is a full cockpit, but menu
+ * navigation, `dorkos://` links and the "restart to install" card all land in
+ * the primary one.
  */
 function isTrackedRenderer(event: Electron.IpcMainInvokeEvent): boolean {
   const win = getMainWindow();
@@ -73,6 +92,9 @@ function showMainWindow(): void {
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
+  // Windows are created hidden and revealed on their first frame, so a window
+  // asked for before it has painted needs showing as well as focusing.
+  mainWindow.show();
   mainWindow.focus();
 }
 
@@ -145,8 +167,21 @@ if (!gotTheLock) {
     if (coldStartUrl) handleDeepLinkUrl(coldStartUrl);
   }
 
+  // Own the way out before anything can ask for it: every quit — Cmd+Q, the
+  // menu, the tray, the Dock, `quitAndInstall()`, the crash dialog — goes
+  // through this one handler, which confirms when agents are mid-run and
+  // always stops the server before the process goes (see quit-guard.ts).
+  armQuitGuard({
+    countActiveAgents: getActiveAgentCount,
+    getWindow: getMainWindow,
+    shutdown: stopServer,
+    consumeUpdateRestart,
+  });
+
   // Register IPC handlers for the preload bridge.
   // These must be registered before the window is created.
+  setupCloseTab();
+
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();
   });
@@ -162,7 +197,7 @@ if (!gotTheLock) {
   // event fired (macOS close→reopen). No-ops in dev (unpackaged builds can't
   // apply updates).
   ipcMain.on('update:restart', () => {
-    restartToUpdate();
+    void restartToUpdate();
   });
 
   // Replay the last `downloading`/`downloaded` status — called once by the
@@ -215,36 +250,56 @@ if (!gotTheLock) {
     setupAboutPanel();
     setupDockMenu(showMainWindow);
 
-    // 4. Check for updates in the background (non-blocking). No-ops in dev
+    // 4. Put DorkOS in the menu bar / system tray. This is what makes closing
+    // the window safe: the app stays running, and the tray is how you get it
+    // back and how you see whether anything is happening.
+    setupTray({
+      showWindow: showMainWindow,
+      openActivity: () => requestNavigate(getMainWindow, showMainWindow, ACTIVITY_ROUTE),
+    });
+
+    // 5. Follow the server's own event stream so the tray — and the quit
+    // confirmation — know how many agents are mid-run, with no window open and
+    // no polling.
+    watchAgentActivity({ getPort: getServerPort, onChange: setTrayActivity });
+
+    // 6. Rescue windows stranded by a monitor being unplugged while we run.
+    watchDisplayChanges(() => BrowserWindow.getAllWindows());
+
+    // 7. Check for updates in the background (non-blocking). No-ops in dev
     // (unpackaged builds can't apply updates) — see auto-updater.ts.
     setupAutoUpdater(getMainWindow);
   });
 
-  // macOS convention: closing all windows does NOT quit the app.
-  // The app stays in the dock until the user presses Cmd+Q.
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-      app.quit();
-    }
-  });
-
-  // Clean up the server process before the app quits.
-  // Electron does not await async before-quit handlers, so we
-  // prevent quit, run cleanup, then quit explicitly.
+  // Closing the last window does not quit: the server keeps running, so agents
+  // keep working, and the tray is how you come back. One rule for every
+  // platform, replacing the old split where macOS stayed alive and Windows
+  // quit outright.
   //
-  // This also has to interplay correctly with `autoUpdater.quitAndInstall()`
-  // (auto-updater.ts): it arms the native installer, then calls `app.quit()`.
-  // That first quit hits preventDefault() and runs stopServer(), then the
-  // `isQuitting` guard lets the second, explicit quit() through — so install
-  // + relaunch only happens after the server has shut down cleanly.
-  // `autoInstallOnAppQuit = true` is the fallback if quitAndInstall() is never
-  // called directly. Do not "simplify" this dance without preserving that.
-  let isQuitting = false;
-  app.on('before-quit', (e) => {
-    if (isQuitting) return;
-    e.preventDefault();
-    isQuitting = true;
-    stopServer().finally(() => app.quit());
+  // The condition is "is there a way back", not "which OS is this" — if the
+  // tray could not be created (no image for this platform, an unreadable one),
+  // quitting is the only honest thing left. An app running with no window and
+  // no icon is one nobody can reach.
+  app.on('window-all-closed', () => {
+    // This stays unconditional. An app with no window and no way back is the
+    // one state this whole design exists to prevent, so nothing may return
+    // above it — least of all a flag owned by another module, which is what
+    // an earlier version of this handler did. Quitting during an update
+    // restart is harmless anyway: it is what `quitAndInstall()` was about to
+    // do, and the quit guard keeps it silent.
+    if (!hasTray()) {
+      app.quit();
+      return;
+    }
+    // `autoUpdater.quitAndInstall()` closes every window and only *then* calls
+    // `app.quit()`, so this fires on the update-restart path exactly as if a
+    // person had closed the last window by hand. Left ungated they get "DorkOS
+    // is still running" — with a Quit button — in the middle of an update, and
+    // the one-time notice is burnt for good. `isQuitting()` cannot catch it: on
+    // that path `before-quit` has not happened yet.
+    if (isRestartingToUpdate()) return;
+    // Someone who thinks they quit and didn't files a bug report. Say it once.
+    void announceBackgroundRunning();
   });
 
   // macOS convention: clicking the dock icon re-creates the window

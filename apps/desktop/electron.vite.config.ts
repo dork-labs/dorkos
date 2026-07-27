@@ -1,11 +1,43 @@
 import { defineConfig } from 'electron-vite';
+import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import fs from 'node:fs';
+import { TRAY_IMAGE_FILES } from './src/shared/tray-images';
 
 const clientRoot = path.resolve(__dirname, '../client');
 const sharedSrc = path.resolve(__dirname, '../../packages/shared/src');
+const buildResources = path.resolve(__dirname, 'build');
+
+/**
+ * Copy the tray images from `build/` into the main process's output directory.
+ *
+ * `build/` is electron-builder's `buildResources` directory, which is
+ * deliberately NOT packaged into the app — and `electron-builder.yml`'s `files`
+ * allowlist only ships `dist/**` anyway. Rather than duplicate them into
+ * `extraResources` (which that file argues against, with reason), they are
+ * emitted alongside the compiled main process, so `src/main/tray.ts` resolves
+ * one path — `join(__dirname, name)` — in dev and packaged alike.
+ *
+ * The file list is shared with the loader (`src/shared/tray-images.ts`) rather
+ * than repeated here: adding a platform to one list and not the other would
+ * package green and produce an app with no tray.
+ */
+function emitTrayImages(): Plugin {
+  return {
+    name: 'dorkos:tray-images',
+    generateBundle() {
+      for (const fileName of TRAY_IMAGE_FILES) {
+        this.emitFile({
+          type: 'asset',
+          fileName,
+          source: fs.readFileSync(path.join(buildResources, fileName)),
+        });
+      }
+    },
+  };
+}
 
 /**
  * Build alias entries for @dorkos/shared subpath exports.
@@ -27,6 +59,7 @@ function sharedSubpathAliases(): Record<string, string> {
 
 export default defineConfig({
   main: {
+    plugins: [emitTrayImages()],
     build: {
       outDir: 'dist/main',
       rollupOptions: {

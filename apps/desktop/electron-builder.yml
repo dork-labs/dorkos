@@ -96,7 +96,10 @@ publish:
 #
 # Everything the packaged runtime actually reads, and nothing else:
 #   package.json        Electron reads `main` (dist/main/index.js) + version.
-#   dist/main, preload  The compiled shell (electron-vite output).
+#   dist/main, preload  The compiled shell (electron-vite output), including the
+#                       tray images the main build emits beside it from build/
+#                       — buildResources is NOT packaged, so that emit (see
+#                       electron.vite.config.ts) is what ships them.
 #   dist/renderer       The SPA, served by the bundled server (asarUnpack'd below).
 #   dist/server         The esbuild server bundle the main process forks.
 #   dist/drizzle        Migrations, resolved as `__dirname/../drizzle` from the

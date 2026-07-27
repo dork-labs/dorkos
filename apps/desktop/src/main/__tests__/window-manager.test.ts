@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { HandlerDetails, WindowOpenHandlerResponse } from 'electron';
 
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('node:fs', () => ({
@@ -10,193 +11,105 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
 }));
 
+import { createWindow, isOwnOrigin, makeRendererUrlAccessor } from '../window-manager';
+import { resetWindowStateModule } from '../window-state';
 import {
-  isMeaningfullyVisible,
-  clampSizeToWorkArea,
-  validateWindowState,
-  createWindow,
-  isOwnOrigin,
-  type WindowState,
-} from '../window-manager';
-import { makeDisplay, BrowserWindow, resetElectronMock } from './electron-mock';
+  app,
+  BrowserWindow,
+  resetElectronMock,
+  nativeTheme,
+  type MockBrowserWindow,
+} from './electron-mock';
 import { shell } from 'electron';
 
 const mockedReadFileSync = vi.mocked(readFileSync);
-const mockedWriteFileSync = vi.mocked(writeFileSync);
 
 beforeEach(() => {
   resetElectronMock();
+  resetWindowStateModule();
   mockedReadFileSync.mockReset();
-  mockedWriteFileSync.mockReset();
+  vi.mocked(writeFileSync).mockReset();
 });
 
-describe('isMeaningfullyVisible', () => {
-  it('is true when the rectangle sits entirely inside the work area', () => {
-    const workArea = { x: 0, y: 0, width: 1440, height: 900 };
-    expect(isMeaningfullyVisible({ x: 100, y: 100, width: 800, height: 600 }, workArea)).toBe(true);
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
+
+/** The window-open handler `createWindow` installed on `win`. */
+function windowOpenHandler(
+  win: MockBrowserWindow
+): (details: Pick<HandlerDetails, 'url'>) => WindowOpenHandlerResponse {
+  const handler = vi.mocked(win.webContents.setWindowOpenHandler).mock.calls[0][0];
+  return handler as (details: Pick<HandlerDetails, 'url'>) => WindowOpenHandlerResponse;
+}
+
+/** A live accessor returning a fixed origin, as `index.ts` supplies. */
+function origin(url: string | undefined): () => string | undefined {
+  return () => url;
+}
+
+describe('createWindow — first paint (M5)', () => {
+  it('creates the window hidden with a background colour, and shows it on ready-to-show', async () => {
+    const win = createWindow() as unknown as MockBrowserWindow;
+
+    expect(win.options.show).toBe(false);
+    expect(win.options.backgroundColor).toBe('#0a0a0a');
+    expect(win.show).not.toHaveBeenCalled();
+
+    await win.emit('ready-to-show');
+
+    expect(win.show).toHaveBeenCalledTimes(1);
   });
 
-  it('is false when fewer than 100px overlap on the x axis', () => {
-    const workArea = { x: 0, y: 0, width: 1440, height: 900 };
-    expect(isMeaningfullyVisible({ x: 1400, y: 100, width: 800, height: 600 }, workArea)).toBe(
-      false
+  it('uses the light background when the OS is in light mode', () => {
+    nativeTheme.shouldUseDarkColors = false;
+
+    const win = createWindow() as unknown as MockBrowserWindow;
+
+    expect(win.options.backgroundColor).toBe('#fafafa');
+  });
+
+  it('re-maximizes on show when the persisted state was maximized', async () => {
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ x: 100, y: 100, width: 1000, height: 700, isMaximized: true })
     );
-  });
 
-  it('is false when fewer than 100px overlap on the y axis', () => {
-    const workArea = { x: 0, y: 0, width: 1440, height: 900 };
-    expect(isMeaningfullyVisible({ x: 100, y: 850, width: 800, height: 600 }, workArea)).toBe(
-      false
-    );
-  });
+    const win = createWindow() as unknown as MockBrowserWindow;
+    // Maximizing before the window is shown opens it un-maximized on macOS.
+    expect(win.maximize).not.toHaveBeenCalled();
 
-  it('is true when exactly 100px overlap in both axes', () => {
-    const workArea = { x: 0, y: 0, width: 1440, height: 900 };
-    expect(isMeaningfullyVisible({ x: -700, y: -500, width: 800, height: 600 }, workArea)).toBe(
-      true
-    );
-  });
-});
+    await win.emit('ready-to-show');
 
-describe('clampSizeToWorkArea', () => {
-  it('shrinks a size larger than the work area', () => {
-    const workArea = { x: 0, y: 0, width: 1024, height: 768 };
-    expect(clampSizeToWorkArea({ width: 2000, height: 1500 }, workArea)).toEqual({
-      width: 1024,
-      height: 768,
-    });
-  });
-
-  it('leaves a size that already fits unchanged', () => {
-    const workArea = { x: 0, y: 0, width: 1440, height: 900 };
-    expect(clampSizeToWorkArea({ width: 1200, height: 800 }, workArea)).toEqual({
-      width: 1200,
-      height: 800,
-    });
-  });
-});
-
-describe('validateWindowState (A2)', () => {
-  const primary = makeDisplay({ id: 1, workArea: { x: 0, y: 0, width: 1440, height: 900 } });
-
-  it('falls back to a centered default when the saved position is off-screen', () => {
-    // Simulates a window restored after its external monitor was unplugged.
-    const state: WindowState = { x: 3000, y: 3000, width: 1200, height: 800, isMaximized: false };
-    const result = validateWindowState(state, [primary], primary);
-
-    expect(result.width).toBe(1200);
-    expect(result.height).toBe(800);
-    expect(result.x).toBe(Math.round((1440 - 1200) / 2));
-    expect(result.y).toBe(Math.round((900 - 800) / 2));
-  });
-
-  it('clamps size to the primary display when discarding an off-screen position', () => {
-    const state: WindowState = { x: -5000, y: 0, width: 2000, height: 1500, isMaximized: false };
-    const result = validateWindowState(state, [primary], primary);
-
-    expect(result.width).toBe(1440);
-    expect(result.height).toBe(900);
-  });
-
-  it('keeps a position that is still partially visible', () => {
-    // 190px of width still overlaps the primary display's work area — above
-    // the 100px visibility threshold, so the saved position is kept as-is.
-    const state: WindowState = { x: 1250, y: 100, width: 800, height: 600, isMaximized: false };
-    const result = validateWindowState(state, [primary], primary);
-
-    expect(result).toEqual(state);
-  });
-
-  it('keeps a position visible on a secondary display', () => {
-    const secondary = makeDisplay({
-      id: 2,
-      workArea: { x: 1440, y: 0, width: 1920, height: 1080 },
-    });
-    const state: WindowState = { x: 1500, y: 100, width: 800, height: 600, isMaximized: false };
-    const result = validateWindowState(state, [primary, secondary], primary);
-
-    expect(result).toEqual(state);
-  });
-
-  it('clamps oversized default size when no position was ever saved', () => {
-    const state: WindowState = { width: 2000, height: 1200, isMaximized: false };
-    const result = validateWindowState(state, [primary], primary);
-
-    expect(result.x).toBeUndefined();
-    expect(result.y).toBeUndefined();
-    expect(result.width).toBe(1440);
-    expect(result.height).toBe(900);
-  });
-});
-
-describe('createWindow (A2 integration)', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('re-maximizes on launch when the persisted state was maximized', () => {
-    const persisted: WindowState = {
-      x: 100,
-      y: 100,
-      width: 1000,
-      height: 700,
-      isMaximized: true,
-    };
-    mockedReadFileSync.mockReturnValue(JSON.stringify(persisted));
-
-    createWindow();
-
-    const win = BrowserWindow.instances[0];
     expect(win.maximize).toHaveBeenCalledTimes(1);
+    expect(win.show).toHaveBeenCalledTimes(1);
   });
 
-  it('debounces resize saves — rapid resize events coalesce into a single write', async () => {
+  it('shows the window anyway if the renderer never paints', async () => {
     vi.useFakeTimers();
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ x: 100, y: 100, width: 1000, height: 700, isMaximized: false })
-    );
+    const win = createWindow() as unknown as MockBrowserWindow;
 
-    const win = createWindow();
+    await vi.advanceTimersByTimeAsync(4_000);
 
-    await win.emit('resize');
-    await win.emit('resize');
-    await win.emit('resize');
-
-    expect(mockedWriteFileSync).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(500);
-
-    expect(mockedWriteFileSync).toHaveBeenCalledTimes(1);
+    expect(win.show).toHaveBeenCalledTimes(1);
   });
 
-  it('saves immediately on close, bypassing any pending debounce', async () => {
+  it('never shows twice when the fallback and ready-to-show both fire', async () => {
     vi.useFakeTimers();
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ x: 100, y: 100, width: 1000, height: 700, isMaximized: false })
-    );
+    const win = createWindow() as unknown as MockBrowserWindow;
 
-    const win = createWindow();
+    await win.emit('ready-to-show');
+    await vi.advanceTimersByTimeAsync(4_000);
 
-    await win.emit('resize');
-    await win.emit('close');
-
-    expect(mockedWriteFileSync).toHaveBeenCalledTimes(1);
-
-    // The debounced resize save must not fire again after close already saved.
-    await vi.advanceTimersByTimeAsync(500);
-    expect(mockedWriteFileSync).toHaveBeenCalledTimes(1);
+    expect(win.show).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('createWindow — renderer loading', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   it('loads the built renderer via file:// when no dev server or rendererUrl is available (electron-vite preview)', () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', '');
 
-    const win = createWindow();
+    const win = createWindow() as unknown as MockBrowserWindow;
 
     expect(win.loadFile).toHaveBeenCalledTimes(1);
     expect(win.loadURL).not.toHaveBeenCalled();
@@ -205,7 +118,9 @@ describe('createWindow — renderer loading', () => {
   it("loads via the bundled server's localhost origin in a packaged build (rendererUrl passed, no dev server)", () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', '');
 
-    const win = createWindow('http://localhost:54321');
+    const win = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
 
     expect(win.loadURL).toHaveBeenCalledWith('http://localhost:54321');
     expect(win.loadFile).not.toHaveBeenCalled();
@@ -214,17 +129,15 @@ describe('createWindow — renderer loading', () => {
   it('prefers the dev server URL over rendererUrl when both are present', () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
 
-    const win = createWindow('http://localhost:54321');
+    const win = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
 
     expect(win.loadURL).toHaveBeenCalledWith('http://localhost:5173');
   });
 });
 
 describe('isOwnOrigin', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   // The module under test resolves its renderer bundle relative to its own
   // location (`resolve(__dirname, '../renderer')` — same layout as loadFile),
   // so these tests build file:// URLs against that same directory.
@@ -289,91 +202,194 @@ describe('isOwnOrigin', () => {
   });
 });
 
-describe('createWindow — external links and navigation guard (P2a)', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllEnvs();
+describe('createWindow — window.open (C2)', () => {
+  it("opens the app's own origin as a second cockpit window, not in the system browser", () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const opener = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
+
+    const result = windowOpenHandler(opener)({ url: 'http://localhost:54321/session?id=42' });
+
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    expect(result).toEqual({ action: 'deny' });
+    // Electron's own `allow` path would produce a popup shaped by the page's
+    // `features` string; the second window is built here instead.
+    expect(BrowserWindow.instances).toHaveLength(2);
+    const second = BrowserWindow.instances[1];
+    expect(second.loadURL).toHaveBeenCalledWith('http://localhost:54321/session?id=42');
   });
 
-  describe('setWindowOpenHandler', () => {
-    it('opens an http(s) URL in the system browser and denies the in-app window', () => {
-      const win = createWindow();
-      const handler = vi.mocked(win.webContents.setWindowOpenHandler).mock
-        .calls[0][0] as (details: { url: string }) => { action: string };
+  it('gives the second window the same locked-down webPreferences as the first', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const opener = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
 
-      const result = handler({ url: 'https://example.com/docs' });
+    windowOpenHandler(opener)({ url: 'http://localhost:54321/agents' });
 
-      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/docs');
-      expect(result).toEqual({ action: 'deny' });
+    const second = BrowserWindow.instances[1];
+    expect(second.options.webPreferences).toEqual(opener.options.webPreferences);
+    expect(second.options.webPreferences).toMatchObject({
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     });
-
-    it('denies a non-http(s) scheme without opening it externally', () => {
-      const win = createWindow();
-      const handler = vi.mocked(win.webContents.setWindowOpenHandler).mock
-        .calls[0][0] as (details: { url: string }) => { action: string };
-
-      const result = handler({ url: 'mailto:someone@example.com' });
-
-      expect(shell.openExternal).not.toHaveBeenCalled();
-      expect(result).toEqual({ action: 'deny' });
-    });
+    expect((second.options.webPreferences as { preload: string }).preload).toContain('preload');
   });
 
-  describe('will-navigate guard', () => {
-    it('blocks navigation to a foreign origin and hands http(s) off to the system browser', async () => {
-      vi.stubEnv('ELECTRON_RENDERER_URL', '');
-      const win = createWindow();
-      const preventDefault = vi.fn();
+  it('guards the second window the same way, so it can open a third and still refuse foreign links', () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const opener = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
+    windowOpenHandler(opener)({ url: 'http://localhost:54321/agents' });
 
-      await win.webContents.emit('will-navigate', {
-        url: 'https://example.com/evil',
-        preventDefault,
-      });
+    const second = BrowserWindow.instances[1];
+    expect(windowOpenHandler(second)({ url: 'https://example.com' })).toEqual({ action: 'deny' });
+    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com');
+  });
 
-      expect(preventDefault).toHaveBeenCalledTimes(1);
-      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/evil');
+  it('only the first window persists its geometry — two writers would race one file', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ x: 100, y: 100, width: 1000, height: 700, isMaximized: false })
+    );
+    const opener = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
+    windowOpenHandler(opener)({ url: 'http://localhost:54321/agents' });
+
+    const second = BrowserWindow.instances[1];
+    await second.emit('close');
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(writeFileSync).not.toHaveBeenCalled();
+
+    await opener.emit('close');
+    expect(writeFileSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens an http(s) URL in the system browser and denies the in-app window', () => {
+    const win = createWindow() as unknown as MockBrowserWindow;
+
+    const result = windowOpenHandler(win)({ url: 'https://example.com/docs' });
+
+    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/docs');
+    expect(result).toEqual({ action: 'deny' });
+    expect(BrowserWindow.instances).toHaveLength(1);
+  });
+
+  it('denies a non-http(s) scheme without opening it externally', () => {
+    const win = createWindow() as unknown as MockBrowserWindow;
+
+    const result = windowOpenHandler(win)({ url: 'mailto:someone@example.com' });
+
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    expect(result).toEqual({ action: 'deny' });
+  });
+});
+
+describe('createWindow — will-navigate guard', () => {
+  it('blocks navigation to a foreign origin and hands http(s) off to the system browser', async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const win = createWindow() as unknown as MockBrowserWindow;
+    const preventDefault = vi.fn();
+
+    await win.webContents.emit('will-navigate', {
+      url: 'https://example.com/evil',
+      preventDefault,
     });
 
-    it("allows navigation to the app's own origin", async () => {
-      vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
-      const win = createWindow();
-      const preventDefault = vi.fn();
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/evil');
+  });
 
-      await win.webContents.emit('will-navigate', {
-        url: 'http://localhost:5173/agents',
-        preventDefault,
-      });
+  it("allows navigation to the app's own origin", async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+    const win = createWindow() as unknown as MockBrowserWindow;
+    const preventDefault = vi.fn();
 
-      expect(preventDefault).not.toHaveBeenCalled();
-      expect(shell.openExternal).not.toHaveBeenCalled();
+    await win.webContents.emit('will-navigate', {
+      url: 'http://localhost:5173/agents',
+      preventDefault,
     });
 
-    it("allows navigation to the bundled server's localhost origin in a packaged build", async () => {
-      vi.stubEnv('ELECTRON_RENDERER_URL', '');
-      const win = createWindow('http://localhost:54321');
-      const preventDefault = vi.fn();
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
 
-      await win.webContents.emit('will-navigate', {
-        url: 'http://localhost:54321/agents',
-        preventDefault,
-      });
+  it("allows navigation to the bundled server's localhost origin in a packaged build", async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const win = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
+    const preventDefault = vi.fn();
 
-      expect(preventDefault).not.toHaveBeenCalled();
-      expect(shell.openExternal).not.toHaveBeenCalled();
+    await win.webContents.emit('will-navigate', {
+      url: 'http://localhost:54321/agents',
+      preventDefault,
     });
 
-    it('still blocks a foreign origin in a packaged build (rendererUrl set)', async () => {
-      vi.stubEnv('ELECTRON_RENDERER_URL', '');
-      const win = createWindow('http://localhost:54321');
-      const preventDefault = vi.fn();
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
 
-      await win.webContents.emit('will-navigate', {
-        url: 'https://example.com/evil',
-        preventDefault,
-      });
+  it('still blocks a foreign origin in a packaged build (rendererUrl set)', async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const win = createWindow({
+      getRendererUrl: origin('http://localhost:54321'),
+    }) as unknown as MockBrowserWindow;
+    const preventDefault = vi.fn();
 
-      expect(preventDefault).toHaveBeenCalledTimes(1);
-      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/evil');
+    await win.webContents.emit('will-navigate', {
+      url: 'https://example.com/evil',
+      preventDefault,
     });
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/evil');
+  });
+
+  it('follows the server to a new port after a restart, instead of externalising our own pages (H4)', async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    let port = 54321;
+    const win = createWindow({
+      getRendererUrl: () => `http://localhost:${port}`,
+    }) as unknown as MockBrowserWindow;
+
+    // The server crashed and came back on a different port.
+    port = 54999;
+    const preventDefault = vi.fn();
+    await win.webContents.emit('will-navigate', {
+      url: 'http://localhost:54999/agents',
+      preventDefault,
+    });
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+});
+
+describe('makeRendererUrlAccessor', () => {
+  it('is undefined in dev, where electron-vite serves the renderer', () => {
+    app.isPackaged = false;
+    expect(makeRendererUrlAccessor(() => 4242)()).toBeUndefined();
+  });
+
+  it('is undefined while no server is running', () => {
+    app.isPackaged = true;
+    expect(makeRendererUrlAccessor(() => null)()).toBeUndefined();
+  });
+
+  it("is the server's own origin in a packaged build, re-read every call", () => {
+    app.isPackaged = true;
+    let port: number | null = 4242;
+    const accessor = makeRendererUrlAccessor(() => port);
+
+    expect(accessor()).toBe('http://localhost:4242');
+    port = 5555;
+    expect(accessor()).toBe('http://localhost:5555');
   });
 });

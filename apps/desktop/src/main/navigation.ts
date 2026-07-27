@@ -12,6 +12,13 @@ import type { BrowserWindow } from 'electron';
 export const SETTINGS_ROUTE = '/?settings=open';
 
 /**
+ * Client route the tray's "Activity" item opens — the cockpit's live view of
+ * what every agent is doing, which is the follow-up question the tray's own
+ * "3 agents working" line provokes.
+ */
+export const ACTIVITY_ROUTE = '/activity';
+
+/**
  * Send the `navigate` IPC message to a window's renderer, asking the client's
  * TanStack Router to route to `path` (see ADR 260709-210223). This is the
  * low-level delivery primitive: it always sends immediately over the wire,

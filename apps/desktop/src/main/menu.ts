@@ -1,7 +1,7 @@
-import { app, Menu, shell } from 'electron';
-import type { BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu, shell } from 'electron';
 import { requestNavigate, SETTINGS_ROUTE } from './navigation';
 import { checkForUpdatesInteractive } from './auto-updater';
+import { requestCloseTab } from './close-tab';
 
 /**
  * Build the "Settings…" menu item. Shared by every platform's menu —
@@ -39,6 +39,36 @@ function buildCheckForUpdatesItem(): Electron.MenuItemConstructorOptions {
     enabled: app.isPackaged,
     click: () => checkForUpdatesInteractive(),
   };
+}
+
+/**
+ * Build the two closing items every platform's Window menu shares.
+ *
+ * `CmdOrCtrl+W` used to be Electron's `close` role, which takes the whole
+ * window down — wrong once the cockpit has tabs in it, where the keystroke
+ * means "close this tab". It now asks the focused renderer first and closes the
+ * window only if the renderer has nothing to close or does not answer (see
+ * `close-tab.ts`). `CmdOrCtrl+Shift+W` keeps the old, unconditional behaviour,
+ * so there is always a keystroke that closes the window itself.
+ *
+ * **The label is "Close", not "Close Tab", on purpose.** Nothing in the client
+ * subscribes to `onCloseTab` yet, so today this closes the window — and a menu
+ * item that names something the product does not do is a promise it breaks the
+ * moment someone reads it. "Close" is honest either way. Rename it to
+ * "Close Tab" in the same change that ships the renderer's tab handling, not
+ * before.
+ */
+function buildWindowClosingItems(): Electron.MenuItemConstructorOptions[] {
+  return [
+    {
+      label: 'Close',
+      accelerator: 'CmdOrCtrl+W',
+      // Looked up here rather than taken from the click handler's second
+      // argument, which Electron types as the broader `BaseWindow`.
+      click: () => requestCloseTab(BrowserWindow.getFocusedWindow()),
+    },
+    { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', role: 'close' },
+  ];
 }
 
 /** Build the 3 external links every platform's Help menu shares. */
@@ -84,6 +114,7 @@ export function setupMenu(
   const settingsItem = buildSettingsItem(getMainWindow, ensureWindow);
   const checkForUpdatesItem = buildCheckForUpdatesItem();
   const helpLinkItems = buildHelpLinkItems();
+  const windowClosingItems = buildWindowClosingItems();
 
   const template: Electron.MenuItemConstructorOptions[] =
     process.platform === 'darwin'
@@ -108,7 +139,25 @@ export function setupMenu(
           },
           { role: 'editMenu' },
           { role: 'viewMenu' },
-          { role: 'windowMenu' },
+          // The role is kept while the submenu is replaced. Dropping it and
+          // hand-building a "Window" menu costs the macOS windows menu — the
+          // role is what hands this submenu to `NSApp.setWindowsMenu:`, which
+          // is what adds the automatic list of open windows and the checkmark
+          // on the frontmost one. That matters more now, not less: this is the
+          // release where a second cockpit window became possible. Verified
+          // against a real Electron build that the custom submenu survives the
+          // role rather than being replaced by the default.
+          {
+            role: 'windowMenu',
+            submenu: [
+              { role: 'minimize' },
+              { role: 'zoom' },
+              { type: 'separator' },
+              ...windowClosingItems,
+              { type: 'separator' },
+              { role: 'front' },
+            ],
+          },
           {
             role: 'help',
             submenu: helpLinkItems,
@@ -153,7 +202,7 @@ export function setupMenu(
           },
           {
             label: 'Window',
-            submenu: [{ role: 'minimize' }, { role: 'close' }],
+            submenu: [{ role: 'minimize' }, ...windowClosingItems],
           },
           {
             label: 'Help',
