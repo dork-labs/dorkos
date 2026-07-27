@@ -41,7 +41,6 @@ describe('ShortcutsPanel', () => {
     render(<ShortcutsPanel />);
 
     expect(screen.getByText('Navigation')).toBeInTheDocument();
-    expect(screen.getByText('Sessions')).toBeInTheDocument();
     expect(screen.getByText('Chat')).toBeInTheDocument();
     expect(screen.getByText('Global')).toBeInTheDocument();
   });
@@ -51,7 +50,6 @@ describe('ShortcutsPanel', () => {
     render(<ShortcutsPanel />);
 
     expect(screen.getByText('Command palette')).toBeInTheDocument();
-    expect(screen.getByText('New session')).toBeInTheDocument();
     expect(screen.getByText('Toggle sidebar')).toBeInTheDocument();
     expect(screen.getByText('Keyboard shortcuts')).toBeInTheDocument();
   });

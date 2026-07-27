@@ -134,35 +134,58 @@ const indexRoute = createRoute({
 // ── Session/chat at /session ────────────────────────────────
 
 /**
+ * The search params {@link sessionRouteLoader} reads. Declaring them is what
+ * makes the loader re-run when they change: without `loaderDeps` a loader runs
+ * on entry to the route and never again, so navigating from
+ * `/session?session=A&dir=X` to `/session?dir=Y` **within** `/session` left the
+ * URL session-less — a page where the durable stream never attaches and the
+ * composer cannot accept text. Dialog params (`?settings=`, `?agent=`) are
+ * deliberately absent: opening a dialog must not re-run session selection.
+ *
+ * @internal Exported for testing only.
+ */
+export function sessionLoaderDeps({ search }: { search: SessionSearch }) {
+  return {
+    session: search.session,
+    dir: search.dir,
+    runtime: search.runtime,
+    prompt: search.prompt,
+  };
+}
+
+/** What {@link sessionRouteLoader} receives, mirroring {@link sessionLoaderDeps}. */
+export type SessionLoaderDeps = ReturnType<typeof sessionLoaderDeps>;
+
+/**
  * Loader for the /session route. Redirects to the most recent cached session
  * or generates a speculative UUID when no session param is provided.
+ *
+ * Reads its inputs from `deps` rather than re-parsing the URL, so the values it
+ * acts on are exactly the ones {@link sessionLoaderDeps} declared — a param
+ * read here but missing there would silently stop triggering a re-run.
  *
  * @internal Exported for testing only.
  */
 export function sessionRouteLoader({
   context: { queryClient },
-  location,
+  deps,
 }: {
   context: { queryClient: QueryClient };
-  location: { searchStr: string };
+  deps: SessionLoaderDeps;
 }) {
-  const params = new URLSearchParams(location.searchStr);
-  const session = params.get('session');
-
   // Session already specified — nothing to do
-  if (session) return;
+  if (deps.session) return;
 
-  // Read cached session list (may be stale or empty on first load)
-  const dir = params.get('dir') ?? undefined;
-  // Launch-time runtime selection — must survive the auto-select/UUID redirects
-  // so the first message can carry it as the session's runtime hint.
-  const runtime = params.get('runtime') ?? undefined;
-  // Launch-time prompt seed ("Run this with…") — carried ONLY onto the fresh-UUID
-  // branch below so a new session's composer is pre-filled. It is deliberately
-  // NOT propagated onto the auto-select-existing-session redirect: a seed must
-  // never ride an existing session (defense-in-depth atop ChatPanel's empty-only
-  // guard).
-  const prompt = params.get('prompt') ?? undefined;
+  const { dir, runtime } = deps;
+  // `runtime` is the launch-time runtime selection: it must survive the
+  // auto-select/UUID redirects so the first message can carry it as the
+  // session's runtime hint.
+  //
+  // `prompt` is the launch-time seed ("Run this with…"), carried ONLY onto the
+  // fresh-UUID branch below so a new session's composer is pre-filled. It is
+  // deliberately NOT propagated onto the auto-select-existing-session redirect:
+  // a seed must never ride an existing session (defense-in-depth atop
+  // ChatPanel's empty-only guard).
   const sessions = queryClient.getQueryData<Session[]>(['sessions', dir ?? null]);
 
   if (sessions && sessions.length > 0) {
@@ -177,7 +200,7 @@ export function sessionRouteLoader({
   // No sessions cached — generate a fresh UUID for a new session
   throw redirect({
     to: '/session',
-    search: { session: crypto.randomUUID(), dir, runtime, prompt },
+    search: { session: crypto.randomUUID(), dir, runtime, prompt: deps.prompt },
     replace: true,
   });
 }
@@ -187,6 +210,7 @@ const sessionRoute = createRoute({
   path: '/session',
   validateSearch: zodValidator(sessionSearchSchema),
   component: SessionPage,
+  loaderDeps: sessionLoaderDeps,
   loader: sessionRouteLoader,
 });
 

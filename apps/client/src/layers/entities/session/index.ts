@@ -7,6 +7,7 @@ export { useSessions, useSessionListWarnings, insertOptimisticSession } from './
 export { useAgentSessions } from './model/use-agent-sessions';
 export { selectAgentSessions } from './lib/select-agent-sessions';
 export { switchAgentCwd } from './lib/switch-agent-cwd';
+export { resolveSessionForCwd } from './lib/resolve-session-for-cwd';
 export type { SwitchAgentCwdStore, SwitchAgentCwdDeps } from './lib/switch-agent-cwd';
 // Context-health — the one client source for context percent, thresholds, and severity.
 export {

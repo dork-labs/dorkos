@@ -167,6 +167,30 @@ describe('useInteractiveShortcuts', () => {
       expect(onToggleOption).toHaveBeenCalledWith(4);
     });
 
+    it('leaves modified chords to the window shortcuts that own them', () => {
+      // DOR-540: `Cmd/Ctrl+1`-`9` switch window tabs. Neither handler stops
+      // propagation, so without a modifier guard here the same keystroke both
+      // switched tabs and toggled an answer option.
+      renderHook(() =>
+        useInteractiveShortcuts({
+          activeInteraction: questionInteraction,
+          onToggleOption,
+          onSubmit,
+          optionCount: 5,
+        })
+      );
+
+      fireKey('1', { metaKey: true });
+      fireKey('2', { ctrlKey: true });
+      fireKey('Enter', { metaKey: true });
+      expect(onToggleOption).not.toHaveBeenCalled();
+      expect(onSubmit).not.toHaveBeenCalled();
+
+      // The unmodified key still works.
+      fireKey('1');
+      expect(onToggleOption).toHaveBeenCalledWith(0);
+    });
+
     it('ignores digit keys beyond optionCount', () => {
       renderHook(() =>
         useInteractiveShortcuts({

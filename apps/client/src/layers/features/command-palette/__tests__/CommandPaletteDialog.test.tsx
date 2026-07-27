@@ -3,10 +3,22 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
+import { registerTabOpener } from '@/layers/shared/lib';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+
+/**
+ * The palette resolves which session an agent should open on from the query
+ * cache, so it needs a real client. A fresh one per render keeps each case's
+ * cache empty, which is the "no cached sessions yet" branch.
+ */
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 // jsdom does not implement ResizeObserver (required by cmdk CommandList)
 globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
@@ -120,7 +132,10 @@ vi.mock('@/layers/shared/model', () => ({
 }));
 
 const mockSetDir = vi.fn();
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // Keep the real session resolver — the palette builds its hrefs with it, and
+  // faking it would hide whether those hrefs carry a session at all.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => ['/projects/current', mockSetDir],
 }));
 
@@ -335,6 +350,7 @@ describe('CommandPaletteDialog', () => {
     // Sub-menu should appear with all agent actions
     expect(screen.getByText('Open Here')).toBeInTheDocument();
     expect(screen.getByText('Open in New Tab')).toBeInTheDocument();
+    expect(screen.getByText('Open in New Window')).toBeInTheDocument();
     expect(screen.getByText('New Session')).toBeInTheDocument();
     expect(screen.getByText('Edit Worker Settings')).toBeInTheDocument();
   });
@@ -347,12 +363,12 @@ describe('CommandPaletteDialog', () => {
     expect(screen.getByText('Agent: Worker')).toBeInTheDocument();
   });
 
-  it('opens a second cockpit window — not the system browser — from Open in New Tab', () => {
-    // DOR-534: the palette used to hand its own origin to `window.open` with no
-    // classification, so the packaged desktop shell forwarded the cockpit to
-    // Chrome. The target must stay same-origin, on an app route, carrying the
-    // agent's directory — and keep the plain `_blank` shape the desktop shell
-    // turns into a real DorkOS window.
+  it('opens an in-window tab on the agent\u2019s project from Open in New Tab', () => {
+    // DOR-540: this used to be a second window (and before DOR-534, a hand-off
+    // to Chrome). It is now a tab in this window, aimed at `/session` with only
+    // the agent's directory — the loader resolves which session that becomes.
+    const opened: string[] = [];
+    const unregister = registerTabOpener((href) => opened.push(href));
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -360,17 +376,52 @@ describe('CommandPaletteDialog', () => {
     const newTabItem = screen.getByText('Open in New Tab').closest('[data-slot="command-item"]');
     if (newTabItem) fireEvent.click(newTabItem as Element);
 
-    expect(openSpy).toHaveBeenCalledTimes(1);
-    // Asserting the WHOLE call pins the arity: a third argument would fail
-    // this, which is the point — `noopener` must never be added here.
-    expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
-    const opened = new URL(String(openSpy.mock.calls[0][0]));
-    expect(opened.origin).toBe(window.location.origin);
-    expect(opened.pathname).toBe('/');
-    expect(opened.searchParams.get('dir')).toBe('/projects/current');
+    expect(opened).toHaveLength(1);
+    const target = new URL(opened[0], window.location.origin);
+    expect(target.pathname).toBe('/session');
+    expect(target.searchParams.get('dir')).toBe('/projects/current');
+    // Names the session up front, so the tab lands on a real session in one
+    // navigation instead of bouncing through the loader's redirect.
+    expect(target.searchParams.get('session')).toBeTruthy();
+    // …and not the session of whatever tab you were already reading.
+    expect(target.searchParams.get('session')).not.toBe('session-in-progress');
+    // A tab is not a window.
+    expect(openSpy).not.toHaveBeenCalled();
     expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
 
     openSpy.mockRestore();
+    unregister();
+  });
+
+  it('opens a second cockpit window \u2014 not a tab \u2014 from Open in New Window', () => {
+    // "Another tab" and "put this on my other monitor" are different requests,
+    // so the strip must not absorb the second one. Same target as the tab
+    // action; only where it lands differs.
+    const opened: string[] = [];
+    const unregister = registerTabOpener((href) => opened.push(href));
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<CommandPaletteDialog />);
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    const newWindowItem = screen
+      .getByText('Open in New Window')
+      .closest('[data-slot="command-item"]');
+    if (newWindowItem) fireEvent.click(newWindowItem as Element);
+
+    expect(opened).toEqual([]);
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    // Asserting the WHOLE call pins the arity: the desktop shell adopts a
+    // same-origin `_blank` as a DorkOS window, and a `noopener` third argument
+    // would forfeit that.
+    expect(openSpy).toHaveBeenCalledWith(expect.any(String), '_blank');
+    const target = new URL(String(openSpy.mock.calls[0][0]));
+    expect(target.origin).toBe(window.location.origin);
+    expect(target.pathname).toBe('/session');
+    expect(target.searchParams.get('dir')).toBe('/projects/current');
+    expect(target.searchParams.get('session')).toBeTruthy();
+
+    openSpy.mockRestore();
+    unregister();
   });
 
   it('calls recordUsage and setDir when Open Here is clicked in sub-menu', () => {

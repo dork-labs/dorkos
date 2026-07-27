@@ -5,7 +5,7 @@ import { getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { useSessionId } from './use-session-id';
-import type { Session } from '@dorkos/shared/types';
+import { resolveSessionForCwd } from '../lib/resolve-session-for-cwd';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
 export interface SetDirOptions {
@@ -73,15 +73,11 @@ export function useDirectoryState(): [
             search: (prev) => ({ ...prev, dir }),
           });
         } else {
-          // Always include a session ID so the URL has ?session=. Without it,
-          // sessionId is null and the chat input cannot accept text (controlled
-          // input resets). Mirror the sessionRouteLoader logic: reuse the
-          // most-recent cached session for the target dir, or generate a fresh UUID.
-          const cached = queryClient.getQueryData<Session[]>(['sessions', dir]);
-          const session = cached?.[0]?.id ?? crypto.randomUUID();
+          // Always include a session ID so the URL has ?session=; without it the
+          // chat input cannot accept text.
           void navigate({
             to: '/session',
-            search: { dir, session },
+            search: { dir, session: resolveSessionForCwd(queryClient, dir) },
           });
         }
       } else {

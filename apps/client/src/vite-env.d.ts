@@ -43,6 +43,25 @@ declare global {
      */
     getPendingNavigate(): Promise<string | null>;
     /**
+     * Subscribe to `Cmd/Ctrl+W` so the renderer can close one of its in-window
+     * tabs instead of the whole window (DOR-540). Mirrors the contract in the
+     * desktop preload — read that for the authoritative version.
+     *
+     * **Subscribing is what claims the keystroke**, and the answer decides what
+     * happens: return `true` when you closed a tab and the window stays open;
+     * return `false` or nothing and the window closes, which is the right
+     * answer for the last tab. Throwing, or taking longer than the main
+     * process's backstop timeout, also closes the window — so the handler must
+     * do its work **synchronously**.
+     *
+     * **Optional on purpose.** It is absent in the browser cockpit, in the
+     * Obsidian embed, and in any desktop build predating the menu item, so
+     * every caller must guard on it.
+     *
+     * @returns An unsubscribe function that removes the listener.
+     */
+    onCloseTab?(cb: () => boolean | void): () => void;
+    /**
      * Restart the app to install a downloaded update — wired to the in-app
      * card's "Restart to install" button. Only meaningful after an
      * {@link onUpdateStatus} `downloaded` event.

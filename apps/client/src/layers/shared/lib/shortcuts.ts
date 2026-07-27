@@ -13,18 +13,17 @@ export interface ShortcutDef {
 }
 
 /** Categories for grouping shortcuts in the reference panel. */
-export type ShortcutGroup = 'sessions' | 'navigation' | 'chat' | 'global';
+export type ShortcutGroup = 'navigation' | 'chat' | 'global';
 
 /** Group display order and labels. */
 export const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
   navigation: 'Navigation',
-  sessions: 'Sessions',
   chat: 'Chat',
   global: 'Global',
 };
 
 /** Display order for groups in the reference panel. */
-export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'sessions', 'chat', 'global'];
+export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'chat', 'global'];
 
 /** All keyboard shortcuts in the application. Single source of truth. */
 export const SHORTCUTS = {
@@ -59,9 +58,20 @@ export const SHORTCUTS = {
     label: 'Agent profile',
     group: 'navigation',
   },
-
-  // Sessions
-  NEW_SESSION: { id: 'new-session', key: 'mod+shift+n', label: 'New session', group: 'sessions' },
+  // In-window tabs (DOR-540). All four are registered by `useAppTabShortcuts`.
+  // In the browser cockpit the browser claims these combos for its own tabs
+  // before the page ever sees them, so they are live in the desktop app; the
+  // strip's "+" button, its arrow-key traversal, and the command palette are
+  // the surfaces that work everywhere.
+  NEW_TAB: { id: 'new-tab', key: 'mod+t', label: 'New tab', group: 'navigation' },
+  SELECT_TAB: { id: 'select-tab', key: 'mod+1-9', label: 'Go to tab', group: 'navigation' },
+  PREVIOUS_TAB: {
+    id: 'previous-tab',
+    key: 'mod+shift+[',
+    label: 'Previous tab',
+    group: 'navigation',
+  },
+  NEXT_TAB: { id: 'next-tab', key: 'mod+shift+]', label: 'Next tab', group: 'navigation' },
 
   // Chat (composer + interactive tool shortcuts)
   NEW_LINE: { id: 'new-line', key: 'shift+enter', label: 'New line', group: 'chat' },

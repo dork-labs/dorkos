@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { resolveSessionForCwd } from '@/layers/entities/session';
 import { cn, openLink, supportsNewTab } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
@@ -70,22 +72,64 @@ export function CommandPaletteDialog() {
     selectedCwd,
   } = usePaletteActions(closePalette);
 
-  // "Open in New Tab" — a second cockpit window aimed at this agent's project.
-  // The href is query-only on purpose: the link seam merges it into the current
-  // search, so the new window lands on the same route in the same state, just
-  // pointed at another agent. Where there is no second window to open (the
-  // Obsidian embed), open the agent here rather than dropping the action.
+  const queryClient = useQueryClient();
+
+  // Where an agent should open, as a `/session` href.
+  //
+  // It names the session up front rather than leaving `?session=` off for the
+  // route loader to fill in. The loader would get there — it declares its
+  // inputs, so it re-runs — but only by redirecting, which costs a second
+  // navigation and a history `REPLACE` the tab reconciler then has to absorb,
+  // and leaves a frame where a new tab is named after an href it is about to
+  // lose. This is the same resolution "Open Here" performs, so all three
+  // actions agree on which session an agent is on.
+  //
+  // It also carries ONLY this agent's directory. Inheriting the current
+  // `?session=` would aim the new view at the session you were already reading,
+  // under a different project — and the durable stream resolves history from
+  // `?cwd=`, so that mismatch reads the wrong project's transcript.
+  const agentHref = useCallback(
+    (agent: AgentPathEntry) =>
+      `/session?${new URLSearchParams({
+        dir: agent.projectPath,
+        session: resolveSessionForCwd(queryClient, agent.projectPath),
+      }).toString()}`,
+    [queryClient]
+  );
+
+  // "Open in New Tab" — this agent in a new tab of this window (DOR-540). Where
+  // there is no second view to open (the Obsidian embed), open the agent here
+  // rather than dropping the action.
   const openAgentInNewTab = useCallback(
     (agent: AgentPathEntry) => {
       if (!supportsNewTab()) {
         handleAgentSelect(agent);
         return;
       }
-      openLink(`?${new URLSearchParams({ dir: agent.projectPath }).toString()}`, { newTab: true });
+      openLink(agentHref(agent), { target: 'tab' });
       recordUsage(agent.id);
       closePalette();
     },
-    [handleAgentSelect, recordUsage, closePalette]
+    [agentHref, handleAgentSelect, recordUsage, closePalette]
+  );
+
+  // "Open in New Window" — the same target, in a second cockpit window instead
+  // of a tab. Kept as its own action rather than a modifier on the tab one:
+  // parking an agent on a second monitor is a different intent from wanting
+  // another tab, and this list is where a person already chooses where an agent
+  // lands. In the embed there is no second window, so it falls back like the
+  // tab action does.
+  const openAgentInNewWindow = useCallback(
+    (agent: AgentPathEntry) => {
+      if (!supportsNewTab()) {
+        handleAgentSelect(agent);
+        return;
+      }
+      openLink(agentHref(agent), { target: 'window' });
+      recordUsage(agent.id);
+      closePalette();
+    },
+    [agentHref, handleAgentSelect, recordUsage, closePalette]
   );
 
   const {
@@ -369,6 +413,7 @@ export function CommandPaletteDialog() {
                         agent={subMenuAgent}
                         onOpenHere={() => handleAgentSelect(subMenuAgent)}
                         onOpenNewTab={() => openAgentInNewTab(subMenuAgent)}
+                        onOpenNewWindow={() => openAgentInNewWindow(subMenuAgent)}
                         onNewSession={() => {
                           setDir(subMenuAgent.projectPath);
                           recordUsage(subMenuAgent.id);

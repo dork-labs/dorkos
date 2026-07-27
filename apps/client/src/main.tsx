@@ -17,6 +17,7 @@ import {
   reportClientError,
   installClientErrorHandlers,
   registerLinkNavigator,
+  registerTabOpener,
 } from '@/layers/shared/lib';
 import {
   TransportProvider,
@@ -25,6 +26,7 @@ import {
   useThemeStore,
   EventStreamProvider,
 } from '@/layers/shared/model';
+import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { switchAgentCwd } from '@/layers/entities/session';
 import { applyShapeAction } from '@/layers/entities/shapes';
@@ -239,6 +241,13 @@ const router = createAppRouter(queryClient);
 // through here instead of a document load, so the desktop shell never hands one
 // of our own URLs to the system browser (DOR-534).
 registerLinkNavigator(({ href, replace }) => void router.navigate({ href, replace }));
+
+// …and its tab strip. `target: 'tab'` links — the palette's "Open in New Tab",
+// anything that wants a second view without losing the first — add a tab here
+// and navigate into it (DOR-540). Registered only in the standalone cockpit:
+// the Obsidian embed never runs this entry, so a tab request degrades there to
+// an in-place navigation, which is the only thing one pane can do.
+registerTabOpener((href) => openTabAt(router, href));
 
 // Electron serves the API on a dynamic localhost port (preload bridge); web mode
 // uses the relative /api path. Shared with the auth client so both hit one origin.
