@@ -240,18 +240,37 @@ describe('cascade guard, wired', () => {
     );
   });
 
-  it('still starts a fresh cascade for an agent posting with no turn in flight', async () => {
-    // The rule is "provenance follows the turn", not "agents never start
-    // cascades". An agent posting of its own accord — a finished task, a status
-    // update — is a legitimate start, and it is bounded anyway: to loop, it must
-    // be re-triggered, and by then it is inside a turn.
+  it('gives an agent posting with no turn in flight a cascade that is already spent', async () => {
+    // The shell case: an agent holds its identity token (it is in every spawned
+    // session's environment) and calls `POST /api/rooms/:id/entries` with
+    // nothing in flight. Keying the fresh start on "no trigger argument" made
+    // this a full guard bypass — 30 posts, 30 turns, 30 roots, max depth 0, not
+    // one notice. Its post is durable and readable; what it must not do is buy
+    // another model call.
     const spontaneous = service.post(room.id, { authorId: ana, text: 'deploy finished' });
     await service.triggersIdle();
 
     expect(spontaneous.cascadeRoot).toBe(spontaneous.id);
-    expect(spontaneous.cascadeDepth).toBe(0);
-    // And it does address the room: Bo answers it.
-    expect(runner.turns.map((t) => t.authorId)).toContain(bo);
+    expect(spontaneous.cascadeDepth).toBe(MAX_AGENT_DEPTH);
+    expect(runner.turns).toHaveLength(0);
+    // Refused visibly, not silently — that is the whole point of the notice.
+    expect(log().some((entry) => entry.kind === 'notice')).toBe(true);
+  });
+
+  it('does not let an agent buy turns by posting in a loop', async () => {
+    // The reviewer's attack, run against the real service and dispatcher.
+    for (let i = 0; i < 30; i++) {
+      service.post(room.id, { authorId: ana, text: `spam ${i}` });
+      await service.triggersIdle();
+    }
+    expect(runner.turns).toHaveLength(0);
+  });
+
+  it('still lets the operator start a conversation the agents answer', async () => {
+    // The fix must not become "nothing ever triggers". A person's post is the
+    // one thing that resets the count, which is exactly what §6 grants.
+    await seedAndSettle('what do you two think?');
+    expect(runner.turns.map((t) => t.authorId).sort()).toEqual([ana, bo].sort());
   });
 
   it('stops replying entirely when the ceiling is zero', async () => {
@@ -389,14 +408,34 @@ describe('evaluateCascade', () => {
 });
 
 describe('deriveCascade', () => {
-  it('starts an untriggered post fresh, at its own id and depth 0', () => {
-    expect(deriveCascade('E7')).toEqual({ cascadeRoot: 'E7', cascadeDepth: 0 });
+  it('starts a HUMAN untriggered post fresh, at its own id and depth 0', () => {
+    expect(deriveCascade('E7', { authorKind: 'human', maxAgentDepth: 3 })).toEqual({
+      cascadeRoot: 'E7',
+      cascadeDepth: 0,
+    });
   });
 
-  it('inherits the trigger provenance when there is one', () => {
-    expect(deriveCascade('E7', { root: 'E0', depth: 2 })).toEqual({
-      cascadeRoot: 'E0',
-      cascadeDepth: 2,
+  it('refuses an agent a fresh cascade, stamping it at the ceiling instead', () => {
+    // The rule is who is writing, not whether a `trigger` argument was passed.
+    // `POST /api/rooms/:id/entries` passes none and resolves an agent bearer to
+    // that agent, so keying on call shape let any agent with a shell mint depth
+    // 0 at will — 30 hops, 30 roots, max depth 0, no notice.
+    expect(deriveCascade('E7', { authorKind: 'agent', maxAgentDepth: 3 })).toEqual({
+      cascadeRoot: 'E7',
+      cascadeDepth: 3,
     });
+    // The room's own voice gets no reset either.
+    expect(deriveCascade('E7', { authorKind: 'system', maxAgentDepth: 3 })).toEqual({
+      cascadeRoot: 'E7',
+      cascadeDepth: 3,
+    });
+  });
+
+  it('inherits the trigger provenance when there is one, whoever is writing', () => {
+    for (const authorKind of ['human', 'agent', 'system'] as const) {
+      expect(
+        deriveCascade('E7', { trigger: { root: 'E0', depth: 2 }, authorKind, maxAgentDepth: 3 })
+      ).toEqual({ cascadeRoot: 'E0', cascadeDepth: 2 });
+    }
   });
 });

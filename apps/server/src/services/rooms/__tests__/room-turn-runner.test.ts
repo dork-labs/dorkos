@@ -16,15 +16,14 @@ const getCapabilities = vi.fn().mockReturnValue({ logBackedHistory: false, nativ
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
-    resolveForSession: () =>
-      Promise.resolve({
+    get: () => ({
         getCapabilities: () => getCapabilities(),
         acquireLock: () => true,
         releaseLock: () => undefined,
         sendMessage: () => undefined,
         interruptQuery: () => Promise.resolve(false),
         getInternalSessionId: () => undefined,
-      }),
+    }),
     has: () => true,
     getDefaultType: () => 'claude-code',
   },
@@ -133,6 +132,21 @@ describe('createSessionRoomTurnRunner', () => {
     turnBehaviour = () => ({ accepted: false });
     const result = await createSessionRoomTurnRunner().run(request());
     expect(result.text).toBeNull();
+  });
+
+  it('writes no runtime binding for a turn that never started', async () => {
+    // A ghost `session_metadata` row per failed message: `bindRoomSession` is
+    // never reached, so the next trigger mints a fresh id and the dead row and
+    // its projector stay forever.
+    turnBehaviour = () => ({ accepted: false });
+    await createSessionRoomTurnRunner().run(request());
+    expect(persistSessionRuntime).not.toHaveBeenCalled();
+
+    turnBehaviour = () => {
+      throw new Error('runtime is down');
+    };
+    await expect(createSessionRoomTurnRunner().run(request())).rejects.toThrow('runtime is down');
+    expect(persistSessionRuntime).not.toHaveBeenCalled();
   });
 
   it('treats an empty turn as nothing to post', async () => {

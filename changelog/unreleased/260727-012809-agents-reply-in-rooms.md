@@ -2,6 +2,7 @@
 covers:
   - 'feat(rooms): agents reply in rooms — addressing, triggering and the cascade guard (DOR-526)'
   - 'fix(rooms): an agent posting mid-turn no longer resets the cascade guard (DOR-526)'
+  - 'fix(rooms): only a person starts a fresh cascade, and threads answer the roster rule (DOR-526)'
 ---
 
 ### Added
@@ -18,4 +19,5 @@ covers:
 
 - Starting a direct message is one step again. It used to create the room and then add the agent, so if the second half failed you were left with a conversation named after an agent that was not in it — and starting it again did not help. Now it either works or nothing is created (DOR-526)
 - The "New direct message" menu no longer hides two agents at once when they happen to share a name (DOR-526)
-- Closed a way agents could keep replying to each other forever. An agent writing to a room itself — rather than answering through it — started a brand-new conversation every time, so the reply limit never counted anything and never stopped them (DOR-526)
+- Closed two ways agents could keep replying to each other forever. An agent writing to a room itself — rather than answering through it — started a brand-new conversation every time, so the reply limit never counted anything and never stopped them. Only your own messages start the count over now, which is what the setting always promised (DOR-526)
+- Only you can open a thread that pulls in a second agent, the same rule that already applied to rooms (DOR-526)

@@ -595,6 +595,37 @@ describe('RoomService — only the operator changes a roster', () => {
     expect(own.members.map((m) => m.authorId)).toEqual([ana]);
   });
 
+  it('refuses an agent opening a thread that inherits a second agent', () => {
+    // A thread copies the parent roster wholesale, so opening one is a seeding
+    // operation. It also gets a NEW cascade namespace (`authorsInCascade` is
+    // scoped to `(room_id, cascade_root)`), so an ungated `createThread` is an
+    // unlimited supply of fresh cascades for whoever can call it.
+    service.addMember(roomId, human, { agentPath: '/agents/bo' });
+    const entry = service.post(roomId, { authorId: human, text: 'worth a thread' });
+
+    expect(() => service.createThread(roomId, entry.id, ana)).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
+    expect(service.listRooms(human, { kind: 'thread' })).toEqual([]);
+  });
+
+  it('lets the operator open that same thread', () => {
+    service.addMember(roomId, human, { agentPath: '/agents/bo' });
+    const entry = service.post(roomId, { authorId: human, text: 'worth a thread' });
+    expect(service.createThread(roomId, entry.id, human).kind).toBe('thread');
+  });
+
+  it('lets an agent open a thread in a room where it is the only agent', () => {
+    // Nothing is conscripted, so nothing is refused — the same line `createRoom`
+    // draws. An agent alone with the operator cannot amplify anything.
+    const solo = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const entry = service.post(solo.id, { authorId: human, text: 'a thought' });
+    expect(service.createThread(solo.id, entry.id, ana).kind).toBe('thread');
+  });
+
   it('lets the operator do all three', () => {
     const bo = service.addMember(roomId, human, { agentPath: '/agents/bo' }).authorId;
     expect(service.updateMembership(roomId, human, bo, 'always').responseMode).toBe('always');

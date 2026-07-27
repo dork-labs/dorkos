@@ -23,7 +23,7 @@
  *
  * @module server/services/rooms/cascade-guard
  */
-import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
+import type { AuthorKind, RoomEntryBody } from '@dorkos/shared/room-schemas';
 
 /** Why a trigger was refused. */
 export type CascadeRefusalReason = 'depth' | 'ancestry';
@@ -82,21 +82,47 @@ export function evaluateCascade(
 /**
  * Where a post's own cascade begins.
  *
- * A human's post always starts fresh — its own id at depth 0 — which is exactly
- * what lets a person re-engage a room the guard has stopped. An agent's post
- * inherits the provenance of the trigger that produced it; without a trigger
- * (an agent posting of its own accord) it starts fresh too.
+ * **Gated on who is writing, never on how the call was shaped.** Spec §6 grants
+ * a fresh cascade to a **human** post, and only to that: it is what lets a
+ * person re-engage a room the guard has stopped, and it is a person's
+ * prerogative because a person is who the budget belongs to.
+ *
+ * An earlier revision keyed the fresh start on whether a `trigger` argument was
+ * passed, which reads as the same rule and is not. `POST /api/rooms/:id/entries`
+ * passes no trigger and resolves an `X-DorkOS-Agent` bearer to that agent — and
+ * the token sits in every spawned session's environment — so any agent with a
+ * shell could mint `cascadeDepth: 0` at will. Measured: two `always` agents
+ * posting through that path ran 30 hops, 30 turns, 30 distinct cascade roots,
+ * max depth 0 and not one refusal notice. Unbounded by depth, unbounded by
+ * ancestry, invisible in the room, one model call per hop. This is the exact
+ * failure ADR 260726-170127 predicted — "a path that forgets to carry it is
+ * unguarded and looks fine in tests".
+ *
+ * So an agent writing with no provenance behind it starts a cascade that is
+ * already spent: its own id, stamped AT the ceiling. The entry is durable and
+ * readable like any other, and anything it would address is refused by the
+ * depth rule — visibly, with a notice — instead of silently costing a turn.
+ * An agent that genuinely is mid-turn passes its `trigger` and is unaffected.
  *
  * @param entryId - The id of the entry being written.
- * @param trigger - The cascade the writing turn was triggered under, if any.
+ * @param opts.trigger - The cascade the writing turn was triggered under, if any.
+ * @param opts.authorKind - Who is writing. Only `human` starts fresh.
+ * @param opts.maxAgentDepth - The ceiling an un-provenanced agent post is stamped at.
  * @returns The `cascadeRoot` / `cascadeDepth` to persist on the entry.
  */
 export function deriveCascade(
   entryId: string,
-  trigger?: { root: string; depth: number }
+  opts: {
+    trigger?: { root: string; depth: number };
+    authorKind: AuthorKind;
+    maxAgentDepth: number;
+  }
 ): { cascadeRoot: string; cascadeDepth: number } {
-  if (!trigger) return { cascadeRoot: entryId, cascadeDepth: 0 };
-  return { cascadeRoot: trigger.root, cascadeDepth: trigger.depth };
+  if (opts.trigger) {
+    return { cascadeRoot: opts.trigger.root, cascadeDepth: opts.trigger.depth };
+  }
+  if (opts.authorKind === 'human') return { cascadeRoot: entryId, cascadeDepth: 0 };
+  return { cascadeRoot: entryId, cascadeDepth: opts.maxAgentDepth };
 }
 
 /**

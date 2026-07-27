@@ -63,8 +63,14 @@ export function createSessionRoomTurnRunner(): RoomTurnRunner {
     async run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       const sessionId = request.sessionId ?? randomUUID();
       const runtimeType = await resolveRuntimeType(request.agentPath);
-      await runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, request.agentPath);
-      const runtime = await runtimeRegistry.resolveForSession(sessionId);
+      // Resolve the runtime WITHOUT writing anything. `persistSessionRuntime`
+      // used to run here, before the turn was known to have started, so a
+      // runtime that reliably throws left one orphan `session_metadata` row (and
+      // one projector) per room message: `bindRoomSession` is never reached, the
+      // next trigger mints a fresh UUID, and the dead row stays forever. The
+      // registry's own docs warn about exactly this ghost-row shape.
+      const runtime = runtimeRegistry.get(runtimeType);
+      if (!runtime) throw new Error(`Runtime '${runtimeType}' is not registered`);
 
       const projector = getOrCreateProjector(sessionId, request.agentPath, {
         persist: runtime.getCapabilities().logBackedHistory === true,
@@ -99,6 +105,16 @@ export function createSessionRoomTurnRunner(): RoomTurnRunner {
           });
         },
       });
+
+      // The turn started, so the session is real: record which runtime owns it.
+      // INSERT-OR-IGNORE at the registry, so a resumed session is a no-op.
+      if (result.accepted) {
+        await runtimeRegistry.persistSessionRuntime(
+          result.canonicalId ?? sessionId,
+          runtimeType,
+          request.agentPath
+        );
+      }
 
       if (!result.accepted) {
         // Somebody else is writing to this session — the operator, most likely,

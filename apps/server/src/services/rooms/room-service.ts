@@ -67,11 +67,14 @@ export class RoomService {
   private readonly broadcaster: RoomBroadcaster;
   private readonly roster: RoomRoster;
   private readonly triggers: RoomTriggerDispatcher;
+  /** The live `rooms.maxAgentDepth`. Read per write, so a change takes effect. */
+  private readonly maxAgentDepth: () => number;
 
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
+    this.maxAgentDepth = deps.maxAgentDepth;
     this.roster = new RoomRoster({
       store: deps.store,
       authors: deps.authors,
@@ -127,9 +130,11 @@ export class RoomService {
    * in it — a room named after an agent that the agent was not in, which no
    * amount of retrying could repair because the room already existed.
    *
-   * Everything resolves before a single row is written, inside the transaction
-   * `RoomStore.createRoom` already holds, so an unregistered agent path fails
-   * while the room does not exist and the obvious retry works.
+   * Resolve-then-create: every member is resolved before `RoomStore.createRoom`
+   * is called at all, and that call writes the room and its whole roster in one
+   * transaction. So an unregistered agent path fails while the room does not
+   * exist, and the obvious retry works. (The resolution itself is not inside
+   * that transaction — it does not need to be, and saying so would be drift.)
    *
    * @param request - The validated create request.
    * @param creatorAuthorId - The author opening the room; joined automatically.
@@ -215,6 +220,18 @@ export class RoomService {
     }
     const rootEntry = this.store.getEntryById(parentId, rootEntryId);
     if (!rootEntry) throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
+
+    // A thread inherits the parent's whole roster, response modes included, so
+    // opening one is a seeding operation and answers to the same rule
+    // `createRoom` does: only the operator puts a SECOND agent in a room. It is
+    // not a formality here — a thread is a new room, and `authorsInCascade` is
+    // scoped `(room_id, cascade_root)`, so an ungated `createThread` would hand
+    // an agent an unlimited supply of fresh cascade namespaces.
+    const inherited = this.roster.inheritedFrom(parent.id, new Date(0).toISOString());
+    this.requireSeedingAllowed(
+      this.roster.requireAuthor(viewerAuthorId),
+      inherited.map((member) => this.roster.requireAuthor(member.authorId))
+    );
 
     const createdAt = new Date().toISOString();
     // Same atomicity as createRoom: the thread and the roster it inherits land
@@ -440,12 +457,13 @@ export class RoomService {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
 
-    // Provenance follows the TURN, not the call. The dispatcher supplies a
-    // trigger for the reply it writes, but an agent can also post here directly
-    // while its turn is running — `POST /api/rooms/:id/entries` carries none —
-    // and treating that as "no cascade" let an agent reset the guard on itself
-    // once per message, forever. Spec §6 grants a fresh cascade to a HUMAN post;
-    // an agent gets one only when it genuinely has no turn in flight.
+    // Provenance follows the TURN, not the call — and where there is no turn,
+    // who is writing decides, never the shape of the call. An agent can post
+    // here directly (`POST /api/rooms/:id/entries` carries no trigger), both
+    // while its turn runs and from a shell with nothing in flight at all;
+    // `deriveCascade` refuses a fresh cascade to either. Only a human resets the
+    // count, which is what spec §6 says and what the setting's own docs promise.
+    const author = this.authors.getById(input.authorId);
     const trigger = input.trigger ?? this.triggers.activeTurnFor(input.authorId);
 
     const id = ulid();
@@ -457,7 +475,14 @@ export class RoomService {
       body: { text: input.text },
       mentions: resolveMentions(input.text, this.roster.mentionCandidates(roomId)),
       sessionId: input.sessionId ?? null,
-      ...deriveCascade(id, trigger),
+      ...deriveCascade(id, {
+        trigger,
+        // An author row that has vanished is treated as an agent — the
+        // conservative read, since the only thing this decides is whether the
+        // writer may reset a spend limit.
+        authorKind: author?.kind ?? 'agent',
+        maxAgentDepth: this.maxAgentDepth(),
+      }),
       createdAt: new Date().toISOString(),
     });
 
@@ -485,7 +510,11 @@ export class RoomService {
     body: RoomEntryBody,
     cascade?: { root: string; depth: number }
   ): RoomEntry {
-    this.requireRoom(roomId);
+    const room = this.requireRoom(roomId);
+    // Archived means archived for the room's own voice too. `post` has always
+    // refused here; a notice that slipped past would let an archived room keep
+    // gaining entries, which is the one thing archiving promises it will not do.
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     const id = ulid();
     const entry = this.store.appendEntry({
       roomId,

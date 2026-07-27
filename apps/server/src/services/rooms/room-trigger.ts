@@ -351,10 +351,22 @@ export class RoomTriggerDispatcher {
       if (oldest !== undefined) this.noticed.delete(oldest);
     }
     this.noticed.add(key);
-    this.deps.writer.postNotice(room.id, buildCascadeNotice(displayName, authorId), {
-      root: entry.cascadeRoot,
-      depth: entry.cascadeDepth,
-    });
+    try {
+      this.deps.writer.postNotice(room.id, buildCascadeNotice(displayName, authorId), {
+        root: entry.cascadeRoot,
+        depth: entry.cascadeDepth,
+      });
+    } catch (err) {
+      // Refusals are evaluated synchronously inside `post`, so a throw here
+      // would surface as a failure of the message that was already committed —
+      // the poster would see their own successful post 500. The room being
+      // archived between the post and the notice is the reachable case.
+      logger.warn('[rooms] could not write a refusal notice', {
+        roomId: room.id,
+        authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /** Author ids with a turn in flight in one cascade. */

@@ -10,6 +10,7 @@
  */
 import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { configManager } from '../core/config-manager.js';
 import { AuthorRegistry } from './author-registry.js';
 import type { RoomAgentLookup } from './room-errors.js';
@@ -54,6 +55,24 @@ function createAgentLookup(db: Db): RoomAgentLookup {
   };
 }
 
+/**
+ * The live cascade ceiling, degrading to the shipped default rather than
+ * throwing.
+ *
+ * `RoomService.post` reads this on EVERY write, so a config manager that is not
+ * up yet — or a config file that cannot be read — must never be able to stop a
+ * room accepting messages. Degrading to the schema's own default keeps the
+ * guard ON: the failure mode is "the guard used its default", never "the guard
+ * was absent", which is the only direction it is safe to fail in.
+ */
+function readMaxAgentDepth(): number {
+  try {
+    return configManager.get('rooms').maxAgentDepth;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms.maxAgentDepth;
+  }
+}
+
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
   try {
@@ -84,9 +103,9 @@ export function createRoomSubsystem(opts: {
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),
     turns: opts.turns ?? createSessionRoomTurnRunner(),
-    // Read per dispatch, not captured once: changing the ceiling in Settings
-    // has to bound the very next cascade, not the next server start.
-    maxAgentDepth: () => configManager.get('rooms').maxAgentDepth,
+    // Read per write, not captured once: changing the ceiling in Settings has
+    // to bound the very next cascade, not the next server start.
+    maxAgentDepth: readMaxAgentDepth,
   });
   return { service, store, authors, broadcaster };
 }
