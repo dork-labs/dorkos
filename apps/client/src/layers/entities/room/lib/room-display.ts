@@ -40,6 +40,12 @@ const NAMED_PARTICIPANTS = 3;
  * member set (`RoomService.createRoom`), so renaming one later never splits it
  * and two DMs can share a name without confusing anything but a person.
  *
+ * **The title does not follow the roster.** It is written once, when the
+ * conversation is opened, and `POST /api/rooms/:id/members` has shipped since
+ * R1 — so a room called `Ana` can already hold three agents, and this function
+ * is never re-run to notice. Keeping the roster and the title in step is R6b's,
+ * where adding an agent to a room becomes something the cockpit can do.
+ *
  * @param names - The participants' display names, in the order they were picked.
  * @returns The title, or an empty string for no names — which the caller should
  *   never reach, because a conversation with nobody in it is not one.

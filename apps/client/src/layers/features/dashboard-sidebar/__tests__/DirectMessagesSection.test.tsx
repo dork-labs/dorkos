@@ -245,6 +245,72 @@ describe('DirectMessagesSection', () => {
     expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
   });
 
+  it('does nothing on Enter when the query matches nobody', () => {
+    // Typing "Kia" for Kai and pressing Enter to try again must not open the
+    // half-assembled conversation. "Open this" is gated on the FIELD being
+    // empty, never on "no agent is highlighted" — those differ exactly here.
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/kai': 'Kai' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.change(input, { target: { value: 'Kia' } });
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(mockStart).not.toHaveBeenCalled();
+    // Still open, still holding what was typed and who was picked.
+    expect(screen.getByRole('combobox')).toHaveValue('Kia');
+    expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+  });
+
+  it('keeps the highlight on the agent it was pointed at when the list moves under it', () => {
+    // Pick Ana (list: Bo, Cy), highlight Bo, then take Ana back — the list
+    // becomes Ana, Bo, Cy and index 0 now means Ana. A positional highlight
+    // would add Ana here; the highlight is keyed on the agent instead.
+    renderSection({
+      displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' },
+    });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(screen.getByRole('option', { name: 'Bo' })).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    expect(screen.getByRole('option', { name: 'Bo' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(screen.getByRole('button', { name: 'Remove Bo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove Ana' })).not.toBeInTheDocument();
+  });
+
+  it('drops a highlight that Backspace took off the list rather than sliding it', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    fireEvent.keyDown(input, { key: 'Backspace' });
+
+    // Bo is still the one aimed at, and it is still on the list, so it stays lit.
+    expect(screen.getByRole('option', { name: 'Bo' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('option', { name: 'Ana' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('tells assistive technology there is no list when nothing matches', () => {
+    renderSection({ displayNames: { '/repo/ana': 'Ana' } });
+    openPicker();
+    const input = screen.getByRole('combobox');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.change(input, { target: { value: 'zzz' } });
+    expect(input).toHaveAttribute('aria-expanded', 'false');
+    expect(input).not.toHaveAttribute('aria-controls');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    // …and the reason is still readable, not stranded inside an empty listbox.
+    expect(screen.getByText('No agent by that name.')).toBeInTheDocument();
+  });
+
   it('moves the highlight with the arrow keys', () => {
     renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
     openPicker();

@@ -77,13 +77,23 @@ router.get('/', (req, res) => {
   }
 });
 
-/** POST / — create a channel or a DM. */
+/**
+ * POST / — open a channel or a DM.
+ *
+ * **201 when a room was created, 200 when one already existed.** A DM is
+ * idempotent on its member set, so this can answer with a conversation that has
+ * been running for weeks — and nothing in the body would say so. `created` is
+ * stripped here rather than serialized, so the response stays exactly
+ * `RoomWithRosterSchema` and the distinction rides the status line, where an
+ * upsert's does.
+ */
 router.post('/', (req, res) => {
   const body = parseBody(CreateRoomRequestSchema, req.body, res);
   if (!body) return;
   try {
     const caller = resolveCaller(res);
-    res.status(201).json(getRoomService().createRoom(body, caller.id));
+    const { created, ...room } = getRoomService().createRoom(body, caller.id);
+    res.status(created ? 201 : 200).json(room);
   } catch (err) {
     sendRoomError(res, err, 'POST /');
   }

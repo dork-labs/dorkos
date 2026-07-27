@@ -2787,12 +2787,16 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Open a channel or a DM',
   description:
-    'The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. A DM may name any number of agents; one gives a one-to-one conversation and several give a group. **Creating a DM is idempotent on its member set**: when a direct message already holds exactly these authors (the creator included, order irrelevant, neither a superset nor a subset), that room is returned instead of a second one being minted, and an archived match is un-archived first. The existing room keeps its own title. Threads are created via `POST /api/rooms/{id}/threads`.',
+    'The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. A DM may name any number of agents; one gives a one-to-one conversation and several give a group. **Creating a DM is idempotent on its member set**: when a direct message already holds exactly these authors (the creator included, order irrelevant, neither a superset nor a subset), that room is returned instead of a second one being minted, and an archived match is un-archived first. The existing room keeps its own title and its place in the activity order — opening a conversation is not activity in it. Read the status to tell the two apart: **201** means a room was created, **200** means one was already there. The body is identical either way, so the status is the only signal.',
   request: { body: { content: { 'application/json': { schema: CreateRoomRequestSchema } } } },
   responses: {
     201: {
+      description: 'A new room, with its roster',
+      content: { 'application/json': { schema: RoomWithRosterSchema } },
+    },
+    200: {
       description:
-        'The room with its roster — newly created, or the direct message that already held exactly these members',
+        'The direct message that already held exactly these members, returned instead of a second one being created (un-archived first if it was archived)',
       content: { 'application/json': { schema: RoomWithRosterSchema } },
     },
     400: roomValidationError,

@@ -793,6 +793,41 @@ describe('RoomService — a DM is idempotent on its member set', () => {
     expect(service.listRooms(human, { kind: 'dm' })).toHaveLength(1);
   });
 
+  it('reports whether it created the room, which the body cannot say', () => {
+    const request = { kind: 'dm' as const, title: 'Ana', members: [], agentPaths: ['/agents/ana'] };
+    expect(service.createRoom(request, human).created).toBe(true);
+    expect(service.createRoom(request, human).created).toBe(false);
+    // A channel never matches an existing room, so it is always a creation.
+    expect(
+      service.createRoom({ kind: 'channel', title: 'Backend', members: [], agentPaths: [] }, human)
+        .created
+    ).toBe(true);
+  });
+
+  it('leaves the conversation where it was in the activity order', () => {
+    // Opening a conversation is not activity in it. Bumping `lastActivityAt`
+    // would float a silent room to the top of a recency-sorted sidebar and tell
+    // the reader something had happened in it.
+    const first = openDm(['/agents/ana'], 'Ana');
+    const before = service.getRoom(first, human)?.lastActivityAt;
+
+    expect(openDm(['/agents/ana'], 'Ana')).toBe(first);
+    expect(service.getRoom(first, human)?.lastActivityAt).toBe(before);
+  });
+
+  it('leaves an un-archived conversation where it was too', () => {
+    const first = openDm(['/agents/ana'], 'Ana');
+    const before = service.getRoom(first, human)?.lastActivityAt;
+    service.updateRoom(first, human, { archived: true });
+
+    const reopened = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(reopened.archived).toBe(false);
+    expect(reopened.lastActivityAt).toBe(before);
+  });
+
   it('matches whatever order the agents were named in', () => {
     const group = openDm(['/agents/ana', '/agents/bo'], 'Ana and Bo');
     expect(openDm(['/agents/bo', '/agents/ana'], 'Bo and Ana')).toBe(group);

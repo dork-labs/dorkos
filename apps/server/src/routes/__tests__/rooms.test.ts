@@ -152,11 +152,36 @@ describe('/api/rooms', () => {
         .post('/api/rooms')
         .send({ kind: 'dm', title: 'Ana and Bo again', agentPaths: [BO_PATH, ANA_PATH] });
 
-      expect(again.status).toBe(201);
+      // 201 said a room was created; 200 says one was already there. The bodies
+      // are identical, so the status is the only thing that can carry it.
+      expect(first.status).toBe(201);
+      expect(again.status).toBe(200);
       expect(again.body.id).toBe(first.body.id);
       expect((await request(app).get('/api/rooms').query({ kind: 'dm' })).body.rooms).toHaveLength(
         1
       );
+    });
+
+    it('serializes the same body on both paths, with no bookkeeping field on the wire', async () => {
+      const created = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
+      const matched = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
+
+      // `created` decides the status and then stops existing: the response is
+      // exactly RoomWithRosterSchema, which is what the OpenAPI doc promises.
+      expect(created.body).not.toHaveProperty('created');
+      expect(matched.body).not.toHaveProperty('created');
+      expect(matched.body).toEqual(created.body);
+    });
+
+    it('answers 201 for a channel every time, since only a DM dedupes', async () => {
+      const first = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'One' });
+      const second = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'Two' });
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
     });
 
     it('still opens a separate conversation for a subset of a group', async () => {

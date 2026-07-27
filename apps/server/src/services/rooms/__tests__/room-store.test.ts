@@ -181,18 +181,30 @@ describe('RoomStore.findDmByMemberSet', () => {
     expect(found?.archived).toBe(true);
   });
 
+  // The two tie-break tests below name their rooms so that EVERY order the
+  // query could fall back on — insertion order, primary-key order, `createdAt`
+  // — points at the wrong room. An earlier pair of fixtures happened to sort
+  // the way the assertions wanted, so both passed with the `ORDER BY` deleted:
+  // they certified SQLite's index walk rather than this store's tie-break.
+
   it('prefers a live DM over an archived one holding the same people', () => {
     // Only pre-existing data can hold two, so the tie-break has to be stated
-    // rather than left to whichever index the planner reaches for.
-    seedDm('dm-old', ['me', 'ana'], { archived: true, createdAt: '2026-07-20T10:00:00.000Z' });
-    seedDm('dm-live', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
-    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('dm-live');
+    // rather than left to whichever index the planner reaches for. The archived
+    // one sorts first by id AND is older AND was written first.
+    seedDm('aaa-archived', ['me', 'ana'], {
+      archived: true,
+      createdAt: '2026-07-20T10:00:00.000Z',
+    });
+    seedDm('zzz-live', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('zzz-live');
   });
 
   it('takes the oldest when two live DMs hold the same people', () => {
-    seedDm('dm-second', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
-    seedDm('dm-first', ['me', 'ana'], { createdAt: '2026-07-20T10:00:00.000Z' });
-    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('dm-first');
+    // The oldest sorts LAST by id and was written second, so only `createdAt`
+    // can produce this answer.
+    seedDm('aaa-newest', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
+    seedDm('zzz-oldest', ['me', 'ana'], { createdAt: '2026-07-20T10:00:00.000Z' });
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('zzz-oldest');
   });
 
   it('collapses a member named twice rather than failing to match', () => {

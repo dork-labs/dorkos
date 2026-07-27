@@ -46,13 +46,24 @@ interface NewDirectMessageMenuProps {
  *
  * The keyboard is the whole interaction:
  *
- * - **Enter** adds the highlighted agent when there is one, and otherwise opens
- *   the conversation. Typing highlights the first match, so `an` `⏎` `ka` `⏎`
- *   `⏎` assembles a group and opens it without touching the mouse. Nothing is
- *   highlighted while the field is empty, which is what leaves the second `⏎`
- *   free to mean "go".
+ * - **Enter** adds the highlighted agent when there is one. With an EMPTY field
+ *   and nothing highlighted it opens the conversation instead, so `an` `⏎` `ka`
+ *   `⏎` `⏎` assembles a group and opens it without touching the mouse.
+ * - **Enter on a query that matches nothing does nothing at all.** It is the one
+ *   case worth stating twice: "open the conversation" is gated on the field
+ *   being empty, never on "no agent is highlighted". Typing `Kia` for Kai and
+ *   pressing Enter to try again must not open the half-assembled conversation
+ *   and throw away the rest of it.
  * - **Backspace** on an empty field takes back the last agent picked.
  * - **↓ / ↑** move the highlight; **Escape** closes without opening anything.
+ *
+ * The highlight is keyed on an `agentPath`, never on a position in the list.
+ * That list recomputes from `chosen` and `query`, so an index silently comes to
+ * mean a different agent the moment either changes — highlight Bo, take a chip
+ * back, and a positional highlight is sitting on whoever moved into that slot.
+ * A path either still matches something on screen or falls through to the
+ * default, which makes that whole class of bug unrepresentable rather than
+ * something every mutation site has to remember to reset.
  *
  * Hand-rolled rather than built on `Command` (`cmdk`), which the single-select
  * pickers in this codebase use: it binds Enter to the highlighted item
@@ -63,8 +74,11 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<DirectMessageCandidate[]>([]);
-  /** Which match Enter would add. `-1` is "none", which frees Enter to commit. */
-  const [activeIndex, setActiveIndex] = useState(-1);
+  /**
+   * The agent the reader pointed at, by directory. `null` means "nobody has
+   * said", which is not the same as "nothing is highlighted" — see `active`.
+   */
+  const [aimedAt, setAimedAt] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
@@ -73,20 +87,29 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
   const matches = candidates.filter(
     (c) => !picked.has(c.agentPath) && c.displayName.toLowerCase().includes(needle)
   );
-  const active = activeIndex >= 0 && activeIndex < matches.length ? matches[activeIndex] : null;
+  // Derived every render rather than stored, which is what makes a stale aim
+  // harmless: an agent that has left the list simply falls through to the
+  // default instead of pointing at whoever took its place. Typing implies a
+  // target and an empty field does not, which is what leaves Enter free to open
+  // the conversation.
+  const active =
+    (aimedAt ? matches.find((c) => c.agentPath === aimedAt) : undefined) ??
+    (needle ? matches[0] : undefined) ??
+    null;
+  const activeIndex = active ? matches.indexOf(active) : -1;
 
   /** Reset to a blank picker whenever the popover opens or closes. */
   function handleOpenChange(next: boolean) {
     setOpen(next);
     setQuery('');
     setChosen([]);
-    setActiveIndex(-1);
+    setAimedAt(null);
   }
 
   function add(candidate: DirectMessageCandidate) {
     setChosen((prev) => [...prev, candidate]);
     setQuery('');
-    setActiveIndex(-1);
+    setAimedAt(null);
     inputRef.current?.focus();
   }
 
@@ -97,11 +120,26 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
     onStart(started);
   }
 
+  /** Move the highlight by `step`, entering the list from whichever end. */
+  function moveAim(step: 1 | -1) {
+    if (matches.length === 0) return;
+    const next =
+      activeIndex < 0
+        ? step === 1
+          ? 0
+          : matches.length - 1
+        : Math.min(Math.max(activeIndex + step, 0), matches.length - 1);
+    setAimedAt(matches[next].agentPath);
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
       if (active) add(active);
-      else commit();
+      // Gated on the FIELD being empty, not on "nothing is highlighted". A
+      // query nobody matches leaves the reader mid-correction, and opening the
+      // conversation under them would discard everyone else they had picked.
+      else if (!needle) commit();
       return;
     }
     if (event.key === 'Backspace' && query === '' && chosen.length > 0) {
@@ -109,14 +147,14 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
       setChosen((prev) => prev.slice(0, -1));
       return;
     }
-    if (event.key === 'ArrowDown' && matches.length > 0) {
+    if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setActiveIndex((i) => (i < 0 ? 0 : Math.min(i + 1, matches.length - 1)));
+      moveAim(1);
       return;
     }
-    if (event.key === 'ArrowUp' && matches.length > 0) {
+    if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setActiveIndex((i) => (i < 0 ? matches.length - 1 : Math.max(i - 1, 0)));
+      moveAim(-1);
     }
   }
 
@@ -165,8 +203,10 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
               <input
                 ref={inputRef}
                 role="combobox"
-                aria-expanded
-                aria-controls={listId}
+                // There is no popup to expand when nothing matches, and saying
+                // otherwise advertises a list of zero options to a screen reader.
+                aria-expanded={matches.length > 0}
+                aria-controls={matches.length > 0 ? listId : undefined}
                 aria-autocomplete="list"
                 aria-activedescendant={active ? `${listId}-${activeIndex}` : undefined}
                 aria-label="Search agents"
@@ -174,54 +214,59 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                 placeholder={chosen.length > 0 ? 'Add another' : 'Search agents'}
                 onChange={(event) => {
                   setQuery(event.target.value);
-                  // Typing implies a target; an empty field does not, which is
-                  // what leaves Enter free to mean "open this conversation".
-                  setActiveIndex(event.target.value.trim() ? 0 : -1);
+                  // The aim is whoever the reader last pointed at, and typing
+                  // is not pointing — dropping it lets the derived default (the
+                  // first match, or nothing at all) take over again.
+                  setAimedAt(null);
                 }}
                 onKeyDown={handleKeyDown}
                 className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-0.5 text-sm outline-hidden"
               />
             </div>
 
-            <ul
-              id={listId}
-              role="listbox"
-              aria-label="Agents"
-              className="mt-1 max-h-56 overflow-y-auto"
-            >
-              {matches.map((candidate, index) => (
-                // An aria-activedescendant combobox keeps DOM focus on the input, so an
-                // option is deliberately not focusable and carries no key handler of its
-                // own. The rule reads the `li` element rather than its role and cannot
-                // see that, so it is off for this element only.
-                // eslint-disable-next-line jsx-a11y/click-events-have-key-events
-                <li
-                  key={candidate.agentPath}
-                  id={`${listId}-${index}`}
-                  role="option"
-                  aria-selected={index === activeIndex}
-                  data-testid="dm-candidate"
-                  // The input keeps focus, so the highlight is what a keyboard
-                  // reader follows and the pointer only ever borrows it.
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => add(candidate)}
-                  className={cn(
-                    'cursor-pointer truncate rounded-sm px-2 py-1.5 text-sm',
-                    index === activeIndex && 'bg-accent text-accent-foreground'
-                  )}
-                >
-                  {candidate.displayName}
-                </li>
-              ))}
-              {matches.length === 0 && (
-                <li role="presentation" className="text-muted-foreground px-2 py-1.5 text-xs">
-                  {needle
-                    ? 'No agent by that name.'
-                    : 'Everyone you have added is already in this conversation.'}
-                </li>
-              )}
-            </ul>
+            {/* The listbox exists only while it has options in it. An empty one
+                would be a popup a reader is told to expect and finds nothing in,
+                and its "nothing matched" line would be inside a listbox, where
+                the accessibility tree drops any child that is not an option. */}
+            {matches.length > 0 ? (
+              <ul
+                id={listId}
+                role="listbox"
+                aria-label="Agents"
+                className="mt-1 max-h-56 overflow-y-auto"
+              >
+                {matches.map((candidate, index) => (
+                  // An aria-activedescendant combobox keeps DOM focus on the input, so an
+                  // option is deliberately not focusable and carries no key handler of its
+                  // own. The rule reads the `li` element rather than its role and cannot
+                  // see that, so it is off for this element only.
+                  // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+                  <li
+                    key={candidate.agentPath}
+                    id={`${listId}-${index}`}
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    // The input keeps focus, so the highlight is what a keyboard
+                    // reader follows and the pointer only ever borrows it.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setAimedAt(candidate.agentPath)}
+                    onClick={() => add(candidate)}
+                    className={cn(
+                      'cursor-pointer truncate rounded-sm px-2 py-1.5 text-sm',
+                      index === activeIndex && 'bg-accent text-accent-foreground'
+                    )}
+                  >
+                    {candidate.displayName}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-muted-foreground mt-1 px-2 py-1.5 text-xs">
+                {needle
+                  ? 'No agent by that name.'
+                  : 'Everyone you have added is already in this conversation.'}
+              </p>
+            )}
 
             <Button
               type="button"
