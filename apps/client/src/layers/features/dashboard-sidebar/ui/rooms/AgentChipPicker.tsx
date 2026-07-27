@@ -111,6 +111,18 @@ interface AgentChipPickerProps {
  * unconditionally and always highlights the first one, so there is no state in
  * which Enter can mean "commit this selection".
  *
+ * **Mobile-first, with `md:` for the compact panel** — one 768px breakpoint,
+ * shared with the responsive shells that hold this. Three flex rules carry the
+ * layout, and each is load-bearing at a size the others are not. The field and
+ * the button do not shrink, so they stay legible and tappable everywhere. The
+ * list takes what is left, which on a portrait phone is most of the screen. And
+ * the list has a **floor** — because when a landscape phone puts its keyboard up
+ * there is under 200px of sheet to divide, and a list that only ever takes "what
+ * is left" takes nothing, leaving a search field above a blank space while you
+ * type. The floor costs a short scroll to reach the button in that one case,
+ * which is the right way round: the keyboard is up because you are still
+ * choosing, and Enter commits anyway.
+ *
  * Takes no focus of its own — see {@link AgentChipPickerProps.inputRef}.
  */
 export function AgentChipPicker({
@@ -219,12 +231,15 @@ export function AgentChipPicker({
   }
 
   return (
-    <>
-      <div className="border-input focus-within:ring-ring flex flex-wrap items-center gap-1 rounded-md border px-1.5 py-1 focus-within:ring-2">
+    // A column on both: the field and the button hold their size and the list
+    // takes whatever is left, which on a phone is most of the screen and in a
+    // desktop panel is capped so the panel stays a panel.
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-input focus-within:ring-ring flex shrink-0 flex-wrap items-center gap-2 rounded-md border px-2 py-1.5 focus-within:ring-2 md:gap-1 md:px-1.5 md:py-1">
         {chosen.map((candidate) => (
           <span
             key={candidate.agentPath}
-            className="bg-accent text-accent-foreground flex items-center gap-1 rounded-sm py-0.5 pr-0.5 pl-1.5 text-xs"
+            className="bg-accent text-accent-foreground flex items-center gap-1 rounded-sm py-1 pr-1 pl-2 text-xs md:py-0.5 md:pr-0.5 md:pl-1.5"
           >
             {candidate.displayName}
             <button
@@ -234,9 +249,22 @@ export function AgentChipPicker({
                 setChosen((prev) => prev.filter((c) => c.agentPath !== candidate.agentPath));
                 fieldRef.current?.focus();
               }}
-              className="hover:bg-background focus-visible:ring-ring rounded-sm p-0.5 outline-hidden focus-visible:ring-2"
+              className={cn(
+                'hover:bg-background focus-visible:ring-ring relative rounded-sm p-2 outline-hidden focus-visible:ring-2 md:p-0.5',
+                // Most of the touch target is real size (30px), and the
+                // invisible part is deliberately smaller than the dead space
+                // around it: 6px sideways into the 12px between this button and
+                // whatever is next (`pr-1` + the row's `gap-2`), 4px down into
+                // the 12px above the next wrapped row. An earlier version
+                // reached 12px in every direction and ate into the FIELD —
+                // sampling its box at 390x844 found 1.9% of it stolen at two
+                // chips and 10.6% at six, and a tap there focused the field and
+                // silently deleted an agent. `SidebarGroupAction` gets away with
+                // a bare outset because nothing interactive sits next to it.
+                'after:absolute after:-inset-x-1.5 after:-inset-y-1 md:after:hidden'
+              )}
             >
-              <X className="size-3" />
+              <X className="size-3.5 md:size-3" />
             </button>
           </span>
         ))}
@@ -260,7 +288,7 @@ export function AgentChipPicker({
             setAimedAt(null);
           }}
           onKeyDown={handleKeyDown}
-          className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-0.5 text-sm outline-hidden"
+          className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-1 text-sm outline-hidden md:py-0.5"
         />
       </div>
 
@@ -273,7 +301,13 @@ export function AgentChipPicker({
           id={listId}
           role="listbox"
           aria-label="Agents"
-          className="mt-1 max-h-56 overflow-y-auto"
+          // `min-h-24` is a floor, not a size: it only bites when the sheet has
+          // been squeezed — a landscape phone with the keyboard up leaves barely
+          // 180px, and a pure `flex-1` list gives all of it back to the field
+          // and the button and renders zero of the matches you are typing to
+          // find. Two rows always survive, and the sheet's scroll of last resort
+          // covers the rest.
+          className="mt-2 min-h-24 flex-1 overflow-y-auto md:mt-1 md:max-h-56 md:min-h-0"
         >
           {matches.map((candidate, index) => (
             // An aria-activedescendant combobox keeps DOM focus on the input, so an
@@ -292,7 +326,7 @@ export function AgentChipPicker({
               onMouseEnter={() => setAimedAt(candidate.agentPath)}
               onClick={() => add(candidate)}
               className={cn(
-                'cursor-pointer truncate rounded-sm px-2 py-1.5 text-sm',
+                'flex min-h-11 cursor-pointer items-center truncate rounded-sm px-2 py-2 text-sm md:min-h-0 md:py-1.5',
                 index === activeIndex && 'bg-accent text-accent-foreground'
               )}
             >
@@ -301,7 +335,7 @@ export function AgentChipPicker({
           ))}
         </ul>
       ) : (
-        <p className="text-muted-foreground mt-1 px-2 py-1.5 text-xs">
+        <p className="text-muted-foreground mt-2 flex-1 px-2 py-1.5 text-xs md:mt-1 md:flex-none">
           {needle ? 'No agent by that name.' : allChosenMessage}
         </p>
       )}
@@ -311,10 +345,10 @@ export function AgentChipPicker({
         size="sm"
         disabled={chosen.length === 0 || isSubmitting}
         onClick={commit}
-        className="mt-2 w-full"
+        className="mt-3 w-full shrink-0 md:mt-2"
       >
         {submitLabel(chosen.length)}
       </Button>
-    </>
+    </div>
   );
 }
