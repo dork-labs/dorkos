@@ -212,6 +212,43 @@ seconds.
 this repo's automated review returned "0 important, 0 nits". Nothing in those
 verdicts was wrong on its face. They just never crossed the seam.
 
+## When the code under review is a recovery path, ask whether it can fail
+
+For most code the review question is "does this do the right thing." For code
+that runs **because something already went wrong** — a catch block, a fallback, a
+repair, a retry, a migration's error branch — that question is secondary. The
+first one is: **can this itself fail, and what happens if it does?**
+
+On DOR-584 a fix for a config-destruction bug introduced a **boot**-destruction
+bug, and it did it _inside the catch block that was the last-resort "always
+boots" guarantee_. The salvage carried a stored value forward after checking its
+JavaScript type; the value was type-correct but violated its own schema's
+minimum, so `conf` re-validated it through Ajv on write and threw. Nothing up the
+stack handled it, and the server did not start — on inputs that the unfixed code
+recovered from cleanly. The file was left half-restored, because the write
+iterated sections and had already committed two before the third threw.
+
+The PR's own comment said the function "never throws — a throw here would take
+down the boot it is trying to rescue." It was the right thing to worry about and
+it was not true, and no test caught it because the suite was green at 2813
+passing.
+
+Two transferable checks:
+
+- **`typeof` is not validation.** A type check sees `number`; it does not see
+  `min`, `format`, `enum`, or any other constraint the schema enforces on write.
+  Any value that will be re-validated downstream must be validated against its
+  **own** schema first, not merely type-narrowed.
+- **A multi-step repair needs to be all-or-nothing, or explicitly resumable.** A
+  loop of writes that can throw partway leaves state no code path anticipated —
+  worse than the corruption it was repairing, because it looks recovered.
+
+So for any diff touching a recovery path: find every write it performs, ask what
+validates that write, and construct the input where validation says no. Then run
+it. Compare against the pre-change behavior on the same input — if the old code
+survived what the new code dies on, that is a 🔴 regression regardless of how
+well the new code handles the case it was written for.
+
 ## Verification bar
 
 Behavior claims need a `file:line` citation in the diff or surrounding code, not
