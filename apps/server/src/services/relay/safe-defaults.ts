@@ -115,13 +115,34 @@ export function carryForwardAdapterDefaults(raw: unknown): unknown {
   if (!isRecord(raw) || !Array.isArray(raw.adapters)) return raw;
 
   let carried = 0;
+  let closed = 0;
   const adapters = raw.adapters.map((entry) => {
     if (!isRecord(entry) || entry.type !== 'slack') return entry;
     const config = entry.config;
-    if (!isRecord(config) || 'dmPolicy' in config) return entry;
-    carried++;
-    return { ...entry, config: { ...config, dmPolicy: LEGACY_SLACK_DM_POLICY } };
+    if (!isRecord(config)) return entry;
+
+    if (!('dmPolicy' in config)) {
+      carried++;
+      return { ...entry, config: { ...config, dmPolicy: LEGACY_SLACK_DM_POLICY } };
+    }
+
+    // A stored value that is neither option is not a third option. `''` is what
+    // a client with no manifest default used to send, and it satisfied neither
+    // the DM gate (`=== 'allowlist'`) nor the warning (`=== 'open'`) — open, and
+    // silent about it. Close it rather than let it through (DOR-604 review).
+    if (config.dmPolicy !== 'open' && config.dmPolicy !== 'allowlist') {
+      closed++;
+      return { ...entry, config: { ...config, dmPolicy: 'allowlist' } };
+    }
+    return entry;
   });
+
+  if (closed > 0) {
+    logger.warn(
+      `[Relay] ${closed} Slack integration(s) stored an unreadable DM policy; ` +
+        `treating it as 'allowlist' so direct messages stay restricted (DOR-604).`
+    );
+  }
 
   if (carried > 0) {
     logger.info(
@@ -147,7 +168,13 @@ export function warnOnOpenDmPolicy(adapters: ReadonlyArray<unknown>): void {
   for (const entry of adapters) {
     if (!isRecord(entry) || entry.type !== 'slack' || entry.enabled === false) continue;
     const config = entry.config;
-    if (!isRecord(config) || config.dmPolicy !== LEGACY_SLACK_DM_POLICY) continue;
+    // Warn on anything that is not the closed value, not just on the literal
+    // `'open'`. A `dmPolicy` of `''` — what a client with no manifest default
+    // used to send — is not `'open'`, so it once slipped past this check while
+    // also failing the `=== 'allowlist'` gate that restricts DMs: effectively
+    // open and silent about it. The schema now folds such values to
+    // `'allowlist'`, and this stays broad as the second line of defence.
+    if (!isRecord(config) || config.dmPolicy === 'allowlist') continue;
     logger.warn(
       `[Relay] Slack integration '${String(entry.id)}' accepts direct messages from anyone in ` +
         `the workspace, and a direct message can start an agent turn on this machine. ` +

@@ -22,8 +22,6 @@ import {
 } from '@dorkos/relay';
 import type { AgentRuntimeLike, TraceStoreLike, TasksStoreLike } from '@dorkos/relay';
 import type { AdapterManifest, CatalogEntry } from '@dorkos/shared/relay-schemas';
-import { AdapterConfigSchema } from '@dorkos/shared/relay-schemas';
-import { z } from 'zod';
 import type { AdapterStatus } from '@dorkos/relay';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logger } from '../../lib/logger.js';
@@ -35,6 +33,7 @@ import {
   watchAdapterConfig,
   maskSensitiveFields,
   mergeWithPasswordPreservation,
+  parseAdapterConfigForPersist,
 } from './adapter-config.js';
 import { createAdapter, defaultAdapterStatus, testAdapterConnection } from './adapter-factory.js';
 import {
@@ -591,36 +590,6 @@ export class AdapterManager {
     return testAdapterConnection(adapter);
   }
 
-  /**
-   * Validate an adapter entry through its own schema before it is persisted.
-   *
-   * The write path used to cast (`as AdapterConfig`) and store the caller's raw
-   * request body verbatim, so **no Zod default ever fired on write**. A Slack
-   * integration created without naming `dmPolicy` was therefore written without
-   * the key, and on the next load it was indistinguishable from one written
-   * before the field existed — so the DOR-604 carry-forward stamped a
-   * seconds-old integration back to `'open'`. Only the setup wizard escaped,
-   * because it seeds the field from the manifest default; a direct
-   * `POST /api/relay/adapters`, an older client bundle, or a scripted install
-   * did not.
-   *
-   * Parsing here is what makes "the key is missing" mean "written by a build
-   * older than this one" — the premise `relay/safe-defaults.ts` rests on.
-   *
-   * @param entry - The adapter entry about to be pushed or replaced.
-   * @returns The parsed entry, with every schema default materialized.
-   */
-  private parseForPersist(entry: Record<string, unknown>): AdapterConfig {
-    const parsed = AdapterConfigSchema.safeParse(entry);
-    if (!parsed.success) {
-      throw new AdapterError(
-        `Invalid adapter configuration: ${z.prettifyError(parsed.error)}`,
-        'INVALID_CONFIG'
-      );
-    }
-    return parsed.data as AdapterConfig;
-  }
-
   /** Add a new adapter instance, persist config, and start it if enabled. */
   async addAdapter(
     type: string,
@@ -650,7 +619,7 @@ export class AdapterManager {
       }
     }
 
-    const adapterConfig = this.parseForPersist({
+    const adapterConfig = parseAdapterConfigForPersist({
       id,
       type,
       enabled,
@@ -790,7 +759,7 @@ export class AdapterManager {
     // in: the merge can drop a key the incoming config omitted, and an
     // unvalidated write is what let an entry reach disk with no `dmPolicy`
     // (see `parseForPersist`).
-    existing.config = this.parseForPersist({ ...existing, config: mergedConfig }).config;
+    existing.config = parseAdapterConfigForPersist({ ...existing, config: mergedConfig }).config;
 
     // Promote label from config to top-level if present (client embeds it in config)
     if (typeof mergedConfig.label === 'string' && mergedConfig.label) {

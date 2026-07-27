@@ -130,6 +130,12 @@ export const SlackAdapterConfigSchema = z
      * nobody configured answers nobody, rather than answering the whole
      * workspace (DOR-604, ADR 260727-181825). Integrations that predate this
      * default keep `'open'`; see `services/relay/safe-defaults.ts`.
+     *
+     * This stays a strict enum on purpose. The form shapes that used to slip
+     * past it — `''` from a field nobody touched — are normalized at the write
+     * boundary (`relay/adapter-config.ts`), and an unreadable stored value is
+     * closed on load (`relay/safe-defaults.ts`). Only the literal `'open'`
+     * opens it; everything else resolves to `'allowlist'` before it gets here.
      */
     dmPolicy: z.enum(['open', 'allowlist']).default('allowlist'),
     dmAllowlist: z.array(z.string()).default([]),
