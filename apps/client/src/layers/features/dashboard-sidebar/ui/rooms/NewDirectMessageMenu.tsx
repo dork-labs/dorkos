@@ -50,7 +50,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <AgentChipPicker
-          autoFocus
+          takeFocus
           candidates={candidates}
           onSubmit={(chosen) => {
             setOpen(false);

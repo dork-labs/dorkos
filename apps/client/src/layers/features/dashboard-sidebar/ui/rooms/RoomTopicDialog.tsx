@@ -64,8 +64,10 @@ export function RoomTopicDialog({ room, open, onOpenChange }: RoomTopicDialogPro
           </ResponsiveDialogHeader>
 
           <ResponsiveDialogBody>
+            {/* No `autoFocus`: this field is the first tabbable thing in the
+                dialog, so Radix's own open-focus lands on it — and a focus that
+                comes from the dialog opening is the dialog's to give. */}
             <Textarea
-              autoFocus
               value={value}
               maxLength={MAX_TOPIC}
               rows={3}

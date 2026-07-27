@@ -79,6 +79,7 @@ function renderPanel(
     transport?: Transport;
     intent?: 'roster' | 'add';
     agents?: { agentPath: string; displayName: string }[];
+    onOpenChange?: (open: boolean) => void;
   } = {}
 ) {
   const transport =
@@ -100,7 +101,7 @@ function renderPanel(
     <RoomMembersDialog
       room={ROOM}
       open
-      onOpenChange={vi.fn()}
+      onOpenChange={opts.onOpenChange ?? vi.fn()}
       intent={opts.intent ?? 'roster'}
       agents={opts.agents ?? FLEET}
     />,
@@ -212,12 +213,45 @@ describe('RoomMembersDialog', () => {
     await rosterList();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('Remove Ana from #general?');
+    const confirm = screen.getByRole('group', { name: 'Remove Ana from #general?' });
+    expect(confirm).toHaveTextContent('Adding it back starts a fresh session.');
     expect(transport.removeRoomMember).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /^Remove$/ }));
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Remove' }));
     await waitFor(() =>
       expect(transport.removeRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana')
+    );
+  });
+
+  it('confirms in place, so the panel the reader is working in stays open', async () => {
+    // A dialog over a dialog closed BOTH when answered. The panel has to
+    // survive its own confirmation, which is the whole reason this is inline.
+    const { transport } = renderPanel();
+    await rosterList();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
+        name: 'Remove',
+      })
+    );
+
+    await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalled());
+    expect(screen.getByRole('dialog')).toHaveTextContent('Members of #general');
+  });
+
+  it('puts the focus on the confirmation so it can be answered from the keyboard', async () => {
+    renderPanel();
+    await rosterList();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole(
+          'button',
+          { name: 'Remove' }
+        )
+      ).toHaveFocus()
     );
   });
 
@@ -226,9 +260,30 @@ describe('RoomMembersDialog', () => {
     await rosterList();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
+        name: 'Cancel',
+      })
+    );
 
     expect(transport.removeRoomMember).not.toHaveBeenCalled();
+    expect(screen.queryByRole('group', { name: /^Remove Ana/ })).not.toBeInTheDocument();
+  });
+
+  it('lets Escape answer the confirmation without closing the panel', async () => {
+    const onOpenChange = vi.fn();
+    renderPanel({ onOpenChange });
+    await rosterList();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    // Radix listens for Escape on the document in the capture phase, which is
+    // where the panel's own handler has to intercept it — so this is dispatched
+    // there rather than at the confirmation.
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('group', { name: /^Remove Ana/ })).not.toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toHaveTextContent('Members of #general');
   });
 
   it('offers only agents that are not already in the room', async () => {

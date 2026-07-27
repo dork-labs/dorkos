@@ -35,7 +35,7 @@ interface AgentChipPickerProps {
    * only to pick agents; off when the picker shares a panel with something the
    * reader asked for instead — stealing focus would scroll that out of view.
    */
-  autoFocus?: boolean;
+  takeFocus?: boolean;
 }
 
 /**
@@ -87,7 +87,7 @@ interface AgentChipPickerProps {
  * unconditionally and always highlights the first one, so there is no state in
  * which Enter can mean "commit this selection".
  *
- * With `autoFocus`, focuses its own field on mount. Radix's focus scope sees the
+ * With `takeFocus`, focuses its own field on mount. Radix's focus scope sees the
  * focus is already inside its container and stands down, so a popover or dialog
  * holding this needs no ref into it.
  */
@@ -98,7 +98,7 @@ export function AgentChipPicker({
   emptyRosterMessage,
   allChosenMessage,
   isSubmitting = false,
-  autoFocus = false,
+  takeFocus = false,
 }: AgentChipPickerProps) {
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<AgentPickerCandidate[]>([]);
@@ -111,8 +111,8 @@ export function AgentChipPicker({
   const listId = useId();
 
   useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
+    if (takeFocus) inputRef.current?.focus();
+  }, [takeFocus]);
 
   const picked = new Set(chosen.map((c) => c.agentPath));
   const needle = query.trim().toLowerCase();

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { UserMinus } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
@@ -9,14 +9,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { initialOf } from '@/layers/shared/lib';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  Button,
   IdentityAvatar,
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -91,7 +84,15 @@ export function RoomMembersDialog({
   const addMember = useAddRoomMember();
   const removeMember = useRemoveRoomMember();
   const setResponseMode = useSetMemberResponseMode();
-  const [pendingRemoval, setPendingRemoval] = useState<RoomRosterEntry | null>(null);
+  /** The member whose removal is waiting to be confirmed, by author id. */
+  const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  // The confirmation takes the focus so it can be answered from the keyboard
+  // without hunting for it, and so a screen reader reads what it is confirming.
+  useEffect(() => {
+    if (pendingRemoval !== null) confirmRef.current?.focus();
+  }, [pendingRemoval]);
 
   const title = roomDisplayTitle(room);
   const members = useMemo(() => roomQuery.data?.members ?? [], [roomQuery.data]);
@@ -132,10 +133,8 @@ export function RoomMembersDialog({
     );
   };
 
-  const confirmRemoval = () => {
-    const member = pendingRemoval;
+  const confirmRemoval = (member: RoomRosterEntry) => {
     setPendingRemoval(null);
-    if (!member) return;
     removeMember.mutate(
       { roomId: room.id, authorId: member.authorId },
       {
@@ -145,145 +144,176 @@ export function RoomMembersDialog({
     );
   };
 
+  /**
+   * Escape answers the confirmation first, and only closes the panel once there
+   * is no confirmation to answer.
+   *
+   * It has to be handled here, on the dialog, rather than on the confirmation
+   * itself: Radix listens for Escape on the document in the CAPTURE phase, so
+   * it has already decided to close by the time a React handler further down
+   * the tree runs, and `stopPropagation` there is too late to matter.
+   */
+  const handleEscapeKeyDown = (event: globalThis.KeyboardEvent) => {
+    if (pendingRemoval === null) return;
+    event.preventDefault();
+    setPendingRemoval(null);
+  };
+
   return (
-    <>
-      <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-        <ResponsiveDialogContent
-          className="sm:max-w-md"
-          // Focus follows the entry point, and has to be taken over to do it.
-          // The picker sits at the BOTTOM of this panel but is the first
-          // tabbable thing in it while the roster is still loading, so Radix's
-          // "focus the first tabbable element" drops the cursor into a search
-          // field a reader who asked for "Members…" never wanted. Panel first;
-          // the picker focuses itself when the reader asked to add.
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            if (intent === 'roster') (event.currentTarget as HTMLElement | null)?.focus();
-          }}
-        >
-          <ResponsiveDialogHeader>
-            <ResponsiveDialogTitle>Members of {title}</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription>
-              Who is in here, and when each agent replies.
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-
-          <ResponsiveDialogBody className="space-y-4">
-            <section
-              aria-label="Current members"
-              aria-busy={roomQuery.isLoading || undefined}
-              className="space-y-2"
-            >
-              {roomQuery.isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-9 w-full" />
-                  <Skeleton className="h-9 w-full" />
-                </div>
-              ) : roomQuery.isError ? (
-                <p className="text-muted-foreground text-sm">
-                  Couldn&apos;t read who is in here. Everyone is still where they were — close this
-                  and open it again to retry.
-                </p>
-              ) : agentMembers.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  No agents in here yet. Add one below and it will see everything said so far.
-                </p>
-              ) : (
-                <ul className="space-y-2">
-                  {agentMembers.map((member) => (
-                    <li
-                      key={member.authorId}
-                      className="flex flex-col gap-2 sm:flex-row sm:items-center"
-                    >
-                      <span className="flex min-w-0 flex-1 items-center gap-2">
-                        <IdentityAvatar
-                          color={member.author.color ?? authorColor(member.author.id)}
-                          emoji={member.author.emoji}
-                          fallback={initialOf(member.author.displayName)}
-                          className="size-6 shrink-0"
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm">
-                          {member.author.displayName}
-                        </span>
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Select
-                          value={member.responseMode}
-                          onValueChange={(value) => handleModeChange(member, value as ResponseMode)}
-                        >
-                          <SelectTrigger
-                            className="w-48"
-                            aria-label={`When ${member.author.displayName} replies`}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {RESPONSE_MODE_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <button
-                          type="button"
-                          aria-label={`Remove ${member.author.displayName}`}
-                          onClick={() => setPendingRemoval(member)}
-                          className="text-muted-foreground hover:text-destructive focus-visible:ring-ring shrink-0 rounded-md p-1.5 outline-hidden transition-colors focus-visible:ring-2"
-                        >
-                          <UserMinus className="size-4" />
-                        </button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section aria-label="Add agents" className="space-y-2 border-t pt-4">
-              <h3 className="text-sm font-medium">Add agents</h3>
-              <p className="text-muted-foreground text-xs">
-                They join here and can read everything already said.
-              </p>
-              <AgentChipPicker
-                candidates={candidates}
-                onSubmit={handleAdd}
-                submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
-                emptyRosterMessage={
-                  agents.length === 0
-                    ? 'You have not added any agents yet. Add one to put it in here.'
-                    : 'Every agent you have is already in here.'
-                }
-                allChosenMessage="Every agent you have is already in here."
-                isSubmitting={addMember.isPending}
-                autoFocus={intent === 'add'}
-              />
-            </section>
-          </ResponsiveDialogBody>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-
-      <AlertDialog
-        open={pendingRemoval !== null}
-        onOpenChange={(next) => !next && setPendingRemoval(null)}
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent
+        className="sm:max-w-md"
+        // Focus follows the entry point, and has to be taken over to do it.
+        // The picker sits at the BOTTOM of this panel but is the first
+        // tabbable thing in it while the roster is still loading, so Radix's
+        // "focus the first tabbable element" drops the cursor into a search
+        // field a reader who asked for "Members…" never wanted. Panel first;
+        // the picker focuses itself when the reader asked to add.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          if (intent === 'roster') (event.currentTarget as HTMLElement | null)?.focus();
+        }}
+        onEscapeKeyDown={handleEscapeKeyDown}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Remove {pendingRemoval?.author.displayName} from {title}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              It stops seeing new messages here. What it already said stays. You can add it back,
-              but it starts a fresh session rather than picking up where it left off.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRemoval}>Remove</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+        <ResponsiveDialogHeader>
+          <ResponsiveDialogTitle>Members of {title}</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
+            Who is in here, and when each agent replies.
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
+
+        <ResponsiveDialogBody className="space-y-4">
+          <section
+            aria-label="Current members"
+            aria-busy={roomQuery.isLoading || undefined}
+            className="space-y-2"
+          >
+            {roomQuery.isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-full" />
+              </div>
+            ) : roomQuery.isError ? (
+              <p className="text-muted-foreground text-sm">
+                Couldn&apos;t read who is in here. Everyone is still where they were — close this
+                and open it again to retry.
+              </p>
+            ) : agentMembers.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                No agents in here yet. Add one below and it will see everything said so far.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {agentMembers.map((member) => (
+                  <li key={member.authorId} className="rounded-md border p-2">
+                    <div className="flex items-center gap-2">
+                      <IdentityAvatar
+                        color={member.author.color ?? authorColor(member.author.id)}
+                        emoji={member.author.emoji}
+                        fallback={initialOf(member.author.displayName)}
+                        className="size-6 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {member.author.displayName}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${member.author.displayName}`}
+                        onClick={() => setPendingRemoval(member.authorId)}
+                        className="text-muted-foreground hover:text-destructive focus-visible:ring-ring shrink-0 rounded-md p-1.5 outline-hidden transition-colors focus-visible:ring-2"
+                      >
+                        <UserMinus className="size-4" />
+                      </button>
+                    </div>
+
+                    {/* The mode gets its own line rather than sharing one with
+                        the name: the longest label does not fit beside an agent
+                        name at this width, and a truncated "Replies only when
+                        @me…" is a setting you cannot read. */}
+                    <Select
+                      value={member.responseMode}
+                      onValueChange={(value) => handleModeChange(member, value as ResponseMode)}
+                    >
+                      <SelectTrigger
+                        className="mt-1.5 w-full"
+                        aria-label={`When ${member.author.displayName} replies`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {RESPONSE_MODE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Confirmed in place rather than in a second dialog.
+                          A dialog over a dialog closed BOTH when it was
+                          answered — the inner one's dismissal reaches the outer
+                          as an interaction from outside it — so the roster the
+                          reader was working on vanished with the confirmation.
+                          jsdom has no portals to race; only a browser shows it. */}
+                    {pendingRemoval === member.authorId && (
+                      <div
+                        role="group"
+                        aria-label={`Remove ${member.author.displayName} from ${title}?`}
+                        className="bg-muted/60 mt-1.5 space-y-2 rounded-md p-2"
+                      >
+                        <p className="text-muted-foreground text-xs">
+                          Remove {member.author.displayName}? It stops seeing new messages here and
+                          what it already said stays. Adding it back starts a fresh session.
+                        </p>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setPendingRemoval(null)}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            ref={confirmRef}
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => confirmRemoval(member)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section aria-label="Add agents" className="space-y-2 border-t pt-4">
+            <h3 className="text-sm font-medium">Add agents</h3>
+            <p className="text-muted-foreground text-xs">
+              They join here and can read everything already said.
+            </p>
+            <AgentChipPicker
+              candidates={candidates}
+              onSubmit={handleAdd}
+              submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
+              emptyRosterMessage={
+                agents.length === 0
+                  ? 'You have not added any agents yet. Add one to put it in here.'
+                  : 'Every agent you have is already in here.'
+              }
+              allChosenMessage="Every agent you have is already in here."
+              isSubmitting={addMember.isPending}
+              takeFocus={intent === 'add'}
+            />
+          </section>
+        </ResponsiveDialogBody>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
 
