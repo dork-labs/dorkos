@@ -440,6 +440,14 @@ export class RoomService {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
 
+    // Provenance follows the TURN, not the call. The dispatcher supplies a
+    // trigger for the reply it writes, but an agent can also post here directly
+    // while its turn is running — `POST /api/rooms/:id/entries` carries none —
+    // and treating that as "no cascade" let an agent reset the guard on itself
+    // once per message, forever. Spec §6 grants a fresh cascade to a HUMAN post;
+    // an agent gets one only when it genuinely has no turn in flight.
+    const trigger = input.trigger ?? this.triggers.activeTurnFor(input.authorId);
+
     const id = ulid();
     const entry = this.store.appendEntry({
       roomId,
@@ -449,7 +457,7 @@ export class RoomService {
       body: { text: input.text },
       mentions: resolveMentions(input.text, this.roster.mentionCandidates(roomId)),
       sessionId: input.sessionId ?? null,
-      ...deriveCascade(id, input.trigger),
+      ...deriveCascade(id, trigger),
       createdAt: new Date().toISOString(),
     });
 

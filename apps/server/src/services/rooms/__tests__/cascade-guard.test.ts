@@ -17,6 +17,7 @@ import {
   agentLookupFor,
   createRoomHarness,
   scriptedRunner,
+  type RecordedTurn,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
 
@@ -162,6 +163,95 @@ describe('cascade guard, wired', () => {
     await seedAndSettle('round two');
     const secondAna = runner.turns.filter((t) => t.authorId === ana)[1];
     expect(secondAna?.sessionId).not.toBeNull();
+  });
+
+  it('does not let an agent reset the guard by posting during its own turn', async () => {
+    // The dispatcher supplies provenance for the reply IT writes — but an agent
+    // can also write to the room directly while its turn is running, which is
+    // what `POST /api/rooms/:id/entries` is, and that call carries none.
+    //
+    // Treating "no trigger argument" as "no cascade" gave every such post a
+    // fresh root at depth 0, so two `always` agents that each post an update
+    // re-triggered each other forever: measured at 21 entries, every one at
+    // depth 0 under its own root, the guard never firing once. Only the cap
+    // below stopped it, and in production nothing would have.
+    const SELF_POST_CAP = 20;
+    let selfPosts = 0;
+    const turns: RecordedTurn[] = [];
+    // Assigned once the harness exists; the runner has to be built first because
+    // the harness is constructed from it.
+    let postAsAgent: (roomId: string, authorId: string, text: string) => void = () => {};
+
+    const selfPosting: ScriptedTurnRunner = {
+      turns,
+      run(request) {
+        turns.push({
+          roomId: request.room.id,
+          authorId: request.authorId,
+          agentPath: request.agentPath,
+          sessionId: request.sessionId,
+          prompt: request.entry.body.text,
+        });
+        if (selfPosts < SELF_POST_CAP) {
+          selfPosts += 1;
+          postAsAgent(request.room.id, request.authorId, `update ${selfPosts}`);
+        }
+        // Says nothing through the dispatcher: everything it contributes is the
+        // post above, so provenance can only come from the turn it is inside.
+        return Promise.resolve({ sessionId: 'session-1', text: null });
+      },
+    };
+
+    const harness = createRoomHarness({
+      agents: alwaysAgents,
+      runner: selfPosting,
+      maxAgentDepth: MAX_AGENT_DEPTH,
+    });
+    // The agent writing to the room ITSELF, mid-turn — the shape of an agent
+    // calling `POST /api/rooms/:id/entries` while it is answering.
+    postAsAgent = (roomId, authorId, text) => {
+      harness.service.post(roomId, { authorId, text });
+    };
+    const loud = harness.service.createRoom(
+      {
+        kind: 'channel',
+        title: 'Backend',
+        members: [],
+        agentPaths: ['/agents/ana', '/agents/bo'],
+      },
+      harness.human
+    );
+    const anaId = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+    const boId = harness.authors.resolveAgent('/agents/bo', 'Bo').id;
+    harness.service.updateMembership(loud.id, harness.human, anaId, 'always');
+    harness.service.updateMembership(loud.id, harness.human, boId, 'always');
+
+    const seed = harness.service.post(loud.id, { authorId: harness.human, text: 'kick off' });
+    await harness.service.triggersIdle();
+
+    const log = harness.service.listEntries(loud.id, harness.human, { limit: 500 });
+    // The tripwire was never reached: the guard stopped this, not the cap.
+    expect(selfPosts).toBeLessThan(SELF_POST_CAP);
+    // One human message, one cascade — an agent's own writes join the turn they
+    // were made inside rather than starting a new one.
+    expect(new Set(log.map((entry) => entry.cascadeRoot))).toEqual(new Set([seed.id]));
+    expect(Math.max(...log.map((entry) => entry.cascadeDepth))).toBeLessThanOrEqual(
+      MAX_AGENT_DEPTH
+    );
+  });
+
+  it('still starts a fresh cascade for an agent posting with no turn in flight', async () => {
+    // The rule is "provenance follows the turn", not "agents never start
+    // cascades". An agent posting of its own accord — a finished task, a status
+    // update — is a legitimate start, and it is bounded anyway: to loop, it must
+    // be re-triggered, and by then it is inside a turn.
+    const spontaneous = service.post(room.id, { authorId: ana, text: 'deploy finished' });
+    await service.triggersIdle();
+
+    expect(spontaneous.cascadeRoot).toBe(spontaneous.id);
+    expect(spontaneous.cascadeDepth).toBe(0);
+    // And it does address the room: Bo answers it.
+    expect(runner.turns.map((t) => t.authorId)).toContain(bo);
   });
 
   it('stops replying entirely when the ceiling is zero', async () => {

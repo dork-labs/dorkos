@@ -128,8 +128,15 @@ const NOTICE_MEMORY = 512;
 export class RoomTriggerDispatcher {
   private readonly deps: RoomTriggerDeps;
 
-  /** `(room, cascade, author)` triples with a turn in flight — rule 2 above. */
-  private readonly claimed = new Set<string>();
+  /**
+   * Turns in flight, keyed `(room, cascade, author)`.
+   *
+   * The VALUE carries every field a reader needs. Nothing parses the key back
+   * apart — an earlier revision did, against a separator it guessed wrong, and
+   * the resulting lookup silently returned "no active turn" for every caller
+   * while every test still passed.
+   */
+  private readonly claimed = new Map<string, ActiveClaim>();
 
   /** `(room, cascade, author)` triples a refusal notice has already named. */
   private readonly noticed = new Set<string>();
@@ -235,9 +242,51 @@ export class RoomTriggerDispatcher {
     }
 
     for (const target of allowed) {
-      this.claimed.add(claimKey(room.id, entry.cascadeRoot, target.authorId));
+      this.claimed.set(claimKey(room.id, entry.cascadeRoot, target.authorId), {
+        roomId: room.id,
+        cascadeRoot: entry.cascadeRoot,
+        authorId: target.authorId,
+        depth: target.depth,
+      });
     }
     return allowed;
+  }
+
+  /**
+   * The cascade `authorId` is currently answering inside, if any.
+   *
+   * This is what stops an agent resetting the guard on itself. A reply the
+   * dispatcher writes carries provenance because the dispatcher supplies it —
+   * but an agent can also write to a room DIRECTLY, mid-turn, through
+   * `POST /api/rooms/:id/entries`, and that call supplies none. Left alone,
+   * every such post minted a fresh cascade at depth 0, re-triggering everyone;
+   * two `always` agents that each post an update looped forever, one model call
+   * per hop, with the guard never firing (every entry sat at depth 0 under its
+   * own root).
+   *
+   * So provenance follows the TURN, not the call. Spec §6 only ever granted a
+   * fresh cascade to a **human** post; treating "no trigger argument" as "no
+   * cascade" quietly extended that to agents, and this is where that is undone.
+   * An agent posting with no turn in flight still starts fresh, which is correct
+   * and bounded — to loop it would have to be re-triggered, and by then it is
+   * inside a turn and lands here.
+   *
+   * The deepest in-flight turn wins when an agent is answering in more than one
+   * room at once: the room a post lands in cannot say which turn produced it, so
+   * the conservative choice is the one closest to the ceiling.
+   *
+   * @param authorId - The author writing a post.
+   * @returns The cascade to inherit, or `undefined` when this author has no turn running.
+   */
+  activeTurnFor(authorId: string): CascadeStamp | undefined {
+    let active: CascadeStamp | undefined;
+    for (const claim of this.claimed.values()) {
+      if (claim.authorId !== authorId) continue;
+      if (!active || claim.depth > active.depth) {
+        active = { root: claim.cascadeRoot, depth: claim.depth };
+      }
+    }
+    return active;
   }
 
   /** Run one agent's turn and post whatever it said back into the room. */
@@ -310,13 +359,22 @@ export class RoomTriggerDispatcher {
 
   /** Author ids with a turn in flight in one cascade. */
   private claimsIn(roomId: string, cascadeRoot: string): string[] {
-    const prefix = `${roomId} ${cascadeRoot} `;
     const authors: string[] = [];
-    for (const key of this.claimed) {
-      if (key.startsWith(prefix)) authors.push(key.slice(prefix.length));
+    for (const claim of this.claimed.values()) {
+      if (claim.roomId === roomId && claim.cascadeRoot === cascadeRoot) {
+        authors.push(claim.authorId);
+      }
     }
     return authors;
   }
+}
+
+/** One turn in flight: which cascade it belongs to, and how deep it sits. */
+interface ActiveClaim {
+  roomId: string;
+  cascadeRoot: string;
+  authorId: string;
+  depth: number;
 }
 
 /** One agent that survived the guard, with the depth its reply will carry. */
@@ -328,11 +386,16 @@ interface TriggerTarget {
 }
 
 /**
- * A `(room, cascade, author)` key. Joined on a space, which no id here can
- * contain — room ids, entry ids and author ids are all ULIDs (Crockford
- * base32), so no value can forge a boundary and make one cascade's claim read
- * as another's.
+ * Separator for a claim key. Named, rather than a literal in a template, because
+ * it used to be an invisible NUL that a doc comment described as a space — and
+ * the next reader wrote a lookup against the space.
+ */
+const CLAIM_KEY_SEPARATOR = '\u0000';
+
+/**
+ * A `(room, cascade, author)` key, for map identity only. Nothing parses it back
+ * apart; every reader goes through the {@link ActiveClaim} value instead.
  */
 function claimKey(roomId: string, cascadeRoot: string, authorId: string): string {
-  return `${roomId} ${cascadeRoot} ${authorId}`;
+  return [roomId, cascadeRoot, authorId].join(CLAIM_KEY_SEPARATOR);
 }
