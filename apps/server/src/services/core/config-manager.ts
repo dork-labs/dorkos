@@ -1311,8 +1311,14 @@ export const CONFIG_MIGRATIONS = {
  * constructor's recovery path backs the file up and replaces it with defaults.
  *
  * That is not "the sidebar forgets its groups". It resets the ENTIRE file:
- * telemetry consent (a privacy opt-out silently reverting to the opt-in
- * defaults), `mesh.scanRoots`, `approvals`, `runtimes`, `cloud`, `onboarding`.
+ * `mesh.scanRoots`, `approvals`, `runtimes`, `cloud`, `onboarding`.
+ *
+ * It no longer takes the person's privacy choice with it —
+ * `safe-defaults/protected-state.ts` salvages that (and every other protective
+ * value) before the file is replaced, which is what DOR-584 closed. Do not read
+ * that as making this widening optional: salvage keeps protections, not
+ * preferences, and it needs the doomed file to still parse as JSON. Not
+ * condemning the file in the first place is still the goal.
  *
  * And the migration is skipped more often than it sounds. `conf` runs a key only
  * when `key > storedVersion && key <= projectVersion`, so: a dev tree resolves

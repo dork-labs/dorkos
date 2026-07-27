@@ -2965,6 +2965,15 @@
       "created": "2026-07-26",
       "extractedFrom": null,
       "specSlug": null
+    },
+    {
+      "id": "260727-181825",
+      "slug": "user-safe-defaults",
+      "title": "Defaults, fallbacks and recovery land on the option that protects the user",
+      "status": "accepted",
+      "created": "2026-07-27",
+      "extractedFrom": null,
+      "specSlug": null
     }
   ]
 }

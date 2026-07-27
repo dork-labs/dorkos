@@ -12,7 +12,7 @@ This directory contains the **Claude Code Harness** — the customization framew
 | Agents        | 7     | `.claude/agents/`                                                            |
 | Skills        | 31    | `.claude/skills/` (13 Claude-only dirs + 18 symlinks into `.agents/skills/`) |
 | Shared Skills | 18    | `.agents/skills/` (canonical, projected to other harnesses)                  |
-| Rules         | 9     | `.claude/rules/`                                                             |
+| Rules         | 11    | `.claude/rules/`                                                             |
 | Claude Hooks  | 9     | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
 | ADRs          | 249   | `decisions/` (+87 archived)                                                  |
@@ -103,8 +103,10 @@ Rules inject context when Claude edits matching files (`paths:` frontmatter — 
 | `api.md`                 | `apps/server/src/routes/**/*.ts`                 | Zod validation, thin routes, error shapes                      |
 | `components.md`          | `apps/client/src/**/*.tsx`                       | Radix/shadcn patterns, a11y, which utilities exist             |
 | `conventions.md`         | `**/*.ts, **/*.tsx`                              | TSDoc format, file-size thresholds, DRY/complexity             |
+| `desktop.md`             | `apps/desktop/**`                                | Electron shell facts, packaging + native-module rebuilds       |
 | `dork-home.md`           | server + packages src                            | dorkHome parameter convention, no `os.homedir()`               |
 | `fsd-layers.md`          | `apps/client/src/layers/**`                      | FSD layer dependency rules, barrel imports                     |
+| `safe-defaults.md`       | config + manifest/task schemas, config-manager   | Absence is not consent; verdict + carryover registries         |
 | `server-structure.md`    | `apps/server/src/{services,routes}/**`           | Domain placement for new services, thin routes                 |
 | `testing.md`             | `**/__tests__/**, **/*.test.ts(x)`               | Vitest patterns, mock Transport, FakeAgentRuntime              |
 | `user-facing-writing.md` | changelog, docs MDX, READMEs, marketing features | Plain-language pointer to `writing-for-humans` + 5 self-checks |
