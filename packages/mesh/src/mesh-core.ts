@@ -465,7 +465,12 @@ export class MeshCore {
   private async discoverAgentsFromDisk(recordedScanRoots: string[]): Promise<number> {
     const safeRecordedRoots = recordedScanRoots.filter((r) => {
       if (this.homedirFallbackRoot !== null && r === this.homedirFallbackRoot) {
-        this.logger.warn(
+        // Not an anomaly — the guard above is working exactly as designed on
+        // every pass a legacy homedir-scoped entry survives, which on a
+        // dev machine is every ~5 minutes. WARN would page nobody and just
+        // drown out the reconciler's other logs; debug keeps the trail for
+        // anyone who goes looking without alarming anyone who isn't.
+        this.logger.debug(
           '[Mesh] Skipping homedir-fallback scan root in reconciler disk discovery',
           { root: r }
         );
