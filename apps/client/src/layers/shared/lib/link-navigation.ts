@@ -331,21 +331,19 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
   }
 
   if (options.target === 'window' && supportsNewTab()) {
-    // Two arguments, never three: no `noopener`. Where this lands is decided
-    // downstream, not here, so the rule is about the call SHAPE rather than
-    // about any one shell's current behavior:
+    // Two arguments, never three: no `noopener`.
     //
-    // - In a browser, `_blank` at our own origin is a real second cockpit
-    //   window, and `noopener` would only cost us the opener reference.
-    // - In the desktop shell, the window-open handler in
-    //   `apps/desktop/src/main/window-manager.ts` inspects the URL to tell our
-    //   own origin from someone else's site — adopting the former as a second
-    //   DorkOS window and handing the latter to the system browser. Read that
-    //   handler rather than trusting this sentence; it is the authority, and
-    //   which branch a given build takes is its business, not ours.
+    // In a browser, `_blank` at our own origin is a real second cockpit window,
+    // and `noopener` would only cost us the opener reference. In the desktop
+    // shell, `setWindowOpenHandler` (`apps/desktop/src/main/window-manager.ts`)
+    // runs `isOwnOrigin` on the URL: our own origin is denied to Electron's
+    // popup path and built as a proper second cockpit window instead, loaded at
+    // exactly this URL; anything else goes to the system browser. So what we
+    // owe that handler is a plain, classifiable same-origin target, which is
+    // what `classifyLink` guarantees before we get here.
     //
-    // What we owe it is an unpolluted target it can classify. `noopener` here
-    // would foreclose that permanently.
+    // Read the handler rather than trusting this comment — it is the authority,
+    // and it is where this behavior can change without touching this file.
     window.open(link.url, '_blank');
     return true;
   }

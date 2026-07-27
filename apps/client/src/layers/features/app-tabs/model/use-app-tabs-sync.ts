@@ -8,8 +8,8 @@
  * truth — see the rule in `shared/model/app-tabs/app-tabs-store`.
  *
  * It also tells the reconciler **how** the location changed. Only a history
- * traversal (Back/Forward) may move focus to another tab; every other
- * navigation belongs to the tab you are already in. Without that distinction,
+ * traversal — Back, Forward, or a multi-step jump — may move focus to another
+ * tab; every other navigation belongs to the tab you are already in. Without that distinction,
  * closing a `?settings=open` dialog while a second tab sits at the same
  * pathname teleports you into that tab, and opening a tab on an agent another
  * tab already shows strands the new one. The router's own history reports the
@@ -38,7 +38,14 @@ export function useAppTabsSync(): void {
 
   useEffect(() => {
     return router.history.subscribe(({ action }) => {
-      traversed.current = action.type === 'BACK' || action.type === 'FORWARD';
+      // Defined as "not a new entry" rather than as a list of the traversals we
+      // thought of. `@tanstack/history` reports `GO` for any popstate whose
+      // delta is not exactly ±1 — jumping three back through the Back button's
+      // context menu, say — so an allowlist of BACK/FORWARD silently drops
+      // multi-step traversals and lets the active tab overwrite itself with an
+      // old location. Only PUSH and REPLACE create a new entry; everything
+      // else, present or future, moved through history.
+      traversed.current = action.type !== 'PUSH' && action.type !== 'REPLACE';
     });
   }, [router]);
 

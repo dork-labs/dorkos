@@ -39,8 +39,13 @@ export interface AppTabActions {
   activateRelative: (delta: number) => void;
   /** Close a tab by id. The last tab cannot be closed. */
   close: (id: string) => void;
-  /** Close whichever tab is on screen. Does nothing when it is the last one. */
-  closeActive: () => void;
+  /**
+   * Close whichever tab is on screen, and report whether there was one to
+   * close. `false` on the last tab, which is what the desktop shell's
+   * `Cmd/Ctrl+W` contract needs to hear before it closes the window. Answers
+   * synchronously — the shell races the reply.
+   */
+  closeActive: () => boolean;
   /** Open a new tab on {@link NEW_TAB_HREF} and focus it. */
   create: () => void;
 }
@@ -87,11 +92,15 @@ export function useAppTabActions(): AppTabActions {
         goToActive();
       },
       closeActive: () => {
-        const { activeTabId } = useAppTabsStore.getState();
-        if (activeTabId) {
-          useAppTabsStore.getState().closeTab(activeTabId);
-          goToActive();
-        }
+        const { tabs, activeTabId } = useAppTabsStore.getState();
+        if (!activeTabId) return false;
+        const before = tabs.length;
+        useAppTabsStore.getState().closeTab(activeTabId);
+        // `closeTab` refuses the last tab, so the count is the honest answer to
+        // "did anything close?" — never the caller's own guess at the rule.
+        const closed = useAppTabsStore.getState().tabs.length < before;
+        if (closed) goToActive();
+        return closed;
       },
       create: () => openTabAt(router, NEW_TAB_HREF),
     };

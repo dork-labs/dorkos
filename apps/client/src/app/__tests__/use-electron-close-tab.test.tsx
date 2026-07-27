@@ -26,16 +26,20 @@ function setTabs(hrefs: string[], activeIndex = 0): AppTab[] {
   return tabs;
 }
 
-/** Install a desktop bridge that hands back the callback it was given. */
+/**
+ * Install a desktop bridge that hands back the callback it was given, and
+ * reports the answer the way the real preload does: `true` keeps the window,
+ * anything else closes it.
+ */
 function installBridge() {
   const unsubscribe = vi.fn();
-  let handler: (() => void) | null = null;
-  const onCloseTab = vi.fn((cb: () => void) => {
+  let handler: (() => boolean | void) | null = null;
+  const onCloseTab = vi.fn((cb: () => boolean | void) => {
     handler = cb;
     return unsubscribe;
   });
   window.electronAPI = { onCloseTab } as unknown as Window['electronAPI'];
-  return { onCloseTab, unsubscribe, fire: () => handler?.() };
+  return { onCloseTab, unsubscribe, fire: () => handler?.() === true };
 }
 
 beforeEach(() => {
@@ -56,6 +60,15 @@ describe('useElectronCloseTab', () => {
     expect(useAppTabsStore.getState().tabs).toHaveLength(2);
   });
 
+  it('answers synchronously — the shell races the reply and the window wins ties', () => {
+    setTabs(['/', '/agents'], 0);
+    const bridge = installBridge();
+    renderHook(() => useElectronCloseTab());
+
+    // No await anywhere: the answer is known the moment the store write lands.
+    expect(bridge.fire()).toBe(true);
+  });
+
   it('does nothing when the desktop half of the contract has not shipped', () => {
     setTabs(['/', '/agents'], 0);
     window.electronAPI = {
@@ -66,40 +79,47 @@ describe('useElectronCloseTab', () => {
     expect(useAppTabsStore.getState().tabs).toHaveLength(2);
   });
 
-  it('closes the tab you are on and shows the one that took over', () => {
+  it('closes the tab you are on, shows the one that took over, and keeps the window', () => {
     setTabs(['/', '/agents', '/tasks'], 1);
     const bridge = installBridge();
 
     renderHook(() => useElectronCloseTab());
-    bridge.fire();
+    const handled = bridge.fire();
 
     expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/tasks']);
     expect(navigate).toHaveBeenCalledWith({ href: '/tasks' });
+    // `true` is what tells the shell to keep the window open. Answering `void`
+    // here would close a tab AND the window on the same keystroke.
+    expect(handled).toBe(true);
   });
 
-  it('stays out of the way on the last tab, so the window still closes', () => {
+  it('answers "not handled" on the last tab, so the window closes', () => {
     setTabs(['/session?session=abc'], 0);
     const bridge = installBridge();
 
     renderHook(() => useElectronCloseTab());
+    const handled = bridge.fire();
 
-    expect(bridge.onCloseTab).not.toHaveBeenCalled();
+    expect(handled).toBe(false);
+    expect(useAppTabsStore.getState().tabs).toHaveLength(1);
   });
 
-  it('claims Cmd+W as soon as a second tab opens, and lets go when it closes', () => {
+  it('claims the keystroke for the whole life of the shell, not per tab count', () => {
+    // The shell relabels its menu item while a subscriber exists, so a
+    // subscription that came and went with the tab count would flicker the
+    // label between two names for one key.
     setTabs(['/'], 0);
     const bridge = installBridge();
     const { rerender } = renderHook(() => useElectronCloseTab());
-    expect(bridge.onCloseTab).not.toHaveBeenCalled();
+    expect(bridge.onCloseTab).toHaveBeenCalledTimes(1);
 
     useAppTabsStore.getState().openTab('/agents');
     rerender();
     expect(bridge.onCloseTab).toHaveBeenCalledTimes(1);
+    expect(bridge.unsubscribe).not.toHaveBeenCalled();
 
-    bridge.fire();
-    rerender();
+    expect(bridge.fire()).toBe(true);
     expect(useAppTabsStore.getState().tabs).toHaveLength(1);
-    expect(bridge.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it('unsubscribes on unmount', () => {

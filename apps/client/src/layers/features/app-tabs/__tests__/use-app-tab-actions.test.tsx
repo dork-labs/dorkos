@@ -10,8 +10,14 @@ import { useAppTabsStore, type AppTab } from '@/layers/shared/model';
 const navigate = vi.fn((_options: { href: string }) => Promise.resolve());
 let locationHref = '/';
 
-/** The router's history action type, as `@tanstack/history` reports it. */
-type HistoryActionType = 'PUSH' | 'REPLACE' | 'BACK' | 'FORWARD';
+/**
+ * Every action type `@tanstack/history` reports, matching the enumerations in
+ * `use-dialog-deep-link.test.tsx` and `OnboardingFlow.test.tsx`. `GO` is the
+ * one that matters here: it covers any popstate whose delta is not exactly ±1,
+ * and leaving it out of this type is what let a multi-step Back slip past the
+ * traversal check unnoticed.
+ */
+type HistoryActionType = 'PUSH' | 'REPLACE' | 'GO' | 'FORWARD' | 'BACK';
 
 const historySubscribers = new Set<(opts: { action: { type: HistoryActionType } }) => void>();
 
@@ -258,6 +264,35 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
       '/',
       '/session?session=abc&dir=%2Fapi',
     ]);
+  });
+
+  it('treats a multi-step jump through history as a traversal', () => {
+    // The Back button's context menu (or `history.go(-3)`) reports `GO`, not
+    // `BACK`. Checking for BACK/FORWARD by name silently dropped these: the tab
+    // you were in would overwrite itself with the old location while the tab
+    // that legitimately held it sat there, leaving two tabs on one href.
+    const tabs = setTabs(['/', '/agents', '/tasks'], 2);
+    locationHref = '/tasks';
+    const { rerender } = renderHook(() => useAppTabsSync());
+
+    navigateTo('/', 'GO', rerender);
+
+    expect(useAppTabsStore.getState().activeTabId).toBe(tabs[0].id);
+    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/agents', '/tasks']);
+  });
+
+  it('treats every non-entry-creating action as a traversal', () => {
+    // Defined as "not PUSH or REPLACE" so a future action type cannot quietly
+    // fall through to the adopt branch.
+    for (const type of ['BACK', 'FORWARD', 'GO'] as const) {
+      const tabs = setTabs(['/', '/agents'], 1);
+      locationHref = '/agents';
+      const { rerender, unmount } = renderHook(() => useAppTabsSync());
+      navigateTo('/', type, rerender);
+      expect(useAppTabsStore.getState().activeTabId, type).toBe(tabs[0].id);
+      unmount();
+      historySubscribers.clear();
+    }
   });
 
   it('does not let a traversal onto an unchanged href leak into the next navigation', () => {

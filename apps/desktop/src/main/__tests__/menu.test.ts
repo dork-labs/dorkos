@@ -91,7 +91,7 @@ describe('setupMenu (B1)', () => {
       'minimize',
       'zoom',
       undefined,
-      'Close',
+      'Close Tab',
       'Close Window',
       undefined,
       'front',
@@ -329,7 +329,7 @@ describe('setupMenu on win32/linux (DOR-310)', () => {
 
     expect(windowMenu.map((item) => item.label ?? item.role)).toEqual([
       'minimize',
-      'Close',
+      'Close Tab',
       'Close Window',
     ]);
   });
@@ -408,11 +408,10 @@ describe('Cmd/Ctrl+W — closing (DOR-538)', () => {
         | Electron.MenuItemConstructorOptions[]
         | undefined;
 
-      // Labelled "Close", not "Close Tab": nothing subscribes to onCloseTab
-      // yet, so today this closes the window, and a menu item that names
-      // something the product does not do breaks its promise on sight.
-      const closeItem = findItem(template!, 'Close')!;
-      expect(findItem(template!, 'Close Tab')).toBeUndefined();
+      // Labelled "Close Tab" since DOR-540 shipped the renderer's handler: the
+      // cockpit subscribes for the life of the shell, so this closes a tab
+      // whenever there is one and the window on the last tab.
+      const closeItem = findItem(template!, 'Close Tab')!;
       expect(closeItem.accelerator).toBe('CmdOrCtrl+W');
       // Not a role: the renderer decides whether the window survives.
       expect(closeItem.role).toBeUndefined();

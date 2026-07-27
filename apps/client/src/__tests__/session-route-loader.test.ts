@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { sessionRouteLoader, sessionSearchSchema } from '../router';
+import { sessionRouteLoader, sessionLoaderDeps, sessionSearchSchema } from '../router';
 import type { Session } from '@dorkos/shared/types';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -17,6 +17,35 @@ describe('sessionSearchSchema', () => {
   });
 });
 
+describe('sessionLoaderDeps', () => {
+  it('declares exactly the params the loader acts on', () => {
+    const search = sessionSearchSchema.parse({
+      session: 'abc',
+      dir: '/api',
+      runtime: 'opencode',
+      prompt: 'hello',
+    });
+    expect(sessionLoaderDeps({ search })).toEqual({
+      session: 'abc',
+      dir: '/api',
+      runtime: 'opencode',
+      prompt: 'hello',
+    });
+  });
+
+  it('ignores dialog params, so opening a dialog cannot re-run session selection', () => {
+    // `?settings=open` is a modifier on wherever you are. Including it here
+    // would re-run the loader on every dialog toggle.
+    const search = sessionSearchSchema.parse({ dir: '/api', settings: 'open' });
+    expect(Object.keys(sessionLoaderDeps({ search })).sort()).toEqual([
+      'dir',
+      'prompt',
+      'runtime',
+      'session',
+    ]);
+  });
+});
+
 describe('sessionRouteLoader', () => {
   let queryClient: QueryClient;
 
@@ -26,12 +55,19 @@ describe('sessionRouteLoader', () => {
     });
   });
 
-  /** Helper to invoke the loader and catch the redirect throw. */
+  /**
+   * Invoke the loader the way the router does — through `loaderDeps`, so the
+   * test exercises the same param extraction production uses — and catch the
+   * redirect throw.
+   */
   function callLoader(searchStr: string) {
+    const search = sessionSearchSchema.parse(
+      Object.fromEntries(new URLSearchParams(searchStr).entries())
+    );
     try {
       sessionRouteLoader({
         context: { queryClient },
-        location: { searchStr },
+        deps: sessionLoaderDeps({ search }),
       });
       return { redirected: false } as const;
     } catch (thrown: unknown) {
