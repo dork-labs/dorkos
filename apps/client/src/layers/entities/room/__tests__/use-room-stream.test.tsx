@@ -267,11 +267,22 @@ describe('useRoomStream', () => {
     });
     await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(1));
 
-    unmount();
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    // Still 1: the aborted stream ending is not a failure, so nothing reopened.
-    expect(transport.subscribeRoom).toHaveBeenCalledTimes(1);
+    // The assertion is a NEGATIVE — that no reconnect happens — which `waitFor`
+    // cannot express, so the clock is moved by hand instead of slept through.
+    // Fake timers only from here: everything above needs the real ones, and the
+    // window advanced is the longest backoff the hook can possibly schedule, so
+    // a retry that existed would have fired by the assertion below whatever the
+    // jitter rolled.
+    vi.useFakeTimers();
+    try {
+      unmount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(SSE_RESILIENCE.BACKOFF_CAP_MS);
+      });
+      // Still 1: the aborted stream ending is not a failure, so nothing reopened.
+      expect(transport.subscribeRoom).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
