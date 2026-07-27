@@ -88,6 +88,10 @@ So: **rebase onto `origin/main` and push before you open the PR, and again befor
 you ask for a review.** If GitHub's PR page says the branch has conflicts, treat
 every green space on that page as meaningless.
 
+**An auto-merge armed on a conflicting PR is the same silence, one step later.** It
+waits on checks that will never run, so it never fires, and nothing tells you it is
+stuck. It just sits there looking armed.
+
 If you need a review without rebasing first, run the workflow by hand:
 
 ```bash
@@ -136,6 +140,45 @@ bump) where you are the merger and have full context. Prefer `review:light` over
 `skip-review` when in doubt: you still get Important-only coverage at low cost.
 Use `review:deep` for risky changes (security, migrations, broad refactors,
 deletions).
+
+## Merging: arm auto-merge instead of babysitting it
+
+Where the base branch requires status checks _and_ requires branches to be up to
+date, merging by hand becomes a loop: update the branch, wait a few minutes for
+checks, try to merge, find that the base moved again, start over. Hand the loop to
+GitHub instead:
+
+```bash
+gh pr merge --auto --squash <number>
+```
+
+The PR then merges itself once its required checks pass. Arm it once and stop
+watching. (The repo must have auto-merge turned on; DorkOS does.)
+
+**Arm it after a review pass, not before.** Nothing here requires an approving
+review, so an armed auto-merge lands the PR on its required checks alone. The order
+is the whole safeguard: review, then arm.
+
+**Only people with write access can arm it.** In GitHub's words: "People with write
+permissions to a repository can enable auto-merge for a pull request." An outside
+contributor on a fork PR cannot arm their own merge.
+
+**Ask the repo what its required checks are; never assume.** The set differs per
+repo and changes over time, so any list written down here would go stale:
+
+```bash
+gh api repos/{owner}/{repo}/branches/main/protection --jq '.required_status_checks'
+```
+
+**Never require a check whose workflow has a `paths:` filter.** That workflow does
+not run on a PR that touches nothing under those paths, and GitHub leaves the check
+pending rather than skipping it: "If a workflow is skipped due to path filtering,
+branch filtering or a commit message, then checks associated with that workflow
+will remain in a 'Pending' state. A pull request that requires those checks to be
+successful will be blocked from merging." An auto-merge armed on such a PR waits
+forever too. (DorkOS's `main` today requires `typecheck` and `fragment-present`,
+both from workflows with no `paths:` filter, with "require branches to be up to
+date" on.)
 
 ## One-time repo setup
 
@@ -191,5 +234,8 @@ gh label create re-review    --description "Request another automated review pas
   never touches `CHANGELOG.md`). For changes that should not land in the user-facing
   changelog, `touch .claude/.changelog-populator.lock` before committing (the lock is
   gitignored) and delete any fragment it already wrote.
-- **The review is non-blocking.** It posts comments; it never gates merge. You can
-  merge without waiting for it.
+- **The review is non-blocking.** It posts comments, and it is not one of the
+  branch's required checks, so nothing waits on it. That is not the same as being
+  free to merge: branch protection still gates the merge on the checks it does
+  require. Arming auto-merge is how you stop waiting on the review without
+  pretending the other gates are gone.
