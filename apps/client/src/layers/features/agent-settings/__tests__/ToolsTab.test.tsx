@@ -90,8 +90,17 @@ describe('ToolsTab', () => {
 
     it('shows core tools footnote instead of row', () => {
       const view = renderTab(baseAgent, onUpdate);
+      // "Always REGISTERED", not "in every agent's instructions" (DOR-509 review).
+      // A first pass at this footnote said "instructions", which is false: there is
+      // no core-tools context block. `context-builder.ts` assembles exactly five
+      // blocks (relay, mesh, adapter, tasks, ui) and `get_server_info` appears in no
+      // prompt-building file at all. What IS unconditional is registration —
+      // `mcp-tools/index.ts` spreads `getCoreTools(deps)` with no toolConfig branch.
+      // Registration is the honest word, and it is the one the toggles never touch.
       expect(
-        view.getByText('Core tools (ping, server info, agent identity) are always available.')
+        view.getByText(
+          'Core tools (ping, server info, agent identity) are always registered, whatever you set here.'
+        )
       ).toBeInTheDocument();
     });
 

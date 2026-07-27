@@ -209,6 +209,7 @@
         "services/core/capabilities/",
         "services/core/approvals/",
         "services/core/agent-identity/",
+        "services/core/mcp-tool-",
         "external-mcp/tool-security",
         "packages/evals/src/suite/governance",
         "packages/cli/src/commands/(agent",

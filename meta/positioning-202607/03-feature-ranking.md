@@ -27,7 +27,8 @@ _Benefit:_ install a working agent or skill pack in one command; and because Dor
 _Why:_ the flywheel, and the shelf is not empty at launch: it starts stocked with the largest agent-plugin ecosystem in the world. ClawHub proved skills marketplaces compound; DorkOS's is live, MCP-reachable from other tools, and bidirectionally compatible (DorkOS marketplaces serve plain Claude Code users too). Superset claim needs verification against popular real-world plugins before public use (`09-gtm-plan.md` §2.5).
 
 **6. Trust controls** (tool approvals, permission modes, per-agent tool context, honest data-flow story)
-_Benefit:_ let agents run exactly as far as you trust them, and see everything they did.
+_Benefit:_ the things an agent cannot take back stop and ask you first, and you can see everything it did.
+_Do not claim:_ per-agent trust levels. `tierCeiling` is implemented and has no setter, so every agent sits at the same ceiling; "run exactly as far as you trust them" is a roadmap line, not a shipped one.
 _Why:_ the enabler of everything above (autonomy without controls is a horror story) and, post-OpenClaw, a first-class buying criterion. Pair with a published security posture to convert it from feature to positioning.
 
 **7. Remote access** (tunnel, passcode, QR to phone)

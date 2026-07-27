@@ -26,7 +26,7 @@ The core thesis survives fully intact ("intelligence doesn't scale; coordination
 
 1. **Vendor-neutral, structurally.** Any agent, per session, one interface. The claim no first party can ever make, and the answer to "what happens when Anthropic ships this?" (They did ship it. For their agent. That is the point.)
 2. **A coordination layer, not a dashboard.** Scheduling, messaging (to you and between agents), discovery, memory, marketplace. The peer group shows sessions; DorkOS runs an organization.
-3. **Yours.** Self-hosted, laptop-first, MIT, honest about what goes to model providers. Post-OpenClaw, pair this with _secure by default_ or "self-hosted" reads as a liability instead of a benefit.
+3. **Yours.** Self-hosted, laptop-first, MIT, honest about what goes to model providers. Post-OpenClaw, "self-hosted" reads as a liability unless it is paired with a security claim. Pair it with the claim that is actually true: _it listens only on your own machine by default_. Do **not** pair it with "secure by default", and do **not** say "sign-in required the moment you expose it" (see the copy rule at §Pillar 3): DorkOS's default posture trusts every program running as you, which is the right default for a laptop tool and the wrong thing to describe with an unqualified adjective.
 
 ### The one-sentence word-of-mouth test (Godin format)
 
@@ -73,7 +73,11 @@ Explicitly _not_ now: hosted SaaS, team/multi-user features, Wing as a product, 
 
 **Pillar 2: A team, not tabs.** Schedules, messages, discovery. Agents that ping your phone when they finish and find each other when they need help. _Proof:_ the 5-minute path; a night-run receipt (real PR, real Telegram screenshot); Relay/Mesh docs.
 
-**Pillar 3: Yours, and safe to run.** Self-hosted, MIT, laptop-first, secure by default, honest about what goes to model providers. Includes fully-local sessions: OpenCode brings local models, so private work provably never leaves the machine. _Proof:_ threat model page; localhost-default config; an offline-session demo; the honesty section; readable source.
+**Pillar 3: Yours, and safe to run.** Self-hosted, MIT, laptop-first, listens only on your own machine by default, honest about what goes to model providers. Includes fully-local sessions: OpenCode brings local models, so private work provably never leaves the machine. _Proof:_ threat model page; localhost-default config; an offline-session demo; the honesty section; readable source.
+
+**Downstream copy rule for this pillar.** Every protection here has a posture it depends on, and a protection stated without its posture is the defect DOR-509 was opened to clear. The default is `local-trust`: no login, loopback only. It refuses the agent that asked (an agent identity or the retry token it holds is enough to turn it down), and it cannot tell the person apart from a program on the same machine that hides both. The stricter posture is `signed-in-operator`: login on, and only a signed-in account can answer. Both are real; only one is on by default. So say "listens only on your own machine by default", never bare "secure by default", and when a surface names a gate, say which posture makes it hold.
+
+**Two phrasings that are false, and one that is only nearly true.** "Sign-in required the moment you expose it" was written into this file by DOR-509's own first pass and is wrong twice. First, causally: `DORKOS_HOST` is what decides the bind, and sign-in only _permits_ a wider one, so flipping sign-in is not what opens the door. Second, and worse, it is false for the artifact we publish: the Docker image bakes in `DORKOS_HOST=0.0.0.0` **and** `DORKOS_ALLOW_INSECURE_BIND=true` (`Dockerfile:144-145`), and `auth/exposure-guard.ts:156` returns `allowed` on that flag, so the shipped container serves the whole API to anyone who reaches the port with login off. Our own `docs/self-hosting/docker.mdx` says so plainly. A reverse proxy in front of a loopback bind is a second path the guard never sees, since it only inspects `DORKOS_HOST`. The safe published claim is the narrow one: **it listens only on your own machine by default.** Anything stronger has to name the container.
 
 **Foundation:** built by one dork with an agent fleet, in public, dogfooding all of it.
 

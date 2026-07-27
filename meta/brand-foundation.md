@@ -149,11 +149,11 @@ DorkOS is modular and open source. Each module can run independently or together
 
 #### 6.1 DorkOS Engine (Runtime)
 
-The runtime that powers everything. Engine connects your AI agents, exposes a secure REST API, and serves as the foundation for all other modules. Agent adapters let you plug in any coding agent — **Claude Code, Codex, and OpenCode are all shipped today**, per-session switchable, each passing a shared conformance suite. OpenCode brings local models, so fully-offline private sessions are possible in the same cockpit.
+The runtime that powers everything. Engine connects your AI agents, exposes a REST API that listens only on your own machine by default, and serves as the foundation for all other modules. Agent adapters let you plug in any coding agent: **Claude Code, Codex, and OpenCode are all shipped today**, per-session switchable, each passing a shared conformance suite. OpenCode brings local models, so fully-offline private sessions are possible in the same cockpit.
 
 - Runs locally on your machine
 - Connects AI agents via pluggable adapters (Claude Code first, more coming)
-- Exposes a secure REST + SSE API
+- Exposes a REST + SSE API, bound to localhost by default
 - Enables remote access via tunnel
 - Runs Pulse, Relay, and Mesh as integrated capabilities
 

@@ -263,7 +263,8 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
           </FieldCard>
 
           <p className="text-muted-foreground text-xs">
-            Core tools (ping, server info, agent identity) are always available.
+            Core tools (ping, server info, agent identity) are always registered, whatever you set
+            here.
           </p>
         </>
       ) : (
