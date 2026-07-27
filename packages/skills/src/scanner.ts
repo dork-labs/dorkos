@@ -101,6 +101,12 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
  * @param options.requireNameMatch - Forwarded to {@link parseSkillFile}: when
  *   `false`, a frontmatter `name` that differs from the directory name does
  *   not fail the parse (Claude Code compatibility, DOR-263). Defaults to `true`.
+ * @param options.ignoreDirs - Subdirectory names that are containers rather
+ *   than skills, and so are skipped entirely — never parsed, never reported
+ *   as missing a SKILL.md. Use it for a directory the caller itself owns
+ *   (e.g. the task-templates container inside a tasks directory); without it
+ *   such a container reads as a skill that forgot its SKILL.md. Defaults to
+ *   none, so every subdirectory is treated as a skill.
  * @returns Array of parse results (both successes and failures)
  */
 export async function scanSkillDirectory<T>(
@@ -111,11 +117,13 @@ export async function scanSkillDirectory<T>(
     withUiTemplates?: boolean;
     logger?: Logger;
     requireNameMatch?: boolean;
+    ignoreDirs?: readonly string[];
   }
 ): Promise<ParseResult<ParsedSkill<T>>[]> {
   const includeMissing = options?.includeMissing ?? true;
   const withUiTemplates = options?.withUiTemplates ?? false;
   const logger = options?.logger ?? noopLogger;
+  const ignoreDirs = new Set(options?.ignoreDirs ?? []);
   const results: ParseResult<ParsedSkill<T>>[] = [];
 
   let entries: Dirent[];
@@ -127,8 +135,9 @@ export async function scanSkillDirectory<T>(
   }
 
   for (const entry of entries) {
-    // Skip non-directories and dotfiles
+    // Skip non-directories, dotfiles, and caller-declared containers
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    if (ignoreDirs.has(entry.name)) continue;
 
     const skillPath = path.join(dir, entry.name, SKILL_FILENAME);
 

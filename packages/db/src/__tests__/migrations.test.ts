@@ -1,10 +1,58 @@
-import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect, afterEach } from 'vitest';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { createDb, runMigrations } from '../index';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
+
+/**
+ * Journal index of the last migration BEFORE `pulse_runs` gained its
+ * `ON DELETE CASCADE`. A database built through this index reproduces the
+ * pre-cascade schema every existing install is upgrading from.
+ */
+const PRE_CASCADE_MIGRATION_IDX = 43;
+
+/** Temp migration folders to remove after each test. */
+const tempMigrationDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempMigrationDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Build a throwaway migrations folder holding only migrations up to and
+ * including `idx`, so a test can stand up a database at an older schema
+ * version and then let the real {@link runMigrations} upgrade it.
+ *
+ * The migrator reads `meta/_journal.json` for the list to apply, so truncating
+ * the journal and copying just those `.sql` files is enough; snapshots are
+ * build-time input to drizzle-kit and are not read at runtime.
+ *
+ * @param idx - Highest journal index to include
+ * @returns Absolute path to the temporary migrations folder
+ */
+function migrationsFolderThrough(idx: number): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'dorkos-drizzle-'));
+  tempMigrationDirs.push(dir);
+  mkdirSync(path.join(dir, 'meta'));
+
+  const journal = JSON.parse(
+    readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
+  ) as { entries: { idx: number; tag: string }[] };
+  journal.entries = journal.entries.filter((e) => e.idx <= idx);
+  writeFileSync(path.join(dir, 'meta/_journal.json'), JSON.stringify(journal));
+
+  for (const entry of journal.entries) {
+    copyFileSync(path.join(DRIZZLE_DIR, `${entry.tag}.sql`), path.join(dir, `${entry.tag}.sql`));
+  }
+  return dir;
+}
 
 describe('Database Migrations', () => {
   it('applies all migrations to a fresh database without errors', () => {
@@ -298,6 +346,97 @@ describe('Database Migrations', () => {
     // Partial: a full index would carry a row per ordinary message to serve a
     // lookup that only ever asks for a non-null root.
     expect(index?.sql).toContain('WHERE "thread_root_entry_id" IS NOT NULL');
+  });
+
+  it('deleting a pulse_schedules row cascades to its pulse_runs', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        "INSERT INTO pulse_schedules (id, name, cron, timezone, prompt, enabled, permission_mode, status, file_path, tags_json, created_at, updated_at) VALUES ('01SCHED', 'nightly', '0 3 * * *', 'UTC', 'go', 1, 'acceptEdits', 'active', '/tmp/tasks/nightly/SKILL.md', '[]', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO pulse_runs (id, schedule_id, status, started_at, trigger, created_at) VALUES ('01RUN', '01SCHED', 'completed', '2026-01-01T03:00:00Z', 'scheduled', '2026-01-01T03:00:00Z')"
+      )
+      .run();
+
+    // Before migration 0036 this threw FOREIGN KEY constraint failed, which
+    // aborted every reconciliation pass that tried to retire an old task.
+    expect(() => {
+      raw.prepare("DELETE FROM pulse_schedules WHERE id = '01SCHED'").run();
+    }).not.toThrow();
+
+    const runs = raw.prepare('SELECT id FROM pulse_runs').all();
+    expect(runs).toEqual([]);
+  });
+
+  it('the pulse_runs cascade rebuild preserves existing run history', () => {
+    // Driven through the REAL runMigrations, not by exec-ing the .sql by hand.
+    // The difference is load-bearing: drizzle's migrator wraps every migration
+    // in BEGIN…COMMIT, and SQLite ignores `PRAGMA foreign_keys` inside a
+    // transaction, so the rebuild's leading `PRAGMA foreign_keys=OFF` is inert
+    // in production. Replaying the statements bare would leave the pragma in
+    // force and test a strictly more permissive environment than the one users
+    // get. So: migrate to the version before the rebuild, seed a schedule with
+    // run history, then let runMigrations apply it exactly as an upgrade does.
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_CASCADE_MIGRATION_IDX) });
+    const raw = db.$client;
+
+    // The pre-rebuild FK really has no cascade: deleting the parent fails.
+    raw
+      .prepare(
+        "INSERT INTO pulse_schedules (id, name, cron, timezone, prompt, enabled, permission_mode, status, file_path, tags_json, created_at, updated_at) VALUES ('01SCHED', 'nightly', '0 3 * * *', 'UTC', 'go', 1, 'acceptEdits', 'active', '/tmp/tasks/nightly/SKILL.md', '[]', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO pulse_runs (id, schedule_id, status, started_at, finished_at, duration_ms, output, trigger, created_at) VALUES ('01RUNOLD', '01SCHED', 'completed', '2026-01-01T03:00:00Z', '2026-01-01T03:01:00Z', 60000, 'all good', 'scheduled', '2026-01-01T03:00:00Z')"
+      )
+      .run();
+    expect(() => {
+      raw.prepare("DELETE FROM pulse_schedules WHERE id = '01SCHED'").run();
+    }).toThrow(/FOREIGN KEY/);
+
+    runMigrations(db);
+
+    // Every column survives the rebuild, unchanged.
+    const rows = raw
+      .prepare(
+        'SELECT id, schedule_id, status, started_at, finished_at, duration_ms, output, error, session_id, trigger, created_at FROM pulse_runs'
+      )
+      .all();
+    expect(rows).toEqual([
+      {
+        id: '01RUNOLD',
+        schedule_id: '01SCHED',
+        status: 'completed',
+        started_at: '2026-01-01T03:00:00Z',
+        finished_at: '2026-01-01T03:01:00Z',
+        duration_ms: 60000,
+        output: 'all good',
+        error: null,
+        session_id: null,
+        trigger: 'scheduled',
+        created_at: '2026-01-01T03:00:00Z',
+      },
+    ]);
+
+    // The rebuild leaves no scaffolding behind, and the DB is self-consistent.
+    const leftovers = raw
+      .prepare("SELECT name FROM sqlite_master WHERE name LIKE '__new%'")
+      .all() as { name: string }[];
+    expect(leftovers).toEqual([]);
+    expect(raw.pragma('foreign_key_check')).toEqual([]);
+    expect(raw.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+
+    // And the same delete that failed before the migration now cascades.
+    raw.prepare("DELETE FROM pulse_schedules WHERE id = '01SCHED'").run();
+    expect(raw.prepare('SELECT id FROM pulse_runs').all()).toEqual([]);
   });
 
   it('unique constraint on relay_traces.message_id is enforced', () => {

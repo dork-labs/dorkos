@@ -30,7 +30,10 @@ export const pulseRuns = sqliteTable('pulse_runs', {
   id: text('id').primaryKey(), // ULID
   scheduleId: text('schedule_id')
     .notNull()
-    .references(() => pulseSchedules.id),
+    // ON DELETE CASCADE: a run is history *of* a schedule and has no meaning
+    // without it. Without the cascade, `foreign_keys = ON` turns every delete
+    // of a schedule that ever ran into a FOREIGN KEY violation.
+    .references(() => pulseSchedules.id, { onDelete: 'cascade' }),
   status: text('status', {
     enum: ['running', 'completed', 'failed', 'cancelled', 'timeout'],
   }).notNull(),

@@ -1,8 +1,10 @@
 /**
  * Task preset system — default task templates for first-time users.
  *
- * Provides factory-default presets stored at `{dorkHome}/tasks/templates/`.
+ * Provides factory-default presets stored at `{dorkHome}/tasks/presets.json`.
  * Presets are created on first server start and can be customized by the user.
+ * Distinct from task templates, which are SKILL.md directories under
+ * `{dorkHome}/tasks/templates/` — see `task-templates.ts`.
  *
  * @module services/tasks/task-presets
  */
@@ -110,7 +112,7 @@ export async function loadPresets(dorkHome: string): Promise<TaskPreset[]> {
 /**
  * Ensure default presets exist on disk.
  *
- * Creates `{dorkHome}/tasks/templates/` with the four default presets
+ * Creates `{dorkHome}/tasks/presets.json` with the four default presets
  * if the file does not already exist. Existing files are left untouched.
  *
  * @param dorkHome - The dork home directory path

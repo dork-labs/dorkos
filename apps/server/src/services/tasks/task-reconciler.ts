@@ -10,6 +10,7 @@ import path from 'node:path';
 import type { TaskStore } from './task-store.js';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
+import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
 import { logger } from '../../lib/logger.js';
 
 /** 5-minute reconciliation interval. */
@@ -71,31 +72,54 @@ export class TaskReconciler {
     }
   }
 
-  /** Run a single reconciliation pass. */
+  /**
+   * Run a single reconciliation pass.
+   *
+   * This is a periodic safety net over many independent task files and rows, so
+   * every step that can fail is contained to the one file or row it concerns.
+   * One unreadable directory, one bad file, or one row the DB refuses to touch
+   * says nothing about the rest — and because the pass runs on a timer forever,
+   * letting a single failure escape does not retry the work, it permanently
+   * disables the safety net.
+   */
   async reconcile(): Promise<{ upserted: number; orphaned: number }> {
     let upserted = 0;
     let orphaned = 0;
     const seenFilePaths = new Set<string>();
 
     for (const dir of this.directories) {
-      try {
-        const results = await scanSkillDirectory(dir.tasksDir, TaskFrontmatterSchema);
-        for (const result of results) {
-          if (!result.ok) {
-            logger.warn(`[TaskReconciler] Invalid file ${result.filePath}: ${result.error}`);
-            continue;
-          }
-          seenFilePaths.add(result.definition.filePath);
-          const def = {
-            ...result.definition,
-            scope: dir.scope as 'project' | 'global',
-            projectPath: dir.projectPath,
-          };
+      // `templates/` and friends are containers the tasks system owns, not
+      // tasks — scanning them as tasks reports a permanent bogus "invalid
+      // file" every pass.
+      const results = await scanSkillDirectory(dir.tasksDir, TaskFrontmatterSchema, {
+        ignoreDirs: RESERVED_TASK_DIRNAMES,
+      }).catch((err: unknown) => {
+        // A missing directory is already an empty scan, so reaching here means
+        // something genuinely went wrong reading this one.
+        logger.error(`[TaskReconciler] Failed to scan ${dir.tasksDir}`, err);
+        return [];
+      });
+
+      for (const result of results) {
+        if (!result.ok) {
+          logger.warn(`[TaskReconciler] Invalid file ${result.filePath}: ${result.error}`);
+          continue;
+        }
+        // Record the file as seen BEFORE attempting the write: the file is on
+        // disk either way, and a task missing from this set is treated as
+        // deleted below. A failed write must never look like a deletion.
+        seenFilePaths.add(result.definition.filePath);
+        const def = {
+          ...result.definition,
+          scope: dir.scope as 'project' | 'global',
+          projectPath: dir.projectPath,
+        };
+        try {
           this.store.upsertFromFile(def, dir.agentId);
           upserted++;
+        } catch (err) {
+          logger.error(`[TaskReconciler] Failed to sync ${result.definition.filePath}`, err);
         }
-      } catch {
-        // Directory may not exist yet — that's fine
       }
     }
 
@@ -103,7 +127,8 @@ export class TaskReconciler {
     const allTasks = this.store.getTasks();
     const now = Date.now();
     for (const task of allTasks) {
-      if (task.filePath && !seenFilePaths.has(task.filePath)) {
+      if (!task.filePath || seenFilePaths.has(task.filePath)) continue;
+      try {
         const updatedAt = new Date(task.updatedAt).getTime();
         if (now - updatedAt > ORPHAN_GRACE_MS) {
           this.store.deleteTask(task.id);
@@ -113,6 +138,8 @@ export class TaskReconciler {
           const dirName = path.basename(path.dirname(task.filePath));
           this.store.markRemovedBySlug(dirName);
         }
+      } catch (err) {
+        logger.error(`[TaskReconciler] Failed to retire removed task ${task.id}`, err);
       }
     }
 

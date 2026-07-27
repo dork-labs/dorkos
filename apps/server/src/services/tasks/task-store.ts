@@ -204,10 +204,29 @@ export class TaskStore {
     return this.getTask(id);
   }
 
-  /** Delete a task by ID. Returns true if found and deleted. */
+  /**
+   * Delete a task and everything keyed to it. Returns true if found and deleted.
+   *
+   * Both child deletes are explicit, in one transaction, rather than left to
+   * the database:
+   *
+   * - `pulse_runs` has an `ON DELETE CASCADE` foreign key, so the delete would
+   *   succeed without this. It stays because the cascade is only in force while
+   *   `foreign_keys = ON`; a connection opened without that pragma would leave
+   *   run rows pointing at a task that no longer exists.
+   * - `pulse_dispatch_log` has no foreign key at all (it is a dedup ledger keyed
+   *   on task id, deliberately unconstrained so a claim is one cheap INSERT).
+   *   Nothing else deletes its rows on task deletion — the scheduler only prunes
+   *   them on a 7-day TTL, and only at startup — so without this they outlive
+   *   the task they belong to.
+   */
   deleteTask(id: string): boolean {
-    const result = this.db.delete(pulseSchedules).where(eq(pulseSchedules.id, id)).run();
-    return result.changes > 0;
+    return this.db.transaction((tx) => {
+      tx.delete(pulseRuns).where(eq(pulseRuns.scheduleId, id)).run();
+      tx.delete(pulseDispatchLog).where(eq(pulseDispatchLog.taskId, id)).run();
+      const result = tx.delete(pulseSchedules).where(eq(pulseSchedules.id, id)).run();
+      return result.changes > 0;
+    });
   }
 
   // === Run CRUD ===

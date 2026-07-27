@@ -203,6 +203,15 @@ describe('Tasks routes', () => {
       expect(scheduler.unregisterTask).toHaveBeenCalledWith(sched.id);
     });
 
+    it('deletes a schedule that has already run', async () => {
+      const sched = store.createTask(taskInput({ name: 'Ran', prompt: 'p', cron: '0 * * * *' }));
+      store.createRun(sched.id, 'scheduled');
+
+      const res = await request(app).delete(`/api/tasks/${sched.id}`);
+      expect(res.status).toBe(200);
+      expect(store.getTask(sched.id)).toBeNull();
+    });
+
     it('returns 404 for nonexistent schedule', async () => {
       const res = await request(app).delete('/api/tasks/nope');
       expect(res.status).toBe(404);
