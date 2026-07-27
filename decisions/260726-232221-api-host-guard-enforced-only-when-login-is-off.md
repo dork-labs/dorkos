@@ -31,10 +31,10 @@ default (ADR-0320), so nothing else stood between that page and
 session on first write and starts an agent turn in a working directory the caller
 chose. That is remote code execution triggered by visiting a web page.
 
-The same defence had existed for `/mcp` since 2026-03-09 — `validateMcpOrigin`
-(`middleware/mcp-origin.ts:15`) rejects any browser `Origin` outside the
-loopback-plus-tunnel allowlist — and was never generalized to the REST API, which is
-the larger and more dangerous surface.
+A sibling defence on a different header had existed for `/mcp` since 2026-03-09 —
+`validateMcpOrigin` (`middleware/mcp-origin.ts:15`) rejects any browser `Origin`
+outside the loopback-plus-tunnel allowlist — and was never generalized to the REST
+API, the larger and more dangerous surface.
 
 ## Decision
 
@@ -62,24 +62,25 @@ great deal — every reverse-proxy self-host binds loopback and forwards its own
 `Host`, so unconditional enforcement would 403 all of them on upgrade.
 
 `DORKOS_TRUSTED_HOSTS` is the escape hatch for the one configuration that genuinely
-changes: a login-off instance behind a proxy. The 403 body names the variable so the
-operator reads the fix once and is done, and never lists the allowlist back.
+changes: a login-off instance behind a proxy. The 403 body names the variable, and
+never lists the allowlist back.
 
 ## Consequences
 
 ### Positive
 
-- The rebinding path to agent execution is closed on the default configuration,
-  with no configuration required: a normal local install reaches DorkOS on
-  `localhost` or `127.0.0.1`, which already pass.
-- Login-on deployments are untouched — any host name, no new variable, no upgrade
-  note. The same is true of Docker, which sets `DORKOS_ALLOW_INSECURE_BIND`.
+- The rebinding path to agent execution is closed on the default configuration and
+  costs nobody any setup: a normal local install arrives on `localhost` or
+  `127.0.0.1`, which already pass. Login-on deployments and Docker are untouched.
 - The CORS same-origin fallback can stay. Port remapping keeps working, and the
   `Host` check is what makes that fallback safe rather than a hole.
-- One origin policy. `isLoopbackHost` moved out of
-  `services/core/auth/exposure-guard.ts` into `lib/trusted-origins.ts:31`, so the
-  bind check, the CORS allowlist, the `Host` allowlist, and Better Auth's
-  `trustedOrigins` all read a single definition of "names that mean this machine".
+- Network trust moved into one module: `isLoopbackHost` left
+  `services/core/auth/exposure-guard.ts` for `lib/trusted-origins.ts:31`, so the bind
+  check and the `Host` allowlist share one definition of "names that mean this
+  machine". One module, but still **two lists** — `getStaticLocalOrigins` (`:160`)
+  hardcodes `localhost` and `127.0.0.1` without consulting `isLoopbackHost`, so
+  `Host: [::1]` passes `hostGuard` while `Origin: http://[::1]:4242` is not a trusted
+  origin. Reconciling them is filed separately; this ADR does not claim they agree.
 
 ### Negative
 
@@ -89,12 +90,16 @@ operator reads the fix once and is done, and never lists the allowlist back.
   `docs/self-hosting/reverse-proxy.mdx` and
   `docs/self-hosting/securing-your-instance.mdx`, but it still surfaces at runtime
   rather than at start-up.
-- The defence is conditional, which quietly makes cookie scoping load-bearing. If
+- The defence is conditional, which quietly makes cookie scoping load-bearing: if
   `sessionGate` or the cookie's origin scoping ever changes, this guard will not
-  catch the fall, because it is inert precisely where login is on. Anyone touching
-  either must re-read this ADR.
-- Coverage stops at `/api`. `/mcp`, `/a2a`, and the terminal WebSocket keep their own
-  origin checks; a new top-level surface is unprotected until it opts in.
+  catch the fall, because it is inert precisely where login is on.
+- Coverage stops at `/api`, and the surfaces outside it are not defended alike.
+  `/mcp` has an `Origin` check (`validateMcpOrigin`, mounted at `index.ts:1114` and
+  `:1144`) and the terminal WebSocket has its own; `/a2a` has **no** origin check —
+  it is gated by a bearer-token credential (`createMcpAuth({ surface: 'a2a' })`,
+  `index.ts:1461`) plus `checkA2aExposure` at mount time. Different defences, so
+  "is this surface rebinding-protected?" must be asked per surface, and a new
+  top-level surface gets nothing until it opts in.
 - `DORKOS_ALLOW_INSECURE_BIND` now carries **four** meanings, all of them
   relaxations: (1) a non-loopback bind without a login (`checkBindAllowed`,
   `exposure-guard.ts:153`); (2) mounting the A2A gateway unauthenticated on a

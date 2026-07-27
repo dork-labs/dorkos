@@ -30,23 +30,20 @@ normal, so nothing was reported and `getServerPort()` kept handing the renderer 
 dead port (`apps/desktop/src/main/server-process.ts:12-16`).
 
 `/reset` was worse: it deletes the data directory _before_ it exits
-(`routes/admin.ts:159-168`). The failure mode was "your data is gone and the app
-is now talking to nothing."
-
-Both endpoints are wired to shipped buttons in Settings → Advanced
-(`apps/client/src/layers/features/settings/ui/AdvancedTab.tsx`, via
-`system-methods.ts:485` and `:496`).
+(`routes/admin.ts:159-168`), so the failure mode was "your data is gone and the app
+is now talking to nothing." Both endpoints are wired to shipped buttons in
+Settings → Advanced (`AdvancedTab.tsx`, via `system-methods.ts:485` and `:496`).
 
 ## Decision
 
-**A server that knows it is supervised refuses the operations only its supervisor
-can perform.** A supervisor that starts DorkOS as a child it does not restart
-declares itself by setting `DORKOS_MANAGED_BY` in the server's environment; the
-desktop shell sets `desktop` before spawning (`server-spawn.ts:52`, `:296`). The
-admin router then answers 409 with the stable code `MANAGED_BY_DESKTOP` instead of
-exiting (`routes/admin.ts:130-139`). Setting the variable is the supervisor's half
-of the contract; refusing is the router's half, and neither half knows anything else
-about the other.
+**A server that knows it is supervised refuses the operations only its supervisor can
+perform.** A supervisor that starts DorkOS as a child it does not restart on the
+child's own initiative declares itself by setting `DORKOS_MANAGED_BY` in the server's
+environment; the desktop shell sets `desktop` before spawning (`server-spawn.ts:52`,
+`:296`). The admin router then answers 409 with the stable code
+`MANAGED_BY_DESKTOP` instead of exiting (`routes/admin.ts:130-139`). Setting the
+variable is the supervisor's half of the contract; refusing is the router's half, and
+neither half knows anything else about the other.
 
 The refusal is `router.use` over the whole router, not a check inside each handler
 or a path allowlist. Every route here ends the process and one of them deletes the
@@ -57,28 +54,25 @@ routing walked around it — `POST /api/admin/reset/` reached the handler and ra
 Only the message copy is chosen by path, and that lookup is allowed to fall back
 (`routes/admin.ts:117-124`, `:59`).
 
-It also sits **ahead of** the rate limiter (`routes/admin.ts:141`). A desktop-managed
-refusal is a fixed fact about the deployment, not load to shed; behind the limiter, a
-person tapping Restart four times got "Too many admin requests" for five minutes
-instead of the explanation.
-
-The 409 copy completes the user's actual intent where it honestly can: restart says
-to quit and reopen the app, which does the same thing; reset says plainly that
+It also sits **ahead of** the rate limiter (`routes/admin.ts:141`): a desktop-managed
+refusal is a fixed fact about the deployment, not load to shed, and behind the
+limiter a person tapping Restart four times got "Too many admin requests" instead of
+the explanation. The 409 copy completes the user's intent where it honestly can —
+restart says to quit and reopen, which does the same thing; reset says plainly that
 nothing was deleted and names the folder to remove (`routes/admin.ts:31-40`).
 
 ## Consequences
 
 ### Positive
 
-- The destructive path is closed in the mode where it was destructive. Reset cannot
-  delete the data directory out from under a shell that will not restart the server.
+- The destructive path is closed in the mode where it was destructive: reset cannot
+  delete the data directory out from under a shell that will not bring the server
+  back.
 - The contract is one environment variable, so a future supervisor (a launchd agent,
-  a systemd unit, a container entrypoint) opts in by setting it, with no new code
-  server-side. `desktop` is the only value today.
+  a systemd unit, a container entrypoint) opts in by setting it, with no new
+  server-side code. `desktop` is the only value today.
 - Refusing at the router means a new admin route inherits the guard rather than
   having to remember it.
-- The desktop app is no longer reachable from a state where its own UI ends its
-  server.
 
 ### Negative
 
@@ -92,11 +86,10 @@ nothing was deleted and names the folder to remove (`routes/admin.ts:31-40`).
   work is **DOR-542** ("Desktop: make Restart Server and Reset All Data work again,
   via the supervisor"). Whoever picks it up should replace this refusal, not build
   alongside it.
-- The client does not branch on `MANAGED_BY_DESKTOP` yet. `system-methods.ts` throws
-  the raw response text and the Advanced tab passes it to `toast.error`, so a person
-  is shown the whole JSON body with the sentence inside it. Each message is written
-  to survive that, which is a workaround for a client fix that is still owed
-  (`routes/admin.ts:11-18`).
+- The client does not branch on `MANAGED_BY_DESKTOP` yet: `system-methods.ts` throws
+  the raw response text and the Advanced tab toasts it, so a person sees the whole
+  JSON body. Each message is written to survive that, which is a workaround for a
+  client fix still owed (`routes/admin.ts:11-18`).
 - `triggerRestart()`'s `process.argv[0]` assumption is still wrong in principle; it
   is now merely unreachable in the one environment that broke it.
 
@@ -106,10 +99,11 @@ This ADR says a lifecycle operation belongs to whoever owns the lifecycle. The
 converse is also true and is easier to miss: **an operation the supervisor delegates
 to a platform installer may silently not happen, so the code either side of it must
 not assume the process is about to exit.** `autoUpdater.quitAndInstall()` is the live
-example — reached from the in-app "Restart to install" card via `restartToInstall()`
-(`apps/desktop/src/main/auto-updater.ts:267`) and from the native dialog
-(`:156`), with `index.ts:231-241` describing a two-stage quit dance built on the
-assumption that the call is on its way out of the process. Review of PR #511 found
+example — reached from the in-app "Restart to install" card through the
+`update:restart` IPC (`apps/desktop/src/main/index.ts:164`) into `restartToUpdate()`
+(`auto-updater.ts:265`, the call at `:267`), and from the native dialog (`:156`),
+with `index.ts:231-241` describing a two-stage quit dance built on the assumption
+that the call is on its way out of the process. Review of PR #511 found
 that assumption does not hold: on macOS the call can return with the app still alive
 whenever the native download has not finished, and `update-downloaded` — which raises
 the card at `auto-updater.ts:139` — fires well before that point, which is exactly
@@ -123,10 +117,13 @@ thing that exits" as a request, not a fact.
   or the executable name works today and breaks the moment a second kind of
   supervisor appears; a declared contract costs one variable and generalizes.
 - **Make the restart work under Electron** (re-exec the app, or ask the shell over
-  the existing message channel). Rejected for this PR: it is the right answer, it
-  belongs on the desktop side of the boundary, and it was not going to be written
-  correctly in a security fix. Filed as the follow-up above.
-- **Refuse only `/reset`.** Rejected: restart's failure is quieter but not smaller —
-  the app is left pointed at a dead port, which is indistinguishable from a hang.
+  the existing message channel). It is the right answer, it belongs on the desktop
+  side of the boundary, and it was not going to be written correctly inside a
+  security fix. Deferred to DOR-542.
+- **Refuse only `/reset`.** Rejected on the facts as they stood when this shipped:
+  restart's failure was quieter but not smaller, leaving the app pointed at a dead
+  port, indistinguishable from a hang. (#500 landed the same day and made that
+  particular silence recoverable; the refusal still stands, because the re-exec
+  cannot work under a `UtilityProcess` at all.)
 - **Key the refusal off the path.** Rejected on evidence: that is the revision Express 5's
   non-strict routing defeated with a trailing slash.

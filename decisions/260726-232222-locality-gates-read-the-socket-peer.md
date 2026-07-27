@@ -35,7 +35,8 @@ signal, because it never was one.
 ## Decision
 
 A local-only gate requires **both** the TCP peer and the `Host` header.
-`isLocalRequest` (`lib/trusted-origins.ts:150`) returns true only when
+`isLocalRequest` (`lib/trusted-origins.ts:150`) returns true — absent the
+`DORKOS_ALLOW_INSECURE_BIND` short-circuit recorded below — only when
 `isLoopbackPeer(req.socket.remoteAddress)` and
 `isLoopbackHostHeader(req.headers.host)` both hold. Every handler in
 `routes/runtimes.ts` goes through it — nine via `rejectNonLoopback`

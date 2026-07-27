@@ -87,9 +87,12 @@ for anyone who knows better than the check (`isInstanceLockEnabled`,
   those forms — `fr_FR` yields `dim. 26 juil. 15:40:36 2026` → `NaN`. The call
   therefore pins `LC_ALL=C` (`instance-lock.ts:144-161`). Without that pin the
   corroboration silently degrades to `live-unconfirmed` on most of the macOS locale
-  set (measured at 48 of 84) while CI, which runs Linux in the `C` locale, stays
-  green — an inert safety check that looks like a working one. Any future code
-  reading `ps` output must pin the locale the same way.
+  set, while CI — Linux in the `C` locale — stays green, so an inert safety check
+  looks like a working one. Measured during the DOR-532 review by enumerating the
+  installed macOS locales and parsing each one's `lstart` output with `new Date()`:
+  48 of 84 produced `NaN` (independently reproduced at 47 of 83 on a second machine,
+  the spread being locale-set enumeration, not disagreement). Any future code reading
+  `ps` output must pin the locale the same way.
 - Windows has no `ps`, so `processStartTime` returns `null` and the check falls back
   to pid-only liveness there. A recycled pid on Windows keeps the directory locked
   until the operator uses `DORKOS_SKIP_INSTANCE_LOCK`.
