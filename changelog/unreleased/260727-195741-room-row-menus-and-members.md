@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): context menus and a members panel for channels and DMs (DOR-572)'
+  - 'fix(rooms): confirm a removal in place, so the panel survives answering it'
 ---
 
 ### Added
