@@ -83,10 +83,20 @@ interface NewDirectMessageMenuProps {
  * classes below). Picking who to talk to is a task, not a glance, and the
  * anchored panel was the wrong shape for it on a phone twice over: the sidebar
  * it hangs off _is_ a sheet down there, so it had to close for the panel to be
- * seen, and what was left was a small floating box in the bottom corner, which
- * is exactly where a software keyboard lands. The sheet puts the field at the
- * top where the keyboard cannot reach it, gives the list the height to be a
- * list, and carries a close button, because a phone has no Escape key.
+ * seen, and what was left was a floating box drawn at `x = -17` — off the left
+ * edge of the screen. The sheet puts the field at the top where the keyboard
+ * cannot reach it, gives the list the height to be a list, and carries a close
+ * button, because a phone has no Escape key.
+ *
+ * Three flex rules carry that, and each one is load-bearing at a size the
+ * others are not. The field and the button do not shrink, so they are legible
+ * and tappable at every size. The list takes what is left, which is most of a
+ * portrait phone. And the list has a **floor** — because when a landscape
+ * phone puts its keyboard up there is under 200px of sheet to divide, and a
+ * list that only ever takes "what is left" takes nothing, leaving a search
+ * field above a blank space while you type. The floor costs a short scroll to
+ * reach the button in that one case, which is the right way round: the
+ * keyboard is up because you are still choosing, and Enter commits anyway.
  */
 export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMenuProps) {
   const [open, setOpen] = useState(false);
@@ -181,17 +191,23 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
   }
 
   return (
-    <ResponsivePopover open={open} onOpenChange={handleOpenChange} modal>
+    <ResponsivePopover open={open} onOpenChange={handleOpenChange} modal fullHeight>
       <ResponsivePopoverTrigger asChild>
         <SidebarGroupAction aria-label="New direct message">
           <Plus />
         </SidebarGroupAction>
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent
-        fullHeight
         side="right"
         align="start"
-        className="w-64 p-2"
+        // A column, so the list below can give height back when the panel is
+        // clamped: on a 844x390 window the desktop panel is capped at 70vh and
+        // a fixed-height list pushed the commit button below the fold.
+        className="flex w-64 flex-col p-2"
+        // Names the desktop panel, which is a focus-trapping `role="dialog"`
+        // and would otherwise be an unnamed one. On mobile the sheet's own
+        // heading wins, per the accname precedence rules, and says the same.
+        aria-label="New message"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           inputRef.current?.focus();
@@ -202,7 +218,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
         <ResponsivePopoverTitle>New message</ResponsivePopoverTitle>
 
         {candidates.length === 0 ? (
-          <p className="text-muted-foreground px-1 py-1.5 text-sm md:text-xs">
+          <p className="text-muted-foreground px-1 py-1.5 text-xs">
             You have not added any agents yet. Add one to start a direct message with it.
           </p>
         ) : (
@@ -214,7 +230,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
               {chosen.map((candidate) => (
                 <span
                   key={candidate.agentPath}
-                  className="bg-accent text-accent-foreground flex items-center gap-1 rounded-sm py-1 pr-1 pl-2 text-sm md:py-0.5 md:pr-0.5 md:pl-1.5 md:text-xs"
+                  className="bg-accent text-accent-foreground flex items-center gap-1 rounded-sm py-1 pr-1 pl-2 text-xs md:py-0.5 md:pr-0.5 md:pl-1.5"
                 >
                   {candidate.displayName}
                   <button
@@ -224,9 +240,16 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                       setChosen((prev) => prev.filter((c) => c.agentPath !== candidate.agentPath));
                       inputRef.current?.focus();
                     }}
-                    className="hover:bg-background focus-visible:ring-ring rounded-sm p-1 outline-hidden focus-visible:ring-2 md:p-0.5"
+                    className={cn(
+                      'hover:bg-background focus-visible:ring-ring relative rounded-sm p-1 outline-hidden focus-visible:ring-2 md:p-0.5',
+                      // A chip cannot hold a 44px button, so the target grows
+                      // instead of the glyph — the pattern `SidebarGroupAction`
+                      // already uses. Off above the breakpoint, where a pointer
+                      // is precise and neighbours are close together.
+                      'after:absolute after:-inset-3 md:after:hidden'
+                    )}
                   >
-                    <X className="size-4 md:size-3" />
+                    <X className="size-3.5 md:size-3" />
                   </button>
                 </span>
               ))}
@@ -250,10 +273,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                   setAimedAt(null);
                 }}
                 onKeyDown={handleKeyDown}
-                // 16px on the phone, deliberately: iOS Safari zooms the whole
-                // page in when a field smaller than that takes focus, and it
-                // never zooms back out.
-                className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-1 text-base outline-hidden md:py-0.5 md:text-sm"
+                className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-1 text-sm outline-hidden md:py-0.5"
               />
             </div>
 
@@ -266,7 +286,13 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                 id={listId}
                 role="listbox"
                 aria-label="Agents"
-                className="mt-2 min-h-0 flex-1 overflow-y-auto md:mt-1 md:max-h-56 md:flex-none"
+                // `min-h-24` is a floor, not a size: it only bites when the
+                // sheet has been squeezed — a landscape phone with the keyboard
+                // up leaves barely 180px, and a pure `flex-1` list gives all of
+                // it back to the field and the button and renders zero of the
+                // matches you are typing to find. Two rows always survive, and
+                // the sheet's scroll of last resort covers the rest.
+                className="mt-2 min-h-24 flex-1 overflow-y-auto md:mt-1 md:max-h-56 md:min-h-0"
               >
                 {matches.map((candidate, index) => (
                   // An aria-activedescendant combobox keeps DOM focus on the input, so an
@@ -285,7 +311,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                     onMouseEnter={() => setAimedAt(candidate.agentPath)}
                     onClick={() => add(candidate)}
                     className={cn(
-                      'flex min-h-11 cursor-pointer items-center truncate rounded-sm px-2 py-2 text-base md:min-h-0 md:py-1.5 md:text-sm',
+                      'flex min-h-11 cursor-pointer items-center truncate rounded-sm px-2 py-2 text-sm md:min-h-0 md:py-1.5',
                       index === activeIndex && 'bg-accent text-accent-foreground'
                     )}
                   >
@@ -294,7 +320,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
                 ))}
               </ul>
             ) : (
-              <p className="text-muted-foreground mt-2 flex-1 px-2 py-1.5 text-sm md:mt-1 md:flex-none md:text-xs">
+              <p className="text-muted-foreground mt-2 flex-1 px-2 py-1.5 text-xs md:mt-1 md:flex-none">
                 {needle
                   ? 'No agent by that name.'
                   : 'Everyone you have added is already in this conversation.'}
@@ -306,7 +332,7 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
               size="sm"
               disabled={chosen.length === 0}
               onClick={commit}
-              className="mt-3 h-11 w-full shrink-0 text-base md:mt-2 md:h-8 md:text-sm"
+              className="mt-3 w-full shrink-0 md:mt-2"
             >
               {chosen.length > 1 ? 'Start group conversation' : 'Start conversation'}
             </Button>

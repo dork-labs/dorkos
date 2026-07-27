@@ -76,6 +76,11 @@ vi.mock('../drawer', () => ({
       {children}
     </div>
   ),
+  DrawerDescription: ({ children, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => (
+    <p data-testid="drawer-description" {...props}>
+      {children}
+    </p>
+  ),
   DrawerTitle: ({ children, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
     <h2 data-testid="drawer-title" {...props}>
       {children}
@@ -181,8 +186,8 @@ describe('ResponsivePopoverContent', () => {
   it('fills the screen on mobile when asked, instead of hugging its content', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(
-      <ResponsivePopover open>
-        <ResponsivePopoverContent fullHeight>inner</ResponsivePopoverContent>
+      <ResponsivePopover open fullHeight>
+        <ResponsivePopoverContent>inner</ResponsivePopoverContent>
       </ResponsivePopover>
     );
     const content = screen.getByTestId('drawer-content');
@@ -193,8 +198,8 @@ describe('ResponsivePopoverContent', () => {
   it('gives the full-height sheet a close button, because a phone has no Escape key', () => {
     mockUseIsMobile.mockReturnValue(true);
     render(
-      <ResponsivePopover open>
-        <ResponsivePopoverContent fullHeight>inner</ResponsivePopoverContent>
+      <ResponsivePopover open fullHeight>
+        <ResponsivePopoverContent>inner</ResponsivePopoverContent>
       </ResponsivePopover>
     );
     expect(screen.getByTestId('drawer-close')).toBeInTheDocument();
@@ -211,29 +216,20 @@ describe('ResponsivePopoverContent', () => {
     expect(screen.queryByTestId('drawer-close')).not.toBeInTheDocument();
   });
 
-  it('ignores fullHeight on desktop, where the panel is anchored and small', () => {
-    mockUseIsMobile.mockReturnValue(false);
-    render(
-      <ResponsivePopover open>
-        <ResponsivePopoverContent fullHeight className="w-64">
-          inner
-        </ResponsivePopoverContent>
-      </ResponsivePopover>
-    );
-    const content = screen.getByTestId('popover-content');
-    expect(content.className).toContain('w-64');
-    expect(content.className).not.toContain('h-[92dvh]');
-    expect(screen.queryByTestId('drawer-close')).not.toBeInTheDocument();
-  });
-
-  it('does not leak fullHeight onto the DOM element', () => {
+  it('can always scroll the full-height sheet, however little of it the keyboard leaves', () => {
+    // vaul shrinks this sheet to whatever the software keyboard leaves — on a
+    // landscape phone, barely 200px — and a flex column cannot shrink the
+    // parts that do not shrink. Without a scroll of last resort the field and
+    // the commit button are drawn OUTSIDE the sheet, behind the keyboard.
     mockUseIsMobile.mockReturnValue(true);
     render(
-      <ResponsivePopover open>
-        <ResponsivePopoverContent fullHeight>inner</ResponsivePopoverContent>
+      <ResponsivePopover open fullHeight>
+        <ResponsivePopoverContent>inner</ResponsivePopoverContent>
       </ResponsivePopover>
     );
-    expect(screen.getByTestId('drawer-content')).not.toHaveAttribute('fullheight');
+    const body = screen.getByText('inner');
+    expect(body.className).toContain('overflow-y-auto');
+    expect(body.className).toContain('min-h-0');
   });
 });
 
@@ -262,6 +258,33 @@ describe('ResponsivePopoverTitle', () => {
     );
     expect(screen.getByTestId('drawer-title')).toBeInTheDocument();
     expect(screen.getByText('My Title')).toBeInTheDocument();
+  });
+
+  it('trims its own chrome in a full-height sheet, and clears the close button', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsivePopover open fullHeight>
+        <ResponsivePopoverContent>
+          <ResponsivePopoverTitle>Title</ResponsivePopoverTitle>
+        </ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    const header = screen.getByTestId('drawer-header');
+    // Right inset keeps ANY title clear of the close button, not just a short one.
+    expect(header.className).toContain('pr-14');
+    expect(header.className).toContain('shrink-0');
+  });
+
+  it('keeps the roomy heading when the sheet only hugs its content', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsivePopover open>
+        <ResponsivePopoverContent>
+          <ResponsivePopoverTitle>Title</ResponsivePopoverTitle>
+        </ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    expect(screen.getByTestId('drawer-header').className ?? '').not.toContain('pr-14');
   });
 
   it('wraps DrawerTitle in DrawerHeader on mobile', () => {
