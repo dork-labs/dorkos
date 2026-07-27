@@ -452,6 +452,8 @@ Slack's shape is a multi-select: typeahead, chips for who is selected, one actio
 
 Server-side, because it is an idempotency property of the resource rather than a rule about a menu, and because the client would need every roster loaded to evaluate it correctly. Slack behaves the same way: re-opening a conversation with the same people opens the same conversation.
 
+Two details later confirmed against primary sources (`research/20260727_chat-navigation-quick-switcher-patterns.md`). **Chips, not a checkbox list** — Discord uses checkboxes and we have fewer agents than a Discord user has friends, so it is less obviously wrong at our scale than it looks, but chips keep _who is already selected_ visible and ordered, which matters more here because each agent carries its own `responseMode` consequences for the room. And **Teams does not dedupe at all** — it lets you hold several identical chats and tells you to rename them apart. That is a design gap to avoid, not a third option worth weighing.
+
 ### 12.4 Channels and DMs had no context menu, and no way to manage membership (R6b, DOR-572)
 
 `POST /:id/members`, `DELETE /:id/members/:authorId` and `PATCH /:id/members/:authorId` have existed since R1 and nothing in the cockpit calls them. Agent rows have had a right-click menu since well before rooms shipped; room rows have none.
@@ -512,9 +514,15 @@ The palette (`features/command-palette/`) has fuzzy search, frecency, preview pa
 
 Unread is currently visible in exactly one place — a badge on a sidebar row — which means it is invisible whenever the sidebar is collapsed or the tab is backgrounded. That is the wrong shape for a product whose whole premise is that agents work while you are not looking.
 
-- Unread count in the document title, reusing `buildTitle`'s existing badge slot.
-- Next / previous unread room from the keyboard. Slack and Discord both bind this; `alt+↑` / `alt+↓` are free in `SHORTCUTS`.
+- Unread count in the document title, reusing `buildTitle`'s existing badge slot. Research confirms a leading `(N)` in the title plus a numbered favicon is the actual cross-industry convention, not something we would be inventing.
+- **`Esc` marks this room read; `Shift+Esc` marks everything read.** Slack and Teams converged on this independently, it is mnemonically sound, and nothing in `SHORTCUTS` conflicts.
+- Next / previous unread room on `alt+↑` / `alt+↓`, both free.
+
+  **A correction to an earlier draft of this section, which claimed Slack and Discord both bind this.** They do not. Step-through is **Discord's** pattern and it is the minority one: Slack and Teams deliberately chose a filtered _view_ of all unreads instead. We are taking the minority pattern on purpose — a filtered view earns its place at enterprise scale with a hundred channels, and DorkOS has a handful of rooms with one human reading them. Worth knowing it is a scale judgment rather than an industry default, because the right answer flips if a room list ever gets long.
+
 - `mod+shift+k` for a new direct message, matching Slack. Also free.
+
+Sources and the full comparison: `research/20260727_chat-navigation-quick-switcher-patterns.md`.
 
 ### 13.4 Phasing
 
