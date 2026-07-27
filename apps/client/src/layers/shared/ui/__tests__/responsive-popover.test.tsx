@@ -63,6 +63,14 @@ vi.mock('../drawer', () => ({
       {children}
     </div>
   ),
+  DrawerClose: ({
+    children,
+    ...props
+  }: React.HTMLAttributes<HTMLButtonElement> & { children: React.ReactNode }) => (
+    <button data-testid="drawer-close" {...props}>
+      {children}
+    </button>
+  ),
   DrawerHeader: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
     <div data-testid="drawer-header" {...props}>
       {children}
@@ -168,6 +176,64 @@ describe('ResponsivePopoverContent', () => {
     expect(content.className).toContain('max-h-[90vh]');
     // Caller's width constraint should not be applied to drawer
     expect(content.className).not.toContain('w-72');
+  });
+
+  it('fills the screen on mobile when asked, instead of hugging its content', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsivePopover open>
+        <ResponsivePopoverContent fullHeight>inner</ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    const content = screen.getByTestId('drawer-content');
+    expect(content.className).toContain('h-[92dvh]');
+    expect(content.className).not.toContain('max-h-[90vh]');
+  });
+
+  it('gives the full-height sheet a close button, because a phone has no Escape key', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsivePopover open>
+        <ResponsivePopoverContent fullHeight>inner</ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    expect(screen.getByTestId('drawer-close')).toBeInTheDocument();
+    expect(screen.getByText('Close')).toBeInTheDocument();
+  });
+
+  it('leaves a content-height sheet without one — nothing is covered to reach around', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsivePopover open>
+        <ResponsivePopoverContent>inner</ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    expect(screen.queryByTestId('drawer-close')).not.toBeInTheDocument();
+  });
+
+  it('ignores fullHeight on desktop, where the panel is anchored and small', () => {
+    mockUseIsMobile.mockReturnValue(false);
+    render(
+      <ResponsivePopover open>
+        <ResponsivePopoverContent fullHeight className="w-64">
+          inner
+        </ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    const content = screen.getByTestId('popover-content');
+    expect(content.className).toContain('w-64');
+    expect(content.className).not.toContain('h-[92dvh]');
+    expect(screen.queryByTestId('drawer-close')).not.toBeInTheDocument();
+  });
+
+  it('does not leak fullHeight onto the DOM element', () => {
+    mockUseIsMobile.mockReturnValue(true);
+    render(
+      <ResponsivePopover open>
+        <ResponsivePopoverContent fullHeight>inner</ResponsivePopoverContent>
+      </ResponsivePopover>
+    );
+    expect(screen.getByTestId('drawer-content')).not.toHaveAttribute('fullheight');
   });
 });
 

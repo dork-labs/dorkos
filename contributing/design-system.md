@@ -782,6 +782,30 @@ Use instead of plain `DropdownMenu` when the menu appears in a touch-accessible 
 
 Use instead of plain `Dialog` when the dialog content needs full-screen treatment on mobile. Shows as a centered `Dialog` on desktop and a `Drawer` on mobile. See `components/ui/responsive-dialog.tsx`.
 
+### `ResponsivePopover`
+
+Use instead of plain `Popover` for anything a touch user has to reach. `Popover` on desktop, bottom `Drawer` on mobile. `shared/ui/responsive-popover.tsx`.
+
+| Sub-component              | Desktop (≥768px) | Mobile (<768px)                |
+| -------------------------- | ---------------- | ------------------------------ |
+| `ResponsivePopover`        | `Popover`        | `Drawer`                       |
+| `ResponsivePopoverTrigger` | `PopoverTrigger` | `DrawerTrigger`                |
+| `ResponsivePopoverContent` | `PopoverContent` | `DrawerContent`                |
+| `ResponsivePopoverTitle`   | _nothing_        | `DrawerHeader` + `DrawerTitle` |
+
+Two props decide the shape, and both are about the difference between a **glance** and a **task**:
+
+| Prop         | On                                       | Off (default)                                     |
+| ------------ | ---------------------------------------- | ------------------------------------------------- |
+| `modal`      | Focus trapped, page behind inert         | Tab leaves the panel — right for a status readout |
+| `fullHeight` | Mobile sheet fills the screen, gets an X | Mobile sheet hugs its content — right for a menu  |
+
+Turn both on for a picker: a field, a list and a commit button need the screen, and a half-finished selection should not be tabbable away from. `NewDirectMessageMenu` is the reference implementation.
+
+`ResponsivePopoverTitle` renders **only** on mobile, so pair it with a `hidden md:block` heading in the content when the desktop panel needs one too — the shell and the `md:` breakpoint are both 768px, so they are exact complements.
+
+Do **not** add padding for the software keyboard: vaul already shrinks the drawer to the visual viewport while a field inside it has focus, and compensating again subtracts the same height twice (it collapsed a result list to 0px on a 390×844 phone).
+
 ---
 
 ## Data Tables
