@@ -200,6 +200,11 @@ if (!gotTheLock) {
   // anything else ignored. That leaves this bridge no more powerful than the
   // `target="_blank"` the renderer already has — it removes the own-origin
   // exception and nothing else.
+  //
+  // Deliberately NOT gated on `isTrackedRenderer`, unlike the handlers below.
+  // Those guard read-once state meant for one renderer; this is stateless and
+  // owns nothing, and a second cockpit window (`window.open` at our own origin)
+  // is a full cockpit whose Settings → Server must work too.
   ipcMain.handle('open-external', async (_event, url: unknown): Promise<void> => {
     if (typeof url !== 'string' || !isWebLink(url)) return;
     await shell.openExternal(url);

@@ -126,11 +126,11 @@ function dataDirectory(config?: unknown): string {
 }
 
 describe('resolvePreferredPort', () => {
-  it('asks for 4242, the port every doc and MCP snippet names', async () => {
+  it('asks for 4242, the port every doc and MCP snippet names, and calls it a default', async () => {
     process.env.DORK_HOME = dataDirectory();
     const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
 
-    expect(resolvePreferredPort()).toBe(PREFERRED_SERVER_PORT);
+    expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
     expect(PREFERRED_SERVER_PORT).toBe(4242);
   });
 
@@ -138,7 +138,7 @@ describe('resolvePreferredPort', () => {
     process.env.DORK_HOME = dataDirectory({ server: { port: 4500 } });
     const { resolvePreferredPort } = await import('../server-port');
 
-    expect(resolvePreferredPort()).toBe(4500);
+    expect(resolvePreferredPort()).toEqual({ port: 4500, source: 'config.json' });
   });
 
   it('lets DORKOS_PORT win over the pinned one, matching the CLI precedence', async () => {
@@ -146,7 +146,7 @@ describe('resolvePreferredPort', () => {
     process.env.DORKOS_PORT = '4600';
     const { resolvePreferredPort } = await import('../server-port');
 
-    expect(resolvePreferredPort()).toBe(4600);
+    expect(resolvePreferredPort()).toEqual({ port: 4600, source: 'DORKOS_PORT' });
   });
 
   it('falls back to the default rather than refusing to start on unusable config', async () => {
@@ -159,8 +159,21 @@ describe('resolvePreferredPort', () => {
       process.env.DORK_HOME = dir;
       vi.resetModules();
       const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
-      expect(resolvePreferredPort()).toBe(PREFERRED_SERVER_PORT);
+      expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
     }
+  });
+
+  it('ignores a hand-edited privileged port in config, and says why', async () => {
+    // `UserConfigSchema` enforces a 1024 floor, so a value below it could never
+    // have been written through the config manager — it is malformed input, not
+    // a choice. Honouring it would refuse the launch with EACCES on a port the
+    // person could not have set through any supported route.
+    const log = await getLogMock();
+    process.env.DORK_HOME = dataDirectory({ server: { port: 80 } });
+    const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
+
+    expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
+    expect(log.default.warn.mock.calls.flat().join(' ')).toMatch(/server\.port 80/);
   });
 
   it('ignores a DORKOS_PORT that is not a port', async () => {
@@ -168,7 +181,18 @@ describe('resolvePreferredPort', () => {
     process.env.DORKOS_PORT = 'not-a-number';
     const { resolvePreferredPort, PREFERRED_SERVER_PORT } = await import('../server-port');
 
-    expect(resolvePreferredPort()).toBe(PREFERRED_SERVER_PORT);
+    expect(resolvePreferredPort()).toEqual({ port: PREFERRED_SERVER_PORT, source: 'default' });
+  });
+
+  it('keeps a privileged DORKOS_PORT, because exporting one is deliberate', async () => {
+    // `apps/server/src/env.ts` accepts the whole 1–65535 range here, and the
+    // refusal for one DorkOS cannot bind says so accurately rather than
+    // pretending the setting was never made.
+    process.env.DORK_HOME = dataDirectory();
+    process.env.DORKOS_PORT = '80';
+    const { resolvePreferredPort } = await import('../server-port');
+
+    expect(resolvePreferredPort()).toEqual({ port: 80, source: 'DORKOS_PORT' });
   });
 });
 
@@ -235,30 +259,7 @@ describe('findAvailablePort', () => {
 });
 
 describe('chooseServerPort', () => {
-  it('records the move in the log — and nowhere a person is interrupted by', async () => {
-    const log = await getLogMock();
-    const block = await reserveBlock(2);
-    process.env.DORK_HOME = dataDirectory({ server: { port: block.base } });
-    const { chooseServerPort } = await import('../server-port');
-
-    try {
-      await block.releaseAt(1);
-
-      expect(await chooseServerPort()).toBe(block.base + 1);
-      const logged = log.default.info.mock.calls.flat().join(' ');
-      expect(logged).toContain(String(block.base));
-      expect(logged).toContain(String(block.base + 1));
-      // The only start-up conflict worth a dialog is the data directory's,
-      // which the server itself reports (ADR 260726-234122). This one is
-      // diagnostics, so it must not raise anything a person has to dismiss.
-      expect(log.default.warn).not.toHaveBeenCalled();
-      expect(log.default.error).not.toHaveBeenCalled();
-    } finally {
-      await block.release();
-    }
-  });
-
-  it('says nothing when it got the port it asked for', async () => {
+  it('uses a pinned port that is free, and says nothing about it', async () => {
     const log = await getLogMock();
     const block = await reserveBlock(1);
     const free = block.base;
@@ -268,5 +269,106 @@ describe('chooseServerPort', () => {
 
     expect(await chooseServerPort()).toBe(free);
     expect(log.default.info).not.toHaveBeenCalled();
+  });
+
+  it('moves off a busy default and records it in the log, interrupting nobody', async () => {
+    const log = await getLogMock();
+    process.env.DORK_HOME = dataDirectory(); // no pin, so the default applies
+    const { chooseServerPort, PREFERRED_SERVER_PORT } = await import('../server-port');
+    // `null` here means something real already holds 4242, which is the same
+    // precondition this test needs.
+    const holder = await bind(PREFERRED_SERVER_PORT);
+
+    try {
+      const port = await chooseServerPort();
+
+      expect(port).toBeGreaterThan(PREFERRED_SERVER_PORT);
+      const logged = log.default.info.mock.calls.flat().join(' ');
+      expect(logged).toContain(String(PREFERRED_SERVER_PORT));
+      expect(logged).toContain(String(port));
+      // A default that moves is a small, self-correcting accommodation. The
+      // only start-up conflict worth interrupting someone for is the data
+      // directory's (ADR 260726-234122), which the server itself reports.
+      expect(log.default.warn).not.toHaveBeenCalled();
+      expect(log.default.error).not.toHaveBeenCalled();
+    } finally {
+      if (holder) await close([holder]);
+    }
+  });
+
+  it('refuses a taken pin rather than moving off an address other tools are set to', async () => {
+    // The scenario that decides this: someone pins 5000 *because* their MCP
+    // config says 5000. Coming up on 5001 instead would break every client they
+    // configured, with nothing anywhere reporting a fault. A default is a
+    // guess and may move; a pin is a commitment and may not.
+    const block = await reserveBlock(2);
+    process.env.DORK_HOME = dataDirectory({ server: { port: block.base } });
+    const { chooseServerPort } = await import('../server-port');
+
+    try {
+      // The next port up is deliberately free: an implementation that scanned
+      // would find it and succeed, so this cannot pass by accident.
+      await block.releaseAt(1);
+
+      const err = await chooseServerPort().then(
+        () => null,
+        (e: unknown) => e as Error
+      );
+      expect(err).not.toBeNull();
+      expect(err!.message).toContain(String(block.base));
+      expect(err!.message).toMatch(/already has it/i);
+      expect(err!.message).toMatch(/will not quietly move/i);
+      // The way out, worded for a pin that lives in config.json.
+      expect(err!.message).toMatch(/dorkos config set server\.port/);
+      expect(err!.message).toContain('config.json');
+    } finally {
+      await block.release();
+    }
+  });
+
+  it('points at the environment variable when that is where the pin came from', async () => {
+    const block = await reserveBlock(1);
+    process.env.DORK_HOME = dataDirectory();
+    process.env.DORKOS_PORT = String(block.base);
+    const { chooseServerPort } = await import('../server-port');
+
+    try {
+      const err = await chooseServerPort().then(
+        () => null,
+        (e: unknown) => e as Error
+      );
+      expect(err).not.toBeNull();
+      // Telling someone to edit config.json would be wrong here: DORKOS_PORT
+      // wins over it, so the edit would appear to do nothing.
+      expect(err!.message).toContain('DORKOS_PORT');
+      expect(err!.message).not.toContain('config.json');
+    } finally {
+      await block.release();
+    }
+  });
+
+  it('says a forbidden pin is forbidden, not that something is using it', async () => {
+    // Folding EACCES into "taken" is right for the scan and wrong for the
+    // message: "quit whatever is using it" is unfollowable advice when nothing
+    // is using it and the operating system simply will not hand it over.
+    process.env.DORK_HOME = dataDirectory();
+    process.env.DORKOS_PORT = '80';
+    const { chooseServerPort } = await import('../server-port');
+
+    const outcome = await chooseServerPort().then(
+      (port) => ({ port, err: null }),
+      (e: unknown) => ({ port: null, err: e as Error })
+    );
+    if (outcome.port !== null) {
+      // This process may bind port 80 (running as root, or a container with
+      // CAP_NET_BIND_SERVICE). There is no EACCES to observe, so there is
+      // nothing here to assert — the busy-pin case above covers the wording
+      // this test exists to keep apart from it.
+      return;
+    }
+    expect(outcome.err!.message).toMatch(/will not let it listen/i);
+    expect(outcome.err!.message).toMatch(/administrator rights/i);
+    expect(outcome.err!.message).not.toMatch(/already has it/i);
+    expect(outcome.err!.message).not.toMatch(/quit whatever/i);
   });
 });

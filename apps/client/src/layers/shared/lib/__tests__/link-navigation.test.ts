@@ -377,6 +377,41 @@ describe('link dispatch', () => {
       }
     });
 
+    it('falls back to window.open when a host exposes a bridge without this method', () => {
+      // The bridge is feature-detected per method, like every other
+      // `electronAPI` consumer. A host with an older or partial preload would
+      // otherwise throw out of the seam instead of opening anything.
+      window.electronAPI = { platform: 'darwin' } as unknown as ElectronAPI;
+      try {
+        expect(openExternalLink('https://dorkos.ai/docs')).toBe(true);
+        expect(openSpy).toHaveBeenCalledWith(
+          'https://dorkos.ai/docs',
+          '_blank',
+          'noopener,noreferrer'
+        );
+      } finally {
+        delete window.electronAPI;
+      }
+    });
+
+    it('reports a bridge failure somewhere findable rather than as an unhandled rejection', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      window.electronAPI = {
+        openExternal: vi.fn().mockRejectedValue(new Error('shell refused')),
+      } as unknown as ElectronAPI;
+      try {
+        // Already returned `true` by the time the promise settles, so the only
+        // honest thing left is to leave a trace a bug report can find.
+        expect(openExternalLink('https://dorkos.ai/docs')).toBe(true);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(errorSpy).toHaveBeenCalled();
+      } finally {
+        delete window.electronAPI;
+        errorSpy.mockRestore();
+      }
+    });
+
     it('refuses the same schemes whether or not the shell bridge is there', () => {
       const openExternal = vi.fn().mockResolvedValue(undefined);
       window.electronAPI = { openExternal } as unknown as ElectronAPI;

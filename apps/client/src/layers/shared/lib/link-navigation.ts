@@ -262,9 +262,19 @@ export function supportsNewTab(): boolean {
  * http(s)-only policy the shell's link guards apply.
  */
 function openInBrowser(url: string): void {
-  const shellBridge = typeof window === 'undefined' ? undefined : window.electronAPI;
-  if (shellBridge) {
-    void shellBridge.openExternal(url);
+  // Feature-detect the METHOD, not the bridge, matching every other consumer of
+  // `electronAPI` (`use-desktop-updater.ts`, `api-base-url.ts`,
+  // `use-electron-navigate.ts`). A host that exposes a partial bridge would
+  // otherwise throw out of here instead of falling back to `window.open`.
+  const openExternal = typeof window === 'undefined' ? undefined : window.electronAPI?.openExternal;
+  if (openExternal) {
+    // Unlike `window.open`'s null return, this one can actually report. The
+    // caller has already been told `true`, so the only honest thing left is to
+    // say so where a bug report can find it, rather than let it surface as an
+    // unhandled rejection with no context.
+    openExternal(url).catch((err: unknown) => {
+      console.error('[dorkos:link] the desktop shell could not open', url, err);
+    });
     return;
   }
   window.open(url, '_blank', 'noopener,noreferrer');

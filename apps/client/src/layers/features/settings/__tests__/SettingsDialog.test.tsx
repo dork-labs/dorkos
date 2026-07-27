@@ -157,7 +157,7 @@ describe('SettingsDialog', () => {
   });
 
   // Verifies server tab shows endpoint and directory info
-  it('shows API URL, MCP Endpoint, and Data Directory in server tab', async () => {
+  it('shows the address, the MCP endpoint, and the data directory in the server tab', async () => {
     const transport = createSettingsTransport();
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),

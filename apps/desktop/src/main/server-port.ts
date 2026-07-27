@@ -13,6 +13,15 @@ import { resolveDataDirectory } from './dork-home';
  * is one nobody can write down. So the shell asks for the same port the CLI
  * uses, every time, and moves off it only when something else is holding it.
  *
+ * **A pin and a default get opposite answers.** 4242 is a starting guess, so a
+ * conflict there steps up to the next free port. A port someone *chose* —
+ * `DORKOS_PORT`, or `server.port` in `config.json` — is a commitment to an
+ * address other tools are already configured against, so a conflict there
+ * refuses and says so, exactly as the CLI does (the `EADDRINUSE` handler in
+ * `apps/server/src/index.ts`). Quietly serving a pinned-5000 install on 5001
+ * would break every MCP client the person had set up, with nothing anywhere
+ * reporting that anything went wrong.
+ *
  * A random high port used to be the one thing making the desktop app harder to
  * reach than the CLI. That is no longer load-bearing: `/api` is behind a `Host`
  * guard (ADR 260726-232221) and the local-only routes read the socket peer
@@ -33,7 +42,7 @@ import { resolveDataDirectory } from './dork-home';
  */
 
 /**
- * The port DorkOS asks for first.
+ * The port DorkOS asks for when nobody has chosen one.
  *
  * The CLI's default, and the one the docs, the marketplace links, and every MCP
  * setup snippet name. Duplicated from `DEFAULT_PORT` in
@@ -45,13 +54,14 @@ import { resolveDataDirectory } from './dork-home';
 export const PREFERRED_SERVER_PORT = 4242;
 
 /**
- * How many consecutive ports to try, counting the preferred one.
+ * How many consecutive ports to try, counting the default one.
  *
- * Ten is chosen to be past the plausible and short of the pointless. The
- * realistic conflicts are a CLI server, a second DorkOS against another data
- * directory, and a dev instance — a handful, not a hundred. Beyond that the
- * problem is not "DorkOS is busy", it is "something is occupying this range",
- * and the honest answer is to say so.
+ * Only ever applies to {@link PREFERRED_SERVER_PORT}; a pinned port is tried
+ * once and then refused. Ten is chosen to be past the plausible and short of
+ * the pointless. The realistic conflicts are a CLI server, a second DorkOS
+ * against another data directory, and a dev instance — a handful, not a
+ * hundred. Beyond that the problem is not "DorkOS is busy", it is "something is
+ * occupying this range", and the honest answer is to say so.
  *
  * Deliberately *not* followed by an operating-system-assigned port as a last
  * resort. That is the behaviour this change removes; reinstating it in the
@@ -64,6 +74,13 @@ export const PORT_SCAN_ATTEMPTS = 10;
 const MAX_PORT = 65535;
 
 /**
+ * Lowest port a normal user process may bind. Below this the operating system
+ * wants administrator rights, and it is the floor `UserConfigSchema` already
+ * enforces on `server.port`.
+ */
+const LOWEST_UNPRIVILEGED_PORT = 1024;
+
+/**
  * The host the probe binds, matching what the child binds.
  *
  * The server listens on `DORKOS_HOST`, which the shell never sets, so it is
@@ -74,6 +91,26 @@ const MAX_PORT = 65535;
  */
 const PROBE_HOST = 'localhost';
 
+/**
+ * What a probe found.
+ *
+ * `forbidden` is kept apart from `in-use` because the two need different words
+ * in front of a person: "quit whatever is using it" is unfollowable advice when
+ * nothing is using it and the operating system simply will not hand it over.
+ */
+type PortAvailability = 'free' | 'in-use' | 'forbidden';
+
+/** Where a preferred port came from. */
+type PortSource = 'DORKOS_PORT' | 'config.json' | 'default';
+
+/** The port DorkOS wants, and how strictly it wants it. */
+export interface PreferredPort {
+  /** The port itself. */
+  port: number;
+  /** Where it came from. `'default'` means nobody chose it. */
+  source: PortSource;
+}
+
 /** Whether `value` is a port number a server could actually listen on. */
 function isValidPort(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= MAX_PORT;
@@ -81,6 +118,11 @@ function isValidPort(value: number): boolean {
 
 /**
  * Parse a port out of an environment variable.
+ *
+ * Accepts the full 1–65535 range `apps/server/src/env.ts` accepts for
+ * `DORKOS_PORT`, privileged ports included. Someone who exports a value that
+ * low has said something deliberate, and gets an accurate answer about it from
+ * {@link claimPinnedPort} rather than having it quietly discarded.
  *
  * @param raw - The raw value, or `undefined` when it is not set.
  * @returns The port, or `null` when unset or not a usable port number.
@@ -98,21 +140,34 @@ function parsePortEnv(raw: string | undefined): number | null {
  * on purpose: pinning a port is one setting with one meaning, whichever way
  * DorkOS was started. It is read straight off disk rather than through the
  * server's config manager, which lives in the child process and has not started
- * yet when the port has to be chosen.
+ * yet when the port has to be chosen — so this repeats the floor
+ * `UserConfigSchema` would have applied. A value below that floor could never
+ * have been written through the config manager, so it is malformed input rather
+ * than a choice, and is treated the way an unparseable file is: warned about,
+ * and ignored.
  *
  * @param dorkHome - The data directory to read from.
  * @returns The pinned port, or `null` when there is no usable one.
  */
 function readPinnedPort(dorkHome: string): number | null {
+  let port: unknown;
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf8'));
-    const port = (parsed as { server?: { port?: unknown } } | null)?.server?.port;
-    return typeof port === 'number' && isValidPort(port) ? port : null;
+    port = (parsed as { server?: { port?: unknown } } | null)?.server?.port;
   } catch {
     // No config file yet (first launch), or one nothing can parse. Neither is a
     // reason to refuse to start, and the default is a good answer.
     return null;
   }
+  if (typeof port !== 'number' || !isValidPort(port)) return null;
+  if (port < LOWEST_UNPRIVILEGED_PORT) {
+    log.warn(
+      `[server] Ignoring server.port ${port} in config.json: DorkOS cannot use a port below ` +
+        `${LOWEST_UNPRIVILEGED_PORT} without administrator rights. Using ${PREFERRED_SERVER_PORT}.`
+    );
+    return null;
+  }
+  return port;
 }
 
 /**
@@ -122,20 +177,22 @@ function readPinnedPort(dorkHome: string): number | null {
  * the default — minus the `--port` flag, which a windowed app has no equivalent
  * of.
  *
- * @returns The preferred port.
+ * @returns The preferred port and where it came from.
  */
-export function resolvePreferredPort(): number {
-  return (
-    parsePortEnv(process.env.DORKOS_PORT) ??
-    readPinnedPort(resolveDataDirectory()) ??
-    PREFERRED_SERVER_PORT
-  );
+export function resolvePreferredPort(): PreferredPort {
+  const fromEnv = parsePortEnv(process.env.DORKOS_PORT);
+  if (fromEnv !== null) return { port: fromEnv, source: 'DORKOS_PORT' };
+
+  const pinned = readPinnedPort(resolveDataDirectory());
+  if (pinned !== null) return { port: pinned, source: 'config.json' };
+
+  return { port: PREFERRED_SERVER_PORT, source: 'default' };
 }
 
 /**
  * Whether a port can be bound right now.
  *
- * There is an unavoidable gap between this answering `true` and the child
+ * There is an unavoidable gap between this answering `free` and the child
  * binding — the port could be taken in between. Handing the listening socket to
  * the child would close it, but neither a UtilityProcess nor a tsx-run fork can
  * inherit one portably. What we can do is make a lost race cheap: the child
@@ -144,68 +201,131 @@ export function resolvePreferredPort(): number {
  * window.
  *
  * @param port - The port to test.
- * @returns `true` when the port is free, `false` when something holds it or the
- *   operating system will not let us have it.
+ * @returns What the operating system said about it.
  * @throws If the probe fails for a reason that is not about availability.
  */
-function isPortFree(port: number): Promise<boolean> {
+function probePort(port: number): Promise<PortAvailability> {
   return new Promise((resolve, reject) => {
     const probe = net.createServer();
     probe.once('error', (err: NodeJS.ErrnoException) => {
       // Close before answering: an open probe socket would hold the very port
       // it was asked about, which is the opposite of the point.
       probe.close(() => {
-        // EACCES is a privileged port (below 1024) rather than a busy one, but
-        // it is just as unusable, so it reads the same to the scan.
-        if (err.code === 'EADDRINUSE' || err.code === 'EACCES') resolve(false);
+        if (err.code === 'EADDRINUSE') resolve('in-use');
+        else if (err.code === 'EACCES') resolve('forbidden');
         else reject(err);
       });
     });
     probe.listen(port, PROBE_HOST, () => {
-      probe.close((err) => (err ? reject(err) : resolve(true)));
+      probe.close((err) => (err ? reject(err) : resolve('free')));
     });
   });
 }
 
 /**
+ * How to choose a different port, worded for where the current one came from.
+ *
+ * Every refusal ends with this, because someone who hits one cannot fix it from
+ * inside the app.
+ *
+ * @param source - Where the port DorkOS tried came from.
+ */
+function howToChangeThePort(source: PortSource): string {
+  if (source === 'DORKOS_PORT') {
+    return 'To use a different one, change the DORKOS_PORT setting in the environment DorkOS starts in.';
+  }
+  const configPath = path.join(resolveDataDirectory(), 'config.json');
+  return (
+    'To use a different one, run `dorkos config set server.port <number>`, or set ' +
+    `"server": { "port": <number> } in ${configPath}.`
+  );
+}
+
+/**
+ * Take a port someone chose, or refuse.
+ *
+ * No scanning: see the module doc. The alternative is an install pinned to 5000
+ * quietly coming up on 5001, where every client configured against 5000 stops
+ * resolving and nothing reports a fault.
+ *
+ * @param preferred - The pinned port and its source.
+ * @returns The port, once confirmed free.
+ * @throws If something already holds it, or the operating system will not allow
+ *   it. The message says which of the two, because "quit whatever is using it"
+ *   is unfollowable advice when nothing is.
+ */
+async function claimPinnedPort({ port, source }: PreferredPort): Promise<number> {
+  const availability = await probePort(port);
+  if (availability === 'free') return port;
+
+  if (availability === 'forbidden') {
+    const why =
+      port < LOWEST_UNPRIVILEGED_PORT
+        ? `Ports below ${LOWEST_UNPRIVILEGED_PORT} need administrator rights.`
+        : 'Another program on this computer may have reserved it.';
+    throw new Error(
+      `DorkOS is set to use port ${port}, but this computer will not let it listen there. ` +
+        `${why} ${howToChangeThePort(source)}`
+    );
+  }
+
+  throw new Error(
+    `DorkOS is set to use port ${port}, and something else on this computer already has it. ` +
+      'DorkOS will not quietly move to another port, because anything you pointed at this one ' +
+      `would stop working. Quit whatever is using port ${port} and open DorkOS again. ` +
+      howToChangeThePort(source)
+  );
+}
+
+/**
  * The first free port at or after `preferred`.
+ *
+ * Only used for the unpinned default; a chosen port goes through
+ * {@link claimPinnedPort} instead.
  *
  * @param preferred - The port to try first.
  * @param attempts - How many consecutive ports to try, counting `preferred`.
  * @returns The port that was free a moment ago.
- * @throws If every candidate is taken. The message names the range and the way
- *   to move DorkOS somewhere else, because a person who hits this cannot fix it
- *   from inside the app.
+ * @throws If every candidate is taken. The message tells ports that are in use
+ *   apart from ports the operating system refuses, which are not the same
+ *   problem and do not have the same fix.
  */
 export async function findAvailablePort(preferred: number, attempts: number): Promise<number> {
   const last = Math.min(preferred + attempts - 1, MAX_PORT);
+  let anyForbidden = false;
   for (let port = preferred; port <= last; port++) {
-    if (await isPortFree(port)) return port;
+    const availability = await probePort(port);
+    if (availability === 'free') return port;
+    if (availability === 'forbidden') anyForbidden = true;
   }
-  const configPath = path.join(resolveDataDirectory(), 'config.json');
-  throw new Error(
-    `Every port from ${preferred} to ${last} is already in use on this computer, so DorkOS has ` +
-      'nowhere to listen. Quit whatever is using one of them and open DorkOS again, or pick a ' +
-      `different port by setting "server": { "port": <number> } in ${configPath}.`
-  );
+  const problem = anyForbidden
+    ? `DorkOS could not get any port from ${preferred} to ${last}: they are in use, or this ` +
+      'computer will not let DorkOS listen on them. Free one of them and open DorkOS again.'
+    : `Every port from ${preferred} to ${last} is already in use on this computer, so DorkOS has ` +
+      'nowhere to listen. Quit whatever is using one of them and open DorkOS again.';
+  throw new Error(`${problem} ${howToChangeThePort('default')}`);
 }
 
 /**
  * Pick the port this launch's server will listen on.
  *
  * @returns The chosen port.
- * @throws If no port in the scanned range is free (see {@link findAvailablePort}).
+ * @throws If a pinned port is unavailable, or if no port in the scanned range
+ *   is free (see {@link claimPinnedPort} and {@link findAvailablePort}).
  */
 export async function chooseServerPort(): Promise<number> {
   const preferred = resolvePreferredPort();
-  const port = await findAvailablePort(preferred, PORT_SCAN_ATTEMPTS);
-  if (port !== preferred) {
-    // A log line, never a dialog. The address is on screen in Settings →
+  if (preferred.source !== 'default') return claimPinnedPort(preferred);
+
+  const port = await findAvailablePort(preferred.port, PORT_SCAN_ATTEMPTS);
+  if (port !== preferred.port) {
+    // A log line, never a dialog. Moving off the default is a small,
+    // self-correcting accommodation: the address is on screen in Settings →
     // Server, and the only start-up conflict worth interrupting someone for is
     // the one that actually stops them — which is the data directory's, not
     // this one (see the module doc).
     log.info(
-      `[server] Port ${preferred} is in use, so this session is on ${port}. ` +
+      `[server] Port ${preferred.port} is in use, so this session is on ${port}. ` +
         'Settings → Server shows the address.'
     );
   }

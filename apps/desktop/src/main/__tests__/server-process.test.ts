@@ -201,6 +201,26 @@ function dialogDetail(dialog: ElectronMock['dialog'], index: number): string {
  */
 let originalRejectionListeners: Array<(...args: unknown[]) => void> = [];
 
+/**
+ * Pin every `startServer` in this file to a port nothing is using, so the
+ * supervisor's behaviour is what is under test and the machine's port map is
+ * not.
+ *
+ * `DORKOS_PORT` is the top of `resolvePreferredPort`'s precedence, and a pinned
+ * port is claimed strictly — no scanning (see `server-port.ts`). That is what
+ * makes this necessary: left ambient, a developer with DorkOS already running on
+ * 4242 would turn every start in this file into a refusal. Pinning also means
+ * the restart assertions below are about the supervisor reusing an address, not
+ * about whichever port the operating system felt like handing out.
+ *
+ * Found fresh per test rather than once, so a port taken part-way through a run
+ * cannot strand the rest of the file.
+ */
+async function pinFreePort(): Promise<void> {
+  const { findAvailablePort } = await import('../server-port');
+  vi.stubEnv('DORKOS_PORT', String(await findAvailablePort(45_000, 50)));
+}
+
 beforeEach(async () => {
   vi.resetModules();
   originalRejectionListeners = process.listeners('unhandledRejection') as Array<
@@ -211,10 +231,12 @@ beforeEach(async () => {
   childProcess.resetChildProcessMock();
   forkedChildren = childProcess.forkedChildren;
   (await getLogMock()).resetLogMock();
+  await pinFreePort();
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   process.removeAllListeners('unhandledRejection');
   for (const listener of originalRejectionListeners) process.on('unhandledRejection', listener);
 });
@@ -521,6 +543,36 @@ describe('the environment handed to the server child', () => {
 
     expect(port).toBe(asked);
     expect(child.env.DORKOS_PORT).toBe(String(asked));
+  });
+
+  it("puts the server's refusal to share a data directory in front of the user", async () => {
+    // The argument this whole design rests on: the port scan is silent, so the
+    // one start-up conflict a person is ever shown is the one that actually
+    // stopped them — the single-instance lock (ADR 260726-234122), in the
+    // server's own words. That only holds if the relay works end to end, from
+    // the child's stderr to the dialog `index.ts` raises.
+    const { startServer } = await import('../server-process');
+
+    const started = startServer();
+    const child = await devChildAt(0);
+    for (const line of [
+      'Another DorkOS instance is already using this data directory (/Users/kai/.dork).',
+      'It is running as process 8123 on port 4242 (DorkOS 0.56.0).',
+      'Stop it first (`kill 8123`), or start this one against a different directory.',
+    ]) {
+      child.emitStderr(line);
+    }
+    child.emitExit(1);
+
+    const message = (await startupError(started)).message;
+    // `~/.dork`, not `/Users/kai/.dork`: the tail abbreviates home paths on its
+    // way to a dialog someone may screenshot. The actionable part survives.
+    expect(message).toContain('already using this data directory (~/.dork)');
+    expect(message).toContain('process 8123 on port 4242');
+    expect(message).toContain('kill 8123');
+    // Nothing in the relay may reframe it as a port problem: this conflict is
+    // about the directory, and the two stories must not compete.
+    expect(message).not.toMatch(/next free port|will not quietly move/i);
   });
 
   it('marks the server as desktop-managed so it refuses to restart itself', async () => {

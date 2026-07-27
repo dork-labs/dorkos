@@ -31,7 +31,9 @@ You'll see an error like `Port 4242 is already in use.` DorkOS listens on port 4
   you set with `--port` wins over everything else for that run.
 </Callout>
 
-**In the [desktop app](/docs/getting-started/desktop-app) this fixes itself.** The app wants 4242, and takes the next free port (4243, then 4244) when it can't have it. Open **Settings → Server** to see the address it landed on and copy it. Only when ten ports in a row are busy does it stop and tell you, and the message names the range so you know what to free up.
+**In the [desktop app](/docs/getting-started/desktop-app) this usually fixes itself.** 4242 is a starting guess, so when something else has it the app takes the next free port (4243, then 4244) and **Settings → Server** shows the address it landed on. It only stops if ten ports in a row are unavailable, and the message names the range.
+
+**A port you chose is treated differently.** If you pinned one with `dorkos config set server.port` or the `DORKOS_PORT` environment variable, the app will not move off it. It stops and tells you the port is taken, because anything you already pointed at that port would break if DorkOS quietly answered somewhere else. Free the port and open the app again, or pin a different one.
 
 ## "I opened the desktop app and it says another DorkOS is already running"
 

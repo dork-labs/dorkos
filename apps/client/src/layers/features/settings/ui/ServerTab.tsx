@@ -1,21 +1,34 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { cn, openExternalLink, useCopyFeedback } from '@/layers/shared/lib';
-import { CopyButton } from '@/layers/shared/ui';
+import { Button, CopyButton } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import { isNewer } from '@/layers/features/status';
 
 /** Settings panel tab displaying server status, environment, and endpoints. */
 export function ServerTab() {
   const transport = useTransport();
-  const { data: config, isLoading } = useQuery({
+  const {
+    data: config,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
     queryKey: ['config'],
     queryFn: () => transport.getConfig(),
     staleTime: 30_000,
   });
   return (
     <div className="space-y-3">
-      {isLoading ? (
+      {isError && !config ? (
+        <ServerUnreachable
+          detail={error instanceof Error ? error.message : null}
+          onRetry={() => void refetch()}
+          isRetrying={isRefetching}
+        />
+      ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex items-center justify-between py-1">
@@ -73,6 +86,51 @@ export function ServerTab() {
 }
 
 /**
+ * What this tab shows when it cannot reach the server.
+ *
+ * This panel is now the only place to find your address, so someone whose
+ * server is mid-restart after a crash opens it precisely when it has nothing to
+ * report. Going blank there tells them nothing and looks like a broken screen;
+ * saying so, with the server's own words and a way to try again, at least
+ * matches what is happening.
+ */
+function ServerUnreachable({
+  detail,
+  onRetry,
+  isRetrying,
+}: {
+  detail: string | null;
+  onRetry: () => void;
+  isRetrying: boolean;
+}) {
+  return (
+    <div className="-mx-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/30">
+      <span className="text-sm font-medium text-amber-800 dark:text-amber-200">
+        Can&rsquo;t reach the DorkOS server
+      </span>
+      <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+        It may be restarting. Give it a moment and try again.
+      </p>
+      {detail ? (
+        <p className="mt-1 font-mono text-[10px] break-words text-amber-700/80 dark:text-amber-300/80">
+          {detail}
+        </p>
+      ) : null}
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-2"
+        onClick={onRetry}
+        disabled={isRetrying}
+        aria-label="Try reaching the server again"
+      >
+        {isRetrying ? 'Trying…' : 'Try again'}
+      </Button>
+    </div>
+  );
+}
+
+/**
  * The address DorkOS is answering on, ready to copy or open.
  *
  * Live rather than assumed: the desktop app asks for 4242 and takes the next
@@ -98,7 +156,7 @@ function ServerAddress({ port }: { port: number }) {
           <button
             type="button"
             onClick={() => openExternalLink(baseUrl)}
-            className="text-muted-foreground hover:text-foreground rounded-sm p-1 transition-colors"
+            className="text-muted-foreground hover:text-foreground focus-ring rounded-sm p-1 transition-colors"
             aria-label="Open DorkOS in your browser"
             title="Open in your browser"
           >

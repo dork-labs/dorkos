@@ -17,10 +17,22 @@ import { ServerTab } from '../ui/ServerTab';
  */
 const PORT = 4243;
 
-function renderTab(port = PORT) {
+/** Render the tab against a `getConfig` the test controls. */
+function renderWithConfig(getConfig: () => Promise<unknown>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({
+  const transport = createMockTransport({ getConfig: getConfig as never });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <ServerTab />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+function renderTab(port = PORT) {
+  renderWithConfig(
+    vi.fn().mockResolvedValue({
       version: '1.2.3',
       isDevMode: false,
       port,
@@ -29,14 +41,7 @@ function renderTab(port = PORT) {
       dorkHome: '/Users/kai/.dork',
       boundary: '/Users/kai',
       nodeVersion: 'v22.0.0',
-    }),
-  });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={transport}>
-        <ServerTab />
-      </TransportProvider>
-    </QueryClientProvider>
+    })
   );
 }
 
@@ -104,5 +109,39 @@ describe('ServerTab', () => {
     expect(await screen.findByText('/Users/kai/.dork')).toBeInTheDocument();
     expect(screen.getByText('v22.0.0')).toBeInTheDocument();
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
+  });
+
+  it('says the server is unreachable instead of going blank', async () => {
+    // This tab is now the only place to find your address, so someone whose
+    // server is mid-restart after a crash opens it exactly when it has nothing
+    // to report. An empty panel there reads as a broken screen.
+    renderWithConfig(vi.fn().mockRejectedValue(new Error('Failed to fetch')));
+
+    expect(await screen.findByText(/can.t reach the dorkos server/i)).toBeInTheDocument();
+    // The server's own words, not a generic apology.
+    expect(screen.getByText('Failed to fetch')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /try reaching the server again/i })).toBeEnabled();
+  });
+
+  it('can be asked to try again, and shows the address once it works', async () => {
+    const getConfig = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValue({
+        version: '1.2.3',
+        isDevMode: false,
+        port: PORT,
+        uptime: 1,
+        workingDirectory: '/Users/kai/code',
+        dorkHome: '/Users/kai/.dork',
+        boundary: '/Users/kai',
+        nodeVersion: 'v22.0.0',
+      });
+    const user = userEvent.setup();
+    renderWithConfig(getConfig);
+
+    await user.click(await screen.findByRole('button', { name: /try reaching the server again/i }));
+
+    expect(await screen.findByText(`http://localhost:${PORT}`)).toBeInTheDocument();
   });
 });
