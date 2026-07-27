@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260727-115434",
+      "slug": "sidebar-groups",
+      "title": "Sidebar groups hold anything, not just agents",
+      "created": "2026-07-27",
+      "status": "specified"
+    },
+    {
       "id": "260726-170533",
       "slug": "rooms",
       "title": "Rooms — channels, DMs and threads",
