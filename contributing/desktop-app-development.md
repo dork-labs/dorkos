@@ -6,14 +6,15 @@
 
 ## 1. What the desktop app is
 
-`apps/desktop` is a **thin shell**. It does not reimplement the product — it starts the same `@dorkos/server` and loads the same `@dorkos/client` SPA that `dorkos` (the npm CLI) runs. Its job is native integration: a real menu bar, a tray presence, single-instance behavior, window-state restore, `dorkos://` deep links, auto-update, and shipping the whole stack as one installable app.
+`apps/desktop` is a **thin shell**. It does not reimplement the product — it starts the same `@dorkos/server` and loads the same `@dorkos/client` SPA that `dorkos` (the npm CLI) runs. Its job is native integration: a real menu bar, a tray presence, supervising the server as a child process that outlives the window, single-instance behavior, window-state restore, `dorkos://` deep links, auto-update, and shipping the whole stack as one installable app.
 
 Build tooling: `electron-vite` (main/preload/renderer) + `electron-builder` (packaging/signing). Renderer root is `apps/client`. The app targets **macOS arm64** today (see `electron-builder.yml` `mac.target`), plus an unsigned Windows x64 alpha.
 
 ```
 apps/desktop/
-├── src/main/            # main process — see the module map in §6
+├── src/main/            # main process — see the module map below
 ├── src/preload/         # contextBridge → window.electronAPI
+├── src/shared/          # constants both main and the build config read (tray-images.ts)
 ├── src/server-entry.ts  # the server child's entry (imports @dorkos/server for its side effect)
 ├── build/               # buildResources: icons, entitlements, tray images (see build/README.md)
 ├── scripts/
@@ -23,6 +24,29 @@ apps/desktop/
 ├── electron-builder.yml # packaging, signing, notarization, files/asarUnpack
 └── electron.vite.config.ts
 ```
+
+### The main-process module map
+
+One job per module. `index.ts` is wiring and ordering **only** — every policy below belongs to the module named for it, and pushing a decision up into `index.ts` is how this directory used to grow.
+
+| Module                     | Job                                                                                                                                                                        |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.ts`                 | The single-instance lock, deep-link registration, the IPC handlers, the ordered `ready` sequence, `window-all-closed`, `activate`. Holds no policy of its own.             |
+| `window-manager.ts`        | What a window **is**: web preferences, the `will-navigate` / `setWindowOpenHandler` link policy, and building a second cockpit window.                                     |
+| `window-state.ts`          | Where a window **sits**: geometry load/validate/persist (`userData/window-state.json`), plus the display-change rescue. Primary window only — see the scoping table in §6. |
+| `menu.ts`                  | The platform-branched application menu, and the macOS Dock menu.                                                                                                           |
+| `about.ts`                 | The macOS About panel.                                                                                                                                                     |
+| `navigation.ts`            | `dorkos://` parsing, renderer-readiness tracking, and the single pending-navigation slot.                                                                                  |
+| `tray.ts`                  | The menu-bar / notification-area presence and its activity summary. `hasTray()` is what makes background running safe (§6).                                                |
+| `background-notice.ts`     | The one-time "DorkOS is still running" dialog, ledgered in `userData/shell-notices.json`.                                                                                  |
+| `quit-guard.ts`            | `before-quit` — the single funnel every exit reaches. Owns `isQuitting()`.                                                                                                 |
+| `close-tab.ts`             | `Cmd/Ctrl+W`'s main-process half: the subscribe / ask / ack protocol with the renderer.                                                                                    |
+| `agent-activity.ts`        | Subscribes the **main process** to the server's `GET /api/events` and counts agents mid-run.                                                                               |
+| `auto-updater.ts`          | The electron-updater lifecycle, the in-app update card's IPC, and the two update-restart states.                                                                           |
+| `server-spawn.ts`          | **How** to start a server child (§2).                                                                                                                                      |
+| `server-process.ts`        | **Supervises** the child (§2).                                                                                                                                             |
+| `server-crash-recovery.ts` | The conversation with the user after an unexpected death (§2).                                                                                                             |
+| `server-output.ts`         | The child's stderr, made safe to show (§2).                                                                                                                                |
 
 ## 2. The packaging model (how it actually runs when installed)
 
@@ -44,7 +68,7 @@ Four small modules own this, split by job:
 | `src/main/server-crash-recovery.ts` | The **conversation with the user** after an unexpected death: what to say, whether to offer a restart, when to stop offering.                                                                                  |
 | `src/main/server-output.ts`         | The child's stderr, **made safe to show** — bounded ring buffer, secret redaction, line truncation.                                                                                                            |
 
-**Any exit nobody asked for is a crash** — including exit 0 (what `POST /api/admin/restart` and "Reset All Data" produce) and a `null` code from a signal. The supervisor logs it _before_ looking for a window (`BrowserWindow.getFocusedWindow()` is `null` whenever the app isn't frontmost, which used to skip the whole handler), offers restart-or-quit anchored to the tracked main window, and nulls the port so `getServerPort()` never hands the renderer a dead one. Read the port through that accessor; never keep a copy, because a restart gives the server a new one.
+**Any exit nobody asked for is a crash** — including exit 0 and a `null` code from a signal. Exit 0 is not evidence that anybody asked: the dev orphan watchdog leaves that way, and `POST /api/admin/restart` and "Reset All Data" used to produce it here, until the server started answering both with a 409 under `DORKOS_MANAGED_BY` (ADR `260726-234120`; that refusal is a stop-gap and DOR-542 is meant to route both back through this supervisor). The supervisor logs it _before_ looking for a window (`BrowserWindow.getFocusedWindow()` is `null` whenever the app isn't frontmost, which used to skip the whole handler), offers restart-or-quit anchored to the tracked main window, and nulls the port so `getServerPort()` never hands the renderer a dead one. Read the port through that accessor; never keep a copy, because a restart gives the server a new one.
 
 **Say what the server said.** A server that refuses to boot writes the actionable sentence to stderr and exits — a data directory another process already holds (the server-side instance lock, DOR-532), a failed migration, a port it could not bind. `server-output.ts` keeps a bounded, redacted tail of that stream, and both the startup-failure error and the crash dialog carry it. Pass it through verbatim: never parse it, match on it, or reword it. **The desktop side owns delivery only** — the server owns the wording, and nothing here knows or cares which failure it is.
 
@@ -57,7 +81,11 @@ Redaction goes through `scrubMessage` from `@dorkos/shared/error-report` — the
 
 **A retry that keeps failing stops being offered.** After `MAX_RESTART_FAILURES` failures the crash dialog drops "Restart Server" and offers "Open Logs" plus "Quit". Some failures cannot be retried out of, and an unlimited retry button against a locked data directory is a button that can never succeed. **A failure is not just a restart that would not start** — a server that starts and then dies inside `MIN_HEALTHY_UPTIME_MS` counts too, because the loop this cap exists to stop is usually a server that boots fine and is killed again by whatever killed it the first time. Only a server that stays up that long clears the counter; do not "simplify" this back to resetting whenever a server starts, which is the bug (DOR-533).
 
-Two env facts worth knowing. The child gets `DORKOS_MANAGED_BY=desktop`, and `apps/server` answers `POST /api/admin/restart` and `/api/admin/reset` with 409 when it sees that — those endpoints re-exec the server process, which cannot work inside a UtilityProcess whose lifecycle the shell owns (this module only sets the variable; the gate lives server-side). And `DORK_HOME` is pinned to `~/.dork` **only** when `app.isPackaged`: in dev the child resolves its own project-local `.temp/.dork`, so `pnpm --filter @dorkos/desktop dev` never migrates production data.
+Three env facts worth knowing, all set in `buildServerEnv`.
+
+- **`DORKOS_MANAGED_BY=desktop`.** `apps/server` answers `POST /api/admin/restart` and `/api/admin/reset` with a 409 (`MANAGED_BY_DESKTOP`) when it sees this — those endpoints re-exec the server process, which cannot work inside a UtilityProcess whose lifecycle the shell owns. This module only sets the variable; the gate is a `router.use` on the server side, deliberately not per-path. See **ADR `260726-234120`**, which also names the follow-up (DOR-542) that is meant to replace the refusal by routing both actions through this supervisor rather than building alongside it.
+- **`DORK_HOME`** is pinned to `~/.dork` **only** when `app.isPackaged`. In dev the child resolves its own project-local `.temp/.dork`, so `pnpm --filter @dorkos/desktop dev` never migrates production data. Note the interaction with the server-side instance lock (ADR `260726-234122`): one server per data directory, so a packaged app and a `dorkos` CLI both pointed at `~/.dork` is now a refusal at boot with a readable reason, not silent mutual corruption.
+- **`DORKOS_PARENT_PID`** is set in **dev only**, and is `delete`d from the packaged child's env rather than merely omitted — a packaged app inherits whatever the launching shell exported, and an inherited stale pid would arm the child's orphan watchdog (`exitWhenOrphaned`, `src/server-entry.ts`) against a process that is already gone, so the child would exit 0 a poll later and the shell would report a crash it caused itself. The child cannot derive this itself: `tsx` runs the server as a _grandchild_, so its `process.ppid` is the tsx wrapper. A packaged build needs none of it, because Electron tears a UtilityProcess down with the app.
 
 ### The server bundle is a separate build step
 
@@ -82,7 +110,7 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 
 - `better-sqlite3` and `node-pty` (native `.node` addons),
 - `dist/renderer/**` (`express.static` can't range-read from inside asar),
-- `@anthropic-ai/claude-agent-sdk-darwin-arm64/**` (the `claude` executable — see §3),
+- `@anthropic-ai/claude-agent-sdk/**` plus **both** per-platform binary packages, `…-darwin-arm64/**` and `…-win32-x64/**` (the `claude` / `claude.exe` executable — see §3). Each packaged target needs its own glob here _and_ its own entry in `package.json`'s `optionalDependencies`; miss either and that target ships without a runnable Claude Code, green,
 - `core-extensions/**` (staged into `DORK_HOME` via `fs.cp`).
 
 Unpacking is the **only** way to put a file outside the asar. Do not add a second copy via `extraResources`: the server bundle resolves `node_modules` by walking up from `app.asar/dist/server/`, so it reaches `app.asar/node_modules/<pkg>` (asar-redirected to the unpacked copy) before it could ever see `resources/node_modules/<pkg>`. A duplicate there is unreachable weight that only surfaces the day the two copies carry different ABIs and someone debugs a `NODE_MODULE_VERSION` error against a binary they didn't know existed. One such copy of `better-sqlite3` was carried from the first desktop commit until DOR-536 removed it.
@@ -188,11 +216,13 @@ The window is **destroyed** on close, not hidden. Reopening remounts a fresh ren
 
 ### The tray
 
-`tray.ts`. Present whenever the app runs; it is what makes the paragraph above safe. Its menu is the activity summary (a disabled line, not a button), **Open DorkOS**, **Activity**, and **Quit DorkOS**.
+`tray.ts`. Created once in the `ready` sequence on every platform that has a tray image; it is what makes the paragraph above safe. Its menu is the activity summary (a disabled line, not a button), **Open DorkOS**, **Activity**, and **Quit DorkOS**. Quit routes through `app.quit()` so it meets the same confirmation as every other exit.
 
-Activity is reflected calmly and never with colour or notifications: the tooltip everywhere, plus `tray.setTitle(count)` on macOS — the only platform that shows text beside a tray icon. Windows has no equivalent, so the tooltip carries it alone.
+Activity is reflected calmly and never with colour or notifications: the tooltip everywhere, plus `tray.setTitle(count)` on macOS — the only platform that shows text beside a tray icon. Windows has no equivalent, so the tooltip carries it alone. Windows also gets a left-click handler that opens the window; macOS deliberately does not, because once a context menu is attached macOS opens it on any click, and a `click` handler there would fire the window _and_ the menu.
 
-Images come from `build/` but are **read from `dist/main/`**: `build/` is electron-builder's `buildResources`, which is not packaged, and `electron-builder.yml`'s `files` allowlist ships only `dist/**`. `electron.vite.config.ts`'s `emitTrayImages()` plugin bridges the two, so `join(__dirname, name)` resolves identically in dev and packaged. macOS gets `trayTemplate.png` (the `Template` suffix is load-bearing — it is what makes macOS recolour the glyph for light and dark menu bars); Windows gets `trayIcon.png`, a **PNG and not the `.ico`**, because Electron's `.ico` decoder is Windows-only and a `.ico` tray asset cannot be verified anywhere else. See `build/README.md` to regenerate.
+**`src/shared/tray-images.ts` is the one list**, read by both `tray.ts` (which image to load) and `electron.vite.config.ts` (which files to copy). Adding a platform to one and not the other packages green and produces an app with no tray on whichever platform was missed — a runtime-only failure. Images come from `build/` but are **read from `dist/main/`**: `build/` is electron-builder's `buildResources`, which is not packaged, and `electron-builder.yml`'s `files` allowlist ships only `dist/**`. The `emitTrayImages()` plugin bridges the two, so `join(__dirname, name)` resolves identically in dev and packaged. macOS gets `trayTemplate.png` (the `Template` suffix is load-bearing — it is what makes macOS recolour the glyph for light and dark menu bars); Windows gets `trayIcon.png`, a **PNG and not the `.ico`**, because Electron's `.ico` decoder is Windows-only and a `.ico` tray asset cannot be verified anywhere else. Linux has no entry at all: there is no Linux build, and a tray there needs a `libappindicator` host that cannot be assumed. See `build/README.md` to regenerate.
+
+**Verification status, for anything you write about this in user-facing copy:** the tray and the background-running behaviour it guards are verified on macOS. On Windows they are built and code-reviewed only — the Windows build has not been confirmed by a real end-user install (`meta/positioning-202607/09-gtm-plan.md` §2.0). The degradation is at least safe by construction: no tray means `hasTray()` is false, which means the app quits on last-window-close rather than vanishing.
 
 ### Quitting goes through one door
 
@@ -222,11 +252,15 @@ A server crash-and-restart **does** move every window to the new port (`pointWin
 
 ### `Cmd/Ctrl+W` delegates to the renderer
 
-The cockpit is growing in-renderer tabs, so the accelerator asks the focused renderer first (`close-tab.ts`). `CmdOrCtrl+Shift+W` ("Close Window") stays unconditional.
+The cockpit has in-renderer tabs (DOR-540), so the accelerator asks the focused renderer first (`close-tab.ts`). `CmdOrCtrl+Shift+W` ("Close Window") stays unconditional.
 
-The menu item is labelled **"Close"**, not "Close Tab". Nothing in `apps/client` subscribes yet, so today it closes the window, and a menu item naming something the product does not do breaks its promise the moment someone reads it. Rename it in the change that ships the renderer's tab handling.
+**The tabs themselves are not a shell feature.** They live in one renderer as router state (`apps/client/src/layers/features/app-tabs`, `shared/model/app-tabs`), not a `WebContentsView` per tab — every tab points at the same trusted local origin, so a process each would buy isolation nothing here needs and pay for it in memory, and the in-renderer form ships the feature to the browser cockpit too. macOS native tabs were never on the table: mac-only, and incompatible with the `hiddenInset` title bar. The shell's entire involvement is this one accelerator. `Cmd/Ctrl+T`, `Cmd/Ctrl+1-9` and `Cmd/Ctrl+Shift+[`/`]` are registered on `document` by the renderer and never reach here — see `contributing/keyboard-shortcuts.md`.
 
-**Subscribing is what claims the keystroke.** A renderer announces itself on `close-tab:subscribe` when it first calls `onCloseTab`; with no subscriber the window closes immediately, no message and no wait — exactly what Cmd+W did before tabs. Only a subscribed renderer gets asked, and only then does the 3-second timeout apply.
+The menu item is labelled **"Close Tab"** since DOR-540, which is the change that shipped the renderer's half. The cockpit subscribes for the whole life of the shell and answers truthfully each time: `closeActive()` returns `false` on the last tab, which is exactly what lets the window close. Chrome's "Close Tab" behaves the same way, so the label is honest in both cases, and "Close Window" remains for closing the window outright.
+
+**Subscribing is what claims the keystroke.** A renderer announces itself on `close-tab:subscribe` when it first calls `onCloseTab`; with no subscriber the window closes immediately, no message and no wait — exactly what Cmd+W did before tabs, and still what happens in a window whose renderer has not mounted (a second cockpit window mid-load, `electron-vite preview`). Only a subscribed renderer gets asked, and only then does the 3-second timeout apply.
+
+**Do not re-gate the subscription on the tab count.** `use-electron-close-tab.ts` subscribes on mount and unsubscribes on unmount, unconditionally; the last-tab rule lives in the _answer_. Moving it into the subscription states one rule in two places and leaves the shell's behaviour depending on which copy is right.
 
 That gate is what lets the timeout be generous. An ack runs on the renderer's main thread, which a streaming turn can block well past a snappy budget, and giving up early destroys a window full of tabs nobody asked to lose. Without the gate, a budget long enough to be safe would be a delay on _every_ Cmd+W in every window that was never going to answer.
 

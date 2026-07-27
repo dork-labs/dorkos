@@ -12,7 +12,7 @@ import { TypeTable } from 'fumadocs-ui/components/type-table';
 DorkOS supports keyboard shortcuts for navigation and for responding to Claude's tool approvals and questions. When Claude is waiting for input, shortcuts let you act without touching the mouse.
 
 <Callout type="info">
-  Shortcuts are only active on desktop (screens 768px and wider). On mobile, use the on-screen
+  Shortcuts are only active on wide screens (768px and wider). On a phone, use the on-screen
   buttons.
 </Callout>
 
@@ -34,6 +34,53 @@ These shortcuts work at any time.
     },
     '⌘. / Ctrl+.': {
       description: 'Toggle the right panel open or closed.',
+      type: 'key',
+    },
+    '?': {
+      description: 'Open this list of shortcuts inside DorkOS.',
+      type: 'key',
+    },
+  }}
+/>
+
+## Tabs
+
+Keep several agents open in one window and switch between them.
+
+<Callout type="info">
+  These keys work in the desktop app. In a web browser, `⌘T` and `⌘1` to `⌘9` belong to the
+  browser's own tabs, so use the tab strip instead: press `Tab` to reach it, arrow keys to move
+  between tabs, `Home` and `End` to jump to either end, and `Delete` to close the one in focus.
+</Callout>
+
+<TypeTable
+  type={{
+    '⌘T / Ctrl+T': {
+      description: 'Open a new tab.',
+      type: 'key',
+    },
+    '⌘1 - ⌘8 / Ctrl+1 - Ctrl+8': {
+      description: 'Jump to that tab, counting from the left.',
+      type: 'key',
+    },
+    '⌘9 / Ctrl+9': {
+      description: 'Jump to the last tab, however many you have open.',
+      type: 'key',
+    },
+    '⌘⇧[ / Ctrl+Shift+[': {
+      description: 'Go to the tab on the left.',
+      type: 'key',
+    },
+    '⌘⇧] / Ctrl+Shift+]': {
+      description: 'Go to the tab on the right.',
+      type: 'key',
+    },
+    '⌘W / Ctrl+W': {
+      description: 'Close the tab you are on. On your last tab it closes the window.',
+      type: 'key',
+    },
+    '⌘⇧W / Ctrl+Shift+W': {
+      description: 'Close the whole window, tabs and all.',
       type: 'key',
     },
   }}
@@ -109,7 +156,7 @@ Press `⌘K` / `Ctrl+K` from anywhere to jump to an agent, a command, or a quick
       type: 'key',
     },
     '⌘Enter / Ctrl+Enter': {
-      description: 'Open the selected agent in a new browser tab (skips sub-menu).',
+      description: 'Open the selected agent in a new DorkOS tab (skips the sub-menu).',
       type: 'key',
     },
     Backspace: {
@@ -131,6 +178,8 @@ Prefix shortcuts in the palette search field:
 
 - Type `@` to scope search to agents only
 - Type `>` to scope search to commands only
+
+Pick an agent and its sub-menu asks where you want it: **Open Here**, **Open in New Tab**, or **Open in New Window**. In the desktop app, New Window gives you a second DorkOS window, which is what you want for a second screen. In a browser it opens a new browser tab.
 
 ## Tool Approval
 

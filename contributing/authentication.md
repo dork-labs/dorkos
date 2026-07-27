@@ -84,6 +84,14 @@ Two enforcement points consume it:
 - **Tunnel start** (`routes/tunnel.ts`) and the boot-time autostart (`index.ts`) call `canExpose()`; on `false` they respond `409 { code: 'AUTH_REQUIRED_FOR_EXPOSURE' }` (and skip the autostart). The client (`features/auth`) matches on `AUTH_REQUIRED_FOR_EXPOSURE` to route the operator into owner-account creation, then retries the tunnel.
 - **Non-loopback bind** (`index.ts`) calls `checkBindAllowed({ host, exposureAllowed, allowInsecureBind })` before `app.listen`. A non-loopback host with the guard failing **refuses to start** (hard gate, non-zero exit) with an actionable message. `DORKOS_ALLOW_INSECURE_BIND=true` is a narrow, loud-logging escape hatch set only by the container images (the `integration` and `runtime` targets of the root `Dockerfile`), which own the network boundary.
 
+### The `/api` host guard is the login-off complement (DOR-532)
+
+`hostGuard` (`middleware/host-guard.ts`) is mounted at `/api` ahead of `express.json` and the Better Auth handler. It 403s (`HOST_NOT_ALLOWED`) any request whose raw `Host` header is not loopback, not in `DORKOS_TRUSTED_HOSTS`, and not the live tunnel host — closing the DNS-rebinding path to `POST /api/sessions/:id/messages`, which CORS structurally cannot see because a rebound request genuinely _is_ same-origin.
+
+**It is inert whenever `config.auth.enabled === true`**, and that is the load-bearing choice, not an oversight: Better Auth cookies are scoped to the real origin, so a rebound origin carries no cookie and `sessionGate` already turns it away — while unconditional enforcement would 403 every reverse-proxy self-host on upgrade. The flag is read per request, so turning login on takes effect with no restart. Full reasoning, including what this makes load-bearing about cookie scoping: **ADR `260726-232221`**.
+
+Do not confuse it with a locality check. `Host` says which name the caller asked for; only `req.socket.remoteAddress` says where the caller is. The runtime-provisioning routes need both and use `isLocalRequest` (`lib/trusted-origins.ts`) — **ADR `260726-232222`**, which also records why `req.hostname` and `req.ip` are traps under `trust proxy: 1`.
+
 ### MCP: 4-tier resolution + legacy seeding
 
 `mcpApiKeyAuth` keeps the JSON-RPC 401 shape MCP clients expect and resolves credentials in priority order:
