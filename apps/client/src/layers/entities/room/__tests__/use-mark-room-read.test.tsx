@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -90,7 +90,7 @@ describe('useMarkRoomRead', () => {
     renderHook(() => useMarkRoomRead(roomWith([human(4)]), [entry(4)]), {
       wrapper: wrapperFor(transport),
     });
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {});
     expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
   });
 
@@ -99,14 +99,14 @@ describe('useMarkRoomRead', () => {
     renderHook(() => useMarkRoomRead(roomWith([agent()]), [entry(1)]), {
       wrapper: wrapperFor(transport),
     });
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {});
     expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
   });
 
   it('says nothing while the room is still loading', async () => {
     const transport = createMockTransport();
     renderHook(() => useMarkRoomRead(undefined, []), { wrapper: wrapperFor(transport) });
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {});
     expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
   });
 
@@ -172,7 +172,7 @@ describe('useMarkRoomRead', () => {
     await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1));
     rerender({ tick: 1 });
     rerender({ tick: 2 });
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {});
     expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1);
   });
 
@@ -185,7 +185,7 @@ describe('useMarkRoomRead', () => {
     await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1));
     // A refetch that has not yet reflected the write re-renders with the old cursor.
     rerender({ room: roomWith([human(1)]) });
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {});
     expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1);
   });
 });

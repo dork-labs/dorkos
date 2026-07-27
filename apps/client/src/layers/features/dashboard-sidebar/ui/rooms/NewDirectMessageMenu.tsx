@@ -13,6 +13,9 @@ export interface DirectMessageCandidate {
 interface NewDirectMessageMenuProps {
   /** Agents not already in a direct message, sorted by name. */
   candidates: DirectMessageCandidate[];
+  /** Whether the roster has any agents at all, regardless of DM status — distinguishes an
+   * empty roster from one where every agent already has a conversation. */
+  hasAnyAgents: boolean;
   /** Start a conversation with this agent. */
   onSelect: (candidate: DirectMessageCandidate) => void;
 }
@@ -23,7 +26,11 @@ interface NewDirectMessageMenuProps {
  * Agents already in a direct message are filtered out upstream, so choosing from
  * this list can never produce a second conversation with the same agent.
  */
-export function NewDirectMessageMenu({ candidates, onSelect }: NewDirectMessageMenuProps) {
+export function NewDirectMessageMenu({
+  candidates,
+  hasAnyAgents,
+  onSelect,
+}: NewDirectMessageMenuProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -36,7 +43,9 @@ export function NewDirectMessageMenu({ candidates, onSelect }: NewDirectMessageM
       <PopoverContent side="right" align="start" className="w-56 p-1">
         {candidates.length === 0 ? (
           <p className="text-muted-foreground px-2 py-1.5 text-xs">
-            You already have a conversation with every agent you have added.
+            {hasAnyAgents
+              ? 'You already have a conversation with every agent you have added.'
+              : 'You have not added any agents yet. Add one to start a direct message with it.'}
           </p>
         ) : (
           candidates.map((candidate) => (

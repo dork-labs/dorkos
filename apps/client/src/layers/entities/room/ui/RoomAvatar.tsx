@@ -23,6 +23,19 @@ const roomAvatarVariants = cva(
   }
 );
 
+/** The channel/thread glyph scales with `size` too, so it reads at the same
+ * visual weight as the lettered disc it stands in for at that size. */
+const roomAvatarIconVariants = cva('text-muted-foreground shrink-0', {
+  variants: {
+    size: {
+      xs: 'size-3.5',
+      sm: 'size-5',
+      md: 'size-6',
+    },
+  },
+  defaultVariants: { size: 'xs' },
+});
+
 export interface RoomAvatarProps extends VariantProps<typeof roomAvatarVariants> {
   /** The room to draw a mark for. */
   room: Pick<Room, 'id' | 'kind' | 'title'>;
@@ -47,7 +60,7 @@ export function RoomAvatar({ room, size, className }: RoomAvatarProps) {
       <Hash
         aria-hidden
         data-slot="room-avatar"
-        className={cn('text-muted-foreground size-3.5 shrink-0', className)}
+        className={cn(roomAvatarIconVariants({ size }), className)}
       />
     );
   }
@@ -57,7 +70,7 @@ export function RoomAvatar({ room, size, className }: RoomAvatarProps) {
       <MessagesSquare
         aria-hidden
         data-slot="room-avatar"
-        className={cn('text-muted-foreground size-3.5 shrink-0', className)}
+        className={cn(roomAvatarIconVariants({ size }), className)}
       />
     );
   }

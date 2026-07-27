@@ -127,6 +127,13 @@ describe('DirectMessagesSection', () => {
     expect(mockUpdate.mock.calls[0]![0]({ dmsCollapsed: false })).toEqual({ dmsCollapsed: true });
   });
 
+  it('tells the person to add an agent first when the roster is empty, not that every agent is taken', () => {
+    renderSection({ displayNames: {} });
+    fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+    expect(screen.getByText(/have not added any agents yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/already have a conversation/i)).not.toBeInTheDocument();
+  });
+
   it('starts a conversation with an agent that has none yet', () => {
     renderSection({ displayNames: { '/repo/ana': 'Ana', '/repo/bo': 'Bo' } });
     fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));

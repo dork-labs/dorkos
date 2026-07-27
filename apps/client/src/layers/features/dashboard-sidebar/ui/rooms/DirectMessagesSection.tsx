@@ -110,7 +110,11 @@ export function DirectMessagesSection({
         collapsed={dmsCollapsed}
         onToggle={() => update((prev) => setDmsCollapsed(prev, !prev.dmsCollapsed))}
       />
-      <NewDirectMessageMenu candidates={candidates} onSelect={handleStart} />
+      <NewDirectMessageMenu
+        candidates={candidates}
+        hasAnyAgents={Object.keys(displayNames).length > 0}
+        onSelect={handleStart}
+      />
 
       {!dmsCollapsed && (
         <SidebarMenu>
