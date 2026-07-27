@@ -16,6 +16,9 @@ import {
   resolveApiBaseUrl,
   reportClientError,
   installClientErrorHandlers,
+  isDesktopShell,
+  registerLinkNavigator,
+  registerTabOpener,
 } from '@/layers/shared/lib';
 import {
   TransportProvider,
@@ -24,6 +27,7 @@ import {
   useThemeStore,
   EventStreamProvider,
 } from '@/layers/shared/model';
+import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
 import { switchAgentCwd } from '@/layers/entities/session';
 import { applyShapeAction } from '@/layers/entities/shapes';
@@ -232,6 +236,26 @@ function Root() {
 // remount the entire provider tree (including EventStreamProvider) on every
 // render, producing duplicate SSE connections.
 const router = createAppRouter(queryClient);
+
+// Give the link seam its router. Every internal link in the cockpit — palette
+// actions, promo cards, deep links into the Settings dialog — dispatches
+// through here instead of a document load, so the desktop shell never hands one
+// of our own URLs to the system browser (DOR-534).
+registerLinkNavigator(({ href, replace }) => void router.navigate({ href, replace }));
+
+// …and, in the desktop app only, its tab strip. `target: 'tab'` links — the
+// palette's "Open in New Tab", anything that wants a second view without losing
+// the first — add a tab here and navigate into it (DOR-540). The strip is a
+// desktop feature: a browser already owns tabs, so a tab request there opens a
+// real browser tab instead (DOR-568).
+//
+// The surface gate lives in the seam, which asks `isDesktopShell()` before it
+// uses an opener at all. This one only avoids handing it an adapter it would
+// refuse, so removing it changes nothing a person can see — the browser still
+// gets a browser tab.
+if (isDesktopShell()) {
+  registerTabOpener((href) => openTabAt(router, href));
+}
 
 // Electron serves the API on a dynamic localhost port (preload bridge); web mode
 // uses the relative /api path. Shared with the auth client so both hit one origin.

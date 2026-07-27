@@ -10,6 +10,7 @@
  * @module services/runtimes/codex/__tests__/codex-scenarios
  */
 import { vi } from 'vitest';
+import type { Mock } from 'vitest';
 import type {
   AgentMessageItem,
   CommandExecutionItem,
@@ -286,13 +287,26 @@ export function toEventStream(events: ThreadEvent[]): AsyncGenerator<ThreadEvent
 }
 
 /**
+ * Fake `Thread` shape returned by {@link makeMockThread}.
+ *
+ * Spelled out rather than inferred: `vi.fn()` would infer `Mock` from
+ * `@vitest/spy`, a transitive path this package cannot name, so tsc rejects the
+ * inferred type as unportable (TS2742).
+ */
+type MockThread = {
+  id: string | null;
+  runStreamed: Mock;
+  run: Mock;
+};
+
+/**
  * Fake `Thread` mirroring the SDK surface the adapter touches:
  * `runStreamed()` resolves to `{ events }` exactly like the real SDK.
  */
 export function makeMockThread(
   events: ThreadEvent[] | AsyncGenerator<ThreadEvent>,
   threadId: string | null = THREAD_ID
-) {
+): MockThread {
   const stream = Array.isArray(events) ? toEventStream(events) : events;
   return {
     id: threadId,
@@ -311,7 +325,7 @@ export function makeMockThread(
  * vi.mock('@openai/codex-sdk', () => makeMockCodexModule(thread));
  * ```
  */
-export function makeMockCodexModule(thread: ReturnType<typeof makeMockThread>) {
+export function makeMockCodexModule(thread: MockThread): { Codex: Mock } {
   return {
     Codex: vi.fn(() => ({
       startThread: vi.fn(() => thread),

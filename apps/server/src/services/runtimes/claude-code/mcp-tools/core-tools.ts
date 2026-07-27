@@ -150,7 +150,15 @@ const agentScopeSchema = {
   cwd: z.string().optional().describe('Working directory path to scope the query to'),
 };
 
-/** Returns the core tool definitions for registration with the MCP server. */
+/**
+ * The core tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers — the external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again (DOR-499). Unguarded, so it needs no separate definitions function.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
 export function getCoreTools(deps: McpToolDeps) {
   const handleGetSessionCount = createGetSessionCountHandler(deps);
   const handleGetAgent = createGetAgentHandler(deps);
@@ -158,7 +166,7 @@ export function getCoreTools(deps: McpToolDeps) {
   return [
     tool(
       'ping',
-      'Check that the DorkOS server MCP integration is working. Returns pong with a timestamp.',
+      'Check that the DorkOS server is running. Returns pong with a timestamp.',
       {},
       handlePing
     ),

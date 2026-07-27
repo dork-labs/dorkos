@@ -161,7 +161,11 @@ describe('platform → binding router → agent turn → reply delivery (real re
     // Turn triggered exactly once — the agent reply (from agent:) does not loop
     // back into a second turn (the from:'agent:' echo guard).
     await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
-    expect(createSession).toHaveBeenCalledWith(PROJECT_PATH, 'acceptEdits');
+    // The binding above was created without naming a permission mode, so the
+    // turn it drives runs in the prompting mode. Before DOR-604 an unconfigured
+    // binding silently produced 'acceptEdits' — a message from off this machine
+    // choosing a permission level nobody had agreed to.
+    expect(createSession).toHaveBeenCalledWith(PROJECT_PATH, 'default');
 
     // Dispatched to the runtime-scoped agent subject with the enriched payload.
     await vi.waitFor(() => expect(registry.dispatches.length).toBe(1));

@@ -63,10 +63,36 @@ import {
   USER_CONFIG_DEFAULTS,
   SENSITIVE_CONFIG_KEYS,
   ONBOARDING_STEPS,
+  SidebarItemRefSchema,
+  SidebarGroupSchema,
+  toSidebarItemRef,
+  normalizeSidebarPrefs,
 } from '@dorkos/shared/config-schema';
-import type { UserConfig } from '@dorkos/shared/config-schema';
+import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
+
+/**
+ * Read a config file that `conf` just refused, so its protections can be
+ * salvaged before the file is replaced.
+ *
+ * Best-effort by design and never throws. A file that fails schema validation
+ * usually still parses as JSON — that is the whole reason salvage is possible —
+ * but a genuinely truncated file does not, and the caller is already handling a
+ * failure. An unreadable file simply yields `undefined` and the recovery
+ * proceeds on defaults, exactly as it did before.
+ *
+ * @param configPath - Absolute path to the config file being replaced.
+ * @returns The parsed contents, or `undefined` when they cannot be read.
+ */
+function readStoredConfigForSalvage(configPath: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Append-only `conf` migration chain keyed by app version. See
@@ -102,6 +128,44 @@ export function backfillExtensionsDisabled(store: {
   const ext = store.get('extensions');
   if (ext && typeof ext === 'object' && !Array.isArray((ext as { disabled?: unknown }).disabled)) {
     store.set('extensions', { ...(ext as Record<string, unknown>), disabled: [] });
+  }
+}
+
+/**
+ * Migration body: backfill `extensions.approvedToRun: []` for configs persisted
+ * before extension code needed a person's approval to run in-process (DOR-516).
+ *
+ * Seeds the list EMPTY, which means nothing an upgrading user already had
+ * installed is pre-approved. That is the deliberate choice, and it is the one
+ * place this migration could have gone wrong: backfilling from
+ * `extensions.enabled` would read "the person once toggled this on in the
+ * cockpit" as "the person reviewed this code", and an agent can turn an extension
+ * on through an ungated route. An upgrade must never hand out an approval nobody
+ * gave. The cost is that anyone already running a user extension with a server
+ * entry approves it once, which is one click and is stated in the changelog.
+ *
+ * Core extensions are unaffected either way — they are exempt by origin, not by
+ * this list (see `extension-load-policy.ts`), so the shipped `linear-issues`
+ * data proxy keeps working across the upgrade with nothing to click.
+ *
+ * Additive and idempotent — only writes when `approvedToRun` is not already an
+ * array, and never touches `enabled` or `disabled`. Configs with no `extensions`
+ * key are skipped (the schema default supplies the object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillExtensionsApprovedToRun(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (
+    ext &&
+    typeof ext === 'object' &&
+    !Array.isArray((ext as { approvedToRun?: unknown }).approvedToRun)
+  ) {
+    store.set('extensions', { ...(ext as Record<string, unknown>), approvedToRun: [] });
   }
 }
 
@@ -202,6 +266,12 @@ export function backfillAuthDefaults(store: {
  * Seeds `standingGrants: false`. A safety feature does not get quietly relaxed
  * by an upgrade — nothing changes for an existing user until they ask for it.
  *
+ * Also seeds `standingGrantsVoidBefore: null` (DOR-520) onto an `approvals` block
+ * an earlier build of this same unreleased key already created, which is why the
+ * two seeds are separate `if`s rather than one. `null` means "nothing has been
+ * voided yet", which is the honest starting point: no upgrade should retroactively
+ * end permissions the person still expects to hold.
+ *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
  */
@@ -209,8 +279,18 @@ export function backfillApprovalsDefaults(store: {
   get: (key: string) => unknown;
   set: (key: string, value: unknown) => void;
 }): void {
-  if (store.get('approvals') == null) {
-    store.set('approvals', { standingGrants: false, trustWindowMinutes: 480 });
+  const approvals = store.get('approvals');
+  if (approvals == null) {
+    store.set('approvals', {
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
+    return;
+  }
+  const section = approvals as Record<string, unknown>;
+  if (!('standingGrantsVoidBefore' in section)) {
+    store.set('approvals', { ...section, standingGrantsVoidBefore: null });
   }
 }
 
@@ -508,6 +588,49 @@ export function applyTier1OptOutDefaults(store: {
 }
 
 /**
+ * Migration body: return the Tier 1 telemetry channels (`install`, `heartbeat`,
+ * `usage`) to opt-in for every install that never answered a consent prompt
+ * (ADR 260727-181825, superseding 260713-143958's Tier 1 posture).
+ *
+ * The mirror image of {@link applyTier1OptOutDefaults}, which is shipped and
+ * therefore frozen — this reverses its effect for the population it enrolled,
+ * rather than editing it:
+ *
+ * - If `userHasDecided === true`, the person made an explicit choice (either
+ *   way) — change NOTHING. Someone who chose to keep sharing keeps sharing.
+ * - Otherwise (never answered), set all three channels `false`. That includes
+ *   installs the 0.48.0 migration enrolled and installs that have since had
+ *   their first-run notice shown, which is the point: enrolment by silence is
+ *   what this reverses.
+ *
+ * The consequence is deliberate and is the whole cost of the change: installs
+ * that are sending anonymous data today, having never been asked, stop sending
+ * it. They are not re-prompted here — `lastPromptedVersion` is untouched, so the
+ * cockpit's consent surfaces remain the way back in.
+ *
+ * Idempotent: an already-opted-out never-answered block, and any
+ * explicit-choice block, are left as-is. The whole-object-absent case is handled
+ * by the schema default on read, which now yields `false`.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function applyTier1OptInDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const telemetry = store.get('telemetry');
+  if (telemetry == null || typeof telemetry !== 'object') return;
+  const t = telemetry as Record<string, unknown>;
+  // An explicit prior choice is never overridden — the same rule the opt-out
+  // flip honored, applied in the other direction.
+  if (t.userHasDecided === true) return;
+  // Idempotent short-circuit: already opted out, nothing to write.
+  if (t.install === false && t.heartbeat === false && t.usage === false) return;
+  store.set('telemetry', { ...t, install: false, heartbeat: false, usage: false });
+}
+
+/**
  * Migration body: backfill `telemetry.usage` (the anonymous feature-usage
  * channel, DOR-315, ADR 260713-143958 Phase 3) onto an EXISTING `telemetry`
  * block. conf merges top-level defaults SHALLOWLY, so a `telemetry` object
@@ -769,6 +892,92 @@ export function backfillSidebarSettingsDefaults(store: {
 }
 
 /**
+ * Migration body: backfill the two room-section collapse flags onto an EXISTING
+ * `ui.sidebar` — `channelsCollapsed` and `dmsCollapsed`, both `false` (rooms
+ * sidebar, DOR-525). conf merges top-level defaults SHALLOWLY, so a `ui.sidebar`
+ * already on disk never inherits new nested fields on its own; this supplies
+ * them. Additive + idempotent: only writes a field that is actually missing.
+ * The whole-section-absent case is handled by the schema default on read and by
+ * `backfillSidebarDefaults` for an existing `ui` block with no `sidebar`.
+ *
+ * Both start expanded. A person upgrading into this release should SEE the two
+ * new sections rather than have to discover two collapsed headers.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillSidebarRoomSections(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  const sidebar = (ui as { sidebar?: unknown }).sidebar;
+  if (!sidebar || typeof sidebar !== 'object') return;
+
+  const s = sidebar as Record<string, unknown>;
+  if (s.channelsCollapsed !== undefined && s.dmsCollapsed !== undefined) return;
+
+  store.set('ui', {
+    ...(ui as Record<string, unknown>),
+    sidebar: {
+      ...s,
+      channelsCollapsed: s.channelsCollapsed ?? false,
+      dmsCollapsed: s.dmsCollapsed ?? false,
+    },
+  });
+}
+
+/**
+ * Migration body: backfill the `rooms` section (the cascade ceiling agents
+ * reply within, DOR-526) for configs persisted before it existed. Additive +
+ * idempotent: only writes when the key is absent; the schema default also
+ * yields this object on read, so this just writes it through on the upgrade
+ * where it lands.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillRoomsDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const seeded = {
+    maxAgentDepth: 3,
+    maxAutomaticTurnsPerRoomPerHour: 60,
+    maxAutomaticTurnsTotalPerHour: 240,
+  };
+  const rooms = store.get('rooms');
+  if (rooms == null) {
+    store.set('rooms', seeded);
+    return;
+  }
+  // conf merges top-level defaults SHALLOWLY, so a `rooms` block already on disk
+  // never inherits a new nested field on its own. Supplying them here is what
+  // stops an upgrade landing with no spend cap at all.
+  const current = { ...(rooms as Record<string, unknown>) };
+  let changed = false;
+  for (const [key, value] of Object.entries(seeded)) {
+    if (current[key] === undefined) {
+      current[key] = value;
+      changed = true;
+    }
+  }
+  // `maxAutomaticTurnsPerHour` only ever existed on unreleased builds of this
+  // feature; it was split into the per-room and total caps before shipping.
+  // Carry its value onto the per-room cap rather than silently resetting a
+  // number somebody chose, then drop it so the schema stops rejecting it.
+  if (current.maxAutomaticTurnsPerHour !== undefined) {
+    if (typeof current.maxAutomaticTurnsPerHour === 'number') {
+      current.maxAutomaticTurnsPerRoomPerHour = current.maxAutomaticTurnsPerHour;
+    }
+    delete current.maxAutomaticTurnsPerHour;
+    changed = true;
+  }
+  if (changed) store.set('rooms', current);
+}
+
+/**
  * Migration body: backfill `kind: 'manual'` onto every EXISTING stored group
  * (smart-agent-groups, DOR-338). conf merges top-level defaults SHALLOWLY and
  * never reaches inside array elements, so a `ui.sidebar.groups` array already
@@ -805,6 +1014,89 @@ export function backfillSmartGroupKindDefaults(store: {
   if (!changed) return;
 
   store.set('ui', { ...(ui as Record<string, unknown>), sidebar: { ...s, groups } });
+}
+
+/**
+ * Migration body: convert the three sidebar membership lists from bare agent
+ * `projectPath` strings to `SidebarItemRef` objects, and rename
+ * `groups[].agentPaths` to `groups[].items` (sidebar-groups, DOR-579).
+ *
+ * `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member list used to
+ * hold a `string[]` of agent paths, which left nowhere to reference a room (a
+ * room has a ULID, not a path). They now hold
+ * `{ kind: 'agent'; path } | { kind: 'room'; roomId }`.
+ *
+ * **The rename is not additive, so this backfill is load-bearing.** Without it
+ * an upgraded config reads back with `items` absent, takes the Zod default of
+ * `[]`, and every group silently empties while the real data sits in an
+ * `agentPaths` key nothing reads. It is keyed to the release that ships the new
+ * schema for exactly that reason.
+ *
+ * The mapping is total: every string in these arrays predates rooms in the
+ * sidebar, so all of them ARE agent paths and none can be misread. Idempotent —
+ * an entry that is already an object passes through untouched, a group that
+ * already has `items` keeps it, and a run that finds nothing to convert writes
+ * nothing. `agentPaths` is dropped rather than left beside `items`: the
+ * generated JSON Schema closes each group object, so a leftover key would fail
+ * validation on the first read after the migration.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function migrateSidebarMembersToItemRefs(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  const sidebar = (ui as { sidebar?: unknown }).sidebar;
+  if (!sidebar || typeof sidebar !== 'object') return;
+
+  const s = sidebar as Record<string, unknown>;
+  let changed = false;
+
+  /**
+   * Wrap each stored path; anything already an object is a ref and passes
+   * through. Delegates to the shared {@link toSidebarItemRef} so this file and
+   * the read-time `normalizeSidebarPrefs` conversion state the rule once.
+   */
+  const toItemRefs = (value: unknown): unknown[] =>
+    (Array.isArray(value) ? value : []).map((entry) =>
+      toSidebarItemRef(entry as SidebarItemRef | string)
+    );
+  /** Whether a list still holds the pre-DOR-579 shape (and so needs converting). */
+  const hasStringEntry = (value: unknown): boolean =>
+    Array.isArray(value) && value.some((entry) => typeof entry === 'string');
+
+  const next: Record<string, unknown> = { ...s };
+
+  for (const field of ['pinned', 'muted'] as const) {
+    if (!hasStringEntry(s[field])) continue;
+    next[field] = toItemRefs(s[field]);
+    changed = true;
+  }
+
+  if (Array.isArray(s.groups)) {
+    next.groups = s.groups.map((g: unknown) => {
+      if (!g || typeof g !== 'object') return g;
+      const group = g as Record<string, unknown>;
+      if (!('agentPaths' in group) && !hasStringEntry(group.items)) return group;
+      changed = true;
+      const { agentPaths, ...rest } = group;
+      return {
+        ...rest,
+        // An existing `items` wins over a leftover `agentPaths`: only a config
+        // written before DOR-579 carries the old key, so the two can never hold
+        // different truths, and preferring `items` keeps a re-run from
+        // resurrecting a list the person has since edited.
+        items: toItemRefs(group.items ?? agentPaths),
+      };
+    });
+  }
+
+  if (!changed) return;
+
+  store.set('ui', { ...(ui as Record<string, unknown>), sidebar: next });
 }
 
 /**
@@ -993,12 +1285,19 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Composite: DOR-452 and DOR-501 both target "the next unreleased version"
-  // (0.56.0 is already tagged) and an object literal cannot repeat a key, so
-  // their bodies compose here in insertion order — the same convention as the
-  // 0.45.0/0.46.0/0.48.0/0.55.0 composites above. Both are independent and
-  // idempotent. /system:release reconciles the key at tag time if the real
-  // release differs.
+  // Composite: DOR-452, DOR-501, DOR-516, DOR-525, DOR-526 and DOR-579 all
+  // target "the next unreleased version" (0.56.0 is already tagged) and an
+  // object literal cannot repeat a key, so their bodies compose here in
+  // insertion order — the same convention as the 0.45.0/0.46.0/0.48.0/0.55.0
+  // composites above. All six are independent and idempotent.
+  // /system:release reconciles the key at tag time if the real release differs.
+  //
+  // Composing rather than opening a 0.58.0 key is not a style choice here.
+  // `conf` only runs a migration when `key > storedVersion && key <=
+  // projectVersion`, so a 0.58.0 body would NOT run on the 0.57.0 release that
+  // carries this schema — and DOR-579 renames a field, so skipping it empties
+  // every group a person has. The rule is "never edit a SHIPPED migration";
+  // extending the next unreleased one is the convention.
   '0.57.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -1014,11 +1313,136 @@ export const CONFIG_MIGRATIONS = {
     // `approvals` section (standing permissions, DOR-501). Additive +
     // idempotent; seeds the feature OFF, so an upgrade never relaxes the gate.
     backfillApprovalsDefaults(store);
+    // `extensions.approvedToRun` (extension load approval, DOR-516). Additive +
+    // idempotent; seeds the list EMPTY, so an upgrade never hands out an approval
+    // nobody gave.
+    backfillExtensionsApprovedToRun(store);
+    // `ui.sidebar.channelsCollapsed` / `ui.sidebar.dmsCollapsed` (the Channels
+    // and Direct messages sections, DOR-525). Additive + idempotent; both seed
+    // expanded so an upgrade shows the new sections rather than hiding them.
+    backfillSidebarRoomSections(store);
+    // The `rooms` section (DOR-526): `maxAgentDepth`, how far agents may reply
+    // to each other before a room stops them, plus the two spend caps that hold
+    // whoever the caller claims to be — per room, and across the whole install.
+    // Additive + idempotent; seeds the shipped defaults, so every bound is on
+    // for every upgraded install.
+    backfillRoomsDefaults(store);
+    // Return the Tier 1 telemetry channels to opt-in for every install that
+    // never answered a consent prompt (ADR 260727-181825). Reverses the 0.48.0
+    // enrolment for that population only; an explicit choice, either way, is
+    // left exactly as it stands.
+    applyTier1OptInDefaults(store);
+    // Convert `ui.sidebar.pinned`, `ui.sidebar.muted` and every group's member
+    // list from agent-path strings to `SidebarItemRef` objects, renaming
+    // `groups[].agentPaths` -> `groups[].items` (sidebar-groups, DOR-579).
+    // Idempotent, but NOT additive: this is a rename, so an install that skips
+    // it reads `items` as the schema default `[]` and loses its groups. Runs
+    // after the sidebar backfills above so it sees the same `ui.sidebar` object
+    // (order is otherwise immaterial — they touch disjoint fields).
+    migrateSidebarMembersToItemRefs(store);
   },
 } as const;
 
+/**
+ * Widen the generated JSON Schema so conf's Ajv ACCEPTS a `ui.sidebar` written
+ * before DOR-579, instead of condemning the whole config file.
+ *
+ * ## Why this has to exist at all
+ *
+ * DOR-579 is the first change in this file's migration history that RENAMES a
+ * field rather than adding one. Every additive backfill degrades safely when its
+ * migration is skipped: the key is absent, a Zod default fills in, nothing
+ * breaks. A rename does not. Skipping it leaves `agentPaths` on a group object
+ * whose schema is now closed (`additionalProperties: false`), and bare path
+ * strings in `pinned`/`muted` where objects are now required — so a config that
+ * was valid yesterday becomes schema-INVALID, `new Conf(...)` throws, and the
+ * constructor's recovery path backs the file up and replaces it with defaults.
+ *
+ * That is not "the sidebar forgets its groups". It resets the ENTIRE file:
+ * `mesh.scanRoots`, `approvals`, `runtimes`, `cloud`, `onboarding`.
+ *
+ * It no longer takes the person's privacy choice with it —
+ * `safe-defaults/protected-state.ts` salvages that (and every other protective
+ * value) before the file is replaced, which is what DOR-584 closed. Do not read
+ * that as making this widening optional: salvage keeps protections, not
+ * preferences, and it needs the doomed file to still parse as JSON. Not
+ * condemning the file in the first place is still the goal.
+ *
+ * And the migration is skipped more often than it sounds. `conf` runs a key only
+ * when `key > storedVersion && key <= projectVersion`, so: a dev tree resolves
+ * `SERVER_VERSION` to `0.0.0` and runs NO migrations at all, and shipping this
+ * schema in a patch release below the migration key would skip it for every
+ * user. Correctness must not hang on the migration running.
+ *
+ * ## Why it is here and not in the Zod schema
+ *
+ * Ajv is the ONLY validator on the config read path — nothing calls Zod on a
+ * stored object, and `z.toJSONSchema` emits a pipe's OUTPUT schema, so a Zod
+ * `.preprocess` would neither run nor widen what Ajv sees. Keying the widening
+ * off the schema identities here keeps the exported TypeScript types strict
+ * (`SidebarItemRef[]`, no legacy field), which is what makes the compiler
+ * enumerate every membership test, and keeps the legacy encoding out of the
+ * operator disclosure walker and the OpenAPI export — both of which build their
+ * own schema without this override.
+ *
+ * ## One thing not to assume
+ *
+ * `SidebarItemRefSchema` is used at THREE sites (`pinned`, `muted`, and each
+ * group's `items`), but this fires ONCE for it — Zod emits the node a single
+ * time and clones it into each site afterwards, so one widening reaches all
+ * three. That is Zod's un-referencing pass, an implementation detail rather
+ * than a contract. The fixture in `'a config written before DOR-579 is not
+ * condemned'` exercises all three lists together precisely so a Zod change that
+ * stopped sharing the node, or a regression widening only one site, goes red
+ * rather than silently leaving two paths condemning the file.
+ *
+ * ## Removing it
+ *
+ * This is back-compat for ONE release: delete this function and its `override`
+ * once the DOR-579 migration has shipped, together with the read-time
+ * `normalizeSidebarPrefs` conversion and `ConfigManager.canonicalUi`. The tests
+ * named above fail if it is removed early.
+ *
+ * @param ctx - The `z.toJSONSchema` override context for one schema node.
+ */
+function tolerateLegacySidebarEncoding(ctx: {
+  zodSchema: unknown;
+  jsonSchema: Record<string, unknown>;
+}): void {
+  // `pinned`, `muted` and `groups[].items` all held a bare agent projectPath.
+  if (ctx.zodSchema === SidebarItemRefSchema) {
+    ctx.jsonSchema.anyOf = [{ type: 'string', minLength: 1 }, { oneOf: ctx.jsonSchema.oneOf }];
+    delete ctx.jsonSchema.oneOf;
+    return;
+  }
+  // `groups[].items` was `groups[].agentPaths`; the group object is closed, so
+  // the retired key has to be named for Ajv to let it through.
+  if (ctx.zodSchema === SidebarGroupSchema) {
+    const properties = ctx.jsonSchema.properties as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (!properties) return;
+    properties.agentPaths = { type: 'array', items: { type: 'string' } };
+    // conf builds Ajv with `useDefaults`, so a declared `default` is WRITTEN IN
+    // during validation, and Zod marks a defaulted field `required` because its
+    // OUTPUT always has one. Left alone, an un-migrated group would gain an
+    // empty `items` before anything could read its `agentPaths`, and the
+    // read-time conversion — which treats a present `items` as authoritative —
+    // would hand back an empty group. Dropping both keeps "absent" meaning
+    // absent, so the conversion can tell the two encodings apart at all.
+    // `normalizeSidebarPrefs` supplies `[]` for a group that genuinely has
+    // neither, and the Zod default still applies wherever Zod parses.
+    delete properties.items?.default;
+    const required = ctx.jsonSchema.required;
+    if (Array.isArray(required)) {
+      ctx.jsonSchema.required = required.filter((key) => key !== 'items');
+    }
+  }
+}
+
 const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
+  override: tolerateLegacySidebarEncoding,
 }) as { properties?: Record<string, unknown> };
 const jsonSchemaProperties = jsonSchemaFull.properties ?? {};
 
@@ -1032,8 +1456,16 @@ const confSchema = jsonSchemaProperties as unknown as Schema<UserConfig>;
  * Uses `conf` for atomic JSON I/O with Ajv validation via the JSON Schema
  * generated from UserConfigSchema. Handles first-run detection, corrupt
  * config recovery (backup + recreate), and sensitive field warnings.
+ *
+ * The class is exported alongside the {@link configManager} singleton for one
+ * reason: a SECOND manager over the same directory is the faithful stand-in for
+ * `dorkos config set`, which is a different process holding its own manager over
+ * the same file. Tests that need to reproduce an out-of-process write build one
+ * here rather than re-running {@link initConfigManager}, which would replace the
+ * singleton and read like a restart — the very thing those tests must not
+ * simulate. Production code uses the singleton.
  */
-class ConfigManager {
+export class ConfigManager {
   private store: Conf<UserConfig>;
   private _isFirstRun = false;
 
@@ -1067,7 +1499,14 @@ class ConfigManager {
       this.store = new Conf<UserConfig>(confOptions);
       logger.info(`[Config] Loaded from ${configPath} (first run: ${this._isFirstRun})`);
     } catch (_error) {
+      // Read the doomed file BEFORE deleting it. The common failure is a file
+      // that parses as JSON but no longer satisfies the schema (a skipped
+      // rename, a narrowed enum, a hand edit), so the person's privacy and
+      // permission choices are sitting right there, perfectly readable, in the
+      // file we are about to replace. Losing state must not lose a protection.
+      let stored: unknown;
       if (fs.existsSync(configPath)) {
+        stored = readStoredConfigForSalvage(configPath);
         const backupPath = configPath + '.bak';
         fs.copyFileSync(configPath, backupPath);
         fs.unlinkSync(configPath);
@@ -1077,6 +1516,7 @@ class ConfigManager {
       // Reuse the exact same options so the recovered store still has the
       // migration chain wired up.
       this.store = new Conf<UserConfig>(confOptions);
+      restoreProtectedState(this.store, stored, 'Recovered a damaged config');
     }
   }
 
@@ -1085,19 +1525,64 @@ class ConfigManager {
     return this._isFirstRun;
   }
 
-  /** Get a top-level config section */
-  get<K extends keyof UserConfig>(key: K): UserConfig[K] {
-    return this.store.get(key);
+  /**
+   * Put a stored `ui` section into the canonical sidebar encoding.
+   *
+   * **This class is the server's read boundary for the legacy encoding.** A
+   * `ui.sidebar` written before DOR-579 holds bare agent paths and
+   * `groups[].agentPaths`; the widened conf schema lets conf LOAD that file, but
+   * the declared `UserConfig` type says otherwise, and every server-side reader
+   * believes the type. Normalizing here — rather than at each consumer — is what
+   * makes the type true at the one place the value is handed out, so a new
+   * reader cannot reintroduce the gap by forgetting to convert.
+   *
+   * It matters most on the WRITE path: `applyConfigPatch` merges a patch onto
+   * this value and re-validates with Zod, which is strict. Un-normalized, a
+   * legacy `pinned` fails that validation and every config write is refused —
+   * theme, telemetry consent, onboarding, all of it — and a legacy `agentPaths`
+   * is silently stripped by Zod and persisted as an empty group.
+   *
+   * Returns its input unchanged once the file is canonical, so callers keep
+   * referential equality and the steady state costs one scan per list.
+   *
+   * Removed with the rest of the DOR-579 back-compat, one release on.
+   *
+   * @param ui - The stored `ui` section, in either encoding.
+   */
+  private canonicalUi(ui: UserConfig['ui']): UserConfig['ui'] {
+    const sidebar = ui?.sidebar;
+    if (!sidebar) return ui;
+    const normalized = normalizeSidebarPrefs(sidebar);
+    return normalized === sidebar ? ui : { ...ui, sidebar: normalized };
   }
 
-  /** Get a nested value via dot-path (e.g., 'server.port') */
+  /** Get a top-level config section */
+  get<K extends keyof UserConfig>(key: K): UserConfig[K] {
+    const value = this.store.get(key);
+    // `ui` is the only section that can carry the pre-DOR-579 sidebar encoding.
+    return key === 'ui' ? (this.canonicalUi(value as UserConfig['ui']) as UserConfig[K]) : value;
+  }
+
+  /**
+   * Get a nested value via dot-path (e.g., 'server.port').
+   *
+   * Reads the store verbatim, so a dot-path INTO `ui.sidebar` on a config that
+   * predates DOR-579 reports the stored encoding rather than the canonical one.
+   * That is deliberate: this is the "show me what is on disk" accessor behind
+   * `dorkos config get`, and no code path derives behaviour from it. Everything
+   * that acts on the sidebar goes through {@link ConfigManager.get} or
+   * {@link ConfigManager.getAll}, which normalize.
+   */
   getDot(key: string): unknown {
     return this.store.get(key as keyof UserConfig);
   }
 
   /** Set a top-level config section */
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void {
+    const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key, value);
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
   }
 
   /** Set a nested value via dot-path. Returns warning if key is sensitive. */
@@ -1106,23 +1591,139 @@ class ConfigManager {
     if (SENSITIVE_CONFIG_KEYS.includes(key as (typeof SENSITIVE_CONFIG_KEYS)[number])) {
       result.warning = `'${key}' contains sensitive data. Consider using environment variables instead.`;
     }
+    const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key as keyof UserConfig, value as UserConfig[keyof UserConfig]);
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     return result;
   }
 
-  /** Get the full config object */
+  /**
+   * Get the full config object, in the canonical sidebar encoding
+   * (see {@link ConfigManager.canonicalUi}).
+   */
   getAll(): UserConfig {
-    return this.store.store;
+    const config = this.store.store;
+    const ui = this.canonicalUi(config.ui);
+    return ui === config.ui ? config : { ...config, ui };
   }
 
-  /** Reset a specific key or all keys to defaults */
+  /**
+   * Reset a specific key, or every key, to defaults.
+   *
+   * A whole-config reset keeps the settings a person moved to the protective
+   * side — their telemetry answer, a login gate they switched on, a bound they
+   * tightened (see `safe-defaults/protected-state.ts`). "Reset my preferences" is not
+   * consent to start sharing again, and this is the verb the operator's own
+   * phrasing was about: the safe option has to win *in case things get reset*.
+   *
+   * Resetting one key is the escape hatch and stays literal: `reset('telemetry')`
+   * really does put the telemetry block back to its defaults, because naming the
+   * section IS the explicit act that the blanket reset lacks.
+   *
+   * @param key - The top-level section to reset, or omitted for all of them.
+   */
   reset(key?: string): void {
+    const licensedBefore = this.standingGrantsLicensed();
+    const floorBefore = this.standingGrantVoidFloor();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
+      const stored = this.store.store;
       this.store.clear();
       this.store.set(USER_CONFIG_DEFAULTS);
+      restoreProtectedState(this.store, stored, 'Reset your config');
     }
+    this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
+  }
+
+  /**
+   * Whether the two settings, as stored RIGHT NOW, license a standing permission
+   * to exist: local login is on (a cookie is the only thing that tells the person
+   * in the cockpit from an agent on the same machine) and the master switch is on.
+   *
+   * Reads the store rather than taking a posture argument, because the callers are
+   * the write methods and the answer has to reflect the file on both sides of the
+   * write. Mirrors `readStandingGrantPosture` in
+   * `services/core/approvals/standing-grant-settings.ts`, which cannot be reused
+   * here: it reads the module singleton, and this may be any manager — including
+   * the one the CLI holds in another process, which is the whole point.
+   */
+  private standingGrantsLicensed(): boolean {
+    return (
+      this.store.get('auth')?.enabled === true &&
+      this.store.get('approvals')?.standingGrants === true
+    );
+  }
+
+  /** The posture floor as stored right now, or `null` when nothing has narrowed. */
+  private standingGrantVoidFloor(): string | null {
+    return this.store.get('approvals')?.standingGrantsVoidBefore ?? null;
+  }
+
+  /**
+   * Hold the posture floor at or above where it was before this write, and move
+   * it to now when this write is what took the license away (DOR-520).
+   *
+   * ## Why the marker lives in the config file, written here
+   *
+   * `revokeStandingGrantsIfPostureNarrowed` ends live permissions, but it only
+   * fires on a write the SERVER performs. `dorkos config set
+   * approvals.standingGrants false` and `dorkos config reset` are a different
+   * process holding its own manager, with no database and no route — so they end
+   * nothing, and switching the setting back on used to wake every surviving
+   * permission. This method is on the one seam BOTH processes travel: every write
+   * to `~/.dork/config.json` in DorkOS goes through a `ConfigManager`.
+   *
+   * The floor is durable, which the alternatives are not. It survives the server
+   * being down for the whole round trip — the case a config-file watcher cannot
+   * see at all, and the case the boot sweep misses too, because by the time the
+   * server starts the settings look fine again.
+   *
+   * ## The floor is MONOTONIC, and that is the whole guarantee
+   *
+   * The first version stamped on the licensed → unlicensed TRANSITION and nothing
+   * else. Review broke it in one line: any write performed while the posture was
+   * ALREADY narrowed is not a transition, so it did not stamp — while
+   * `dorkos config reset` had meanwhile rewritten the whole file from defaults and
+   * put the leaf back to `null`. Switch off, reset, switch on, and the permission
+   * was live again, through nothing but the verbs this feature claims to cover.
+   *
+   * The same shape reached `PATCH /api/config`: `applyConfigPatch` computes the
+   * merged value ONCE from the pre-write snapshot and then writes each top-level
+   * section in turn, so a batch carrying `auth` before `approvals` stamped the
+   * floor and then wrote the snapshot's stale `null` straight back over it.
+   *
+   * So the rule is stated as an invariant on the STORED value rather than as a
+   * reaction to a transition: after any write, the floor is `floorBefore`, except
+   * on a narrowing where it becomes `max(floorBefore, now)`. Never lower, on any
+   * path, whatever the write happened to contain.
+   *
+   * `max` rather than `now` is what makes it monotonic rather than merely current:
+   * a backwards clock (an NTP correction, a container with a bad RTC) would
+   * otherwise lower a floor that had already voided permissions.
+   *
+   * ## It still writes nothing when nothing narrowed
+   *
+   * Stating the rule as "stamp whenever the posture is unlicensed after the write"
+   * would also close the hole, and would move the floor on EVERY config write for
+   * the vast majority of installs, which never switch this feature on — doubling
+   * config write I/O to maintain a marker with nothing to void. Comparing against
+   * the stored value first keeps the common path free.
+   *
+   * @param licensedBefore - Whether the posture licensed a permission before the
+   *   write that just happened.
+   * @param floorBefore - The floor as it stood before the write, which this write
+   *   may raise but must never lower.
+   */
+  private stampStandingGrantVoidFloor(licensedBefore: boolean, floorBefore: string | null): void {
+    const narrowed = licensedBefore && !this.standingGrantsLicensed();
+    const required = narrowed ? latestInstant(floorBefore, new Date().toISOString()) : floorBefore;
+    if (required === null) return;
+
+    const approvals = this.store.get('approvals');
+    if (approvals?.standingGrantsVoidBefore === required) return;
+    this.store.set('approvals', { ...approvals, standingGrantsVoidBefore: required });
   }
 
   /** Validate the current config against the Zod schema */

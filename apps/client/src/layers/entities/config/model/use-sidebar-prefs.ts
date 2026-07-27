@@ -13,15 +13,47 @@
 import { useCallback, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
-import type { SidebarPrefs, SidebarGroup } from '@dorkos/shared/config-schema';
-import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
+import {
+  SIDEBAR_PREFS_DEFAULTS,
+  sameSidebarItem,
+  normalizeSidebarPrefs,
+} from '@dorkos/shared/config-schema';
 import { useTransport } from '@/layers/shared/model';
 import { configKeys } from '../api/query-keys';
 import { useConfig } from './use-config';
 
-/** Resolve the sidebar prefs from a (possibly-undefined) server config. */
+/**
+ * Normalized prefs, keyed by the exact stored object they came from.
+ *
+ * {@link selectSidebar} runs on every read, and every consumer memoizes on
+ * `prefs.pinned` / `prefs.groups` identity, so converting into a fresh object
+ * each call would invalidate those memos on every render. Keying the cache on
+ * the stored object makes one config snapshot yield one normalized object for
+ * as long as anything holds it, and a `WeakMap` lets the entry go with it.
+ */
+const normalizedSidebarCache = new WeakMap<object, SidebarPrefs>();
+
+/**
+ * Resolve the sidebar prefs from a (possibly-undefined) server config, in the
+ * canonical encoding.
+ *
+ * A config written before DOR-579 stores bare agent paths and `agentPaths`
+ * instead of item references and `items`, and the migration that rewrites it is
+ * skipped whenever the app version falls outside `conf`'s migration window (a
+ * dev tree runs no migrations at all). Normalizing here is what keeps the
+ * sidebar correct on those installs rather than showing empty groups;
+ * `normalizeSidebarPrefs` returns its input unchanged once the file is
+ * canonical, so the steady state costs one `some()` per list.
+ */
 function selectSidebar(config: ServerConfig | undefined): SidebarPrefs {
-  return config?.ui?.sidebar ?? SIDEBAR_PREFS_DEFAULTS;
+  const stored = config?.ui?.sidebar;
+  if (!stored) return SIDEBAR_PREFS_DEFAULTS;
+  const cached = normalizedSidebarCache.get(stored);
+  if (cached) return cached;
+  const normalized = normalizeSidebarPrefs(stored);
+  normalizedSidebarCache.set(stored, normalized);
+  return normalized;
 }
 
 /**
@@ -148,41 +180,41 @@ function moveItem<T>(arr: readonly T[], from: number, to: number): T[] {
   return next;
 }
 
-/** Append `path` to `pinned` if absent (idempotent). */
-export function pinPath(prev: SidebarPrefs, path: string): SidebarPrefs {
-  if (prev.pinned.includes(path)) return prev;
-  return { ...prev, pinned: [...prev.pinned, path] };
+/** Append `ref` to `pinned` if absent (idempotent). */
+export function pinItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPrefs {
+  if (prev.pinned.some((p) => sameSidebarItem(p, ref))) return prev;
+  return { ...prev, pinned: [...prev.pinned, ref] };
 }
 
-/** Remove `path` from `pinned`. */
-export function unpinPath(prev: SidebarPrefs, path: string): SidebarPrefs {
-  if (!prev.pinned.includes(path)) return prev;
-  return { ...prev, pinned: prev.pinned.filter((p) => p !== path) };
+/** Remove `ref` from `pinned`. */
+export function unpinItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPrefs {
+  if (!prev.pinned.some((p) => sameSidebarItem(p, ref))) return prev;
+  return { ...prev, pinned: prev.pinned.filter((p) => !sameSidebarItem(p, ref)) };
 }
 
 /**
- * Move `path` into a group (or ungroup it). Removes `path` from EVERY group's
- * `agentPaths` first, then appends it to the target group; `groupId === null`
- * ungroups (removed from all, added to none). Enforces disjointness — a path
+ * Move `ref` into a group (or ungroup it). Removes `ref` from EVERY group's
+ * `items` first, then appends it to the target group; `groupId === null`
+ * ungroups (removed from all, added to none). Enforces disjointness — an item
  * never appears in two groups.
  *
  * @param prev - Current prefs.
- * @param path - Agent project path to move.
+ * @param ref - The item to move.
  * @param groupId - Target group id, or `null` to ungroup.
  */
 export function moveToGroup(
   prev: SidebarPrefs,
-  path: string,
+  ref: SidebarItemRef,
   groupId: string | null
 ): SidebarPrefs {
   const groups = prev.groups.map((g) => ({
     ...g,
-    agentPaths: g.agentPaths.filter((p) => p !== path),
+    items: g.items.filter((m) => !sameSidebarItem(m, ref)),
   }));
   if (groupId !== null) {
     const idx = groups.findIndex((g) => g.id === groupId);
     if (idx !== -1) {
-      groups[idx] = { ...groups[idx]!, agentPaths: [...groups[idx]!.agentPaths, path] };
+      groups[idx] = { ...groups[idx]!, items: [...groups[idx]!.items, ref] };
     }
   }
   return { ...prev, groups };
@@ -200,7 +232,7 @@ export function createGroup(prev: SidebarPrefs, name: string): { next: SidebarPr
   const group: SidebarGroup = {
     id,
     name,
-    agentPaths: [],
+    items: [],
     sortMode: 'manual',
     collapsed: false,
     displayFilter: 'all',
@@ -230,7 +262,7 @@ export function createSmartGroup(
   const group: SidebarGroup = {
     id,
     name,
-    agentPaths: [],
+    items: [],
     sortMode: 'recent',
     collapsed: false,
     displayFilter: 'all',
@@ -243,26 +275,25 @@ export function createSmartGroup(
 
 /**
  * Convert a smart group to a manual group, materializing its currently-
- * matching members into `agentPaths` (spec §4, ideation decision 5 — the
- * escape hatch). Keeps name/collapse/sort/mute/displayFilter untouched;
- * drops `rules` since a manual group never reads it.
+ * matching members into `items` (spec §4, ideation decision 5 — the escape
+ * hatch). Keeps name/collapse/sort/mute/displayFilter untouched; drops `rules`
+ * since a manual group never reads it.
  *
  * @param prev - Current prefs.
  * @param groupId - The smart group to convert.
- * @param currentMembers - The group's currently-matching project paths
- *   (from `evaluateSmartGroup`), materialized verbatim into `agentPaths`.
+ * @param currentMembers - The group's currently-matching members (wrapped from
+ *   `evaluateSmartGroup`, which stays agent-only), materialized verbatim into
+ *   `items`.
  */
 export function convertSmartGroupToManual(
   prev: SidebarPrefs,
   groupId: string,
-  currentMembers: string[]
+  currentMembers: SidebarItemRef[]
 ): SidebarPrefs {
   return {
     ...prev,
     groups: prev.groups.map((g) =>
-      g.id === groupId
-        ? { ...g, kind: 'manual', rules: undefined, agentPaths: [...currentMembers] }
-        : g
+      g.id === groupId ? { ...g, kind: 'manual', rules: undefined, items: [...currentMembers] } : g
     ),
   };
 }
@@ -305,7 +336,7 @@ export function reorderGroup(prev: SidebarPrefs, from: number, to: number): Side
   return groups === prev.groups ? prev : { ...prev, groups };
 }
 
-/** Reorder `agentPaths` inside the group with `groupId` (bounds-checked no-op). */
+/** Reorder `items` inside the group with `groupId` (bounds-checked no-op). */
 export function reorderWithinGroup(
   prev: SidebarPrefs,
   groupId: string,
@@ -315,7 +346,7 @@ export function reorderWithinGroup(
   return {
     ...prev,
     groups: prev.groups.map((g) =>
-      g.id === groupId ? { ...g, agentPaths: moveItem(g.agentPaths, from, to) } : g
+      g.id === groupId ? { ...g, items: moveItem(g.items, from, to) } : g
     ),
   };
 }
@@ -327,7 +358,7 @@ export function reorderPinned(prev: SidebarPrefs, from: number, to: number): Sid
 }
 
 /**
- * Set a group's `sortMode`. MUST NOT touch `agentPaths` — switching away from
+ * Set a group's `sortMode`. MUST NOT touch `items` — switching away from
  * 'manual' never destroys the durable manual order.
  */
 export function setGroupSortMode(
@@ -363,6 +394,16 @@ export function setRecentsCollapsed(prev: SidebarPrefs, collapsed: boolean): Sid
   return { ...prev, recentsCollapsed: collapsed };
 }
 
+/** Set the Channels section's collapsed state (rooms, DOR-525). */
+export function setChannelsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
+  return { ...prev, channelsCollapsed: collapsed };
+}
+
+/** Set the Direct messages section's collapsed state (rooms, DOR-525). */
+export function setDmsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
+  return { ...prev, dmsCollapsed: collapsed };
+}
+
 /** Set the ungrouped ("Agents") section's sort mode (`name` or `recent`). */
 export function setUngroupedSortMode(
   prev: SidebarPrefs,
@@ -394,8 +435,8 @@ export function setGroupDisplayFilter(
 
 /**
  * Set a group's muted flag. Group mute is a LENS over its members — it never
- * writes member paths into `muted`, so unmuting the group restores whatever
- * individual mute state each member already had (ideation decision 4).
+ * writes member references into `muted`, so unmuting the group restores
+ * whatever individual mute state each member already had (ideation decision 4).
  */
 export function setGroupMuted(prev: SidebarPrefs, groupId: string, muted: boolean): SidebarPrefs {
   return {
@@ -412,14 +453,14 @@ export function setUngroupedDisplayFilter(
   return { ...prev, ungroupedDisplayFilter: filter };
 }
 
-/** Mute an individual agent path (idempotent). Mute owns ALL signals for the path at once. */
-export function mutePath(prev: SidebarPrefs, path: string): SidebarPrefs {
-  if (prev.muted.includes(path)) return prev;
-  return { ...prev, muted: [...prev.muted, path] };
+/** Mute an individual item (idempotent). Mute owns ALL signals for the item at once. */
+export function muteItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPrefs {
+  if (prev.muted.some((m) => sameSidebarItem(m, ref))) return prev;
+  return { ...prev, muted: [...prev.muted, ref] };
 }
 
-/** Unmute an individual agent path. */
-export function unmutePath(prev: SidebarPrefs, path: string): SidebarPrefs {
-  if (!prev.muted.includes(path)) return prev;
-  return { ...prev, muted: prev.muted.filter((p) => p !== path) };
+/** Unmute an individual item. */
+export function unmuteItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPrefs {
+  if (!prev.muted.some((m) => sameSidebarItem(m, ref))) return prev;
+  return { ...prev, muted: prev.muted.filter((m) => !sameSidebarItem(m, ref)) };
 }

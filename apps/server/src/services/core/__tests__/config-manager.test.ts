@@ -1,17 +1,22 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Conf, { type Schema } from 'conf';
 import { z } from 'zod';
 import * as semver from 'semver';
 import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
+  ConfigManager,
   initConfigManager,
   backfillExtensionsDisabled,
+  backfillExtensionsApprovedToRun,
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
   migrateStatusBarToPins,
   backfillSidebarSettingsDefaults,
+  backfillSidebarRoomSections,
+  backfillRoomsDefaults,
   backfillSmartGroupKindDefaults,
+  migrateSidebarMembersToItemRefs,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
   backfillAuthDefaults,
@@ -25,11 +30,13 @@ import {
   generalizeTelemetryConsent,
   backfillTelemetryLastPromptedVersion,
   applyTier1OptOutDefaults,
+  applyTier1OptInDefaults,
   backfillTelemetryUsageChannel,
   backfillTelemetryLinkAnalyticsToAccount,
   backfillTelemetryAiMetadataChannel,
   scrubRetiredOnboardingSteps,
 } from '../config-manager.js';
+import { applyConfigPatch } from '../operator/config-patch.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -215,7 +222,13 @@ describe('ConfigManager', () => {
 
   it('exposes extensions.disabled default on a fresh config', () => {
     const configManager = initConfigManager(testDir);
-    expect(configManager.get('extensions')).toEqual({ enabled: [], disabled: [] });
+    // `approvedToRun` starts EMPTY on a fresh install, so a brand-new DorkOS runs
+    // no user extension's code until a person approves it (DOR-516).
+    expect(configManager.get('extensions')).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [],
+    });
   });
 
   it('exposes harness.autoSync default (true) on a fresh config', () => {
@@ -1049,7 +1062,11 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
     const store = createMockStore({ ui: { theme: 'dark' } });
     CONFIG_MIGRATIONS['0.57.0'](store);
     expect(store.data.ui).toMatchObject({ statusBar: { pins: [] } });
-    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.data.approvals).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
   });
 });
 
@@ -1138,6 +1155,150 @@ describe('backfillSidebarSettingsDefaults migration (DOR-339)', () => {
   });
 });
 
+describe('backfillSidebarRoomSections migration (rooms sidebar, DOR-525)', () => {
+  it('adds both room-section collapse flags to an existing sidebar, expanded', () => {
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        sidebar: {
+          pinned: ['/a'],
+          groups: [],
+          ungroupedSortMode: 'name',
+          ungroupedCollapsed: false,
+          recentsCollapsed: true,
+          groupsHintDismissed: false,
+          muted: [],
+          ungroupedDisplayFilter: 'all',
+        },
+      },
+    });
+    backfillSidebarRoomSections(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/a'],
+        groups: [],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: true,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all',
+      },
+    });
+  });
+
+  it('is idempotent — keeps a collapse choice the user already made', () => {
+    const existing = {
+      theme: 'system',
+      sidebar: {
+        pinned: [],
+        groups: [],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        channelsCollapsed: true,
+        dmsCollapsed: true,
+        groupsHintDismissed: false,
+        muted: [],
+        ungroupedDisplayFilter: 'all',
+      },
+    };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillSidebarRoomSections(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when ui.sidebar is absent (schema default owns that case)', () => {
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    backfillSidebarRoomSections(store);
+    expect(store.data.ui).toEqual({ theme: 'dark' });
+  });
+
+  it('is a no-op when the ui section is absent entirely', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillSidebarRoomSections(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () => {
+  it('seeds the section on a config persisted before it existed', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillRoomsDefaults(store);
+    // Pinned to the literal the release ships. Reading the default out of the
+    // schema here would only prove the migration and the schema agree, never
+    // that they agree on a number that bounds anything.
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 3,
+      maxAutomaticTurnsPerRoomPerHour: 60,
+      maxAutomaticTurnsTotalPerHour: 240,
+    });
+  });
+
+  it('is idempotent — keeps a ceiling the user already chose', () => {
+    const store = createMockStore({
+      rooms: {
+        maxAgentDepth: 1,
+        maxAutomaticTurnsPerRoomPerHour: 5,
+        maxAutomaticTurnsTotalPerHour: 9,
+      },
+    });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 1,
+      maxAutomaticTurnsPerRoomPerHour: 5,
+      maxAutomaticTurnsTotalPerHour: 9,
+    });
+  });
+
+  it('keeps an explicit zero, which is a real choice and not an absent section', () => {
+    const store = createMockStore({
+      rooms: {
+        maxAgentDepth: 0,
+        maxAutomaticTurnsPerRoomPerHour: 0,
+        maxAutomaticTurnsTotalPerHour: 0,
+      },
+    });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 0,
+      maxAutomaticTurnsPerRoomPerHour: 0,
+      maxAutomaticTurnsTotalPerHour: 0,
+    });
+  });
+
+  it('adds both spend caps to a rooms block that predates them', () => {
+    // The upgrade that matters: someone already had `rooms` from an earlier
+    // build of this feature, so conf's shallow merge would never give them the
+    // caps. Without this they would run with no posture-independent bound.
+    const store = createMockStore({ rooms: { maxAgentDepth: 1 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 1,
+      maxAutomaticTurnsPerRoomPerHour: 60,
+      maxAutomaticTurnsTotalPerHour: 240,
+    });
+  });
+
+  it('carries a chosen value across the per-hour cap rename, rather than resetting it', () => {
+    // `maxAutomaticTurnsPerHour` only existed on unreleased builds, and was split
+    // into a per-room and a total cap. Anyone running one of those builds has
+    // picked a number; silently resetting it to the default would be the kind of
+    // quiet data loss a migration is supposed to prevent, and leaving the key in
+    // place would make the schema reject the whole config.
+    const store = createMockStore({ rooms: { maxAgentDepth: 2, maxAutomaticTurnsPerHour: 7 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 2,
+      maxAutomaticTurnsPerRoomPerHour: 7,
+      maxAutomaticTurnsTotalPerHour: 240,
+    });
+  });
+});
+
 describe('backfillSmartGroupKindDefaults migration (smart-agent-groups, DOR-338)', () => {
   it('adds kind: "manual" to every existing group missing it', () => {
     const store = createMockStore({
@@ -1215,6 +1376,217 @@ describe('backfillSmartGroupKindDefaults migration (smart-agent-groups, DOR-338)
     const store = createMockStore({ server: { port: 4242 } });
     backfillSmartGroupKindDefaults(store);
     expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', () => {
+  /** The exact `ui.sidebar` shape on disk before DOR-579: three lists of paths. */
+  function priorShapeUi() {
+    return {
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/projects/alpha', '/projects/beta'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/alpha', '/projects/gamma'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'manual',
+          },
+          {
+            id: 'g2',
+            name: 'Active now',
+            agentPaths: [],
+            sortMode: 'recent',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'smart',
+            rules: { statuses: ['active'] },
+          },
+        ],
+        ungroupedSortMode: 'name',
+        ungroupedCollapsed: false,
+        recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
+        groupsHintDismissed: false,
+        muted: ['/projects/beta'],
+        ungroupedDisplayFilter: 'all',
+      },
+    };
+  }
+
+  /** The same config after conversion — every string wrapped as an agent ref. */
+  const CONVERTED_SIDEBAR = {
+    pinned: [
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/beta' },
+    ],
+    groups: [
+      {
+        id: 'g1',
+        name: 'Clients',
+        items: [
+          { kind: 'agent', path: '/projects/alpha' },
+          { kind: 'agent', path: '/projects/gamma' },
+        ],
+        sortMode: 'manual',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        kind: 'manual',
+      },
+      {
+        id: 'g2',
+        name: 'Active now',
+        items: [],
+        sortMode: 'recent',
+        collapsed: false,
+        displayFilter: 'all',
+        muted: false,
+        kind: 'smart',
+        rules: { statuses: ['active'] },
+      },
+    ],
+    ungroupedSortMode: 'name',
+    ungroupedCollapsed: false,
+    recentsCollapsed: false,
+    channelsCollapsed: false,
+    dmsCollapsed: false,
+    groupsHintDismissed: false,
+    muted: [{ kind: 'agent', path: '/projects/beta' }],
+    ungroupedDisplayFilter: 'all',
+  };
+
+  it('converts all three lists and renames agentPaths -> members', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', sidebar: CONVERTED_SIDEBAR });
+  });
+
+  it('leaves no agentPaths key behind on any group', () => {
+    // Not cosmetic: the generated JSON Schema closes each group object
+    // (`additionalProperties: false`), so a leftover key fails conf's
+    // post-migration validation and hard-fails startup.
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const groups = (store.data.ui as { sidebar: { groups: Record<string, unknown>[] } }).sidebar
+      .groups;
+    expect(groups.map((g) => 'agentPaths' in g)).toEqual([false, false]);
+  });
+
+  it('produces a shape the schema accepts verbatim', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
+    expect(parsed.ui.sidebar).toEqual(CONVERTED_SIDEBAR);
+  });
+
+  it('a second run is a no-op — same value, and no write at all', () => {
+    const store = createMockStore({ ui: priorShapeUi() });
+    migrateSidebarMembersToItemRefs(store);
+    const afterFirst = store.data.ui;
+
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', sidebar: CONVERTED_SIDEBAR });
+    // `store.set` replaces `data.ui` wholesale, so an unchanged object identity
+    // is proof the second run never wrote.
+    expect(store.data.ui).toBe(afterFirst);
+  });
+
+  it('is a no-op on a fresh install (no ui, or a ui with no sidebar)', () => {
+    const noUi = createMockStore({ server: { port: 4242 } });
+    migrateSidebarMembersToItemRefs(noUi);
+    expect(noUi.data.ui).toBeUndefined();
+
+    const noSidebar = createMockStore({ ui: { theme: 'dark' } });
+    const before = noSidebar.data.ui;
+    migrateSidebarMembersToItemRefs(noSidebar);
+    expect(noSidebar.data.ui).toBe(before);
+  });
+
+  it('is a no-op on an empty-but-present sidebar', () => {
+    const store = createMockStore({
+      ui: { theme: 'dark', sidebar: { pinned: [], groups: [], muted: [] } },
+    });
+    const before = store.data.ui;
+    migrateSidebarMembersToItemRefs(store);
+    expect(store.data.ui).toBe(before);
+  });
+
+  it('still renames an EMPTY agentPaths list (the key itself must go)', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [],
+          groups: [{ id: 'g1', name: 'Empty', agentPaths: [] }],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
+      { id: 'g1', name: 'Empty', items: [] },
+    ]);
+  });
+
+  it('keeps an existing members list and drops a residual agentPaths beside it', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [],
+          groups: [
+            {
+              id: 'g1',
+              name: 'Clients',
+              items: [{ kind: 'room', roomId: 'room-1' }],
+              agentPaths: ['/projects/stale'],
+            },
+          ],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { groups: unknown[] } }).sidebar.groups).toEqual([
+      { id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: 'room-1' }] },
+    ]);
+  });
+
+  it('converts a half-migrated list without duplicating the refs already in it', () => {
+    const store = createMockStore({
+      ui: {
+        sidebar: {
+          pinned: [{ kind: 'agent', path: '/projects/alpha' }, '/projects/beta'],
+          groups: [],
+          muted: [],
+        },
+      },
+    });
+    migrateSidebarMembersToItemRefs(store);
+    expect((store.data.ui as { sidebar: { pinned: unknown[] } }).sidebar.pinned).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/beta' },
+    ]);
+  });
+
+  it('runs from the 0.57.0 composite — the release that ships this schema', () => {
+    // The whole point of composing into 0.57.0 rather than opening 0.58.0:
+    // `conf` only runs keys in `(storedVersion, projectVersion]`, so a 0.58.0
+    // body would not run on the 0.57.0 release carrying `items`, and every
+    // upgraded install would read the Zod default `[]` and lose its groups.
+    const store = createMockStore({ ui: priorShapeUi() });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect((store.data.ui as { sidebar: unknown }).sidebar).toMatchObject({
+      pinned: CONVERTED_SIDEBAR.pinned,
+      muted: CONVERTED_SIDEBAR.muted,
+      groups: CONVERTED_SIDEBAR.groups,
+    });
   });
 });
 
@@ -1365,6 +1737,63 @@ describe('backfillExtensionsDisabled migration', () => {
     const store = createMockStore({ extensions: { enabled: [], disabled: 'oops' } });
     backfillExtensionsDisabled(store);
     expect(store.data.extensions).toEqual({ enabled: [], disabled: [] });
+  });
+});
+
+describe('backfillExtensionsApprovedToRun migration (DOR-516)', () => {
+  it('seeds an EMPTY list, approving nothing the user already had installed', () => {
+    // The whole point. Backfilling from `enabled` would read "the person once
+    // toggled this on" as "the person reviewed this code", and an agent can turn an
+    // extension on through an ungated route. An upgrade must never hand out an
+    // approval nobody gave — the one click this costs an upgrading user is the
+    // deliberate price.
+    const store = createMockStore({
+      extensions: { enabled: ['my-ext', 'another-ext'], disabled: ['marketplace'] },
+    });
+    backfillExtensionsApprovedToRun(store);
+    expect(store.data.extensions).toEqual({
+      enabled: ['my-ext', 'another-ext'],
+      disabled: ['marketplace'],
+      approvedToRun: [],
+    });
+  });
+
+  it('is idempotent — leaves an existing approval list untouched', () => {
+    const store = createMockStore({
+      extensions: { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] },
+    });
+    backfillExtensionsApprovedToRun(store);
+    backfillExtensionsApprovedToRun(store);
+    expect(store.data.extensions).toEqual({
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+    });
+  });
+
+  it('skips when the extensions key is absent (no throw, no write)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillExtensionsApprovedToRun(store)).not.toThrow();
+    expect(store.data.extensions).toBeUndefined();
+  });
+
+  it('repairs a non-array approvedToRun rather than trusting it', () => {
+    const store = createMockStore({
+      extensions: { enabled: [], disabled: [], approvedToRun: 'oops' },
+    });
+    backfillExtensionsApprovedToRun(store);
+    expect(store.data.extensions).toEqual({ enabled: [], disabled: [], approvedToRun: [] });
+  });
+
+  it('leaves the migrated config parseable by the schema', () => {
+    const store = createMockStore({ extensions: { enabled: ['my-ext'], disabled: [] } });
+    backfillExtensionsApprovedToRun(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ...store.data });
+    expect(parsed.extensions).toEqual({
+      enabled: ['my-ext'],
+      disabled: [],
+      approvedToRun: [],
+    });
   });
 });
 
@@ -1528,13 +1957,20 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     expect(USER_CONFIG_DEFAULTS.approvals).toEqual({
       standingGrants: false,
       trustWindowMinutes: 480,
+      // Nothing has been voided yet, which is the only honest starting point: an
+      // upgrade must not retroactively end permissions (DOR-520).
+      standingGrantsVoidBefore: null,
     });
   });
 
   it('upgraded install: seeds the section OFF and leaves other settings alone', () => {
     const store = createMockStore({ auth: { enabled: true }, server: { port: 5000 } });
     backfillApprovalsDefaults(store);
-    expect(store.data.approvals).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.data.approvals).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
     expect(store.data.auth).toEqual({ enabled: true });
     expect(store.data.server).toEqual({ port: 5000 });
   });
@@ -1547,7 +1983,13 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     });
     backfillApprovalsDefaults(store);
     backfillApprovalsDefaults(store);
-    expect(store.data.approvals).toEqual({ standingGrants: true, trustWindowMinutes: 60 });
+    expect(store.data.approvals).toEqual({
+      standingGrants: true,
+      trustWindowMinutes: 60,
+      // The second seed reaches an `approvals` block an earlier build of the same
+      // unreleased key already wrote, and adds only the missing leaf.
+      standingGrantsVoidBefore: null,
+    });
   });
 
   it('a config written before the section existed upgrades without a wipe (full conf path)', () => {
@@ -1584,7 +2026,11 @@ describe('approvals section — standing permissions (DOR-501)', () => {
       migrations: CONFIG_MIGRATIONS,
     });
 
-    expect(store.get('approvals')).toEqual({ standingGrants: false, trustWindowMinutes: 480 });
+    expect(store.get('approvals')).toEqual({
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
     // The upgrade does not disturb what was already there, including the login
     // setting standing permissions depend on.
     expect((store.get('auth') as { enabled: boolean }).enabled).toBe(true);
@@ -1593,5 +2039,533 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // The composite key's other body still ran, so composing did not drop it.
     expect(store.get('ui')).toMatchObject({ statusBar: { pins: [] } });
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('the standing-permission posture floor (DOR-520)', () => {
+  // `ConfigManager` is the one seam every writer of these settings travels,
+  // including `dorkos config set` in a process with no database and no routes. It
+  // records the moment the settings stopped licensing standing permissions so the
+  // store can refuse the ones that moment invalidated. This describes the WRITE
+  // half; the read half is
+  // `services/core/approvals/__tests__/approval-grant-service.test.ts`.
+  let dir: string;
+
+  /** Both halves of the posture on, which is the only state a floor can move from. */
+  function licensed() {
+    const manager = initConfigManager(dir);
+    manager.setDot('auth.enabled', true);
+    manager.setDot('approvals.standingGrants', true);
+    return manager;
+  }
+
+  /** The stored floor, or `null` when nothing has narrowed. */
+  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
+    return manager.get('approvals').standingGrantsVoidBefore;
+  }
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-void-floor-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('starts with no floor, because nothing has been voided', () => {
+    expect(floor(licensed())).toBeNull();
+  });
+
+  it('stamps the floor when the master switch is switched off', () => {
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor when login is switched off, which takes the same license away', () => {
+    const manager = licensed();
+    manager.setDot('auth.enabled', false);
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor on a whole-section write, which is how `PATCH /api/config` lands', () => {
+    const manager = licensed();
+    manager.set('approvals', {
+      standingGrants: false,
+      trustWindowMinutes: 480,
+      standingGrantsVoidBefore: null,
+    });
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor on `dorkos config reset`', () => {
+    const manager = licensed();
+    manager.reset();
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('stamps the floor on a reset of the approvals section alone', () => {
+    const manager = licensed();
+    manager.reset('approvals');
+    expect(floor(manager)).toEqual(expect.any(String));
+  });
+
+  it('moves nothing when an unrelated setting is written', () => {
+    // A floor that crept forward on every write would end standing permissions
+    // whenever anyone changed the log level — the same bug wearing better clothes.
+    const manager = licensed();
+    manager.setDot('logging.level', 'debug');
+    manager.set('ui', { ...manager.get('ui'), theme: 'dark' });
+    expect(floor(manager)).toBeNull();
+  });
+
+  it('moves nothing when a setting is switched ON', () => {
+    // Turning something on grants nothing and voids nothing. A permission is
+    // always a fresh human decision.
+    const manager = initConfigManager(dir);
+    manager.setDot('auth.enabled', true);
+    manager.setDot('approvals.standingGrants', true);
+    expect(floor(manager)).toBeNull();
+  });
+
+  it('leaves an existing floor alone when the settings are switched back on', () => {
+    // The stamp is what a later switch-on must NOT erase: erasing it is exactly
+    // how the permissions it voided would come back.
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const stamped = floor(manager);
+    manager.setDot('approvals.standingGrants', true);
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('records the narrowing a SECOND manager performs, which is what the CLI is', () => {
+    // The whole point of putting the marker in the config file: `dorkos config
+    // set` holds its own manager in its own process, so a marker anywhere the
+    // server owns would never be written at all.
+    const server = licensed();
+    const cli = new ConfigManager(dir);
+    cli.setDot('approvals.standingGrants', false);
+    cli.setDot('approvals.standingGrants', true);
+
+    expect(floor(server)).toEqual(expect.any(String));
+  });
+});
+
+describe('the posture floor is monotonic (DOR-520 review)', () => {
+  // The floor is only worth anything if it can never go backwards. The first
+  // version stamped on the licensed -> unlicensed TRANSITION, which meant any
+  // write performed while ALREADY narrowed could put the leaf back to its default
+  // and silently delete the marker. Review reproduced a live resurrection through
+  // `dorkos config reset` using only verbs this feature claims to cover.
+  let dir: string;
+
+  /** Both halves of the posture on. */
+  function licensed() {
+    const manager = initConfigManager(dir);
+    manager.setDot('auth.enabled', true);
+    manager.setDot('approvals.standingGrants', true);
+    return manager;
+  }
+
+  /** The stored floor, or `null` when nothing has narrowed. */
+  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
+    return manager.get('approvals').standingGrantsVoidBefore;
+  }
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-floor-monotonic-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('survives `dorkos config reset` performed while the switch is ALREADY off', () => {
+    // The reproduction. Every step is a verb this feature claims to cover.
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const stamped = floor(manager);
+    expect(stamped).toEqual(expect.any(String));
+
+    manager.reset();
+
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('survives `dorkos config reset approvals` performed while login is ALREADY off', () => {
+    // The same hole reached through the other half of the posture.
+    const manager = licensed();
+    manager.setDot('auth.enabled', false);
+    const stamped = floor(manager);
+    expect(stamped).toEqual(expect.any(String));
+
+    manager.reset('approvals');
+
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('survives a whole-section write that carries a stale null, while already narrowed', () => {
+    // What a batched `PATCH /api/config` does: `applyConfigPatch` computes the
+    // merged value ONCE from the pre-write snapshot, then writes each top-level
+    // section in turn. A section written after `auth` narrowed carries the
+    // snapshot's `standingGrantsVoidBefore: null` and used to erase the stamp.
+    const manager = licensed();
+    manager.setDot('auth.enabled', false);
+    const stamped = floor(manager);
+
+    manager.set('approvals', {
+      standingGrants: true,
+      trustWindowMinutes: 60,
+      standingGrantsVoidBefore: null,
+    });
+
+    expect(floor(manager)).toBe(stamped);
+  });
+
+  it('advances the floor on a SECOND narrowing rather than leaving the first one', () => {
+    // Defense in depth: the routes refuse to create a permission while the switch
+    // is off, so nothing can be granted between the two narrowings today. A floor
+    // that silently stopped moving would be a trap for whoever changes that.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-26T10:00:00.000Z'));
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const first = floor(manager)!;
+
+    manager.setDot('approvals.standingGrants', true);
+    vi.setSystemTime(new Date('2026-07-26T11:00:00.000Z'));
+    manager.setDot('approvals.standingGrants', false);
+    const second = floor(manager)!;
+    vi.useRealTimers();
+
+    expect(first).toBe('2026-07-26T10:00:00.000Z');
+    expect(second).toBe('2026-07-26T11:00:00.000Z');
+  });
+
+  it('keeps the later floor when the clock goes backwards', () => {
+    // A floor that follows a backwards clock is a floor an NTP correction can
+    // lower. `max` is what makes the marker monotonic rather than merely current.
+    const manager = licensed();
+    manager.setDot('approvals.standingGrants', false);
+    const first = floor(manager)!;
+
+    manager.setDot('approvals.standingGrants', true);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.parse(first) - 60_000));
+    manager.setDot('approvals.standingGrants', false);
+    vi.useRealTimers();
+
+    expect(floor(manager)).toBe(first);
+  });
+
+  it('still writes nothing at all when the posture never narrowed', () => {
+    // The churn guard. A rule stated as "stamp whenever the posture is not
+    // licensed after the write" would move the floor on EVERY config write for the
+    // vast majority of installs, which never switch this feature on.
+    const manager = initConfigManager(dir);
+    manager.setDot('logging.level', 'debug');
+    manager.setDot('server.port', 4300);
+    expect(floor(manager)).toBeNull();
+  });
+});
+
+describe('a config written before DOR-579 survives the migration being skipped', () => {
+  // The DOR-579 rename is the first non-additive change in CONFIG_MIGRATIONS.
+  // Every additive backfill before it degrades safely when its key falls outside
+  // conf's `(storedVersion, projectVersion]` window — the field is absent and a
+  // Zod default fills in. A rename does not: the OLD encoding becomes
+  // schema-INVALID, `new Conf(...)` throws, and ConfigManager's recovery path
+  // backs the file up and replaces it with defaults. That resets the whole
+  // file, not just the sidebar.
+  //
+  // These boot a REAL ConfigManager over a real file, which is the only way to
+  // cross the conf/Ajv seam where that failure lives. The mock-store tests above
+  // cannot see it, and neither can `UserConfigSchema.parse` — Zod strips unknown
+  // keys where Ajv rejects them.
+  //
+  // SERVER_VERSION resolves to `0.0.0` here (the dev/package.json fallback), so
+  // NO migration runs at all. That is not a contrivance: it is exactly what a
+  // developer's tree does on every `pnpm dev`.
+  const priorShapeConfig = {
+    version: 1,
+    // A privacy choice, deliberately opposite to the defaults on both fields, so
+    // a silent reset is visible rather than coincidentally identical.
+    telemetry: { userHasDecided: true, install: false, heartbeat: false },
+    ui: {
+      theme: 'dark',
+      sidebar: {
+        pinned: ['/projects/alpha'],
+        groups: [
+          {
+            id: 'g1',
+            name: 'Clients',
+            agentPaths: ['/projects/alpha', '/projects/gamma'],
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            kind: 'manual',
+          },
+        ],
+        muted: ['/projects/beta'],
+      },
+    },
+  };
+
+  function bootOverPriorShape(): { dir: string; configPath: string; manager: ConfigManager } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-pre-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify(priorShapeConfig));
+    return { dir, configPath, manager: new ConfigManager(dir) };
+  }
+
+  it('is not condemned — no backup is written and the file is not replaced', () => {
+    const { configPath } = bootOverPriorShape();
+    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+  });
+
+  it('keeps every unrelated section, including a telemetry opt-out', () => {
+    const { manager } = bootOverPriorShape();
+    const telemetry = manager.get('telemetry');
+    // The exact three values the fixture chose. A wipe flips all three at once:
+    // `userHasDecided` to false and the two Tier 1 channels back on.
+    expect(telemetry.userHasDecided).toBe(true);
+    expect(telemetry.install).toBe(false);
+    expect(telemetry.heartbeat).toBe(false);
+  });
+
+  it('reads the sidebar back canonical, with the groups intact', () => {
+    const { manager } = bootOverPriorShape();
+    // ConfigManager is the server's read boundary: every consumer sees the
+    // canonical encoding, so the groups are intact rather than empty.
+    const prefs = manager.getAll().ui.sidebar;
+    expect(prefs.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(prefs.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
+    expect(prefs.groups).toHaveLength(1);
+    expect(prefs.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+    expect(prefs.groups[0]!.name).toBe('Clients');
+  });
+
+  it('normalizes the ui section read on its own, not just the whole config', () => {
+    // `GET /api/config` reads `configManager.get('ui')`, a different path from
+    // `getAll()`. Both are read boundaries and both have to convert.
+    const { manager } = bootOverPriorShape();
+    const sidebar = manager.get('ui').sidebar;
+    expect(sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(sidebar.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+  });
+
+  it('converts on READ without rewriting the file', () => {
+    // The conversion is a read boundary, not a hidden migration: the bytes on
+    // disk keep the old encoding until something actually writes.
+    const { configPath } = bootOverPriorShape();
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { groups: Record<string, unknown>[] } };
+    };
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toEqual(['/projects/alpha', '/projects/gamma']);
+    expect(onDisk.ui.sidebar.groups[0]!.items).toBeUndefined();
+  });
+
+  // ── The write path (applyConfigPatch) ──
+  //
+  // `applyConfigPatch` reads the current config, deep-merges the patch, and
+  // re-validates the WHOLE result with Zod — which is strict, and deliberately
+  // never widened the way conf's Ajv schema was. So the read boundary above is
+  // what keeps writes working at all on an un-migrated install; without it a
+  // legacy `pinned` refuses every write (the merge carries the untouched
+  // `ui.sidebar` into validation), and a legacy `agentPaths` is silently
+  // stripped by Zod and persisted as an empty group.
+
+  it('accepts a patch that has nothing to do with the sidebar', () => {
+    const { dir } = bootOverPriorShape();
+    initConfigManager(dir);
+    const result = applyConfigPatch({ logging: { level: 'debug' } });
+    expect(result.ok, JSON.stringify('details' in result ? result.details : result)).toBe(true);
+  });
+
+  it('keeps the groups when a patch touches the ui section', () => {
+    // The assertion that matters: `ok: true` alone would still pass if the
+    // groups had been silently emptied on the way through.
+    const { dir } = bootOverPriorShape();
+    const manager = initConfigManager(dir);
+    const result = applyConfigPatch({ ui: { theme: 'dark' } });
+    expect(result.ok).toBe(true);
+    const groups = manager.getAll().ui.sidebar.groups;
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+    expect(manager.getAll().ui.theme).toBe('dark');
+  });
+
+  it('converges the file to the canonical encoding on the first write', () => {
+    const { dir, configPath } = bootOverPriorShape();
+    initConfigManager(dir);
+    expect(applyConfigPatch({ ui: { theme: 'dark' } }).ok).toBe(true);
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { pinned: unknown; groups: Record<string, unknown>[] } };
+    };
+    expect(onDisk.ui.sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toBeUndefined();
+    expect(onDisk.ui.sidebar.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+  });
+
+  it('accepts a config already in the canonical encoding too', () => {
+    // The tolerance widens what Ajv accepts; it must not narrow it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-post-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        ui: {
+          sidebar: {
+            pinned: [{ kind: 'agent', path: '/projects/alpha' }],
+            groups: [{ id: 'g1', name: 'Clients', items: [{ kind: 'room', roomId: '01JROOM' }] }],
+            muted: [],
+          },
+        },
+      })
+    );
+    const manager = new ConfigManager(dir);
+    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(manager.getAll().ui.sidebar.groups[0]!.items).toEqual([
+      { kind: 'room', roomId: '01JROOM' },
+    ]);
+  });
+
+  it('still rejects a genuinely invalid sidebar entry', () => {
+    // The widened schema accepts a legacy string or a reference — not anything.
+    // Without this, "tolerate the old encoding" could quietly become "validate
+    // nothing", and the next bad write would land unnoticed.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-invalid-579-'));
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ version: 1, ui: { sidebar: { pinned: [{ kind: 'nonsense' }] } } })
+    );
+    new ConfigManager(dir);
+    expect(fs.existsSync(configPath + '.bak')).toBe(true);
+  });
+});
+
+describe('applyTier1OptInDefaults migration', () => {
+  it('turns the Tier 1 channels off for an install that never answered', () => {
+    // The population the 0.48.0 flip enrolled by silence — including one whose
+    // first-run notice has since been shown, so it is sending today.
+    const store = createMockStore({
+      telemetry: {
+        userHasDecided: false,
+        install: true,
+        heartbeat: true,
+        usage: true,
+        lastPromptedVersion: '0.56.0',
+      },
+    });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toMatchObject({
+      install: false,
+      heartbeat: false,
+      usage: false,
+      userHasDecided: false,
+      // Not re-prompted: the consent surfaces are the way back in.
+      lastPromptedVersion: '0.56.0',
+    });
+  });
+
+  it('never overrides an explicit choice to keep sharing', () => {
+    const decidedYes = {
+      userHasDecided: true,
+      install: true,
+      heartbeat: true,
+      usage: true,
+      errorReporting: false,
+    };
+    const store = createMockStore({ telemetry: { ...decidedYes } });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toEqual(decidedYes);
+  });
+
+  it('never overrides an explicit choice to opt out', () => {
+    const decidedNo = { userHasDecided: true, install: false, heartbeat: false, usage: false };
+    const store = createMockStore({ telemetry: { ...decidedNo } });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toEqual(decidedNo);
+  });
+
+  it('is idempotent and leaves an absent block alone', () => {
+    const already = { userHasDecided: false, install: false, heartbeat: false, usage: false };
+    const store = createMockStore({ telemetry: { ...already } });
+    applyTier1OptInDefaults(store);
+    expect(store.data.telemetry).toEqual(already);
+
+    const noBlock = createMockStore({ server: { port: 4242 } });
+    applyTier1OptInDefaults(noBlock);
+    expect(noBlock.data.telemetry).toBeUndefined();
+  });
+});
+
+/**
+ * The conf/Ajv seam. A schema change is not proven by a mock store: mock stores
+ * never construct `conf`, and `UserConfigSchema.parse` strips unknown keys where
+ * Ajv rejects them.
+ */
+describe('Tier 1 opt-in defaults (real conf + Ajv)', () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function seed(stored: Record<string, unknown>): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-tier1-optin-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ version: 1, ...stored }));
+    return dir;
+  }
+
+  it('gives a brand-new install every Tier 1 channel off', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-tier1-optin-'));
+    dirs.push(dir);
+    const telemetry = new ConfigManager(dir).get('telemetry');
+    expect(telemetry).toEqual({
+      userHasDecided: false,
+      install: false,
+      heartbeat: false,
+      errorReporting: false,
+      lastPromptedVersion: null,
+      usage: false,
+      linkAnalyticsToAccount: false,
+      aiMetadata: false,
+    });
+  });
+
+  it('leaves an explicit decision to keep sharing intact through a real load', () => {
+    const dir = seed({
+      telemetry: {
+        userHasDecided: true,
+        install: true,
+        heartbeat: true,
+        errorReporting: false,
+        lastPromptedVersion: '0.56.0',
+        usage: true,
+        linkAnalyticsToAccount: false,
+        aiMetadata: false,
+      },
+    });
+    const manager = new ConfigManager(dir);
+    expect(manager.get('telemetry').install).toBe(true);
+    expect(manager.get('telemetry').usage).toBe(true);
+    expect(manager.validate()).toEqual({ valid: true });
   });
 });

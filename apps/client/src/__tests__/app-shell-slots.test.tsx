@@ -13,11 +13,27 @@ import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-ban
 let mockPathname = '/';
 
 vi.mock('@tanstack/react-router', () => ({
-  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => string }) =>
-    select({ location: { pathname: mockPathname } }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (s: { location: { pathname: string; href: string } }) => string;
+  }) => select({ location: { pathname: mockPathname, href: mockPathname } }),
+  // The tab strip reads the router directly: `useAppTabsSync` subscribes to
+  // history for the action type (only Back/Forward may move focus between
+  // tabs), and the tab actions re-read the location once a navigation settles.
+  useRouter: () => ({
+    navigate: (_options: { href: string }) => Promise.resolve(),
+    get state() {
+      return { location: { pathname: mockPathname, href: mockPathname } };
+    },
+    history: { subscribe: () => () => {} },
+  }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
+  // The shell reads `?id=` to name the open room in the document title
+  // (`useRoomDocumentTitle`). No route under test carries one.
+  useSearch: () => ({}),
 }));
 
 // ── Mock child components with identifiable test markers ──
@@ -96,6 +112,11 @@ vi.mock('@/layers/features/approvals', () => ({
     isError: mockApprovalsError,
     retry: vi.fn(),
   }),
+  StandingPermissionList: () => <div data-testid="standing-permission-list" />,
+  // This suite is about WHERE the marker sits, not about standing permissions.
+  // An empty list keeps the marker's appearance driven solely by the pending
+  // queue, which is what every assertion below is written against.
+  useStandingPermissions: () => ({ permissions: [], isLoading: false, isError: false }),
 }));
 
 vi.mock('@/layers/features/command-palette', () => ({
@@ -133,6 +154,14 @@ vi.mock('@/layers/entities/session', () => ({
   // (session-origin-legibility): no active session in this shell-level
   // isolation test, so it always resolves to "no origin".
   useSessionOrigin: () => ({ origin: undefined, originLabel: undefined }),
+  // The tab strip badges a chat tab off this (DOR-540). Nothing is streaming in
+  // a shell-level isolation test, so every tab reads idle.
+  useSessionBorderState: () => ({
+    kind: 'idle',
+    color: 'transparent',
+    pulse: false,
+    label: 'Idle',
+  }),
 }));
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => {
@@ -161,6 +190,17 @@ vi.mock('@/layers/widgets/pulse', async (importOriginal) => {
   return {
     ...actual,
     usePulseFreshness: () => {},
+  };
+});
+
+// The shell also keeps the room list live for the browser tab's unread badge
+// (`useRoomDocumentTitle` -> `useRoomListStream`) — another event-stream
+// subscription, no-op'd here for the same reason.
+vi.mock('@/layers/entities/room', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/room')>();
+  return {
+    ...actual,
+    useRoomListStream: () => {},
   };
 });
 
@@ -243,6 +283,7 @@ import { AppShell } from '../AppShell';
 // exercise the takeover path.
 import { useExtensionRegistry } from '@/layers/shared/model/extension-registry';
 import type { SidebarBodyContribution } from '@/layers/shared/model/extension-registry';
+import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 // ── Test setup ──
 
@@ -287,6 +328,7 @@ describe('AppShell slot integration', () => {
 
   afterEach(() => {
     cleanup();
+    leaveDesktopShell();
   });
 
   describe('sidebar slots', () => {
@@ -494,6 +536,83 @@ describe('AppShell slot integration', () => {
       const sidebar = document.querySelector('[data-slot="sidebar"]');
       expect(sidebar).not.toBeNull();
       expect(sidebar).not.toContainElement(banner);
+    });
+  });
+
+  describe('window tabs (DOR-540)', () => {
+    // Tabs are a desktop-app feature (DOR-568); the browser case has its own
+    // block below.
+    beforeEach(enterDesktopShell);
+
+    it('mounts the tab strip at the top of the content inset, above the header', () => {
+      // The strip is the inset's top band on macOS: it carries the drag region
+      // and the traffic-light clearance the header used to need, so it has to
+      // come FIRST inside the inset, not after the header.
+      mockPathname = '/';
+      renderAppShell();
+
+      const strip = screen.getByRole('tablist', { name: 'Open tabs' });
+      const inset = document.querySelector('[data-slot="sidebar-inset"]');
+      expect(inset).toContainElement(strip);
+
+      const header = inset?.querySelector('header');
+      expect(header).not.toBeNull();
+      expect(header).not.toContainElement(strip);
+      expect(
+        header && header.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_PRECEDING
+      ).toBeTruthy();
+    });
+
+    it('names the active tab after the route the router is on', () => {
+      // Proves the shell feeds the strip the real location, not a placeholder.
+      mockPathname = '/agents';
+      renderAppShell();
+
+      expect(screen.getByRole('tab', { selected: true })).toHaveAccessibleName(/Agents/);
+    });
+
+    it('points the active tab at the routed content region', () => {
+      mockPathname = '/';
+      renderAppShell();
+
+      const active = screen.getByRole('tab', { selected: true });
+      const panelId = active.getAttribute('aria-controls');
+      expect(panelId).toBeTruthy();
+      expect(document.getElementById(panelId!)).not.toBeNull();
+    });
+  });
+
+  describe('no window tabs in a browser (DOR-568)', () => {
+    it('renders no strip — the browser already has one, and a better one', () => {
+      mockPathname = '/';
+      renderAppShell();
+
+      expect(screen.queryByRole('tablist', { name: 'Open tabs' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    });
+
+    it('keeps the header, its drag region and its chrome — the inset just starts higher', () => {
+      // The strip carried the drag region and the macOS traffic-light
+      // clearance. Removing it must not take the header's own chrome with it.
+      mockPathname = '/';
+      renderAppShell();
+
+      const inset = document.querySelector('[data-slot="sidebar-inset"]');
+      const header = inset?.querySelector('header');
+      expect(header).not.toBeNull();
+      expect(header).toHaveClass('app-drag-region');
+      // The header is now the inset's first child, with nothing above it.
+      expect(inset?.firstElementChild).toBe(header);
+      // …and the routed content region the tabs pointed at is still there.
+      expect(inset?.querySelector('main')).not.toBeNull();
+    });
+
+    it('writes nothing to the tab store — no sessionStorage either', () => {
+      sessionStorage.clear();
+      mockPathname = '/agents';
+      renderAppShell();
+
+      expect(sessionStorage.length).toBe(0);
     });
   });
 

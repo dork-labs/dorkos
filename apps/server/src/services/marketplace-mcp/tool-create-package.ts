@@ -10,7 +10,7 @@
  * Like every mutation tool in this directory, the handler routes through the
  * shared {@link ConfirmationProvider} gate before any disk write — creating
  * files on the user's machine is a trust boundary and must be explicitly
- * approved (or auto-approved via `MARKETPLACE_AUTO_APPROVE=1`).
+ * approved by a person. There is no way to switch that off.
  *
  * The actual `server.tool(...)` registration is performed by the phase-4
  * server-wiring task (#14) which imports this factory alongside its
@@ -117,7 +117,7 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
   return async (args: CreatePackageInput, context?: MarketplaceConfirmationContext) => {
     // 1. Confirmation gate — fires BEFORE any disk write. This is the trust
     //    boundary: external agents cannot create files on the user's machine
-    //    without explicit approval (or `MARKETPLACE_AUTO_APPROVE=1`).
+    //    without explicit approval.
     // `type` decides the shape of what lands on disk, so it is bound too; the
     // rest of the args are metadata inside the package the user is creating.
     const confirmationRequest = {

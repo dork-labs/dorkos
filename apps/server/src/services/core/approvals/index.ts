@@ -28,8 +28,15 @@ export {
   type ApprovalGrantRow,
 } from './approval-grant-service.js';
 export {
+  readStandingGrantPosture,
+  readStandingGrantSettings,
+  readStandingGrantVoidFloor,
+  type StandingGrantSettings,
+} from './standing-grant-settings.js';
+export {
   initStandingGrantPosture,
   resetStandingGrantPosture,
+  revokeStandingGrantsIfPostureForbids,
   revokeStandingGrantsIfPostureNarrowed,
   type StandingGrantPosture,
 } from './standing-grant-posture.js';

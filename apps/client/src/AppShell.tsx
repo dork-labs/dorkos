@@ -8,9 +8,11 @@ import {
   useSlotContributions,
 } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
+import { useElectronCloseTab } from './app/use-electron-close-tab';
+import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
-import { getAgentDisplayName, cn } from '@/layers/shared/lib';
+import { getAgentDisplayName, cn, isDesktopShell } from '@/layers/shared/lib';
 import {
   useSessionId,
   useDefaultCwd,
@@ -57,6 +59,12 @@ import {
   SidebarFooter,
   SidebarRail,
 } from '@/layers/shared/ui';
+import {
+  AppTabBar,
+  APP_TAB_PANEL_ID,
+  useAppTabsSync,
+  useAppTabShortcuts,
+} from '@/layers/features/app-tabs';
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
 import { CreateAgentDialog } from '@/layers/features/agent-creation';
 import { ImportProjectsDialog } from '@/layers/features/mesh';
@@ -231,6 +239,9 @@ export function AppShell() {
   const tasksBadgeCount = useAppStore((s) => s.tasksBadgeCount);
   const { data: currentAgent } = useCurrentAgent(selectedCwd);
   const agentVisual = useAgentVisual(currentAgent ?? null, selectedCwd ?? '');
+  // The tab names the room you are reading when there is one, and counts the
+  // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
+  const { roomTitle, unreadRoomCount } = useRoomDocumentTitle();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,
@@ -244,15 +255,26 @@ export function AppShell() {
     agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
     agentEmoji: currentAgent ? agentVisual.emoji : undefined,
     tasksBadgeCount,
+    roomTitle,
+    unreadRoomCount,
   });
 
   useShortcutsPanel();
   useRightPanelShortcut();
   useAgentProfileShortcut();
   useRightPanelPersistence();
+  // In-window tabs (DOR-540). The sync hook is the single reconciliation point
+  // between the router's location and the tab set — every navigation, whatever
+  // started it, lands here. Both no-op outside the desktop shell, where the
+  // strip does not exist (DOR-568).
+  useAppTabsSync();
+  useAppTabShortcuts();
   // Desktop shell → client navigation bridge (ADR 260709-210223). A no-op in
   // the browser and Obsidian, where `window.electronAPI` is absent.
   useElectronNavigate();
+  // Desktop Cmd+W → close a tab, not the window. No-op without the bridge, and
+  // deliberately silent on the last tab so the window still closes.
+  useElectronCloseTab();
   // Bridge the global `/api/events` session-list stream into the shared
   // `['sessions', cwd]` query cache (sidebar/dashboard/loader go live; ADR-0265).
   useGlobalSessionStream();
@@ -260,7 +282,7 @@ export function AppShell() {
   // marketplace install/uninstall, so the command palette stays an honest
   // mirror of what the runtime recognizes (UX-12).
   useCommandsSync();
-  // Keep channel state live across clients/tabs: invalidate bindings and adapter
+  // Keep integration state live across clients/tabs: invalidate bindings and adapter
   // status when the server signals a change, instead of relying on local
   // mutations and slow polling.
   useBindingsSync();
@@ -425,19 +447,36 @@ export function AppShell() {
                     <SidebarRail />
                   </Sidebar>
                   <SidebarInset className="overflow-hidden">
+                    {/* ── Window tabs — the inset's top band, above the page
+                          header (DOR-540). Desktop app only (DOR-568): a browser
+                          already has tabs, and a second strip under the real one
+                          would be the worse of the two. On macOS this is the
+                          strip that sits level with the traffic lights, so it
+                          carries the drag region and, when the sidebar is
+                          collapsed, the clearance the header used to need. The
+                          header below keeps its own drag region, so the browser
+                          layout simply starts one band higher. ── */}
+                    {isDesktopShell() && (
+                      <AppTabBar
+                        className={cn(
+                          // Literal class, not a `desktop-darwin:` variant utility — see
+                          // the `.app-drag-region` comment in index.css. Inert without the
+                          // `.desktop-darwin` ancestor class, so it's safe unconditionally.
+                          'app-drag-region',
+                          // When the sidebar is collapsed, TitlebarDragStrip's
+                          // traffic-light clearance collapses with it — pad this
+                          // strip so the first tab doesn't sit under the native
+                          // traffic lights (DOR-253).
+                          !sidebarOpen && 'desktop-darwin:pl-20'
+                        )}
+                      />
+                    )}
                     <header
-                      className={cn(
-                        'relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300',
-                        // Literal class, not a `desktop-darwin:` variant utility — see
-                        // the `.app-drag-region` comment in index.css. Inert without the
-                        // `.desktop-darwin` ancestor class, so it's safe unconditionally.
-                        'app-drag-region',
-                        // When the sidebar is collapsed, TitlebarDragStrip's
-                        // traffic-light clearance collapses with it — pad the
-                        // header itself so its content doesn't sit under the
-                        // native traffic lights (DOR-253).
-                        !sidebarOpen && 'desktop-darwin:pl-20'
-                      )}
+                      // `app-drag-region` is a literal class, not a
+                      // `desktop-darwin:` variant utility — see the
+                      // `.app-drag-region` comment in index.css. Inert without
+                      // the `.desktop-darwin` ancestor, so it is unconditional.
+                      className="app-drag-region relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
                       style={headerSlot.borderStyle}
                     >
                       <SidebarTrigger className="-ml-0.5" />
@@ -470,7 +509,11 @@ export function AppShell() {
                     <AppBannerSlot descriptors={appBanners} />
                     {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
                           routed content above the 64px bar — nothing occluded. */}
-                    <main className="flex-1 overflow-hidden pb-[var(--pip-dock,0px)]">
+                    <main
+                      // The region the active tab controls (`aria-controls`).
+                      id={APP_TAB_PANEL_ID}
+                      className="flex-1 overflow-hidden pb-[var(--pip-dock,0px)]"
+                    >
                       {/* The explicit id doubles as the DOM hook (data-panel-group-id)
                             that useRightPanelSizing measures for the pixel floor. */}
                       <PanelGroup

@@ -1,8 +1,9 @@
 import { autoUpdater } from 'electron-updater';
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-updater';
-import { app, dialog } from 'electron';
+import { app, autoUpdater as nativeAutoUpdater, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
+import { confirmInterruptingAgents } from './quit-guard';
 
 /** The IPC channel the main process pushes {@link UpdateStatus} events to the renderer on. */
 export const UPDATE_STATUS_CHANNEL = 'update:status';
@@ -152,13 +153,34 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
       detail: 'The update will be applied when you restart the app.',
       buttons: ['Restart Now', 'Later'],
     }).then(({ response }) => {
-      if (response === 0) {
-        autoUpdater.quitAndInstall();
-      }
+      // Same path as the in-app card, so the "agents are still working"
+      // question and the window-all-closed suppression apply here too.
+      if (response === 0) void beginUpdateRestart();
     });
   });
 
+  // Electron's *native* updater announces the install-quit as it begins, which
+  // is the most precise "the restart is happening now" signal available — it
+  // arrives on the deferred macOS branch too, whenever Squirrel finally
+  // finishes. Refreshing here keeps the confirmation valid for a restart that
+  // took longer than the grace window.
+  //
+  // A refinement, never the mechanism: it is verified to fire from
+  // electron-updater's `BaseUpdater` (`out/BaseUpdater.js` emits it by hand
+  // before `app.quit()`) and from Electron's own MSIX updater, but on macOS it
+  // comes from the C++ binding, which could not be verified from here. Nothing
+  // above depends on it firing.
+  nativeAutoUpdater.on('before-quit-for-update', () => {
+    armUpdateRestart();
+  });
+
   autoUpdater.on('error', (err: Error) => {
+    // Whatever else this error is, it means no restart is happening. On macOS
+    // this is how an armed restart realistically dies: `quitAndInstall()` took
+    // its deferred branch and returned, and Squirrel then rejected the update.
+    // Neither piece of state may outlive the attempt.
+    resetUpdateRestartState();
+
     // A not-yet-ready release (metadata file 404) means "nothing to install
     // right now", not a failure. Surface it like `update-not-available` so the
     // sidebar card never turns red and an interactive check gets a calm notice
@@ -254,17 +276,121 @@ export function checkForUpdatesInteractive(): void {
 }
 
 /**
+ * How long a confirmed restart may skip the quit confirmation.
+ *
+ * The skip exists because the person authorised this exact interruption
+ * moments ago; it is that authorisation, not a flag, that has to expire. Ten
+ * minutes is far longer than Squirrel needs to pull an already-downloaded
+ * update over the loopback proxy and check its signature, and short enough
+ * that a restart which silently never happens cannot disable the confirmation
+ * for a working day. Expiring early costs one extra dialog during an update.
+ * Expiring late costs agents killed without being asked, so it errs short.
+ */
+const RESTART_CONFIRMED_GRACE_MS = 10 * 60_000;
+
+/**
+ * Whether an update restart is under way, for the sole purpose of keeping the
+ * "DorkOS is still running" notice quiet while it happens.
+ *
+ * `quitAndInstall()` closes every window and only *then* calls `app.quit()`, so
+ * `window-all-closed` fires exactly as if a person had closed the last window
+ * by hand — and without this it did, complete with a Quit button, in the middle
+ * of an update, burning the one-time notice for good. `isQuitting()` cannot
+ * cover that: on this path `before-quit` comes afterwards.
+ *
+ * **This one deliberately survives a `quitAndInstall()` that has not quit yet.**
+ * On macOS those are indistinguishable from the outside: `MacUpdater`
+ * (`out/MacUpdater.js`) quits only `if (this.squirrelDownloadedUpdate)` and
+ * otherwise registers a deferred `update-downloaded` listener and **returns**,
+ * with the restart still very much on its way. Clearing this on that branch
+ * puts the notice back in the middle of the update — the exact bug it exists to
+ * prevent — via the fast-click path, which is the likely one.
+ *
+ * Being set too long is cheap: the notice is skipped for that close and shown
+ * at the next one, because `announceBackgroundRunning` writes its ledger only
+ * on the path that actually shows the dialog. It is never allowed to stop a
+ * quit (see `index.ts`), so it cannot strand anyone. It is cleared on any
+ * updater `error`, which is how a rejected Squirrel update ends.
+ */
+let restartArmed = false;
+
+/**
+ * When the person confirmed the restart, or `null` if they have not.
+ *
+ * Separate from {@link restartArmed} because the two have opposite tolerances,
+ * and one flag serving both is what broke here. Left set too long, this one
+ * silently kills mid-run agents on an unrelated quit — so unlike the notice
+ * state it is spent on use ({@link consumeUpdateRestart}) and expires
+ * ({@link RESTART_CONFIRMED_GRACE_MS}).
+ */
+let restartConfirmedAt: number | null = null;
+
+/**
+ * Is an update restart under way? A peek, for `window-all-closed`, which fires
+ * *during* the restart and must not spend the confirmation the quit still needs.
+ */
+export function isRestartingToUpdate(): boolean {
+  return restartArmed;
+}
+
+/**
+ * Take the person's restart confirmation, if it is still good: `true` means
+ * this quit is the restart they already answered for, and the quit guard should
+ * not ask again. Spent on read.
+ */
+export function consumeUpdateRestart(): boolean {
+  const confirmedAt = restartConfirmedAt;
+  restartConfirmedAt = null;
+  return confirmedAt !== null && Date.now() - confirmedAt <= RESTART_CONFIRMED_GRACE_MS;
+}
+
+/** Record that a restart is under way and freshly authorised. */
+function armUpdateRestart(): void {
+  restartArmed = true;
+  restartConfirmedAt = Date.now();
+}
+
+/**
+ * Clear both pieces of update-restart state.
+ *
+ * @internal Exported for testing only.
+ */
+export function resetUpdateRestartState(): void {
+  restartArmed = false;
+  restartConfirmedAt = null;
+}
+
+/**
+ * Arm the installer and restart, once anything mid-run has been accounted for.
+ *
+ * The question is asked **here**, not from `before-quit`, because by then the
+ * answer cannot change anything: on Windows `quitAndInstall()` has already run
+ * the installer before it quits, and on macOS it may have handed off to
+ * Squirrel and taken the windows with it. Asked from here, "Keep Working"
+ * genuinely costs nothing — the installer was never armed, and the update still
+ * lands on the next ordinary quit.
+ */
+async function beginUpdateRestart(): Promise<void> {
+  if (!(await confirmInterruptingAgents('restart'))) return;
+
+  // Armed before the call, because on the branch that quits straight away the
+  // windows are gone before this function resumes.
+  armUpdateRestart();
+  autoUpdater.quitAndInstall();
+}
+
+/**
  * Restart the app to apply a downloaded update, driven by the renderer's
  * in-app card (the "Restart to install" button) via the `update:restart` IPC.
  *
- * Shares `autoUpdater.quitAndInstall()` with the native restart dialog, so
- * both paths tear down the server cleanly through the `before-quit` dance in
- * `index.ts`. No-ops when `!app.isPackaged`, matching {@link setupAutoUpdater}
- * — an unpackaged build has no installer to run.
+ * Shares {@link beginUpdateRestart} with the native restart dialog, so both
+ * paths ask the same question and tear the server down through the same quit
+ * sequence (`quit-guard.ts`). No-ops when `!app.isPackaged`, matching
+ * {@link setupAutoUpdater} — an unpackaged build has no installer to run.
  */
-export function restartToUpdate(): void {
+export async function restartToUpdate(): Promise<void> {
   if (!app.isPackaged) return;
-  autoUpdater.quitAndInstall();
+  await beginUpdateRestart();
 }
 
 /**

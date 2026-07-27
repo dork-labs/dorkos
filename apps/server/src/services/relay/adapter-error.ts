@@ -12,7 +12,9 @@ export type AdapterErrorCode =
   | 'NOT_FOUND'
   | 'UNKNOWN_TYPE'
   | 'MULTI_INSTANCE_DENIED'
-  | 'REMOVE_BUILTIN_DENIED';
+  | 'REMOVE_BUILTIN_DENIED'
+  /** The entry failed `AdapterConfigSchema` and was refused rather than persisted. */
+  | 'INVALID_CONFIG';
 
 /**
  * Error class for adapter CRUD operations.

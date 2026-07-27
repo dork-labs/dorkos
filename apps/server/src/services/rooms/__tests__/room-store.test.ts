@@ -1,0 +1,424 @@
+/**
+ * `seq` allocation is the one non-obvious thing {@link RoomStore} owns, and the
+ * spec's claim about it — "SQLite serialises writers, so `COALESCE(MAX(seq),0)+1`
+ * inside the insert transaction is safe and needs no counter table" — is load
+ * bearing. So it is proved here under REAL concurrency (worker threads writing
+ * to the same file database at the same time), not just asserted sequentially.
+ *
+ * The other property proved here is an absence: the room log is never trimmed.
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createRequire } from 'node:module';
+import { Worker } from 'node:worker_threads';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { RoomStore, type NewRoomEntry } from '../room-store.js';
+import { EVENT_LOG_MAX_EVENTS } from '../../session/event-log.js';
+
+const require = createRequire(import.meta.url);
+const ROOM_ID = 'room-1';
+
+/** A minimal appendable entry; the caller supplies whatever it wants to vary. */
+function entry(overrides: Partial<NewRoomEntry> & { id: string }): NewRoomEntry {
+  return {
+    roomId: ROOM_ID,
+    authorId: 'author-1',
+    kind: 'post',
+    body: { text: 'hello' },
+    mentions: [],
+    sessionId: null,
+    cascadeRoot: overrides.id,
+    cascadeDepth: 0,
+    createdAt: '2026-07-26T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** Seed a room so `appendEntry`'s `lastActivityAt` update has something to hit. */
+function seedRoom(store: RoomStore, id = ROOM_ID): void {
+  store.createRoom(
+    {
+      id,
+      kind: 'channel',
+      parentId: null,
+      slug: id,
+      title: `#${id}`,
+      topic: null,
+      workspaceId: null,
+      rootEntryId: null,
+      createdAt: '2026-07-26T11:00:00.000Z',
+    },
+    []
+  );
+}
+
+describe('RoomStore seq allocation', () => {
+  let db: Db;
+  let store: RoomStore;
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new RoomStore(db);
+    seedRoom(store);
+  });
+
+  it('allocates 1, 2, 3 … with no gaps', () => {
+    const seqs = ['a', 'b', 'c'].map((id) => store.appendEntry(entry({ id })).seq);
+    expect(seqs).toEqual([1, 2, 3]);
+  });
+
+  it('allocates per room, not globally', () => {
+    seedRoom(store, 'room-2');
+    expect(store.appendEntry(entry({ id: 'a' })).seq).toBe(1);
+    expect(store.appendEntry(entry({ id: 'b', roomId: 'room-2' })).seq).toBe(1);
+    expect(store.appendEntry(entry({ id: 'c' })).seq).toBe(2);
+  });
+
+  it('does not consume a seq when the insert rolls back', () => {
+    store.appendEntry(entry({ id: 'a' }));
+    // A duplicate entry id violates `room_entries_room_id_entry_id_unique`, so
+    // the whole transaction rolls back — including the seq it had read.
+    expect(() => store.appendEntry(entry({ id: 'a' }))).toThrow();
+    expect(store.appendEntry(entry({ id: 'b' })).seq).toBe(2);
+    expect(store.maxSeq(ROOM_ID)).toBe(2);
+  });
+
+  it('bumps the room activity in the same transaction as the entry', () => {
+    store.appendEntry(entry({ id: 'a', createdAt: '2026-07-26T13:00:00.000Z' }));
+    expect(store.getRoom(ROOM_ID)?.lastActivityAt).toBe('2026-07-26T13:00:00.000Z');
+  });
+});
+
+describe('RoomStore.findDmByMemberSet', () => {
+  let store: RoomStore;
+
+  /**
+   * Seed one room holding exactly these authors.
+   *
+   * @param id - The room id, also its title, so a failure names itself.
+   * @param authorIds - The whole roster.
+   * @param opts.kind - Defaults to `dm`.
+   * @param opts.archived - Archive it after creating it.
+   * @param opts.createdAt - Overrides the timestamp the tie-break reads.
+   */
+  function seedDm(
+    id: string,
+    authorIds: readonly string[],
+    opts: { kind?: 'dm' | 'channel'; archived?: boolean; createdAt?: string } = {}
+  ): void {
+    const createdAt = opts.createdAt ?? '2026-07-26T11:00:00.000Z';
+    store.createRoom(
+      {
+        id,
+        kind: opts.kind ?? 'dm',
+        parentId: null,
+        slug: opts.kind === 'channel' ? id : null,
+        title: id,
+        topic: null,
+        workspaceId: null,
+        rootEntryId: null,
+        createdAt,
+      },
+      authorIds.map((authorId) => ({
+        authorId,
+        responseMode: 'always' as const,
+        joinedAt: createdAt,
+      }))
+    );
+    if (opts.archived) store.updateRoom(id, { archived: true });
+  }
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+  });
+
+  it('finds the DM whose roster is exactly the set asked for', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('dm-ana');
+  });
+
+  it('does not care what order the members were named in', () => {
+    seedDm('dm-group', ['me', 'ana', 'kai']);
+    expect(store.findDmByMemberSet(['kai', 'me', 'ana'])?.id).toBe('dm-group');
+    expect(store.findDmByMemberSet(['ana', 'kai', 'me'])?.id).toBe('dm-group');
+  });
+
+  it('does not match a DM that merely CONTAINS the members asked for', () => {
+    // "Me and Ana" is a different conversation from "me, Ana and Kai". A
+    // superset match here would silently reopen the group chat instead.
+    seedDm('dm-group', ['me', 'ana', 'kai']);
+    expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+
+  it('does not match a DM that holds only SOME of the members asked for', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'ana', 'kai'])).toBeNull();
+  });
+
+  it('does not match a set that overlaps without being equal', () => {
+    // Same size, one member different — the case a bare COUNT(*) check passes.
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'kai'])).toBeNull();
+  });
+
+  it('counts the human, so a DM is not identified by its agents alone', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['ana'])).toBeNull();
+  });
+
+  it('ignores a channel holding exactly those members', () => {
+    seedDm('backend', ['me', 'ana'], { kind: 'channel' });
+    expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+
+  it('matches an archived DM, leaving what to do with it to the caller', () => {
+    seedDm('dm-ana', ['me', 'ana'], { archived: true });
+    const found = store.findDmByMemberSet(['me', 'ana']);
+    expect(found?.id).toBe('dm-ana');
+    expect(found?.archived).toBe(true);
+  });
+
+  // The two tie-break tests below name their rooms so that EVERY order the
+  // query could fall back on — insertion order, primary-key order, `createdAt`
+  // — points at the wrong room. An earlier pair of fixtures happened to sort
+  // the way the assertions wanted, so both passed with the `ORDER BY` deleted:
+  // they certified SQLite's index walk rather than this store's tie-break.
+
+  it('prefers a live DM over an archived one holding the same people', () => {
+    // Only pre-existing data can hold two, so the tie-break has to be stated
+    // rather than left to whichever index the planner reaches for. The archived
+    // one sorts first by id AND is older AND was written first.
+    seedDm('aaa-archived', ['me', 'ana'], {
+      archived: true,
+      createdAt: '2026-07-20T10:00:00.000Z',
+    });
+    seedDm('zzz-live', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('zzz-live');
+  });
+
+  it('takes the oldest when two live DMs hold the same people', () => {
+    // The oldest sorts LAST by id and was written second, so only `createdAt`
+    // can produce this answer.
+    seedDm('aaa-newest', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
+    seedDm('zzz-oldest', ['me', 'ana'], { createdAt: '2026-07-20T10:00:00.000Z' });
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('zzz-oldest');
+  });
+
+  it('collapses a member named twice rather than failing to match', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'ana', 'ana'])?.id).toBe('dm-ana');
+  });
+
+  it('answers null for an empty set rather than matching an empty room', () => {
+    seedDm('dm-empty', []);
+    expect(store.findDmByMemberSet([])).toBeNull();
+  });
+
+  it('answers null when there is no DM at all', () => {
+    expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+});
+
+describe('RoomStore never trims the log', () => {
+  // Deliberately heavy: proving the absence of a trim means writing past the cap
+  // through the real append path, which is 5000+ IMMEDIATE transactions. The
+  // default 5s budget is not enough for that on a loaded machine, and a timeout
+  // here would read as "the log trims" — the exact thing this test denies.
+  it(`keeps more than EVENT_LOG_MAX_EVENTS (${EVENT_LOG_MAX_EVENTS}) entries`, () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    const total = EVENT_LOG_MAX_EVENTS + 5;
+    for (let i = 0; i < total; i++) store.appendEntry(entry({ id: `e-${i}` }));
+
+    // The in-memory EventLog and session_events both evict oldest at this cap.
+    // A room that forgot what was said would not be a room, so this one does not.
+    expect(store.maxSeq(ROOM_ID)).toBe(total);
+    expect(store.listEntriesAfter(ROOM_ID, 0)).toHaveLength(total);
+    expect(store.listEntries(ROOM_ID, { limit: 1, before: 2 })[0].seq).toBe(1);
+  }, 60_000);
+});
+
+describe('RoomStore.listRooms ordering', () => {
+  let store: RoomStore;
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+  });
+
+  /** The agent whose membership scopes {@link RoomStore.listRoomsForMember}. */
+  const ANA = 'author-ana';
+
+  /** A channel created — and so last active — at `at`, with Ana on its roster. */
+  function channelAt(id: string, at: string): void {
+    store.createRoom(
+      {
+        id,
+        kind: 'channel',
+        parentId: null,
+        slug: id,
+        title: `#${id}`,
+        topic: null,
+        workspaceId: null,
+        rootEntryId: null,
+        createdAt: at,
+      },
+      [{ authorId: ANA, responseMode: 'always', joinedAt: at }]
+    );
+  }
+
+  it('answers newest activity first', () => {
+    channelAt('old', '2026-07-26T10:00:00.000Z');
+    channelAt('new', '2026-07-26T12:00:00.000Z');
+    channelAt('mid', '2026-07-26T11:00:00.000Z');
+
+    expect(store.listRooms().map((room) => room.id)).toEqual(['new', 'mid', 'old']);
+  });
+
+  it('breaks a tie on the id rather than leaving it to SQLite', () => {
+    // Ties are the common case, not the corner: a room that has never been
+    // posted in has `lastActivityAt === createdAt`, so any batch seeded in one
+    // pass ties outright. Inserted a, c, b — an untied ORDER BY hands those back
+    // in whatever order it likes, and the sidebar reshuffles on every refetch.
+    const tied = '2026-07-26T10:00:00.000Z';
+    channelAt('a', tied);
+    channelAt('c', tied);
+    channelAt('b', tied);
+
+    expect(store.listRooms().map((room) => room.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('orders an agent-scoped listing identically, ties included', () => {
+    // `listRoomsForMember` is the agent-facing sibling and feeds the SAME
+    // endpoint. Asserting only `listRooms` left this half free to drift, and
+    // "the two must not disagree about what newest-first means" is the entire
+    // reason its ORDER BY was touched — so it gets the same proof, not a
+    // comment promising it.
+    const tied = '2026-07-26T10:00:00.000Z';
+    channelAt('a', tied);
+    channelAt('c', tied);
+    channelAt('b', tied);
+    channelAt('newest', '2026-07-26T12:00:00.000Z');
+
+    const scoped = store.listRoomsForMember(ANA).map((room) => room.id);
+    expect(scoped).toEqual(['newest', 'c', 'b', 'a']);
+    expect(scoped).toEqual(store.listRooms().map((room) => room.id));
+  });
+});
+
+/**
+ * The worker body. It mirrors `RoomStore.appendEntry`'s statements rather than
+ * importing the store, because a worker cannot load this repo's TypeScript
+ * without a build step — the point of these threads is to contend for the same
+ * SQLite file at the same time, which is a property of the SQL, not the ORM.
+ * The main thread writes through the real store into the same contention, so
+ * the store's own path is exercised under it.
+ */
+const WORKER_SOURCE = `
+const { workerData, parentPort } = require('node:worker_threads');
+const Database = require(workerData.driver);
+const db = new Database(workerData.dbPath);
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 20000');
+
+const readNext = db.prepare(
+  'SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM room_entries WHERE room_id = ?'
+);
+const insert = db.prepare(
+  'INSERT INTO room_entries (room_id, seq, id, author_id, kind, body, mentions, session_id, cascade_root, cascade_depth, signature, created_at)' +
+    " VALUES (?, ?, ?, ?, 'post', '{\\"text\\":\\"x\\"}', '[]', NULL, ?, 0, NULL, '2026-07-26T12:00:00.000Z')"
+);
+const append = db.transaction((entryId) => {
+  const seq = readNext.get(workerData.roomId).next;
+  insert.run(workerData.roomId, seq, entryId, 'author-1', entryId);
+  return seq;
+});
+
+parentPort.postMessage({ ready: true });
+parentPort.once('message', () => {
+  const seqs = [];
+  for (let i = 0; i < workerData.count; i++) {
+    seqs.push(append.immediate(workerData.label + '-' + i));
+  }
+  db.close();
+  parentPort.postMessage({ seqs });
+});
+`;
+
+/** Spawn one writer thread and resolve once it has signalled readiness. */
+function spawnWriter(opts: {
+  dbPath: string;
+  roomId: string;
+  label: string;
+  count: number;
+}): Promise<{ worker: Worker; done: Promise<number[]> }> {
+  const worker = new Worker(WORKER_SOURCE, {
+    eval: true,
+    workerData: { ...opts, driver: require.resolve('better-sqlite3') },
+  });
+  return new Promise((resolve, reject) => {
+    const done = new Promise<number[]>((resolveDone, rejectDone) => {
+      worker.on('message', (msg: { ready?: boolean; seqs?: number[] }) => {
+        if (msg.ready) {
+          resolve({ worker, done });
+        } else if (msg.seqs) {
+          resolveDone(msg.seqs);
+        }
+      });
+      worker.on('error', (err) => {
+        rejectDone(err);
+        reject(err);
+      });
+    });
+  });
+}
+
+describe('RoomStore seq allocation under concurrent writers', () => {
+  let dir: string;
+  let dbPath: string;
+  let db: Db;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-rooms-seq-'));
+    dbPath = path.join(dir, 'rooms.db');
+    db = createDb(dbPath);
+    runMigrations(db);
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('never issues the same seq twice, and leaves no gaps', async () => {
+    const store = new RoomStore(db);
+    seedRoom(store);
+
+    const perWriter = 20;
+    const writers = await Promise.all(
+      ['w1', 'w2', 'w3'].map((label) =>
+        spawnWriter({ dbPath, roomId: ROOM_ID, label, count: perWriter })
+      )
+    );
+
+    // All three threads are parked on the barrier. Release them and write from
+    // this thread through the real store at the same time, so the drizzle path
+    // is inside the contention rather than watching it.
+    for (const { worker } of writers) worker.postMessage('go');
+    const mine: number[] = [];
+    for (let i = 0; i < perWriter; i++) {
+      mine.push(store.appendEntry(entry({ id: `main-${i}` })).seq);
+    }
+
+    const theirs = await Promise.all(writers.map(({ done }) => done));
+    await Promise.all(writers.map(({ worker }) => worker.terminate()));
+
+    const all = [...mine, ...theirs.flat()].sort((a, b) => a - b);
+    const expected = Array.from({ length: perWriter * 4 }, (_, i) => i + 1);
+
+    expect(all).toEqual(expected);
+    expect(new Set(all).size).toBe(all.length);
+    expect(store.maxSeq(ROOM_ID)).toBe(perWriter * 4);
+  }, 30_000);
+});

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TelegramAdapter } from '../index.js';
 import type { RelayPublisher, Unsubscribe } from '../../../types.js';
+import type { z } from 'zod';
+import { TelegramAdapterConfigSchema } from '@dorkos/shared/relay-schemas';
+import type { TelegramAdapterConfig } from '../../../types.js';
 
 // --- node:http mock ---
 // Replaces the real HTTP server to avoid port-binding in tests and to expose
@@ -131,6 +134,18 @@ vi.mock('@grammyjs/auto-retry', () => ({
   autoRetry: vi.fn().mockReturnValue(vi.fn()),
 }));
 
+/**
+ * A Telegram adapter config with schema defaults filled in.
+ *
+ * Built through `TelegramAdapterConfigSchema` rather than as an object literal
+ * so the fixture inherits every default the real config path applies. When the
+ * schema gains a field (as it did with `streaming`), these call sites keep
+ * compiling and keep matching production instead of drifting.
+ */
+function tgConfig(overrides: z.input<typeof TelegramAdapterConfigSchema>): TelegramAdapterConfig {
+  return TelegramAdapterConfigSchema.parse(overrides);
+}
+
 // --- Relay mock helpers ---
 
 function createMockRelay(): RelayPublisher {
@@ -141,6 +156,7 @@ function createMockRelay(): RelayPublisher {
 
   const relay: RelayPublisher = {
     publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+    subscribe: vi.fn().mockReturnValue(() => {}),
     onSignal: vi
       .fn()
       .mockImplementation(
@@ -239,7 +255,13 @@ describe('TelegramAdapter', () => {
     _capturedOnStart = null;
     lastMockServer = null;
 
-    adapter = new TelegramAdapter('tg1', { token: 'test-token', mode: 'polling' });
+    // User 42 is the approver these tests press buttons as. Without a named
+    // approver every approval is refused, which is the point of DOR-609 — the
+    // refusal path has its own tests below.
+    adapter = new TelegramAdapter(
+      'tg1',
+      tgConfig({ token: 'test-token', mode: 'polling', approverAllowlist: ['42'] })
+    );
     mockRelay = createMockRelay();
   });
 
@@ -265,7 +287,7 @@ describe('TelegramAdapter', () => {
   it('accepts a custom displayName', () => {
     const custom = new TelegramAdapter(
       'tg-work',
-      { token: 'tok', mode: 'polling' },
+      tgConfig({ token: 'tok', mode: 'polling' }),
       'Work Telegram'
     );
     expect(custom.displayName).toBe('Work Telegram');
@@ -818,12 +840,15 @@ describe('TelegramAdapter', () => {
   // --- Webhook mode ---
 
   it('webhook mode: calls setWebhook and starts webhook server', async () => {
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      webhookUrl: 'https://example.com/webhook',
-      webhookPort: 8443,
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+      })
+    );
 
     await webhookAdapter.start(mockRelay);
 
@@ -836,11 +861,14 @@ describe('TelegramAdapter', () => {
   });
 
   it('webhook mode: throws if webhookUrl is missing', async () => {
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      // no webhookUrl
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        // no webhookUrl
+      })
+    );
 
     await expect(webhookAdapter.start(mockRelay)).rejects.toThrow('webhookUrl is required');
   });
@@ -861,13 +889,16 @@ describe('TelegramAdapter', () => {
   it('webhook mode: passes secret_token to setWebhook and webhookCallback', async () => {
     const { webhookCallback } = await import('grammy');
 
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      webhookUrl: 'https://example.com/webhook',
-      webhookPort: 8443,
-      webhookSecret: 'my-fixed-secret',
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+        webhookSecret: 'my-fixed-secret',
+      })
+    );
 
     await webhookAdapter.start(mockRelay);
 
@@ -885,12 +916,15 @@ describe('TelegramAdapter', () => {
   });
 
   it('webhook mode: auto-generates secret when webhookSecret is not provided', async () => {
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      webhookUrl: 'https://example.com/webhook',
-      webhookPort: 8443,
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+      })
+    );
 
     await webhookAdapter.start(mockRelay);
 
@@ -1094,6 +1128,74 @@ describe('TelegramAdapter', () => {
     });
   });
 
+  /**
+   * DOR-609. The approval card lands in the same chat that asked for the turn,
+   * so without this check the person who sent the message could approve their
+   * own tool call with one tap. `respondedBy` recorded who acted; nothing
+   * decided who may.
+   */
+  describe('approval authorization', () => {
+    /** Deliver a card and press Approve as `userId`. */
+    async function pressApproveAs(userId: number) {
+      await adapter.start(mockRelay);
+      const envelope = createEnvelope('relay.human.telegram.tg1.12345', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_auth',
+          toolName: 'Bash',
+          input: '{"command":"rm -rf ~"}',
+          timeoutMs: 0,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      await adapter.deliver('relay.human.telegram.tg1.12345', envelope);
+
+      const sendCall = mockSendMessage.mock.calls.at(-1)!;
+      const approveData = (
+        sendCall[2] as { reply_markup: { inline_keyboard: { callback_data: string }[][] } }
+      ).reply_markup.inline_keyboard[0][0].callback_data;
+
+      const ctx = {
+        callbackQuery: { data: approveData },
+        from: { id: userId },
+        answerCallbackQuery: vi.fn().mockResolvedValue(true),
+        editMessageText: vi.fn().mockResolvedValue(true),
+      };
+      vi.mocked(mockRelay.publish).mockClear();
+      await capturedCallbackQueryHandler!(ctx);
+      return ctx;
+    }
+
+    it('refuses a user who is not on the approver list', async () => {
+      const ctx = await pressApproveAs(9999);
+
+      expect(mockRelay.publish).not.toHaveBeenCalled();
+      expect(ctx.editMessageText).not.toHaveBeenCalled();
+      expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ show_alert: true })
+      );
+    });
+
+    it('allows the named approver', async () => {
+      await pressApproveAs(42);
+
+      expect(mockRelay.publish).toHaveBeenCalledWith(
+        'relay.system.approval.agent-1',
+        expect.objectContaining({ approved: true, respondedBy: '42' }),
+        { from: 'telegram:42' }
+      );
+    });
+
+    it('refuses everyone when no approver list is configured', async () => {
+      adapter = new TelegramAdapter('tg1', tgConfig({ token: 'test-token', mode: 'polling' }));
+      const ctx = await pressApproveAs(42);
+
+      expect(mockRelay.publish).not.toHaveBeenCalled();
+      expect(ctx.editMessageText).not.toHaveBeenCalled();
+    });
+  });
+
   // --- H2: formatted long messages split into valid HTML chunks ---
 
   it('deliver() splits >4096-char formatted content into valid HTML chunks each within the limit (H2)', async () => {
@@ -1198,12 +1300,15 @@ describe('TelegramAdapter', () => {
   // --- C4: Webhook server startup uses server.once for error handler ---
 
   it('webhook startup registers the error handler with once() not on() (C4)', async () => {
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      webhookUrl: 'https://example.com/webhook',
-      webhookPort: 8443,
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+      })
+    );
 
     await webhookAdapter.start(mockRelay);
 
@@ -1223,12 +1328,15 @@ describe('TelegramAdapter', () => {
   // --- C5: Webhook server shutdown calls closeAllConnections() before close() ---
 
   it('stop() calls closeAllConnections() before server.close() (C5)', async () => {
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      webhookUrl: 'https://example.com/webhook',
-      webhookPort: 8443,
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+      })
+    );
 
     await webhookAdapter.start(mockRelay);
 
@@ -1248,12 +1356,15 @@ describe('TelegramAdapter', () => {
   // --- M8: Webhook cleanup on stop ---
 
   it('stop() calls deleteWebhook() in webhook mode (M8)', async () => {
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      webhookUrl: 'https://example.com/webhook',
-      webhookPort: 8443,
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+      })
+    );
 
     await webhookAdapter.start(mockRelay);
     await webhookAdapter.stop();
@@ -1269,12 +1380,15 @@ describe('TelegramAdapter', () => {
   });
 
   it('stop() succeeds even when deleteWebhook() throws', async () => {
-    const webhookAdapter = new TelegramAdapter('tg-webhook', {
-      token: 'test-token',
-      mode: 'webhook',
-      webhookUrl: 'https://example.com/webhook',
-      webhookPort: 8443,
-    });
+    const webhookAdapter = new TelegramAdapter(
+      'tg-webhook',
+      tgConfig({
+        token: 'test-token',
+        mode: 'webhook',
+        webhookUrl: 'https://example.com/webhook',
+        webhookPort: 8443,
+      })
+    );
 
     await webhookAdapter.start(mockRelay);
     mockDeleteWebhook.mockRejectedValueOnce(new Error('Network error'));

@@ -1,52 +1,39 @@
 /**
- * MCP tool inventory and group definitions for the Settings Tools tab.
+ * Tool group display metadata for the Settings Tools tab.
  *
- * Display names omit the `mcp__dorkos__` prefix. The source of truth for the
- * server-side equivalent lives in `services/runtimes/claude-code/tool-filter.ts` —
- * keep the two in sync when adding/removing tools.
+ * The tool NAMES are not written down here. Which tools each toggle covers is
+ * declared once in `@dorkos/shared/mcp-tool-groups` and shared with the server's
+ * session tool list, so the screen cannot claim a tool set the server does not
+ * build (DOR-499). This module holds only what is genuinely presentational: the
+ * labels, the descriptions, and the order the groups appear in.
+ *
+ * Display names omit the `mcp__dorkos__` prefix, which is what the shared table
+ * stores.
  *
  * @module features/settings/config/tool-inventory
  */
-/** Inventory of tool names per domain — display names without `mcp__dorkos__` prefix. */
-export const TOOL_INVENTORY = {
-  core: ['ping', 'get_server_info', 'get_session_count', 'get_agent', 'control_ui', 'get_ui_state'],
-  tasks: ['tasks_list', 'tasks_create', 'tasks_update', 'tasks_delete', 'tasks_get_run_history'],
-  relay: [
-    'relay_send',
-    'relay_inbox',
-    'relay_list_endpoints',
-    'relay_register_endpoint',
-    'relay_send_and_wait',
-    'relay_send_async',
-    'relay_unregister_endpoint',
-    'relay_get_trace',
-    'relay_get_metrics',
-  ],
-  mesh: [
-    'mesh_discover',
-    'mesh_register',
-    'mesh_list',
-    'mesh_deny',
-    'mesh_unregister',
-    'mesh_status',
-    'mesh_inspect',
-    'mesh_query_topology',
-  ],
-  adapter: [
-    'relay_list_adapters',
-    'relay_enable_adapter',
-    'relay_disable_adapter',
-    'relay_reload_adapters',
-    'binding_list',
-    'binding_create',
-    'binding_delete',
-    'binding_list_sessions',
-    'relay_notify_user',
-  ],
-} as const;
+import {
+  SESSION_CORE_TOOL_NAMES,
+  toolNamesForDomain,
+  type ToolDomainKey,
+} from '@dorkos/shared/mcp-tool-groups';
 
-/** Identifier for a toggleable tool domain. */
-export type ToolDomainKey = 'tasks' | 'relay' | 'mesh' | 'adapter';
+export type { ToolDomainKey };
+
+/**
+ * Tool names per toggle, derived from the shared group table.
+ *
+ * `core` is the set no toggle controls; the other four each list everything their
+ * toggle covers, including the groups that implicitly follow it (trace follows
+ * Messaging, chat routes follow External Integrations).
+ */
+export const TOOL_INVENTORY: Readonly<Record<'core' | ToolDomainKey, readonly string[]>> = {
+  core: SESSION_CORE_TOOL_NAMES,
+  tasks: toolNamesForDomain('tasks'),
+  relay: toolNamesForDomain('relay'),
+  mesh: toolNamesForDomain('mesh'),
+  adapter: toolNamesForDomain('adapter'),
+};
 
 /** Server-config key that controls whether a tool domain is enabled by default. */
 export type GlobalConfigKey = 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools';
@@ -81,7 +68,7 @@ export const TOOL_GROUPS: ToolGroupDef[] = [
     label: 'Relay (Messaging)',
     description: 'Send messages, check inbox, register endpoints',
     tools: TOOL_INVENTORY.relay,
-    implicitNote: 'Includes trace tools (relay_get_trace, relay_get_metrics)',
+    implicitNote: 'Includes trace tools',
   },
   {
     key: 'mesh',
@@ -94,6 +81,6 @@ export const TOOL_GROUPS: ToolGroupDef[] = [
     label: 'Relay Adapters',
     description: 'Manage Telegram, Slack, webhooks, and bindings',
     tools: TOOL_INVENTORY.adapter,
-    implicitNote: 'Includes binding tools (binding_list, binding_create, binding_delete)',
+    implicitNote: 'Includes binding tools',
   },
 ];

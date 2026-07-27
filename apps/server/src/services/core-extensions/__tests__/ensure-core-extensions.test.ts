@@ -153,38 +153,73 @@ describe('ensureCoreExtensions', () => {
     expect(manifest.version).toBe('1.0.0');
   });
 
-  it('is a no-op when the installed version already matches', async () => {
+  // --- The staged copy is DorkOS's code, not whatever is sitting there (DOR-516) ---
+  //
+  // `origin: 'core'` exempts an extension from the load approval, and it means "the
+  // copy this function staged". So a staged directory has to actually hold the
+  // bundled code. Skipping the copy on a version match made `version` the thing that
+  // decided that, and a tamperer simply does not bump it.
+
+  it('restages over an edited server entry even when the version is unchanged', async () => {
     await writeExtension(sourceRoot, 'stable', { version: '3.1.4' });
-    // Pre-stage the destination at the same version, with a sentinel file.
+    await fs.writeFile(
+      path.join(sourceRoot, 'stable', 'server.ts'),
+      'export default function register() {}\n',
+      'utf-8'
+    );
+    // A tamperer edits the staged copy in place and leaves `version` alone, so a
+    // version-match check sees nothing to do.
     await fs.mkdir(destDir('stable'), { recursive: true });
     await fs.writeFile(
       destManifest('stable'),
       JSON.stringify({ id: 'stable', name: 'stable', version: '3.1.4' }, null, 2),
       'utf-8'
     );
-    const sentinelPath = path.join(destDir('stable'), 'sentinel.txt');
-    await fs.writeFile(sentinelPath, 'untouched', 'utf-8');
-    const beforeStat = await fs.stat(destManifest('stable'));
+    await fs.writeFile(
+      path.join(destDir('stable'), 'server.ts'),
+      'export default function register() { PLANTED(); }\n',
+      'utf-8'
+    );
 
     await ensureCoreExtensions(dorkHome, sourceRoot);
 
-    const afterStat = await fs.stat(destManifest('stable'));
-    expect(afterStat.mtimeMs).toBe(beforeStat.mtimeMs);
-    // Sentinel survives because copyDirectory was never invoked.
-    expect(await fs.readFile(sentinelPath, 'utf-8')).toBe('untouched');
+    const staged = await fs.readFile(path.join(destDir('stable'), 'server.ts'), 'utf-8');
+    expect(staged).not.toContain('PLANTED');
+    expect(staged).toBe('export default function register() {}\n');
+  });
+
+  it('replaces a symlink standing where the staged directory belongs', async () => {
+    await writeExtension(sourceRoot, 'linked', { version: '1.0.0' });
+    // A symlink would let `fs.cp` write THROUGH it, leaving a "core" directory whose
+    // real contents live somewhere DorkOS never wrote.
+    const elsewhere = path.join(dorkHome, 'elsewhere');
+    await fs.mkdir(elsewhere, { recursive: true });
+    await fs.writeFile(path.join(elsewhere, 'index.ts'), '// planted\n', 'utf-8');
+    await fs.mkdir(path.join(dorkHome, 'extensions'), { recursive: true });
+    await fs.symlink(elsewhere, destDir('linked'), 'dir');
+
+    await ensureCoreExtensions(dorkHome, sourceRoot);
+
+    const stats = await fs.lstat(destDir('linked'));
+    expect(stats.isSymbolicLink()).toBe(false);
+    expect(await fs.readFile(path.join(destDir('linked'), 'index.ts'), 'utf-8')).toBe(
+      '// fake core extension entry\n'
+    );
+    // The link target was not written through.
+    expect(await fs.readFile(path.join(elsewhere, 'index.ts'), 'utf-8')).toBe('// planted\n');
   });
 
   it('is idempotent across repeat calls', async () => {
     await writeExtension(sourceRoot, 'idem', { version: '1.0.0' });
 
     const first = await ensureCoreExtensions(dorkHome, sourceRoot);
-    const beforeStat = await fs.stat(destManifest('idem'));
     const second = await ensureCoreExtensions(dorkHome, sourceRoot);
-    const afterStat = await fs.stat(destManifest('idem'));
 
+    // Idempotent in RESULT, not in "did nothing": the second call restages the same
+    // bytes, which is the point.
     expect(first).toEqual(second);
-    // Second call is a no-op: the staged manifest is not rewritten.
-    expect(afterStat.mtimeMs).toBe(beforeStat.mtimeMs);
+    const entries = await fs.readdir(destDir('idem'));
+    expect(entries.sort()).toEqual(['extension.json', 'index.ts']);
   });
 
   it('returns an empty array when the source dir does not exist', async () => {

@@ -119,7 +119,6 @@ import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
-  AutoApproveConfirmationProvider,
   TokenConfirmationProvider,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
@@ -139,6 +138,9 @@ import {
   ApprovalGrantService,
   ApprovalService,
   initStandingGrantPosture,
+  readStandingGrantPosture,
+  readStandingGrantSettings,
+  revokeStandingGrantsIfPostureForbids,
   resolveApprovalTtlMs,
 } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
@@ -156,8 +158,10 @@ import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import { createDb, runMigrations, agents } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
+import { acquireInstanceLock } from './lib/instance-lock.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
+import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
@@ -220,6 +224,10 @@ let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
+// Drops this process's claim on the data directory. Called from
+// shutdownServices() rather than shutdown(), because the admin restart path runs
+// the former and then spawns a successor that must find the directory free.
+let releaseInstanceLock: (() => void) | undefined;
 
 async function start() {
   // KEEP IN SYNC with `bootInProcessTestServer()` in `harness-boot.ts`: the
@@ -238,6 +246,21 @@ async function start() {
 
   const logLevel = env.DORKOS_LOG_LEVEL;
   initLogger({ level: logLevel, logDir: path.join(dorkHome, 'logs') });
+
+  // One server per data directory (DOR-532). Claimed here, before the database
+  // opens and before any reconciler starts, because a second instance sharing
+  // this directory would corrupt both. The port check further down catches only
+  // the case where both listen on the same port; this catches the rest.
+  const lock = acquireInstanceLock({ dorkHome, port: PORT, version: SERVER_VERSION });
+  if (!lock.acquired) {
+    logger.error(lock.reason);
+    // Also to stderr: an operator starting from a terminal must see this even
+    // when the logger only writes to the log file.
+    console.error(`\n${lock.reason}\n`);
+    process.exit(1);
+  }
+  releaseInstanceLock = lock.release;
+
   initConfigManager(dorkHome);
   // Credential substrate (ADR-0315): resolves stored credential references to
   // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
@@ -376,9 +399,10 @@ async function start() {
   };
   const telemetryDebug = isTelemetryDebugEnabled(telemetryEnv);
 
-  // Tier 1 opt-out telemetry (ADR 260713-143958). The heartbeat, install, and
-  // feature-usage channels default ON and are genuinely anonymous, but the
-  // Homebrew ordering rule requires a first-run notice before anything sends.
+  // Anonymous telemetry (ADR 260713-143958, posture revised by 260727-182651).
+  // The heartbeat, install, and feature-usage channels default OFF; on top of
+  // that the Homebrew ordering rule requires a first-run notice before anything
+  // sends, so the gate below is a second lock, not the only one.
   // `decideTier1Boot` reads the consent snapshot ONCE, here, and captures the
   // send gate BEFORE the notice writes `lastPromptedVersion` — so nothing sends
   // on the boot that first shows the notice, and the install reporter (below),
@@ -390,7 +414,7 @@ async function start() {
   const tier1SendGate = tier1Boot.sendGate;
 
   // Register the dorkos.ai marketplace install reporter. No-op unless
-  // `config.telemetry.install` is on (default true), no env kill switch is set,
+  // `config.telemetry.install` is on (default false), no env kill switch is set,
   // AND the Tier 1 notice gate is open. The reporter forwards `InstallEvent`s
   // emitted by the marketplace install pipeline to
   // https://dorkos.ai/api/telemetry/install with a stable per-machine install ID
@@ -415,15 +439,18 @@ async function start() {
   }
 
   // Register the anonymous feature-usage reporter (DOR-315, ADR 260713-143958
-  // Phase 3). Tier 1: `telemetry.usage` defaults ON, but sends only when no env
+  // Phase 3). `telemetry.usage` defaults OFF, and sends only when no env
   // kill switch is set (`resolveTelemetryConsent`) AND the CAPTURED pre-notice
   // `tier1SendGate` above is open — the same snapshotted gate the install and
   // heartbeat senders use, never re-read after the notice writes
   // `lastPromptedVersion`, so a never-prompted install sends nothing this boot.
   // No-op (no timer, no network) unless all three hold. Curated events flow
   // through the owned ingest at https://dorkos.ai/api/telemetry/events.
+  // `?? false`, matching the install and heartbeat gates above and below. A
+  // config block that is present but missing this key is not a person saying
+  // yes to it, and absence is never read as consent.
   const usageConsent =
-    resolveTelemetryConsent(telemetryConfig?.usage ?? true, telemetryEnv) && tier1SendGate;
+    resolveTelemetryConsent(telemetryConfig?.usage ?? false, telemetryEnv) && tier1SendGate;
   registerUsageReporter({
     enabled: usageConsent,
     debug: telemetryDebug,
@@ -673,6 +700,15 @@ async function start() {
     workspaceReconciler.start();
     logger.info('[Workspace] WorkspaceManager registered');
   }
+
+  // Rooms subsystem (spec `rooms`, ADR 260726-170125) — channels, DMs and
+  // threads. Unconditional: a room is a durable store plus an in-process
+  // broadcaster, so an install with no rooms in it costs one object graph and
+  // no background work. A post now triggers whoever it addresses, bounded by
+  // the cascade guard (`rooms.maxAgentDepth`, ADR 260726-170127).
+  const { service: roomService } = createRoomSubsystem({ db });
+  setRoomService(roomService);
+  logger.info('[Rooms] RoomService registered');
 
   // Initialize Tasks scheduler if enabled
   const schedulerConfig = configManager.get('scheduler');
@@ -960,6 +996,30 @@ async function start() {
     }
   } catch (err) {
     logger.warn('[Approvals] Failed to purge expired standing permissions (non-fatal)', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  // No permission may be live unless BOTH settings license one. The posture seam
+  // above catches a setting being turned off through `PATCH /api/config`, but
+  // `dorkos config set` writes the file directly and out of process, so it reaches
+  // no seam at all. This is the floor under both: a restart always starts from a
+  // state that matches the settings, rather than waking permissions the operator
+  // switched the feature — or login — off with.
+  try {
+    revokeStandingGrantsIfPostureForbids(readStandingGrantPosture());
+    // …and end the ones an out-of-process settings round trip already voided
+    // (DOR-520). The sweep above cannot see those: by the time the server starts,
+    // the switch is back on and the posture looks fine. The store refuses them on
+    // every read regardless of this call; running it here is what makes the stored
+    // rows say so too, instead of reading as permissions that quietly expired.
+    const voided = approvalGrantService.revokeVoidedByPosture();
+    if (voided > 0) {
+      logger.info(
+        `[Approvals] Ended ${voided} standing permission(s) that a settings change had voided`
+      );
+    }
+  } catch (err) {
+    logger.warn('[Approvals] Failed to reconcile standing permissions with the setting', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -1308,7 +1368,16 @@ async function start() {
 
   // Approvals — always available. The cockpit lists what is waiting on a person
   // and records their decision (spec `agent-trust` §3.3).
-  app.use('/api/approvals', createApprovalsRouter(approvalService, { activity: activityService }));
+  app.use(
+    '/api/approvals',
+    createApprovalsRouter(approvalService, approvalGrantService, {
+      activity: activityService,
+      // The permissions list names the action the way the approval card does, from
+      // the registry rather than from whoever asked. Read lazily for the same
+      // reason `approvalService` reads it lazily: the registry is composed later.
+      describeCapability: (capabilityId) => capabilityRegistry?.get(capabilityId),
+    })
+  );
 
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
@@ -1605,14 +1674,13 @@ async function start() {
     }
 
     // Build the confirmation provider that gates marketplace mutation tools.
-    // `MARKETPLACE_AUTO_APPROVE=1` selects the auto-approve provider for CI
-    // and tests; everything else uses the token provider, which records an
-    // approval the operator decides from the cockpit's approval card
-    // (`POST /api/approvals/:id/grant|deny`).
-    const confirmationProvider: ConfirmationProvider =
-      env.MARKETPLACE_AUTO_APPROVE === '1'
-        ? new AutoApproveConfirmationProvider()
-        : new TokenConfirmationProvider(approvalService);
+    // There is exactly one, and no way to switch it off: it records an approval
+    // the operator decides from the cockpit's approval card
+    // (`POST /api/approvals/:id/grant|deny`). Automation answers that approval
+    // through the same routes a person uses rather than skipping it (DOR-501).
+    const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
+      approvalService
+    );
 
     marketplaceMcpDeps = {
       dorkHome,
@@ -1678,6 +1746,14 @@ async function start() {
   initCapabilityTierGate({
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),
+    // Standing permissions (spec `agent-approval-settings` §3.3). Both halves are
+    // read per gated call rather than captured here: the master switch can be
+    // turned off between two invocations and a permission runs out on a clock, so
+    // the guarantee "the very next call asks again" has to come from a fresh read.
+    standingGrants: {
+      enabled: () => readStandingGrantSettings().enabled,
+      findLive: (agentPath, capabilityId) => approvalGrantService.findLive(agentPath, capabilityId),
+    },
   });
   // GET /api/capabilities/catalog — the self-description catalog. (The bare
   // `/api/capabilities` path already serves the per-runtime capability matrix, a
@@ -1748,7 +1824,7 @@ async function start() {
     });
 
     // Register the anonymous daily heartbeat (Tier 1 opt-out; ADR 260713-143958).
-    // `config.telemetry.heartbeat` defaults ON, but the send folds in the env
+    // `config.telemetry.heartbeat` defaults OFF, and the send folds in the env
     // kill switch AND the `tier1SendGate` captured at boot (BEFORE the first-run
     // notice wrote `lastPromptedVersion`), so a first-notice boot sends nothing.
     // Payload documented at https://dorkos.ai/telemetry (DOR-293).
@@ -1910,6 +1986,11 @@ async function shutdownServices() {
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
   await shutdownObservability();
+  // Give up the data directory last, once nothing is still writing to it. The
+  // admin restart path calls this function and then spawns a successor, so the
+  // release has to happen here rather than in shutdown().
+  releaseInstanceLock?.();
+  releaseInstanceLock = undefined;
 }
 
 // Graceful shutdown — guarded against concurrent signals (SIGINT + SIGTERM)

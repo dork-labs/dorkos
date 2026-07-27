@@ -297,7 +297,9 @@ describe('enforceCapabilityTier', () => {
       const decision = enforce('destructive', 'destructive', token);
       expect(decision.outcome).toBe('allowed');
       if (decision.outcome !== 'allowed') throw new Error('unreachable');
-      expect(decision.approval?.approvalId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+      expect(decision.approval?.via).toBe('approval');
+      if (decision.approval?.via !== 'approval') throw new Error('unreachable');
+      expect(decision.approval.approvalId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     });
 
     it('refuses a REPLAY of the same granted token', () => {

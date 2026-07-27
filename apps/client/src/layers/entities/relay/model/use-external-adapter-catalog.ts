@@ -4,7 +4,7 @@ import { useAdapterCatalog } from './use-adapter-catalog';
 
 /**
  * The `internal` adapter category identifies runtime-bridge adapters
- * (e.g., `claude-code`) that must never surface in channel pickers.
+ * (e.g., `claude-code`) that must never surface in integration pickers.
  */
 export const ADAPTER_CATEGORY_INTERNAL: AdapterCategory = 'internal';
 
@@ -12,10 +12,10 @@ export const ADAPTER_CATEGORY_INTERNAL: AdapterCategory = 'internal';
  * Adapter catalog with `category: 'internal'` entries filtered out.
  *
  * Use this hook instead of {@link useAdapterCatalog} in any UI surface
- * that presents adapters as "channels" to the user. Runtime-bridge
+ * that presents adapters as "integrations" to the user. Runtime-bridge
  * adapters (the `claude-code` adapter is the canonical example) are never
- * a "channel" to add or configure like Telegram or Slack — the Settings
- * Channels tab surfaces the claude-code instance separately, under its own
+ * an "integration" to add or configure like Telegram or Slack — the Settings
+ * Integrations tab surfaces the claude-code instance separately, under its own
  * "Session Delivery" section, sourced directly from {@link useAdapterCatalog}.
  *
  * The underlying query is shared with `useAdapterCatalog` via TanStack

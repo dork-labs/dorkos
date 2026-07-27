@@ -3,25 +3,13 @@
  *
  * @module features/chat/ui/message/MessageAuthorAvatar
  */
-import { AgentAvatar, agentAvatarVariants } from '@/layers/entities/agent';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { cn, hashToHslColor } from '@/layers/shared/lib';
+import { cn, hashToHslColor, initialOf } from '@/layers/shared/lib';
+import { IdentityAvatar } from '@/layers/shared/ui';
 import type { MessageAuthor } from '@/layers/shared/model';
-
-/** Glyph for a display name with no letter or digit to draw an initial from. */
-const FALLBACK_INITIAL = '?';
 
 /** Edge length of the runtime brand mark inside the avatar circle, in pixels. */
 const BRAND_MARK_SIZE = 14;
-
-/** How much of the author's color tints the avatar circle — matches `AgentAvatar`. */
-const TINT_STRENGTH = '18%';
-
-/** First letter or digit of a display name, uppercased. */
-function initialOf(displayName: string): string {
-  const match = /\p{L}|\p{N}/u.exec(displayName);
-  return match ? match[0].toUpperCase() : FALLBACK_INITIAL;
-}
 
 export interface MessageAuthorAvatarProps {
   /** The message's resolved author. */
@@ -42,35 +30,18 @@ export interface MessageAuthorAvatarProps {
  * hidden from assistive technology.
  */
 export function MessageAuthorAvatar({ author, className }: MessageAuthorAvatarProps) {
-  if (author.emoji) {
-    return (
-      <AgentAvatar
-        color={author.color ?? hashToHslColor(author.id)}
-        emoji={author.emoji}
-        className={cn('size-[var(--msg-gutter-width)]', className)}
-      />
-    );
-  }
-
-  const brand = author.runtime ? getRuntimeDescriptor(author.runtime) : null;
+  const brand = author.emoji || !author.runtime ? null : getRuntimeDescriptor(author.runtime);
   const BrandMark = brand?.icon;
   const color = brand?.accent ?? author.color ?? hashToHslColor(author.id);
 
   return (
-    <span
+    <IdentityAvatar
       data-slot="message-author-avatar"
       aria-hidden
-      className={cn(
-        agentAvatarVariants(),
-        'size-[var(--msg-gutter-width)] text-xs font-medium',
-        className
-      )}
-      // The tint is mixed from a per-author color — a hash or a runtime accent —
-      // that Tailwind cannot know at build time, the same reason AgentAvatar
-      // styles its own background inline.
-      style={{ backgroundColor: `color-mix(in oklch, ${color} ${TINT_STRENGTH}, transparent)` }}
-    >
-      {BrandMark ? <BrandMark size={BRAND_MARK_SIZE} /> : initialOf(author.displayName)}
-    </span>
+      color={color}
+      emoji={author.emoji}
+      fallback={BrandMark ? <BrandMark size={BRAND_MARK_SIZE} /> : initialOf(author.displayName)}
+      className={cn('size-[var(--msg-gutter-width)]', className)}
+    />
   );
 }

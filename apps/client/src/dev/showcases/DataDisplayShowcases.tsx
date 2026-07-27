@@ -9,12 +9,21 @@ import {
   ScanLine,
   MarkdownContent,
   FeatureDisabledState,
+  IdentityAvatar,
   ScrollArea,
   ScrollBar,
   Switch,
   Label,
   Input,
 } from '@/layers/shared/ui';
+
+/** Identities the avatar showcase draws: one with an emoji, one without. */
+const IDENTITIES = [
+  { color: '#6366f1', emoji: '🔍', name: 'code-reviewer' },
+  { color: '#f59e0b', emoji: '🚀', name: 'deploy-bot' },
+  { color: '#10b981', name: 'Priya' },
+  { color: '#ef4444', name: 'You' },
+] as const;
 
 const SAMPLE_MARKDOWN = `## Agent Report
 
@@ -36,7 +45,7 @@ const agent = await runtime.spawn({
 > DorkOS coordinates. Agents deliver.
 `;
 
-/** Data display component showcases: PathBreadcrumb, ScanLine, MarkdownContent, FeatureDisabledState, ScrollArea. */
+/** Data display component showcases: PathBreadcrumb, ScanLine, MarkdownContent, FeatureDisabledState, IdentityAvatar, ScrollArea. */
 export function DataDisplayShowcases() {
   const [isStreaming, setIsStreaming] = useState(true);
   const [scanColor, setScanColor] = useState('#3b82f6');
@@ -184,6 +193,55 @@ export function DataDisplayShowcases() {
             </div>
             <ScrollBar orientation="horizontal" />
           </ScrollArea>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="IdentityAvatar"
+        description="The one tinted disc every identity is drawn as — an agent, a person, whoever a direct message is with. Shows its emoji when it has one, its initial when it does not."
+      >
+        <ShowcaseLabel>Sizes</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex items-end gap-4">
+            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+              <div key={size} className="flex flex-col items-center gap-2">
+                <IdentityAvatar color="#6366f1" emoji="🔍" size={size} />
+                <IdentityAvatar color="#6366f1" fallback="R" size={size} />
+                <span className="text-muted-foreground text-[10px]">{size}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Both faces, side by side</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex items-center gap-3">
+            {IDENTITIES.map((identity) => (
+              <IdentityAvatar
+                key={identity.name}
+                color={identity.color}
+                emoji={'emoji' in identity ? identity.emoji : undefined}
+                fallback={identity.name[0]}
+                size="md"
+              />
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Overlapping, as a room roster draws them</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex items-center -space-x-1.5">
+            {IDENTITIES.map((identity) => (
+              <IdentityAvatar
+                key={identity.name}
+                color={identity.color}
+                emoji={'emoji' in identity ? identity.emoji : undefined}
+                fallback={identity.name[0]}
+                size="xs"
+                className="border-background size-6 border"
+              />
+            ))}
+          </div>
         </ShowcaseDemo>
       </PlaygroundSection>
     </>

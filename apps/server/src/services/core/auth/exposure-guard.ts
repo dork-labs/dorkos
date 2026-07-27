@@ -29,6 +29,7 @@
  * @module services/core/auth/exposure-guard
  */
 import { configManager } from '../config-manager.js';
+import { isLoopbackHost } from '../../../lib/trusted-origins.js';
 import { hasAnyUser } from './index.js';
 
 /**
@@ -83,19 +84,9 @@ export function canExpose(): boolean {
 }
 
 // ---------- Non-loopback bind check ----------
-
-/** Hosts that are loopback-only and therefore never require a login to bind. */
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
-
-/**
- * Whether a bind host is loopback-only (reachable only from this machine).
- * `0.0.0.0` and any other address are treated as public (non-loopback).
- *
- * @param host - The host `app.listen` will bind to (`env.DORKOS_HOST`).
- */
-export function isLoopbackHost(host: string): boolean {
-  return LOOPBACK_HOSTS.has(host.trim().toLowerCase());
-}
+//
+// "Which host names mean this machine" is defined once, in
+// `lib/trusted-origins.ts`, and shared with the `/api` host guard.
 
 /** Inputs to {@link checkBindAllowed}. */
 export interface BindCheckInput {

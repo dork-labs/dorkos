@@ -28,7 +28,14 @@ import { composeDorkOsCapabilityRegistry } from '../../../core/self-description/
 import { registerDorkOsResources } from '../../../core/mcp-resources/index.js';
 import { logger } from '../../../../lib/logger.js';
 
-// Re-export types and handlers for external consumers
+// Re-export the individual handlers and handler factories, which the per-domain
+// tests import by name to exercise one handler without standing up a server.
+//
+// They used to also serve the external `/mcp` registration files. Those now import
+// each domain's DEFINITIONS (name + description + input schema + handler together)
+// straight from the domain module instead, so the tool is described once for both
+// servers (DOR-499). Production reaches this barrel only for
+// `createDorkOsToolServer`, from `apps/server/src/index.ts`.
 export type { McpToolDeps } from './types.js';
 export {
   handlePing,
@@ -52,8 +59,8 @@ export {
   createRelayQueryHandler,
   createRelayDispatchHandler,
   createRelayUnregisterEndpointHandler,
-  createRelayNotifyUserHandler,
 } from './relay-tools.js';
+export { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 export {
   createRelayListAdaptersHandler,
   createRelayEnableAdapterHandler,

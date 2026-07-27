@@ -87,7 +87,7 @@ There's no CLI command that lists everything you've installed. For that, open th
 
 ### Open Marketplace
 
-Click the **Marketplace** entry in the dashboard sidebar, or navigate directly to [http://localhost:4242/marketplace](http://localhost:4242/marketplace).
+Click the **Marketplace** entry in the dashboard sidebar. In a browser you can also go straight to `/marketplace` on your DorkOS address, which is [http://localhost:4242/marketplace](http://localhost:4242/marketplace) on the default port. **Settings → Server** shows yours if it is different.
 
 </Step>
 
@@ -179,7 +179,23 @@ dorkos marketplace list
 dorkos marketplace remove my-team
 ```
 
-You can also manage sources in DorkOS at [http://localhost:4242/marketplace/sources](http://localhost:4242/marketplace/sources). Sources are merged into a single browse surface: packages from your team's marketplace appear alongside community packages, with the source clearly labeled on each card.
+You can also manage sources in DorkOS, at `/marketplace/sources` on your own DorkOS address. On the default port that is [http://localhost:4242/marketplace/sources](http://localhost:4242/marketplace/sources); if you changed the port, or the [desktop app](/docs/getting-started/desktop-app#find-your-address) had to move off 4242, **Settings → Server** shows the address to use. Sources are merged into a single browse surface: packages from your team's marketplace appear alongside community packages, with the source clearly labeled on each card.
+
+<Callout type="info">
+  **Adding and removing a source is yours to do, not your agents'.** A source is a place DorkOS will
+  download and run code from, so an agent that asks to add or remove one is turned down flat. There
+  is no card and no way to say yes, the same as the settings in [Settings your agents cannot
+  change](/docs/guides/action-approvals#settings-your-agents-cannot-change). An agent that needs a
+  package from somewhere new will tell you the line to run and wait for you.
+
+Your own terminal is unaffected: `dorkos marketplace add` and `dorkos marketplace remove` work as
+they always have. The same honest limit applies as everywhere else, though. With **Require login**
+off, which is the default, a program on your computer that hides the fact it is an agent looks
+exactly like you, and DorkOS has nothing left to tell the two apart. Turning on **Require login**
+does not close this one either, because the command line signs in with a key rather than a
+password, and refusing keys here would lock you out of your own terminal.
+
+</Callout>
 
 <Callout type="info">
   A marketplace source is just a GitHub repo with a `marketplace.json` at its root. The schema is
@@ -189,7 +205,7 @@ You can also manage sources in DorkOS at [http://localhost:4242/marketplace/sour
 
 ## Telemetry consent
 
-DorkOS can report anonymous install events to dorkos.ai to power the public install counts and ranking on the marketplace browse page. This is **opt-in**: telemetry is disabled by default, and DorkOS will never report anything until you explicitly enable it in settings.
+DorkOS can report anonymous install events to dorkos.ai to power the public install counts and ranking on the marketplace browse page. This is **opt-in**: the channel is off by default, and DorkOS never reports anything until you turn it on in the Privacy & Data settings tab or with `dorkos telemetry enable --channel install`.
 
 When telemetry is on, each successful install sends a single event containing:
 

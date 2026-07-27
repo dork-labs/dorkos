@@ -227,14 +227,18 @@ export const SLACK_MANIFEST: AdapterManifest = {
       key: 'dmPolicy',
       label: 'DM Access',
       type: 'select',
-      required: false,
-      description: 'Control who can DM the bot.',
+      // Required with an explicit default so the form always shows a choice.
+      // Left optional, a person who never touched this field silently got the
+      // permissive value (DOR-604).
+      required: true,
+      default: 'allowlist',
+      description: 'Control who can DM the bot. A DM can start an agent turn on your machine.',
       section: 'Access Control',
       options: [
         {
           label: 'Open (anyone)',
           value: 'open',
-          description: 'Any workspace member can DM the bot.',
+          description: 'Any workspace member can DM the bot, and start a turn on your machine.',
         },
         {
           label: 'Allowlist only',
@@ -253,6 +257,23 @@ export const SLACK_MANIFEST: AdapterManifest = {
       placeholder: 'U01ABC123\nU02DEF456',
       section: 'Access Control',
       showWhen: { field: 'dmPolicy', equals: 'allowlist' },
+    },
+    {
+      key: 'approverAllowlist',
+      label: 'Approvers',
+      type: 'textarea',
+      required: false,
+      description:
+        'Slack user IDs who may approve a tool call from Slack (one per line). ' +
+        'Empty means nobody can — approvals will be declined.',
+      placeholder: 'U01ABC123\nU02DEF456',
+      section: 'Access Control',
+      helpMarkdown:
+        'When your agent needs permission to run something, it posts an Approve/Deny card ' +
+        'into the conversation. Only the people listed here can answer it.\n\n' +
+        'This is deliberately a separate list from the DM allowlist: being able to talk to ' +
+        'your agent and being able to let it run a command on your machine are different ' +
+        'things. Leave it empty and nothing gets approved from Slack.',
     },
     {
       key: 'channelOverrides',

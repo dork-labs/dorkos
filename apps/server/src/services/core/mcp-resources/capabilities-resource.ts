@@ -40,7 +40,10 @@ export function registerCapabilitiesResource(
         'title, description, permission tier, input/output JSON Schema, and surfaces (MCP tool, CLI ' +
         'verb, HTTP route). Includes a content-hash catalogVersion you can cache on. This is NOT the ' +
         'full list of DorkOS tools: the task, relay, mesh, binding, extension, and UI tools are ' +
-        'registered directly on the MCP server, so they carry no tier and do not appear here.',
+        'registered directly on the MCP server, so they do not appear here and cannot be reached ' +
+        'by `dorkos call`. They carry a permission tier all the same and answer to the same ' +
+        'approval gate, so a tool being absent here is not a tool that runs unasked: ' +
+        '`tasks_delete` and `mesh_unregister` are destructive and stop for a person.',
       mimeType: 'application/json',
     },
     async () => jsonResourceContents('dorkos://capabilities', registry.catalog())

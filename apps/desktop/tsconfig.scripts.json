@@ -1,0 +1,24 @@
+{
+  // Build/QA scripts (esbuild bundling, native rebuild, packaged smoke) are
+  // ~1000 lines of TypeScript that tsconfig.json cannot cover: it sets
+  // `rootDir: "src"` for the app's own compile, and anything outside that is a
+  // TS6059. They are also the enforcement machinery for everything else in this
+  // package, so leaving them unchecked meant the gates themselves were the only
+  // unguarded code here — ESLint sees syntax, not types.
+  //
+  // A sibling config rather than a widened `include` on tsconfig.json: this
+  // needs no `rootDir` (nothing is emitted), and keeping the app's compile
+  // settings untouched avoids changing what electron-vite and editors resolve.
+  // The `typecheck` script runs both.
+  "extends": "@dorkos/typescript-config/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // Scripts run under tsx (Node), not Electron — but `electron` is the only
+    // types package resolvable from here, and it pulls in @types/node, which is
+    // what these files actually need.
+    "types": ["electron"]
+  },
+  "include": ["scripts/**/*.ts"]
+}

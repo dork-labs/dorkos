@@ -20,6 +20,7 @@ import {
   marketplaceStubs,
   shapeStubs,
   workspaceStubs,
+  roomStubs,
   cloudStubs,
 } from '../embedded-mode-stubs';
 
@@ -37,6 +38,7 @@ export function createEmbeddedStubMethods() {
     ...marketplaceStubs,
     ...shapeStubs,
     ...workspaceStubs,
+    ...roomStubs,
     ...cloudStubs,
   };
 }

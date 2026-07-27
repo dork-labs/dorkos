@@ -34,7 +34,15 @@ export function createCreateAgentHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the agent tool definitions for registration with the internal MCP server. */
+/**
+ * The agent tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers — the external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again (DOR-499). Unguarded, so it needs no separate definitions function.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
 export function getAgentTools(deps: McpToolDeps) {
   return [
     tool(

@@ -24,6 +24,7 @@ import type {
 import { handleInboundMessage } from './inbound.js';
 import { GrammyPlatformClient } from './grammy-platform-client.js';
 import { TelegramThreadIdCodec } from '../../lib/thread-id.js';
+import { mayApprove } from '../approver-allowlist.js';
 import {
   deliverMessage,
   handleTypingSignal,
@@ -145,6 +146,20 @@ For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).`,
         'When enabled, recipients in DMs see text appearing in real-time (ChatGPT-style). ' +
         'Group chats always use buffer-and-flush regardless of this setting. ' +
         'Requires Telegram Bot API 9.5+.',
+    },
+    {
+      key: 'approverAllowlist',
+      label: 'Approvers',
+      type: 'textarea',
+      required: false,
+      description:
+        'Telegram user IDs who may approve a tool call from Telegram (one per line). ' +
+        'Empty means nobody can — approvals will be declined.',
+      placeholder: '123456789\n987654321',
+      helpMarkdown:
+        'When your agent needs permission to run something, it sends an Approve/Deny card ' +
+        'into the chat. Only the people listed here can answer it.\n\n' +
+        'Leave it empty and nothing gets approved from Telegram.',
     },
   ],
   setupInstructions:
@@ -333,6 +348,23 @@ export class TelegramAdapter extends BaseRelayAdapter {
 
       if (!entry) {
         await ctx.answerCallbackQuery({ text: 'This approval has expired.' });
+        return;
+      }
+
+      // Authorization, not identification. `respondedBy` below records who
+      // acted; it never decided who may. Without this check the person whose
+      // message triggered the tool call could approve it themselves, one tap,
+      // from their own device (DOR-609). Left pending rather than consumed, so
+      // an authorized approver can still answer the same card.
+      if (!mayApprove(this.config.approverAllowlist, String(ctx.from.id))) {
+        this.logger.warn(
+          `[Telegram] refused tool approval from unauthorized user ${ctx.from.id}` +
+            ` for toolCallId=${entry.toolCallId}`
+        );
+        await ctx.answerCallbackQuery({
+          text: 'You are not on this integration’s approver list.',
+          show_alert: true,
+        });
         return;
       }
 

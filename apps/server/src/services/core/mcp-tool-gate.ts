@@ -259,11 +259,17 @@ export type ToolRegistrar = Pick<McpServer, 'registerTool'> & { readonly [GATED]
  * and to `never` the moment it does — at which point this assignment stops
  * compiling and `tsc` names this line.
  *
- * It lives in production source rather than in the test file on purpose:
- * `apps/server/tsconfig.json` excludes `src/**\/__tests__/**`, so a
- * `@ts-expect-error` written next to the other gate tests is never typechecked by
- * anything and would be decoration. The one guarantee this whole module rests on
- * deserves a check that can actually fail.
+ * It lives in production source rather than in the test file on purpose, though
+ * the reason has narrowed. It used to be that `apps/server/tsconfig.json` excluded
+ * `src/**\/__tests__/**` wholesale, so a `@ts-expect-error` anywhere in a test was
+ * decoration that could never fail. DOR-508 put the test files in the tsc program,
+ * so that is no longer true in general.
+ *
+ * It is still true for `__tests__/mcp-tool-gate.test.ts` specifically: that file is
+ * one of the test files quarantined in the tsconfig's `exclude` while its own type
+ * errors are worked off, so a pin written there today would still be decoration.
+ * Once it leaves quarantine, this pin can move next to the tests it describes. The
+ * one guarantee this whole module rests on deserves a check that can actually fail.
  */
 const _rawServerIsNotARegistrar: McpServer extends ToolRegistrar ? never : true = true;
 

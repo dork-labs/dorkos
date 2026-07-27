@@ -211,6 +211,53 @@ describe('forkShape', () => {
     expect(result.manifest.schedules.map((s) => s.name)).toEqual(['tick']);
   });
 
+  it('merges a PARTIAL liveLayout field-wise — omitted fields keep the source Shape values', async () => {
+    // The regression guard for the data-loss bug: the web cockpit has no state
+    // at all behind `focusDashboardSections` (and no surface where anyone picks
+    // a `sidebarTab`), so it reports neither. A whole-object replace would blank
+    // both; the merge must leave the source's values standing.
+    const { dorkHome, deps: base } = await makeHome();
+    const source = sourceManifest();
+    source.layout.focusDashboardSections = ['linear-issues:board'];
+    await installShape(dorkHome, 'linear-ops', source);
+
+    const deps: ForkShapeDeps = {
+      ...base,
+      getActiveShape: () => 'linear-ops',
+      getEnabledExtensions: () => ['linear-issues', 'other-ext'],
+    };
+
+    const result = await forkShape(
+      'linear-ops',
+      // Exactly what the client capture helper sends: two observed fields.
+      { captureCurrent: true, liveLayout: { sidebarOpen: false, openPanels: ['tasks'] } },
+      deps
+    );
+
+    expect(result.manifest.layout).toEqual({
+      // Observed → captured.
+      sidebarOpen: false,
+      openPanels: ['tasks'],
+      // Not observed → the source Shape's values survive untouched.
+      sidebarTab: 'overview',
+      focusDashboardSections: ['linear-issues:board'],
+    });
+  });
+
+  it('keeps the whole source layout when captureCurrent comes with no liveLayout (the CLI path)', async () => {
+    const { dorkHome, deps: base } = await makeHome();
+    await installShape(dorkHome, 'linear-ops', sourceManifest());
+    const deps: ForkShapeDeps = {
+      ...base,
+      getActiveShape: () => 'linear-ops',
+      getEnabledExtensions: () => ['linear-issues', 'other-ext'],
+    };
+
+    const result = await forkShape('linear-ops', { captureCurrent: true }, deps);
+
+    expect(result.manifest.layout).toEqual(sourceManifest().layout);
+  });
+
   it('captureCurrent drops extension-secret connections whose extension left activates (no ZodError)', async () => {
     // Exact review repro: the source declares a secret connection for
     // 'linear-issues', but that extension is currently DISABLED, so the capture

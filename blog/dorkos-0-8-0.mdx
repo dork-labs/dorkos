@@ -7,6 +7,8 @@ category: release
 tags: [release, agents, command-palette, relay]
 ---
 
+> **Correction, 26 July 2026.** This post described per-agent tool filtering as controlling which tools an agent can access. That was wrong when we wrote it, not just out of date. The switches change what an agent is **told about** in its instructions, so it stops reaching for those tools, but they never took a tool out of an agent's reach: the feature was built on a misreading of an SDK option that auto-approves tools rather than restricting them. If you turned a group off expecting a lock, you did not have one. The wording below is left as published; this note is the correction. Details in [Action Approvals](/docs/guides/action-approvals) and the [Threat Model](/docs/self-hosting/threat-model).
+
 DorkOS 0.8.0 brings meaningful control back to you: define exactly which tools each agent can access, discover and navigate agents faster with a rebuilt command palette, and rely on a hardened relay pipeline that just works.
 
 ## Highlights

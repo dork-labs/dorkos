@@ -22,6 +22,14 @@ The endpoint is `/mcp` on your DorkOS server (`http://localhost:4242/mcp` by def
 Manage it from **Settings → Tools → External MCP Server**: an enable/disable toggle, the live endpoint URL, current auth mode, rate limiting, and copy-pasteable setup snippets for Claude Code, the Claude Code CLI, Cursor, and Windsurf.
 
 <Callout type="info">
+  **Copy the endpoint, don't type it.** Every example on this page uses `http://localhost:4242`,
+  which is right for the CLI and for Docker. The [desktop app](/docs/getting-started/desktop-app)
+  uses that address too, unless something else on your machine already had port 4242, in which case
+  it moves to the next free one. **Settings → Tools → External MCP Server** and **Settings →
+  Server** both show your real endpoint with a copy button, so copying from there always works.
+</Callout>
+
+<Callout type="info">
   A screenshot of the Settings → Tools → External MCP Server card would help here (toggle, endpoint
   URL, auth mode, rate limit, and snippets in one view). Flagged for the media pipeline.
 </Callout>
@@ -115,7 +123,9 @@ Connecting gives a client DorkOS's full external tool surface: 55 tools in total
 | Self-description    | 1     | `list_capabilities`                                                                                |
 | Marketplace         | 8     | `marketplace_search`, `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package` |
 
-The last three rows (operator, self-description, marketplace: 15 tools) are generated from the Capability Registry, so they carry a permission tier and are reachable by id through `dorkos call`. The other 40 are registered directly on this server and carry no tier. `list_capabilities` says which is which, so a client never has to infer it.
+The last three rows (operator, self-description, marketplace: 15 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 40 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+
+Being off the registry does not mean running unasked. All 40 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive` and answer with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
 <Callout type="info">
   The 8 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized

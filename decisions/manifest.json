@@ -2,6 +2,14 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260727-184933",
+      "slug": "the-community-server-never-runs-a-members-agent",
+      "title": "The community server never runs a member's agent; hosted DorkOS is three products, not one",
+      "status": "accepted",
+      "created": "2026-07-27",
+      "specSlug": "community-server"
+    },
+    {
       "id": "260726-022251",
       "slug": "in-session-identity-comes-from-the-working-directory",
       "title": "An in-session agent's identity comes from its working directory, not a presented token",
@@ -1069,9 +1077,10 @@
       "slug": "channels-vocabulary-over-relay-adapters",
       "title": "User-Facing \"Channels\" Vocabulary Over \"Relay Adapters\"",
       "created": "2026-04-04",
-      "status": "accepted",
+      "status": "superseded",
       "extractedFrom": "channels-and-agent-adapters",
-      "specSlug": "channels-and-agent-adapters"
+      "specSlug": "channels-and-agent-adapters",
+      "supersededBy": "260726-193526"
     },
     {
       "number": 221,
@@ -2010,10 +2019,11 @@
       "number": 70,
       "slug": "per-agent-tool-filtering-via-allowedtools",
       "title": "Per-Agent Tool Filtering via Domain-Level allowedTools",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
-      "specSlug": "agent-tools-elevation"
+      "specSlug": "agent-tools-elevation",
+      "supersededBy": "260726-171347"
     },
     {
       "number": 69,
@@ -2671,7 +2681,7 @@
       "id": "260713-143958",
       "slug": "two-plane-two-tier-data-collection-strategy",
       "title": "Two-plane, two-tier data collection strategy",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-13"
     },
     {
@@ -2887,6 +2897,100 @@
       "created": "2026-07-25",
       "extractedFrom": "agents-as-operators",
       "specSlug": "agents-as-operators"
+    },
+    {
+      "id": "260726-170125",
+      "slug": "a-room-is-a-membership-scoped-durable-stream",
+      "title": "A room is a membership-scoped durable stream, not a session",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "specSlug": "rooms"
+    },
+    {
+      "id": "260726-170126",
+      "slug": "author-identity-is-keyed-on-the-agents-directory",
+      "title": "Persisted author identity is an opaque id keyed on the agent's directory, never its ULID",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "specSlug": "rooms"
+    },
+    {
+      "id": "260726-170127",
+      "slug": "the-room-path-carries-its-own-cascade-guard",
+      "title": "The room path carries its own cascade guard, not the relay's budget envelope",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "specSlug": "rooms"
+    },
+    {
+      "id": "260726-193526",
+      "slug": "channel-is-a-conversation-relay-is-an-integration",
+      "title": "\"Channel\" means a conversation; Relay's integrations are called \"Integrations\"",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "specSlug": "rooms"
+    },
+    {
+      "id": "260726-171347",
+      "slug": "tool-group-toggles-gate-context-not-access",
+      "title": "Tool-group toggles gate context, not access",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "supersedes": 70
+    },
+    {
+      "id": "260726-232221",
+      "slug": "api-host-guard-enforced-only-when-login-is-off",
+      "title": "The /api Host guard is enforced only when login is off",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260726-232222",
+      "slug": "locality-gates-read-the-socket-peer",
+      "title": "A local-only gate reads the socket peer; Host answers a different question",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260726-234120",
+      "slug": "supervised-server-refuses-its-own-lifecycle",
+      "title": "A supervised server refuses the lifecycle operations only its supervisor can perform",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260726-234122",
+      "slug": "one-server-per-data-directory",
+      "title": "One server per data directory, enforced by a corroborated lock file",
+      "status": "accepted",
+      "created": "2026-07-26",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260727-181825",
+      "slug": "user-safe-defaults",
+      "title": "Defaults, fallbacks and recovery land on the option that protects the user",
+      "status": "accepted",
+      "created": "2026-07-27",
+      "extractedFrom": null,
+      "specSlug": null
+    },
+    {
+      "id": "260727-182651",
+      "slug": "tier-1-telemetry-returns-to-opt-in",
+      "title": "Tier 1 telemetry returns to opt-in",
+      "status": "accepted",
+      "created": "2026-07-27",
+      "extractedFrom": null,
+      "specSlug": null
     }
   ]
 }

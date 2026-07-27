@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { REQUIREMENTS_KEY } from '@/layers/entities/runtime';
+import { openExternalLink } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 
 /** The paste-key Gateway connect: validate + store an OpenRouter key. */
@@ -100,7 +101,13 @@ export function useOpenRouterOAuth(): UseOpenRouterOAuth {
     mutationFn: () => transport.startOpenRouterOAuth(),
     onMutate: () => setStartError(null),
     onSuccess: ({ authorizeUrl, state }) => {
-      window.open(authorizeUrl, '_blank', 'noopener,noreferrer');
+      // Sign-in happens in the browser, so this always leaves the app. Only arm
+      // the status poll once the page actually opened — otherwise the UI sits
+      // waiting for a sign-in the user was never shown.
+      if (!openExternalLink(authorizeUrl)) {
+        setStartError('Could not open the OpenRouter sign-in page.');
+        return;
+      }
       setFlowState(state);
     },
     onError: (err) =>

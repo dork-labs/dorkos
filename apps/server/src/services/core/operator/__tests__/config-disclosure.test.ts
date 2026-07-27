@@ -34,20 +34,35 @@ import {
 
 /**
  * Read a dot-path out of a plain object, or `undefined` when any hop is missing.
- * A `[]` segment reads the first array element, which is enough to prove an
- * exposed per-element path made it into the projection.
+ *
+ * A `[]` segment reads the FIRST element in which the rest of the path resolves,
+ * not simply element zero. `ui.sidebar.pinned` and friends hold a discriminated
+ * union (sidebar-groups, DOR-579), so each element carries only its own branch's
+ * fields — `path` on an agent, `roomId` on a room. An exposed per-element path
+ * is therefore present in SOME element, and element-zero-only would report a
+ * correctly-projected room field as missing.
  */
 function at(root: unknown, dotPath: string): unknown {
-  let node: unknown = root;
-  for (const segment of dotPath.split('.')) {
-    if (node === null || typeof node !== 'object') return undefined;
-    node = (node as Record<string, unknown>)[segment.replace(/\[\]$/, '')];
-    if (segment.endsWith('[]')) {
-      if (!Array.isArray(node)) return undefined;
-      node = node[0];
-    }
+  return walkPath(
+    root,
+    dotPath.split('.').filter((segment) => segment.length > 0)
+  );
+}
+
+/** Recursive half of {@link at}. */
+function walkPath(node: unknown, segments: readonly string[]): unknown {
+  const segment = segments[0];
+  if (segment === undefined) return node;
+  const rest = segments.slice(1);
+  if (node === null || typeof node !== 'object') return undefined;
+  const next = (node as Record<string, unknown>)[segment.replace(/\[\]$/, '')];
+  if (!segment.endsWith('[]')) return walkPath(next, rest);
+  if (!Array.isArray(next)) return undefined;
+  for (const element of next) {
+    const found = walkPath(element, rest);
+    if (found !== undefined) return found;
   }
-  return node;
+  return undefined;
 }
 
 /** Shape the walker assigned to each leaf of the live schema. */
@@ -68,7 +83,9 @@ function pathsWithVerdict(verdict: ConfigDisclosure): string[] {
  * serialized projection proves none of them escaped.
  *
  * Every nested shape is populated too (a smart sidebar group with all five rules,
- * both open records), because an empty array or map proves nothing about how the
+ * both open records, and BOTH branches of the sidebar item-reference union in
+ * each of the three membership lists), because an empty array or map — or a list
+ * that only ever exercises one branch of a union — proves nothing about how the
  * projection treats what is inside one.
  */
 function fullyPopulatedConfig(): Record<string, unknown> {
@@ -80,12 +97,21 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       theme: 'dark',
       dismissedUpgradeVersions: ['0.55.0'],
       sidebar: {
-        pinned: ['/Users/me/code'],
+        pinned: [
+          { kind: 'agent', path: '/Users/me/code' },
+          { kind: 'room', roomId: '01JPINNEDROOM' },
+        ],
         groups: [
           {
             id: 'group-1',
             name: 'Work',
-            agentPaths: ['/Users/me/code'],
+            // Both branches of the item-reference union, so the projection is
+            // exercised on an element that carries `path` and one that carries
+            // `roomId` (each drops the other branch's field).
+            items: [
+              { kind: 'agent', path: '/Users/me/code' },
+              { kind: 'room', roomId: '01JROOM' },
+            ],
             sortMode: 'recent',
             collapsed: false,
             displayFilter: 'all',
@@ -103,8 +129,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         ungroupedSortMode: 'name',
         ungroupedCollapsed: false,
         recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
         groupsHintDismissed: false,
-        muted: ['/Users/me/noisy'],
+        muted: [
+          { kind: 'agent', path: '/Users/me/noisy' },
+          { kind: 'room', roomId: '01JMUTEDROOM' },
+        ],
         ungroupedDisplayFilter: 'all',
       },
       shapes: {
@@ -431,7 +462,10 @@ describe('projectDisclosedConfig', () => {
     // And not over-redacted: the group a person configured still arrives whole.
     expect(projectedGroup.id).toBe('group-1');
     expect(projectedGroup.name).toBe('Work');
-    expect(projectedGroup.agentPaths).toEqual(['/Users/me/code']);
+    expect(projectedGroup.items).toEqual([
+      { kind: 'agent', path: '/Users/me/code' },
+      { kind: 'room', roomId: '01JROOM' },
+    ]);
     expect(projectedGroup.rules).toEqual({
       runtimes: ['claude-code'],
       namespaces: ['default'],

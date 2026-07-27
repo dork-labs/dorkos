@@ -907,6 +907,38 @@ describe('AdapterManager', () => {
       expect(adapters[0].config.id).toBe('wh-new');
     });
 
+    // DOR-604. The write path used to cast and push the caller's raw body, so a
+    // Slack integration created without naming `dmPolicy` reached disk without
+    // the key — indistinguishable on load from one written before the field
+    // existed, and so carried straight back to 'open'. The setup wizard escaped
+    // only because it seeds the field; a scripted POST did not.
+    it('materializes dmPolicy on write for a Slack integration that did not name one', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await initAndStart(manager);
+      vi.clearAllMocks();
+
+      await manager.addAdapter(
+        'slack',
+        'sl-new',
+        { botToken: 'xoxb-1', appToken: 'xapp-1', signingSecret: 'sec' },
+        false
+      );
+
+      const written = vi.mocked(writeFile).mock.calls[0][1] as string;
+      expect(JSON.parse(written).adapters[0].config.dmPolicy).toBe('allowlist');
+    });
+
+    it('rejects an adapter entry its schema refuses instead of persisting it', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await initAndStart(manager);
+      vi.clearAllMocks();
+
+      await expect(manager.addAdapter('slack', 'Bad_ID', { botToken: 'x' }, false)).rejects.toThrow(
+        AdapterError
+      );
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
     it('starts the adapter if enabled', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
       await initAndStart(manager);

@@ -111,10 +111,19 @@ export function createBindingListSessionsHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the binding tool definitions — only when bindingStore is provided. */
-export function getBindingTools(deps: McpToolDeps) {
-  if (!deps.bindingStore) return [];
-
+/**
+ * The binding tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers. The external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again (DOR-499); it takes only the first three, because
+ * `binding_list_sessions` is in-session-only. Unguarded on purpose — see
+ * {@link getBindingTools} for the in-session guard and `mcp-server.ts` for why the
+ * external server registers every tool regardless of feature flags.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function bindingToolDefinitions(deps: McpToolDeps) {
   return [
     tool('binding_list', 'List all adapter-to-agent bindings.', {}, createBindingListHandler(deps)),
     tool(
@@ -154,4 +163,14 @@ export function getBindingTools(deps: McpToolDeps) {
       createBindingListSessionsHandler(deps)
     ),
   ];
+}
+
+/**
+ * The binding tools for the in-session server — only when bindingStore is provided.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function getBindingTools(deps: McpToolDeps) {
+  if (!deps.bindingStore) return [];
+  return bindingToolDefinitions(deps);
 }

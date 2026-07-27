@@ -12,14 +12,24 @@
  *
  * ## Why a table, and not a `tier:` field at each registration
  *
- * Because the two registration sites demonstrably drift. The same tool is written
- * out twice today — once in `runtimes/claude-code/mcp-tools/` for the in-session
- * `dorkos` server and once in `core/external-mcp/` for the external `/mcp` server —
- * and five of those pairs already disagree about their own DESCRIPTION, one
- * (`mesh_discover`) disagrees about its INPUT SCHEMA, and seven tools exist on only
- * one of the two servers. Writing a tier at 47 registrations twice over would add
- * one more hand-copied fact to a set that has already proven it drifts, on the one
- * axis where drifting is a security hole rather than a typo.
+ * Because the two registration sites demonstrably drifted, which is the whole
+ * reason this table was not built as a `tier:` field at each registration.
+ *
+ * When DOR-468 wrote that argument down, each tool was registered twice by hand:
+ * once in `runtimes/claude-code/mcp-tools/` for the in-session `dorkos` server and
+ * once in `core/external-mcp/` for the external `/mcp` server. SEVEN of those pairs
+ * disagreed about their own DESCRIPTION, and two disagreed about their INPUT SCHEMA
+ * (`mesh_discover`, whose external copy omitted a field its own shared handler
+ * read, and `create_extension`). Writing a tier at 47 registrations twice over
+ * would have added one more hand-copied fact to a set that had already proven it
+ * drifts, on the one axis where drifting is a security hole rather than a typo.
+ *
+ * DOR-499 has since removed the duplication rather than merely surviving it: the
+ * external server now projects the in-session definitions, so name, description,
+ * and input schema have one source and those counts are zero. The argument for
+ * keying BY TOOL NAME still stands on its own, and the history is kept because the
+ * next person tempted to move a fact back to the registration sites should know it
+ * was tried. Seven tools still exist on only one of the two servers.
  *
  * So the tier is keyed by TOOL NAME, and a tool has exactly one tier no matter
  * where it is registered. That is also the whole answer for a tool that exists on
@@ -33,9 +43,15 @@
  * A tier governs WHETHER A CALL NEEDS A PERSON'S APPROVAL. It says nothing about
  * what the call's arguments are allowed to contain. An `act` tool can still take an
  * argument that turns off some other safety system, and labeling it `act` here is
- * not a claim that it cannot — `tasks_create` and `tasks_update` accept a
- * `permissionMode` argument, which is exactly that shape, and is tracked
- * separately. Do not read a full table as a governed domain.
+ * not a claim that it cannot. Do not read a full table as a governed domain.
+ *
+ * `tasks_create` and `tasks_update` were the worked example of that gap: both
+ * accept a `permissionMode` argument, and `tasks_update` applied it, so an `act`
+ * call could hand a future unattended run the safety prompts its caller did not
+ * have. The answer was NOT a higher tier — a card on every schedule edit is the
+ * over-tiering that teaches people to click through — but a policy on the FIELD,
+ * in `tasks/task-write-policy.ts` (DOR-504). Both tools stay `act`. If you find
+ * another argument of this shape, that is the pattern to copy.
  *
  * Only `destructive` changes runtime behavior. `observe` returns allowed before any
  * other check runs, and `act` passes the gate. Labeling all 47 anyway is the point:
@@ -54,6 +70,7 @@
  * @module services/core/mcp-tool-tiers
  */
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import type { McpToolGroupName } from '@dorkos/shared/mcp-tool-groups';
 import type { GatedAction } from './capabilities/tier-enforcement.js';
 
 /** One tool's tier declaration. */
@@ -211,6 +228,41 @@ export const MCP_TOOL_TIERS = {
 export type McpToolName = keyof typeof MCP_TOOL_TIERS;
 
 /**
+ * Compile-time proof that this table and the shared tool-GROUP table describe the
+ * same set of tools (DOR-499).
+ *
+ * The two answer different questions about the same 47 tools — this one "does
+ * calling it need a person's approval", the other "which toggle takes it away" —
+ * and both are keyed by tool name. Nothing but a check makes them stay the same
+ * length. Before this, seven tools had a tier and no group, which is how the
+ * cockpit came to show a tool set the server did not build.
+ *
+ * These live in production source rather than beside the tests, though the reason
+ * has narrowed. It used to be that `apps/server/tsconfig.json` excluded
+ * `src/**\/__tests__/**` wholesale, so a type assertion written in any test file was
+ * decoration that could never fail. DOR-508 put the test files in the tsc program,
+ * so that is no longer true in general. It is still true for the file these would
+ * most naturally sit in, `__tests__/mcp-tool-gate.test.ts`, which remains
+ * quarantined in that tsconfig's `exclude` while its own type errors are worked off.
+ *
+ * They also resolve through the shared package's `types` condition, which points at
+ * its SOURCE, so an unbuilt or stale `dist` cannot make them pass by accident. That
+ * is not theoretical: the same table is read at RUNTIME by tests that resolve
+ * `default` to `dist`, which is why `apps/server/vitest.config.ts` aliases this
+ * module to source as well.
+ *
+ * Each resolves to `true` while the key sets agree and to `never` the moment they
+ * do not, at which point the assignment stops compiling and `tsc` names the line
+ * and the offending tool.
+ */
+const _everyTieredToolHasAGroup: [Exclude<McpToolName, McpToolGroupName>] extends [never]
+  ? true
+  : never = true;
+const _everyGroupedToolHasATier: [Exclude<McpToolGroupName, McpToolName>] extends [never]
+  ? true
+  : never = true;
+
+/**
  * The {@link GatedAction} for a hand-registered MCP tool, ready to hand to the
  * tier gate.
  *
@@ -248,4 +300,20 @@ export function gatedActionForMcpTool(toolName: string): GatedAction {
       ? { approvalDisplayFields: declared.approvalDisplayFields }
       : {}),
   };
+}
+
+/**
+ * The human-facing title of a hand-registered MCP tool, or `undefined`.
+ *
+ * The forgiving sibling of {@link gatedActionForMcpTool}, and it exists because the
+ * two callers want opposite things from an unknown name. Building a server must
+ * FAIL on one, so an ungated tool cannot ship. Naming an action in a list a person
+ * reads must not: a permissions list that threw would take the whole cockpit panel
+ * down to avoid showing one raw id.
+ *
+ * @param toolName - The registered MCP tool name.
+ * @returns Its title, or `undefined` when nothing declares one.
+ */
+export function titleForMcpTool(toolName: string): string | undefined {
+  return (MCP_TOOL_TIERS as Record<string, McpToolTier | undefined>)[toolName]?.title;
 }

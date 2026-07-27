@@ -8,3 +8,4 @@ export { shapeKeys } from './api/query-keys';
 export { useShapes } from './model/use-shapes';
 export { applyShapeAction, type ApplyShapeActionDeps } from './lib/apply-shape-action';
 export { applyShapeLayout, buildShapeLayoutCommands } from './lib/apply-shape-layout';
+export { captureShapeLayout, type LiveChromeSnapshot } from './lib/capture-shape-layout';

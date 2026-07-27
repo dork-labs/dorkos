@@ -18,6 +18,8 @@ import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import type {
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
+  RevokeStandingPermissionResponse,
+  StandingPermissionsResponse,
 } from '@dorkos/shared/approval-schemas';
 import type {
   StoreCredentialResult,
@@ -31,6 +33,20 @@ import type {
   OllamaPullResult,
   OllamaProvisionResult,
 } from '@dorkos/shared/runtime-connect';
+import type {
+  AddRoomMemberRequest,
+  CreateRoomRequest,
+  ListRoomEntriesQuery,
+  ListRoomsQuery,
+  PostToRoomRequest,
+  PostToRoomResponse,
+  RoomEntry,
+  RoomEvent,
+  RoomMember,
+  RoomRosterEntry,
+  RoomSummary,
+  RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import type {
   Workspace,
   WorkspaceWithSessions,
@@ -82,13 +98,18 @@ import type {
   AddSourceInput,
   InstalledShapeSummary,
   ApplyShapeResult,
+  ForkShapeResult,
 } from '@dorkos/shared/marketplace-schemas';
 import type {
   CloudLinkStatus,
   CloudLinkSummary,
   StartLinkResult,
 } from '@dorkos/shared/cloud-schemas';
-import type { McpAppResourceRequest, McpAppResourceResponse } from '@dorkos/shared/schemas';
+import type {
+  ForkShapeRequest,
+  McpAppResourceRequest,
+  McpAppResourceResponse,
+} from '@dorkos/shared/schemas';
 
 // ---------------------------------------------------------------------------
 // Tasks scheduler stubs
@@ -389,11 +410,22 @@ export const approvalStubs = {
     return { approvals: [] };
   },
 
-  async grantApproval(_approvalId: string): Promise<ApprovalDecisionResponse> {
+  async grantApproval(
+    _approvalId: string,
+    _options?: { standing?: boolean }
+  ): Promise<ApprovalDecisionResponse> {
     throw new Error('Approvals are not supported in Obsidian plugin mode.');
   },
 
   async denyApproval(_approvalId: string, _reason?: string): Promise<ApprovalDecisionResponse> {
+    throw new Error('Approvals are not supported in Obsidian plugin mode.');
+  },
+
+  async listStandingPermissions(): Promise<StandingPermissionsResponse> {
+    return { grants: [] };
+  },
+
+  async revokeStandingPermission(_grantId: string): Promise<RevokeStandingPermissionResponse> {
     throw new Error('Approvals are not supported in Obsidian plugin mode.');
   },
 };
@@ -639,6 +671,10 @@ export const shapeStubs = {
   async applyShape(_name: string): Promise<ApplyShapeResult> {
     throw new Error('Shapes are not supported in embedded mode');
   },
+
+  async forkShape(_name: string, _request?: ForkShapeRequest): Promise<ForkShapeResult> {
+    throw new Error('Shapes are not supported in embedded mode');
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -697,3 +733,51 @@ export const workspaceStubs = {
     throw new Error('Workspaces are not supported in embedded mode');
   },
 };
+
+/**
+ * Room stubs — rooms are a server-owned subsystem (five SQLite tables and a
+ * durable per-room stream), and the Obsidian embed is deliberately out of scope
+ * for them in v1 (spec `rooms` §9). Reads answer "no rooms" so the embed's
+ * sidebar simply has nothing to show; writes refuse.
+ */
+export const roomStubs = {
+  async listRooms(_query?: ListRoomsQuery): Promise<RoomSummary[]> {
+    return [];
+  },
+
+  async createRoom(_req: CreateRoomRequest): Promise<RoomWithRoster> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async getRoom(_id: string): Promise<RoomWithRoster> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async listRoomEntries(_id: string, _query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
+    return [];
+  },
+
+  async postToRoom(_id: string, _req: PostToRoomRequest): Promise<PostToRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async addRoomMember(_id: string, _req: AddRoomMemberRequest): Promise<RoomRosterEntry> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async setRoomReadCursor(_id: string, _lastReadSeq: number): Promise<RoomMember> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  subscribeRoom(
+    _roomId: string,
+    _sinceCursor?: number,
+    _signal?: AbortSignal
+  ): AsyncIterable<RoomEvent> {
+    return emptyRoomEvents();
+  },
+};
+
+/** An empty room stream — the embed has no rooms, so nothing ever arrives. */
+// eslint-disable-next-line require-yield
+async function* emptyRoomEvents(): AsyncIterable<RoomEvent> {}

@@ -13,7 +13,24 @@
   (`win.icon` in `electron-builder.yml`). Multi-resolution (16–256px).
   Regenerate it from `icon.svg` whenever the glyph changes — never edit the
   `.ico` by hand.
+- `trayTemplate.svg` — the menu-bar glyph source: the same "D" with the dark
+  chip removed, solid black on transparent, padded via the viewBox.
+- `trayTemplate.png` / `trayTemplate@2x.png` — the macOS menu-bar icon
+  (16px + 32px Retina). The `Template` suffix is what makes macOS treat it as a
+  template image and recolour it for light and dark menu bars — **do not
+  rename it**.
+- `trayIcon.png` / `trayIcon@2x.png` — the Windows notification-area icon
+  (16px + 32px), rendered from `icon.svg` so it keeps its dark chip and stays
+  legible on both the light and dark Windows taskbar.
 - `entitlements.mac.plist` — hardened-runtime entitlements for signing.
+
+**The tray PNGs are read at runtime, unlike everything else here.** This
+directory is electron-builder's `buildResources`, which is _not_ packaged into
+the app, so `electron.vite.config.ts` copies the four PNGs into `dist/main/`
+alongside the compiled main process (where `electron-builder.yml`'s `dist/**`
+allowlist ships them). `src/main/tray.ts` resolves them from there; the `@2x`
+files need no entry of their own, because Electron's `nativeImage` picks up a
+`@2x` sibling automatically.
 
 ## Regenerating icon.icns from icon.svg
 
@@ -69,3 +86,25 @@ magick identify icon.ico
 ```
 
 Commit the updated `icon.ico` alongside the `icon.svg` change.
+
+## Regenerating the tray icons
+
+Any platform with librsvg (`brew install librsvg`). Each size is rendered
+natively from the vector, never downscaled — at 16px that is the difference
+between a readable "D" and a smudge.
+
+```bash
+cd apps/desktop/build
+
+# macOS menu bar: the template glyph (black on transparent).
+rsvg-convert -w 16 -h 16 trayTemplate.svg -o trayTemplate.png
+rsvg-convert -w 32 -h 32 trayTemplate.svg -o trayTemplate@2x.png
+
+# Windows notification area: the full mark, chip and all.
+rsvg-convert -w 16 -h 16 icon.svg -o trayIcon.png
+rsvg-convert -w 32 -h 32 icon.svg -o trayIcon@2x.png
+```
+
+Check the 16px renders by eye afterwards: the counter of the "D" has to stay
+open. If the glyph in `icon.svg` changes, update `trayTemplate.svg`'s `<path>`
+to match — it is the same path data with a different fill and viewBox.

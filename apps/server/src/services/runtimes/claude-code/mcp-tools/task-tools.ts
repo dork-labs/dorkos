@@ -1,7 +1,25 @@
+/**
+ * The `tasks_*` tool handlers, shared by both MCP servers — the in-session
+ * `dorkos` server ({@link getTasksTools}, below) and the external `/mcp` server
+ * (`core/external-mcp/task-tools.ts`, which registers these same factories).
+ *
+ * Writing the guard here rather than at each registration is the point: there are
+ * two registration sites and one set of handlers, so a control on the handler
+ * covers both servers by construction and cannot be added to one and forgotten on
+ * the other.
+ *
+ * @module services/runtimes/claude-code/mcp-tools/task-tools
+ */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
+import {
+  describeOperatorOnlyTaskRefusal,
+  findOperatorOnlyTaskFields,
+  OPERATOR_ONLY_TASK_CODE,
+  OPERATOR_ONLY_TASK_ERROR,
+} from '../../../tasks/task-write-policy.js';
 
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
@@ -9,6 +27,85 @@ function requireTasks(deps: McpToolDeps) {
     return jsonContent({ error: 'Tasks scheduler is not enabled' }, true);
   }
   return null;
+}
+
+/**
+ * The description both servers give the `permissionMode` argument (DOR-504).
+ *
+ * The argument stays ADVERTISED on purpose, and it is worth being explicit about
+ * why, because deleting it looks tidier and is worse. The MCP SDK parses a call
+ * against the advertised schema before the handler runs, so an argument this
+ * schema does not declare is STRIPPED on the way in — the agent's other fields
+ * would land, its `permissionMode` would evaporate, and it would be told the
+ * whole call succeeded. That is the silent partial write this guard exists to
+ * prevent. Declaring the argument is what lets the handler see it and refuse the
+ * call whole, naming the field.
+ *
+ * So the field no longer lies about what it does: it says it is refused, and it
+ * is refused, on both tools and both servers.
+ */
+export const REFUSED_PERMISSION_MODE_DESCRIPTION =
+  'Not yours to set. A scheduled task runs later with nobody watching, so the person chooses ' +
+  'how much it may do without asking. Send this and DorkOS refuses the whole call and changes ' +
+  'nothing — leave it out, and ask the person to set it on the task in DorkOS.';
+
+/**
+ * The description both servers give the `status` argument (DOR-504).
+ *
+ * Declared for exactly the reason {@link REFUSED_PERMISSION_MODE_DESCRIPTION} is,
+ * and it was missed on the first pass: `status` was operator-only in the policy
+ * but absent from this tool's schema, so the SDK stripped it and the call
+ * reported SUCCESS with the rest of the fields applied. Nothing could reach the
+ * store either way, so it was never an escalation — but "we refuse the call
+ * whole" has to be true of every operator-only field, or the sentence is not
+ * worth anything on the ones where it matters.
+ *
+ * On BOTH tools, including `tasks_create`, where `status` is not a meaningful
+ * argument at all (the store hardcodes it, then the handler parks it). Declaring
+ * it there anyway is not padding: the seeded `scheduling-tasks` skill tells agents
+ * DorkOS refuses the whole call for either field on either tool, and a field that
+ * is silently stripped instead makes that sentence false. The alternative was to
+ * narrow the sentence to one tool-and-field pairing, which is a rule nobody will
+ * hold in their head. The text below reads for both, and at create time it is the
+ * best moment to say a new task waits for approval.
+ */
+export const REFUSED_STATUS_DESCRIPTION =
+  'Not yours to set. Moving a task to `active` IS the person approving it, and a task you ' +
+  'create waits at `pending_approval` until they do. Send this and DorkOS refuses the whole ' +
+  'call and changes nothing — tell the person the task is waiting, and let them approve it in ' +
+  'DorkOS. To turn an already-approved task on or off, use `enabled` instead.';
+
+/**
+ * Refuse a task write that reaches for a field only a person may set, or return
+ * `null` to let the call proceed.
+ *
+ * Unconditional, and that is the design rather than an omission. The wrong shape
+ * here would be "refuse when the caller presented an agent identity", because
+ * then omitting a header would be the bypass — the exact inversion
+ * `approvals/decision-authority.ts` was rewritten to remove. An MCP tool call IS
+ * the agent surface, so the proof is structural: there is no header involved and
+ * nothing to strip. `operator-tool-handlers.ts` refuses operator-only config
+ * paths the same way, for the same reason.
+ *
+ * The refusal is WHOLE. Nothing is written, including the fields the caller was
+ * allowed to send, so a caller is never told a change landed when part of it did
+ * not.
+ *
+ * @param args - The arguments the SDK parsed for this call.
+ * @returns The refusal envelope, or `null` when the call may proceed.
+ */
+function refuseOperatorOnlyTaskFields(args: unknown) {
+  const operatorOnly = findOperatorOnlyTaskFields(args);
+  if (operatorOnly.length === 0) return null;
+  return jsonContent(
+    {
+      error: OPERATOR_ONLY_TASK_ERROR,
+      code: OPERATOR_ONLY_TASK_CODE,
+      fields: operatorOnly,
+      message: describeOperatorOnlyTaskRefusal(operatorOnly),
+    },
+    true
+  );
 }
 
 /** List all Tasks scheduled jobs. */
@@ -24,7 +121,14 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
   };
 }
 
-/** Create a new scheduled job — always sets status to pending_approval. */
+/**
+ * Create a new scheduled job — always sets status to pending_approval.
+ *
+ * `maxRuntime` is accepted and ignored: the store call below hardcodes `null`,
+ * and a run-time cap is set with `tasks_update` instead (the seeded
+ * `scheduling-tasks` skill already says so). That is a separate, non-security
+ * loose end from DOR-504 and is deliberately left as it is here.
+ */
 export function createCreateScheduleHandler(deps: McpToolDeps) {
   return async (args: {
     name: string;
@@ -33,10 +137,15 @@ export function createCreateScheduleHandler(deps: McpToolDeps) {
     description?: string;
     timezone?: string;
     maxRuntime?: string;
+    /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
+    /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
+    status?: string;
   }) => {
     const err = requireTasks(deps);
     if (err) return err;
+    const refusal = refuseOperatorOnlyTaskFields(args);
+    if (refusal) return refusal;
     const schedule = deps.taskStore!.createTask({
       name: args.name,
       description: args.description ?? args.name,
@@ -66,19 +175,33 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
     enabled?: boolean;
     timezone?: string;
     maxRuntime?: string;
+    /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
+    /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
+    status?: string;
   }) => {
     const err = requireTasks(deps);
     if (err) return err;
-    const { id, permissionMode, maxRuntime, ...rest } = args;
-    const updated = deps.taskStore!.updateTask(id, {
-      ...rest,
-      ...(maxRuntime !== undefined && { maxRuntime }),
-      ...(permissionMode !== undefined && {
-        permissionMode: permissionMode as 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions',
-      }),
+    const refusal = refuseOperatorOnlyTaskFields(args);
+    if (refusal) return refusal;
+
+    // The patch is assembled field by field rather than spread from the rest of
+    // `args`, so there is no code here that could carry `permissionMode` to the
+    // store even if the guard above were removed. The spread this replaces is how
+    // the field reached the store in the first place: it forwarded whatever the
+    // tool schema happened to declare, and it also cast a bare `z.string()`
+    // straight into the permission-mode enum without validating it. A new
+    // agent-writable field now has to be added in both places, which is the
+    // trade: a forgotten field is a visible bug, a forwarded one was a hole.
+    const updated = deps.taskStore!.updateTask(args.id, {
+      ...(args.name !== undefined && { name: args.name }),
+      ...(args.prompt !== undefined && { prompt: args.prompt }),
+      ...(args.cron !== undefined && { cron: args.cron }),
+      ...(args.enabled !== undefined && { enabled: args.enabled }),
+      ...(args.timezone !== undefined && { timezone: args.timezone }),
+      ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
     });
-    if (!updated) return jsonContent({ error: `Schedule ${id} not found` }, true);
+    if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
     return jsonContent({ schedule: updated });
   };
 }
@@ -107,7 +230,15 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the Tasks tool definitions for registration with the MCP server. */
+/**
+ * The Tasks tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers — the external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again (DOR-499). Unguarded, so it needs no separate definitions function.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
 export function getTasksTools(deps: McpToolDeps) {
   return [
     tool(
@@ -118,7 +249,7 @@ export function getTasksTools(deps: McpToolDeps) {
     ),
     tool(
       'tasks_create',
-      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it runs.',
+      'Create a new Tasks scheduled job. The schedule will be created with pending_approval status and must be approved by the user before it can run.',
       {
         name: z.string().describe('Name for the scheduled job'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),
@@ -126,10 +257,8 @@ export function getTasksTools(deps: McpToolDeps) {
         description: z.string().optional().describe('Description of what this task does'),
         timezone: z.string().optional().describe('IANA timezone (e.g., "America/New_York")'),
         maxRuntime: z.string().optional().describe('Maximum run time (e.g., "5m", "1h")'),
-        permissionMode: z
-          .string()
-          .optional()
-          .describe('Permission mode: acceptEdits or bypassPermissions'),
+        permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
+        status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
       },
       createCreateScheduleHandler(deps)
     ),
@@ -144,7 +273,8 @@ export function getTasksTools(deps: McpToolDeps) {
         enabled: z.boolean().optional().describe('Enable or disable the schedule'),
         timezone: z.string().optional().describe('New timezone'),
         maxRuntime: z.string().optional().describe('New max runtime (e.g., "5m", "1h")'),
-        permissionMode: z.string().optional().describe('New permission mode'),
+        permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
+        status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
       },
       createUpdateScheduleHandler(deps)
     ),

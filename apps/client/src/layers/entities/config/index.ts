@@ -19,8 +19,8 @@ export { TelemetryPayloadToggle } from './ui/TelemetryPayloadToggle';
 export {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
-  pinPath,
-  unpinPath,
+  pinItem,
+  unpinItem,
   moveToGroup,
   createGroup,
   createSmartGroup,
@@ -34,13 +34,15 @@ export {
   setGroupCollapsed,
   setUngroupedCollapsed,
   setRecentsCollapsed,
+  setChannelsCollapsed,
+  setDmsCollapsed,
   setUngroupedSortMode,
   setGroupsHintDismissed,
   setGroupDisplayFilter,
   setGroupMuted,
   setGroupRules,
   setUngroupedDisplayFilter,
-  mutePath,
-  unmutePath,
+  muteItem,
+  unmuteItem,
 } from './model/use-sidebar-prefs';
 export type { UpdateSidebarPrefs } from './model/use-sidebar-prefs';

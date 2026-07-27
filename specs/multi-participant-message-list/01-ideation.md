@@ -112,12 +112,14 @@ N threads × N threads is combinatorial, and both Slack and Discord ship _zero_ 
 
 Slack threads can't corrupt a git repo. Ours can. Two threads whose agents both edit the working tree will collide, and this repo already has the rule for it: **one checkout, one writer**.
 
-Proposed policy:
+Policy — **settled** in `specs/rooms/01-ideation.md` (A′-policy):
 
-- **Default:** threads are advisory/read-oriented. They share the parent's `cwd` and respect a single write lock across the conversation tree — one writer at a time, others queue. This extends the existing `session-lock` / `X-Client-Id` machinery rather than inventing a second one.
+- **Default:** threads are advisory/read-oriented. They share the parent's `cwd`.
 - **Escalation:** promoting a thread to a branch allocates a worktree, at which point it is a peer session with its own tree.
 
-This needs deciding before threads ship, not after. It is the single most likely source of "agents corrupted each other" bug reports.
+**Correction to this document's original proposal.** It claimed the write lock "extends the existing `session-lock` / `X-Client-Id` machinery rather than inventing a second one." That is wrong. `SessionLockManager` is keyed on `sessionId` (`apps/server/src/services/session/session-lock.ts:24`) and guards several clients contending for **one session**. The hazard here is one resource with **many sessions** — the orthogonal case, which that machinery neither covers nor could be extended to cover. No cwd-, worktree-, or resource-keyed lock exists anywhere in the repo; it needs a new primitive keyed on the resolved path.
+
+That primitive is tracked separately as **A′-mechanism** and is **not** thread-gated, so it does not block threads. DOR-500 measured why it matters and what it should be keyed on: at 6 concurrent agents on one working tree, 57 / 6 / 18 canary lines of 360 survived across three runs, against 43 / 55 / 61 of 180 per tree when the same 6 agents were split across two trees. Tree-sharing is the collision, so the tree — not the conversation and not the room — is what a lock must be keyed on. (Interleave rate, not corruption rate: the canary is a deliberately non-atomic read-modify-write and an atomic writer loses nothing. See `research/20260725_q3-contention-preregistration.md`.)
 
 ## Reactions
 
@@ -167,12 +169,12 @@ Decisions 1 and 6 are **resolved** in `02-specification.md` (D1: the bubble is d
 
 1. ~~Right-aligned user bubble — drop entirely, or keep as a single-participant density mode?~~ Resolved: dropped (D1).
 2. Thread creation trigger: hover "reply in thread" only, or also auto-thread agent-initiated sub-work (subagent blocks are already proto-threads)?
-3. Do threads get their own runtime session, or one runtime session multiplexed by a thread key? (Cost, isolation and per-runtime feasibility differ.)
+3. ~~Do threads get their own runtime session, or one runtime session multiplexed by a thread key?~~ **Resolved: their own.** ADR-0255 binds a session to a runtime at first write and never rebinds, so a multiplexed session cannot hold agents on two runtimes — and a mixed-runtime thread is exactly the case the multiplexed option existed to make cheap. See ADR 260726-170125 and `specs/rooms/02-specification.md` §2 (`room_sessions`).
 4. Digest budget: caps for root headlines, sibling headlines, and total token ceiling.
 5. Actuator reaction set for v1, and whether actuators are user-configurable at launch.
 6. ~~Read cursor scope: per client, per (client, session), or per human identity once accounts land?~~ Resolved for phase 1: client-local `localStorage` per session (D4); revisit when accounts land.
 7. Thread lifecycle: explicit resolve, auto-resolve on inactivity, or both?
-8. Whether the write-lock policy is thread-scoped or conversation-tree-scoped.
+8. ~~Whether the write-lock policy is thread-scoped or conversation-tree-scoped.~~ **Resolved: neither.** The lock is keyed on the resource — a containment relation over paths — not on any conversation shape. Tracked as A′-mechanism; see the correction above.
 
 ## Message-id stability — verified 2026-07-25
 

@@ -14,19 +14,29 @@
  * place is what lets the guarantee be stated as a single sentence — whoever may
  * decide an approval may act without one — and stay true.
  *
- * ## The second, stricter bar
+ * ## The second, stricter bar, and why it is two pieces
  *
  * Clearing `resolveDecisionAuthority` is not always enough. Under the default
  * `local-trust` posture that resolver allows any caller presenting neither an
  * agent header nor an approval token, which an agent with a shell reaches by
- * omitting two headers. For most effects that is an accepted trade (the cockpit
- * needs those routes and `local-trust` genuinely cannot tell it apart from
- * anything else on loopback). For a few it is not, because the effect is a
- * standing one: a permission that keeps saying yes for hours.
+ * omitting two headers.
  *
- * {@link requireOperatorCookie} is that stricter bar, and it lives here for the
- * same anti-divergence reason as the reader above — two routes enforce it and
- * they must not mean different things by it.
+ * The stricter bar is split into the two independent questions it was always
+ * asking at once, because the surfaces that need it need different halves:
+ *
+ * - {@link requireStandingGrantsLogin} — is login on at all? This one is specific
+ *   to standing permissions, which cannot exist in a posture with no accounts.
+ * - {@link requireOperatorCookieUnderLogin} — with login on, is this a person in
+ *   the cockpit rather than something holding a per-user API key? **With login
+ *   off it allows, because there is no cookie for anyone to present.** That allow
+ *   is the residual DOR-505 could not close, and putting it in its own function
+ *   is what makes the posture it covers readable instead of buried.
+ *
+ * {@link requireOperatorCookie} composes both, for the one surface that needs
+ * both: creating a standing permission.
+ *
+ * They live here for the same anti-divergence reason as the reader above —
+ * several routes enforce them and they must not mean different things by it.
  *
  * @module lib/caller-authority
  */
@@ -91,18 +101,60 @@ export interface OperatorCookieRefusal {
  *
  * No defensive branch for an unreadable config: `configManager` is a module
  * singleton that boot initializes long before any router mounts, and a genuine
- * read failure THROWS rather than returning something falsy. The throw
- * propagates, the request never reaches the write, and the effect is the same
- * refusal a false would have produced. Writing a `return true` fallback here
- * would look like it was making that guarantee when it is the throw that does.
+ * read failure THROWS rather than returning something falsy. The throw propagates,
+ * the request never reaches the write, and the caller gets a 500 instead of a
+ * decision.
+ *
+ * **The throw is the whole guarantee, and no default value could stand in for
+ * it.** There is deliberately no claim here that a `false` would have been
+ * equivalent, because it would not be: the two callers read the answer in
+ * OPPOSITE directions. `false` refuses in {@link requireStandingGrantsLogin} and
+ * ALLOWS in {@link requireOperatorCookieUnderLogin}, which treats login-off as
+ * "no cookie to ask for". So a fallback of either polarity would be wrong for one
+ * of them, and only the throw is right for both.
  */
 function loginEnabledFromConfig(): boolean {
   return configManager.get('auth')?.enabled === true;
 }
 
 /**
- * Require that this request came from a person signed in to the cockpit, proved
- * by a session cookie.
+ * Require that local login is on, for the effects that cannot exist without it.
+ *
+ * Standing permissions are the whole of that set today. A standing permission is
+ * a window in which DorkOS stops asking, so the only thing that makes one
+ * defensible is that a real account had to open it. With login off there are no
+ * accounts, so there is nothing to attribute it to and no way to tell the person
+ * from a program running as them.
+ *
+ * This is deliberately a SEPARATE bar from
+ * {@link requireOperatorCookieUnderLogin}, not a special case inside it. That one
+ * allows every caller while login is off, which is right for an ordinary setting
+ * and wrong here: the tier gate reads `approvals.standingGrants` on every gated
+ * call, so a caller that could write it in the login-off posture would be arming
+ * the thing that makes DorkOS stop asking. The value also PERSISTS and nothing
+ * revokes it when the posture later widens, so it would still be set once login is
+ * on, reading as something the person chose. See `config-write-policy.ts` at
+ * REQUIRES_LOGIN_CONFIG_PATHS for the full argument.
+ *
+ * @param isLoginEnabled - Optional login-state lookup for tests.
+ * @returns `undefined` when login is on, or the refusal to answer with.
+ */
+export function requireStandingGrantsLogin(
+  isLoginEnabled?: LoginEnabledLookup
+): OperatorCookieRefusal | undefined {
+  if ((isLoginEnabled ?? loginEnabledFromConfig)()) return undefined;
+
+  return {
+    status: 403,
+    code: STANDING_GRANTS_REQUIRE_LOGIN_CODE,
+    error:
+      'Standing permissions need Require login turned on, because without it DorkOS cannot tell you apart from an agent running on this machine',
+  };
+}
+
+/**
+ * With login ON, require that this request came from a person signed in to the
+ * cockpit, proved by a session cookie. With login OFF, allow.
  *
  * ## Why a cookie, and not something weaker
  *
@@ -114,30 +166,42 @@ function loginEnabledFromConfig(): boolean {
  * signal that separates the cockpit from a header-stripping caller on loopback,
  * and inventing a weaker marker would assert a distinction DorkOS cannot make.
  *
- * The consequence is stated rather than hidden: with login off there is no
- * cookie, so standing permissions do not exist in that posture. That is more
- * honest than a control that appears to tell callers apart when it cannot.
+ * Under login-on it also separates a person from a program holding one of their
+ * per-user API keys, which `sessionGate` accepts as the same identity (DOR-474).
+ *
+ * ## The login-off half is an allow, and that is the residual
+ *
+ * With login off there is no cookie for ANYONE, so this bar cannot be applied
+ * without locking a person out of their own settings — the cockpit is exactly how
+ * they change them, and in the default posture it presents no credential at all.
+ * So this returns `undefined` and contributes NOTHING in that posture: whether the
+ * caller is refused then rests entirely on whatever other bars the route runs. In
+ * `routes/config.ts` that is the agent bar, which refuses a caller naming itself
+ * an agent and nothing else. That is the open half of DOR-505, stated here rather
+ * than implied: **in the login-off posture DorkOS cannot tell the cockpit from a
+ * program on the same machine that strips its agent header, and this function does
+ * not pretend otherwise.** Turning on Require login is what closes it.
+ *
+ * Callers that must refuse in BOTH postures need to run
+ * {@link requireStandingGrantsLogin} as well; this one cannot do it for them.
  *
  * This is a SERVER-side guarantee. The cockpit also hides and disables the
  * controls this refuses, but that is a courtesy; this is the guarantee.
  *
  * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param subject - What the caller tried to change, as the refusal names it, so
+ *   one bar can serve several surfaces without any of them inheriting another's
+ *   wording. Reads as "Only a person signed in to DorkOS can change {subject}".
  * @param isLoginEnabled - Optional login-state lookup for tests.
- * @returns `undefined` when the caller presented a session cookie, or the refusal
- *   to answer with.
+ * @returns `undefined` when login is off, or when the caller presented a session
+ *   cookie. Otherwise the refusal to answer with.
  */
-export function requireOperatorCookie(
+export function requireOperatorCookieUnderLogin(
   res: Response,
+  subject: string,
   isLoginEnabled?: LoginEnabledLookup
 ): OperatorCookieRefusal | undefined {
-  if (!(isLoginEnabled ?? loginEnabledFromConfig)()) {
-    return {
-      status: 403,
-      code: STANDING_GRANTS_REQUIRE_LOGIN_CODE,
-      error:
-        'Standing permissions need Require login turned on, because without it DorkOS cannot tell you apart from an agent running on this machine',
-    };
-  }
+  if (!(isLoginEnabled ?? loginEnabledFromConfig)()) return undefined;
 
   const user = res.locals.user as RequestUser | undefined;
   if (user?.credential === 'cookie') return undefined;
@@ -145,6 +209,24 @@ export function requireOperatorCookie(
   return {
     status: 403,
     code: OPERATOR_COOKIE_REQUIRED_CODE,
-    error: 'Only a person signed in to DorkOS can change standing permissions',
+    error: `Only a person signed in to DorkOS can change ${subject}`,
   };
+}
+
+/**
+ * Both bars, for creating a standing permission: login has to be on, and the
+ * caller has to be a person in the cockpit.
+ *
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param isLoginEnabled - Optional login-state lookup for tests.
+ * @returns `undefined` when the caller clears both bars, or the first refusal.
+ */
+export function requireOperatorCookie(
+  res: Response,
+  isLoginEnabled?: LoginEnabledLookup
+): OperatorCookieRefusal | undefined {
+  return (
+    requireStandingGrantsLogin(isLoginEnabled) ??
+    requireOperatorCookieUnderLogin(res, 'standing permissions', isLoginEnabled)
+  );
 }

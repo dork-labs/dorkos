@@ -3,10 +3,21 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+
+/**
+ * The palette resolves which session an agent should open on from the query
+ * cache, so it needs a real client. A fresh one per render keeps each case's
+ * cache empty.
+ */
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 // jsdom does not implement ResizeObserver (required by cmdk CommandList)
 globalThis.ResizeObserver = vi.fn().mockImplementation(function () {
@@ -122,7 +133,9 @@ vi.mock('@/layers/shared/model', () => ({
 const mockSetDir = vi.fn();
 let mockSelectedCwd: string | null = '/projects/current';
 
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // Keep the real session resolver — the palette builds its hrefs with it.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => [mockSelectedCwd, mockSetDir],
 }));
 
@@ -144,7 +157,7 @@ vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => {
     const features = [
       { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
-      { id: 'relay', label: 'Channels', icon: 'Radio', action: 'openRelay' },
+      { id: 'relay', label: 'Integrations', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
     ];
@@ -393,9 +406,9 @@ describe('Command Palette Integration', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 
-  it('selecting Channels opens relay dialog and closes palette', () => {
+  it('selecting Integrations opens relay dialog and closes palette', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Channels').closest('[data-slot="command-item"]');
+    const item = screen.getByText('Integrations').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
     expect(mockSetRelayOpen).toHaveBeenCalledWith(true);

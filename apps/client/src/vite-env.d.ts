@@ -25,6 +25,17 @@ declare global {
     /** The current platform (darwin, win32, linux). */
     platform: NodeJS.Platform;
     /**
+     * Open a URL in the system browser.
+     *
+     * The reason the seam in `shared/lib/link-navigation.ts` prefers this over
+     * `window.open`: at the app's own `http://localhost:<port>` origin the
+     * shell turns `window.open` into a second cockpit window, so a promise to
+     * leave would not be kept. Only `http`/`https` URLs are opened.
+     *
+     * @param url - The URL to hand to the browser.
+     */
+    openExternal(url: string): Promise<void>;
+    /**
      * Subscribe to main-process navigation requests (menu items, dock menu,
      * `dorkos://` deep links — ADR 260709-210223). `cb` receives the client
      * route path to navigate to.
@@ -42,6 +53,25 @@ declare global {
      * @returns The queued path, or `null` if nothing is pending.
      */
     getPendingNavigate(): Promise<string | null>;
+    /**
+     * Subscribe to `Cmd/Ctrl+W` so the renderer can close one of its in-window
+     * tabs instead of the whole window (DOR-540). Mirrors the contract in the
+     * desktop preload — read that for the authoritative version.
+     *
+     * **Subscribing is what claims the keystroke**, and the answer decides what
+     * happens: return `true` when you closed a tab and the window stays open;
+     * return `false` or nothing and the window closes, which is the right
+     * answer for the last tab. Throwing, or taking longer than the main
+     * process's backstop timeout, also closes the window — so the handler must
+     * do its work **synchronously**.
+     *
+     * **Optional on purpose.** It is absent in the browser cockpit, in the
+     * Obsidian embed, and in any desktop build predating the menu item, so
+     * every caller must guard on it.
+     *
+     * @returns An unsubscribe function that removes the listener.
+     */
+    onCloseTab?(cb: () => boolean | void): () => void;
     /**
      * Restart the app to install a downloaded update — wired to the in-app
      * card's "Restart to install" button. Only meaningful after an

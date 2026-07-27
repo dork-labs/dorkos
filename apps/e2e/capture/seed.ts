@@ -45,7 +45,18 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** PATCH JSON, throwing on a non-2xx response. */
+/**
+ * PATCH JSON, throwing on a non-2xx response.
+ *
+ * Sends no credential, and several callers below patch `operator-only` settings
+ * with it (`telemetry.*`, `mesh.scanRoots`, `agents.defaultDirectory`). That works
+ * only because the capture home is always a fresh wipe, so `auth.enabled` is off
+ * and the cookie bar on `PATCH /api/config` does not apply (DOR-505). **One
+ * `auth.enabled: true` anywhere in this pipeline turns every later operator-only
+ * patch into a 403**, and there is no fallback here that would soften it into
+ * anything but a thrown error. If capture ever needs login on, this helper needs a
+ * real session cookie first.
+ */
 async function patchJson(url: string, body: unknown): Promise<void> {
   const res = await fetch(url, {
     method: 'PATCH',

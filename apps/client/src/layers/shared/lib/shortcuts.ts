@@ -1,4 +1,4 @@
-import { isMac } from './platform';
+import { isMac, isDesktopShell } from './platform';
 
 /** Definition of a single keyboard shortcut. */
 export interface ShortcutDef {
@@ -10,23 +10,30 @@ export interface ShortcutDef {
   label: string;
   /** Category for the reference panel. */
   group: ShortcutGroup;
-  /** Where the shortcut is active. Defaults to 'global'. */
-  scope?: 'global' | 'sidebar';
+  /**
+   * Live only in the desktop app, and so listed only there
+   * ({@link getShortcutsGrouped}).
+   *
+   * The reference panel is a promise: a combo it lists must do something when
+   * you press it. A panel that advertises keys the browser has already taken is
+   * worse than one that leaves them out, because the reader blames DorkOS for
+   * not working. Mark the shortcut, do not fork the panel.
+   */
+  desktopOnly?: boolean;
 }
 
 /** Categories for grouping shortcuts in the reference panel. */
-export type ShortcutGroup = 'sessions' | 'navigation' | 'chat' | 'global';
+export type ShortcutGroup = 'navigation' | 'chat' | 'global';
 
 /** Group display order and labels. */
 export const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
   navigation: 'Navigation',
-  sessions: 'Sessions',
   chat: 'Chat',
   global: 'Global',
 };
 
 /** Display order for groups in the reference panel. */
-export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'sessions', 'chat', 'global'];
+export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = ['navigation', 'chat', 'global'];
 
 /** All keyboard shortcuts in the application. Single source of truth. */
 export const SHORTCUTS = {
@@ -61,29 +68,37 @@ export const SHORTCUTS = {
     label: 'Agent profile',
     group: 'navigation',
   },
-
-  // Sessions
-  NEW_SESSION: { id: 'new-session', key: 'mod+shift+n', label: 'New session', group: 'sessions' },
-  TAB_SESSIONS: {
-    id: 'tab-sessions',
-    key: 'mod+1',
-    label: 'Sessions tab',
-    group: 'sessions',
-    scope: 'sidebar',
+  // In-window tabs (DOR-540), registered by `useAppTabShortcuts` — in the
+  // desktop app and nowhere else (DOR-568). The tabs they drive are a desktop
+  // feature: a browser owns its own tabs, and these keys already address them
+  // there. So the panel does not list them in a browser.
+  NEW_TAB: {
+    id: 'new-tab',
+    key: 'mod+t',
+    label: 'New tab',
+    group: 'navigation',
+    desktopOnly: true,
   },
-  TAB_SCHEDULES: {
-    id: 'tab-schedules',
-    key: 'mod+2',
-    label: 'Schedules tab',
-    group: 'sessions',
-    scope: 'sidebar',
+  SELECT_TAB: {
+    id: 'select-tab',
+    key: 'mod+1-9',
+    label: 'Go to tab',
+    group: 'navigation',
+    desktopOnly: true,
   },
-  TAB_CONNECTIONS: {
-    id: 'tab-connections',
-    key: 'mod+3',
-    label: 'Connections tab',
-    group: 'sessions',
-    scope: 'sidebar',
+  PREVIOUS_TAB: {
+    id: 'previous-tab',
+    key: 'mod+shift+[',
+    label: 'Previous tab',
+    group: 'navigation',
+    desktopOnly: true,
+  },
+  NEXT_TAB: {
+    id: 'next-tab',
+    key: 'mod+shift+]',
+    label: 'Next tab',
+    group: 'navigation',
+    desktopOnly: true,
   },
 
   // Chat (composer + interactive tool shortcuts)
@@ -153,15 +168,28 @@ export function formatShortcutKey(def: ShortcutDef | string): string {
     .toUpperCase();
 }
 
-/** Group all shortcuts by their category, in display order. */
+/**
+ * The shortcuts this surface actually has, grouped by category in display
+ * order — what the reference panel renders.
+ *
+ * {@link ShortcutDef.desktopOnly} entries are dropped outside the desktop app,
+ * so the panel never advertises a key the browser has already claimed. Read at
+ * call time, not at module load, so it reflects the surface rather than the
+ * import order.
+ */
 export function getShortcutsGrouped(): {
   group: ShortcutGroup;
   label: string;
   shortcuts: ShortcutDef[];
 }[] {
   const map = new Map<ShortcutGroup, ShortcutDef[]>();
+  const desktop = isDesktopShell();
+  // Annotated to widen `SHORTCUTS`'s literal members back to `ShortcutDef`:
+  // `as const` drops the optional keys an entry does not set.
+  const all: ShortcutDef[] = Object.values(SHORTCUTS);
 
-  for (const shortcut of Object.values(SHORTCUTS)) {
+  for (const shortcut of all) {
+    if (shortcut.desktopOnly && !desktop) continue;
     const list = map.get(shortcut.group) ?? [];
     list.push(shortcut);
     map.set(shortcut.group, list);

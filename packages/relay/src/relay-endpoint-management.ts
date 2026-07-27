@@ -58,6 +58,16 @@ export interface ReadInboxOptions {
 
 // --- Endpoint Registration ---
 
+/** Options accepted by {@link executeRegisterEndpoint}. */
+export interface RegisterEndpointOptions {
+  /**
+   * Relay subject of the principal registering this endpoint, recorded as
+   * {@link EndpointInfo.owner}. Omit for endpoints the server registers on its
+   * own behalf; an omitted owner means nobody owns the endpoint.
+   */
+  owner?: string;
+}
+
 /**
  * Register a new message endpoint (creates Maildir directories).
  *
@@ -65,14 +75,16 @@ export interface ReadInboxOptions {
  * to enable push delivery to subscription handlers.
  *
  * @param subject - The hierarchical subject for this endpoint
+ * @param options - Optional registration options (see {@link RegisterEndpointOptions})
  * @param deps - Injected dependencies
  * @returns The registered EndpointInfo
  */
 export async function executeRegisterEndpoint(
   subject: string,
+  options: RegisterEndpointOptions | undefined,
   deps: EndpointManagementDeps
 ): Promise<EndpointInfo> {
-  const info = await deps.endpointRegistry.registerEndpoint(subject);
+  const info = await deps.endpointRegistry.registerEndpoint(subject, options);
   await deps.maildirStore.ensureMaildir(info.hash);
   await deps.watcherManager.startWatcher(info);
   return info;
@@ -106,6 +118,24 @@ export async function executeUnregisterEndpoint(
  */
 export function executeListEndpoints(deps: EndpointManagementDeps): EndpointInfo[] {
   return deps.endpointRegistry.listEndpoints();
+}
+
+/**
+ * Look up one registered endpoint by its exact subject.
+ *
+ * The lookup is an exact match on the subject string used at registration —
+ * there is no case folding, trimming, or wildcard expansion. A subject spelled
+ * any other way resolves to `undefined`.
+ *
+ * @param subject - The endpoint subject to look up
+ * @param deps - Injected dependencies
+ * @returns The EndpointInfo, or `undefined` when no endpoint is registered
+ */
+export function executeGetEndpoint(
+  subject: string,
+  deps: EndpointManagementDeps
+): EndpointInfo | undefined {
+  return deps.endpointRegistry.getEndpoint(subject);
 }
 
 /**

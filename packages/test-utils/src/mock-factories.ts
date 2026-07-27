@@ -293,6 +293,16 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     }),
     pinWorkspace: vi.fn().mockResolvedValue({}),
     removeWorkspace: vi.fn().mockResolvedValue({ removed: true }),
+    // Rooms (spec `rooms`) — every read answers empty so a component under test
+    // renders its empty state unless the test overrides it.
+    listRooms: vi.fn().mockResolvedValue([]),
+    createRoom: vi.fn(),
+    getRoom: vi.fn(),
+    listRoomEntries: vi.fn().mockResolvedValue([]),
+    postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
+    addRoomMember: vi.fn(),
+    setRoomReadCursor: vi.fn().mockResolvedValue({}),
+    subscribeRoom: vi.fn(emptyAsyncIterable),
     // Models
     getModels: vi.fn().mockResolvedValue([
       { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast model' },
@@ -533,9 +543,15 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((approvalId: string) =>
         Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
       ),
+    // Standing permissions (spec `agent-approval-settings` §3.7)
+    listStandingPermissions: vi.fn().mockResolvedValue({ grants: [] }),
+    revokeStandingPermission: vi
+      .fn()
+      .mockImplementation((grantId: string) => Promise.resolve({ ok: true, grantId })),
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),
+    forkShape: vi.fn(),
     // Cloud account link (accounts-and-auth P2)
     startCloudLink: vi.fn().mockResolvedValue({
       userCode: 'ABCD-1234',

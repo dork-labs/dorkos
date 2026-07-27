@@ -39,9 +39,6 @@ const serverEnvSchema = z.object({
   // shared seam also bundled into the CLI, and this schema's parse-once
   // snapshot is a server-boot concern. See readEnvSecret() there; same
   // carve-out routes/tunnel.ts uses for NGROK_AUTHTOKEN.
-  // Marketplace MCP — when '1', auto-approves every install/uninstall/create
-  // confirmation request without prompting the user. Used by CI and tests.
-  MARKETPLACE_AUTO_APPROVE: z.string().optional(),
   // Approval decision window (ms). Boot-time only, and CLAMPED AT BOOT so it can
   // only ever SHORTEN the two-hour default, never lengthen it — a one-directional
   // knob cannot be turned into a way to keep consent alive past the moment a
@@ -91,7 +88,28 @@ const serverEnvSchema = z.object({
   // Exposure escape hatch (accounts-and-auth task 1.3) — when 'true', allow
   // binding a non-loopback host without a login. Off by default; set only by
   // container images that own their own network boundary (see Dockerfile.*).
+  // It also switches OFF the two request-level locality checks, for the same
+  // reason — the surrounding environment owns the boundary, and inside a
+  // container neither check can succeed anyway (a browser's request arrives from
+  // the bridge gateway, not loopback):
+  //   - the `/api` host guard (middleware/host-guard.ts)
+  //   - the local-only gate on the runtime connect/provision routes (routes/runtimes.ts)
   DORKOS_ALLOW_INSECURE_BIND: boolFlag,
+  // Extra host names the `/api` host guard accepts, comma-separated and without
+  // ports (DOR-532), e.g. `dorkos.example.com,dorkos.internal`. Only consulted
+  // in login-off mode: with login on, the guard is inert because auth cookies
+  // are already origin-scoped. Set this when a login-off reverse proxy forwards
+  // its own `Host` to DorkOS. See middleware/host-guard.ts.
+  DORKOS_TRUSTED_HOSTS: z.string().optional(),
+  // Set by a supervising process that owns the server's lifecycle (DOR-532).
+  // `desktop` means the Electron shell started this server as a utility process,
+  // so the admin restart/reset endpoints refuse (409) rather than exit into a
+  // process nothing will bring back. See routes/admin.ts.
+  DORKOS_MANAGED_BY: z.enum(['desktop']).optional(),
+  // Single-instance lock escape hatch (DOR-532) — when 'true', skip the
+  // per-data-directory lock that stops two servers from sharing one `~/.dork`.
+  // The lock is already inert under NODE_ENV=test.
+  DORKOS_SKIP_INSTANCE_LOCK: boolFlag,
   // Activity feed — retention period for pruning (defaults to 30 days in service)
   DORKOS_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime
@@ -156,3 +174,22 @@ if (!result.success) {
 
 export const env = result.data;
 export type ServerEnv = typeof env;
+
+// The marketplace auto-approve environment variable was retired (DOR-501):
+// marketplace installs always need a person's approval now, and nothing reads
+// it any more. Zod silently strips unknown keys rather than rejecting them, so
+// a pipeline still setting it gets no error: `marketplace_install` just
+// returns `requires_confirmation` forever, which a naive script can misread
+// as success. Warn instead of failing silent.
+//
+// The name is assembled from fragments, not written as a literal, so this
+// intentional (advisory-only, never behavior-changing) mention doesn't trip
+// `no-auto-approve-env-var.test.ts`'s reintroduction guard — see that file's
+// module TSDoc for why the guard treats any literal appearance of the name as
+// a regression.
+const RETIRED_AUTO_APPROVE_ENV_VAR = ['MARKETPLACE', 'AUTO', 'APPROVE'].join('_');
+if (process.env[RETIRED_AUTO_APPROVE_ENV_VAR]) {
+  console.warn(
+    `\n  ${RETIRED_AUTO_APPROVE_ENV_VAR} is set, but it no longer does anything: marketplace installs always wait for your approval now. Remove it from your environment. See contributing/external-agent-marketplace-access.md for how to approve installs from a script.\n`
+  );
+}

@@ -6,6 +6,7 @@
  * @module @dorkos/extension-api
  */
 export {
+  EXTENSION_ID_REGEX,
   ExtensionManifestSchema,
   SettingOptionSchema,
   SettingDeclarationSchema,

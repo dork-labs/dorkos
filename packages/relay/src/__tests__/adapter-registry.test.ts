@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createMockRelay } from './fixtures.js';
 import { AdapterRegistry } from '../adapter-registry.js';
 import type { RelayAdapter, RelayPublisher, AdapterStatus } from '../types.js';
 
@@ -19,13 +20,6 @@ function createMockAdapter(overrides: Partial<RelayAdapter> = {}): RelayAdapter 
     deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
     getStatus: vi.fn().mockReturnValue(status),
     ...overrides,
-  };
-}
-
-function createMockRelay(): RelayPublisher {
-  return {
-    publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
-    onSignal: vi.fn().mockReturnValue(() => {}),
   };
 }
 

@@ -15,7 +15,7 @@ export const systemModules: SystemModule[] = [
     name: 'Engine',
     label: 'Runtime',
     description:
-      'The runtime that powers everything. Connects your AI agents, exposes a secure API, and runs Tasks, Relay, and Mesh as integrated capabilities.',
+      'The runtime that powers everything. Connects your AI agents, listens only on your own machine by default, and runs Tasks, Relay, and Mesh as integrated capabilities.',
     status: 'available',
     group: 'platform',
   },

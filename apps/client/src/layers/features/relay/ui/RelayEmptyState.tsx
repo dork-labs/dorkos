@@ -1,12 +1,12 @@
 import { Button } from '@/layers/shared/ui';
 
 interface RelayEmptyStateProps {
-  /** Called when the user clicks the keystone "Add Channel" action. */
-  onAddChannel: () => void;
+  /** Called when the user clicks the keystone "Add Integration" action. */
+  onAddIntegration: () => void;
 }
 
-/** Full-bleed ghost preview empty state for Relay Mode A (no channels configured). */
-export function RelayEmptyState({ onAddChannel }: RelayEmptyStateProps) {
+/** Full-bleed ghost preview empty state for Relay Mode A (no integrations configured). */
+export function RelayEmptyState({ onAddIntegration }: RelayEmptyStateProps) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-16">
       {/* Ghost preview — faded message rows showing what the configured state looks like */}
@@ -63,11 +63,11 @@ export function RelayEmptyState({ onAddChannel }: RelayEmptyStateProps) {
         Relay routes messages between your agents and external platforms.
       </p>
       <p className="text-muted-foreground mb-6 max-w-sm text-center text-sm">
-        Add your first channel to start sending and receiving messages.
+        Add your first integration to start sending and receiving messages.
       </p>
 
       {/* Keystone action */}
-      <Button onClick={onAddChannel}>Add Channel</Button>
+      <Button onClick={onAddIntegration}>Add Integration</Button>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ShortcutDef } from '../shortcuts';
 
 describe('shortcuts registry', () => {
   describe('formatShortcutKey', () => {
@@ -26,9 +27,9 @@ describe('shortcuts registry', () => {
     it('accepts a ShortcutDef object', async () => {
       vi.doMock('../platform', () => ({ isMac: true }));
       const { formatShortcutKey, SHORTCUTS } = await import('../shortcuts');
-      const result = formatShortcutKey(SHORTCUTS.NEW_SESSION);
-      // mod+shift+n → ⌘⇧N (mod replaced first, then shift)
-      expect(result).toBe('\u2318\u21e7N');
+      const result = formatShortcutKey(SHORTCUTS.AGENT_PROFILE);
+      // mod+shift+a → ⌘⇧A (mod replaced first, then shift)
+      expect(result).toBe('\u2318\u21e7A');
     });
   });
 
@@ -38,7 +39,7 @@ describe('shortcuts registry', () => {
     });
 
     it('returns groups in the correct display order', async () => {
-      vi.doMock('../platform', () => ({ isMac: true }));
+      vi.doMock('../platform', () => ({ isMac: true, isDesktopShell: () => true }));
       const { getShortcutsGrouped, SHORTCUT_GROUP_ORDER } = await import('../shortcuts');
       const groups = getShortcutsGrouped();
       const groupKeys = groups.map((g) => g.group);
@@ -46,12 +47,28 @@ describe('shortcuts registry', () => {
       expect(groupKeys).toEqual(SHORTCUT_GROUP_ORDER.filter((g) => groupKeys.includes(g)));
     });
 
-    it('includes all shortcuts from the registry', async () => {
-      vi.doMock('../platform', () => ({ isMac: true }));
+    it('includes every shortcut in the registry on the desktop app', async () => {
+      vi.doMock('../platform', () => ({ isMac: true, isDesktopShell: () => true }));
       const { getShortcutsGrouped, SHORTCUTS } = await import('../shortcuts');
       const groups = getShortcutsGrouped();
       const allShortcuts = groups.flatMap((g) => g.shortcuts);
       expect(allShortcuts.length).toBe(Object.values(SHORTCUTS).length);
+    });
+
+    it('leaves the desktop-only shortcuts out in a browser', async () => {
+      // The panel promises that what it lists works when you press it, so it
+      // must not list keys the browser has already claimed (DOR-568).
+      vi.doMock('../platform', () => ({ isMac: true, isDesktopShell: () => false }));
+      const { getShortcutsGrouped, SHORTCUTS } = await import('../shortcuts');
+      const listed = getShortcutsGrouped().flatMap((g) => g.shortcuts);
+      const all: ShortcutDef[] = Object.values(SHORTCUTS);
+      const desktopOnly = all.filter((s) => s.desktopOnly);
+
+      expect(desktopOnly.length).toBeGreaterThan(0);
+      expect(listed).toHaveLength(all.length - desktopOnly.length);
+      for (const shortcut of desktopOnly) {
+        expect(listed.map((s) => s.id)).not.toContain(shortcut.id);
+      }
     });
   });
 

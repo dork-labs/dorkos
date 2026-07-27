@@ -1,6 +1,6 @@
 ---
 title: Action Approvals
-description: DorkOS asks you first before an agent adds or removes a marketplace package
+description: DorkOS asks you first before an agent does something to DorkOS you cannot take back
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
@@ -9,9 +9,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Action Approvals
 
-Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Removing an installed package is not.
+Your agents can run DorkOS for you: make agents, schedule work, change settings, add and remove packages. Most of that is easy to take back. Three things are not: removing an installed package, deleting a scheduled task, and removing an agent.
 
-So DorkOS stops there and asks you. The agent does not get to remove a package and then tell you about it.
+So DorkOS stops at those three and asks you. An agent does not get to do one of them and then tell you about it afterwards.
 
 <Callout type="info">
   This is not the same as [tool approval](/docs/guides/tool-approval). Tool approval covers what an
@@ -52,31 +52,87 @@ Nothing is pre-selected, and neither button is styled as the safe choice. Saying
 
 ## What needs your OK, and what doesn't
 
-Three things an agent asks for will wait for you today:
+Five things an agent asks for will wait for you today. Three of them cannot be taken back:
 
 - **Removing an installed package**, with or without its saved data
+- **Deleting a scheduled task**, which has no undo: the prompt, the schedule, and the timezone are gone
+- **Removing an agent**, which also deletes its setup file and turns off its scheduled tasks
+
+Two more wait for you because they bring new code onto your machine:
+
 - **Installing a package**
 - **Creating a new package** in your personal marketplace
 
-Everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a setting: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
+Almost everything else an agent asks DorkOS for runs straight away. Reading your activity, listing your agents, editing an agent, changing a preference: those go through, and the ones that change something land in your activity feed so you can see them after the fact.
 
-The rule is about the action, not about which agent asked.
+The rule is about the action, not about which agent asked. The one way to change it is to grant a standing permission, which is a decision you make yourself, for one agent and one action, on a clock. See [Telling DorkOS to stop asking about one thing](#telling-dorkos-to-stop-asking-about-one-thing).
+
+One set of settings is neither of those things. Agents are refused them outright, with no card and no way to say yes. See [Settings your agents cannot change](#settings-your-agents-cannot-change).
 
 <Callout type="warn">
-  **Some tools are not covered yet.** Agents also get tools for scheduled tasks, agent-to-agent
-  messages, agent discovery, and extensions. None of those wait for you: an agent can delete one of
-  your scheduled tasks without asking first. Bringing them under the same question is work we have
-  not finished. If that gap matters for how you run your agents, the safe move today is to not hand
-  an agent a job that depends on deleting things you cannot rebuild.
+  **Waiting is for the things you cannot rebuild, and a few things you can are still gone in one
+  call.** An agent can overwrite a scheduled task's prompt and timing with no copy of the old one.
+  It can clear its own message inbox, which deletes the messages it just read. It can remove a
+  message endpoint along with anything undelivered in it, or delete a chat route. None of those stop
+  to ask, because they are the ordinary way an agent tidies up after itself, and a card on every
+  routine cleanup teaches people to click through cards without reading them. What you get instead
+  is a record: each one lands in your activity feed, named to the agent when DorkOS knows which one
+  asked. Extension tools work differently again: an agent can write and compile extension files
+  freely, but it cannot make DorkOS **run** an extension's code until you have allowed that
+  extension, once. That covers both places it would run, on your computer and on the DorkOS page in
+  your browser.
 </Callout>
 
 Each action DorkOS does cover carries a size label on its card, so you can tell at a glance what you are being asked:
 
-| Label                | What it means                                                     |
-| -------------------- | ----------------------------------------------------------------- |
-| **Read only**        | Only reads. You will not be asked about these at all.             |
-| **Changes things**   | Changes something you can change back.                            |
-| **Cannot be undone** | There is no undo. Removing an installed package is the one today. |
+| Label                | What it means                                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Read only**        | Only reads. You will not be asked about these at all.                                                       |
+| **Changes things**   | Changes something you can change back.                                                                      |
+| **Cannot be undone** | There is no undo. Three today: removing an installed package, deleting a scheduled task, removing an agent. |
+
+## Settings your agents cannot change
+
+Most settings are preferences, and an agent can change one on your word. A few are not preferences. They decide who can reach this DorkOS, what it can reach on your computer, where your keys go, and what leaves the machine:
+
+- Whether **Require login** is on
+- Your public web address, and the ngrok account it runs through
+- Whether the tool endpoint answers, and the key that guards it
+- Your provider credentials, and the addresses they get sent to
+- The DorkOS account this instance is linked to
+- The folder DorkOS is allowed to touch, and the programs it is allowed to start
+- Which extensions may run their code inside DorkOS
+- Your privacy choices
+
+Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself in Settings. Three of these settings can still be reached by another route, which the second note below explains.
+
+<Callout type="warn">
+  **How well this holds depends on Require login, and it is worth knowing which half you have.**
+
+With **Require login** on, only a person signed in to DorkOS can change these settings **through the
+settings screen**. A program holding one of your API keys is refused there just like an agent,
+because a key proves an account, not a person at the keyboard.
+
+With **Require login** off, which is the default, it holds against any agent that says who it is,
+and that is how agents normally run. It does **not** hold against a program on your computer that
+deliberately hides that it is an agent. That program looks exactly like you clicking a toggle in
+Settings, and with no password anywhere, DorkOS has nothing left to tell the two apart. This is the
+same gap as the one below, and turning on **Require login** is what closes it.
+
+</Callout>
+
+One more thing works the same way, though it is not a setting: **where your packages come from**. Agents cannot add or remove a marketplace source, because a source is a place DorkOS will download and run code from. The note just above does not describe it, though: this one is guarded the same way whether **Require login** is on or off, so turning login on does not add a second lock here the way it does for settings. [Marketplace sources](/docs/marketplace#marketplace-sources) explains it, including the part **Require login** does not fix.
+
+<Callout type="warn">
+  **Not every one of these settings is guarded everywhere yet, and the unguarded paths are wide
+  open.** Three of them have their own separate buttons that write the same setting by another path:
+  connecting a model provider, starting your public web address, and linking this instance to a
+  DorkOS account. Those paths have **no agent check at all**. Not "they accept an API key" — they do
+  not ask who is calling in the first place, so an agent that says plainly who it is can use them,
+  with **Require login** on or off. Reaching them still takes a terminal or the ability to make web
+  requests to DorkOS, which is the same access the gap further down describes. So read this as: the
+  settings screen is guarded, those three buttons are not yet. We are closing them separately.
+</Callout>
 
 ## What about an agent that does not say who it is?
 
@@ -110,6 +166,35 @@ you would give out your password.
 </Callout>
 
 Either way, every yes and every no lands in your activity feed. With login required, it says which account answered. Without it, the feed says the answer came from this machine and that DorkOS could not check who gave it, so an approval you never clicked is something you can find.
+
+## Telling DorkOS to stop asking about one thing
+
+Answering the same question five times a day is not safety, it is noise. So you can answer it once, for one agent and one action, for a set stretch of time.
+
+Turn it on in Settings, under Security. After that, an approval card carries a third button that names exactly what it does: **Allow, and stop asking about this for 8 hours**. Press it and that one agent does that one thing without stopping, until the time runs out.
+
+Some things about it are worth knowing before you use it:
+
+- **It covers one agent doing one action.** The same agent doing something else still asks, and so does a different agent doing the same thing. There is no "trust this agent with everything" button, on purpose.
+- **The clock does not reset.** Eight hours means eight hours from when you pressed the button, no matter how often the agent uses it.
+- **A day is the longest you can pick.** "Forever" is not on the list.
+- **You can find it and end it in two places.** Settings under Security lists everything that is live, and the approvals marker in the header shows it too. Either one has a **Stop trusting** button next to it.
+- **Every use is still recorded.** Your activity feed says so each time the agent goes ahead without asking. Ending a permission stops the next action; it does not undo one that already ran.
+- **Turning the feature off ends everything that is live.** Nothing sits dormant waiting to wake up later.
+
+<Callout type="warn">
+  **This needs Require login on, and there is no lighter version.** Opening a permission means
+  DorkOS has to know it is you asking and not an agent on the same computer. With no login, there is
+  no password anywhere and nothing to tell the two apart, so the control is shown but switched off,
+  with Require login sitting right above it. Any weaker check would be one an agent could pass
+  exactly as easily as you, which would be worse than not offering it.
+</Callout>
+
+<Callout type="warn">
+  **A standing permission really does lower the gate.** That is what it is for. It is a trade you
+  make on purpose, bounded by one agent, one action, and a clock. If you would not be comfortable
+  coming back to find that action had run three times while you were at lunch, do not grant it.
+</Callout>
 
 ## Approvals are used once, and they expire
 

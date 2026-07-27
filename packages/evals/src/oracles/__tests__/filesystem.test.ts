@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { EvalSandbox, OracleContext } from '../../types.js';
+import { emptyApprovalLog, type EvalSandbox, type OracleContext } from '../../types.js';
 import {
   fileExists,
   dirAbsent,
@@ -23,7 +23,13 @@ let root: string;
 
 /** Build an OracleContext over the temp sandbox (no server/frames needed). */
 function ctx(): OracleContext {
-  return { sandbox, baseUrl: 'http://unused', sessionId: 's', frames: [] };
+  return {
+    sandbox,
+    baseUrl: 'http://unused',
+    sessionId: 's',
+    frames: [],
+    approvals: emptyApprovalLog(),
+  };
 }
 
 beforeEach(async () => {

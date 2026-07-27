@@ -24,6 +24,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: (...args: unknown[]) => mockReadManifest(...args),
   writeManifest: (...args: unknown[]) => mockWriteManifest(...args),
   MANIFEST_DIR: '.dork',
+  MANIFEST_FILE: 'agent.json',
 }));
 
 const mockReadConventionFile = vi.fn().mockResolvedValue(null);
@@ -63,7 +64,7 @@ vi.mock('@dorkos/shared/dorkbot-templates', () => ({
 // DOR-142: createAgentWorkspace now scaffolds instructions via @dorkos/harness
 // (synchronous node:fs), not the mocked fs/promises. Mock the collaborator so the
 // route test asserts the wiring rather than real sync-fs writes against /mock paths.
-const mockScaffoldInstructions = vi.fn(() => ({ created: [], skipped: [] }));
+const mockScaffoldInstructions = vi.fn(() => ({ created: [], skipped: [], createdDirs: [] }));
 
 vi.mock('@dorkos/harness', () => ({
   scaffoldInstructions: (...args: unknown[]) => mockScaffoldInstructions(...args),
@@ -165,10 +166,12 @@ describe('POST /api/agents/create', () => {
     expect(mkdirCalls[0]).toEqual(['/mock/agents', { recursive: true }]);
     // Agent directory created (non-recursive)
     expect(mkdirCalls[1]).toEqual(['/mock/agents/my-agent']);
-    // .dork/ subdirectory created recursively so the same code path also
-    // works for the marketplace install pipeline, where the package may
-    // already ship a `.dork/` directory before scaffolding runs.
-    expect(mkdirCalls[2]).toEqual(['/mock/agents/my-agent/.dork', { recursive: true }]);
+    // .dork/ subdirectory created non-recursively (DOR-507): the call either
+    // creates it or fails with EEXIST, which is how the creator knows whether
+    // the directory is its own to remove if the scaffold fails. An existing
+    // `.dork/` is still fine, as in the marketplace install pipeline where the
+    // package may already ship one.
+    expect(mkdirCalls[2]).toEqual(['/mock/agents/my-agent/.dork']);
   });
 
   it('scaffolds SOUL.md and NOPE.md via writeConventionFile', async () => {

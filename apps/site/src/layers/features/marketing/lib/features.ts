@@ -434,16 +434,16 @@ export const features: Feature[] = [
     name: 'Action Approvals',
     product: 'console',
     category: 'agent-control',
-    tagline: 'An agent asks before it removes a package, and waits for you',
+    tagline: 'An agent asks before it does something you cannot take back',
     description:
-      'Your agents can add and remove marketplace packages. Before one lands or leaves, DorkOS puts a card in front of you and waits for your answer.',
+      'Removing a package, deleting a scheduled task, removing an agent: before any of those run, DorkOS puts a card in front of you and waits for your answer.',
     status: 'ga',
     benefits: [
       'A marker in the header when an agent is waiting',
       'Read what would run, in plain words, before deciding',
       'One yes covers one exact action, then it is spent',
       'Requests run out after two hours, so none linger',
-      'Refusals land in your activity feed, not just approvals',
+      'Turn on sign-in so only your account can answer a card',
     ],
     moment:
       'Your agent wants to remove a package, saved data and all. A marker appears in the header wherever you happen to be, you read the one sentence describing it, and you decide.',

@@ -373,14 +373,25 @@ describe('MCP Tool Handlers', () => {
       expect(parsed.error).toContain('not found');
     });
 
-    it('handles permissionMode string conversion', async () => {
-      const store = makeMockTasksStore({
-        updateTask: vi.fn().mockReturnValue({ id: 'u1', permissionMode: 'plan' }),
-      });
+    it('refuses permissionMode and writes nothing (DOR-504)', async () => {
+      // This test used to assert the OPPOSITE: that the handler passed
+      // `permissionMode` through to the store. That was the defect — an agent
+      // could hand a future unattended run the safety prompts its caller did not
+      // have. The field is now refused, and the refusal is whole, so the store is
+      // never touched. Full coverage of both servers lives in
+      // `mcp-tools/__tests__/task-tools.test.ts` and
+      // `external-mcp/__tests__/task-permission-mode.test.ts`.
+      const store = makeMockTasksStore({ updateTask: vi.fn() });
       const deps = { ...makeMockDeps(), taskStore: store };
       const handler = createUpdateScheduleHandler(deps);
-      await handler({ id: 'u1', permissionMode: 'plan' });
-      expect(store!.updateTask).toHaveBeenCalledWith('u1', { permissionMode: 'plan' });
+      const result = await handler({ id: 'u1', name: 'Renamed', permissionMode: 'plan' });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.code).toBe('operator_only_task_field');
+      expect(parsed.fields).toEqual(['permissionMode']);
+      // Not even the rename landed.
+      expect(store!.updateTask).not.toHaveBeenCalled();
     });
 
     it('returns error when Tasks disabled', async () => {
@@ -610,10 +621,13 @@ function makeRelayCoreMock(
     messageId?: string;
     rejected?: Array<{ subject: string; reason: string }>;
     unregisterResult?: boolean;
+    /** Owner recorded on every endpoint the mock reports as registered. */
+    endpointOwner?: string;
   } = {}
 ) {
   return {
     registerEndpoint: vi.fn().mockResolvedValue({ subject: 'relay.inbox.dispatch.test' }),
+    getEndpoint: vi.fn((subject: string) => ({ subject, owner: overrides.endpointOwner })),
     unregisterEndpoint: vi.fn().mockResolvedValue(overrides.unregisterResult ?? true),
     publish: vi.fn().mockResolvedValue({
       messageId: overrides.messageId ?? 'msg-1',
@@ -662,13 +676,16 @@ describe('createRelayDispatchHandler', () => {
 });
 
 describe('createRelayUnregisterEndpointHandler', () => {
+  /** The caller in these cases; `endpointOwner` makes it the endpoint's owner. */
+  const ME = { subject: 'relay.agent.me' };
+
   it('returns success when endpoint exists', async () => {
     // Purpose: basic happy path for cleanup tool.
-    const relayCore = makeRelayCoreMock({ unregisterResult: true });
-    const handler = createRelayUnregisterEndpointHandler({
-      ...makeMockDeps(),
-      relayCore,
-    } as McpToolDeps);
+    const relayCore = makeRelayCoreMock({ unregisterResult: true, endpointOwner: ME.subject });
+    const handler = createRelayUnregisterEndpointHandler(
+      { ...makeMockDeps(), relayCore } as McpToolDeps,
+      ME
+    );
     const result = await handler({ subject: 'relay.inbox.dispatch.abc' });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.success).toBe(true);
@@ -677,11 +694,11 @@ describe('createRelayUnregisterEndpointHandler', () => {
 
   it('returns ENDPOINT_NOT_FOUND when endpoint does not exist', async () => {
     // Purpose: caller can detect cleanup of non-existent inbox (idempotent cleanup).
-    const relayCore = makeRelayCoreMock({ unregisterResult: false });
-    const handler = createRelayUnregisterEndpointHandler({
-      ...makeMockDeps(),
-      relayCore,
-    } as McpToolDeps);
+    const relayCore = makeRelayCoreMock({ unregisterResult: false, endpointOwner: ME.subject });
+    const handler = createRelayUnregisterEndpointHandler(
+      { ...makeMockDeps(), relayCore } as McpToolDeps,
+      ME
+    );
     const result = await handler({ subject: 'relay.inbox.dispatch.gone' });
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).code).toBe('ENDPOINT_NOT_FOUND');
@@ -689,7 +706,7 @@ describe('createRelayUnregisterEndpointHandler', () => {
 
   it('returns error when relay disabled', async () => {
     // Purpose: verifies requireRelay guard applies to relay_unregister_endpoint.
-    const handler = createRelayUnregisterEndpointHandler(makeMockDeps());
+    const handler = createRelayUnregisterEndpointHandler(makeMockDeps(), ME);
     const result = await handler({ subject: 'relay.inbox.dispatch.abc' });
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).code).toBe('RELAY_DISABLED');

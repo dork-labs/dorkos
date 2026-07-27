@@ -8,12 +8,13 @@
  * @module routes/tasks
  */
 import path from 'node:path';
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import {
   CreateTaskRequestSchema,
   UpdateTaskRequestSchema,
   ListTaskRunsQuerySchema,
 } from '@dorkos/shared/schemas';
+import type { Task } from '@dorkos/shared/schemas';
 import type { MeshCore } from '@dorkos/mesh';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../services/tasks/task-scheduler-service.js';
@@ -26,7 +27,97 @@ import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
+import { trustedCaller } from '../services/core/capabilities/index.js';
+import { readCallerAuthority } from '../lib/caller-authority.js';
+import {
+  describeOperatorOnlyTaskRefusal,
+  findOperatorOnlyTaskFields,
+  OPERATOR_ONLY_TASK_CODE,
+  OPERATOR_ONLY_TASK_ERROR,
+} from '../services/tasks/task-write-policy.js';
 import fs from 'node:fs/promises';
+
+/**
+ * Refuse a task write that reaches for a field only a person may set (DOR-504),
+ * answering on `res` when it does.
+ *
+ * ## Why this route needs a caller check when the MCP twin does not
+ *
+ * `tasks_create` and `tasks_update` refuse `permissionMode` and `status`
+ * unconditionally, because an MCP tool call is by construction the agent surface.
+ * This route is not: the cockpit's Approve button writes `status: 'active'`
+ * through it (`TaskRow.tsx`), and its task form writes `permissionMode`. So the
+ * policy is skipped for a caller that clears `trustedCaller` — no agent identity
+ * and no approval token — and applied to everyone else. That is exactly the shape
+ * `PATCH /api/config` uses for operator-only settings, and the long note there
+ * states the divergence it creates: under the default `local-trust` posture a
+ * caller with a shell can omit both headers and clear the check, so this stops
+ * an agent that follows the protocol, not an adversary already running as you.
+ * That is stated rather than papered over, and it is strictly tighter than the
+ * nothing this route enforced before.
+ *
+ * ## Read the RAW body, and refuse it whole
+ *
+ * The check runs before `parseBody` for two reasons. `CreateTaskRequestSchema`
+ * DEFAULTS `permissionMode` to `acceptEdits`, so a parsed body always carries the
+ * key and the guard could not tell a caller that sent it from one that did not.
+ * And refusing before anything is parsed or written is what makes the refusal
+ * whole: a caller is never told a change landed when only part of it did.
+ *
+ * @param req - The incoming request, whose raw body is inspected.
+ * @param res - The response, answered with 403 when a field is refused.
+ * @param trusted - Whether the caller cleared {@link trustedCaller}. Passed in
+ *   rather than resolved here because `POST /` needs the same answer a second
+ *   time, to decide whether the new task is parked (see {@link parksOnCreate}),
+ *   and asking twice would let the two uses disagree.
+ * @returns True when the request was refused and the route must stop.
+ */
+function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: boolean): boolean {
+  if (trusted) return false;
+  const operatorOnly = findOperatorOnlyTaskFields(req.body);
+  if (operatorOnly.length === 0) return false;
+  res.status(403).json({
+    error: OPERATOR_ONLY_TASK_ERROR,
+    code: OPERATOR_ONLY_TASK_CODE,
+    fields: operatorOnly,
+    message: describeOperatorOnlyTaskRefusal(operatorOnly),
+  });
+  return true;
+}
+
+/**
+ * Whether a task created by this caller must wait for a person's approval
+ * (DOR-504).
+ *
+ * ## The gap this closes
+ *
+ * `tasks_create` on both MCP servers parks every schedule it makes at
+ * `pending_approval`, and says so in its own description. That parking lived in
+ * the TOOL HANDLER, not in the store: both store insert paths hardcode
+ * `status: 'active'`. So the REST twin created a LIVE cron task instead — and
+ * `dorkos task create` is that REST surface, sending its agent header. An agent
+ * could not arm a task through the tool it was told to use, and could through the
+ * CLI it was also told to use.
+ *
+ * That is worth closing rather than only narrowing the prose around: a cron task
+ * is persistence. It fires later, on its own, when nobody is looking, which is a
+ * different thing from running a command now.
+ *
+ * ## Why trust, and not the presence of a `status` field
+ *
+ * The caller never has to ASK to arm a task here; it arms by default, because
+ * the store's insert says `active`. So there is no field to refuse. The question
+ * is only "did a person do this", which is the same question
+ * {@link refusedOperatorOnlyTaskWrite} already asks, answered by the same
+ * predicate — so the cockpit's task form and a signed-in operator are untouched,
+ * and an agent's REST-created task now waits exactly like its MCP-created one.
+ *
+ * @param trusted - Whether the caller cleared {@link trustedCaller}.
+ * @returns True when the new task must be parked at `pending_approval`.
+ */
+function parksOnCreate(trusted: boolean): boolean {
+  return !trusted;
+}
 
 /**
  * Create the Tasks router with schedule and run management endpoints.
@@ -64,6 +155,8 @@ export function createTasksRouter(
   });
 
   router.post('/', async (req, res) => {
+    const trusted = trustedCaller(readCallerAuthority(req, res)) !== undefined;
+    if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
     const data = parseBody(CreateTaskRequestSchema, req.body, res);
     if (!data) return;
 
@@ -114,7 +207,7 @@ export function createTasksRouter(
     // Sync to DB for immediate consistency
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = parseSkillFile(filePath, content, TaskFrontmatterSchema);
-    let schedule;
+    let schedule: Task;
     if (parsed.ok) {
       const def = { ...parsed.definition, scope: 'global' as const, projectPath: undefined };
       schedule = store.upsertFromFile(def, agentId ?? undefined);
@@ -133,6 +226,15 @@ export function createTasksRouter(
         permissionMode: data.permissionMode,
         filePath,
       });
+    }
+
+    // Both store insert paths hardcode `status: 'active'`, so parking is a patch
+    // after the fact — the same two-step `tasks_create` uses on the MCP servers.
+    // It has to happen BEFORE the register below, or the task fires while it is
+    // still waiting to be approved.
+    if (parksOnCreate(trusted)) {
+      store.updateTask(schedule.id, { status: 'pending_approval' });
+      schedule = store.getTask(schedule.id)!;
     }
 
     if (schedule.enabled && schedule.status === 'active') {
@@ -161,6 +263,8 @@ export function createTasksRouter(
   });
 
   router.patch('/:id', async (req, res) => {
+    const trusted = trustedCaller(readCallerAuthority(req, res)) !== undefined;
+    if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
     const data = parseBody(UpdateTaskRequestSchema, req.body, res);
     if (!data) return;
 

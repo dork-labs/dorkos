@@ -1,8 +1,12 @@
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { PendingApproval, StandingPermission } from '@dorkos/shared/approval-schemas';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
+import {
+  ApprovalList,
+  ApprovalsUnavailable,
+  StandingPermissionList,
+} from '@/layers/features/approvals';
 
 /**
  * The content width of the header marker's popover: 30rem panel less its 16px
@@ -37,11 +41,43 @@ function sample(overrides: Partial<PendingApproval> = {}): PendingApproval {
     summary:
       'DorkBot wants to run "Uninstall a marketplace package" with name: sentry-monitor, purge: yes',
     requestedBy: '/Users/dev/agents/dorkbot',
+    hasAgentPath: true,
     requestedAt: new Date(LOADED_AT).toISOString(),
     expiresAt: expiresIn(105),
     ...overrides,
   };
 }
+
+/** The live permissions to draw, including a pair that share a folder name. */
+const PERMISSIONS: StandingPermission[] = [
+  {
+    grantId: '01JZ00000000000000000000G1',
+    agentPath: '/Users/dev/agents/dorkbot',
+    agentLabel: 'dorkbot',
+    capabilityId: 'marketplace.uninstall',
+    capabilityTitle: 'Uninstall a marketplace package',
+    expiresAt: expiresIn(212),
+  },
+  // Two agents whose folders are both called "helper". `--path` is required when
+  // an agent is created and nothing uniques its NAME, so this is allowed and the
+  // list has to tell them apart or a person cannot act on it.
+  {
+    grantId: '01JZ00000000000000000000G2',
+    agentPath: '/Users/dev/work/acme/helper',
+    agentLabel: 'helper',
+    capabilityId: 'tasks_delete',
+    capabilityTitle: 'Delete a scheduled task',
+    expiresAt: expiresIn(38),
+  },
+  {
+    grantId: '01JZ00000000000000000000G3',
+    agentPath: '/Users/dev/work/beta/helper',
+    agentLabel: 'helper',
+    capabilityId: 'marketplace.uninstall',
+    capabilityTitle: 'Uninstall a marketplace package',
+    expiresAt: expiresIn(0.4),
+  },
+];
 
 /** A queue long enough to trip the six-card cap. */
 const QUEUE: PendingApproval[] = Array.from({ length: 8 }, (_, i) =>
@@ -143,6 +179,11 @@ export function ApprovalsShowcases() {
               sample({
                 approvalId: '01JZ0000000000000000000022',
                 requestedBy: undefined,
+                // No agent path either, which is what makes this card ineligible to
+                // become a standing permission. The two travel together on a real
+                // anonymous request, and a showcase that split them would teach the
+                // wrong thing to whoever draws the third button off it.
+                hasAgentPath: false,
                 summary: 'An unidentified caller wants to run "Uninstall a marketplace package"',
               }),
               // Inside the last minute, where the countdown reads "expiring".
@@ -178,6 +219,30 @@ export function ApprovalsShowcases() {
               <ApprovalList approvals={QUEUE} />
             </WidthColumn>
           </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="StandingPermissionList"
+        description="Trust that is already live, and the button that ends it. Drawn in both places a person can find one — the header panel and Settings under Security — so what a permission looks like cannot differ between where you stumble on it and where you go looking."
+      >
+        <ShowcaseLabel>The same list at both widths it has to survive</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-start gap-6">
+            <WidthColumn px={POPOVER_CONTENT_PX} caption="Header popover">
+              <StandingPermissionList permissions={PERMISSIONS} />
+            </WidthColumn>
+            <WidthColumn px={DASHBOARD_CONTENT_PX} caption="Settings dialog">
+              <StandingPermissionList permissions={PERMISSIONS} />
+            </WidthColumn>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>At phone width, where the button must not shrink</ShowcaseLabel>
+        <ShowcaseDemo>
+          <WidthColumn px={288} caption="Bottom sheet">
+            <StandingPermissionList permissions={PERMISSIONS} />
+          </WidthColumn>
         </ShowcaseDemo>
       </PlaygroundSection>
 

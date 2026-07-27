@@ -607,7 +607,7 @@ The CapabilitiesTab uses a 3-state display for per-agent tool group toggles:
 | State                 | Visual                                        | Meaning                                               |
 | --------------------- | --------------------------------------------- | ----------------------------------------------------- |
 | Inherited (enabled)   | Switch ON, "Inherited" badge                  | Agent inherits the global default (enabled)           |
-| Overridden (disabled) | Switch OFF, "Overridden" badge                | Agent explicitly disables this tool group             |
+| Overridden (disabled) | Switch OFF, "Overridden" badge                | Agent opts out of this tool group's documentation     |
 | Inherited (disabled)  | Switch OFF, disabled, "Server disabled" badge | Server feature flag is off; toggle is non-interactive |
 
 The toggle writes to the agent manifest's `enabledToolGroups` field. When a toggle is flipped, it sets an explicit value; when reset, the field is removed (returning to inherited behavior).
@@ -781,6 +781,37 @@ Use instead of plain `DropdownMenu` when the menu appears in a touch-accessible 
 ### `ResponsiveDialog`
 
 Use instead of plain `Dialog` when the dialog content needs full-screen treatment on mobile. Shows as a centered `Dialog` on desktop and a `Drawer` on mobile. See `components/ui/responsive-dialog.tsx`.
+
+### `ResponsivePopover`
+
+Use instead of plain `Popover` for anything a touch user has to reach. `Popover` on desktop, bottom `Drawer` on mobile. `shared/ui/responsive-popover.tsx`.
+
+| Sub-component              | Desktop (≥768px) | Mobile (<768px)                |
+| -------------------------- | ---------------- | ------------------------------ |
+| `ResponsivePopover`        | `Popover`        | `Drawer`                       |
+| `ResponsivePopoverTrigger` | `PopoverTrigger` | `DrawerTrigger`                |
+| `ResponsivePopoverContent` | `PopoverContent` | `DrawerContent`                |
+| `ResponsivePopoverTitle`   | _nothing_        | `DrawerHeader` + `DrawerTitle` |
+
+Two props on the **root** decide the shape, and both are about the difference between a **glance** and a **task**:
+
+| Prop         | On                                                              | Off (default)                                     |
+| ------------ | --------------------------------------------------------------- | ------------------------------------------------- |
+| `modal`      | Tab stays inside; pointer input outside is blocked              | Tab leaves the panel — right for a status readout |
+| `fullHeight` | Mobile sheet fills the screen, gets an X, trims its own heading | Mobile sheet hugs its content — right for a menu  |
+
+Turn both on for a picker: a field, a list and a commit button need the screen, and a half-finished selection should not be tabbable away from. `NewDirectMessageMenu` is the reference implementation.
+
+`modal` is **not** `inert`. Measured at 1440×900 it sets `body { pointer-events: none }` and traps focus, but adds neither `aria-modal` nor `inert` — so do not describe it as sealing the page off.
+
+**Name the panel.** A `modal` popover is a focus-trapping `role="dialog"`, and an unnamed one is materially worse than an unnamed non-modal one. `ResponsivePopoverTitle` renders **only** on mobile, so the desktop panel needs its own name: pass `aria-label` to `ResponsivePopoverContent` (mobile ignores it — the sheet's own heading wins under the accname precedence rules), or pair the title with a `hidden md:block` heading. The shell and the `md:` breakpoint are both 768px, so the two halves are exact complements.
+
+Two sizing rules that only surface once a software keyboard is involved, both of which cost real measurement to find:
+
+- **Never pad for the keyboard.** vaul already shrinks the drawer to the visual viewport while a field inside it has focus, so compensating again subtracts the same height twice — it collapsed a result list to 0px on a 390×844 phone.
+- **Give a scrollable list a `min-h` floor.** A landscape phone with the keyboard up leaves under 200px of sheet. A list that is only `flex-1` hands all of it to the parts that do not shrink and renders zero rows — a search field above a blank space. A floor plus the sheet's scroll of last resort keeps two rows on screen and the commit button one short scroll away.
+
+Sizes come from the system, not by hand: `Button` is already `responsive` by default (`size="sm"` → `h-10 md:h-8`), rows use `min-h-11` / `min-h-[44px]`, and `--_st` already scales every text token 1.25× below 768px — so writing `text-base md:text-sm` double-scales. When a control has to stay visually small, grow the target rather than the glyph with `after:absolute after:-inset-3 md:after:hidden`, the way `SidebarGroupAction` does.
 
 ---
 

@@ -10,7 +10,7 @@
 
 // Main entry point
 export { RelayCore } from './relay-core.js';
-export type { InboxMessage, ReadInboxOptions } from './relay-core.js';
+export type { InboxMessage, ReadInboxOptions, RegisterEndpointOptions } from './relay-core.js';
 
 // API versioning
 export { RELAY_ADAPTER_API_VERSION } from './version.js';
@@ -201,3 +201,6 @@ export type {
   AdapterPluginModule,
   LoadedAdapter,
 } from './adapter-plugin-loader.js';
+
+// Approver authorization for chat-platform tool approvals (DOR-609)
+export { mayApprove, toIdList } from './adapters/approver-allowlist.js';

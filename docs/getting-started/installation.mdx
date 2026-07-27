@@ -201,6 +201,10 @@ There is now a Windows version too, and it is brand new. Download it from [dorko
   finger.
 </Callout>
 
+The app runs its own DorkOS server, normally at `http://localhost:4242` just like the CLI. **Settings
+→ Server** shows the exact address, copies it, and opens it in your browser, which is what you need
+to bookmark the cockpit or point another tool at it.
+
 See the [Desktop App guide](/docs/getting-started/desktop-app) for the full menu, deep link, and
 auto-update details, plus what it doesn't do that the web cockpit does.
 
@@ -398,7 +402,7 @@ dorkos --version
 
 <Tab value="Desktop App">
 
-Nothing to do: the desktop app updates itself. It downloads new versions in the background and installs them the next time you quit and reopen the app. (On Windows, updates ride the same unverified alpha mechanism.)
+Nothing to do: the desktop app updates itself. It downloads new versions in the background, then offers you a restart to install one. An update also installs itself the next time you quit and reopen the app. Closing the window doesn't quit the app, so take the restart when it's offered. (On Windows, updates ride the same unverified alpha mechanism.)
 
 </Tab>
 

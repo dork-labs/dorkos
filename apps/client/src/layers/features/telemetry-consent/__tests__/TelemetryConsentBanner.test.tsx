@@ -89,12 +89,12 @@ describe('TelemetryConsentBanner', () => {
 
     render(<TelemetryConsentBanner />);
 
-    expect(screen.getByText(/shares a little anonymous data/i)).toBeInTheDocument();
+    expect(screen.getByText(/sends us nothing unless you say so/i)).toBeInTheDocument();
     // Progressive disclosure: the payload stays hidden until asked for.
     expect(screen.queryByText(/runtimesConfigured/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /see what.s sent/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /turn off/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /keep sharing/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /no thanks/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /share anonymously/i })).toBeInTheDocument();
   });
 
   it('reveals the heartbeat payload verbatim after clicking "See what\'s sent"', async () => {
@@ -110,7 +110,7 @@ describe('TelemetryConsentBanner', () => {
   it('renders defensively when config has not loaded yet', () => {
     setConfigState(null);
     render(<TelemetryConsentBanner />);
-    expect(screen.getByText(/shares a little anonymous data/i)).toBeInTheDocument();
+    expect(screen.getByText(/sends us nothing unless you say so/i)).toBeInTheDocument();
   });
 
   it('does not render once the user has decided', () => {
@@ -119,28 +119,30 @@ describe('TelemetryConsentBanner', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('keeping sharing leaves both channels on and records the decision', async () => {
+  it('accepting turns on every channel it covers and records the decision', async () => {
     const user = userEvent.setup();
     setConfigState({ userHasDecided: false });
 
     render(<TelemetryConsentBanner />);
-    await user.click(screen.getByRole('button', { name: /keep sharing/i }));
+    await user.click(screen.getByRole('button', { name: /share anonymously/i }));
 
     expect(updateMutate).toHaveBeenCalledTimes(1);
+    // `usage` rides along: with the channels defaulting off, a "yes" that
+    // omitted one would be silently narrower than the copy promises.
     expect(updateMutate).toHaveBeenCalledWith({
-      telemetry: { install: true, heartbeat: true, userHasDecided: true },
+      telemetry: { install: true, heartbeat: true, usage: true, userHasDecided: true },
     });
   });
 
-  it('turning off zeroes both channels and records the decision', async () => {
+  it('declining writes every channel off and records the decision', async () => {
     const user = userEvent.setup();
     setConfigState({ userHasDecided: false });
 
     render(<TelemetryConsentBanner />);
-    await user.click(screen.getByRole('button', { name: /turn off/i }));
+    await user.click(screen.getByRole('button', { name: /no thanks/i }));
 
     expect(updateMutate).toHaveBeenCalledWith({
-      telemetry: { install: false, heartbeat: false, userHasDecided: true },
+      telemetry: { install: false, heartbeat: false, usage: false, userHasDecided: true },
     });
   });
 
@@ -160,7 +162,7 @@ describe('TelemetryConsentBanner', () => {
 
     render(<TelemetryConsentBanner />);
 
-    expect(screen.getByRole('button', { name: /turn off/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /keep sharing/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /no thanks/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /share anonymously/i })).toBeDisabled();
   });
 });

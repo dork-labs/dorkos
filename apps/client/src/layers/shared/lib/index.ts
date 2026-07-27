@@ -20,9 +20,32 @@ export {
   setPlatformAdapter,
   isMac,
   isDesktopDarwin,
+  isDesktopShell,
   localDeviceNoun,
   type PlatformAdapter,
 } from './platform';
+export {
+  APP_ROUTE_PATHS,
+  classifyLink,
+  openLink,
+  openExternalLink,
+  registerLinkNavigator,
+  registerTabOpener,
+  supportsNewTab,
+  supportsSeparateWindow,
+  type BlockedLink,
+  type BlockedLinkReason,
+  type ClassifiedLink,
+  type ExternalLink,
+  type InternalLink,
+  type LinkNavigation,
+  type LinkNavigator,
+  type LinkTarget,
+  type OpenLinkOptions,
+  type TabOpener,
+} from './link-navigation';
+export { initialOf } from './initial-of';
+export { isBypassPermissionMode } from './permission-mode';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
 export { HttpTransport, streamManager } from './transport';
@@ -104,7 +127,7 @@ export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } fr
 export { formatDuration } from './format-duration';
 export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './humanize-name';
 export { truncateMiddle } from './truncate-middle';
-export { queryClient } from './query-client';
+export { queryClient, createQueryClientConfig } from './query-client';
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
@@ -139,3 +162,5 @@ export {
   type FilterValues,
 } from './filter-engine';
 export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';
+export { buildTimelineRows, GROUP_GAP_MS } from './group-timeline';
+export type { TimelineItem, TimelineRow, DayDividerRow, UnreadDividerRow } from './group-timeline';

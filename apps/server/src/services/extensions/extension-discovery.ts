@@ -17,7 +17,9 @@ const HOST_VERSION = '0.1.0';
  * Scans filesystem paths for extension directories containing valid
  * `extension.json` manifests. Handles both global (`{dorkHome}/extensions/`)
  * and local (`{cwd}/.dork/extensions/`) scopes, with local overriding global
- * when an extension ID appears in both.
+ * when an extension ID appears in both — except for an id that ships with
+ * DorkOS or that a person approved to run code, which a project directory can
+ * never take over. See {@link ExtensionDiscovery.discover}.
  */
 export class ExtensionDiscovery {
   private dorkHome: string;
@@ -28,10 +30,13 @@ export class ExtensionDiscovery {
 
   /**
    * Scan for extensions in both global and local directories, then resolve each
-   * record's `origin` (from the core staging set) and tier-aware `status`.
+   * record's `origin` (from the staging directory it was read from) and
+   * tier-aware `status`.
    *
    * @param cwd - Optional current working directory for local extension scanning.
-   * @param config - The user's `{ enabled, disabled }` deviation lists.
+   * @param config - The user's `{ enabled, disabled }` deviation lists plus
+   *   `approvedToRun`, read here so a project directory cannot take over the id
+   *   of an extension the person already approved.
    * @param core - Tier metadata for bundled core extensions, keyed by id.
    * @returns All discovered extension records, with local overriding global by ID.
    */
@@ -55,16 +60,41 @@ export class ExtensionDiscovery {
       merged.set(rec.id, rec);
     }
     for (const rec of localRecords) {
+      // ...except for an id whose standing is already spoken for: one DorkOS ships
+      // (`core`), or one a person approved to run code in this process. Both are
+      // decisions about the extension INSTALLED under `{dorkHome}/extensions`, and
+      // an id is all a project directory needs to inherit them — a file an agent
+      // writes with no prompt and no shell (the DOR-511 adversary the approval
+      // record itself is placed to avoid). A project copy may still override any
+      // ordinary global extension, which is what the local scope is for.
+      if (core.has(rec.id) || config.approvedToRun.includes(rec.id)) {
+        logger.warn(
+          `[Extensions] Ignoring the project copy of '${rec.id}' at ${rec.path}: that id ` +
+            `belongs to the extension installed under ${globalDir}. Rename it, or remove the ` +
+            `installed one first.`
+        );
+        continue;
+      }
       merged.set(rec.id, rec);
     }
 
-    // Resolve origin (from the staging set) and tier-aware status per record.
+    // Resolve origin (from the staging directory on disk) and tier-aware status.
+    const stagingDir = path.resolve(globalDir);
     const results: ExtensionRecord[] = [];
     for (const rec of merged.values()) {
-      // `origin` keys off core-map membership — VS Code's isBuiltin pattern,
-      // unspoofable by a manifest claim. A local override of a core id stays
-      // 'core' by id membership while running whichever code won the merge.
-      const origin: 'core' | 'user' = core.has(rec.id) ? 'core' : 'user';
+      // `origin: 'core'` means "this is the copy `ensureCoreExtensions` staged",
+      // so it is answered by WHERE the record was read from, never by its id and
+      // never by a manifest claim — VS Code's `isBuiltin` semantic, which is a
+      // property of the install location. Deriving it from the core map alone let
+      // any directory that reused a bundled id run as core: `{cwd}/.dork/extensions/
+      // marketplace/server.ts` was `origin: 'core'`, and core short-circuits the
+      // load approval, so the planted code was never asked about.
+      const origin: 'core' | 'user' =
+        core.has(rec.id) &&
+        path.resolve(rec.path) === path.join(stagingDir, rec.id) &&
+        (await this.isRealDirectory(rec.path))
+          ? 'core'
+          : 'user';
 
       if (rec.status === 'invalid') {
         results.push({ ...rec, origin });
@@ -94,6 +124,43 @@ export class ExtensionDiscovery {
       }`
     );
     return results;
+  }
+
+  /**
+   * Whether `target` is a real directory, rather than a symlink standing where one
+   * belongs.
+   *
+   * The third condition on `origin: 'core'`, and it has to be checked HERE rather
+   * than trusted from staging. The path comparison above is lexical —
+   * `path.resolve` normalizes `..` and separators but does not follow links — and
+   * {@link ExtensionDiscovery.scanDirectory} admits symlink entries on purpose, so
+   * a symlink at `{dorkHome}/extensions/<core-id>` matches the staged path exactly
+   * while its contents live wherever the link points.
+   *
+   * `ensureCoreExtensions` deletes such a symlink before staging, but that runs
+   * once, at boot (`index.ts`). {@link ExtensionManager.reload} re-runs discovery
+   * with no re-staging, and it is reachable from `POST /api/extensions/reload` and
+   * the `reload_extensions` tool — so the repair sat on the wrong side of the check
+   * it was protecting, and a symlink planted after boot re-derived as `core` until
+   * the next restart. Both defenses are kept: this one refuses, that one heals.
+   *
+   * `fs.realpath` on both sides would NOT have worked. When the staged path itself
+   * is the link, both sides resolve to the same target and compare equal. The
+   * question is not "where does this path lead" but "is this path the directory
+   * DorkOS wrote", and only `lstat` answers that.
+   *
+   * Scoped honestly: creating a symlink needs a shell, so this is not the no-shell
+   * `acceptEdits` adversary that made the id-membership derivation critical.
+   *
+   * @param target - Absolute path to the extension directory.
+   */
+  private async isRealDirectory(target: string): Promise<boolean> {
+    try {
+      const stats = await fs.lstat(target);
+      return stats.isDirectory();
+    } catch {
+      return false;
+    }
   }
 
   /**

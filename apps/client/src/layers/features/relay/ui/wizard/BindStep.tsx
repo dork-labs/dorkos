@@ -47,14 +47,14 @@ export function BindStep({
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
-        Connect this channel to an agent so incoming messages are routed automatically. You can skip
-        this and connect it later from the Connections tab.
+        Connect this integration to an agent so incoming messages are routed automatically. You can
+        skip this and connect it later from the Integrations tab.
       </p>
 
       {agentOptions.length === 0 ? (
         <div className="text-muted-foreground rounded-md border border-dashed px-4 py-6 text-center text-sm">
-          No agents registered yet. Once you have an agent, connect this channel to it from the
-          Connections tab.
+          No agents registered yet. Once you have an agent, connect this integration to it from the
+          Integrations tab.
         </div>
       ) : agentOptions.length === 1 ? (
         <div className="bg-accent/30 rounded-md border px-4 py-3 text-sm">

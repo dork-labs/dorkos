@@ -1,7 +1,9 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { cn } from '@/layers/shared/lib';
+import { resolveSessionForCwd } from '@/layers/entities/session';
+import { cn, openLink, supportsNewTab, supportsSeparateWindow } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -69,6 +71,70 @@ export function CommandPaletteDialog() {
     setDir,
     selectedCwd,
   } = usePaletteActions(closePalette);
+
+  const queryClient = useQueryClient();
+
+  // Where an agent should open, as a `/session` href.
+  //
+  // It names the session up front rather than leaving `?session=` off for the
+  // route loader to fill in. The loader would get there — it declares its
+  // inputs, so it re-runs — but only by redirecting, which costs a second
+  // navigation and a history `REPLACE` the tab reconciler then has to absorb,
+  // and leaves a frame where a new tab is named after an href it is about to
+  // lose. This is the same resolution "Open Here" performs, so all three
+  // actions agree on which session an agent is on.
+  //
+  // It also carries ONLY this agent's directory. Inheriting the current
+  // `?session=` would aim the new view at the session you were already reading,
+  // under a different project — and the durable stream resolves history from
+  // `?cwd=`, so that mismatch reads the wrong project's transcript.
+  const agentHref = useCallback(
+    (agent: AgentPathEntry) =>
+      `/session?${new URLSearchParams({
+        dir: agent.projectPath,
+        session: resolveSessionForCwd(queryClient, agent.projectPath),
+      }).toString()}`,
+    [queryClient]
+  );
+
+  // "Open in New Tab" — this agent in another tab (DOR-540). The seam picks
+  // whose tab: the cockpit's own strip in the desktop app, a real browser tab in
+  // a browser, so the label is honest on both. Where there is no second view at
+  // all (the Obsidian embed), open the agent here rather than dropping the
+  // action.
+  const openAgentInNewTab = useCallback(
+    (agent: AgentPathEntry) => {
+      if (!supportsNewTab()) {
+        handleAgentSelect(agent);
+        return;
+      }
+      openLink(agentHref(agent), { target: 'tab' });
+      recordUsage(agent.id);
+      closePalette();
+    },
+    [agentHref, handleAgentSelect, recordUsage, closePalette]
+  );
+
+  // "Open in New Window" — the same target, in a second cockpit window instead
+  // of a tab. Kept as its own action rather than a modifier on the tab one:
+  // parking an agent on a second monitor is a different intent from wanting
+  // another tab, and this list is where a person already chooses where an agent
+  // lands. It needs no surface fallback of its own — the row exists only where
+  // a separate window is a real destination (see `canOpenSeparateWindow`).
+  const openAgentInNewWindow = useCallback(
+    (agent: AgentPathEntry) => {
+      openLink(agentHref(agent), { target: 'window' });
+      recordUsage(agent.id);
+      closePalette();
+    },
+    [agentHref, recordUsage, closePalette]
+  );
+
+  // Whether to offer the "New Window" choice at all. In a browser it is not a
+  // distinct destination — a window.open there is just another tab, which the
+  // row above already offers — so the row is left out rather than shown greyed
+  // or quietly remapped. Two rows that do the same thing is a lie (DOR-568).
+  const canOpenSeparateWindow = supportsSeparateWindow();
 
   const {
     recentAgents,
@@ -247,11 +313,7 @@ export function CommandPaletteDialog() {
               // Cmd+Enter (or Ctrl+Enter) on root page opens selected agent in new tab
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !page && selectedAgent) {
                 e.preventDefault();
-                const url = new URL(window.location.href);
-                url.searchParams.set('dir', selectedAgent.projectPath);
-                window.open(url.toString(), '_blank');
-                recordUsage(selectedAgent.id);
-                closePalette();
+                openAgentInNewTab(selectedAgent);
                 return;
               }
               // Cmd+Enter (or Ctrl+Enter) on agent sub-menu opens in new tab
@@ -262,11 +324,7 @@ export function CommandPaletteDialog() {
                 subMenuAgent
               ) {
                 e.preventDefault();
-                const url = new URL(window.location.href);
-                url.searchParams.set('dir', subMenuAgent.projectPath);
-                window.open(url.toString(), '_blank');
-                recordUsage(subMenuAgent.id);
-                closePalette();
+                openAgentInNewTab(subMenuAgent);
                 return;
               }
               // Backspace when input is empty pops the last page (goes back)
@@ -358,13 +416,12 @@ export function CommandPaletteDialog() {
                       <AgentSubMenu
                         agent={subMenuAgent}
                         onOpenHere={() => handleAgentSelect(subMenuAgent)}
-                        onOpenNewTab={() => {
-                          const url = new URL(window.location.href);
-                          url.searchParams.set('dir', subMenuAgent.projectPath);
-                          window.open(url.toString(), '_blank');
-                          recordUsage(subMenuAgent.id);
-                          closePalette();
-                        }}
+                        onOpenNewTab={() => openAgentInNewTab(subMenuAgent)}
+                        onOpenNewWindow={
+                          canOpenSeparateWindow
+                            ? () => openAgentInNewWindow(subMenuAgent)
+                            : undefined
+                        }
                         onNewSession={() => {
                           setDir(subMenuAgent.projectPath);
                           recordUsage(subMenuAgent.id);

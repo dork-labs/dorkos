@@ -67,7 +67,7 @@ The **platform** — Engine and Console — is the foundation: a runtime for AI 
 
 ### Engine — The Runtime
 
-Engine is the foundation. It connects your AI agents via the `AgentRuntime` interface, exposes a secure REST + SSE API, manages sessions, and composes the modules (Pulse, Relay, Mesh) into a unified server.
+Engine is the foundation. It connects your AI agents via the `AgentRuntime` interface, exposes a REST + SSE API that binds to localhost by default, manages sessions, and composes the modules (Pulse, Relay, Mesh) into a unified server.
 
 Engine runs locally on your machine. Sessions are stored as JSONL transcript files — the same format Claude Code uses natively. This means every session is visible regardless of how it was started: from DorkOS, from the CLI, from an Obsidian plugin. One source of truth.
 
@@ -76,7 +76,7 @@ Remote access is available via an optional Remote module (ngrok-based). Engine c
 - REST + SSE API with OpenAPI documentation
 - JSONL transcripts as the single source of truth for session data
 - Pluggable agent runtimes via `AgentRuntime` interface (Claude Code via Agent SDK today)
-- Per-agent tool filtering — control which MCP tools each agent can access
+- Per-agent tool context — control which MCP tools each agent is told about
 - Optional Remote for access from any device
 - Directory boundary enforcement for security
 - MCP tool server for agent-accessible capabilities
@@ -89,13 +89,13 @@ Console is a browser-based command center built with React 19, Tailwind CSS 4, a
 
 Console connects to Engine via a Transport interface that decouples the UI from its backend. Two adapters exist: `HttpTransport` for standalone web use, and `DirectTransport` for embedded use in Obsidian. This means Console works as a standalone web app, as a plugin inside your knowledge management tool, or as a bundled CLI — same interface, different delivery mechanisms.
 
-Each agent is a first-class citizen in Console. Agents have names, colors, icons, and personas. The sidebar shows every agent across your projects. Agent settings expose identity, persona, capabilities, and connections — all configurable per-agent.
+Each agent is a first-class citizen in Console. Agents have names, colors, icons, and personas. The sidebar shows every agent across your projects. Agent settings expose identity, persona, and connections, all configurable per-agent. Permission tiers are not: a tier belongs to the action, so the same action is gated the same way whichever agent asks. The one per-agent lever is a standing permission, which a person grants from an approval card for one agent doing one named action, on a clock. That grant is keyed to that agent's path, so two agents can hit the same gate and get different answers.
 
 - Chat with agents in rich markdown with syntax highlighting
-- Approve or deny every tool call before it executes
+- Approve or deny tool calls before they execute, in the session permission modes that prompt
 - Browse, resume, and sync sessions across devices
 - Command Palette (Cmd+K) for agent navigation with fuzzy search and preview panel
-- Agent settings — identity, persona, per-agent tool group controls
+- Agent settings: identity, persona, per-agent tool group preferences (which decide the tool documentation an agent receives, not what it may call)
 - Slash command palette for custom workflows
 - Real-time session sync across multiple clients
 
@@ -159,7 +159,7 @@ Mesh is always-on. No feature flag required.
 - `.dork/agent.json` manifest generated at registration — name, persona, color, icon, tool config
 - Agent-agnostic: `.dork/` configuration works with any runtime, not just Claude Code
 - Network topology graph with ELK.js layout, zoom levels, and access control visualization
-- Per-agent tool filtering — each agent can have a custom set of enabled tool domains
+- Per-agent tool context — each agent can have a custom set of enabled tool domains, which decides the tool documentation it receives
 - Health monitoring and heartbeat system
 - Access control rules authored by Mesh, enforced by Relay
 - Three approval interfaces: Console UI, MCP tools (agent-driven), CLI

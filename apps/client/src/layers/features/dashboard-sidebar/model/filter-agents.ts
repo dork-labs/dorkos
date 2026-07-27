@@ -32,7 +32,11 @@ export interface FilterSectionAgentsOptions {
   filter: SidebarDisplayFilter;
   /** Agent path → attention state (from `useAgentAttentionMap`). Missing paths default to `inactive`. */
   attention: Record<string, AttentionState>;
-  /** Individually-muted agent paths (`ui.sidebar.muted`), independent of any containing group. */
+  /**
+   * Agent paths that are individually muted — the agent members of
+   * `ui.sidebar.muted`, narrowed to paths by `DashboardSidebar`. Independent of
+   * any containing group.
+   */
   mutedPaths: ReadonlySet<string>;
   /** Whether the containing group itself is muted — applies to every member in this call. */
   groupMuted: boolean;

@@ -14,7 +14,16 @@ export default defineConfig([
   // composes the child server's env, and server-entry runs inside that child
   // where env vars ARE the IPC contract with the main process.
   {
-    files: ['src/main/server-process.ts', 'src/main/window-manager.ts', 'src/server-entry.ts'],
+    files: ['src/main/server-spawn.ts', 'src/main/window-manager.ts', 'src/server-entry.ts'],
+    rules: { 'no-restricted-syntax': 'off' },
+  },
+
+  // Same carve-out for the build/QA scripts, for the same reason: they compose
+  // the environment of child processes they spawn (esbuild's specifier-
+  // resolution child, the packaged app under smoke test), so process.env is the
+  // interface, not a config read that an env.ts could own.
+  {
+    files: ['scripts/**/*.ts'],
     rules: { 'no-restricted-syntax': 'off' },
   },
 

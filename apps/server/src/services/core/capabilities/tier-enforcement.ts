@@ -78,6 +78,52 @@
  * unrestricted), which is exactly why the mechanism is fixed now, while nothing
  * depends on it.
  *
+ * ## Standing permissions: the one supported way to stop being asked
+ *
+ * An operator can say "stop asking about this agent doing this thing" for a
+ * bounded window (spec `agent-approval-settings`). That answer is looked up HERE,
+ * and its position in this function is the whole of its safety:
+ *
+ * - AFTER the ceiling check, so a permission can never lift a ceiling. A ceiling
+ *   refusal is already `approvable: false` — no human decision can unlock it — and
+ *   a standing permission must not be able to either.
+ * - BEFORE the `act` early-return, so a permission also reaches the marketplace's
+ *   own, older confirmation step. `marketplace.install` is tier `act`, so this gate
+ *   never stopped it, but that second mechanism does. Threading the permission onto
+ *   the invocation context is what lets one lookup satisfy both, instead of "stop
+ *   asking" quietly meaning "stop asking at one of the two places that ask".
+ *
+ * Only an IDENTIFIED caller can match one, because permissions key on agent path.
+ * Dropping a credential can get a caller the gate; it can never buy trust. That is
+ * the mirror of the ceiling reasoning above.
+ *
+ * ## The `act` half is FORWARD-LOOKING and cannot fire yet. Say so, do not imply it.
+ *
+ * The ordering above is stated as load-bearing safety, and for `destructive` it is.
+ * For `act` it describes behavior no running DorkOS exhibits, and a reader who
+ * tests it will find nothing — so the reason is written down rather than left to be
+ * rediscovered, the same way `REQUIRES_LOGIN_CONFIG_PATHS` explains itself in
+ * `services/core/operator/config-write-policy.ts`.
+ *
+ * A permission is keyed on the `requestedByPath` an approval recorded, and that
+ * column has exactly one writer: `ask()`, below. `ask()` is only reachable on the
+ * `destructive` branch — `observe` and `act` return allowed long before it. So
+ * **every permission row that can exist today carries a destructive id**, and no
+ * `act`-tier action of any kind can be granted one. Not just the two marketplace
+ * ones: any of them. The `act` branch below is therefore correct and inert.
+ *
+ * What would make it fire is a second thing recording `requestedByPath` on the
+ * approvals the marketplace's own confirmation flow creates
+ * (`services/marketplace-mcp/confirmation-provider.ts`, which records a display
+ * label and no path). That is deliberately NOT done here: one writer for that
+ * column is the property that makes "the gate recorded who asked" checkable in one
+ * place, and a second writer would have to be argued for on its own.
+ *
+ * Keeping the ordering anyway is the cheap half. Reordering it later, once
+ * something does mint `act` permissions, is the expensive half — and it would be a
+ * silent bug, because nothing about an `act` call looks wrong when its permission
+ * is ignored.
+ *
  * ## Fail closed
  *
  * The gate is initialized once at boot with the approval service
@@ -85,6 +131,11 @@
  * agent's destructive call is REFUSED rather than allowed: with no approval
  * service there is nobody to ask, and silently running the operation would turn a
  * wiring mistake into an unreviewed destructive action.
+ *
+ * The standing-permission lookup fails closed in the other direction, which is the
+ * same principle: with nothing wired, no permission is ever found, so every
+ * destructive call takes the approval path exactly as it did before the feature
+ * existed.
  *
  * @module services/core/capabilities/tier-enforcement
  */
@@ -250,13 +301,44 @@ export interface TierDeniedPayload {
 }
 
 /**
- * A granted approval, threaded onto the invocation context so a capability whose
- * handler runs its own confirmation flow can see that a person already said yes
- * to this exact call and not ask twice.
+ * Proof that a person already said yes to this exact call, threaded onto the
+ * invocation context so a capability whose handler runs its own confirmation flow
+ * does not ask twice.
+ *
+ * A discriminated union rather than one shape, because the two answers are not the
+ * same event and the audit trail must not pretend they are: one is a person
+ * deciding this call, the other is a permission they opened earlier and can end at
+ * any time. A handler that only needs "somebody said yes" can keep testing for
+ * presence and ignore the tag.
  */
-export interface GrantedApproval {
-  /** The approval that was spent to allow this invocation. */
-  approvalId: string;
+export type GrantedApproval =
+  /** A person decided THIS call, and the approval was spent to allow it. */
+  | { via: 'approval'; approvalId: string }
+  /** A standing permission the operator opened earlier allowed it, with no card. */
+  | { via: 'standing-grant'; grantId: string };
+
+/**
+ * What the gate needs to honor a standing permission: whether the operator
+ * switched the feature on at all, and the live permission covering one pair.
+ *
+ * An interface rather than the store itself, because both halves have to be read
+ * FRESH on every gated call. The switch lives in user config, which a person can
+ * turn off between two invocations, and a permission runs out on a clock — so a
+ * value captured at boot would be a stale answer to a question that has to be
+ * current. This is what makes "the master switch going off stops the very next
+ * call" a property of the code rather than a promise.
+ */
+export interface StandingGrantLookup {
+  /** Whether standing permissions may exist at all (`approvals.standingGrants`). */
+  enabled: () => boolean;
+  /**
+   * The live permission covering this agent doing this thing, or `undefined`.
+   *
+   * Expiry and revocation are applied by the implementation, on read, so a
+   * permission whose window closed is invisible here the instant it closes rather
+   * than whenever a sweep next runs.
+   */
+  findLive: (agentPath: string, capabilityId: string) => { id: string } | undefined;
 }
 
 /**
@@ -270,6 +352,22 @@ export type TierEnforcementDecision =
   | { outcome: 'approval_required'; payload: ApprovalRequiredPayload }
   | { outcome: 'denied'; payload: TierDeniedPayload };
 
+/**
+ * A destructive call a standing permission allowed without asking anyone.
+ *
+ * The one `allowed` decision that reaches the audit hook. Every other allowed call
+ * is recorded by the registry's attribution observer instead, so reporting them
+ * here too would describe one invocation twice — but "DorkOS did not ask you about
+ * this" is a fact no other observer knows, and it is the whole answer to "what did
+ * my agent do while I was not being asked".
+ */
+export interface AutoApprovedAttempt {
+  /** Discriminator. Always `allowed`. */
+  outcome: 'allowed';
+  /** The permission that allowed it. */
+  approval: Extract<GrantedApproval, { via: 'standing-grant' }>;
+}
+
 /** One gated attempt, for the audit trail. */
 export interface TierEnforcementAttempt {
   /** The capability or hand-registered MCP tool the caller tried to run. */
@@ -278,10 +376,18 @@ export interface TierEnforcementAttempt {
    * The agent that tried, when it identified itself. Absent for an unidentified
    * caller — which is still audited, because an anonymous attempt at something
    * irreversible is exactly the event an operator most wants a record of.
+   *
+   * Always present on an {@link AutoApprovedAttempt}: permissions key on agent
+   * path, so an anonymous caller can never match one.
    */
   identity?: AgentIdentity;
-  /** What the gate decided — never `allowed` (allowed calls are audited on invoke). */
-  decision: Extract<TierEnforcementDecision, { outcome: 'approval_required' | 'denied' }>;
+  /**
+   * What the gate decided. Ordinary allowed calls are absent (the attribution
+   * observer records those); {@link AutoApprovedAttempt} is the one exception.
+   */
+  decision:
+    | Extract<TierEnforcementDecision, { outcome: 'approval_required' | 'denied' }>
+    | AutoApprovedAttempt;
 }
 
 /** Everything the gate needs to decide one invocation. */
@@ -321,6 +427,14 @@ export interface CapabilityTierGateOptions {
    * anonymous destructive call still needs an approval at `destructive`.
    */
   anonymousTierCeiling?: CapabilityTier;
+  /**
+   * How the gate resolves a standing permission, when boot wired one.
+   *
+   * Optional, and its absence fails closed: with nothing wired no permission is
+   * ever found, so every destructive call takes the approval path exactly as it
+   * did before standing permissions existed.
+   */
+  standingGrants?: StandingGrantLookup;
 }
 
 /**
@@ -476,6 +590,44 @@ function approvalMessage(reason: ApprovalRequiredReason, title: string): string 
   }
 }
 
+/**
+ * The live standing permission covering this caller doing this thing, if there is
+ * one.
+ *
+ * Three conditions, all of which have to hold, and none of which is inferred from
+ * another: the caller presented an identity, the operator switched the feature on,
+ * and a live permission exists for the exact pair. An anonymous caller returns
+ * early here — permissions key on agent path, so shedding a credential can never
+ * match one.
+ *
+ * A lookup that throws (a database that has gone away) is treated as "no
+ * permission", so the call falls back to asking a person rather than failing open
+ * on a broken store.
+ *
+ * @param action - The action about to run.
+ * @param identity - The calling agent, when it identified itself.
+ * @returns The permission to thread onto the invocation, or `undefined`.
+ */
+function resolveStandingGrant(
+  action: GatedAction,
+  identity?: AgentIdentity
+): Extract<GrantedApproval, { via: 'standing-grant' }> | undefined {
+  const lookup = gate?.standingGrants;
+  if (!lookup || !identity) return undefined;
+  try {
+    if (!lookup.enabled()) return undefined;
+    const grant = lookup.findLive(identity.agentPath, action.id);
+    return grant ? { via: 'standing-grant', grantId: grant.id } : undefined;
+  } catch (err) {
+    logger.error('[capabilities] standing permission could not be read; asking a person instead', {
+      capabilityId: action.id,
+      agentPath: identity.agentPath,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
+}
+
 /** Report a gated attempt to the audit hook without ever failing the call. */
 function audit(attempt: TierEnforcementAttempt): void {
   try {
@@ -555,9 +707,38 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     return { outcome: 'denied', payload };
   }
 
+  // A standing permission, resolved here and nowhere else. AFTER the ceiling
+  // above, so it can never lift one; BEFORE the `act` early-return below, so the
+  // marketplace's own confirmation step honors the same answer (see the module
+  // TSDoc).
+  const standingGrant = resolveStandingGrant(action, identity);
+
   // `act` is allowed and audited — by the attribution observer on invoke, so
-  // exactly one Activity record describes the call.
-  if (tier === 'act') return { outcome: 'allowed' };
+  // exactly one Activity record describes the call. A permission changes nothing
+  // about WHETHER it runs; it only rides along so a handler that would have asked
+  // its own question does not.
+  //
+  // `standingGrant` is always undefined here TODAY: permissions key on the
+  // `requestedByPath` only `ask()` writes, and `ask()` is destructive-only, so no
+  // `act` action can have one minted. Forward-looking on purpose — see "The `act`
+  // half is FORWARD-LOOKING" in the module TSDoc for why it is kept and what would
+  // make it fire.
+  //
+  // Deliberately NOT audited as auto-approved: at this tier the gate allowed the
+  // call regardless, so a line saying a permission let it through would credit a
+  // permission for a decision it did not make. The attribution observer records the
+  // invocation and names the permission in its metadata, which is the honest shape.
+  if (tier === 'act') {
+    return { outcome: 'allowed', ...(standingGrant ? { approval: standingGrant } : {}) };
+  }
+
+  // `destructive` with a live permission: this is the call the operator said to
+  // stop asking about. No card, and one Activity line saying so, because a window
+  // in which DorkOS goes quiet must not also be a window in which it goes blind.
+  if (standingGrant) {
+    audit({ action, ...attributed, decision: { outcome: 'allowed', approval: standingGrant } });
+    return { outcome: 'allowed', approval: standingGrant };
+  }
 
   if (!gate) {
     const payload = denied(
@@ -663,7 +844,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   }
   switch (result.outcome) {
     case 'granted':
-      return { outcome: 'allowed', approval: { approvalId: result.approvalId } };
+      return { outcome: 'allowed', approval: { via: 'approval', approvalId: result.approvalId } };
 
     case 'pending': {
       // Still undecided: echo the SAME approval back rather than stacking a

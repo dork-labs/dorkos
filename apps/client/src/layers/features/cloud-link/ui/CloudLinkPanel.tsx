@@ -26,7 +26,7 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
-import { cn, formatRelativeTime, useCopyFeedback } from '@/layers/shared/lib';
+import { cn, formatRelativeTime, openLink, useCopyFeedback } from '@/layers/shared/lib';
 import { useCloudLink, type CloudLinkView } from '../model/use-cloud-link';
 
 /**
@@ -351,7 +351,7 @@ function openVerification(verificationUri: string, userCode: string): void {
     const url = new URL(verificationUri);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
     url.searchParams.set('code', userCode);
-    window.open(url.href, '_blank', 'noopener,noreferrer');
+    openLink(url.href);
   } catch {
     // Malformed URL — do nothing rather than open something unexpected.
   }

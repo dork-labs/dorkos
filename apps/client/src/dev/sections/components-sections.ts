@@ -111,6 +111,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Navigation',
     keywords: ['nav', 'sidebar', 'settings', 'panel', 'layout', 'menu', 'item'],
   },
+  {
+    id: 'apptabstrip',
+    title: 'AppTabStrip',
+    page: 'components',
+    category: 'Navigation',
+    keywords: ['tab', 'tabs', 'strip', 'window', 'titlebar', 'close', 'new tab', 'session'],
+  },
   // SidebarShowcases
   {
     id: 'sessionrow',
@@ -229,6 +236,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     page: 'components',
     category: 'Data Display',
     keywords: ['scroll', 'area', 'overflow', 'scrollbar', 'custom', 'vertical', 'horizontal'],
+  },
+  {
+    id: 'identityavatar',
+    title: 'IdentityAvatar',
+    page: 'components',
+    category: 'Data Display',
+    keywords: ['avatar', 'identity', 'emoji', 'initial', 'color', 'tint', 'disc', 'agent', 'room'],
   },
   // ChatPrimitivesShowcases
   {

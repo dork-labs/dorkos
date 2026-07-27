@@ -14,6 +14,7 @@ import { SessionPage } from '@/layers/widgets/session';
 import { AgentsPage } from '@/layers/widgets/agents';
 import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
+import { ChannelsPage } from '@/layers/widgets/room-view';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
@@ -133,35 +134,58 @@ const indexRoute = createRoute({
 // ── Session/chat at /session ────────────────────────────────
 
 /**
+ * The search params {@link sessionRouteLoader} reads. Declaring them is what
+ * makes the loader re-run when they change: without `loaderDeps` a loader runs
+ * on entry to the route and never again, so navigating from
+ * `/session?session=A&dir=X` to `/session?dir=Y` **within** `/session` left the
+ * URL session-less — a page where the durable stream never attaches and the
+ * composer cannot accept text. Dialog params (`?settings=`, `?agent=`) are
+ * deliberately absent: opening a dialog must not re-run session selection.
+ *
+ * @internal Exported for testing only.
+ */
+export function sessionLoaderDeps({ search }: { search: SessionSearch }) {
+  return {
+    session: search.session,
+    dir: search.dir,
+    runtime: search.runtime,
+    prompt: search.prompt,
+  };
+}
+
+/** What {@link sessionRouteLoader} receives, mirroring {@link sessionLoaderDeps}. */
+export type SessionLoaderDeps = ReturnType<typeof sessionLoaderDeps>;
+
+/**
  * Loader for the /session route. Redirects to the most recent cached session
  * or generates a speculative UUID when no session param is provided.
+ *
+ * Reads its inputs from `deps` rather than re-parsing the URL, so the values it
+ * acts on are exactly the ones {@link sessionLoaderDeps} declared — a param
+ * read here but missing there would silently stop triggering a re-run.
  *
  * @internal Exported for testing only.
  */
 export function sessionRouteLoader({
   context: { queryClient },
-  location,
+  deps,
 }: {
   context: { queryClient: QueryClient };
-  location: { searchStr: string };
+  deps: SessionLoaderDeps;
 }) {
-  const params = new URLSearchParams(location.searchStr);
-  const session = params.get('session');
-
   // Session already specified — nothing to do
-  if (session) return;
+  if (deps.session) return;
 
-  // Read cached session list (may be stale or empty on first load)
-  const dir = params.get('dir') ?? undefined;
-  // Launch-time runtime selection — must survive the auto-select/UUID redirects
-  // so the first message can carry it as the session's runtime hint.
-  const runtime = params.get('runtime') ?? undefined;
-  // Launch-time prompt seed ("Run this with…") — carried ONLY onto the fresh-UUID
-  // branch below so a new session's composer is pre-filled. It is deliberately
-  // NOT propagated onto the auto-select-existing-session redirect: a seed must
-  // never ride an existing session (defense-in-depth atop ChatPanel's empty-only
-  // guard).
-  const prompt = params.get('prompt') ?? undefined;
+  const { dir, runtime } = deps;
+  // `runtime` is the launch-time runtime selection: it must survive the
+  // auto-select/UUID redirects so the first message can carry it as the
+  // session's runtime hint.
+  //
+  // `prompt` is the launch-time seed ("Run this with…"), carried ONLY onto the
+  // fresh-UUID branch below so a new session's composer is pre-filled. It is
+  // deliberately NOT propagated onto the auto-select-existing-session redirect:
+  // a seed must never ride an existing session (defense-in-depth atop
+  // ChatPanel's empty-only guard).
   const sessions = queryClient.getQueryData<Session[]>(['sessions', dir ?? null]);
 
   if (sessions && sessions.length > 0) {
@@ -176,7 +200,7 @@ export function sessionRouteLoader({
   // No sessions cached — generate a fresh UUID for a new session
   throw redirect({
     to: '/session',
-    search: { session: crypto.randomUUID(), dir, runtime, prompt },
+    search: { session: crypto.randomUUID(), dir, runtime, prompt: deps.prompt },
     replace: true,
   });
 }
@@ -186,6 +210,7 @@ const sessionRoute = createRoute({
   path: '/session',
   validateSearch: zodValidator(sessionSearchSchema),
   component: SessionPage,
+  loaderDeps: sessionLoaderDeps,
   loader: sessionRouteLoader,
 });
 
@@ -202,6 +227,39 @@ const tasksRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/tasks',
   component: TasksPage,
+});
+
+// ── Channels, DMs and threads at /channels ───────────────────
+
+/**
+ * Search params for the `/channels` route.
+ *
+ * A room's identity travels as a search param, the same way `/session` carries
+ * `?session=` rather than a path segment (`sessionSearchSchema` above). Discord
+ * addresses a DM the same way, so `/channels?id=<dmId>` is precedented rather
+ * than odd.
+ *
+ * `thread` names a child room of `id`. When both are set the thread is what
+ * renders, and `id` stays in the URL so leaving the thread returns to the room
+ * it hangs off.
+ *
+ * @internal Exported for testing only.
+ */
+export const channelsSearchSchema = mergeDialogSearch(
+  z.object({
+    id: z.string().optional(),
+    thread: z.string().optional(),
+  })
+);
+
+/** Search params available on the `/channels` route. */
+export type ChannelsSearch = z.infer<typeof channelsSearchSchema>;
+
+const channelsRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/channels',
+  validateSearch: zodValidator(channelsSearchSchema),
+  component: ChannelsPage,
 });
 
 // ── Workspaces at /workspaces ────────────────────────────────
@@ -253,6 +311,7 @@ const routeTree = rootRoute.addChildren([
     sessionRoute,
     agentsRoute,
     tasksRoute,
+    channelsRoute,
     workspacesRoute,
     activityRoute,
     marketplaceRoute,

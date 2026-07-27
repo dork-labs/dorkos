@@ -70,10 +70,19 @@ export function createRelayReloadAdaptersHandler(deps: McpToolDeps) {
   };
 }
 
-/** Returns the adapter tool definitions — only when adapterManager is provided. */
-export function getAdapterTools(deps: McpToolDeps) {
-  if (!deps.adapterManager) return [];
-
+/**
+ * The adapter tool definitions: name, description, input schema, and handler.
+ *
+ * The single source for all of that on BOTH MCP servers. The external `/mcp`
+ * server projects these through `registerFromDefinitions` rather than typing them
+ * out again, which is what stops the two surfaces describing them differently
+ * (DOR-499). Guarded on `deps.adapterManager` by {@link getAdapterTools} for the
+ * in-session server; the external server registers unconditionally (see
+ * `mcp-server.ts`).
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function adapterToolDefinitions(deps: McpToolDeps) {
   return [
     tool(
       'relay_list_adapters',
@@ -100,4 +109,14 @@ export function getAdapterTools(deps: McpToolDeps) {
       createRelayReloadAdaptersHandler(deps)
     ),
   ];
+}
+
+/**
+ * The adapter tools for the in-session server — only when adapterManager is provided.
+ *
+ * @param deps - Shared MCP tool dependencies.
+ */
+export function getAdapterTools(deps: McpToolDeps) {
+  if (!deps.adapterManager) return [];
+  return adapterToolDefinitions(deps);
 }

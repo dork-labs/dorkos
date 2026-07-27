@@ -4,7 +4,7 @@ import type { UiCanvasContent } from '@dorkos/shared/types';
 import type { BrowserHistoryState } from '@/layers/shared/model';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Input } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 import {
   classifyBrowserTarget,
@@ -177,7 +177,9 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
     [currentUrl, navigate]
   );
 
-  const openExternally = () => window.open(currentUrl, '_blank', 'noopener,noreferrer');
+  // Always leaves the app, even for one of our own URLs — that is what the
+  // button says it does.
+  const openExternally = () => openExternalLink(currentUrl);
 
   return (
     <div className="flex h-full flex-col">

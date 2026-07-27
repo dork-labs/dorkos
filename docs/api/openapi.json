@@ -4277,7 +4277,7 @@
           }
         },
         "default": {},
-        "description": "Per-domain tool group enable/disable. undefined = inherit global default. Binding tools follow adapter toggle. Trace tools follow relay toggle."
+        "description": "Per-domain tool groups. undefined = inherit global default. Off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle."
       },
       "RegisterAgentRequest": {
         "type": "object",
@@ -4685,8 +4685,48 @@
           "captureCurrent": {
             "type": "boolean",
             "description": "Snapshot the live arrangement (enabled extensions + chrome) when forking the active Shape."
+          },
+          "liveLayout": {
+            "$ref": "#/components/schemas/ShapeLiveLayoutCapture"
           }
         }
+      },
+      "ShapeLiveLayoutCapture": {
+        "type": "object",
+        "properties": {
+          "sidebarOpen": {
+            "type": "boolean",
+            "description": "Whether the sidebar is open right now."
+          },
+          "sidebarTab": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
+            "description": "The selected sidebar tab. Report it only where the person picked a tab from a sidebar tab strip the host renders; omit it otherwise, and the source Shape's value is kept."
+          },
+          "openPanels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "settings",
+                "tasks",
+                "relay",
+                "picker"
+              ]
+            },
+            "description": "Panels open right now."
+          },
+          "focusDashboardSections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Dashboard sections to order first. No client observes this today."
+          }
+        },
+        "description": "The client’s live chrome, merged field-wise over the source Shape’s layout. Only honored alongside `captureCurrent` on the active Shape."
       },
       "PendingApprovalsResponse": {
         "type": "object",
@@ -4729,6 +4769,9 @@
           "requestedBy": {
             "type": "string"
           },
+          "hasAgentPath": {
+            "type": "boolean"
+          },
           "requestedAt": {
             "type": "string"
           },
@@ -4742,6 +4785,7 @@
           "capabilityTitle",
           "tier",
           "summary",
+          "hasAgentPath",
           "requestedAt",
           "expiresAt"
         ]
@@ -4764,10 +4808,73 @@
               "granted",
               "denied"
             ]
+          },
+          "standingPermission": {
+            "$ref": "#/components/schemas/StandingPermission"
           }
         },
         "required": [
           "ok",
+          "approvalId",
+          "outcome"
+        ]
+      },
+      "StandingPermission": {
+        "type": "object",
+        "properties": {
+          "grantId": {
+            "type": "string"
+          },
+          "agentPath": {
+            "type": "string"
+          },
+          "agentLabel": {
+            "type": "string"
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "capabilityTitle": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "grantId",
+          "agentPath",
+          "agentLabel",
+          "capabilityId",
+          "capabilityTitle",
+          "expiresAt"
+        ]
+      },
+      "StandingPermissionNotRecordedResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "STANDING_PERMISSION_NOT_RECORDED"
+            ]
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "granted"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code",
           "approvalId",
           "outcome"
         ]
@@ -4788,6 +4895,670 @@
             "maxLength": 1024
           }
         }
+      },
+      "StandingPermissionsResponse": {
+        "type": "object",
+        "properties": {
+          "grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StandingPermission"
+            }
+          }
+        },
+        "required": [
+          "grants"
+        ]
+      },
+      "RevokeStandingPermissionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "grantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "grantId"
+        ]
+      },
+      "RoomListResponse": {
+        "type": "object",
+        "properties": {
+          "rooms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomSummary"
+            }
+          }
+        },
+        "required": [
+          "rooms"
+        ]
+      },
+      "RoomSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Room"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "unreadCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "participants": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "$ref": "#/components/schemas/AuthorRef"
+                },
+                "description": "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel or a thread, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; a DM's roster is whoever one person assembled by hand, which is small enough to ride along on every list. A channel reads as `#slug` and a thread as its own glyph, so their rosters would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
+              }
+            },
+            "required": [
+              "unreadCount",
+              "participants"
+            ]
+          }
+        ]
+      },
+      "RoomKind": {
+        "type": "string",
+        "enum": [
+          "channel",
+          "dm",
+          "thread"
+        ]
+      },
+      "AuthorRef": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Opaque author id (ULID). Stable across agent re-registration."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuthorKind"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "emoji": {
+            "type": "string",
+            "description": "Render cache: the emoji avatar, when the author has one."
+          },
+          "color": {
+            "type": "string",
+            "description": "Render cache: the identity colour, when the author has one."
+          },
+          "agentRef": {
+            "type": "string",
+            "description": "Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "displayName"
+        ]
+      },
+      "AuthorKind": {
+        "type": "string",
+        "enum": [
+          "human",
+          "agent",
+          "system"
+        ]
+      },
+      "Room": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RoomKind"
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Non-null exactly when kind is \"thread\"."
+          },
+          "slug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Channels only. Unique among non-archived channels."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "topic": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspaceId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional workspace reference. How it resolves a cwd is out of scope for v1."
+          },
+          "rootEntryId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Threads only: the parent entry this thread hangs off."
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "lastActivityAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "parentId",
+          "slug",
+          "title",
+          "topic",
+          "workspaceId",
+          "rootEntryId",
+          "archived",
+          "createdAt",
+          "lastActivityAt"
+        ]
+      },
+      "RoomWithRoster": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Room"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "members": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RoomRosterEntry"
+                }
+              }
+            },
+            "required": [
+              "members"
+            ]
+          }
+        ]
+      },
+      "RoomRosterEntry": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RoomMember"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "author": {
+                "$ref": "#/components/schemas/AuthorRef"
+              }
+            },
+            "required": [
+              "author"
+            ]
+          }
+        ]
+      },
+      "RoomMember": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "responseMode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "direct-only",
+              "mention-only",
+              "silent"
+            ],
+            "description": "Per-room override, written explicitly at join time. Seeded from the manifest for a DM, \"mention-only\" for a channel, inherited from the parent for a thread."
+          },
+          "joinedAt": {
+            "type": "string"
+          },
+          "lastReadSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The (member, room) read cursor."
+          }
+        },
+        "required": [
+          "roomId",
+          "authorId",
+          "responseMode",
+          "joinedAt",
+          "lastReadSeq"
+        ]
+      },
+      "CreateRoomRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "channel",
+              "dm"
+            ],
+            "description": "Threads are created via POST /:id/threads."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,79}$"
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "workspaceId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": [],
+            "description": "Author ids to seed the roster with, besides the creator."
+          },
+          "agentPaths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": [],
+            "description": "Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The cockpit knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it. A DM may name any number of agents: one gives a one-to-one conversation, several give a group."
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "UpdateRoomRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "topic": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "archived": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RoomEntryListResponse": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomEntry"
+            }
+          }
+        },
+        "required": [
+          "entries"
+        ]
+      },
+      "RoomEntry": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable entry id (ULID). What a reaction would attach to."
+          },
+          "authorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RoomEntryKind"
+          },
+          "body": {
+            "$ref": "#/components/schemas/RoomEntryBody"
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author ids resolved from @name at write time. Never re-parsed by the client."
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cascadeRoot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cascadeDepth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "signature": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Reserved for phase 4. Always null in v1."
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "roomId",
+          "seq",
+          "id",
+          "authorId",
+          "kind",
+          "body",
+          "mentions",
+          "sessionId",
+          "cascadeRoot",
+          "cascadeDepth",
+          "signature",
+          "createdAt"
+        ]
+      },
+      "RoomEntryKind": {
+        "type": "string",
+        "enum": [
+          "post",
+          "notice"
+        ]
+      },
+      "RoomEntryBody": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "notice": {
+            "$ref": "#/components/schemas/RoomNoticeCode"
+          },
+          "subjectAuthorId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "RoomNoticeCode": {
+        "type": "string",
+        "enum": [
+          "cascade_stopped",
+          "budget_reached"
+        ]
+      },
+      "PostToRoomResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "entryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "accepted",
+          "entryId",
+          "seq"
+        ]
+      },
+      "PostToRoomRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The session that produced this post, when one did."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "AddRoomMemberRequest": {
+        "type": "object",
+        "properties": {
+          "authorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agentPath": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Add an agent by its directory, minting the author row if this is its first room."
+          },
+          "responseMode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "direct-only",
+              "mention-only",
+              "silent"
+            ],
+            "description": "Omit to seed from the room kind: the agent manifest for a DM, \"mention-only\" for a channel."
+          }
+        }
+      },
+      "UpdateMembershipRequest": {
+        "type": "object",
+        "properties": {
+          "responseMode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "direct-only",
+              "mention-only",
+              "silent"
+            ]
+          }
+        },
+        "required": [
+          "responseMode"
+        ]
+      },
+      "SetReadCursorRequest": {
+        "type": "object",
+        "properties": {
+          "lastReadSeq": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "lastReadSeq"
+        ]
+      },
+      "CreateThreadRequest": {
+        "type": "object",
+        "properties": {
+          "rootEntryId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The parent entry this thread hangs off."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "rootEntryId"
+        ]
+      },
+      "RoomSnapshot": {
+        "type": "object",
+        "properties": {
+          "room": {
+            "$ref": "#/components/schemas/RoomWithRoster"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomEntry"
+            }
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "room",
+          "entries",
+          "cursor"
+        ]
+      },
+      "RoomEntryEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "entry"
+            ]
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "entry": {
+            "$ref": "#/components/schemas/RoomEntry"
+          }
+        },
+        "required": [
+          "type",
+          "seq",
+          "entry"
+        ]
+      },
+      "RoomSignalEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "signal"
+            ]
+          },
+          "signal": {
+            "$ref": "#/components/schemas/SignalType"
+          },
+          "authorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "signal",
+          "authorId",
+          "at"
+        ]
+      },
+      "SignalType": {
+        "type": "string",
+        "enum": [
+          "typing",
+          "presence",
+          "read_receipt",
+          "delivery_receipt",
+          "progress",
+          "backpressure"
+        ]
       },
       "ActorType": {
         "type": "string",
@@ -8393,7 +9164,8 @@
         "tags": [
           "Marketplace"
         ],
-        "summary": "Add a marketplace source",
+        "summary": "Add a marketplace source (operator only)",
+        "description": "Only the person running DorkOS may add a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -8462,6 +9234,35 @@
               }
             }
           },
+          "403": {
+            "description": "Caller is not the operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "operator_only_marketplace_source"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
           "409": {
             "description": "Duplicate source name",
             "content": {
@@ -8480,7 +9281,8 @@
         "tags": [
           "Marketplace"
         ],
-        "summary": "Remove a marketplace source",
+        "summary": "Remove a marketplace source (operator only)",
+        "description": "Only the person running DorkOS may remove a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it.",
         "parameters": [
           {
             "schema": {
@@ -8494,6 +9296,35 @@
         "responses": {
           "204": {
             "description": "Source removed"
+          },
+          "403": {
+            "description": "Caller is not the operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "operator_only_marketplace_source"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "message"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -10331,7 +11162,7 @@
           "Shapes"
         ],
         "summary": "Fork an installed Shape",
-        "description": "Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape.",
+        "description": "Clones an installed Shape into a new, independently-editable one and stamps `lineage`. `captureCurrent` snapshots the live arrangement when forking the active Shape: the currently-enabled extensions (read server-side) plus the caller’s `liveLayout`. `liveLayout` is a PARTIAL chrome snapshot merged field-wise over the source Shape’s `layout` — every field the caller omits keeps the source’s value, so a client never overwrites chrome it cannot observe.",
         "parameters": [
           {
             "schema": {
@@ -11153,7 +11984,7 @@
           "Approvals"
         ],
         "summary": "Allow the requested action",
-        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\nThe body accepts a `standing` flag, which asks DorkOS to stop asking about this agent doing this thing. It is currently REFUSED for every caller with `STANDING_GRANTS_NOT_YET_ENFORCED`, because nothing enforces a standing permission yet. It is accepted and refused rather than ignored so a caller is never told it got something it did not: when the standing part is refused, the one-time grant does not happen either. The stricter bar that will guard it is already live and is checked first, so a caller with no session cookie is refused before reaching this.",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the cockpit apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\nThe body accepts a `standing` flag, which also stops DorkOS asking about this agent doing this thing for as long as `approvals.trustWindowMinutes` says. Opening one needs a person signed in to the cockpit, so it needs Require login to be on: with login off there is no session cookie and DorkOS cannot tell the operator from an agent running as the same user. It is refused rather than quietly downgraded to a plain one-time yes, and the refusal comes before anything is granted, so a caller that asked for two things and can only have one gets neither and is told which part failed. On success the response carries the permission that was opened. Re-answering the same question replaces the live permission and starts a fresh window; using a permission never extends it.",
         "parameters": [
           {
             "schema": {
@@ -11215,7 +12046,7 @@
             }
           },
           "409": {
-            "description": "Already decided; or `standing: true` was asked for, which nothing enforces yet (`STANDING_GRANTS_NOT_YET_ENFORCED`). Nothing is granted in the second case",
+            "description": "Already decided; or `standing: true` was asked for while standing permissions are switched off (`STANDING_GRANTS_DISABLED`), or for an approval that recorded no agent path, so there is no agent to stop asking about (`APPROVAL_HAS_NO_AGENT`). Nothing is granted in the last two cases",
             "content": {
               "application/json": {
                 "schema": {
@@ -11230,6 +12061,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The one-time yes was recorded but the permission was not (`STANDING_PERMISSION_NOT_RECORDED`). The two are separate writes; this answer carries `approvalId` and `outcome` so a caller can tell it apart from \"nothing happened\" — retrying the whole call would answer 409, which reads like the permission exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandingPermissionNotRecordedResponse"
                 }
               }
             }
@@ -11337,6 +12178,872 @@
         }
       }
     },
+    "/api/approvals/grants": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "List live standing permissions",
+        "description": "The standing permissions that are live right now: which agent, which action, and when each one runs out. A permission nobody can find is a dark pattern, so this is the list the cockpit shows in both places it offers to end one. Expiry is applied here rather than left to a sweep, so a permission whose window has closed is already gone from this list.\n\nAuthorized like deciding an approval, NOT like reading the pending list, and the difference is deliberate. A pending card is meant to be agent-readable. This list is prospective: it says which irreversible action will go through silently right now and the minute the window shuts, and it names other agents' pairings. So a caller presenting an agent identity or an approval token is refused.\n\nIt carries what the cockpit renders and nothing more. Who opened each permission, when, under which posture, and which card it came from are recorded in the `approval.grant_created` Activity event instead, which is where an audit question belongs.",
+        "responses": {
+          "200": {
+            "description": "Live standing permissions, soonest to expire first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandingPermissionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot read this (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/grants/{id}": {
+      "delete": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "End one standing permission",
+        "description": "Ends a standing permission, so DorkOS asks again before the next time that agent runs that action. It does not undo anything that already ran.\n\nEnding one NARROWS what an agent may do, so it needs no session cookie — unlike opening one. It still needs proof of a person in the same sense deciding an approval does: a caller presenting an agent identity or an approval token is refused in every posture. A second click answers 404, so the moment a permission ended cannot be rewritten.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The permission was ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeStandingPermissionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No permission is live under that id (`UNKNOWN_STANDING_PERMISSION`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "List rooms visible to the caller",
+        "description": "A human sees every room; an agent presenting `X-DorkOS-Agent` sees only rooms it belongs to. `unreadCount` is null for a room the caller is not a member of, and `participants` is null for anything that is not a direct message.",
+        "parameters": [
+          {
+            "schema": {
+              "$ref": "#/components/schemas/RoomKind"
+            },
+            "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "required": false,
+            "name": "includeArchived",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rooms, newest activity first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Open a channel or a DM",
+        "description": "The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. A DM may name any number of agents; one gives a one-to-one conversation and several give a group. **Creating a DM is idempotent on its member set**: when a direct message already holds exactly these authors (the creator included, order irrelevant, neither a superset nor a subset), that room is returned instead of a second one being minted, and an archived match is un-archived first. The existing room keeps its own title and its place in the activity order — opening a conversation is not activity in it. Read the status to tell the two apart: **201** means a room was created, **200** means one was already there. The body is identical either way, so the status is the only signal.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoomRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The direct message that already held exactly these members, returned instead of a second one being created (un-archived first if it was archived)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomWithRoster"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "A new room, with its roster",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomWithRoster"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent caller tried to seed the room with a SECOND agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A live channel already holds that slug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Get one room with its roster",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The room and its members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomWithRoster"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Update a room title, topic, or archived flag",
+        "description": "Archiving a channel releases its slug. Un-archiving reclaims it, and is refused with 409 when another channel took it meanwhile.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoomRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated room with its roster",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomWithRoster"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Un-archiving would collide with a live channel holding the slug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/entries": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Read a page of room history",
+        "description": "Oldest-first within the page. Page backwards with `before=<seq>`. The room log is never trimmed, so any page remains readable.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Return entries with seq < this."
+            },
+            "required": false,
+            "description": "Return entries with seq < this.",
+            "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomEntryListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Post to a room (trigger-only)",
+        "description": "Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body. Every agent member the post addresses is then triggered, bounded by the cascade guard; their replies arrive on the same stream.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostToRoomRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; delivery rides the room SSE stream",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostToRoomResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/members": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Add a member to a room",
+        "description": "Add by `authorId`, or by `agentPath` to mint an agent author on first use. `responseMode` is seeded from the room kind when omitted. Operator-only: an agent that could widen a room-mate addressing could drive replies nobody asked for.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddRoomMemberRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The stored membership with its author resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomRosterEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the local human may change a roster; an agent caller is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, no such author, or no agent registered at that path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/members/{authorId}": {
+      "patch": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Change a member's per-room response mode",
+        "description": "Operator-only. `responseMode` decides when an agent answers without being addressed, so an agent able to turn it up on a room-mate could manufacture a conversation.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "authorId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMembershipRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomRosterEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the local human may change a roster; an agent caller is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or not a member of it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Remove a member from a room",
+        "description": "Operator-only. Also drops that member's per-room session binding.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "authorId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Member removed"
+          },
+          "403": {
+            "description": "Only the local human may change a roster; an agent caller is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or not a member of it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/read-cursor": {
+      "put": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Advance the caller's read cursor",
+        "description": "The `(member, room)` cursor the unread divider reads. Monotonic — a lower value is ignored, so a stale client cannot un-read a room for another client.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetReadCursorRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated membership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomMember"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or not a member of it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/threads": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Open a thread off an entry",
+        "description": "One level only: a thread whose parent is itself a thread is refused with 400. The thread inherits the parent roster and each member keeps their parent response mode.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThreadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new thread room with its roster",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomWithRoster"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, or the parent is already a thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/events": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Durable room event stream (SSE)",
+        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` (a durable `entry`, or an ephemeral `signal` that is never replayed).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Resume cursor; ignored past the end of the log."
+            },
+            "required": false,
+            "description": "Resume cursor; ignored past the end of the log.",
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream: a RoomSnapshot frame on a cold connect, then RoomEvent frames",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RoomSnapshot"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoomEntryEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoomSignalEvent"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/activity": {
       "get": {
         "tags": [
@@ -11417,7 +13124,7 @@
           "Capabilities"
         ],
         "summary": "List capabilities",
-        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools, ui tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog, carry no permission tier, and cannot be reached by `dorkos call`. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest.",
+        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools, ui tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog and cannot be reached by `dorkos call`. They carry a permission tier all the same and answer to the same approval gate, so a tool being absent here is not a tool that runs unasked: `tasks_delete` and `mesh_unregister` are destructive and stop for a person. A destructive tool advertises an `approvalToken` argument, which is how you can tell one from its own schema. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest.",
         "responses": {
           "200": {
             "description": "List capabilities result",

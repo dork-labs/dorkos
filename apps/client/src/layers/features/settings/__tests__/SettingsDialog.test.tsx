@@ -149,12 +149,15 @@ describe('SettingsDialog', () => {
     navigateTo(/server/i);
     const version = await screen.findByText('1.0.0');
     expect(version).toBeDefined();
-    expect(screen.getByText('4242')).toBeDefined();
+    // The port is reported as the address you can act on, not as a bare number:
+    // a standalone "Port 4242" row told a desktop user nothing they could copy
+    // into an MCP client or a browser.
+    expect(screen.getByText('http://localhost:4242')).toBeDefined();
     expect(screen.getByText('/home/user/project')).toBeDefined();
   });
 
   // Verifies server tab shows endpoint and directory info
-  it('shows API URL, MCP Endpoint, and Data Directory in server tab', async () => {
+  it('shows the address, the MCP endpoint, and the data directory in the server tab', async () => {
     const transport = createSettingsTransport();
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
       wrapper: createWrapper(transport),
@@ -184,13 +187,13 @@ describe('SettingsDialog', () => {
   });
 
   // Verifies sidebar navigation items render correctly
-  it('renders eight sidebar items: Appearance, Preferences, Server, Tools, Channels, Agents, Runtimes, Advanced', () => {
+  it('renders eight sidebar items: Appearance, Preferences, Server, Tools, Integrations, Agents, Runtimes, Advanced', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /channels/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /integrations/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /agents/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /^runtimes/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();

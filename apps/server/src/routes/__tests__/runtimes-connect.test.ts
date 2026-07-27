@@ -42,8 +42,10 @@ vi.mock('../../services/runtimes/opencode/ollama.js', () => ({
   pullOllamaModel: vi.fn(),
 }));
 
+import express from 'express';
 import request from 'supertest';
 import { createApp } from '../../app.js';
+import runtimesRouter from '../runtimes.js';
 import { logger } from '../../lib/logger.js';
 import {
   storeRuntimeCredential,
@@ -434,6 +436,132 @@ describe('runtime connect endpoints', () => {
 
       expect(res.status).toBe(403);
       expect(pullOllamaModel).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Every route in this file calls `rejectNonLoopback`, and until now nothing
+   * would have noticed if one stopped. The existing `Host: evil.example.com`
+   * cases do not cover it: the `/api` host guard answers those at the app edge,
+   * so the request never reaches the route's own gate. Mutation-testing found
+   * this — forcing `isLocalRequest` to `true` left this whole file green
+   * (DOR-532 final review).
+   *
+   * A non-loopback TCP peer with a LOOPBACK `Host` is the shape that isolates the
+   * route gate: the host guard admits it, and only `rejectNonLoopback` can turn it
+   * away. These are the routes that accept secrets, so a silent regression here is
+   * the one worth catching.
+   */
+  describe('locality gate on the credential + connect routes', () => {
+    /** Mount the real router behind a middleware that rewrites the TCP peer. */
+    function appWithPeer(peer: string): express.Express {
+      const peerApp = express();
+      peerApp.use((req, _res, next) => {
+        Object.defineProperty(req.socket, 'remoteAddress', { value: peer, configurable: true });
+        next();
+      });
+      peerApp.use(express.json());
+      peerApp.use('/api/runtimes', runtimesRouter);
+      return peerApp;
+    }
+
+    /** The LAN peer that defeated the header-only check, per the DOR-532 probes. */
+    const REMOTE_PEER = '192.168.86.200';
+
+    const ROUTES: Array<{
+      name: string;
+      method: 'get' | 'post';
+      path: string;
+      body?: Record<string, unknown>;
+      /** The action that must never run. */
+      action?: () => unknown;
+      /** Whether the request body carries a secret that must not be echoed. */
+      carriesSecret?: boolean;
+    }> = [
+      {
+        name: 'POST /:type/credential',
+        method: 'post',
+        path: '/api/runtimes/claude-code/credential',
+        body: { secret: SECRET },
+        action: () => storeRuntimeCredential,
+        carriesSecret: true,
+      },
+      {
+        name: 'POST /opencode/provider/credential',
+        method: 'post',
+        path: '/api/runtimes/opencode/provider/credential',
+        body: { providerId: 'anthropic', secret: SECRET },
+        action: () => storeProviderCredential,
+        carriesSecret: true,
+      },
+      {
+        name: 'POST /:type/login',
+        method: 'post',
+        path: '/api/runtimes/claude-code/login',
+        body: {},
+        action: () => delegateRuntimeLogin,
+      },
+      {
+        name: 'POST /opencode/openrouter/key',
+        method: 'post',
+        path: '/api/runtimes/opencode/openrouter/key',
+        body: { key: SECRET },
+        action: () => storeOpenRouterKeyReference,
+        carriesSecret: true,
+      },
+      {
+        name: 'POST /opencode/openrouter/oauth/start',
+        method: 'post',
+        path: '/api/runtimes/opencode/openrouter/oauth/start',
+        body: {},
+      },
+      {
+        name: 'GET /opencode/openrouter/oauth/status',
+        method: 'get',
+        path: '/api/runtimes/opencode/openrouter/oauth/status',
+      },
+      {
+        name: 'GET /opencode/ollama',
+        method: 'get',
+        path: '/api/runtimes/opencode/ollama',
+        action: () => detectOllama,
+      },
+      {
+        name: 'GET /opencode/ollama/models',
+        method: 'get',
+        path: '/api/runtimes/opencode/ollama/models',
+      },
+      {
+        name: 'POST /opencode/ollama/pull',
+        method: 'post',
+        path: '/api/runtimes/opencode/ollama/pull',
+        body: { model: 'qwen2.5-coder:7b' },
+        action: () => pullOllamaModel,
+      },
+    ];
+
+    it.each(ROUTES)('refuses $name from a non-loopback peer', async (route) => {
+      const req = request(appWithPeer(REMOTE_PEER))
+        [route.method](route.path)
+        .set('Host', 'localhost');
+      const res = await (route.body ? req.send(route.body) : req);
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/locally/i);
+      if (route.action) expect(route.action()).not.toHaveBeenCalled();
+      if (route.carriesSecret) expect(JSON.stringify(res.body)).not.toContain(SECRET);
+    });
+
+    it.each(ROUTES)('still admits $name from a loopback peer', async (route) => {
+      const req = request(appWithPeer('127.0.0.1'))
+        [route.method](route.path)
+        .set('Host', 'localhost');
+      const res = await (route.body ? req.send(route.body) : req);
+
+      // The gate is what is under test, not each route's own outcome — a handler
+      // may still 400 on a stub'd dependency. Anything but the locality refusal
+      // proves the request got past it.
+      expect(res.status).not.toBe(403);
     });
   });
 });

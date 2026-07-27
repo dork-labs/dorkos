@@ -35,12 +35,13 @@ export default function TelemetryPage() {
       <article className="space-y-8">
         <header className="space-y-2">
           <h1 className="text-charcoal font-mono text-3xl font-bold">Telemetry</h1>
-          <p className="text-warm-gray text-lg">Last updated: July 13, 2026</p>
+          <p className="text-warm-gray text-lg">Last updated: July 27, 2026</p>
           <p className="text-warm-gray leading-relaxed">
-            DorkOS is made by Blaze Ventures, LLC. It shares a little anonymous data by default so
-            we can see roughly how many people run it. It is anonymous, not personal: no prompts, no
-            code, no file paths, no session content, ever. This page shows the exact data, word for
-            word, and every way to turn it off.
+            DorkOS is made by Blaze Ventures, LLC. It sends us nothing unless you turn it on. If you
+            choose to help, you can share a little anonymous data so we can see roughly how many
+            people run it. It is anonymous, not personal: no prompts, no code, no file paths, no
+            session content, ever. This page shows the exact data, word for word, and how to switch
+            it on or off.
           </p>
         </header>
 
@@ -48,12 +49,12 @@ export default function TelemetryPage() {
           <h2 className="text-charcoal font-mono text-base font-semibold">The short version</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
             <li>
-              Two anonymous things are on by default: a daily heartbeat and marketplace install
-              counts.
+              Two anonymous things you can switch on: a daily heartbeat and marketplace install
+              counts. Both are off until you do.
             </li>
             <li>
-              The first time you run DorkOS, it shows you a notice with the payload below and sends
-              nothing on that first run.
+              The first time you run DorkOS, it shows you a notice with the payload below. If you do
+              nothing, nothing is ever sent.
             </li>
             <li>It is anonymous. No prompts, no code, no file paths, no session content, ever.</li>
             <li>
@@ -116,8 +117,8 @@ export default function TelemetryPage() {
             The list above is the complete payload. It is enforced in code and in tests, so nothing
             can sneak in. In particular it never includes your prompts, your code, file paths, your
             hostname or username, IP address, or anything from your sessions. This is what makes it
-            anonymous rather than personal, and it is why we can turn it on by default. If we ever
-            want to add a field, we change this page first.
+            anonymous rather than personal. If we ever want to add a field, we change this page
+            first.
           </p>
         </section>
 
@@ -126,18 +127,19 @@ export default function TelemetryPage() {
             We tell you before anything sends
           </h2>
           <p className="text-warm-gray leading-relaxed">
-            The very first time DorkOS starts, it prints a plain notice in its log: what it shares,
-            a link to this page, and how to turn it off. Nothing is sent on that first run. If you
-            do nothing, the daily heartbeat and install counts begin on the next launch. If you turn
-            them off first, they never start.
+            The very first time DorkOS starts, it prints a plain notice in its log: what it could
+            share, a link to this page, and how to turn it on. Nothing is sent on that run, or on
+            any run, until you say yes. On top of that, the code holds every channel shut until the
+            notice has actually been shown, so nothing can send before you have seen what it covers.
           </p>
         </section>
 
         <section className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">Marketplace installs</h2>
           <p className="text-warm-gray leading-relaxed">
-            The install-count channel is on by default too, and it helps us rank packages and spot
-            broken installs. It follows the same no-PII rule and is documented in detail on the{' '}
+            The install-count channel is off by default too. Turning it on helps us rank packages
+            and spot broken installs. It follows the same no-PII rule and is documented in detail on
+            the{' '}
             <Link
               href="/marketplace/privacy"
               className="text-charcoal hover:text-brand-orange underline"
@@ -211,17 +213,16 @@ export default function TelemetryPage() {
           <pre className="border-warm-gray-light/30 text-charcoal overflow-x-auto rounded-xl border bg-black/[0.03] p-4 text-sm">
             <code>{`{
   "telemetry": {
-    "heartbeat": true,        // the daily ping (on by default)
-    "install": true,          // marketplace install counts (on by default)
+    "heartbeat": false,       // the daily ping (off by default)
+    "install": false,         // marketplace install counts (off by default)
     "errorReporting": false,  // scrubbed crash reports to dorkos.ai (off by default)
     "userHasDecided": true
   }
 }`}</code>
           </pre>
           <p className="text-warm-gray leading-relaxed">
-            Set a value to <span className="font-mono">false</span> to turn a channel off, or{' '}
-            <span className="font-mono">true</span> to turn it on. The two anonymous channels
-            default to <span className="font-mono">true</span>; error reporting defaults to{' '}
+            Set a value to <span className="font-mono">true</span> to turn a channel on, or{' '}
+            <span className="font-mono">false</span> to turn it off. Every channel defaults to{' '}
             <span className="font-mono">false</span>.
           </p>
         </section>

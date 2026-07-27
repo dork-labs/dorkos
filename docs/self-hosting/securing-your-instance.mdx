@@ -74,6 +74,40 @@ Remote visitors reaching an exposed instance get the **sign-in screen**: static 
   number if that default gets in your way.
 </Callout>
 
+## Which addresses DorkOS answers to
+
+With login off, DorkOS answers to `localhost` and `127.0.0.1` only, plus your tunnel address while a tunnel is running. A request that arrives under any other name gets a `403`.
+
+That closes a browser trick called DNS rebinding. A web page you happen to visit can point its own domain at your own machine, and the browser then treats that page as if it came from DorkOS itself. Checking the address the request arrived under is what stops it, because the page cannot fake that.
+
+Reach DorkOS by another name, such as `dorkos.example.com` through a reverse proxy? List it:
+
+```bash
+DORKOS_TRUSTED_HOSTS=dorkos.example.com,dorkos.internal
+```
+
+Separate names with commas and leave the port off. DorkOS matches the name only, so the port your proxy or `ssh -L` forward uses never matters.
+
+<Callout type="info">
+  Turning on login retires the whole question. A sign-in cookie belongs to one real address, so a
+  rebound page never receives one and gets turned away at the door. DorkOS skips the address check
+  entirely once login is on, which is why proxies and remote setups with a login need no extra
+  configuration.
+</Callout>
+
+<Callout type="warn">
+  **`DORKOS_ALLOW_INSECURE_BIND=true` also turns this address check off.** That setting says "the
+  thing around DorkOS controls who reaches it", so it does more than let DorkOS listen beyond your
+  own machine. It also stops DorkOS checking where each request came from, both the address it
+  arrived under and whether it came from this computer at all. So if you set it once to get past the
+  startup error, you gave up the rebinding protection above as well, even on `localhost`.
+
+That is the right trade inside a container, which owns its own network boundary, and it is why the
+official Docker image ships with it. It is the wrong trade on a normal machine. If you set it for
+the listening reason alone, [turn on login](#enabling-login) instead and remove it.
+
+</Callout>
+
 ## API keys for MCP, scripts, and agents
 
 External agents (Claude Code, Cursor, Windsurf), scripts, and the MCP endpoint authenticate with **per-user API keys** instead of a single global key.

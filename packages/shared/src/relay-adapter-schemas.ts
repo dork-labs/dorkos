@@ -69,6 +69,11 @@ export const TelegramAdapterConfigSchema = z
     /** Webhook validation secret — a credential reference at rest (see {@link AdapterSecretSchema}). */
     webhookSecret: AdapterSecretSchema.optional(),
     streaming: z.boolean().default(true),
+    /**
+     * Telegram user IDs who may approve a tool call this agent asks about.
+     * Empty by default, and empty authorizes nobody (DOR-609).
+     */
+    approverAllowlist: z.array(z.string()).default([]),
   })
   .openapi('TelegramAdapterConfig');
 
@@ -119,8 +124,29 @@ export const SlackAdapterConfigSchema = z
     nativeStreaming: z.boolean().default(true),
     typingIndicator: z.enum(['none', 'reaction']).default('reaction'),
     respondMode: z.enum(['always', 'mention-only', 'thread-aware']).default('thread-aware'),
-    dmPolicy: z.enum(['open', 'allowlist']).default('open'),
+    /**
+     * Who may DM the bot. A direct message starts an agent turn on the
+     * operator's machine, so this defaults to `'allowlist'` — an integration
+     * nobody configured answers nobody, rather than answering the whole
+     * workspace (DOR-604, ADR 260727-181825). Integrations that predate this
+     * default keep `'open'`; see `services/relay/safe-defaults.ts`.
+     *
+     * This stays a strict enum on purpose. The form shapes that used to slip
+     * past it — `''` from a field nobody touched — are normalized at the write
+     * boundary (`relay/adapter-config.ts`), and an unreadable stored value is
+     * closed on load (`relay/safe-defaults.ts`). Only the literal `'open'`
+     * opens it; everything else resolves to `'allowlist'` before it gets here.
+     */
+    dmPolicy: z.enum(['open', 'allowlist']).default('allowlist'),
     dmAllowlist: z.array(z.string()).default([]),
+    /**
+     * Slack user IDs who may approve a tool call this agent asks about.
+     * Empty by default, and empty authorizes nobody — see
+     * `@dorkos/relay` `adapters/approver-allowlist.ts` (DOR-609). Deliberately
+     * separate from {@link SlackAdapterConfigSchema.shape.dmAllowlist}: talking
+     * to an agent and authorizing a shell command are different privileges.
+     */
+    approverAllowlist: z.array(z.string()).default([]),
     channelOverrides: z
       .record(
         z.string(),
@@ -328,7 +354,15 @@ export const AdapterBindingSchema = z
     channelType: ChannelTypeSchema.optional(),
     sessionStrategy: SessionStrategySchema.default('per-chat'),
     label: z.string().default(''),
-    permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
+    /**
+     * The permission mode turns from this binding run in. Defaults to
+     * `'default'` — the prompting mode — because a binding carries messages from
+     * off this machine and nobody picked a mode for it (DOR-604,
+     * ADR 260727-181825). Non-optional in the parsed shape, so there is exactly
+     * one place this value is decided; bindings that predate the field are
+     * carried forward at `'acceptEdits'` in `services/relay/safe-defaults.ts`.
+     */
+    permissionMode: PermissionModeSchema.default('default'),
     /**
      * When false, the binding is paused — the router skips it for both
      * inbound delivery and agent-initiated publishes. The binding remains

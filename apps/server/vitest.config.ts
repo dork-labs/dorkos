@@ -3,34 +3,81 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
-    // Resolve `@dorkos/shared/config-schema` to the package's SOURCE, not its
+    // Resolve a few `@dorkos/shared` subpaths to the package's SOURCE, not its
     // built `dist/`.
     //
     // The `exports` map points `default` at `dist/`, so without this a stale dist
-    // silently tests yesterday's schema. That is a false PASS, not a loud
-    // failure, and it defeats the config-disclosure drift guard specifically:
-    // that guard enumerates the leaves of `UserConfigSchema` to prove every
-    // config field has been classified for the tokenless `config_get` surface, so
-    // against a stale dist a newly added field reads as "already classified".
-    // `pnpm test` is safe (turbo's `^build`), but the targeted
+    // silently tests yesterday's module. That is a false PASS, not a loud
+    // failure. `pnpm test` is safe (turbo's `^build`), but the targeted
     // `pnpm vitest run <path>` loop AGENTS.md prescribes is not, and that is
     // where the next author actually stands.
     //
-    // Scoped to this one module on purpose. Aliasing all 42 subpaths made every
+    // Both entries below are here because they back a DRIFT GUARD — a test whose
+    // whole job is to notice that a table grew a row. Those are exactly the tests
+    // a stale dist turns into decoration, because the guard reads the old table,
+    // finds it consistent, and reports success:
+    //
+    // - `config-schema` backs the config-disclosure guard, which enumerates the
+    //   leaves of `UserConfigSchema` to prove every config field has been
+    //   classified for the tokenless `config_get` surface. Against a stale dist a
+    //   newly added field reads as "already classified".
+    // - `mcp-tool-groups` backs the tool-group guards, which decide what the cockpit
+    //   shows for each toggle and which groups no toggle gates. Measured against a
+    //   stale dist, back when this table also fed the SDK's `allowedTools`: moving
+    //   `tasks_delete` into an always-on group, making a destructive tool permanently
+    //   auto-approved, passed all 85 targeted tests AND `tsc`, because the type-level
+    //   assertions only compare key SETS and the keys had not changed. Nothing feeds
+    //   `allowedTools` anymore (DOR-519), so that exact edit no longer bypasses a
+    //   prompt, but the guard is still the only thing that notices the table moved,
+    //   and a stale dist still turns it into decoration. With the alias the same edit
+    //   fails immediately.
+    // - `@dorkos/operating-skills` backs the tier-consistency guard
+    //   (`services/core/__tests__/operating-skills-tier-consistency.test.ts`),
+    //   which reads the SKILL PROSE agents are seeded with and checks it against
+    //   everything that declares a `destructive` tier. Its whole subject is the text
+    //   of that package, so a dist copy is the wrong text by construction:
+    //   reintroducing "carries no gate of its own" in `src/` would pass against a
+    //   dist built before the edit. That is the DOR-509 bug itself, checked by a test
+    //   that cannot see it.
+    //
+    // Scoped to these modules on purpose. Aliasing all 43 subpaths made every
     // worker re-transform the whole package and took the suite from ~51s to
-    // ~110s (transform 97s); scoped, it costs nothing measurable (~37s). All
-    // three measured in one session, because machine load moves these numbers
-    // more than the alias does. The trade-off is that
-    // `dist/schemas.js` reaches config-schema by a relative import, which this
-    // alias does not rewrite, so a test process can hold both the src and dist
-    // copies. That is safe here and only here: the module has no mutable state and
-    // exports only Zod schemas plus plain constants, nothing whose identity is
-    // ever compared. Do not widen this alias without re-measuring.
+    // ~110s (transform 97s); scoped, it costs nothing measurable. Adding the
+    // second entry was re-measured in one session, back to back: 50.7s to 52.9s
+    // total, transform 18.9s to 19.4s. Both runs were dominated by a 45s flaky
+    // watcher integration test, so treat transform time as the signal here and
+    // total time as noise, and re-measure in ONE session rather than comparing
+    // against a number written down on a different day. The trade-off is
+    // that other `dist/*.js` files reach these modules by relative imports, which
+    // this alias does not rewrite, so a test process can hold both the src and
+    // dist copies. That is safe for these two and only because of what they are:
+    // no mutable state, and they export only Zod schemas, plain constants, and
+    // pure functions over them, nothing whose identity is ever compared. Do not
+    // widen this alias without re-measuring.
     alias: [
       {
         find: '@dorkos/shared/config-schema',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/config-schema.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/mcp-tool-groups',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/mcp-tool-groups.ts', import.meta.url)
+        ),
+      },
+      {
+        // Anchored, unlike the two above. A bare string `find` is a PREFIX match
+        // in Vite, and the two entries above happen to be safe because they are
+        // already full subpaths with nothing beneath them. This one is a package
+        // ROOT: as a bare string it would also swallow a future
+        // `@dorkos/operating-skills/seed` and rewrite it to `.../src/index.ts/seed`,
+        // which resolves to nothing. The package exports only `.` today, so the
+        // regex is what keeps that a build error instead of a silent one later.
+        find: /^@dorkos\/operating-skills$/,
+        replacement: fileURLToPath(
+          new URL('../../packages/operating-skills/src/index.ts', import.meta.url)
         ),
       },
     ],

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-34 -34 468 468">
+  <!--
+    Menu-bar glyph: the "D" from icon.svg with its dark chip removed and the
+    stroke inverted to solid black, padded by 34 units on every side so the
+    16px render keeps a hair of breathing room against neighbouring items.
+    Black-on-transparent is what makes it a macOS *template* image — the OS
+    recolours it for light and dark menu bars. See README.md to regenerate.
+  -->
+  <path d="M292.333 0.127L399.833 96.127L400 96.276V292.207L292.207 400H0V0H292.19L292.333 0.127ZM134.5 148V249H235.5V148H134.5Z" fill="#000000"/>
+</svg>

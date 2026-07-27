@@ -58,6 +58,8 @@ describe('approvals routes', () => {
       loginEnabled?: boolean;
       agentIdentity?: boolean;
       user?: { userId: string; credential: 'cookie' | 'api-key' };
+      /** Whether the operator switched standing permissions on. Off by default. */
+      standingGrants?: boolean;
     } = {}
   ): express.Express {
     const built = express();
@@ -74,9 +76,15 @@ describe('approvals routes', () => {
     } as unknown as ActivityService;
     built.use(
       '/api/approvals',
-      createApprovalsRouter(approvals, {
+      createApprovalsRouter(approvals, grants, {
         activity,
         isLoginEnabled: () => options.loginEnabled === true,
+        readStandingGrantSettings: () => ({
+          enabled: options.standingGrants === true,
+          windowMinutes: 480,
+        }),
+        describeCapability: (id) =>
+          id === 'marketplace.uninstall' ? { title: 'Uninstall a marketplace package' } : undefined,
       })
     );
     return built;
@@ -408,40 +416,136 @@ describe('approvals routes', () => {
       expect(grants.list()).toEqual([]);
     });
 
-    it('checks the cookie bar BEFORE the not-yet-enforced refusal', async () => {
-      // Ordering matters: the bar has to be live and observable NOW, so the phase
-      // that adds enforcement replaces the refusal beneath it and nothing else.
-      // If the not-yet-enforced answer came first it would mask the bar, and the
-      // bar would ship untested under a refusal that is going away.
-      const withLoginOff = await request(buildApp({ loginEnabled: false }))
+    it('checks the cookie bar BEFORE the master switch', async () => {
+      // Ordering matters. A caller that cannot open a permission in ANY posture
+      // must not be told "turn the feature on first", which reads as an invitation
+      // and would leak whether the switch is set to a caller that has no business
+      // knowing.
+      const withLoginOff = await request(buildApp({ loginEnabled: false, standingGrants: true }))
         .post(`/api/approvals/${requestIdentified().approvalId}/grant`)
         .send({ standing: true });
       expect(withLoginOff.body.code).toBe('standing_grants_require_login');
 
       const withApiKey = await request(
-        buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+        buildApp({
+          loginEnabled: true,
+          standingGrants: true,
+          user: { userId: 'user_program', credential: 'api-key' },
+        })
       )
         .post(`/api/approvals/${requestIdentified().approvalId}/grant`)
         .send({ standing: true });
       expect(withApiKey.body.code).toBe('operator_cookie_required');
-
-      // Neither caller ever saw the refusal that is scheduled for deletion.
-      for (const res of [withLoginOff, withApiKey]) {
-        expect(res.body.code).not.toBe('STANDING_GRANTS_NOT_YET_ENFORCED');
-      }
     });
 
-    it('refuses a signed-in person too, because nothing enforces one yet', async () => {
-      // Honest rather than encouraging. A recorded permission would report a
-      // success that changes nothing: the agent would keep asking every time.
+    it('refuses a signed-in person while the master switch is off', async () => {
       const ticket = requestIdentified();
       const res = await request(buildApp({ loginEnabled: true, user: COOKIE_USER }))
         .post(`/api/approvals/${ticket.approvalId}/grant`)
         .send({ standing: true });
 
       expect(res.status).toBe(409);
-      expect(res.body.code).toBe('STANDING_GRANTS_NOT_YET_ENFORCED');
+      expect(res.body.code).toBe('STANDING_GRANTS_DISABLED');
       expect(grants.list()).toEqual([]);
+    });
+
+    it('refuses an approval nobody identified themselves for', async () => {
+      // A permission keys on the agent path. An anonymous request has none, so
+      // there is nothing to stop asking ABOUT — and keying it on the display label
+      // would key it on caller-supplied text two agents can share.
+      const anonymous = approvals.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
+
+      const res = await request(
+        buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER })
+      )
+        .post(`/api/approvals/${anonymous.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('APPROVAL_HAS_NO_AGENT');
+      expect(grants.list()).toEqual([]);
+    });
+
+    it('says on the card whether it can become a permission at all', async () => {
+      // The one bit a surface needs, and the reason it exists: `requestedBy` is SET
+      // on the marketplace confirmation rows, which are exactly the ones that carry
+      // no agent path — so a button drawn from `requestedBy` would appear precisely
+      // where pressing it is refused.
+      requestIdentified();
+      approvals.request({ ...BINDING, summary: 'Uninstall "other"', requestedBy: 'a label' });
+
+      const res = await request(app).get('/api/approvals/pending');
+
+      const cards = res.body.approvals as { requestedBy?: string; hasAgentPath: boolean }[];
+      expect(cards).toHaveLength(2);
+      expect(cards.map((c) => c.hasAgentPath)).toEqual([true, false]);
+      // Both carry a label, so the label cannot be the signal.
+      expect(cards.every((c) => typeof c.requestedBy === 'string')).toBe(true);
+    });
+
+    it('never projects the requestedByPath column onto the card', async () => {
+      // The precise claim, and the only one that holds: the COLUMN a permission is
+      // keyed on is not part of the card. `hasAgentPath` says whether there is one
+      // without saying what it is.
+      requestIdentified();
+
+      const res = await request(app).get('/api/approvals/pending');
+
+      expect(res.body.approvals[0].hasAgentPath).toBe(true);
+      expect(res.body.approvals[0]).not.toHaveProperty('requestedByPath');
+      expect(JSON.stringify(res.body)).not.toContain(AGENT_IDENTITY.agentPath);
+    });
+
+    it('does carry the path inside the LABEL when an agent set no display name', async () => {
+      // The edge the assertion above must not be read as covering. `requestedBy` is
+      // built from `displayName || agentPath`, and `agent-token-env.ts` falls back to
+      // the path when the name is blank — so the label can contain it. Documented
+      // rather than asserted away, because the test above passes only because its
+      // fixture has a real display name, and a reader deserves to know that.
+      approvals.request({
+        ...BINDING,
+        summary: 'Uninstall "sentry-monitor"',
+        requestedBy: AGENT_IDENTITY.agentPath,
+        requestedByPath: AGENT_IDENTITY.agentPath,
+      });
+
+      const res = await request(app).get('/api/approvals/pending');
+
+      expect(res.body.approvals[0].requestedBy).toContain(AGENT_IDENTITY.agentPath);
+    });
+
+    it('says both halves when the yes was recorded but the permission was not', async () => {
+      // The two writes are not one transaction. A bare 500 would leave the caller
+      // unable to tell this apart from "nothing happened", and retrying would answer
+      // 409 — which reads like the permission exists.
+      const ticket = requestIdentified();
+      vi.spyOn(grants, 'create').mockImplementation(() => {
+        throw new Error('the database went away');
+      });
+
+      const res = await request(
+        buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER })
+      )
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe('STANDING_PERMISSION_NOT_RECORDED');
+      expect(res.body.outcome).toBe('granted');
+      // The safe half stands: the one action the person allowed still runs.
+      expect(approvals.consume(ticket.token, BINDING).outcome).toBe('granted');
+      expect(grants.list()).toEqual([]);
+    });
+
+    it('404s a standing request for an approval that does not exist', async () => {
+      const res = await request(
+        buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER })
+      )
+        .post('/api/approvals/01JQQQQQQQQQQQQQQQQQQQQQQQ/grant')
+        .send({ standing: true });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('UNKNOWN_APPROVAL');
     });
 
     it('does not quietly fall back to a plain grant', async () => {
@@ -459,6 +563,108 @@ describe('approvals routes', () => {
         'the approval must still be pending, not quietly granted'
       ).toBe('pending');
       expect(emitted).toEqual([]);
+    });
+
+    it('opens a permission for a signed-in person, and says exactly what it covers', async () => {
+      const ticket = requestIdentified();
+      const res = await request(
+        buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER })
+      )
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.outcome).toBe('granted');
+      expect(res.body.standingPermission).toEqual({
+        grantId: expect.any(String),
+        agentPath: AGENT_IDENTITY.agentPath,
+        agentLabel: 'dorkbot',
+        capabilityId: 'marketplace.uninstall',
+        capabilityTitle: 'Uninstall a marketplace package',
+        expiresAt: expect.any(String),
+      });
+
+      // The one-time yes happened too: a caller asked for both and got both.
+      expect(approvals.consume(ticket.token, BINDING).outcome).toBe('granted');
+
+      // Who opened it, when, and under which posture are recorded — in the row and
+      // in the Activity event, which is where an audit question belongs. They are
+      // deliberately absent from the response above, where nothing renders them.
+      const live = grants.list();
+      expect(live).toHaveLength(1);
+      expect(live[0]).toMatchObject({
+        id: res.body.standingPermission.grantId,
+        grantedBy: COOKIE_USER.userId,
+        posture: 'signed-in-operator',
+        sourceApprovalId: ticket.approvalId,
+      });
+    });
+
+    it('sends nothing about who opened it, and no raw account id', async () => {
+      // The response is read by an agent under `local-trust` (see the note on
+      // `GET /grants`), so it carries what the cockpit renders and nothing else.
+      const ticket = requestIdentified();
+      const res = await request(
+        buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER })
+      )
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(Object.keys(res.body.standingPermission).sort()).toEqual([
+        'agentLabel',
+        'agentPath',
+        'capabilityId',
+        'capabilityTitle',
+        'expiresAt',
+        'grantId',
+      ]);
+      expect(JSON.stringify(res.body)).not.toContain(COOKIE_USER.userId);
+    });
+
+    it('bounds the window by the setting, counted from now', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-26T12:00:00.000Z'));
+      const ticket = requestIdentified();
+
+      const res = await request(
+        buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER })
+      )
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      // 480 minutes is what `buildApp` reports for `trustWindowMinutes`.
+      expect(res.body.standingPermission.expiresAt).toBe('2026-07-26T20:00:00.000Z');
+      expect(grants.list()[0].grantedAt).toBe('2026-07-26T12:00:00.000Z');
+    });
+
+    it('records both the one-time yes and the permission in the Activity feed', async () => {
+      const ticket = requestIdentified();
+      await request(buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER }))
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .send({ standing: true });
+
+      expect(emitted.map((e) => e.eventType)).toEqual([
+        'approval.granted',
+        'approval.grant_created',
+      ]);
+      expect(emitted[1].metadata).toMatchObject({
+        posture: 'signed-in-operator',
+        agentPath: AGENT_IDENTITY.agentPath,
+        capabilityId: 'marketplace.uninstall',
+      });
+    });
+
+    it('replaces a live permission for the same pair rather than stacking one', async () => {
+      // Answering the same question again EXTENDS. Accumulating would give a person
+      // a list with duplicates in it and no way to tell which one is doing the work.
+      const app = buildApp({ loginEnabled: true, standingGrants: true, user: COOKIE_USER });
+      const first = requestIdentified();
+      await request(app).post(`/api/approvals/${first.approvalId}/grant`).send({ standing: true });
+      const second = requestIdentified();
+      await request(app).post(`/api/approvals/${second.approvalId}/grant`).send({ standing: true });
+
+      expect(grants.list()).toHaveLength(1);
+      expect(grants.list()[0].sourceApprovalId).toBe(second.approvalId);
     });
 
     it('leaves an ordinary grant untouched', async () => {
@@ -496,6 +702,134 @@ describe('approvals routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('INVALID_GRANT_BODY');
+    });
+  });
+
+  describe('GET /grants and DELETE /grants/:id — finding one again, and ending it (DOR-501)', () => {
+    /** Seed a permission through the store, which is how Settings will list one. */
+    function seed(capabilityId = 'marketplace.uninstall') {
+      return grants.create({
+        agentPath: AGENT_IDENTITY.agentPath,
+        capabilityId,
+        grantedBy: 'user_owner',
+        posture: 'signed-in-operator',
+        windowMinutes: 480,
+      });
+    }
+
+    it('returns an empty list when nothing is live', async () => {
+      const res = await request(app).get('/api/approvals/grants');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ grants: [] });
+    });
+
+    it('names the agent and the action, so a person can recognize what they granted', async () => {
+      const row = seed();
+
+      const res = await request(app).get('/api/approvals/grants');
+
+      expect(res.body.grants).toEqual([
+        {
+          grantId: row.id,
+          agentPath: AGENT_IDENTITY.agentPath,
+          agentLabel: 'dorkbot',
+          capabilityId: 'marketplace.uninstall',
+          capabilityTitle: 'Uninstall a marketplace package',
+          expiresAt: row.expiresAt,
+        },
+      ]);
+    });
+
+    it('names a hand-registered MCP tool too, which the registry knows nothing about', async () => {
+      // Today these tools are most of what can actually be granted, so leaving them
+      // as raw ids would break the promise that this list is one a person recognizes.
+      seed('tasks_delete');
+
+      const res = await request(app).get('/api/approvals/grants');
+
+      expect(res.body.grants[0].capabilityTitle).toBe('Delete a scheduled task');
+    });
+
+    it('refuses an agent that names itself, so no agent can read its own free passes', async () => {
+      // Unlike a pending card, this list is PROSPECTIVE: it says which irreversible
+      // action goes through silently right now and when the window shuts. So it is
+      // authorized like deciding, not like reading a card.
+      seed();
+
+      const res = await request(buildApp({ agentIdentity: true })).get('/api/approvals/grants');
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+    });
+
+    it('refuses the caller holding an approval token', async () => {
+      seed();
+
+      const res = await request(app)
+        .get('/api/approvals/grants')
+        .set(APPROVAL_TOKEN_HEADER, 'some-approval-token');
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('REQUESTER_CANNOT_DECIDE');
+    });
+
+    it('falls back to the capability id when nothing can name the action', async () => {
+      const row = seed('some.unregistered_capability');
+
+      const res = await request(app).get('/api/approvals/grants');
+
+      expect(res.body.grants).toHaveLength(1);
+      expect(res.body.grants[0]).toMatchObject({
+        grantId: row.id,
+        capabilityTitle: 'some.unregistered_capability',
+      });
+    });
+
+    it('hides a permission whose window has closed, without waiting for a sweep', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-26T12:00:00.000Z'));
+      seed();
+      vi.setSystemTime(new Date('2026-07-27T12:00:00.000Z'));
+
+      const res = await request(app).get('/api/approvals/grants');
+
+      expect(res.body.grants).toEqual([]);
+    });
+
+    it('ends one permission and records it', async () => {
+      const row = seed();
+
+      const res = await request(app).delete(`/api/approvals/grants/${row.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, grantId: row.id });
+      expect(grants.list()).toEqual([]);
+      expect(emitted.map((e) => e.eventType)).toEqual(['approval.grant_revoked']);
+      expect(emitted[0].metadata).toMatchObject({ grantId: row.id });
+    });
+
+    it('404s a second click, so ending one cannot be recorded twice', async () => {
+      const row = seed();
+      await request(app).delete(`/api/approvals/grants/${row.id}`).expect(200);
+
+      const again = await request(app).delete(`/api/approvals/grants/${row.id}`);
+
+      expect(again.status).toBe(404);
+      expect(again.body.code).toBe('UNKNOWN_STANDING_PERMISSION');
+      expect(emitted.map((e) => e.eventType)).toEqual(['approval.grant_revoked']);
+    });
+
+    it('refuses an agent that names itself, so nothing can end a permission but a person', async () => {
+      const row = seed();
+
+      const res = await request(buildApp({ agentIdentity: true })).delete(
+        `/api/approvals/grants/${row.id}`
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      expect(grants.list()).toHaveLength(1);
     });
   });
 

@@ -8,10 +8,11 @@ import { FeaturedRail } from '../FeaturedRail';
 
 /** Build a ranked fixture; DorkOS fields (type, featured) ride the sidecar. */
 function makeRanked(overrides: Partial<RankedPackage> & { name: string }): RankedPackage {
+  // Defaults first, `overrides` last — `name` comes from the spread (the
+  // signature makes it required), so restating it here would be overwritten.
   return {
-    name: overrides.name,
-    source: overrides.source ?? `https://github.com/example/${overrides.name}`,
-    score: overrides.score ?? 0,
+    source: `https://github.com/example/${overrides.name}`,
+    score: 0,
     ...overrides,
   };
 }

@@ -95,6 +95,8 @@ export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
 export { HoverBorderGradient } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
+export { IdentityAvatar, identityAvatarVariants } from './identity-avatar';
+export type { IdentityAvatarProps } from './identity-avatar';
 export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';
@@ -193,6 +195,8 @@ export {
 export type { SelectTriggerProps, SelectItemProps } from './select';
 export { Separator } from './separator';
 export { Slider } from './slider';
+export { PermissionModeScopeNote } from './permission-mode-scope-note';
+export type { PermissionModeScopeNoteProps } from './permission-mode-scope-note';
 export { Switch } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
 export {

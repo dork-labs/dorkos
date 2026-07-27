@@ -94,9 +94,10 @@ export class BindingSubsystem {
         );
       }
       const sessionCreator: AgentSessionCreator = {
-        async createSession(cwd: string, permissionMode?: PermissionMode) {
+        async createSession(cwd: string, permissionMode: PermissionMode) {
           const id = crypto.randomUUID();
-          agentManager.ensureSession(id, { permissionMode: permissionMode ?? 'acceptEdits', cwd });
+          // No fallback: the binding decides the mode (DOR-604).
+          agentManager.ensureSession(id, { permissionMode, cwd });
           return { id };
         },
       };

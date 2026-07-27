@@ -2,6 +2,49 @@
   "version": 1,
   "specs": [
     {
+      "id": "260727-161438",
+      "slug": "invites",
+      "title": "Invites — a second person on one install",
+      "created": "2026-07-27",
+      "status": "specified"
+    },
+    {
+      "id": "260727-155419",
+      "slug": "community-server",
+      "title": "The community server — multi-user DorkOS",
+      "created": "2026-07-27",
+      "status": "ideation"
+    },
+    {
+      "id": "260727-115434",
+      "slug": "sidebar-groups",
+      "title": "Sidebar groups hold anything, not just agents",
+      "created": "2026-07-27",
+      "status": "specified"
+    },
+    {
+      "id": "260726-170533",
+      "slug": "rooms",
+      "title": "Rooms — channels, DMs and threads",
+      "created": "2026-07-26",
+      "status": "specified"
+    },
+    {
+      "id": "260726-162747",
+      "slug": "channel-workspace",
+      "title": "Channel workspaces — a room's shared working context, distributed by git, layered by harness sync",
+      "created": "2026-07-26",
+      "status": "specified"
+    },
+    {
+      "id": "260726-162520",
+      "slug": "agent-workspace-binding",
+      "title": "Agent workspace binding — every agent knows where it works",
+      "created": "2026-07-26",
+      "status": "specified",
+      "project": "Agents as First-Class Operators"
+    },
+    {
       "id": "260726-015631",
       "slug": "agent-approval-settings",
       "title": "Agent approval settings: a supported way to say stop asking",

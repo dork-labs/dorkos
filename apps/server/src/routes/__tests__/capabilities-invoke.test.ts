@@ -19,7 +19,7 @@ import {
   CapabilityToolError,
   type CapabilityDomain,
 } from '../../services/core/capabilities/index.js';
-import { ApprovalService } from '../../services/core/approvals/index.js';
+import { ApprovalGrantService, ApprovalService } from '../../services/core/approvals/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/index.js';
 import { createCapabilitiesInvokeRouter } from '../capabilities-invoke.js';
@@ -123,6 +123,7 @@ describe('POST /api/capabilities/:id/invoke', () => {
 describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
   let destroyed: string[];
   let approvals: ApprovalService;
+  let grants: ApprovalGrantService;
 
   /** A destructive capability that records what it destroyed, so a bypass shows. */
   function gateDomain(): CapabilityDomain {
@@ -168,7 +169,9 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
 
   beforeEach(() => {
     destroyed = [];
-    approvals = new ApprovalService(createTestDb());
+    const db = createTestDb();
+    approvals = new ApprovalService(db);
+    grants = new ApprovalGrantService(db);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     initCapabilityTierGate({ approvals });
   });
@@ -281,7 +284,10 @@ describe('POST /api/capabilities/:id/invoke — tier enforcement', () => {
         next();
       });
       app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
-      app.use('/api/approvals', createApprovalsRouter(approvals, { isLoginEnabled: () => false }));
+      app.use(
+        '/api/approvals',
+        createApprovalsRouter(approvals, grants, { isLoginEnabled: () => false })
+      );
       return app;
     }
 

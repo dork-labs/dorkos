@@ -68,6 +68,17 @@ or "stop doing X", update your own SOUL.md/NOPE.md or traits directly.
 Before editing a DIFFERENT agent's manifest or personality, confirm with the user
 first. Changing another agent's identity is a bigger action than tuning your own.
 
+## Remove an agent (tier: destructive)
+
+\`mesh_unregister\` is the only tool you have for removing an agent (a person can
+also do it from the cockpit), and it takes more than its name suggests: it
+deletes the agent's \`.dork/agent.json\` from disk, tears down its
+message endpoint (undelivered messages included), and turns off its scheduled
+tasks. It is \`destructive\` tier, so it does NOT run until a person approves it. The
+first call returns the \`approval_required\` payload described in operating-dorkos;
+say plainly which agent would go and what goes with it, wait, then retry the same
+call with an \`approvalToken\` argument. There is no CLI verb for this.
+
 ## System agents are protected
 
 DorkBot and any agent with \`isSystem: true\` are system agents. The server rejects:

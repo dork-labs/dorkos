@@ -19,6 +19,29 @@
  */
 import { z } from 'zod';
 
+/**
+ * How long a new standing permission lasts by default, in minutes (eight hours —
+ * about one working day, which is the span the button on the approval card names).
+ */
+export const DEFAULT_TRUST_WINDOW_MINUTES = 480;
+
+/**
+ * Shortest standing permission a person can choose, in minutes.
+ *
+ * A floor keeps the window from becoming a deny-all that looks like a broken
+ * feature, which is the reasoning already applied to the approval window in
+ * `approval-service.ts`.
+ */
+export const MIN_TRUST_WINDOW_MINUTES = 5;
+
+/**
+ * Longest standing permission a person can choose, in minutes (one day).
+ *
+ * The ceiling is what makes "forever" unrepresentable. It is a schema bound rather
+ * than a UI one, so no surface can offer a window the store would accept.
+ */
+export const MAX_TRUST_WINDOW_MINUTES = 1440;
+
 /** Sensitive fields that trigger a warning when set via CLI or API */
 export const SENSITIVE_CONFIG_KEYS = [
   'tunnel.authtoken',
@@ -138,6 +161,64 @@ export const SidebarDisplayFilterSchema = z.enum(['all', 'active', 'attention'])
 export type SidebarDisplayFilter = z.infer<typeof SidebarDisplayFilterSchema>;
 
 /**
+ * A reference to one thing the sidebar can organize (sidebar-groups, DOR-579).
+ *
+ * A discriminated union rather than a `"agent:<path>"` string for two reasons:
+ * stringly-typed keys are banned outright (`.claude/rules/conventions.md`), and
+ * an agent `projectPath` can legally contain a colon on macOS and Linux, so any
+ * prefixed-string scheme needs a parse-on-first-colon rule that reads fine and
+ * breaks on the one path that has one.
+ *
+ * Rooms are referenced by ULID because a room has no `projectPath`. Sessions are
+ * deliberately not a member kind — see `specs/sidebar-groups/01-ideation.md`.
+ */
+export const SidebarItemRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('agent'), path: z.string().min(1) }),
+  z.object({ kind: z.literal('room'), roomId: z.string().min(1) }),
+]);
+
+/** A reference to one sidebar-organizable item (see {@link SidebarItemRefSchema}). */
+export type SidebarItemRef = z.infer<typeof SidebarItemRefSchema>;
+
+/**
+ * Convert one STORED membership entry into a {@link SidebarItemRef}.
+ *
+ * A `ui.sidebar` written before DOR-579 holds bare agent `projectPath` strings
+ * in `pinned`, `muted` and each group's member list. Rooms did not exist in the
+ * sidebar then, so every such string IS an agent path and the mapping is total —
+ * there is no value that could be misread.
+ *
+ * This is the single statement of that rule. Both the read path
+ * ({@link normalizeSidebarPrefs}) and the config migration that rewrites the
+ * file go through it, so the two can never disagree about what a stored string
+ * means.
+ *
+ * @param entry - A stored entry: either a reference already, or a legacy path.
+ * @returns The entry as a reference; an existing reference passes through.
+ */
+export function toSidebarItemRef(entry: SidebarItemRef | string): SidebarItemRef {
+  return typeof entry === 'string' ? { kind: 'agent', path: entry } : entry;
+}
+
+/**
+ * Whether two sidebar item references point at the same thing.
+ *
+ * A discriminated union has no structural identity, so every membership test
+ * over `pinned` / `muted` / `groups[].items` needs this — `includes`,
+ * `indexOf` and `===` all compare by object reference and would silently miss.
+ * Do NOT substitute a `JSON.stringify` comparison: key order is not guaranteed
+ * across the code paths that construct these.
+ *
+ * @param a - First reference.
+ * @param b - Second reference.
+ * @returns `true` when both name the same agent path or the same room id.
+ */
+export function sameSidebarItem(a: SidebarItemRef, b: SidebarItemRef): boolean {
+  if (a.kind === 'agent') return b.kind === 'agent' && a.path === b.path;
+  return b.kind === 'room' && a.roomId === b.roomId;
+}
+
+/**
  * A smart group's membership rule set (smart-agent-groups, DOR-338). Every
  * PRESENT field is an AND constraint; within a field, values are OR'd (e.g.
  * `runtimes: ['codex', 'opencode']` matches either). An absent field imposes
@@ -166,14 +247,14 @@ const SidebarGroupShapeSchema = z.object({
   /** Display name. Duplicates allowed (ids disambiguate). */
   name: z.string().trim().min(1).max(40),
   /**
-   * Ordered member agent projectPaths - the durable manual order. Ignored
-   * when `kind === 'smart'` (membership derives from `rules` instead); kept
-   * as-is so "Convert to manual group" has somewhere to materialize into.
+   * Ordered member references - the durable manual order. Ignored when
+   * `kind === 'smart'` (membership derives from `rules` instead); kept as-is
+   * so "Convert to manual group" has somewhere to materialize into.
    */
-  agentPaths: z.array(z.string()).default(() => []),
+  items: z.array(SidebarItemRefSchema).default(() => []),
   /**
    * How rows inside this group are ordered. Switching away from 'manual'
-   * never mutates agentPaths. Smart groups reject `'manual'` (see the
+   * never mutates items. Smart groups reject `'manual'` (see the
    * cross-field refine below) — derived membership has no hand-orderable
    * sequence.
    */
@@ -184,7 +265,7 @@ const SidebarGroupShapeSchema = z.object({
   /** Muted groups drop every attention signal for all members at once (DOR-339). */
   muted: z.boolean().default(false),
   /**
-   * Manual groups own `agentPaths`; smart groups derive members from `rules`
+   * Manual groups own `items`; smart groups derive membership from `rules`
    * (smart-agent-groups, DOR-338). Additive discriminator — existing groups
    * default `'manual'`, zero migration risk.
    */
@@ -225,20 +306,24 @@ export const SidebarGroupSchema = SidebarGroupShapeSchema.superRefine((group, ct
 export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
 
 export const SidebarPrefsSchema = z.object({
-  /** Ordered pinned agent projectPaths. Multi-presence references - membership in groups is unaffected. */
-  pinned: z.array(z.string()).default(() => []),
+  /** Ordered pinned item references. Multi-presence references - membership in groups is unaffected. */
+  pinned: z.array(SidebarItemRefSchema).default(() => []),
   groups: z.array(SidebarGroupSchema).default(() => []),
   /** Ungrouped section ("Agents"): no manual mode - groups are the place for manual curation. */
   ungroupedSortMode: z.enum(['name', 'recent']).default('name'),
   ungroupedCollapsed: z.boolean().default(false),
   recentsCollapsed: z.boolean().default(false),
+  /** Collapse state of the sidebar's "Channels" section (rooms, DOR-525). */
+  channelsCollapsed: z.boolean().default(false),
+  /** Collapse state of the sidebar's "Direct messages" section (rooms, DOR-525). */
+  dmsCollapsed: z.boolean().default(false),
   groupsHintDismissed: z.boolean().default(false),
   /**
-   * Muted agent projectPaths (DOR-339). Mute owns ALL attention signals for a
-   * path at once (badge, rollup-dot contribution, filter/reveal emphasis); no
+   * Muted item references (DOR-339). Mute owns ALL attention signals for an
+   * item at once (badge, rollup-dot contribution, filter/reveal emphasis); no
    * partial mute states.
    */
-  muted: z.array(z.string()).default(() => []),
+  muted: z.array(SidebarItemRefSchema).default(() => []),
   /** Display filter for the ungrouped "Agents" section (DOR-339). */
   ungroupedDisplayFilter: SidebarDisplayFilterSchema.default('all'),
 });
@@ -252,6 +337,71 @@ export type SidebarPrefs = z.infer<typeof SidebarPrefsSchema>;
  * always renders even before the first user write).
  */
 export const SIDEBAR_PREFS_DEFAULTS: SidebarPrefs = SidebarPrefsSchema.parse({});
+
+/**
+ * One group as it may actually sit on disk before the DOR-579 migration runs.
+ *
+ * The declared {@link SidebarGroup} type says `items` is present and holds
+ * references. A file written by an earlier release says otherwise, and this
+ * type is where that gap is stated out loud instead of being cast away.
+ */
+interface StoredSidebarGroup extends Omit<SidebarGroup, 'items'> {
+  items?: readonly (SidebarItemRef | string)[];
+  /** Pre-DOR-579 name for `items`, holding bare agent paths. */
+  agentPaths?: readonly string[];
+}
+
+/**
+ * Convert one stored membership list, preserving identity when there is nothing
+ * to convert (so an already-canonical prefs object is returned unchanged).
+ */
+function normalizeItemList(list: readonly (SidebarItemRef | string)[]): SidebarItemRef[] {
+  return list.some((entry) => typeof entry === 'string')
+    ? list.map(toSidebarItemRef)
+    : (list as SidebarItemRef[]);
+}
+
+/**
+ * Bring a stored `ui.sidebar` into the canonical shape: every membership entry a
+ * {@link SidebarItemRef}, and each group's members under `items`.
+ *
+ * **Read-time conversion exists so correctness never depends on the migration
+ * having run.** `conf` only runs a migration when its key is in
+ * `(storedVersion, projectVersion]`, so the DOR-579 rewrite is skipped whenever
+ * the app version does not land in that window — most visibly in a dev tree,
+ * where the version resolves to `0.0.0` and no migration runs at all. Without
+ * this, those installs would read `items` as the schema default `[]` and show
+ * empty groups. The migration still runs where it can; it cleans the file up,
+ * and this keeps behaviour correct until it does.
+ *
+ * Returns `stored` itself when it is already canonical, so callers can rely on
+ * referential equality to skip work.
+ *
+ * @param stored - The sidebar prefs as read from config, in either encoding.
+ * @returns Canonical prefs.
+ */
+export function normalizeSidebarPrefs(stored: SidebarPrefs): SidebarPrefs {
+  const pinned = normalizeItemList(stored.pinned);
+  const muted = normalizeItemList(stored.muted);
+
+  let groupsChanged = false;
+  const groups = stored.groups.map((group) => {
+    const legacy = group as StoredSidebarGroup;
+    // An existing `items` wins over a leftover `agentPaths`: only a file written
+    // before DOR-579 carries the old key, so the two can never hold different
+    // truths, and preferring `items` keeps a half-migrated file from
+    // resurrecting a list the person has since edited.
+    const source = legacy.items ?? legacy.agentPaths ?? [];
+    const items = normalizeItemList(source);
+    if (items === legacy.items && legacy.agentPaths === undefined) return group;
+    groupsChanged = true;
+    const { agentPaths: _legacyKey, ...rest } = legacy;
+    return { ...rest, items } as SidebarGroup;
+  });
+
+  if (pinned === stored.pinned && muted === stored.muted && !groupsChanged) return stored;
+  return { ...stored, pinned, muted, groups };
+}
 
 /**
  * Person-scoped Shape state (`ui.shapes`, DOR-355). Holds the currently-applied
@@ -356,6 +506,19 @@ export const UserConfigSchema = z.object({
   version: z.literal(1),
   server: z
     .object({
+      /**
+       * **Something else depends on this exact number, not just on there being
+       * a default.** `conf` materializes defaults to disk, so every
+       * `config.json` in the world already carries this value whether or not
+       * anyone chose it. `PREFERRED_SERVER_PORT` in
+       * `apps/desktop/src/main/server-port.ts` compares against it to tell a
+       * port a person pinned from the one the library wrote — a pinned port is
+       * claimed strictly, an unchosen one steps past a conflict. Move this
+       * without moving that and every install's written-out default reads as a
+       * deliberate pin, so the desktop app refuses to start instead of stepping
+       * past a busy port. `config-schema.test.ts` fails with that explanation
+       * if the two drift.
+       */
       port: z.number().int().min(1024).max(65535).default(4242),
       cwd: z.string().nullable().default(null),
       boundary: z.string().nullable().default(null),
@@ -389,6 +552,8 @@ export const UserConfigSchema = z.object({
         ungroupedSortMode: 'name' as const,
         ungroupedCollapsed: false,
         recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
         groupsHintDismissed: false,
         muted: [],
         ungroupedDisplayFilter: 'all' as const,
@@ -411,6 +576,8 @@ export const UserConfigSchema = z.object({
         ungroupedSortMode: 'name' as const,
         ungroupedCollapsed: false,
         recentsCollapsed: false,
+        channelsCollapsed: false,
+        dmsCollapsed: false,
         groupsHintDismissed: false,
         muted: [],
         ungroupedDisplayFilter: 'all' as const,
@@ -451,6 +618,46 @@ export const UserConfigSchema = z.object({
       scanRoots: z.array(z.string()).default(() => []),
     })
     .default(() => ({ scanRoots: [] })),
+  rooms: z
+    .object({
+      /**
+       * How many replies in a row agents may send each other before the room
+       * stops them (ADR 260726-170127). Your own messages always start the
+       * count over, so a room the limit has quietened is one message away from
+       * running again. `0` turns automatic replies off entirely.
+       */
+      maxAgentDepth: z.number().int().min(0).max(10).default(3),
+      /**
+       * The most automatic replies any ONE room may run in an hour, counted
+       * whoever asked for them.
+       *
+       * The reply limit above bounds one conversation and reads who is writing
+       * to do it. With **Require login** off — the default — DorkOS cannot tell
+       * a program on your machine from you, so that reading can be sidestepped.
+       * This one cannot: it counts every automatic reply a room runs and stops
+       * at the number, whoever the message appeared to come from.
+       *
+       * It bounds a ROOM, not your bill — rooms are free to create, so this
+       * alone can be multiplied by making more of them. `maxAutomaticTurnsTotalPerHour`
+       * is the one that bounds the total. This one keeps a single busy room from
+       * eating that whole allowance.
+       */
+      maxAutomaticTurnsPerRoomPerHour: z.number().int().min(0).max(10_000).default(60),
+      /**
+       * The most automatic replies this DorkOS may run in an hour, across every
+       * room that exists.
+       *
+       * This is the ceiling on what automatic replies can cost you. It does not
+       * care how many rooms or threads exist, or who the messages appeared to
+       * come from. `0` stops automatic replies entirely.
+       */
+      maxAutomaticTurnsTotalPerHour: z.number().int().min(0).max(100_000).default(240),
+    })
+    .default(() => ({
+      maxAgentDepth: 3,
+      maxAutomaticTurnsPerRoomPerHour: 60,
+      maxAutomaticTurnsTotalPerHour: 240,
+    })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],
     skippedSteps: [],
@@ -490,14 +697,38 @@ export const UserConfigSchema = z.object({
     .default(() => ({ defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' })),
   extensions: z
     .object({
-      // Both lists record DEVIATIONS from each extension's default state, à la
-      // JetBrains' `disabled_plugins.txt` generalized to two defaults.
+      // `enabled` and `disabled` record DEVIATIONS from each extension's default
+      // state, à la JetBrains' `disabled_plugins.txt` generalized to two defaults.
       /** Extension IDs the user turned ON that default OFF (user/marketplace + default-off core). */
       enabled: z.array(z.string()).default(() => []),
       /** Extension IDs the user turned OFF that default ON (default-on core). */
       disabled: z.array(z.string()).default(() => []),
+      /**
+       * Extension IDs a person has approved to RUN CODE inside the DorkOS server
+       * process (DOR-516).
+       *
+       * Not a deviation list and not an on/off switch: it is a standing consent
+       * about one artifact, and it is deliberately independent of `enabled`.
+       * Enabling an extension says "I want this in my cockpit"; approving it says
+       * "I have looked at this code and DorkOS may execute it in-process, with the
+       * server's own privileges and outside the tier gate". Turning an extension
+       * off and on again must not re-ask, and re-asking on every compile of a
+       * half-written extension is exactly the routine-card harm this repo avoided
+       * on DOR-504/DOR-506 — so the approval is keyed to the extension id and
+       * survives the whole edit-test-reload loop.
+       *
+       * Core extensions (`origin: 'core'`) are NOT listed here and never need to
+       * be: they ship inside the DorkOS binary the person already installed, so
+       * requiring a click for them would gate DorkOS on approving itself. Only
+       * `origin: 'user'` extensions — anything an agent scaffolded, or the
+       * marketplace installed — are gated. See `extension-load-policy.ts`.
+       *
+       * `operator-only` in `config-write-policy.ts`: an agent that could add its
+       * own id here would be approving its own code.
+       */
+      approvedToRun: z.array(z.string()).default(() => []),
     })
-    .default(() => ({ enabled: [], disabled: [] })),
+    .default(() => ({ enabled: [], disabled: [], approvedToRun: [] })),
   mcp: z
     .object({
       enabled: z.boolean().default(true),
@@ -519,13 +750,14 @@ export const UserConfigSchema = z.object({
    * Shared consent namespace for everything DorkOS can send to dorkos.ai, split
    * into two tiers (ADR 260713-143958):
    *
-   * - **Tier 1 — anonymous, opt-out:** `install` and `heartbeat` default to
-   *   `true`. These are genuinely anonymous aggregate signals (no IP, no
-   *   fingerprint, no content, no paths — only a random per-machine id), so they
-   *   collect by default, matching the Next.js/VS Code/Homebrew norm. They are
-   *   still gated by the notice-before-first-send rule (`hasTier1SendGate`): a
-   *   never-answered install sends nothing until its first-run notice has been
-   *   shown and `lastPromptedVersion` recorded.
+   * - **Tier 1 — anonymous, opt-IN:** `install`, `heartbeat` and `usage` default
+   *   to `false`. They are genuinely anonymous aggregate signals (no IP, no
+   *   fingerprint, no content, no paths — only a random per-machine id), which
+   *   is what once justified collecting them by default. They no longer are:
+   *   ADR 260727-181825 holds that a default lands on the option protecting the
+   *   person, and "anonymous" is a property of the payload, not a substitute for
+   *   an answer. The notice-before-first-send rule (`hasTier1SendGate`) still
+   *   applies on top, so nothing sends before the notice either way.
    * - **Tier 2 — identified/third-party, opt-in:** `errorReporting` defaults to
    *   `false` and never turns on without an explicit choice.
    *
@@ -543,23 +775,24 @@ export const UserConfigSchema = z.object({
        */
       userHasDecided: z.boolean().default(false),
       /**
-       * Tier 1 channel (anonymous, opt-out): send anonymous marketplace install
+       * Tier 1 channel (anonymous, opt-in): send anonymous marketplace install
        * events to dorkos.ai so we can rank packages and spot install failures.
-       * Defaults `true`; a never-answered install still sends nothing until the
-       * first-run notice has been shown (see `hasTier1SendGate`). Formerly
-       * `telemetry.enabled`. Privacy contract: https://dorkos.ai/marketplace/privacy
+       * Defaults `false` — sharing starts when a person says so (ADR
+       * 260727-181825). The notice-before-first-send gate (`hasTier1SendGate`)
+       * still applies. Formerly `telemetry.enabled`. Privacy contract:
+       * https://dorkos.ai/marketplace/privacy
        */
-      install: z.boolean().default(true),
+      install: z.boolean().default(false),
       /**
-       * Tier 1 channel (anonymous, opt-out): send a daily anonymous heartbeat to
+       * Tier 1 channel (anonymous, opt-in): send a daily anonymous heartbeat to
        * dorkos.ai (instance id, version, OS/arch, configured runtimes, tunnel +
        * cloud-link flags, and rough counts — never prompts, code, paths, or
-       * session content). Defaults `true`; a never-answered install still sends
-       * nothing until the first-run notice has been shown (see
-       * `hasTier1SendGate`). Payload documented verbatim at
+       * session content). Defaults `false` — sharing starts when a person says
+       * so (ADR 260727-181825). The notice-before-first-send gate
+       * (`hasTier1SendGate`) still applies. Payload documented verbatim at
        * https://dorkos.ai/telemetry.
        */
-      heartbeat: z.boolean().default(true),
+      heartbeat: z.boolean().default(false),
       /**
        * Tier 2 channel (opt-in): send scrubbed crash reports to DorkOS's own
        * ingest at dorkos.ai (which forwards to PostHog Error Tracking), never to
@@ -586,13 +819,13 @@ export const UserConfigSchema = z.object({
        * autocaptured, never prompts, code, paths, or session content; the exact
        * catalog lives in `@dorkos/shared/telemetry-events`.
        *
-       * Tier 1 posture (ADR 260713-143958 Phase 3): defaults to `true`, but like
-       * `heartbeat`/`install` it never sends until the first-run notice gate is
-       * satisfied (`userHasDecided` or `lastPromptedVersion` set), so a
-       * never-prompted install stays silent. Payload documented verbatim at
+       * Tier 1 posture: defaults to `false` — sharing starts when a person says
+       * so (ADR 260727-181825, superseding 260713-143958 Phase 3). Like
+       * `heartbeat`/`install` it also never sends until the first-run notice
+       * gate is satisfied. Payload documented verbatim at
        * https://dorkos.ai/telemetry.
        */
-      usage: z.boolean().default(true),
+      usage: z.boolean().default(false),
       /**
        * Tier 2 channel (opt-in): when linking this install to a DorkOS account,
        * also include the anonymous per-install telemetry `instanceId` in the
@@ -623,11 +856,11 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({
       userHasDecided: false,
-      install: true,
-      heartbeat: true,
+      install: false,
+      heartbeat: false,
       errorReporting: false,
       lastPromptedVersion: null,
-      usage: true,
+      usage: false,
       linkAnalyticsToAccount: false,
       aiMetadata: false,
     })),
@@ -771,8 +1004,9 @@ export const UserConfigSchema = z.object({
    * person edits. Keeping them out also means nothing about WHICH agents are
    * trusted can ever leave through `config_get`.
    *
-   * Both leaves are `operator-only`, and writing either also requires a session
-   * cookie — see `REQUIRES_COOKIE_CONFIG_PATHS`.
+   * Both leaves are `operator-only`, writing either requires a session cookie
+   * like every other operator-only setting, and on top of that neither can be
+   * written at all while login is off — see `REQUIRES_LOGIN_CONFIG_PATHS`.
    */
   approvals: z
     .object({
@@ -792,9 +1026,42 @@ export const UserConfigSchema = z.object({
        * feature, which is the reasoning already applied to the approval window in
        * `approval-service.ts`.
        */
-      trustWindowMinutes: z.number().int().min(5).max(1440).default(480),
+      trustWindowMinutes: z
+        .number()
+        .int()
+        .min(MIN_TRUST_WINDOW_MINUTES)
+        .max(MAX_TRUST_WINDOW_MINUTES)
+        .default(DEFAULT_TRUST_WINDOW_MINUTES),
+      /**
+       * The moment the settings last stopped licensing standing permissions, as
+       * an ISO 8601 UTC string. Every permission granted at or before it is void
+       * and is never honored again (DOR-520). `null` until the posture has
+       * narrowed once.
+       *
+       * Machine-managed, like `onboarding` and `tours`: `ConfigManager` stamps it
+       * on any write that takes `auth.enabled` or `standingGrants` away, and
+       * nothing else should write it by hand.
+       *
+       * It lives in the config file rather than beside the permissions in SQLite
+       * for one reason, and it is the whole point of the field: `dorkos config
+       * set` runs in a process with no database, so the config file is the ONLY
+       * thing every writer of these settings touches. A marker anywhere else
+       * would be invisible to exactly the write that motivated it.
+       *
+       * Constrained to a real timestamp, not merely a string. The store treats a
+       * FALSY floor as "no floor", so a bare `z.string()` let the empty string
+       * through as a value that silently disables the filter — the one direction
+       * this field must never fail. Garbage that is not empty already fails
+       * closed (it sorts above every real timestamp, so everything is voided);
+       * `''` was the single value that failed open.
+       */
+      standingGrantsVoidBefore: z.string().datetime().nullable().default(null),
     })
-    .default(() => ({ standingGrants: false, trustWindowMinutes: 480 })),
+    .default(() => ({
+      standingGrants: false,
+      trustWindowMinutes: DEFAULT_TRUST_WINDOW_MINUTES,
+      standingGrantsVoidBefore: null,
+    })),
   cloud: z
     .object({
       /**

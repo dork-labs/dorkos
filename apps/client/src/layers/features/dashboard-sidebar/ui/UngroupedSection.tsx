@@ -28,7 +28,10 @@ interface UngroupedSectionProps {
   sortCtx: SortAgentsContext;
   /** Attention state per agent path (from `useAgentAttentionMap`, computed once for the whole sidebar). */
   attention: Record<string, AttentionState>;
-  /** Individually-muted agent paths (`ui.sidebar.muted`). */
+  /**
+   * Agent paths that are individually muted — the agent members of
+   * `ui.sidebar.muted`, narrowed to paths by `DashboardSidebar`.
+   */
   mutedPaths: ReadonlySet<string>;
   /** Render one agent row. */
   renderRow: (path: string, keyPrefix: string) => ReactNode;

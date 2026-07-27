@@ -110,9 +110,10 @@ interface GroupHeaderProps {
   /** Show the collapsed-group activity dot (orchestrated: collapsed && a member is working). */
   showActivityDot: boolean;
   /**
-   * The group's currently-derived members (smart groups only) — what "Convert
-   * to manual group" materializes into `agentPaths`. Ignored for manual
-   * groups.
+   * The group's currently-derived member agent paths (smart groups only) —
+   * what "Convert to manual group" materializes into `items`. Ignored for
+   * manual groups. Stays paths because every smart-group rule is an agent
+   * attribute, so a smart group can only ever match agents.
    */
   derivedMemberPaths?: string[];
   /** Runtimes present in the fleet, for the "Edit rules" form (smart groups only). */
@@ -126,7 +127,7 @@ interface GroupHeaderProps {
  * collapsed-activity dot, and the show / sort / mute / rename / delete menu —
  * rendered identically into the "…" dropdown and the right-click context
  * menu. Muting the group is a lens over its members (DOR-339): it never
- * writes member paths into `ui.sidebar.muted`, so unmuting restores whatever
+ * writes member references into `ui.sidebar.muted`, so unmuting restores whatever
  * individual mute state each member already had. Smart groups (DOR-338) add
  * a rule glyph + plain-language summary, an "Edit rules" action that reopens
  * the rule form, and "Convert to manual group" — the escape hatch that
@@ -222,7 +223,15 @@ export function GroupHeader({
   const toggleMuted = () => update((prev) => setGroupMuted(prev, group.id, !group.muted));
   const openEditRules = () => setEditRulesOpen(true);
   const convertToManual = () =>
-    update((prev) => convertSmartGroupToManual(prev, group.id, derivedMemberPaths ?? []));
+    update((prev) =>
+      convertSmartGroupToManual(
+        prev,
+        group.id,
+        // `evaluateSmartGroup` stays agent-only (every rule is an agent
+        // attribute), so its caller is where paths become member references.
+        (derivedMemberPaths ?? []).map((path) => ({ kind: 'agent', path }))
+      )
+    );
   const handleSaveRules = ({
     rules,
   }: {

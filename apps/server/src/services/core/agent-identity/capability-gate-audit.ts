@@ -18,13 +18,33 @@
  * Activity record and never two. For a REGISTRY capability the attribution
  * observer next door writes that record.
  *
- * For a hand-registered MCP tool (DOR-468) nobody does, and that is a real gap
- * rather than a symmetry: the attribution observer is wired into
- * `composeDorkOsCapabilityRegistry`, so it only fires inside `registry.invoke`,
- * which those 47 tools never reach. An approved `tasks_delete` therefore produces
- * an `approval_required` line here, a durable approval record when the person
- * grants it, and then no line saying it ran. Closing that needs an attribution
- * observer on the hand-registered path (`services/core/mcp-tool-gate.ts`).
+ * ## The one exception: a call a standing permission let through
+ *
+ * A destructive call allowed by a standing permission IS recorded here, as
+ * `capability.auto_approved` (spec `agent-approval-settings` §3.6). It is the one
+ * allowed decision the gate reports, and it is not a duplicate of anything: the
+ * attribution observer knows that the call ran, but only the gate knows that
+ * nobody was asked. On a registry-borne surface both lines appear, and they say
+ * different things — "you were not asked about this" and "it ran" (or failed). On
+ * the hand-registered MCP path, where no attribution observer runs, this is the
+ * only line there is, which is why it lives here rather than next door.
+ *
+ * On the OTHER TWO paths into the gate nobody does, and that is a real gap rather
+ * than a symmetry. The attribution observer is wired into
+ * `composeDorkOsCapabilityRegistry`, so it only fires inside `registry.invoke`:
+ *
+ * - The 47 hand-registered MCP tools (DOR-468) never reach the registry. An
+ *   approved `tasks_delete` produces an `approval_required` line here, a durable
+ *   approval record when the person grants it, and then no line saying it ran.
+ *   Closing it needs an attribution observer on `services/core/mcp-tool-gate.ts`.
+ * - `authorizeCapability` callers do not either. The legacy marketplace mutation
+ *   routes reach the gate and then perform the effect THEMSELVES
+ *   (`routes/marketplace.ts`), so an approved uninstall through the cockpit route
+ *   leaves the same silence. Closing it needs the same observer on that seam.
+ *
+ * Both matter more now that a standing permission can allow a call: an
+ * auto-approved uninstall on either path yields one line saying nobody was asked
+ * and nothing saying it ran.
  *
  * Because the gate covers those tools, `resourceId` here can be a bare tool name
  * like `tasks_delete` as well as a `domain.verb` capability id. `resourceType`
@@ -56,6 +76,33 @@ export function createCapabilityGateAuditObserver(
     const label = identity
       ? identity.displayName || path.basename(identity.agentPath)
       : 'Unidentified caller';
+
+    // The one allowed decision the gate reports: a destructive call a standing
+    // permission let through with no card. Recording it is what keeps a window in
+    // which DorkOS stops asking from also being a window in which it stops
+    // telling — the operator's answer to "what did my agent do while I was not
+    // being asked". `identity` is always present here, because a permission keys on
+    // agent path and an anonymous caller can never match one.
+    if (decision.outcome === 'allowed') {
+      void activityService.emit({
+        actorType: 'agent',
+        ...(identity ? { actorId: identity.agentPath } : {}),
+        actorLabel: label,
+        category: 'agent',
+        eventType: 'capability.auto_approved',
+        resourceType: 'capability',
+        resourceId: action.id,
+        resourceLabel: action.title,
+        summary: `${label} ran ${action.title} under a standing permission you granted`,
+        metadata: {
+          capabilityId: action.id,
+          tier: action.tier,
+          grantId: decision.approval.grantId,
+        },
+      });
+      return;
+    }
+
     const pending = decision.outcome === 'approval_required' ? decision.payload : undefined;
     const waiting = pending !== undefined;
 

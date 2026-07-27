@@ -72,7 +72,17 @@ export function createCapabilityAttributionObserver(
       metadata: {
         capabilityId: capability.id,
         tier: capability.tier,
-        ...(context.approval ? { approvalId: context.approval.approvalId } : {}),
+        // Which of the two proofs of consent allowed the call, never just "there
+        // was one". A person deciding this exact action and a permission they
+        // opened hours ago are different facts, and a feed that flattened them
+        // could not answer the question standing permissions create: what ran
+        // while nobody was being asked.
+        ...(context.approval?.via === 'approval'
+          ? { approvalId: context.approval.approvalId }
+          : {}),
+        ...(context.approval?.via === 'standing-grant'
+          ? { grantId: context.approval.grantId }
+          : {}),
       },
     });
   };

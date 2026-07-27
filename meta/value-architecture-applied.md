@@ -17,7 +17,7 @@ The July 2026 positioning review updates this document's outputs without rerunni
 - **Roof:** **You, multiplied.** — one person, shipping like a team. _(Changed 2026-07-09: the old roof, "Intelligence doesn't scale. Coordination does.", was a Layer 2 mechanism claim sitting where a Layer 5 identity claim belongs — a defect by this framework's own construction rules. It demotes to the manifesto line and anchors the 4C anti-positioning template, where naming the paradigm is the job. The customer is the subject of the roof.)_
 - **Pillar 1: One cockpit, any agent.** Claude Code, Codex, OpenCode; per-session choice; every device. _Proof:_ live runtime switcher, CLI sessions appearing instantly, conformance suite in CI.
 - **Pillar 2: A team, not tabs.** Schedules, messages, discovery; agents that ping your phone and find each other. _Proof:_ the 5-minute path, a real night-run receipt.
-- **Pillar 3: Yours, and safe to run.** Self-hosted, MIT, secure by default, honest data-flow; fully-local sessions via OpenCode local models. _Proof:_ threat model page, localhost defaults, an offline-session demo, readable source.
+- **Pillar 3: Yours, and safe to run.** Self-hosted, MIT, listens only on your own machine by default, honest data-flow; fully-local sessions via OpenCode local models. _Proof:_ threat model page, localhost defaults, an offline-session demo, readable source. (Not "secure by default", and not "sign-in required the moment you expose it": both are false for the Docker image, which opts out of the bind guard. See the downstream copy rule in `positioning-202607/02-positioning.md` §Pillar 3.)
 
 **Two new value ladders** (full five-layer treatment to be authored in the 1.0 format):
 

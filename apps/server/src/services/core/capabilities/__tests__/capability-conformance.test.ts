@@ -181,7 +181,7 @@ const { createCapabilitiesInvokeRouter } =
   await import('../../../../routes/capabilities-invoke.js');
 const { createApprovalsRouter } = await import('../../../../routes/approvals.js');
 const { initCapabilityTierGate, APPROVAL_TOKEN_HEADER } = await import('../tier-enforcement.js');
-const { ApprovalService } = await import('../../approvals/index.js');
+const { ApprovalGrantService, ApprovalService } = await import('../../approvals/index.js');
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
 const PROBE_IDENTITY = {
@@ -202,7 +202,9 @@ const DESTRUCTIVE_INPUT = { name: 'nonexistent-conformance-pkg', purge: true };
 
 // Arm the gate over a real approval service on a throwaway database, exactly as
 // boot does — so the probes exercise the real request/consume path, not a stub.
-const approvalService = new ApprovalService(createTestDb());
+const approvalDb = createTestDb();
+const approvalService = new ApprovalService(approvalDb);
+const approvalGrantService = new ApprovalGrantService(approvalDb);
 initCapabilityTierGate({ approvals: approvalService });
 
 /** Read a plain payload back out of an MCP text-content result. */
@@ -313,7 +315,7 @@ const requesterDecideProbe = async () => {
   app.use('/api/capabilities', createCapabilitiesInvokeRouter(registry));
   app.use(
     '/api/approvals',
-    createApprovalsRouter(approvalService, { isLoginEnabled: () => false })
+    createApprovalsRouter(approvalService, approvalGrantService, { isLoginEnabled: () => false })
   );
 
   const asked = await request(app)

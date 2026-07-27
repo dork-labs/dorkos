@@ -90,11 +90,17 @@ import type {
   McpAppResourceRequest,
   McpAppResourceResponse,
   DevtoolsIngest,
+  ForkShapeRequest,
 } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type { ListActivityQuery, ListActivityResponse } from './activity-schemas.js';
-import type { ApprovalDecisionResponse, PendingApprovalsResponse } from './approval-schemas.js';
+import type {
+  ApprovalDecisionResponse,
+  PendingApprovalsResponse,
+  RevokeStandingPermissionResponse,
+  StandingPermissionsResponse,
+} from './approval-schemas.js';
 import type {
   AggregatedPackage,
   PackageFilter,
@@ -110,7 +116,22 @@ import type {
   AddSourceInput,
   InstalledShapeSummary,
   ApplyShapeResult,
+  ForkShapeResult,
 } from './marketplace-schemas.js';
+import type {
+  AddRoomMemberRequest,
+  CreateRoomRequest,
+  ListRoomEntriesQuery,
+  ListRoomsQuery,
+  PostToRoomRequest,
+  PostToRoomResponse,
+  RoomEntry,
+  RoomEvent,
+  RoomMember,
+  RoomRosterEntry,
+  RoomSummary,
+  RoomWithRoster,
+} from './room-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackSubmission } from './telemetry-events.js';
 
@@ -843,6 +864,92 @@ export interface Transport {
   /** Remove a workspace; refuses a dirty one unless `force`. */
   removeWorkspace(id: string, force?: boolean): Promise<RemoveResult>;
 
+  // --- Rooms (channels, DMs and threads; spec `rooms`) ---
+  /**
+   * List the rooms this caller may see, newest activity first.
+   *
+   * Each summary carries `unreadCount`, which is `null` when the caller is not
+   * a member — not-applicable rather than zero. Do not coerce the two: `0`
+   * means "you are in this room and caught up".
+   *
+   * A direct message also carries `participants`, so a reader can draw the
+   * agent it is with without a second call; anything else carries `null`.
+   *
+   * @param query - Optional `kind` / `includeArchived` filters.
+   */
+  listRooms(query?: ListRoomsQuery): Promise<RoomSummary[]>;
+  /**
+   * Create a channel or a DM. The caller joins it automatically.
+   *
+   * @param req - The room to create. A channel derives its slug from the title
+   *   unless one is given; a DM must carry a title.
+   */
+  createRoom(req: CreateRoomRequest): Promise<RoomWithRoster>;
+  /**
+   * Fetch one room with its roster.
+   *
+   * @param id - The room id. Rejects when the room does not exist or the caller
+   *   may not see it — the two are deliberately indistinguishable.
+   */
+  getRoom(id: string): Promise<RoomWithRoster>;
+  /**
+   * Read a page of a room's history, oldest-first within the page.
+   *
+   * @param id - The room id.
+   * @param query - `before` (exclusive `seq` upper bound) and `limit`.
+   */
+  listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]>;
+  /**
+   * Post to a room. Trigger-only, exactly as {@link postMessage} is: the 202
+   * carries the new entry's identity, while the entry itself reaches every
+   * reader — the poster included — over {@link subscribeRoom}. So a caller
+   * inserts nothing of its own; it waits for the stream, which is also what
+   * every agent reply the post triggers arrives on.
+   *
+   * The author is resolved from the caller server-side and is never part of the
+   * request. Rejects when the room is archived.
+   *
+   * @param id - The room id.
+   * @param req - What to say, and the session that produced it when one did.
+   */
+  postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse>;
+  /**
+   * Add a member to a room, by author id or by agent directory.
+   *
+   * @param id - The room id.
+   * @param req - Who to add, and optionally how they should behave in this room.
+   */
+  addRoomMember(id: string, req: AddRoomMemberRequest): Promise<RoomRosterEntry>;
+  /**
+   * Advance the caller's `(member, room)` read cursor.
+   *
+   * Monotonic server-side — a lower value is ignored — so a second client that
+   * is further behind can never un-read a room for the first.
+   *
+   * @param id - The room id.
+   * @param lastReadSeq - The `seq` the caller has read up to.
+   */
+  setRoomReadCursor(id: string, lastReadSeq: number): Promise<RoomMember>;
+  /**
+   * Subscribe to a room's durable event stream (`GET /rooms/:id/events`).
+   *
+   * Modeled on {@link subscribeSession}: with `sinceCursor` the server replays
+   * only entries above it, and without one the connect is cold — the server
+   * leads with a `snapshot` frame, which this skips, because a room's roster and
+   * history are already hydrated through {@link getRoom} and
+   * {@link listRoomEntries}. Ephemeral `signal` events are delivered live and
+   * never replayed.
+   *
+   * @param roomId - The room id.
+   * @param sinceCursor - The highest `seq` already held, to resume from.
+   * @param signal - Aborts the subscription and closes the connection.
+   */
+  subscribeRoom(
+    roomId: string,
+    sinceCursor?: number,
+    signal?: AbortSignal
+  ): AsyncIterable<RoomEvent>;
+
   /** Server health check. */
   health(): Promise<HealthResponse>;
   /** Get server configuration (version, tunnel status, paths). */
@@ -1429,9 +1536,20 @@ export interface Transport {
    * Allow a pending approval, letting the requester spend its token once on
    * exactly the action it was granted for.
    *
+   * With `standing: true` it also opens a standing permission, so DorkOS stops
+   * asking about that agent doing that thing until the window closes. The two
+   * travel together on purpose: a caller that asked for both and can only have
+   * one is refused outright rather than quietly given the one-time yes, because
+   * a silent fallback would leave a person believing they created a permission
+   * that does not exist (spec `agent-approval-settings` §3.5).
+   *
    * @param approvalId - The approval's id, from {@link listPendingApprovals}.
+   * @param options - Set `standing` to also stop being asked about this pair.
    */
-  grantApproval(approvalId: string): Promise<ApprovalDecisionResponse>;
+  grantApproval(
+    approvalId: string,
+    options?: { standing?: boolean }
+  ): Promise<ApprovalDecisionResponse>;
 
   /**
    * Refuse a pending approval.
@@ -1440,6 +1558,24 @@ export interface Transport {
    * @param reason - Optional note the requester sees instead of a bare refusal.
    */
   denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse>;
+
+  /**
+   * The standing permissions that are live right now, soonest to expire first.
+   *
+   * A permission a person cannot find is a dark pattern, so this is what both
+   * places that list one read (spec `agent-approval-settings` §3.7).
+   */
+  listStandingPermissions(): Promise<StandingPermissionsResponse>;
+
+  /**
+   * End one standing permission, so DorkOS asks again next time.
+   *
+   * Ending one stops the next action; it does not reverse anything that already
+   * ran.
+   *
+   * @param grantId - The permission's id, from {@link listStandingPermissions}.
+   */
+  revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
 
   // --- Shapes (DOR-355) ---
 
@@ -1459,6 +1595,22 @@ export interface Transport {
    * @param name - Installed Shape name. Will be URL-encoded.
    */
   applyShape(name: string): Promise<ApplyShapeResult>;
+
+  /**
+   * Fork an installed Shape into a new, independently-editable one stamped with
+   * `lineage`. With `captureCurrent` on the *active* Shape, the new Shape also
+   * records the arrangement in use: the enabled extensions the server reads for
+   * itself, plus whatever chrome the caller reports in `liveLayout`. That
+   * capture is a partial — every field the caller omits keeps the source Shape's
+   * value, so a client never overwrites state it cannot observe.
+   *
+   * Rejects when the source Shape is not installed (404) or the target name is
+   * invalid or taken (409); the thrown error carries the server's message.
+   *
+   * @param name - Installed source Shape name. Will be URL-encoded.
+   * @param request - Fork options (`as`, `captureCurrent`, `liveLayout`).
+   */
+  forkShape(name: string, request?: ForkShapeRequest): Promise<ForkShapeResult>;
 
   // --- DorkOS account link (accounts-and-auth P2) ---
 

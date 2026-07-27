@@ -1,6 +1,6 @@
 ---
 title: Desktop App
-description: Install DorkOS as a native app with a menu, dorkos:// deep links, and automatic updates
+description: Run DorkOS as a native app that keeps working in the background, with tabs, deep links, and automatic updates
 ---
 
 # Desktop App
@@ -17,11 +17,25 @@ The desktop app is the same DorkOS cockpit you'd get from the CLI or Docker, jus
 ## What you get
 
 - **A real window**: a dock icon on macOS or a taskbar entry on Windows, not a browser tab. It remembers its size and position the next time you open it.
-- **A native menu**: About DorkOS, Check for Updates, and Settings (`Cmd/Ctrl+,`), plus a Help menu with links to the docs and to report an issue. On Windows the menu follows the standard File/Edit/View/Window/Help layout instead of a Mac-shaped one.
+- **Tabs, the way a browser has tabs**: keep several agents open in one window and switch between them. The tab strip sits across the top. A small dot on a tab tells you when that agent is working, waiting on you, or has hit a problem, so you can leave five agents running and see at a glance which one wants you. `Cmd/Ctrl+T` opens a tab, `Cmd/Ctrl+1` through `9` jump to one, `Cmd/Ctrl+Shift+[` and `]` step between them, and `Cmd/Ctrl+W` closes the one you're on. This strip is a desktop-app thing. In the [web cockpit](/docs/getting-started/quickstart) you use your browser's own tabs, which you can bookmark one at a time and drag out into their own window.
+- **It keeps working when you close the window**: your agents carry on. DorkOS moves to the menu bar on macOS, or to the notification area next to the clock on Windows. Click that icon to see how many agents are working, open the window again, jump to Activity, or quit. On macOS the count sits right beside the icon. The first time you close the window, DorkOS tells you it's still running, once, and offers to quit if that's what you meant.
+- **It asks before cutting an agent off**: try to quit while agents are mid-task and DorkOS says how many are still working and lets you keep them going instead.
+- **A second window**: press `Cmd/Ctrl+K`, pick an agent, and choose **Open in New Window** to park it on another screen. **Open Here** and **Open in New Tab** are on the same menu. In a browser you get **Open Here** and **Open in New Tab** only, because there a new window is just another tab.
+- **Links that behave**: a link to another DorkOS page switches pages instantly without reloading the app, so an agent mid-answer keeps streaming while you look around. A link to anywhere else opens in your browser.
+- **An address you can bookmark**: the app serves the cockpit at `http://localhost:4242`, the same address the CLI uses, and asks for that port again every time you open it. That's what lets you bookmark DorkOS in a browser or point another tool at it. See [Find your address](#find-your-address) below.
+- **A native menu**: About DorkOS, Check for Updates, and Settings (`Cmd/Ctrl+,`), plus a Window menu with Close Tab and Close Window, and a Help menu with links to the docs and to report an issue. On Windows the menu follows the standard File/Edit/View/Window/Help layout instead of a Mac-shaped one.
 - **`dorkos://` links**: click one, like `dorkos://agents`, and it opens the app straight to that screen instead of a browser tab.
 - **Automatic updates**: the app checks for a new version on launch and every four hours, downloads it quietly in the background, and asks you to restart when it's ready. Windows updates use the same mechanism, but since the Windows build itself is unverified, treat that as unverified too.
 - **Claude Code, already inside**: the default agent runtime ships with the app, so you don't need Node.js or a separate Claude Code install to get going.
-- **One instance at a time**: opening the app again just brings the existing window forward instead of starting a second copy.
+- **One copy at a time**: opening the app again just brings the existing window forward instead of starting a second copy. DorkOS also won't start if another DorkOS already has its data folder open, which is what happens when you already have `dorkos` running in a terminal. It says so and stops, rather than letting two servers write over each other.
+- **It says when something breaks**: DorkOS runs a small server in the background to do the actual work. If that server stops, the app tells you what the server said about why and offers to start it again. If starting it keeps failing, it stops offering a button that isn't working and points you at the logs instead.
+
+<Callout type="warn">
+  The icon and the keep-working-in-the-background behavior are confirmed on macOS. They're built for
+  Windows too, but the Windows app hasn't been confirmed by a real end-user install yet, so treat
+  them as untested there. If the icon can't be created on your machine, DorkOS quits when you close
+  the window rather than leaving you with a running app you have no way to reach.
+</Callout>
 
 ## Install
 
@@ -98,9 +112,30 @@ Same as macOS: sign in to your Claude account, or paste your Anthropic API key, 
 
 </Tabs>
 
+## Find your address
+
+The desktop app runs the same DorkOS server the CLI does, so it has a web address on your own machine. You need that address to bookmark the cockpit in a browser, to point another app at the [MCP server](/docs/integrations/mcp-server), or to run any of the `curl` examples in these docs.
+
+Open **Settings → Server**. The **Address** at the top is yours, with a button to copy it and a button to open it in your browser. The **MCP endpoint** right below it is the one to paste into Claude Code, Cursor, or Windsurf.
+
+Almost always it is `http://localhost:4242`, the same address the CLI uses, and it stays that way every time you open the app. If something else on your machine already has port 4242, DorkOS quietly moves to the next free one (4243, then 4244, and so on) and Settings shows you where it landed. It keeps that address until you quit, and asks for 4242 again the next time you open the app.
+
+<Callout type="info">
+  Want DorkOS on a port of your own? Run `dorkos config set server.port 5000`, or add `"server": {
+  "port": 5000 }` to `~/.dork/config.json` by hand, then reopen the app. The CLI reads that same
+  setting when you start it without `--port`, so both ways of running DorkOS land on the same
+  address. Pick 1024 or higher; lower ports need administrator rights.
+</Callout>
+
+A port you pick this way is one DorkOS will not move off. If it's taken when you open the app, DorkOS stops and says so instead of answering somewhere else, because anything you already pointed at that port would quietly break. That's the opposite of what it does with 4242, and on purpose: 4242 is a starting guess, and a port you chose is a promise to whatever you configured against it.
+
+Already running `dorkos` in a terminal? Opening the app then tells you so and stops, because a single DorkOS folder can only be used by one server at a time. Quit the one in your terminal and open the app again.
+
 ## Updating
 
 Nothing to do. The app checks for a new release on launch and every four hours, downloads it in the background, and shows a restart prompt (or a card in the sidebar) once it's ready.
+
+An update that's waiting also installs itself the next time you quit DorkOS. Closing the window is not quitting, so if you only ever close the window, use the restart prompt when it appears. To quit properly, use the DorkOS icon in the menu bar or notification area, or `Cmd+Q` on macOS, or **File > Exit** on Windows.
 
 If an update doesn't apply for some reason, download the latest installer from the same link you used the first time and run it again. Your sessions, agents, and settings live outside the app itself, so reinstalling doesn't lose anything.
 

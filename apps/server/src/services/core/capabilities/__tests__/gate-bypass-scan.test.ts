@@ -35,16 +35,12 @@
  * touched an effect that is listed — but a scan cannot fail for an effect nobody
  * added, which is the same shape of hole `GATED_ADAPTER_PATHS` had one level up.
  *
- * A live counterexample, named here so the next reader inherits it rather than
- * rediscovering it: `POST /api/marketplace/sources` and
- * `DELETE /api/marketplace/sources/:name` reach `sourceManager.add` /
- * `sourceManager.remove` and are ungated for every caller, so an agent can point
- * this instance at a package feed somebody else controls. It is NOT covered below.
- * Gating it needs a tier decision that is deliberately not being made in passing:
- * there is no `marketplace.*` source capability to authorize against, adding one
- * moves the registry count that four documented surfaces assert, and refusing
- * agents outright would break `dorkos marketplace add`, which the seeded skill
- * pack teaches. Tracked separately (DOR-467 review, M2).
+ * That is not a theoretical worry: this file used to carry a live counterexample,
+ * the ungated marketplace SOURCE routes, sitting in the prose because nobody had
+ * decided what to do about them. They are gated now and listed below (DOR-502), so
+ * the honest general statement is what remains — an effect is covered from the day
+ * somebody adds it here, and not before. When you find the next one, add it rather
+ * than describe it.
  *
  * ## What it does not catch
  *
@@ -79,7 +75,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'applyConfigPatch(',
     allowed: {
       'routes/config.ts':
-        'the cockpit REST route — refuses operator-only paths unless the caller is a trusted caller (DOR-467)',
+        'the cockpit REST route — refuses operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505)',
       'services/core/operator/operator-tool-handlers.ts':
         'the agent capability — refuses operator-only paths unconditionally (DOR-488)',
       'services/core/operator/config-patch.ts': 'the definition itself',
@@ -96,6 +92,40 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/marketplace/marketplace-installer.ts':
         'the first half of an in-place update (uninstall then install); its callers are gated, not this',
     },
+  },
+  {
+    what: 'points this install at a package feed it will fetch and run code from',
+    call: 'sourceManager.add(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller, with no approval that could unlock it (DOR-502)',
+      'services/marketplace-mcp/personal-marketplace.ts':
+        'the boot-time bootstrap of the local personal marketplace; no request reaches it and the source it registers is always a file:// URL under this dork home',
+    },
+  },
+  {
+    what: 'drops a package feed, silently taking away every package it served',
+    call: 'sourceManager.remove(',
+    allowed: {
+      'routes/marketplace.ts':
+        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller (DOR-502)',
+    },
+  },
+  {
+    what: 'disables a package feed, which takes away every package it served just as removing it does — browse aggregates from ENABLED sources only',
+    // Listed with an EMPTY allowlist, which is the only entry here that has one,
+    // so say why. `MarketplaceSourceManager` has three mutators; DOR-502 gated the
+    // two that had routes and left this one with no production caller at all. That
+    // is the moment to list it, not later: the cockpit already RENDERS each
+    // source's enabled state and the CLI already prints it, with nothing anywhere
+    // that can flip it after the source is created, so a `PATCH /sources/:name`
+    // toggle is the obvious next route on this router. Without this entry that
+    // route would arrive ungated AND invisible to this scan — the exact "a scan
+    // cannot fail for an effect nobody added" hole the module TSDoc above warns
+    // about. With it, the route turns this red until its author gates it and
+    // writes down why it is safe.
+    call: 'sourceManager.setEnabled(',
+    allowed: {},
   },
   {
     what: 'runs the tier gate for a caller that performs the effect itself, instead of via registry.invoke',
@@ -124,7 +154,49 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
+      'routes/tasks.ts':
+        'a person approving a scheduled task, or setting how it runs, in their own cockpit (DOR-504)',
+      'routes/extensions-approval.ts':
+        'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'sets how much a scheduled task may do unattended, and whether it is approved to run',
+    call: 'createTask(',
+    allowed: {
+      'routes/tasks.ts':
+        'the cockpit REST route, on its parse-failure FALLBACK branch only — the happy path is upsertFromFile below. Refuses operator-only task fields unless the caller is a trusted caller, and parks the task at pending_approval when it is not (DOR-504)',
+      'services/runtimes/claude-code/mcp-tools/task-tools.ts':
+        'the tasks_create handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
+      'services/shapes/shape-schedule-service.ts':
+        'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy (see task-write-policy.ts)',
+      'services/tasks/task-store.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "writes a task's permission mode and status from a SKILL.md file on disk, which is the primary create path",
+    call: 'upsertFromFile(',
+    allowed: {
+      'routes/tasks.ts':
+        'the cockpit REST route, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504)',
+      'services/tasks/task-file-watcher.ts':
+        'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
+      'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
+      'services/shapes/shape-schedule-service.ts':
+        'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
+      'services/tasks/task-store.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "changes a scheduled task's permission mode or approval status",
+    call: 'updateTask(',
+    allowed: {
+      'routes/tasks.ts':
+        'the cockpit REST route — refuses operator-only task fields unless the caller is a trusted caller (DOR-504)',
+      'services/runtimes/claude-code/mcp-tools/task-tools.ts':
+        'the tasks_create and tasks_update handlers shared by both MCP servers — refuse operator-only fields unconditionally (DOR-504)',
+      'services/tasks/task-store.ts': 'the definition itself',
     },
   },
 ];

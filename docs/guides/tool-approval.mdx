@@ -71,13 +71,15 @@ High-risk tools can modify the filesystem or execute shell commands. Medium-risk
 
 ## Auto-Approved Tools
 
-Certain tools are always auto-approved regardless of permission mode because they cannot modify state:
+Certain tools are always auto-approved regardless of permission mode. Two different reasons apply:
 
-**Read-only tools:** `Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`
+**Read-only tools** cannot change anything: `Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`
 
-**DorkOS agent tools:** Relay messaging (`relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint`), Mesh discovery (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`, `get_agent`), and UI control tools (`control_ui`, `get_ui_state`).
+**DorkOS agent tools** are auto-approved because they are checked by their own rules instead, not because they are read-only: Relay messaging (`relay_send`, `relay_inbox`, `relay_list_endpoints`, `relay_register_endpoint`), Mesh discovery (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`, `get_agent`), and UI control tools (`control_ui`, `get_ui_state`).
 
-These tools never produce an approval card. Relay access control (`relay/access-rules.json`) handles authorization for agent communication tools separately.
+Some of these do change things. `relay_inbox` with `ack: true` permanently deletes the messages it returns, and `relay_register_endpoint` creates a mailbox. They are auto-approved anyway because an agent polls its inbox constantly: a card on every poll would arrive dozens of times an hour, and a person who learns to click through those cards stops reading every other card too. What protects you instead is that the server decides who a call comes from, and an agent can only read or clear an inbox that belongs to it, so the worst an `ack` can destroy is the agent's own mail. Relay access control (`relay/access-rules.json`) governs which agents may message each other.
+
+These tools never produce an approval card. That list is short and hand-picked, not a rule about DorkOS tools in general: everything else an agent can ask DorkOS for prompts like any other tool, and the three things an agent cannot take back stop and ask you no matter which permission mode the session is in. See [Action approvals](/docs/guides/action-approvals).
 
 ## Always Allow
 
@@ -147,12 +149,21 @@ Each session has a permission mode that sets how Claude handles tool approvals. 
 - **Default**: Claude prompts on tool use and respects your project's permission settings. Read-only and agent tools are still auto-approved.
 - **Accept edits**: file edits are auto-accepted; Claude still prompts for other tools.
 - **Plan**: read-only planning mode. Claude can investigate and propose a plan but cannot execute tools.
-- **Bypass permissions**: all approval prompts are skipped. A persistent red warning banner appears at the top of the UI while this mode is active.
+- **Bypass permissions**: every tool prompt inside the session is skipped. A persistent red warning banner appears at the top of the UI while this mode is active.
 - **Auto**: a safety classifier decides each tool call for you, approving routine work and pausing only for risky actions.
 
 <Callout type="warn">
-  Bypass permissions mode disables all safety checks. Only use it in isolated environments where you
-  trust the agent completely.
+  Bypass permissions mode turns off every prompt inside the session, so the agent edits files and
+  runs commands without stopping. Only use it in isolated environments where you trust the agent
+  completely.
+</Callout>
+
+<Callout type="info">
+  **This covers tools inside the session, and nothing else.** Actions on DorkOS itself, like
+  removing an installed package, still ask you first even in bypass permissions mode. Those are a
+  separate question with its own setting: see [Action approvals](/docs/guides/action-approvals). You
+  will see the same reminder next to the permission picker whenever you choose a mode that skips
+  prompts.
 </Callout>
 
 ### Auto mode

@@ -12,9 +12,12 @@ import {
   inferEndpointType,
   requireRelay,
   publishErrorContent,
+  ownsEndpoint,
+  isReservedSubject,
+  endpointAccessDeniedContent,
   type SenderIdentity,
 } from './relay-helpers.js';
-import { resolveNotifyTarget } from '../../../relay/notify-target.js';
+import { createRelayNotifyUserHandler } from './relay-notify-tools.js';
 
 /**
  * Send a message via Relay.
@@ -61,12 +64,21 @@ export function createRelaySendHandler(deps: McpToolDeps, identity: SenderIdenti
 /**
  * Read inbox messages (with payloads) for a Relay endpoint.
  *
+ * The caller may only read an inbox it owns (see {@link ownsEndpoint}). The
+ * `endpoint_subject` argument comes from the model, so without this gate any
+ * agent could name another agent's subject and drain its mail — and with
+ * `ack: true`, destroy it (DOR-506).
+ *
  * Defaults `status` to `'pending'` when omitted — mirrors the HTTP inbox
  * route's contract (DOR-337/DOR-406) so budget-rejected `failed` messages
  * never surface silently next to real deliverables. Pass `status: 'all'`
  * to opt back into the unfiltered view.
+ *
+ * @param deps - Tool dependencies
+ * @param identity - Server-resolved identity of the calling principal; the
+ *   ownership check keys on it and it is never read from tool args
  */
-export function createRelayInboxHandler(deps: McpToolDeps) {
+export function createRelayInboxHandler(deps: McpToolDeps, identity: SenderIdentity) {
   return async (args: {
     endpoint_subject: string;
     limit?: number;
@@ -75,7 +87,21 @@ export function createRelayInboxHandler(deps: McpToolDeps) {
   }) => {
     const err = requireRelay(deps);
     if (err) return err;
+
     try {
+      // Inside the try because getEndpoint asserts the core is open: a shutdown
+      // race must return a structured error, not reject the handler.
+      const endpoint = deps.relayCore!.getEndpoint(args.endpoint_subject);
+      // No endpoint means nothing to disclose: the readInbox below performs the
+      // same lookup and throws ENDPOINT_NOT_FOUND, which is the honest answer
+      // and keeps idempotent cleanup loops working across a restart.
+      if (endpoint && !ownsEndpoint(identity, endpoint.subject, endpoint.owner)) {
+        return endpointAccessDeniedContent(
+          args.endpoint_subject,
+          'Read your own subject, the inbox subject relay_send_async gave you, or an inbox you registered yourself with relay_register_endpoint.'
+        );
+      }
+
       const result = await deps.relayCore!.readInbox(args.endpoint_subject, {
         limit: args.limit,
         status: args.status ?? 'pending',
@@ -106,23 +132,56 @@ export function createRelayListEndpointsHandler(deps: McpToolDeps) {
         type === 'dispatch'
           ? new Date(new Date(ep.registeredAt).getTime() + dispatchTtlMs).toISOString()
           : null;
-      return { ...ep, type, expiresAt };
+      // `owner` is deliberately dropped. Agents need it for nothing, and naming
+      // every mailbox's owner in one unrestricted call is the reconnaissance
+      // step for impersonating one. The cockpit's HTTP route still returns it.
+      const { owner: _owner, ...rest } = ep;
+      return { ...rest, type, expiresAt };
     });
     return jsonContent({ endpoints: typed, count: typed.length });
   };
 }
 
-/** Register a new Relay endpoint. */
-export function createRelayRegisterEndpointHandler(deps: McpToolDeps) {
+/**
+ * Register a new Relay endpoint, owned by the caller.
+ *
+ * Recording the owner is what later lets the caller (and only the caller) read
+ * this inbox. Registering a subject that already exists throws, so an endpoint's
+ * owner can never be taken over by a second registration.
+ *
+ * @param deps - Tool dependencies
+ * @param identity - Server-resolved identity of the calling principal, stored
+ *   as the new endpoint's owner
+ */
+export function createRelayRegisterEndpointHandler(deps: McpToolDeps, identity: SenderIdentity) {
   return async (args: { subject: string; description?: string }) => {
     const err = requireRelay(deps);
     if (err) return err;
+
+    if (isReservedSubject(args.subject, identity)) {
+      return jsonContent(
+        {
+          error:
+            `"${args.subject}" is in a namespace the server manages, so it cannot be registered ` +
+            'by an agent. Register your own inbox under relay.inbox.* instead.',
+          code: 'RESERVED_SUBJECT',
+        },
+        true
+      );
+    }
+
     try {
-      const info = await deps.relayCore!.registerEndpoint(args.subject);
+      const info = await deps.relayCore!.registerEndpoint(args.subject, {
+        owner: identity.subject,
+      });
       return jsonContent({ endpoint: info, note: args.description ?? 'Endpoint registered' });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Registration failed';
-      const code = message.includes('Invalid subject') ? 'INVALID_SUBJECT' : 'REGISTRATION_FAILED';
+      const code = message.includes('Invalid subject')
+        ? 'INVALID_SUBJECT'
+        : message.includes('belongs to another owner') || message.includes('collides with')
+          ? 'ENDPOINT_ACCESS_DENIED'
+          : 'REGISTRATION_FAILED';
       return jsonContent({ error: message, code }, true);
     }
   };
@@ -155,7 +214,8 @@ export function createRelayQueryHandler(deps: McpToolDeps, identity: SenderIdent
     let unsub: (() => void) | undefined;
 
     try {
-      await relay.registerEndpoint(inboxSubject);
+      // Owned by the caller so nothing else can drain the reply it is waiting on.
+      await relay.registerEndpoint(inboxSubject, { owner: identity.subject });
 
       const progressEvents: RelayProgressPayload[] = [];
 
@@ -289,7 +349,9 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
     const inboxSubject = `relay.inbox.dispatch.${randomUUID()}`;
 
     try {
-      await relay.registerEndpoint(inboxSubject);
+      // Owned by the caller: only this agent may poll the dispatch inbox, and
+      // only this agent may ack (and so delete) what lands in it.
+      await relay.registerEndpoint(inboxSubject, { owner: identity.subject });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Registration failed';
       return jsonContent({ error: message, code: 'REGISTRATION_FAILED' }, true);
@@ -325,12 +387,35 @@ export function createRelayDispatchHandler(deps: McpToolDeps, identity: SenderId
   };
 }
 
-/** Unregister a named Relay endpoint. */
-export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
+/**
+ * Unregister a named Relay endpoint the caller owns.
+ *
+ * Gated by the same ownership rule as the inbox read, and for a stronger
+ * reason: unregistering deletes the endpoint's whole Maildir tree, so an
+ * ungated call would let one agent throw away every message another agent has
+ * waiting (DOR-506).
+ *
+ * @param deps - Tool dependencies
+ * @param identity - Server-resolved identity of the calling principal
+ */
+export function createRelayUnregisterEndpointHandler(deps: McpToolDeps, identity: SenderIdentity) {
   return async (args: { subject: string }) => {
     const err = requireRelay(deps);
     if (err) return err;
+
     try {
+      // Inside the try because getEndpoint asserts the core is open (see the
+      // inbox handler). No endpoint means there is no mailbox to delete, so the
+      // unregisterEndpoint below reports ENDPOINT_NOT_FOUND and a cleanup retry
+      // after a restart still terminates.
+      const endpoint = deps.relayCore!.getEndpoint(args.subject);
+      if (endpoint && !ownsEndpoint(identity, endpoint.subject, endpoint.owner)) {
+        return endpointAccessDeniedContent(
+          args.subject,
+          'Only the agent that registered an endpoint can remove it. Clean up the inbox subjects relay_send_async gave you instead.'
+        );
+      }
+
       const removed = await deps.relayCore!.unregisterEndpoint(args.subject);
       if (!removed) {
         return jsonContent(
@@ -347,120 +432,28 @@ export function createRelayUnregisterEndpointHandler(deps: McpToolDeps) {
 }
 
 /**
- * Send a message to a user on a bound external channel.
+ * The relay tool definitions: name, description, input schema, and handler
+ * (8 tools, including `relay_notify_user`).
  *
- * @param deps - Tool dependencies
- * @param identity - Server-injected sender identity; its `agentId` selects the
- *   caller's own channel bindings (never taken from tool args)
- */
-export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: SenderIdentity) {
-  return async (args: { message: string; channel?: string }) => {
-    const err = requireRelay(deps);
-    if (err) return err;
-    if (!deps.bindingRouter || !deps.bindingStore) {
-      return jsonContent(
-        { error: 'Binding system not available', code: 'BINDINGS_DISABLED' },
-        true
-      );
-    }
-
-    const agentId = identity.agentId;
-    if (!agentId) {
-      return jsonContent(
-        {
-          error:
-            'This session is not a registered agent, so it has no channel bindings to notify through.',
-          code: 'NOT_AN_AGENT',
-        },
-        true
-      );
-    }
-
-    // Resolve the channel via the shared resolver (also used by the system-level
-    // TaskCompletionNotifier, DOR-240) so both proactive paths honor identical
-    // binding, active-session, and `canInitiate` (DOR-239) rules.
-    const target = resolveNotifyTarget(agentId, {
-      bindingStore: deps.bindingStore,
-      bindingRouter: deps.bindingRouter,
-      adapterManager: deps.adapterManager,
-      channel: args.channel,
-    });
-
-    if (!target.ok) {
-      switch (target.reason) {
-        case 'NO_BINDING':
-          return jsonContent(
-            {
-              sent: false,
-              error: args.channel
-                ? `No binding found for channel "${args.channel}"`
-                : 'No adapter bindings found for this agent',
-              availableChannels: target.availableChannels,
-              code: 'NO_BINDING',
-            },
-            true
-          );
-        case 'NO_ACTIVE_SESSIONS':
-          return jsonContent(
-            {
-              sent: false,
-              error:
-                'No active chat sessions found. The user must message the bot first to establish a chat.',
-              availableAdapters: target.availableAdapters,
-              code: 'NO_ACTIVE_SESSIONS',
-            },
-            true
-          );
-        case 'INITIATE_NOT_ALLOWED':
-          // relay_notify_user always INITIATES a message — it is never how an
-          // agent replies to an inbound chat message (replies to a
-          // <relay_context> turn are forwarded automatically by the runtime
-          // adapter, see context-builder.ts). So a false canInitiate on the
-          // resolved binding unconditionally blocks this call; it never blocks
-          // the automatic reply-forwarding path.
-          return jsonContent(
-            {
-              sent: false,
-              error:
-                "This channel doesn't allow the agent to start conversations; reply routing still works.",
-              code: 'INITIATE_NOT_ALLOWED',
-              bindingId: target.bindingId,
-              adapterId: target.adapterId,
-            },
-            true
-          );
-      }
-    }
-
-    try {
-      // Same server-injected principal as every other send tool — the bare
-      // agentId is not a relay subject and would not match any access rule.
-      const result = await deps.relayCore!.publish(target.subject, args.message, {
-        from: identity.subject,
-      });
-      return jsonContent({
-        sent: true,
-        subject: target.subject,
-        adapterId: target.adapterId,
-        adapterType: target.adapterType,
-        chatId: target.chatId,
-        messageId: result.messageId,
-        deliveredTo: result.deliveredTo,
-      });
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Send failed';
-      return jsonContent({ sent: false, error: message, code: 'SEND_FAILED' }, true);
-    }
-  };
-}
-
-/**
- * Returns the Relay tool definitions for registration with the MCP server.
+ * The single source for all of that on BOTH MCP servers. The external `/mcp`
+ * server projects the other 7 (the subject-facing send/inbox/endpoint tools)
+ * through `registerFromDefinitions` rather than typing them out again, which is
+ * what stops the two surfaces describing them differently (DOR-499).
+ * `relay_notify_user` has no entry in the external config, which is what keeps
+ * it in-session-only. Unguarded, so it needs no separate definitions function.
+ *
+ * Because one description now reaches both servers, WORD CHOICE HERE HAS TO BE
+ * TRUE ON BOTH. Say "caller", not "agent": an in-session caller is always an
+ * agent, but the external `/mcp` surface has no per-session identity and acts as
+ * one server-controlled external principal that may not be an agent at all (see
+ * `resolveSenderIdentity(deps, undefined)` in `core/mcp-server.ts`). The two
+ * files briefly disagreed on exactly that word before they shared a source.
  *
  * @param deps - Tool dependencies
  * @param identity - Server-resolved sender identity. Injected as the publish
  *   `from` for every send tool, so the LLM cannot assert (spoof) its own
- *   identity to bypass namespace access rules.
+ *   identity to bypass namespace access rules, and as the principal the
+ *   endpoint tools check ownership against (see {@link ownsEndpoint}).
  */
 export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
   return [
@@ -493,14 +486,19 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     ),
     tool(
       'relay_inbox',
-      'Read inbox messages for a Relay endpoint. Each message includes the sender payload: ' +
+      'Read inbox messages for a Relay endpoint you own: your own agent subject, an inbox subject ' +
+        'relay_send_async returned, or one you registered with relay_register_endpoint. Naming another ' +
+        "agent's endpoint fails with code ENDPOINT_ACCESS_DENIED. Each message includes the sender payload: " +
         '{ id, subject, status, createdAt, sender, payload }. For agent dispatch inboxes the payload is ' +
         'a progress event { type: "progress", step, step_type, text, done: false } or the final ' +
         '{ type: "agent_result", text, done: true }. Defaults to status="pending" (deliverable, unread ' +
         'messages) so budget-rejected failures never surface silently next to real deliverables. Pass ' +
-        'ack=true when polling so returned messages are marked read and the next poll only returns new ones.',
+        'ack=true when polling so each message is returned once — note that ack PERMANENTLY DELETES the ' +
+        'message content, so read what you need out of the response before your next call.',
       {
-        endpoint_subject: z.string().describe('Subject of the endpoint to read inbox for'),
+        endpoint_subject: z
+          .string()
+          .describe('Subject of the endpoint to read inbox for. Must be an endpoint you own.'),
         limit: z.number().int().min(1).max(100).optional().describe('Max messages to return'),
         status: InboxStatusFilterSchema.optional().describe(
           'Filter messages by status. Defaults to "pending" (deliverable, unread messages). Pass ' +
@@ -511,10 +509,13 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
           .boolean()
           .optional()
           .describe(
-            'Acknowledge returned unread messages (mark them read). Set true when polling a dispatch inbox so each message is returned exactly once.'
+            'Acknowledge returned unread messages. This DESTROYS them: the message content is deleted ' +
+              'from disk and cannot be recovered, and only the record (id, sender, timestamps) remains, ' +
+              'with payload null on later reads. Set true when polling a dispatch inbox so each message ' +
+              'is returned exactly once; leave it off to peek without destroying anything.'
           ),
       },
-      createRelayInboxHandler(deps)
+      createRelayInboxHandler(deps, identity)
     ),
     tool(
       'relay_list_endpoints',
@@ -526,12 +527,17 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     ),
     tool(
       'relay_register_endpoint',
-      'Register a new Relay endpoint to receive messages on a subject.',
+      'Register a new Relay endpoint to receive messages on a subject. The endpoint belongs to you, ' +
+        'so you are the only caller that can read or unregister it, and it keeps belonging to you ' +
+        'across server restarts. Use the relay.inbox.* namespace: relay.agent.*, relay.system.* and ' +
+        'relay.human.* are managed by the server and fail with code RESERVED_SUBJECT. A subject that ' +
+        'differs from an existing endpoint only by letter case is refused, because the two would ' +
+        'share one mailbox on macOS and Windows.',
       {
-        subject: z.string().describe('Subject for the new endpoint (e.g., "relay.agent.mybot")'),
+        subject: z.string().describe('Subject for the new endpoint (e.g., "relay.inbox.mybot")'),
         description: z.string().optional().describe('Human-readable description of the endpoint'),
       },
-      createRelayRegisterEndpointHandler(deps)
+      createRelayRegisterEndpointHandler(deps, identity)
     ),
     tool(
       'relay_send_and_wait',
@@ -593,11 +599,13 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
     ),
     tool(
       'relay_unregister_endpoint',
-      'Unregister a Relay endpoint. Use to clean up dispatch inboxes after relay_send_async completes (when done:true received).',
+      'Unregister a Relay endpoint you own, deleting its mailbox and every message still in it. Use to ' +
+        'clean up dispatch inboxes after relay_send_async completes (when done:true received). ' +
+        "Another caller's endpoint fails with code ENDPOINT_ACCESS_DENIED.",
       {
-        subject: z.string().describe('Subject of the endpoint to unregister'),
+        subject: z.string().describe('Subject of the endpoint to unregister. Must be one you own.'),
       },
-      createRelayUnregisterEndpointHandler(deps)
+      createRelayUnregisterEndpointHandler(deps, identity)
     ),
     tool(
       'relay_notify_user',

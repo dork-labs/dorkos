@@ -7,7 +7,7 @@
  */
 import { useState, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
+import { cn, openExternalLink } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
 import type { ElicitationAction } from '@dorkos/shared/types';
@@ -111,10 +111,18 @@ export function ElicitationPrompt({
   }, []);
 
   const handleOpenUrl = useCallback(() => {
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setUrlOpened(true);
+    if (!url) return;
+    // Always leaves the app — the button promises a browser trip. Gate the
+    // "Done — I authorized" button on the link actually being dispatched: an
+    // MCP server can name a scheme the seam refuses (a `myapp://` desktop
+    // OAuth deep link, say), and offering to confirm an authorization that
+    // never opened would let someone accept a flow that never ran.
+    if (!openExternalLink(url)) {
+      setError(`Could not open ${url} — DorkOS only opens web and mail links.`);
+      return;
     }
+    setError(null);
+    setUrlOpened(true);
   }, [url]);
 
   // Resolved state — compact summary
@@ -148,7 +156,9 @@ export function ElicitationPrompt({
       {/* Message */}
       <p className="mb-3 text-sm">{message}</p>
 
-      {error && <p className="text-destructive mb-2 text-xs">{error}</p>}
+      {/* break-words: the message can carry a server-supplied URL, and browsers
+          do not break long URLs at `/` or `?` on their own. */}
+      {error && <p className="text-destructive mb-2 text-xs break-words">{error}</p>}
 
       {/* URL mode */}
       {mode === 'url' && url && (

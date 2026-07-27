@@ -83,10 +83,30 @@ async function copyDirectory(source: string, destination: string): Promise<void>
 /**
  * Stage one bundled core extension under `{dorkHome}/extensions/<id>/`.
  *
- * Three paths: fresh install (destination absent), version upgrade (versions
- * differ or installed manifest unreadable), no-op (versions match). Returns the
- * extension's tier metadata, or `null` if the source directory carries no valid
- * `extension.json` (and is therefore not a core extension).
+ * Returns the extension's tier metadata, or `null` if the source directory
+ * carries no valid `extension.json` (and is therefore not a core extension).
+ *
+ * ## Why the copy is unconditional
+ *
+ * This used to skip the copy when the installed manifest's `version` matched the
+ * bundled one, which made `version` the thing that decided whether the staged
+ * copy was DorkOS's own code. It is not: anything that can write
+ * `{dorkHome}/extensions/<id>/server.ts` and leave `version` alone kept a staged
+ * directory that DorkOS trusts as core — and `origin: 'core'` short-circuits the
+ * load approval (`extension-load-policy.ts`), so the edited code would never be
+ * asked about. The staged copy is now rewritten from the bundle on every boot, so
+ * "core" describes what is actually on disk. The whole tree is 48 KB, so the cost
+ * of always copying it is not worth a check that can be defeated by not bumping a
+ * number.
+ *
+ * A symlink standing where the staged directory belongs is removed first, for the
+ * same reason: `fs.cp` would happily write THROUGH it and leave a "core" directory
+ * whose real contents live somewhere else entirely.
+ *
+ * `fs.cp` overwrites but never deletes, so files the bundle no longer ships stay
+ * behind. That is deliberate — a core extension's own `.dork/data` survives an
+ * upgrade — and it is safe because nothing loads a file the (also-overwritten)
+ * manifest and server entry do not reach.
  *
  * @param sourceDir - Absolute path to the bundled source directory.
  * @param dorkHome - Resolved data directory path.
@@ -103,28 +123,45 @@ async function stageCoreExtension(
   const installed = await readManifest(path.join(destinationDir, 'extension.json'));
   const installedVersion = installed?.version ?? null;
 
-  if (installedVersion === bundledVersion) {
-    logger.debug('[CoreExtensions] %s already staged at version %s', id, bundledVersion);
+  if (installedVersion === null) {
+    logger.info('[CoreExtensions] Installing %s %s', id, bundledVersion);
+  } else if (installedVersion !== bundledVersion) {
+    logger.info(
+      '[CoreExtensions] Upgrading %s from %s to %s',
+      id,
+      installedVersion,
+      bundledVersion
+    );
   } else {
-    if (installedVersion === null) {
-      logger.info('[CoreExtensions] Installing %s %s', id, bundledVersion);
-    } else {
-      logger.info(
-        '[CoreExtensions] Upgrading %s from %s to %s',
-        id,
-        installedVersion,
-        bundledVersion
-      );
-    }
-    await copyDirectory(sourceDir, destinationDir);
-    logger.info('[CoreExtensions] %s staged at %s', id, destinationDir);
+    logger.debug('[CoreExtensions] Restaging %s at version %s', id, bundledVersion);
   }
+
+  await removeSymlinkAt(destinationDir);
+  await copyDirectory(sourceDir, destinationDir);
+  logger.debug('[CoreExtensions] %s staged at %s', id, destinationDir);
 
   return {
     id,
     defaultEnabled: manifest.defaultEnabled !== false,
     canDisable: manifest.canDisable !== false,
   };
+}
+
+/**
+ * Delete `target` when it is a symlink, so the staging copy writes a real
+ * directory instead of following the link somewhere else. A no-op when the path
+ * is absent or is already a real directory.
+ */
+async function removeSymlinkAt(target: string): Promise<void> {
+  try {
+    const stats = await fs.lstat(target);
+    if (stats.isSymbolicLink()) {
+      await fs.rm(target, { force: true });
+      logger.warn('[CoreExtensions] Removed a symlink standing at %s before staging', target);
+    }
+  } catch {
+    // Nothing there yet — the copy creates it.
+  }
 }
 
 /**

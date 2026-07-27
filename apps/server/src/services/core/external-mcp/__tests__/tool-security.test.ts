@@ -3,7 +3,7 @@
  *
  * READ_ONLY_MCP_TOOL_NAMES must stay in exact lock-step with the tools the live
  * server advertises as `readOnlyHint: true`. This test stands up the real
- * `createExternalMcpServer` (with marketplace deps so all 27 read-only tools
+ * `createExternalMcpServer` (with marketplace deps so all 28 read-only tools
  * register), issues a `tools/list`, and asserts the constant equals the live set
  * in BOTH directions — so the carve-out can never silently drift from the
  * annotations it mirrors.
@@ -66,7 +66,8 @@ function createMinimalDeps(): McpToolDeps {
  * Minimal MarketplaceMcpDeps. Registration only calls the `create*Handler(deps)`
  * factories (which return closures without dereferencing deps), so a stub bundle
  * is enough to register all five marketplace read-only tools — without these the
- * live count is 18, not 23 (see mcp-server.ts:88).
+ * live count is 23, not 28. See `createExternalMcpServer`, which only joins the
+ * marketplace capabilities to the registry when `marketplaceDeps` is present.
  */
 function createMarketplaceDeps(): MarketplaceMcpDeps {
   return {

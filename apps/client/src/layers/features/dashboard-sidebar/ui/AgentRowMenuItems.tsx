@@ -25,14 +25,16 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from '@/layers/shared/ui';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
+import { sameSidebarItem } from '@dorkos/shared/config-schema';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
-  pinPath,
-  unpinPath,
+  pinItem,
+  unpinItem,
   moveToGroup,
-  mutePath,
-  unmutePath,
+  muteItem,
+  unmuteItem,
 } from '@/layers/entities/config';
 
 /** Which Radix menu the shared item list renders into. */
@@ -245,20 +247,22 @@ export function AgentRowMenuItems({
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
 
-  const isPinned = prefs.pinned.includes(path);
-  const isMuted = prefs.muted.includes(path);
-  const currentGroupId = prefs.groups.find((g) => g.agentPaths.includes(path))?.id ?? null;
+  const ref: SidebarItemRef = { kind: 'agent', path };
+  const isPinned = prefs.pinned.some((p) => sameSidebarItem(p, ref));
+  const isMuted = prefs.muted.some((m) => sameSidebarItem(m, ref));
+  const currentGroupId =
+    prefs.groups.find((g) => g.items.some((m) => sameSidebarItem(m, ref)))?.id ?? null;
 
   const nodes = buildRowMenuNodes({
     isPinned,
     isMuted,
     currentGroupId,
     groups: prefs.groups.map((g) => ({ id: g.id, name: g.name })),
-    onTogglePin: () => update((prev) => (isPinned ? unpinPath(prev, path) : pinPath(prev, path))),
-    onToggleMute: () => update((prev) => (isMuted ? unmutePath(prev, path) : mutePath(prev, path))),
+    onTogglePin: () => update((prev) => (isPinned ? unpinItem(prev, ref) : pinItem(prev, ref))),
+    onToggleMute: () => update((prev) => (isMuted ? unmuteItem(prev, ref) : muteItem(prev, ref))),
     onOpenProfile,
     onNewSession,
-    onMoveToGroup: (groupId) => update((prev) => moveToGroup(prev, path, groupId)),
+    onMoveToGroup: (groupId) => update((prev) => moveToGroup(prev, ref, groupId)),
     onNewGroup: () => onRequestNewGroup(path),
   });
 

@@ -53,10 +53,14 @@
  * ## What this file deliberately does NOT check
  *
  * That a raw `McpServer` cannot be used as a `ToolRegistrar`. That guarantee is a
- * TYPE, and `apps/server/tsconfig.json` excludes `src/**\/__tests__/**`, so nothing
- * here is typechecked — a `@ts-expect-error` written in this file would be
- * decoration that can never fail. The pin lives in `mcp-tool-gate.ts` next to the
- * brand instead, where `tsc` sees it.
+ * TYPE, and the pin for it lives in `mcp-tool-gate.ts` next to the brand instead.
+ *
+ * The reason has narrowed since that was written. `apps/server/tsconfig.json` used
+ * to exclude `src/**\/__tests__/**` wholesale, so nothing in any test file was
+ * typechecked; DOR-508 fixed that. But THIS file is one of the test files still
+ * quarantined in that tsconfig's `exclude` while its own type errors are worked
+ * off, so a `@ts-expect-error` written here today would still be decoration that
+ * can never fail. When this file leaves quarantine, the pin can move here.
  *
  * @vitest-environment node
  */
@@ -80,6 +84,8 @@ import {
 } from '../../runtimes/claude-code/mcp-tools/index.js';
 import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
+import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
+import { DORKOS_AGENT_TOOLS } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
 import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
 import {
   initCapabilityTierGate,
@@ -344,6 +350,55 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       expect(
         DESTRUCTIVE.filter((name) => READ_ONLY_MCP_TOOL_NAMES.has(name)),
         'a destructive tool is in the tokenless read-only carve-out'
+      ).toEqual([]);
+    });
+
+    it('never lets a destructive tool into the always-on session set', () => {
+      // `SESSION_CORE_TOOL_NAMES` is the set no toggle gates, so it applies to every
+      // agent regardless of the person's toggles, and the cockpit presents it as
+      // always enabled. A destructive tool landing in one of those groups is not a
+      // cosmetic miscategorization: it is an irreversible action nobody can turn off.
+      //
+      // This assertion used to guard something sharper. Until DOR-519 the same set was
+      // handed to the SDK's `allowedTools`, an approval bypass rather than an
+      // availability filter, so a destructive tool in here stopped asking for approval
+      // for every agent, permanently. Nothing feeds `allowedTools` now, so the stakes
+      // are lower, but the pin stays: this is still the set a person cannot opt out of.
+      //
+      // Pinned by NAME rather than left to the count assertions in
+      // `tool-filter.test.ts`, which caught this only incidentally and said nothing
+      // about why it matters. Review demonstrated the gap: moving `tasks_delete`
+      // from `tasks` to `core` passed `tsc` (the type-level guards compare key
+      // SETS, and the keys do not change) and passed the whole targeted suite
+      // against a stale `dist`, which is why `vitest.config.ts` now aliases this
+      // module to source.
+      expect(
+        DESTRUCTIVE.filter((name) => (SESSION_CORE_TOOL_NAMES as readonly string[]).includes(name)),
+        'a destructive tool is always-on and therefore cannot be turned off'
+      ).toEqual([]);
+    });
+
+    it('keeps the interactive auto-allow list real and never destructive', () => {
+      // `DORKOS_AGENT_TOOLS` is the fourth hand-written subset of the tool surface
+      // and the one with the least ceremony in front of it: `canUseTool` allows
+      // everything in it outright, with no prompt, in every interactive session.
+      // DOR-499 left it hand-written on purpose (see its TSDoc), so this is the
+      // safe-direction pin that replaces derivation.
+      const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.replace('mcp__dorkos__', ''));
+
+      // A renamed tool leaves a dead entry behind, which silently starts prompting
+      // for something meant to be frictionless. Safe, but nobody would notice.
+      expect(
+        bare.filter((name) => !(name in MCP_TOOL_TIERS)),
+        'these auto-allow entries name no real tool, so they do nothing'
+      ).toEqual([]);
+
+      // The direction that actually costs something.
+      expect(
+        bare.filter(
+          (name) => MCP_TOOL_TIERS[name as keyof typeof MCP_TOOL_TIERS]?.tier === 'destructive'
+        ),
+        'a destructive tool is auto-allowed with no prompt in interactive sessions'
       ).toEqual([]);
     });
 

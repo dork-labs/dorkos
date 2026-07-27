@@ -137,7 +137,12 @@ export const CONFIG_WRITE_POLICY = {
 
   'ui.theme': 'agent-writable',
   'ui.dismissedUpgradeVersions': 'agent-writable',
-  'ui.sidebar.pinned': 'agent-writable',
+  // A sidebar item reference is a discriminated union of objects, so the `[]`
+  // descent enumerates each branch's fields (same convention as
+  // `CONFIG_DISCLOSURE`).
+  'ui.sidebar.pinned[].kind': 'agent-writable',
+  'ui.sidebar.pinned[].path': 'agent-writable',
+  'ui.sidebar.pinned[].roomId': 'agent-writable',
   // A sidebar group is an object inside an array, so each of its fields carries
   // its own verdict (the `[]` descent, same convention as `CONFIG_DISCLOSURE`).
   // A property added to a group is unclassified, so the guard fails until someone
@@ -146,7 +151,9 @@ export const CONFIG_WRITE_POLICY = {
   // harmless only because every verdict below is `agent-writable`.
   'ui.sidebar.groups[].id': 'agent-writable',
   'ui.sidebar.groups[].name': 'agent-writable',
-  'ui.sidebar.groups[].agentPaths': 'agent-writable',
+  'ui.sidebar.groups[].items[].kind': 'agent-writable',
+  'ui.sidebar.groups[].items[].path': 'agent-writable',
+  'ui.sidebar.groups[].items[].roomId': 'agent-writable',
   'ui.sidebar.groups[].sortMode': 'agent-writable',
   'ui.sidebar.groups[].collapsed': 'agent-writable',
   'ui.sidebar.groups[].displayFilter': 'agent-writable',
@@ -160,8 +167,12 @@ export const CONFIG_WRITE_POLICY = {
   'ui.sidebar.ungroupedSortMode': 'agent-writable',
   'ui.sidebar.ungroupedCollapsed': 'agent-writable',
   'ui.sidebar.recentsCollapsed': 'agent-writable',
+  'ui.sidebar.channelsCollapsed': 'agent-writable',
+  'ui.sidebar.dmsCollapsed': 'agent-writable',
   'ui.sidebar.groupsHintDismissed': 'agent-writable',
-  'ui.sidebar.muted': 'agent-writable',
+  'ui.sidebar.muted[].kind': 'agent-writable',
+  'ui.sidebar.muted[].path': 'agent-writable',
+  'ui.sidebar.muted[].roomId': 'agent-writable',
   'ui.sidebar.ungroupedDisplayFilter': 'agent-writable',
   'ui.shapes.active': 'agent-writable',
   'ui.shapes.agentDefaults': 'agent-writable',
@@ -186,6 +197,19 @@ export const CONFIG_WRITE_POLICY = {
   // operator-only pre-emptively: it is a directory-scope field, and classifying it
   // while it is inert is what stops it becoming load-bearing while agent-writable.
   'mesh.scanRoots': 'operator-only',
+
+  // How far agents may reply to each other in a room before it stops them
+  // (ADR 260726-170127). Operator-only for the same reason room rosters are: an
+  // agent that can raise its own reply ceiling can spend the operator's model
+  // budget on a conversation nobody asked for, and the whole point of the guard
+  // is that it bounds a loop the participants cannot see themselves in.
+  'rooms.maxAgentDepth': 'operator-only',
+  // The per-room spend cap. Operator-only for a sharper reason than the ceiling
+  // above: this bound exists precisely BECAUSE an agent can defeat the
+  // identity-based one in the default posture (DOR-505), so leaving it
+  // agent-writable would hand back the thing it was built to hold.
+  'rooms.maxAutomaticTurnsPerRoomPerHour': 'operator-only',
+  'rooms.maxAutomaticTurnsTotalPerHour': 'operator-only',
 
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',
@@ -218,6 +242,13 @@ export const CONFIG_WRITE_POLICY = {
   // cockpit toggles these through `/api/extensions`, not through a config patch.
   'extensions.enabled': 'operator-only',
   'extensions.disabled': 'operator-only',
+  // The standing consent that lets one extension's code execute INSIDE the server
+  // process, with the server's privileges and outside the tier gate (DOR-516).
+  // This is the record of a human decision, so a caller that can write it can
+  // manufacture that decision — the textbook case of "changing it removes a
+  // security control", and the reason the whole gate hangs off a config field
+  // instead of anything under the project tree an agent edits freely.
+  'extensions.approvedToRun': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -279,9 +310,15 @@ export const CONFIG_WRITE_POLICY = {
   // them on removes the card in front of an irreversible action for a whole
   // window, and lengthening the window widens the same hole, so both sit exactly
   // on the line this module states. `operator-only` is NECESSARY here but not
-  // SUFFICIENT — see REQUIRES_COOKIE_CONFIG_PATHS.
+  // SUFFICIENT — see REQUIRES_LOGIN_CONFIG_PATHS.
   'approvals.standingGrants': 'operator-only',
   'approvals.trustWindowMinutes': 'operator-only',
+  // Machine-managed: the moment the settings last stopped licensing standing
+  // permissions (DOR-520). Nothing should write it by hand at all, and the reason
+  // it is classified rather than merely undocumented is that moving it BACKWARDS
+  // resurrects every permission a posture change voided — the exact failure the
+  // marker exists to prevent, reachable in one patch.
+  'approvals.standingGrantsVoidBefore': 'operator-only',
 
   // The credential and the identity of the account link.
   'cloud.instanceToken': 'operator-only',
@@ -304,46 +341,57 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
 export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
 
 /**
- * Config paths whose write needs a SESSION COOKIE on top of the `operator-only`
- * verdict above (spec `agent-approval-settings` §3.0-3.1).
+ * Config paths that may not be written at all while local login is OFF, on top of
+ * the `operator-only` verdict above (spec `agent-approval-settings` §3.0-3.1,
+ * narrowed by DOR-505).
  *
- * ## Why `operator-only` is not enough on its own
+ * ## What DOR-505 took away from this list, and what it could not
  *
- * That verdict is enforced unconditionally on the capability surface
- * (`operator-tool-handlers.ts`), but on `PATCH /api/config` it sits inside
- * `if (!trustedCaller(...))`, and a caller that omits its agent header and its
- * approval token clears `trustedCaller` under the default `local-trust` posture.
- * So for these paths the route checks a cookie as well, BEFORE that block and
- * regardless of its outcome.
+ * This started life as `REQUIRES_COOKIE_CONFIG_PATHS`: `approvals.*` needed a
+ * session cookie, while every other `operator-only` path made do with the
+ * `trustedCaller` escape on `PATCH /api/config`. DOR-505 gave the cookie
+ * requirement to EVERY `operator-only` path under login-on, so the cookie half of
+ * this list is now the general rule and has been deleted rather than kept as a
+ * second check on the same writes.
  *
- * ## Deliberately just this one subtree
+ * What survives is the half the general rule does not reach. That rule allows any
+ * caller while login is off, because with no accounts there is no cookie to ask
+ * for. For an ordinary setting that is the accepted residual. For these paths it
+ * would be wrong, but be precise about WHY, because the imprecise version gets
+ * this list deleted:
  *
- * The same divergence is real for `auth.enabled`, `tunnel.*`, `mcp.*` and the
- * rest, and it is not closed here: extending the cookie requirement to those
- * would change behavior for flows this change has not examined. That work is
- * DOR-505.
+ * **`approvals.standingGrants` decides real behavior.** The tier gate reads it on
+ * every gated call, so an agent that could set it while login is off would be
+ * arming the thing that makes DorkOS stop asking, not flipping an inert flag. The
+ * write also PERSISTS and nothing sweeps it —
+ * `revokeStandingGrantsIfPostureNarrowed` only fires on a narrowing, never on a
+ * widening — so a switch set in the login-off posture is still set on the day the
+ * person turns login on, reading as something they chose.
  *
- * ## This list is meant to be temporary
+ * This list was written before enforcement existed, as a forward-looking guard,
+ * and the note it replaced said so at length because a reader who tested the
+ * "attack" then found it inert. That is no longer the situation: the attack is live
+ * and the guard is what stops it.
  *
- * When DOR-505 closes the header-stripping residual for operator-only config
- * writes generally, this list becomes a second overlapping check on the same
- * writes and should be DELETED, not left in place. Whoever implements DOR-505
- * owns removing it and folding `approvals.*` into the general rule. Written down
- * because the way parallel mechanisms survive forever is that nobody ever
- * recorded that one supersedes the other.
+ * So the two mechanisms no longer overlap: this one asks "is login on", the
+ * general rule asks "with login on, is this a person". They compose.
  *
  * It does NOT cover the cookie requirement on creating a standing permission
  * itself. That one is a property of the approvals routes, not of the config write
  * path, and it stands on its own.
  */
-export const REQUIRES_COOKIE_CONFIG_PATHS: readonly string[] = [
+export const REQUIRES_LOGIN_CONFIG_PATHS: readonly string[] = [
   'approvals.standingGrants',
   'approvals.trustWindowMinutes',
+  // The posture floor decides real behavior for the same reason the master switch
+  // does — the store consults it on every lookup — and moving it backwards is the
+  // one write that can bring voided permissions back. With login off there is no
+  // cookie to ask for, so this bar is the only thing standing in front of it.
+  'approvals.standingGrantsVoidBefore',
 ];
 
-/** The `error` field every cookie-required refusal on a config write carries. */
-export const REQUIRES_COOKIE_CONFIG_ERROR =
-  'Only a person signed in to DorkOS can change standing permissions';
+/** The `error` field every login-required refusal on a config write carries. */
+export const REQUIRES_LOGIN_CONFIG_ERROR = 'Standing permissions need Require login turned on';
 
 /**
  * Every dot-path a patch object touches, including a path that ends at an empty
@@ -406,8 +454,8 @@ export function findOperatorOnlyPaths(patch: unknown): string[] {
 }
 
 /**
- * Find the settings a patch tries to write that additionally need a session
- * cookie ({@link REQUIRES_COOKIE_CONFIG_PATHS}).
+ * Find the settings a patch tries to write that additionally need local login to
+ * be on ({@link REQUIRES_LOGIN_CONFIG_PATHS}).
  *
  * Matches the same way {@link findOperatorOnlyPaths} does, so `{ approvals: {} }`
  * and `{ approvals: true }` are caught as ancestors rather than sliding past a
@@ -418,8 +466,8 @@ export function findOperatorOnlyPaths(patch: unknown): string[] {
  * @returns The offending policy paths, sorted, each named once. Empty when the
  *   patch touches none of them.
  */
-export function findCookieRequiredPaths(patch: unknown): string[] {
-  return findGuardedPaths(patch, REQUIRES_COOKIE_CONFIG_PATHS);
+export function findLoginRequiredPaths(patch: unknown): string[] {
+  return findGuardedPaths(patch, REQUIRES_LOGIN_CONFIG_PATHS);
 }
 
 /**

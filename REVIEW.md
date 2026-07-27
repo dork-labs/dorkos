@@ -137,6 +137,118 @@ This is mechanical and cheap. Run it before concluding a deletion PR is clean.
 - `*.md`, `docs/**`, `contributing/**`: in-scope for the dangling-reference sweep;
   stale internal links are findings.
 
+## A passing test is not evidence the test works
+
+A green suite tells you the assertions held. It does not tell you they would have
+failed. Those are different claims, and the gap between them is where real
+defects live — three separate times on one PR (DOR-526), a **passing test was
+certifying a bug**:
+
+- a test asserting an untriggered post starts a fresh cascade, which was the
+  exact hole a fix had left open — so the suite pinned the bug in as intended
+  behavior;
+- `expect(notices.length).toBeGreaterThan(0)`, satisfied by a _different_
+  agent's notice than the one whose loss was the bug;
+- `expect(turns.length).toBeGreaterThan(2)` where the answer was knowably
+  exactly 3.
+
+None of these is visible by reading the diff. All three are visible in seconds
+by changing the code.
+
+So when a PR's correctness rests on a test — a guard, a limit, a security
+boundary, a race — do not report "covered". **Revert the fix and confirm the
+intended tests go red, and nothing else does.** A fix whose removal breaks
+nothing is untested; a fix whose removal breaks twenty things has a test that
+is measuring something else.
+
+Two smells worth naming, both of which produce green suites over broken code:
+
+- **A bound where a number is knowable.** `toBeGreaterThan(2)` passes for 3 and
+  for 300. If the shape under test yields exactly N, assert N.
+- **An assertion satisfied by the wrong subject.** "Some notice exists" is not
+  "this agent's notice exists"; "a row was written" is not "this row was
+  written". Name the subject.
+
+Also check _where_ a test enters the system. A test that calls a service method
+directly is downstream of every decision the route made — including, on
+DOR-526, the one that was wrong. **The seam an exploit uses is often the seam no
+test crosses.**
+
+## Cross the seam
+
+The single highest-yield move in this repo's reviews, measured over one day of
+them: **stop reading the diff and drive the real thing.**
+
+On DOR-579 the diff read clean, every test was green, and the migration was
+correct — when it ran. Booting a real `ConfigManager` over a real prior-shape
+`config.json` showed it **destroying the entire config file**, silently reverting
+a telemetry opt-out to opt-in. On DOR-571 the picker's logic read fine; driving
+it with a typo and pressing Enter opened the wrong conversation. On DOR-583 the
+JSX looked correct; Chromium's accessibility tree announced the channel name
+twice.
+
+None of those was visible by reading, and none needed cleverness — only
+executing the thing at the boundary a user actually reaches it from.
+
+Concretely, prefer in this order:
+
+1. **Drive the real component or class** over asserting on a mock. A mock store
+   cannot fail the way `conf` + Ajv fails; `UserConfigSchema.parse` cannot
+   substitute for it, because **Zod strips unknown keys where Ajv rejects them**.
+2. **Read the browser's accessibility tree**, not the JSX, for any naming or
+   labelling claim. jsdom loads no CSS and never blockifies flex children, so
+   accessible names differ between it and a real browser.
+3. **Reproduce the user's sequence**, not the unit's contract — switch rooms
+   mid-flight, type a typo, remove the item you had highlighted.
+
+And when a claim rests on a stored field being populated, **query the data**.
+DOR-570 shipped an avatar unification on the premise that `AuthorRef` carries the
+agent's emoji. The wiring was correct end to end and the feature was inert:
+4 of 24 agents had one stored. An author, an adversarial reviewer, and the
+orchestrator all confirmed the premise from the schema. A screenshot found it in
+seconds.
+
+**Calibration, worth knowing when weighing your own verdict:** on both PRs above,
+this repo's automated review returned "0 important, 0 nits". Nothing in those
+verdicts was wrong on its face. They just never crossed the seam.
+
+## When the code under review is a recovery path, ask whether it can fail
+
+For most code the review question is "does this do the right thing." For code
+that runs **because something already went wrong** — a catch block, a fallback, a
+repair, a retry, a migration's error branch — that question is secondary. The
+first one is: **can this itself fail, and what happens if it does?**
+
+On DOR-584 a fix for a config-destruction bug introduced a **boot**-destruction
+bug, and it did it _inside the catch block that was the last-resort "always
+boots" guarantee_. The salvage carried a stored value forward after checking its
+JavaScript type; the value was type-correct but violated its own schema's
+minimum, so `conf` re-validated it through Ajv on write and threw. Nothing up the
+stack handled it, and the server did not start — on inputs that the unfixed code
+recovered from cleanly. The file was left half-restored, because the write
+iterated sections and had already committed two before the third threw.
+
+The PR's own comment said the function "never throws — a throw here would take
+down the boot it is trying to rescue." It was the right thing to worry about and
+it was not true, and no test caught it because the suite was green at 2813
+passing.
+
+Two transferable checks:
+
+- **`typeof` is not validation.** A type check sees `number`; it does not see
+  `min`, `format`, `enum`, or any other constraint the schema enforces on write.
+  Any value that will be re-validated downstream must be validated against its
+  **own** schema first, not merely type-narrowed.
+- **A multi-step repair needs to be all-or-nothing, or explicitly resumable.** A
+  loop of writes that can throw partway leaves state no code path anticipated —
+  worse than the corruption it was repairing, because it looks recovered.
+
+So for any diff touching a recovery path: find every write it performs, ask what
+validates that write, and construct the input where validation says no. Then run
+it. Compare against the pre-change behavior on the same input — if the old code
+survived what the new code dies on, that is a 🔴 regression regardless of how
+well the new code handles the case it was written for.
+
 ## Verification bar
 
 Behavior claims need a `file:line` citation in the diff or surrounding code, not

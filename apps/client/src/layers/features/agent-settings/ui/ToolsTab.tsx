@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from '@/layers/shared/ui';
 import type { AgentManifest, EnabledToolGroups } from '@dorkos/shared/mesh-schemas';
+import { toolNamesForDomain, type ToolDomainKey } from '@dorkos/shared/mcp-tool-groups';
 import { cn } from '@/layers/shared/lib';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
@@ -19,49 +20,6 @@ import { useMcpConfig } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
 
-// ---------------------------------------------------------------------------
-// Tool inventories — display names without the mcp__dorkos__ prefix.
-// Source of truth: services/runtimes/claude-code/tool-filter.ts
-// Duplicated here because FSD prevents cross-feature imports from settings/.
-// ---------------------------------------------------------------------------
-
-const TOOL_INVENTORY = {
-  tasks: ['tasks_list', 'tasks_create', 'tasks_update', 'tasks_delete', 'tasks_get_run_history'],
-  relay: [
-    'relay_send',
-    'relay_inbox',
-    'relay_list_endpoints',
-    'relay_register_endpoint',
-    'relay_send_and_wait',
-    'relay_send_async',
-    'relay_unregister_endpoint',
-    'relay_get_trace',
-    'relay_get_metrics',
-  ],
-  mesh: [
-    'mesh_discover',
-    'mesh_register',
-    'mesh_list',
-    'mesh_deny',
-    'mesh_unregister',
-    'mesh_status',
-    'mesh_inspect',
-    'mesh_query_topology',
-  ],
-  adapter: [
-    'relay_list_adapters',
-    'relay_enable_adapter',
-    'relay_disable_adapter',
-    'relay_reload_adapters',
-    'binding_list',
-    'binding_create',
-    'binding_delete',
-    'binding_list_sessions',
-    'relay_notify_user',
-  ],
-} as const;
-
-type ToolDomainKey = 'tasks' | 'relay' | 'mesh' | 'adapter';
 type GlobalConfigKey = 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools';
 
 interface ToolDomain {
@@ -182,7 +140,7 @@ function ToolGroupRow({
 }
 
 // ---------------------------------------------------------------------------
-// ToolsTab — per-agent tool access and safety limits.
+// ToolsTab — per-agent tool groups and safety limits.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -214,7 +172,7 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
   const { config: globalConfig } = useAgentContextConfig();
   const { data: mcpConfig } = useMcpConfig(projectPath, agent.runtime);
 
-  // DorkOS's own tool groups (Scheduling/Messaging/Discovery/Channels) are
+  // DorkOS's own tool groups (Scheduling/Messaging/Discovery/Integrations) are
   // injected as an MCP server. A runtime that can't consume MCP (e.g. Codex,
   // `supportsMcp: false`) never receives them, so the toggles would be
   // dishonest. Default to available while capabilities load so Claude never
@@ -245,7 +203,7 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
       configKey: 'tasksTools',
       label: 'Scheduling',
       description: 'Create and run scheduled agent tasks',
-      tools: TOOL_INVENTORY.tasks,
+      tools: toolNamesForDomain('tasks'),
       serverDisabled: !tasksEnabled,
       serverDisabledReason: 'Disabled globally by server configuration.',
     },
@@ -254,7 +212,7 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
       configKey: 'relayTools',
       label: 'Messaging',
       description: 'Send and receive messages between agents',
-      tools: TOOL_INVENTORY.relay,
+      tools: toolNamesForDomain('relay'),
       serverDisabled: !relayEnabled,
       serverDisabledReason: 'Disabled globally by server configuration.',
     },
@@ -263,14 +221,14 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
       configKey: 'meshTools',
       label: 'Agent Discovery',
       description: 'Find and register agents on this machine',
-      tools: TOOL_INVENTORY.mesh,
+      tools: toolNamesForDomain('mesh'),
     },
     {
       key: 'adapter',
       configKey: 'adapterTools',
-      label: 'External Channels',
-      description: 'Manage connections to Slack, Telegram, and other platforms',
-      tools: TOOL_INVENTORY.adapter,
+      label: 'External Integrations',
+      description: 'Manage integrations with Slack, Telegram, and other platforms',
+      tools: toolNamesForDomain('adapter'),
       serverDisabled: !relayEnabled,
       serverDisabledReason: 'Disabled globally by server configuration.',
     },
@@ -283,8 +241,10 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
       {supportsDorkTools ? (
         <>
           <p className="text-muted-foreground text-sm">
-            Control which tool groups are available to this agent. Leave unset to inherit global
-            defaults.
+            Choose which tool groups this agent is told about. Turn a group off and the agent stops
+            being told those tools exist, so it stops reaching for them. This is guidance, not a
+            lock: if the agent asks for one anyway, you still get an approval prompt. Leave a group
+            unset to inherit the global default.
           </p>
 
           <FieldCard>
@@ -303,7 +263,8 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
           </FieldCard>
 
           <p className="text-muted-foreground text-xs">
-            Core tools (ping, server info, agent identity) are always available.
+            Core tools (ping, server info, agent identity) are always registered, whatever you set
+            here.
           </p>
         </>
       ) : (
@@ -311,8 +272,8 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
               This agent&rsquo;s runtime does not support DorkOS tool groups (Scheduling, Messaging,
-              Agent Discovery, External Channels). These are delivered over MCP, which this runtime
-              cannot consume.
+              Agent Discovery, External Integrations). These are delivered over MCP, which this
+              runtime cannot consume.
             </p>
           </FieldCardContent>
         </FieldCard>

@@ -31,6 +31,7 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     tier: 'destructive',
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: '/Users/dev/agents/dorkbot',
+    hasAgentPath: true,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 8.5 * 60_000).toISOString(),
     ...overrides,
@@ -87,9 +88,9 @@ describe('PendingApprovalsSection', () => {
 
   it('says so plainly when the request carried no agent identity', async () => {
     renderSection({
-      listPendingApprovals: vi
-        .fn()
-        .mockResolvedValue({ approvals: [buildApproval({ requestedBy: undefined })] }),
+      listPendingApprovals: vi.fn().mockResolvedValue({
+        approvals: [buildApproval({ requestedBy: undefined, hasAgentPath: false })],
+      }),
     });
 
     expect(await screen.findByText('Requested without an agent identity')).toBeInTheDocument();
@@ -106,7 +107,9 @@ describe('PendingApprovalsSection', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Allow' }));
 
-    expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001');
+    // No second argument: a plain Allow is a one-time yes and must never ask for
+    // a standing permission by accident.
+    expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001', undefined);
   });
 
   it('denies through the transport when the refuse button is clicked', async () => {

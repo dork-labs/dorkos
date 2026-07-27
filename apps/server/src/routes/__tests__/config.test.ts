@@ -201,19 +201,23 @@ describe('PATCH /api/config', () => {
       .expect(403);
   });
 
-  describe('approvals.* — the settings that need a session cookie (DOR-501)', () => {
+  describe('approvals.* — the settings that additionally need login ON (DOR-501, DOR-505)', () => {
     /** Turn local login on, which is what makes a cookie possible at all. */
     async function enableLogin(): Promise<void> {
       const { configManager } = await import('../../services/core/config-manager.js');
       configManager.set('auth', { enabled: true });
     }
 
-    it('refuses a header-stripping caller, which the operator-only check alone lets through', async () => {
-      // This is step 1 of the reproduced chain. `trustedCaller` is satisfied by a
-      // caller presenting neither an agent header nor an approval token, so the
-      // operator-only block below is SKIPPED for it. That was an accepted trade
-      // when the worst case was one config write; a standing permission is a
-      // renewable window of silent auto-approval, so this path gets a second bar.
+    it('refuses a header-stripping caller, which the agent bar alone lets through', async () => {
+      // This is step 1 of the reproduced chain. The agent bar (`trustedCaller`) is
+      // satisfied by a caller presenting neither an agent header nor an approval
+      // token, so on its own it would let this through.
+      //
+      // What refuses it is the COOKIE bar, and since DOR-505 that bar covers every
+      // operator-only path rather than just this subtree — so this case is no
+      // longer special, it is simply the first place the general rule was proven.
+      // What remains specific to `approvals.*` is the LOGIN bar, exercised by
+      // "refuses everyone while login is off" below.
       await enableLogin();
       agentHeader = undefined;
       signedInUser = undefined;
@@ -274,12 +278,15 @@ describe('PATCH /api/config', () => {
       expect(ok.body.config.approvals).toEqual({
         standingGrants: true,
         trustWindowMinutes: 120,
+        // Untouched by a widening write: switching the feature ON voids nothing
+        // (DOR-520).
+        standingGrantsVoidBefore: null,
       });
     });
 
     it('refuses an array-shaped body, which the path matcher deliberately ignores', async () => {
-      // `findCookieRequiredPaths` walks objects and returns nothing for an array,
-      // so the cookie bar never sees this body. It is safe only because the config
+      // `findLoginRequiredPaths` walks objects and returns nothing for an array,
+      // so the login bar never sees this body. It is safe only because the config
       // schema is an object and `applyConfigPatch` rejects the shape outright.
       // Pinned so that stays true: if config ever accepted an array anywhere, this
       // goes red instead of quietly becoming a way around the bar.
@@ -304,6 +311,135 @@ describe('PATCH /api/config', () => {
         .send({ approvals: { trustWindowMinutes: 10080 } })
         .expect(400);
     });
+  });
+
+  describe('every operator-only setting, with login on (DOR-505)', () => {
+    /** Turn local login on, which is what makes a cookie possible at all. */
+    async function enableLogin(): Promise<void> {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+    }
+
+    it('refuses a caller holding a per-user API key the settings that protect the instance', async () => {
+      // The hole DOR-505 closes, reproduced. A program handed one of the
+      // person's API keys satisfies `sessionGate` exactly as a browser session
+      // does (DOR-474), and stripping its agent header clears `trustedCaller`.
+      // Before this, both bars were clear and it could turn login off — voiding
+      // every approval the instance would ever enforce — while the capability
+      // surface refused it that same write.
+      await enableLogin();
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_program', credential: 'api-key' };
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ auth: { enabled: false } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_cookie_required');
+      expect(refused.body.paths).toEqual(['auth.enabled']);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('auth.enabled')).toBe(true);
+    });
+
+    it('refuses the same key every other operator-only path too, not just the login gate', async () => {
+      await enableLogin();
+      signedInUser = { userId: 'user_program', credential: 'api-key' };
+
+      for (const patch of [
+        { tunnel: { authtoken: 'attacker-ngrok-token' } },
+        { mcp: { apiKey: 'attacker-bearer' } },
+        { server: { boundary: '/' } },
+        { runtimes: { codex: { binaryPath: '/tmp/evil' } } },
+      ]) {
+        const refused = await request(app).patch('/api/config').send(patch).expect(403);
+        expect(refused.body.code).toBe('operator_cookie_required');
+      }
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('tunnel.authtoken')).toBeNull();
+      expect(configManager.getDot('mcp.apiKey')).toBeNull();
+    });
+
+    it('leaves ordinary settings alone, so the bar is not a blanket refusal', async () => {
+      // A key is a legitimate credential. It just is not a person, and only the
+      // operator-only paths turn on that difference.
+      await enableLogin();
+      signedInUser = { userId: 'user_program', credential: 'api-key' };
+
+      const ok = await request(app)
+        .patch('/api/config')
+        .send({ ui: { theme: 'dark' } })
+        .expect(200);
+      expect(ok.body.config.ui.theme).toBe('dark');
+    });
+
+    it('lets the person in the cockpit through', async () => {
+      await enableLogin();
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      const ok = await request(app)
+        .patch('/api/config')
+        .send({ tunnel: { authtoken: 'chosen-by-a-person' } })
+        .expect(200);
+      expect(ok.body.config.tunnel.authtoken).toBe('chosen-by-a-person');
+    });
+
+    it('still refuses an agent that names itself, cookie or not', async () => {
+      // The cookie bar runs first and this caller CLEARS it, so what refuses here
+      // is the agent bar behind it. A session cookie riding along with an agent
+      // identity is a contradiction, not a promotion: clearing one bar never
+      // softens the other.
+      await enableLogin();
+      agentHeader = 'agent-token';
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+
+      const refused = await request(app)
+        .patch('/api/config')
+        .send({ auth: { enabled: false } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_only_config');
+    });
+
+    it('lets a person turn login ON without a cookie, because there cannot be one yet', async () => {
+      // The lockout this must never cause. `OwnerSetupHost.tsx` writes
+      // `auth.enabled: true` while login is still OFF, so the caller has no
+      // cookie and cannot get one until the write lands. A bar that read the
+      // patched state instead of the current state would make login impossible
+      // to turn on, and a reviewer locked themselves out of an instance this way.
+      signedInUser = undefined;
+      agentHeader = undefined;
+
+      const ok = await request(app)
+        .patch('/api/config')
+        .send({ auth: { enabled: true } })
+        .expect(200);
+      expect(ok.body.config.auth.enabled).toBe(true);
+    });
+  });
+
+  it('DOES let a header-stripping caller write these while login is OFF (the open residual)', async () => {
+    // Not an oversight, and pinned so nobody has to take the docs' word for it.
+    // With login off there is no cookie for ANYONE, so the DOR-505 bar cannot
+    // apply without locking a person out of their own settings: the cockpit in
+    // the default posture presents nothing this caller does not also present.
+    //
+    // If this test ever goes red, that is good news, but it means the residual
+    // closed and three places now say something false about DorkOS. Update them
+    // in the same change: the bar-2 comment in `routes/config.ts`, the
+    // "Who may write which setting" section of `contributing/configuration.md`,
+    // and "Settings your agents cannot change" in `docs/guides/action-approvals.mdx`.
+    signedInUser = undefined;
+    agentHeader = undefined;
+
+    const ok = await request(app)
+      .patch('/api/config')
+      .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
+      .expect(200);
+    expect(ok.body.config.tunnel.authtoken).toBe('planted');
+
+    const { configManager } = await import('../../services/core/config-manager.js');
+    expect(configManager.getDot('mcp.apiKey')).toBe('planted');
   });
 
   it('still lets an agent change ordinary settings', async () => {
