@@ -477,3 +477,50 @@ Four calls in there are decisions rather than defaults:
 - **Mute stays in**, despite costing a semver-keyed config migration, because a channel holding two `always`-mode agents will be noisy by construction and mute is what makes that survivable. This is the one item justified by the cascade behaviour rather than by Slack.
 
 The members panel is where `responseMode` finally becomes reachable. It is a per-room override the schema has carried since R1 (`RoomMemberSchema`) with no UI anywhere — so today an agent's behaviour in a room is fixed at join time and cannot be changed without editing the database.
+
+---
+
+## 13. What looking at it found
+
+Everything above was reasoned from source. This section is what a browser showed, plus the navigation design that follows from it. Screenshots taken against `main@3dffe652b` at 1440×900 with two seeded channels.
+
+### 13.1 Four defects that reading could not find
+
+- **Every channel renders its `#` twice.** `RoomAvatar` draws a lucide `Hash` glyph and `roomDisplayTitle` returns `` `#${slug}` ``, so a sidebar row reads `# #general` and so does the room header. Nothing asserts it; both halves are individually correct. The fix is not to strip the prefix from `roomDisplayTitle` — that string is also the tooltip, the `aria-label` and what a toast says, where `#general` is the right form. `RoomTitle` should render the bare name wherever a mark sits beside it, and every text-only caller keeps the prefixed form.
+
+- **The empty room instructs an action that has no affordance.** It says "Add the agents you want in this conversation, and everything they say will stay here." There is no way to add an agent to a room anywhere in the product (§12.4). The copy is right about the intent and wrong about the present tense; R6b is what makes it true. Until then the empty state is a promise the UI cannot keep.
+
+- **The document title ignores rooms entirely.** On `/channels` it reads `🐧 apps — DorkOS` — the _session's_ working directory. `use-document-title.ts` is keyed on `cwd` and returns the bare `'DorkOS'` when there is none, so a room you are actually reading never appears, and a backgrounded tab cannot tell you a room has activity. The machinery is already there: `buildTitle` takes a `tasksBadgeCount` rendered as `(N)` while hidden. Unread rooms belong in the same place.
+
+- **Channels sort by recency.** `room-store.ts:99` orders every kind by `lastActivityAt DESC`, so a quiet channel sinks and the list reorders under you. That is right for DMs and wrong for channels: Slack sorts channels alphabetically precisely so the list stops moving and you learn where things are. Sort DMs by recency, channels by name.
+
+### 13.2 Rooms in the command palette
+
+The palette (`features/command-palette/`) has fuzzy search, frecency, preview panels and prefix scoping — `@` for agents, `>` for commands. **Rooms are absent from all of it.** A channel is reachable only by finding it in the sidebar with a mouse.
+
+**Add `#` for rooms.** Slack and Discord both use it and it is the closest thing to universal muscle memory in this product category. Threads are child rooms, so they read as `#parent › thread title`.
+
+**DMs stay under `@`, not `#`.** This is not arbitrary: a channel is addressed by its name, a DM by who is in it. Typing `@ana` should offer _both_ "Message Ana" and "New session with Ana" — the same distinction §8.5 already draws between a session (about a directory) and a DM (about a participant). It is also where DorkOS diverges from every chat app: the entity you navigate to is also an actor you can dispatch work to, so the agent's palette row wants verbs, not just a destination.
+
+**Unread first in the zero-query state.** Rooms already carry `unreadCount`. Ranking unread above frecency turns `Cmd+K → Enter` into "go to the thing that needs me", which is what a mission-control surface should do and what a generic launcher does not. This is the single highest-value item in this section.
+
+**Contextual actions come from R6b's node list, not a second list.** When a room is open, the palette offers that room's actions — the _same_ pure `buildRoomRowMenuNodes(model)` that feeds the right-click menu and the `…` dropdown. Three surfaces, one model. Palettes drifting out of step with their equivalent right-click menus is the standard failure here, and `AgentRowMenuItems.tsx` already proves the pattern in this codebase.
+
+**Explicitly out of scope: message search.** Slack keeps navigation (`Cmd+K`) and message search (`Cmd+F`) as separate surfaces, and Teams' merged command bar is the cautionary example. We have no message index, and building one to satisfy a palette would be the tail wagging the dog.
+
+### 13.3 Unread, reachable without the mouse
+
+Unread is currently visible in exactly one place — a badge on a sidebar row — which means it is invisible whenever the sidebar is collapsed or the tab is backgrounded. That is the wrong shape for a product whose whole premise is that agents work while you are not looking.
+
+- Unread count in the document title, reusing `buildTitle`'s existing badge slot.
+- Next / previous unread room from the keyboard. Slack and Discord both bind this; `alt+↑` / `alt+↓` are free in `SHORTCUTS`.
+- `mod+shift+k` for a new direct message, matching Slack. Also free.
+
+### 13.4 Phasing
+
+| Phase   | Deliverable                                                                                                                                                           | Depends on |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| **R6c** | The four §13.1 defects                                                                                                                                                | R3b, R5    |
+| **R9**  | `#` prefix, rooms searchable, unread-first zero-query, `@agent` verbs, new-channel / new-DM actions, prefix legend in the empty state, title badge, unread navigation | R6a, R6b   |
+
+R9 lands after R6b so the contextual actions consume the node list rather than duplicating it. R6c is independent of both and only waits on the two PRs currently touching the same files.
