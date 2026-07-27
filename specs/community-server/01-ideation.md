@@ -109,9 +109,16 @@ A new, self-hostable app that **copies** `apps/site`'s proven auth setup (Better
 
 **Why Buzz is second and read-only.** An interface with one implementation is a fake abstraction, and the review exchange flagged exactly that risk. But **the MVP is not expressible on Nostr**: NIP-01 has no membership, no roster, no invites, no read cursors, and identity _is_ a keypair. Buzz-first would put the MVP behind an integration that structurally cannot deliver it.
 
-Read-only is the resolution. Reads in base NIP-01 are unauthenticated `REQ` subscriptions, so **no keypair is needed** and the zero-keys principle survives v1. It is small, it is real (point it at a live relay, not a mock), and it is genuinely foreign — WebSocket vs SSE, filters vs room ids, tags vs threads, no membership. It forces `canPost: false` / `hasRoster: false` to exist from day one, which is what stops our own server's assumptions being baked into the interface. Posting to Buzz comes later, when key handling earns its complexity.
+Read-only is the resolution. It is small, it is real (point it at a live relay, not a mock), and it is genuinely foreign — WebSocket vs SSE, filters vs room ids, tags vs threads, no membership. It forces `canPost: false` / `hasRoster: false` to exist from day one, which is what stops our own server's assumptions being baked into the interface. Posting to Buzz comes later, when key handling earns its complexity.
 
-_Open caveat, owned by the spike: if Buzz requires NIP-42 AUTH for reads on private channels, reads need a credential too, and step 4's estimate changes._
+**Amended 2026-07-27, after the spike** (`research/20260727_buzz-protocol-capability-spike.md`, Buzz @ `654f384906b5c7`). The premise that reads need no keypair was **wrong**, and the correction matters:
+
+- **Buzz requires NIP-42 AUTH for every read.** `crates/buzz-relay/src/handlers/req.rs:50-87` — `handle_req` matches `AuthState` and the catch-all arm sends `CLOSED "auth-required: not authenticated"` and returns. There is no anonymous variant in the enum (`connection.rs:37-47`) and no public-channel carve-out. Verified directly, not taken on report.
+- **But the credential is cheap and stays invisible.** `require_auth_token`, `pubkey_allowlist_enabled` and `require_relay_membership` all default to `false` (`config.rs:475-487`), so a **self-generated** keypair is enough, and an authenticated stranger reads every open channel without joining (`db/channel.rs:746-773` unions memberships with all open channels).
+
+**D3 survives intact.** The Nostr keypair is _infrastructure_, not identity: the local server generates one and holds it in a `0600` file, exactly as `resolveBetterAuthSecret` already does for the Better Auth secret. Nobody signs up with it, saves it, or can lose it. This is D2 paying for itself — because the adapter is server-side, a private key is a config file rather than a security defect in browser storage.
+
+A4's estimate rises by roughly one point (generate/persist a key, implement the NIP-42 challenge-response). The sequencing decision is unaffected, and the spike's four mismatches (§7 Q1) vindicate it.
 
 ## 4) The experience this is all for
 
@@ -154,18 +161,33 @@ The tracks are largely independent and converge at `apps/community`.
 
 ## 7) Open questions
 
-1. **Does Buzz require auth for reads?** Decision-critical for step 4's cost. Owned by the spike.
-2. **What exactly does `CommunityCapabilities` enumerate?** Falls out of the spike's capability-mapping table.
+1. ~~**Does Buzz require auth for reads?**~~ **Answered 2026-07-27: yes, always.** See the D5 amendment. Closed.
+
+2. **What exactly does `CommunityCapabilities` enumerate?** Largely answered by the spike's capability table. **Four mismatches are the ones that shape the interface** — each is a case where the obvious design would satisfy every backend of ours and fail against Buzz:
+
+   | Mismatch                                                                                                                                                                           | Why it bites                                                                                                                                                                                                                          | Candidate flag                                         |
+   | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+   | **No monotonic sequence.** Our `seq` cursor has no counterpart; WS paging is wall-clock `since`/`until` with no tiebreak, and the gap-free keyset cursor is HTTP-only.             | A cursor typed as a number bakes in an assumption two of three backends cannot meet. The cursor must be an **opaque adapter-minted token**. `AgentRuntime.subscribeSession`'s eager `StaleResumeCursorError` is the contract to copy. | `historyCursor: 'timestamp' \| 'keyset' \| 'sequence'` |
+   | **Threads are arbitrarily deep**, and are tags on a message _in the same channel_ — not child rooms.                                                                               | Directly contradicts ADR `260726-170125`'s "thread = child room." Argues for an entry-level `parentEntryId` relation rather than a room-level one.                                                                                    | `threadDepth: 1 \| 'unbounded'`                        |
+   | **Read cursors are encrypted to the user's own key**, keyed per device slot by wall-clock time. Server-side unread counts are _structurally impossible_, not merely unimplemented. | Our `(member, room)` cursor has no counterpart at all.                                                                                                                                                                                | `readCursor: 'server' \| 'client-opaque' \| 'none'`    |
+   | **Channel-level invites do not exist.** NIP-29 kind:9009 is a logged no-op; HTTP invites admit to the _community_, not a channel.                                                  | "Offer a specific person a specific room" is not expressible. Relevant to B1's design too.                                                                                                                                            | `invite: 'none' \| 'community' \| 'room'`              |
+
+   Also: room listing is **poll-only** on Buzz (channel-created is never pushed), and archiving **evicts live subscriptions** with `CLOSED "restricted: channel access revoked"` — an adapter must read that as "archived," not "error."
+
 3. **Does a room's `workspaceId` mean anything for a remote room?** `rooms.workspaceId` already exists; `specs/channel-workspace/` assumes local. Remote rooms may need it null.
-4. **How does an agent authenticate to a remote community?** Agents are members (requirement 4), but agents do not have email addresses. Likely an owner-attestation model — the research doc surveyed NIP-AA/NIP-OA and Mattermost's `Bot.OwnerId`, where revoking the human revokes their agents. Not yet decided.
-5. **Second role name.** Track B needs one role beyond `owner`. `accounts-and-auth` P3 proposed viewer/operator.
+
+4. **How does an agent authenticate to a remote community?** Agents are members (requirement 4), but agents do not have email addresses. Likely an owner-attestation model — the research doc surveyed NIP-AA/NIP-OA and Mattermost's `Bot.OwnerId`, where revoking the human revokes their agents. **The spike found Buzz's NIP-OA owner attestation is a working implementation of exactly this** — cryptographically binding an agent key to its human's. Read it before designing ours.
+
+5. **Second role name.** Track B needs one role beyond `owner`. `accounts-and-auth` P3 proposed viewer/operator. Note Buzz uses five (`Owner`/`Admin`/`Member`/`Guest`/`Bot`) while our `roomMembers` has no role column at all.
+
+6. **Tenancy addressing.** Buzz is one community per host (`core/tenant.rs:19-24`), so a room reference must be `(communityRef, roomId)` — a bare room id is ambiguous once a second community exists.
 
 ## 8) Related
 
 - `research/20260724_multi-user-communities.md` — the architecture research, thirteen decisions
 - `research/20260727_multi-user-review-exchange.md` — the seven-document adversarial review that produced the room model
 - `research/20260727_q3-contention-findings.md` — the concurrency measurement, and its limits
-- `research/20260727_buzz-protocol-capability-spike.md` — D5 step 1 (in progress at time of writing)
+- `research/20260727_buzz-protocol-capability-spike.md` — D5 step 1, **complete**. Buzz @ `654f384906b5c7`; 11-row capability table that becomes the `CommunityCapabilities` flag set.
 - ADRs `260726-170125`, `260726-170127`, `260726-193526` — the room model
 - ADR-0043 — file-canonical source of truth (the truth↔cache precedent behind D1)
 - ADR-0310 — cross-runtime aggregation with per-backend degradation (the precedent behind D2)
