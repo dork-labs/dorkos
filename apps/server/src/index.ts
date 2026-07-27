@@ -445,8 +445,11 @@ async function start() {
   // `lastPromptedVersion`, so a never-prompted install sends nothing this boot.
   // No-op (no timer, no network) unless all three hold. Curated events flow
   // through the owned ingest at https://dorkos.ai/api/telemetry/events.
+  // `?? false`, matching the install and heartbeat gates above and below. A
+  // config block that is present but missing this key is not a person saying
+  // yes to it, and absence is never read as consent.
   const usageConsent =
-    resolveTelemetryConsent(telemetryConfig?.usage ?? true, telemetryEnv) && tier1SendGate;
+    resolveTelemetryConsent(telemetryConfig?.usage ?? false, telemetryEnv) && tier1SendGate;
   registerUsageReporter({
     enabled: usageConsent,
     debug: telemetryDebug,

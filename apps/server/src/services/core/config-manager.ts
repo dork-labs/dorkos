@@ -71,24 +71,27 @@ import {
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
+import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
 
 /**
- * The later of two posture-floor instants, treating a missing one as "no floor".
+ * Read a config file that `conf` just refused, so its protections can be
+ * salvaged before the file is replaced.
  *
- * Both values are `Date.prototype.toISOString()` output — fixed-width UTC — so
- * ordering them as text orders them as instants, the same property the grant
- * store's own comparison relies on. The schema pins the format
- * (`standingGrantsVoidBefore` is `z.string().datetime().nullable()`), so a value that
- * reaches here through any validated path is comparable this way.
+ * Best-effort by design and never throws. A file that fails schema validation
+ * usually still parses as JSON — that is the whole reason salvage is possible —
+ * but a genuinely truncated file does not, and the caller is already handling a
+ * failure. An unreadable file simply yields `undefined` and the recovery
+ * proceeds on defaults, exactly as it did before.
  *
- * @param a - One instant, or `null`.
- * @param b - The other instant, or `null`.
- * @returns The later of the two, or `null` when both are absent.
+ * @param configPath - Absolute path to the config file being replaced.
+ * @returns The parsed contents, or `undefined` when they cannot be read.
  */
-function latestInstant(a: string | null, b: string | null): string | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  return a > b ? a : b;
+function readStoredConfigForSalvage(configPath: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -1442,7 +1445,14 @@ export class ConfigManager {
       this.store = new Conf<UserConfig>(confOptions);
       logger.info(`[Config] Loaded from ${configPath} (first run: ${this._isFirstRun})`);
     } catch (_error) {
+      // Read the doomed file BEFORE deleting it. The common failure is a file
+      // that parses as JSON but no longer satisfies the schema (a skipped
+      // rename, a narrowed enum, a hand edit), so the person's privacy and
+      // permission choices are sitting right there, perfectly readable, in the
+      // file we are about to replace. Losing state must not lose a protection.
+      let stored: unknown;
       if (fs.existsSync(configPath)) {
+        stored = readStoredConfigForSalvage(configPath);
         const backupPath = configPath + '.bak';
         fs.copyFileSync(configPath, backupPath);
         fs.unlinkSync(configPath);
@@ -1452,6 +1462,7 @@ export class ConfigManager {
       // Reuse the exact same options so the recovered store still has the
       // migration chain wired up.
       this.store = new Conf<UserConfig>(confOptions);
+      restoreProtectedState(this.store, stored, 'Recovered a damaged config');
     }
   }
 
@@ -1543,15 +1554,31 @@ export class ConfigManager {
     return ui === config.ui ? config : { ...config, ui };
   }
 
-  /** Reset a specific key or all keys to defaults */
+  /**
+   * Reset a specific key, or every key, to defaults.
+   *
+   * A whole-config reset keeps the settings a person moved to the protective
+   * side — their telemetry answer, a login gate they switched on, a bound they
+   * tightened (see `safe-defaults/protected-state.ts`). "Reset my preferences" is not
+   * consent to start sharing again, and this is the verb the operator's own
+   * phrasing was about: the safe option has to win *in case things get reset*.
+   *
+   * Resetting one key is the escape hatch and stays literal: `reset('telemetry')`
+   * really does put the telemetry block back to its defaults, because naming the
+   * section IS the explicit act that the blanket reset lacks.
+   *
+   * @param key - The top-level section to reset, or omitted for all of them.
+   */
   reset(key?: string): void {
     const licensedBefore = this.standingGrantsLicensed();
     const floorBefore = this.standingGrantVoidFloor();
     if (key) {
       this.store.reset(key as keyof UserConfig);
     } else {
+      const stored = this.store.store;
       this.store.clear();
       this.store.set(USER_CONFIG_DEFAULTS);
+      restoreProtectedState(this.store, stored, 'Reset your config');
     }
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
   }
