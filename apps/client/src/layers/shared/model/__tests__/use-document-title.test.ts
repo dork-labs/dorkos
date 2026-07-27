@@ -311,3 +311,123 @@ describe('tasks badge count', () => {
     expect(document.title).not.toMatch(/^\(\d+\)/);
   });
 });
+
+describe('the room on screen', () => {
+  beforeEach(() => {
+    document.title = '';
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+  });
+
+  it('names the room, not the working directory of a session you are not looking at', () => {
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/Users/test/apps',
+        activeForm: null,
+        ...defaults,
+        roomTitle: '#general',
+      })
+    );
+    // The bug read `🐧 apps — DorkOS` while `#general` was on screen.
+    expect(document.title).toBe('#general — DorkOS');
+  });
+
+  it('leaves the session title alone when no room is open', () => {
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/Users/test/apps',
+        activeForm: null,
+        ...defaults,
+        roomTitle: null,
+      })
+    );
+    expect(document.title).toMatch(/^.{1,2} apps — DorkOS$/);
+  });
+
+  it('badges a hidden tab with the number of rooms waiting', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        ...defaults,
+        roomTitle: '#general',
+        unreadRoomCount: 3,
+      })
+    );
+    expect(document.title).toBe('(3) #general — DorkOS');
+  });
+
+  it('shows no badge at all while the tab is being looked at', () => {
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        ...defaults,
+        roomTitle: '#general',
+        unreadRoomCount: 3,
+      })
+    );
+    expect(document.title).toBe('#general — DorkOS');
+  });
+
+  it('adds unread rooms to the tasks already waiting, as one number', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        isStreaming: false,
+        isWaitingForUser: false,
+        tasksBadgeCount: 2,
+        unreadRoomCount: 3,
+      })
+    );
+    // Two tasks and three rooms are five things wanting you, not two counters.
+    expect(document.title).toMatch(/^\(5\) /);
+  });
+
+  it('badges a tab parked on no session and no room', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({ cwd: null, activeForm: null, ...defaults, unreadRoomCount: 2 })
+    );
+    // The whole point of a title badge: the tab you are NOT on can still say so.
+    expect(document.title).toBe('(2) DorkOS');
+  });
+
+  it('drops the badge when you come back, and keeps the room named', () => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: null,
+        ...defaults,
+        roomTitle: '#general',
+        unreadRoomCount: 4,
+      })
+    );
+    expect(document.title).toBe('(4) #general — DorkOS');
+
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(document.title).toBe('#general — DorkOS');
+  });
+
+  it('leaves 🔔 with the session, which is the thing actually waiting', () => {
+    renderHook(() =>
+      useDocumentTitle({
+        cwd: '/test',
+        activeForm: 'Running tests',
+        isStreaming: false,
+        isWaitingForUser: true,
+        roomTitle: '#general',
+      })
+    );
+    // `🔔 #general` would read as the channel wanting you. It does not.
+    expect(document.title).toBe('#general — DorkOS');
+  });
+});

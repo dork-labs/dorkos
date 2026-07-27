@@ -34,6 +34,9 @@ vi.mock('@tanstack/react-router', () => ({
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
+  // The shell reads `?id=` to name the open room in the document title
+  // (`useRoomDocumentTitle`). No route under test carries one.
+  useSearch: () => ({}),
 }));
 
 // ── Mock child components with identifiable test markers ──

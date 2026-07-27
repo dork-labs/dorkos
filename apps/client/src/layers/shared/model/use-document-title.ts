@@ -12,46 +12,84 @@ interface UseDocumentTitleOptions {
   agentEmoji?: string;
   /** Tasks badge count — shown as (N) prefix when tab is hidden */
   tasksBadgeCount?: number;
+  /**
+   * The room on screen, already written the way it is spoken (`#general`). Takes
+   * the title over the session, because it is what the tab is actually showing.
+   */
+  roomTitle?: string | null;
+  /**
+   * How many ROOMS hold unread entries — not how many messages. "Three
+   * conversations want you" is the useful number, and counting messages would
+   * make one chatty agent look like an emergency.
+   */
+  unreadRoomCount?: number;
 }
 
 const MAX_ACTIVE_FORM_LENGTH = 40;
 
+/** What every title ends with, so a pinned tab is still recognisably ours. */
+const SUFFIX = ' — DorkOS';
+
 interface BuildTitleOpts {
-  cwd: string;
+  cwd: string | null;
+  roomTitle: string | null;
   activeForm: string | null;
   prefix: string;
   agentName?: string;
   agentEmoji?: string;
-  tasksBadgeCount?: number;
+  badgeCount: number;
   isTabHidden?: boolean;
 }
 
+/**
+ * The whole title, for whichever surface currently owns the tab.
+ *
+ * Three shapes, in priority order:
+ *
+ * 1. **A room** — `(2) #general — DorkOS`. Status prefixes stay behind with the
+ *    session: `🔔 #general` would read as the channel wanting you, when what is
+ *    waiting is a session you are not looking at. The badge still carries that.
+ * 2. **A session** — `(2) 🔔 🐧 apps — Running tests — DorkOS`, unchanged.
+ * 3. **Neither** — the bare product name, still badged, because a backgrounded
+ *    tab parked on `/agents` should say that a room wants you.
+ */
 function buildTitle({
   cwd,
+  roomTitle,
   activeForm,
   prefix,
   agentName,
   agentEmoji,
-  tasksBadgeCount,
+  badgeCount,
   isTabHidden,
 }: BuildTitleOpts): string {
-  const badgePrefix =
-    isTabHidden && tasksBadgeCount && tasksBadgeCount > 0 ? `(${tasksBadgeCount}) ` : '';
+  const badgePrefix = isTabHidden && badgeCount > 0 ? `(${badgeCount}) ` : '';
+  if (roomTitle) return `${badgePrefix}${roomTitle}${SUFFIX}`;
+  if (!cwd) return `${badgePrefix}DorkOS`;
+
   const emoji = agentEmoji ?? hashToEmoji(cwd);
   const label = agentName ?? cwd.split('/').filter(Boolean).pop() ?? cwd;
   let title = `${badgePrefix}${prefix}${emoji} ${label}`;
   if (activeForm) {
     const truncated =
       activeForm.length > MAX_ACTIVE_FORM_LENGTH
-        ? activeForm.slice(0, MAX_ACTIVE_FORM_LENGTH) + '\u2026'
+        ? activeForm.slice(0, MAX_ACTIVE_FORM_LENGTH) + '…'
         : activeForm;
-    title += ` \u2014 ${truncated}`;
+    title += ` — ${truncated}`;
   }
-  title += ' \u2014 DorkOS';
+  title += SUFFIX;
   return title;
 }
 
-/** Manage the browser document title with status prefixes, badge counts, and visibility tracking. */
+/**
+ * Manage the browser document title with status prefixes, badge counts, and
+ * visibility tracking.
+ *
+ * The tab names what you are looking at — the room you are reading, otherwise
+ * the session — and, while it is backgrounded, how many things are waiting.
+ * Tasks and unread rooms share that one `(N)`: they are both "something wants
+ * you", and two separate counters in a browser tab is noise, not information.
+ */
 export function useDocumentTitle({
   cwd,
   activeForm,
@@ -60,10 +98,14 @@ export function useDocumentTitle({
   agentName,
   agentEmoji,
   tasksBadgeCount,
+  roomTitle,
+  unreadRoomCount,
 }: UseDocumentTitleOptions) {
   const isTabHiddenRef = useRef(document.hidden);
   const hasUnseenResponseRef = useRef(false);
   const wasStreamingRef = useRef(isStreaming);
+
+  const badgeCount = (tasksBadgeCount ?? 0) + (unreadRoomCount ?? 0);
 
   // Single ref to keep visibility handler in sync with latest prop values
   const optionsRef = useRef({
@@ -72,7 +114,8 @@ export function useDocumentTitle({
     isWaitingForUser,
     agentName,
     agentEmoji,
-    tasksBadgeCount,
+    badgeCount,
+    roomTitle,
   });
   useEffect(() => {
     optionsRef.current = {
@@ -81,9 +124,10 @@ export function useDocumentTitle({
       isWaitingForUser,
       agentName,
       agentEmoji,
-      tasksBadgeCount,
+      badgeCount,
+      roomTitle,
     };
-  }, [cwd, activeForm, isWaitingForUser, agentName, agentEmoji, tasksBadgeCount]);
+  }, [cwd, activeForm, isWaitingForUser, agentName, agentEmoji, badgeCount, roomTitle]);
 
   // Track tab visibility and rebuild title on return (clears 🏁 and badge)
   useEffect(() => {
@@ -93,21 +137,20 @@ export function useDocumentTitle({
         const opts = optionsRef.current;
         // Rebuild when returning from hidden: clears (N) badge and/or 🏁 prefix
         const hadUnseenResponse = hasUnseenResponseRef.current;
-        const hadBadge = (opts.tasksBadgeCount ?? 0) > 0;
+        const hadBadge = opts.badgeCount > 0;
         if (hadUnseenResponse || hadBadge) {
           hasUnseenResponseRef.current = false;
-          if (opts.cwd) {
-            const prefix = opts.isWaitingForUser ? '🔔 ' : '';
-            document.title = buildTitle({
-              cwd: opts.cwd,
-              activeForm: opts.activeForm,
-              prefix,
-              agentName: opts.agentName,
-              agentEmoji: opts.agentEmoji,
-              tasksBadgeCount: opts.tasksBadgeCount,
-              isTabHidden: false,
-            });
-          }
+          const prefix = opts.isWaitingForUser ? '🔔 ' : '';
+          document.title = buildTitle({
+            cwd: opts.cwd,
+            roomTitle: opts.roomTitle ?? null,
+            activeForm: opts.activeForm,
+            prefix,
+            agentName: opts.agentName,
+            agentEmoji: opts.agentEmoji,
+            badgeCount: opts.badgeCount,
+            isTabHidden: false,
+          });
         }
       }
     };
@@ -125,12 +168,8 @@ export function useDocumentTitle({
 
   // Build title (runs on all relevant state changes)
   useEffect(() => {
-    if (!cwd) {
-      document.title = 'DorkOS';
-      return;
-    }
-
-    // Compute prefix (priority: 🔔 > 🏁 > none)
+    // Compute prefix (priority: 🔔 > 🏁 > none). Only the session title wears
+    // one; `buildTitle` drops it for the other two shapes.
     let prefix = '';
     if (isWaitingForUser) {
       prefix = '🔔 ';
@@ -140,12 +179,22 @@ export function useDocumentTitle({
 
     document.title = buildTitle({
       cwd,
+      roomTitle: roomTitle ?? null,
       activeForm,
       prefix,
       agentName,
       agentEmoji,
-      tasksBadgeCount,
+      badgeCount,
       isTabHidden: isTabHiddenRef.current,
     });
-  }, [cwd, activeForm, isStreaming, isWaitingForUser, agentName, agentEmoji, tasksBadgeCount]);
+  }, [
+    cwd,
+    roomTitle,
+    activeForm,
+    isStreaming,
+    isWaitingForUser,
+    agentName,
+    agentEmoji,
+    badgeCount,
+  ]);
 }
