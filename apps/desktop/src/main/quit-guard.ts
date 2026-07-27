@@ -152,32 +152,47 @@ async function runQuitSequence(options: QuitGuardOptions): Promise<void> {
 }
 
 /** What to say for each way of interrupting agents. The verb has to match the button. */
-const INTENT_COPY: Record<
-  QuitIntent,
-  { title: string; verb: string; confirm: string; detail: string }
-> = {
-  quit: {
-    title: 'Quit DorkOS?',
-    verb: 'Quit',
-    confirm: 'Quit Anyway',
-    detail:
-      'Quitting stops them where they are. To leave them running, close the window instead: ' +
-      'DorkOS keeps going in the background and your agents carry on.',
-  },
-  restart: {
-    title: 'Restart to Update?',
-    verb: 'Restart',
-    confirm: 'Restart Anyway',
-    // No "close the window instead" here: on the native branch this dialog
-    // only ever runs when there is no window, and closing one would not
-    // install the update they just asked for. What is true is that declining
-    // costs them nothing, because the update lands on the next quit anyway
-    // (`autoInstallOnAppQuit`, set in auto-updater.ts).
-    detail:
-      'Restarting installs the update and stops them where they are. To let them finish, ' +
-      'choose Keep Working: the update is applied the next time you quit DorkOS.',
-  },
+const INTENT_COPY: Record<QuitIntent, { title: string; verb: string; confirm: string }> = {
+  quit: { title: 'Quit DorkOS?', verb: 'Quit', confirm: 'Quit Anyway' },
+  restart: { title: 'Restart to Update?', verb: 'Restart', confirm: 'Restart Anyway' },
 };
+
+/**
+ * How to say "leave them running", which depends on what is still on screen.
+ *
+ * A quit asked with a window open can point at the window. Asked without one —
+ * the last window has already closed, on a platform where the tray could not be
+ * created — "close the window instead" is advice about a window that is not
+ * there. What is true then is that the agents keep going and launching DorkOS
+ * again brings the window back: the second launch fails the single-instance
+ * lock, and `second-instance` routes it to `showMainWindow` (see `index.ts`).
+ *
+ * @param intent - What is about to happen.
+ * @param hasWindow - Whether there is a live window to point at.
+ */
+function detailFor(intent: QuitIntent, hasWindow: boolean): string {
+  if (intent === 'restart') {
+    // Never "close the window instead" here: on the native branch this dialog
+    // only ever runs when there is no window, and closing one would not install
+    // the update they just asked for. What is true is that declining costs them
+    // nothing, because the update lands on the next quit anyway
+    // (`autoInstallOnAppQuit`, set in setupAutoUpdater).
+    return (
+      'Restarting installs the update and stops them where they are. To let them finish, ' +
+      'choose Keep Working: the update is applied the next time you quit DorkOS.'
+    );
+  }
+  if (hasWindow) {
+    return (
+      'Quitting stops them where they are. To leave them running, close the window instead: ' +
+      'DorkOS keeps going in the background and your agents carry on.'
+    );
+  }
+  return (
+    'Quitting stops them where they are. To leave them running, choose Keep Working: ' +
+    'DorkOS keeps going in the background, and opening DorkOS again brings the window back.'
+  );
+}
 
 /**
  * Ask before cutting agents off mid-run.
@@ -188,7 +203,8 @@ const INTENT_COPY: Record<
  *
  * @param getWindow - Point-in-time accessor for the window to anchor to.
  * @param activeAgents - How many agents are mid-run.
- * @param intent - What is about to happen; see {@link INTENT_COPY}.
+ * @param intent - What is about to happen; see {@link INTENT_COPY} and
+ *   {@link detailFor}.
  * @returns Whether the person confirmed.
  */
 async function confirmQuit(
@@ -198,20 +214,20 @@ async function confirmQuit(
 ): Promise<boolean> {
   const subject = activeAgents === 1 ? '1 agent is' : `${activeAgents} agents are`;
   const copy = INTENT_COPY[intent];
+  const win = getWindow();
+  const hasWindow = win !== null && !win.isDestroyed();
   const options: Electron.MessageBoxOptions = {
     type: 'question',
     title: copy.title,
     message: `${subject} still working. ${copy.verb} anyway?`,
-    detail: copy.detail,
+    detail: detailFor(intent, hasWindow),
     buttons: ['Keep Working', copy.confirm],
     defaultId: PRIMARY_BUTTON,
     cancelId: PRIMARY_BUTTON,
   };
 
-  const win = getWindow();
-  const { response } =
-    win && !win.isDestroyed()
-      ? await dialog.showMessageBox(win, options)
-      : await dialog.showMessageBox(options);
+  const { response } = hasWindow
+    ? await dialog.showMessageBox(win, options)
+    : await dialog.showMessageBox(options);
   return response !== PRIMARY_BUTTON;
 }

@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import type {
   Display,
   HandlerDetails,
@@ -300,6 +301,14 @@ export const nativeImage = {
 export const nativeTheme = { shouldUseDarkColors: true };
 
 /**
+ * Electron's **own** `autoUpdater` — the one behind `process._linkedBinding`,
+ * not electron-updater's wrapper (that lives in `electron-updater-mock.ts`).
+ * `before-quit-for-update` is announced here on both platforms, so
+ * `auto-updater.ts` listens on it; a test drives it with `.emit(...)`.
+ */
+export const autoUpdater = new EventEmitter();
+
+/**
  * Electron's `dialog.showMessageBox` is overloaded: anchored to a window, or
  * not. Modelling both arms keeps the arguments in `.mock.calls`, which is how
  * tests assert *which* window a dialog was anchored to — a zero-argument stub
@@ -371,6 +380,7 @@ export function resetElectronMock(): void {
 
   nativeImage.createFromPath.mockClear();
   nativeTheme.shouldUseDarkColors = true;
+  autoUpdater.removeAllListeners();
 
   dialog.showMessageBox = vi.fn<ShowMessageBox>(() =>
     Promise.resolve({ response: 0, checkboxChecked: false })

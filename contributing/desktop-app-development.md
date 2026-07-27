@@ -238,18 +238,23 @@ The timeout is still the design, not a safety net: a person pressing Cmd+W must 
 
 `auto-updater.ts` owns that state, and it asks about mid-run agents **before** arming the installer rather than from `before-quit` — by then the answer cannot change anything, because Windows has already run the installer and macOS may have handed off to Squirrel. `quit-guard.ts` takes it as an option rather than importing it, so it stays a leaf module. The wording differs from an ordinary quit ("Restart anyway?", not "Quit anyway?"), because telling someone who asked to install an update to close the window instead is advice that does not install their update.
 
-**It is a one-shot token, not a latch, because `quitAndInstall()` does not always quit.** Read `node_modules/electron-updater` before changing this:
+**Two states, not one, because the two consumers have opposite tolerances.** One flag serving both is what broke here twice.
 
-- `MacUpdater.quitAndInstall()` quits only `if (this.squirrelDownloadedUpdate)`. Otherwise it registers a deferred listener and **returns with the app alive** — and that flag is set only once _Squirrel_ has fetched and validated the update, long after the `update-downloaded` that raised the in-app card. The gap between the card appearing and Squirrel finishing is exactly when someone clicks the button.
+| State                                     | Consumer              | Set too long               | Cleared too early                         |
+| ----------------------------------------- | --------------------- | -------------------------- | ----------------------------------------- |
+| `restartArmed` (`isRestartingToUpdate()`) | the background notice | notice skipped once        | **notice appears mid-update, flag burnt** |
+| the confirmation, timestamped             | the quit guard        | **agents killed silently** | one extra dialog during an update         |
+
+So `restartArmed` never expires on its own, and the confirmation is spent on use (`consumeUpdateRestart()`) and times out. Both clear on an updater `error`, which is how a rejected update ends.
+
+**`quitAndInstall()` does not always quit, and "deferred" is not "did not happen".** Read `node_modules/electron-updater` before changing this:
+
+- `MacUpdater.quitAndInstall()` quits only `if (this.squirrelDownloadedUpdate)`. Otherwise it registers a deferred `update-downloaded` listener and **returns with the app alive** — and the restart still happens, later, when Squirrel finishes. That flag is set long after the `update-downloaded` that raised the in-app card, so the gap between the card appearing and Squirrel finishing is exactly when someone clicks the button. **Treating that branch as "the restart did not take" puts the notice back in the middle of the update**, which is the bug this section exists to describe.
 - `BaseUpdater.quitAndInstall()` (Windows) skips `app.quit()` entirely when `install()` returns false.
 
-So it comes down three ways: spent by the quit it was set for (`consumeUpdateRestart()`), dropped when `quitAndInstall()` returns without a quit under way, and dropped on any updater `error`. Left latched, a restart that silently declined to happen would disable the "agents are still working" confirmation for the rest of the session.
+Electron's own `autoUpdater` emits `before-quit-for-update` as the install-quit begins, including on the deferred branch, and that re-authorises a restart slower than the timeout. It is a refinement, never the mechanism: it is verifiable in `BaseUpdater.js` (emitted by hand) and Electron's MSIX updater, but on macOS it comes from the C++ binding and could not be verified from the repo. Nothing depends on it firing.
 
-**Two rules for anything that reads it.** Peek (`isRestartingToUpdate()`) if the quit still needs the token afterwards; spend it exactly once, in the quit sequence. And **never let it skip a quit** — `window-all-closed`'s `if (!hasTray()) app.quit()` is unconditional, because "running with no window and no tray" is the one state this design exists to prevent, and a stuck flag must not be able to produce it. The flag may silence the notice; it may not stop the quit.
-
-### First paint
-
-Windows are created with `show: false` and a `backgroundColor` matching the cockpit's own, then revealed on `ready-to-show` (with a 4-second fallback, because a window that never appears is far worse than a flash). `maximize()` has to happen in that reveal, not at construction — a hidden window maximized at construction opens un-maximized on macOS.
+**And never let any of it skip a quit.** `window-all-closed`'s `if (!hasTray()) app.quit()` is unconditional, because "running with no window and no tray" is the one state this design exists to prevent, and no flag may be able to produce it. The state may silence the notice; it may not stop the quit.
 
 ## 7. ⚠️ Runtime-QA gotcha: a "hung" packaged launch is almost always Gatekeeper
 

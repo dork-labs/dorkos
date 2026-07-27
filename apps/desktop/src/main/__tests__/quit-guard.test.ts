@@ -158,6 +158,37 @@ describe('confirming a quit while agents are working', () => {
     expect(consumeUpdateRestart).toHaveBeenCalledTimes(1);
   });
 
+  it('does not tell you to close a window that is not there', async () => {
+    // Reachable: the last window has closed and the tray could not be created,
+    // so `window-all-closed` quits — through this guard. "Close the window
+    // instead" would be advice about a window that is already gone. What is
+    // true is that relaunching brings it back (`second-instance`).
+    answerWith(0);
+    arm({ countActiveAgents: () => 2, getWindow: () => null });
+
+    await emitBeforeQuit();
+
+    const [options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
+      Electron.MessageBoxOptions,
+    ];
+    expect(options.detail).not.toContain('close the window');
+    expect(options.detail).toContain('opening DorkOS again brings the window back');
+  });
+
+  it('points at the window when there is one to point at', async () => {
+    answerWith(0);
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    arm({ countActiveAgents: () => 2, getWindow: () => win as unknown as Electron.BrowserWindow });
+
+    await emitBeforeQuit();
+
+    const [, options] = vi.mocked(dialog.showMessageBox).mock.calls[0] as [
+      unknown,
+      Electron.MessageBoxOptions,
+    ];
+    expect(options.detail).toContain('close the window instead');
+  });
+
   it('anchors the confirmation to the window when there is one', async () => {
     answerWith(1);
     const win = new BrowserWindow({ width: 1200, height: 800 });

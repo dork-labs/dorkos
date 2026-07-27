@@ -91,7 +91,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   getUpdateStatus: (): Promise<UpdateStatus | null> => ipcRenderer.invoke('get-update-status'),
   /**
-   * Subscribe to `Cmd/Ctrl+W` ("Close Tab" in the Window menu).
+   * Subscribe to `Cmd/Ctrl+W` ("Close" in the Window menu — it is relabelled
+   * "Close Tab" by whichever change first subscribes here, not before).
    *
    * **Subscribing is what claims the keystroke.** Until you call this, and
    * again after you unsubscribe, `Cmd/Ctrl+W` closes the window immediately
