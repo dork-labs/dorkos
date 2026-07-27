@@ -255,7 +255,13 @@ describe('TelegramAdapter', () => {
     _capturedOnStart = null;
     lastMockServer = null;
 
-    adapter = new TelegramAdapter('tg1', tgConfig({ token: 'test-token', mode: 'polling' }));
+    // User 42 is the approver these tests press buttons as. Without a named
+    // approver every approval is refused, which is the point of DOR-609 — the
+    // refusal path has its own tests below.
+    adapter = new TelegramAdapter(
+      'tg1',
+      tgConfig({ token: 'test-token', mode: 'polling', approverAllowlist: ['42'] })
+    );
     mockRelay = createMockRelay();
   });
 
@@ -1119,6 +1125,74 @@ describe('TelegramAdapter', () => {
     // Decision edit uses HTML parse mode (legacy Markdown hard-fails)
     expect(ctx.editMessageText).toHaveBeenCalledWith('✅ <b>Tool Approved</b>', {
       parse_mode: 'HTML',
+    });
+  });
+
+  /**
+   * DOR-609. The approval card lands in the same chat that asked for the turn,
+   * so without this check the person who sent the message could approve their
+   * own tool call with one tap. `respondedBy` recorded who acted; nothing
+   * decided who may.
+   */
+  describe('approval authorization', () => {
+    /** Deliver a card and press Approve as `userId`. */
+    async function pressApproveAs(userId: number) {
+      await adapter.start(mockRelay);
+      const envelope = createEnvelope('relay.human.telegram.tg1.12345', {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'toolu_auth',
+          toolName: 'Bash',
+          input: '{"command":"rm -rf ~"}',
+          timeoutMs: 0,
+          agentId: 'agent-1',
+          ccaSessionKey: 'sess-abc',
+        },
+      });
+      await adapter.deliver('relay.human.telegram.tg1.12345', envelope);
+
+      const sendCall = mockSendMessage.mock.calls.at(-1)!;
+      const approveData = (
+        sendCall[2] as { reply_markup: { inline_keyboard: { callback_data: string }[][] } }
+      ).reply_markup.inline_keyboard[0][0].callback_data;
+
+      const ctx = {
+        callbackQuery: { data: approveData },
+        from: { id: userId },
+        answerCallbackQuery: vi.fn().mockResolvedValue(true),
+        editMessageText: vi.fn().mockResolvedValue(true),
+      };
+      vi.mocked(mockRelay.publish).mockClear();
+      await capturedCallbackQueryHandler!(ctx);
+      return ctx;
+    }
+
+    it('refuses a user who is not on the approver list', async () => {
+      const ctx = await pressApproveAs(9999);
+
+      expect(mockRelay.publish).not.toHaveBeenCalled();
+      expect(ctx.editMessageText).not.toHaveBeenCalled();
+      expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ show_alert: true })
+      );
+    });
+
+    it('allows the named approver', async () => {
+      await pressApproveAs(42);
+
+      expect(mockRelay.publish).toHaveBeenCalledWith(
+        'relay.system.approval.agent-1',
+        expect.objectContaining({ approved: true, respondedBy: '42' }),
+        { from: 'telegram:42' }
+      );
+    });
+
+    it('refuses everyone when no approver list is configured', async () => {
+      adapter = new TelegramAdapter('tg1', tgConfig({ token: 'test-token', mode: 'polling' }));
+      const ctx = await pressApproveAs(42);
+
+      expect(mockRelay.publish).not.toHaveBeenCalled();
+      expect(ctx.editMessageText).not.toHaveBeenCalled();
     });
   });
 

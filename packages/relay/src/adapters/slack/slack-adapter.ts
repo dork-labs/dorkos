@@ -28,6 +28,7 @@ import {
 import type { ActiveStream, SlackOutboundState } from './outbound.js';
 import { SlackPlatformClient } from './slack-platform-client.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
+import { mayApprove } from '../approver-allowlist.js';
 import { FATAL_SLACK_ERRORS, SLACK_MANIFEST } from './slack-manifest.js';
 
 // Re-export for consumers that import from this module
@@ -338,6 +339,26 @@ export class SlackAdapter extends BaseRelayAdapter {
         sessionId: string;
         agentId: string;
       };
+
+      // Authorization, not identification. `respondedBy` below records who
+      // acted; it never decided who may. Without this check the person whose
+      // message triggered the tool call could approve it themselves, one tap,
+      // from their own device (DOR-609).
+      if (!mayApprove(this.config.approverAllowlist, btnBody.user?.id)) {
+        this.logger.warn(
+          `[Slack] refused tool approval from unauthorized user ${btnBody.user?.id ?? 'unknown'}` +
+            ` for toolCallId=${toolCallId}`
+        );
+        await client.chat.postEphemeral({
+          channel: btnBody.channel?.id ?? '',
+          user: btnBody.user?.id ?? '',
+          text:
+            'You are not on this integration’s approver list, so this tool call was not ' +
+            'authorized. Whoever runs this DorkOS can add you under the integration’s ' +
+            '“Approvers” setting.',
+        });
+        return;
+      }
 
       // Clear any pending timeout for this approval
       clearApprovalTimeout(this.outboundState, toolCallId);

@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import type { PermissionMode } from '@dorkos/shared/schemas';
 import type {
   RelayPublisher,
   AdapterContext,
@@ -145,13 +146,20 @@ export async function handleAgentMessage(
   });
 
   // Extract binding-enriched fields from the payload resolved above.
-  const bindingPerms = payloadObj?.__bindingPermissions as { permissionMode?: string } | undefined;
+  const bindingPerms = payloadObj?.__bindingPermissions as
+    | { permissionMode?: PermissionMode }
+    | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred
   const payloadCwd = payloadObj?.cwd as string | undefined;
   const effectiveCwd = payloadCwd ?? context?.agent?.directory;
-  const effectivePermissionMode = bindingPerms?.permissionMode ?? 'default';
+  // A fallback is correct HERE and nowhere upstream: this reads a JSON payload
+  // off the relay bus, so the field can be absent for reasons the binding never
+  // controls (an older publisher, a hand-built envelope). It lands on the
+  // prompting mode — absence is not consent (DOR-604). The in-process readers
+  // that used to default to 'acceptEdits' were the bug and are gone.
+  const effectivePermissionMode: PermissionMode = bindingPerms?.permissionMode ?? 'default';
   log.debug?.(
     `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
       `payloadCwd=${payloadCwd ?? '(none)'}, context.agent.directory=${context?.agent?.directory ?? '(none)'}, ` +

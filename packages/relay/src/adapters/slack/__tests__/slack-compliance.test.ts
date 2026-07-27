@@ -27,6 +27,7 @@ const SLACK_CONFIG: SlackAdapterConfig = {
   respondMode: 'thread-aware',
   dmPolicy: 'open',
   dmAllowlist: [],
+  approverAllowlist: [],
   channelOverrides: {},
 };
 

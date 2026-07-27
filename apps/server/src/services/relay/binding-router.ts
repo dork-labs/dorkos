@@ -313,8 +313,11 @@ export class BindingRouter {
                 canReply: binding.canReply,
                 canInitiate: binding.canInitiate,
                 // No fallback: `AdapterBindingSchema` resolves this on parse and
-                // `safe-defaults.ts` carries legacy entries forward, so the mode
-                // is decided in exactly one place (DOR-604).
+                // `safe-defaults.ts` carries legacy entries forward, so a
+                // binding always carries a mode (DOR-604). The consumer
+                // (`agent-handler.ts`) does keep one, because it reads this back
+                // off the wire as JSON where the field can genuinely be absent —
+                // that one lands on the prompting mode, not `acceptEdits`.
                 permissionMode: binding.permissionMode,
               },
             }

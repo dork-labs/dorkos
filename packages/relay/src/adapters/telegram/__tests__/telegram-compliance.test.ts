@@ -84,6 +84,7 @@ describe('Telegram — capability compliance', () => {
         token: '123456789:FAKEfakeFAKEfakeFAKEfakeFAKEfakeFA1',
         mode: 'polling',
         streaming: true,
+        approverAllowlist: [],
       }),
     deliverSubject: `${CODEC.prefix}.424242`,
     codec: CODEC,

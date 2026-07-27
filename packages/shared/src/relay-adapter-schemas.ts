@@ -69,6 +69,11 @@ export const TelegramAdapterConfigSchema = z
     /** Webhook validation secret — a credential reference at rest (see {@link AdapterSecretSchema}). */
     webhookSecret: AdapterSecretSchema.optional(),
     streaming: z.boolean().default(true),
+    /**
+     * Telegram user IDs who may approve a tool call this agent asks about.
+     * Empty by default, and empty authorizes nobody (DOR-609).
+     */
+    approverAllowlist: z.array(z.string()).default([]),
   })
   .openapi('TelegramAdapterConfig');
 
@@ -128,6 +133,14 @@ export const SlackAdapterConfigSchema = z
      */
     dmPolicy: z.enum(['open', 'allowlist']).default('allowlist'),
     dmAllowlist: z.array(z.string()).default([]),
+    /**
+     * Slack user IDs who may approve a tool call this agent asks about.
+     * Empty by default, and empty authorizes nobody — see
+     * `@dorkos/relay` `adapters/approver-allowlist.ts` (DOR-609). Deliberately
+     * separate from {@link SlackAdapterConfigSchema.shape.dmAllowlist}: talking
+     * to an agent and authorizing a shell command are different privileges.
+     */
+    approverAllowlist: z.array(z.string()).default([]),
     channelOverrides: z
       .record(
         z.string(),

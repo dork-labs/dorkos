@@ -28,11 +28,24 @@
  * the value the old default gave it. After the first save the value is explicit
  * on disk, and this code never touches that entry again.
  *
- * Absence is the whole signal, and it is a sound one: both schemas materialize
- * these keys on write (`BindingStore.create` parses through
- * `CreateBindingRequestSchema` before saving; `saveAdapterConfig` writes back
- * what `loadAdapterConfig` parsed), so a missing key means the entry predates
- * the field — never that someone chose the value and it got dropped.
+ * ## Absence is the signal, and what it is allowed to mean
+ *
+ * A missing key means **the entry was written by a build older than this one**.
+ * That holds only because every write path now parses before it persists:
+ * `BindingStore.create` through `CreateBindingRequestSchema`, and
+ * `AdapterManager.parseForPersist` through `AdapterConfigSchema` on both the add
+ * and the update path.
+ *
+ * That second one is load-bearing and was not true when this file was first
+ * written. `addAdapter` cast the caller's raw request body (`as AdapterConfig`)
+ * and pushed it unparsed, so a Slack integration created seconds ago — by a
+ * direct `POST /api/relay/adapters`, an older client bundle, or a script —
+ * reached disk with no `dmPolicy` and got carried straight back to `'open'` by
+ * the code below. The fix belongs there, not here: a carry-forward cannot tell
+ * old from new if the writer never records the difference.
+ *
+ * So this runs exactly once per entry. After the first save following an
+ * upgrade the value is explicit on disk and this code never touches it again.
  *
  * ## This does not preserve the vulnerability silently
  *

@@ -122,8 +122,13 @@ export type ModeDecision = 'allow' | 'ask';
  * stays true end-to-end — the auto-accepting happens one layer up, where it can
  * still tell an in-workspace edit from an escape.
  *
- * `bypassPermissions` is the sole exception because it means "skip all tool
- * approval prompts", and the CLI does not consult this callback under it at all.
+ * `bypassPermissions` is the sole exception, because it means "skip all tool
+ * approval prompts". Note this is a policy choice, not an unreachable branch:
+ * the CLI resolves most calls itself under that mode, but it still escalates a
+ * few — a dangerous `rm`/`rmdir`, for one — and those do arrive here, where this
+ * function allows them. That is the same "the CLI escalated on purpose and we
+ * rubber-stamped it" shape fixed above for `acceptEdits`, and it is deliberate
+ * only because the mode is named for it. Tracked separately.
  *
  * @param mode - The session's permission mode.
  * @returns `'allow'` to run without asking, `'ask'` to raise an approval card.
@@ -131,7 +136,7 @@ export type ModeDecision = 'allow' | 'ask';
 export function resolveModeDecision(mode: PermissionMode): ModeDecision {
   switch (mode) {
     // "Skip all tool approval prompts" — this mode IS consent. The CLI resolves
-    // it upstream and never reaches here; DorkOS agrees rather than contradict.
+    // most calls under it upstream, but not quite all (see the TSDoc above).
     case 'bypassPermissions':
       return 'allow';
 
@@ -494,7 +499,10 @@ export function createCanUseTool(
 }
 
 /**
- * Handle tool approval — pause when permissionMode is 'default'.
+ * Handle tool approval — pause and wait for a person.
+ *
+ * Reached for every mode except `bypassPermissions` (see
+ * {@link resolveModeDecision}), not just `'default'` as this once said.
  *
  * Pushes an `approval_required` SSE event to the client, registers a pending
  * interaction, and waits for the user's response (approve, always-allow, or deny).
