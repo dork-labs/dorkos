@@ -51,8 +51,22 @@ beforeEach(() => {
   });
 });
 
+const tabCleanups: (() => void)[] = [];
+
+/**
+ * Register a strip and collect what it opens. Torn down in `afterEach` rather
+ * than at the end of the test body, so a failing assertion cannot leak an opener
+ * into the next case and make a cascade look like a second detection.
+ */
+function captureTabOpens(): string[] {
+  const opened: string[] = [];
+  tabCleanups.push(registerTabOpener((href) => opened.push(href)));
+  return opened;
+}
+
 afterEach(() => {
   cleanup();
+  tabCleanups.splice(0).forEach((clear) => clear());
   // Every test starts in a browser; the ones about the desktop app say so.
   leaveDesktopShell();
 });
@@ -392,8 +406,7 @@ describe('CommandPaletteDialog', () => {
     // `/session` with only the agent's directory — the loader resolves which
     // session that becomes.
     enterDesktopShell();
-    const opened: string[] = [];
-    const unregister = registerTabOpener((href) => opened.push(href));
+    const opened = captureTabOpens();
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -415,7 +428,6 @@ describe('CommandPaletteDialog', () => {
     expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
 
     openSpy.mockRestore();
-    unregister();
   });
 
   it('opens a real browser tab from Open in New Tab in the browser', () => {
@@ -447,8 +459,7 @@ describe('CommandPaletteDialog', () => {
     // action; only where it lands differs. Desktop-only — see the browser case
     // above, where the row does not exist at all.
     enterDesktopShell();
-    const opened: string[] = [];
-    const unregister = registerTabOpener((href) => opened.push(href));
+    const opened = captureTabOpens();
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(<CommandPaletteDialog />);
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -471,7 +482,6 @@ describe('CommandPaletteDialog', () => {
     expect(target.searchParams.get('session')).toBeTruthy();
 
     openSpy.mockRestore();
-    unregister();
   });
 
   it('calls recordUsage and setDir when Open Here is clicked in sub-menu', () => {

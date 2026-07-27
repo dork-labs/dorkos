@@ -111,10 +111,14 @@ when `isDesktopShell()` is false, so in a browser no listener exists at all.
 | `Cmd+Shift+]` / `Ctrl+...` | Next tab (same)                                                   |
 
 **These are live in the desktop app only, and that is the design (DOR-568).** The tab strip they
-drive is a desktop-app feature: a browser already has tabs, and these chords already address them
-there. So the browser cockpit registers nothing and cancels nothing. Do not "fix" this by
-`preventDefault`ing harder, and do not re-enable the strip in the browser to give the chords
-something to do — that is the regression this gate exists to prevent.
+drive is a desktop-app feature: a browser already has tabs, and a browser's tab keys are its own.
+**Do not upgrade that into "the browser already binds these four".** Which chords a browser binds is
+its business and varies by platform — `Cmd+Shift+[`/`]` is a macOS Chrome/Safari binding, while
+Chrome and Firefox on Windows and Linux step tabs with `Ctrl+PageUp`/`Ctrl+PageDown` — so on those
+two of the four do nothing at all, and that is fine. The claim we can make is the one about us: the
+browser cockpit registers nothing and cancels nothing. Do not "fix" this by `preventDefault`ing
+harder, and do not re-enable the strip in the browser to give the chords something to do — that is
+the regression this gate exists to prevent.
 
 Inside the desktop strip the roving `tablist` traversal (`Tab` to enter, arrows to move,
 `Home`/`End`, `Delete` to close) and the `+` button are the mouse-free path for anyone who does not
@@ -160,11 +164,20 @@ the only way to ask for a second cockpit window. They resolve the same `?session
 (`agentHref`), so they agree on which session an agent is on, and neither inherits the `?session=`
 you were already reading.
 
-**Who owns "a new tab" depends on the surface** (DOR-568). `main.tsx` calls `registerTabOpener` only
-when `isDesktopShell()`, so `target: 'tab'` reaches the in-window strip on desktop and falls through
-to `window.open(url, '_blank')` — a real browser tab — in a browser. The label is honest on both. The
-Obsidian embed (`supportsNewTab() === false`) has neither, so a tab request opens in place rather
-than being dropped.
+**Who owns "a new tab" depends on the surface** (DOR-568), and `link-navigation.ts` is what decides.
+`openLink` uses a registered `tabOpener` only when `isDesktopShell()` is true as well, so
+`target: 'tab'` reaches the in-window strip on desktop and falls through to
+`window.open(url, '_blank')` — a real browser tab — in a browser, whatever adapters happen to be in
+scope. The label is honest on both. `main.tsx` gates its `registerTabOpener` call on the same
+predicate, but that is a clarification, not the enforcement: deleting it changes nothing a person can
+see. The Obsidian embed (`supportsNewTab() === false`) has neither strip nor browser tab, so a tab
+request opens in place rather than being dropped.
+
+**A `window` request the surface cannot honour degrades to a tab, never to `here`.** `openLink` takes
+the real-second-window branch on `supportsSeparateWindow()` and otherwise lets `window` fall into the
+same branch as `tab`. Both answers are wrong in the same direction; only one of them takes away the
+view the person is already looking at. Latent while the palette is the only caller (it gates the
+row), load-bearing the moment anything else asks.
 
 **New Window is gated on `supportsSeparateWindow()`** (`supportsNewTab() && isDesktopShell()`) and
 the row is omitted, not disabled and not remapped. In a browser a `window.open` already _is_ the tab

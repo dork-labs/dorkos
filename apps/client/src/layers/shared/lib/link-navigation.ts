@@ -17,12 +17,12 @@
  * "another tab" and "another window" are different requests, and the tab strip
  * must not quietly eat the only way to ask for the second one.
  *
- * **Who owns a tab depends on the surface** (DOR-568). In the desktop app the
- * cockpit owns its own strip and `tab` opens one of those ({@link
- * registerTabOpener}). In a browser the browser owns tabs, so `tab` opens a real
- * browser tab — bookmarkable, restored by session restore, draggable into its
- * own window, none of which ours could be. The Obsidian embed is one pane, so a
- * tab request lands in place.
+ * **Who owns a tab depends on the surface** (DOR-568), and this module is what
+ * decides. In the desktop app the cockpit owns its own strip and `tab` opens one
+ * of those ({@link registerTabOpener}). In a browser the browser owns tabs, so
+ * `tab` opens a real browser tab — bookmarkable, restored by session restore,
+ * draggable into its own window, none of which ours could be. The Obsidian embed
+ * is one pane, so a tab request lands in place.
  *
  * - **Internal** — relative, hash-only, query-only, or absolute at the app's own
  *   origin *and* landing on a route the cockpit actually serves
@@ -260,6 +260,11 @@ export function registerLinkNavigator(navigate: LinkNavigator): () => void {
  * Obsidian embed is one pane inside someone else's app, so a tab request there
  * lands in place.
  *
+ * Registering is not what makes a tab an in-window one — {@link openLink} asks
+ * {@link isDesktopShell} as well, so an opener left in scope on the wrong
+ * surface is ignored rather than obeyed. The app entry's own gate is a
+ * clarification of that rule, not the enforcement of it.
+ *
  * @param open - Adapter that adds a tab for `href` and focuses it.
  * @returns An unregister function (idempotent; only clears its own adapter).
  */
@@ -348,6 +353,14 @@ function openInBrowser(url: string): void {
  *   tab", and collapsing the two would delete the only way to ask for it. Only
  *   worth offering where it is a distinct destination — see
  *   {@link supportsSeparateWindow}, which is the gate the UI asks.
+ *
+ * **Neither degrades to `here` except in the embed.** Where a surface cannot
+ * honour `window` — a browser — the request becomes a browser tab, not an
+ * in-place navigation. Both answers are wrong in the same direction, but only
+ * one of them takes something away: someone who asked for a second view and got
+ * a tab still has the view they started from, and someone who got an in-place
+ * navigation has lost it. The embed is the exception because one pane has
+ * nowhere else to put anything, and opening in place beats doing nothing.
  */
 export type LinkTarget = 'here' | 'tab' | 'window';
 
@@ -388,41 +401,54 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
     return true;
   }
 
-  if (options.target === 'tab') {
-    // The desktop shell registered a strip, so this is one of its tabs.
-    if (tabOpener) {
-      tabOpener(link.path);
-      return true;
-    }
-    // No strip: in a browser the browser owns tabs, and `_blank` at our own
-    // origin is a real one of those — bookmarkable, restored on reopen,
-    // draggable into its own window. Two arguments for the same reason the
-    // `window` branch below gives: a plain, classifiable same-origin target.
-    // Asking for a tab and silently getting an in-place navigation would lose
-    // the view you asked to keep, so only the embed — which has nowhere else to
-    // put it — falls through.
-    if (supportsNewTab()) {
-      window.open(link.url, '_blank');
-      return true;
-    }
-  }
-
-  if (options.target === 'window' && supportsNewTab()) {
-    // Two arguments, never three: no `noopener`.
-    //
-    // In a browser, `_blank` at our own origin is a real second cockpit window,
-    // and `noopener` would only cost us the opener reference. In the desktop
-    // shell, `setWindowOpenHandler` (`apps/desktop/src/main/window-manager.ts`)
-    // runs `isOwnOrigin` on the URL: our own origin is denied to Electron's
-    // popup path and built as a proper second cockpit window instead, loaded at
-    // exactly this URL; anything else goes to the system browser. So what we
-    // owe that handler is a plain, classifiable same-origin target, which is
-    // what `classifyLink` guarantees before we get here.
+  // A second view goes to the best place this **surface** can put it, and the
+  // surface is what decides — not whoever happened to register an adapter. A
+  // browser with a stray tab opener in scope still has to open a browser tab; if
+  // the only thing standing between it and an in-place navigation into a strip
+  // nothing renders were the `if (isDesktopShell())` in `main.tsx`, deleting
+  // that line — it reads as redundant — would cost someone the view they asked
+  // to keep, silently.
+  if (options.target === 'window' && supportsSeparateWindow()) {
+    // Two arguments, never three: no `noopener`. The desktop shell's
+    // `setWindowOpenHandler` (`apps/desktop/src/main/window-manager.ts`) runs
+    // `isOwnOrigin` on the URL: our own origin is denied to Electron's popup
+    // path and built as a proper second cockpit window instead, loaded at
+    // exactly this URL with the same preload and the same guards; anything else
+    // goes to the system browser. So what we owe that handler is a plain,
+    // classifiable same-origin target, which is what `classifyLink` guarantees
+    // before we get here — and `noopener` would forfeit it.
     //
     // Read the handler rather than trusting this comment — it is the authority,
     // and it is where this behavior can change without touching this file.
     window.open(link.url, '_blank');
     return true;
+  }
+
+  if (options.target === 'tab' || options.target === 'window') {
+    // The desktop app owns its own strip, so this is one of its tabs.
+    if (tabOpener && isDesktopShell()) {
+      tabOpener(link.path);
+      return true;
+    }
+    // No strip on this surface. In a browser the browser owns tabs, and
+    // `_blank` at our own origin is a real one of those — bookmarkable, restored
+    // by session restore, draggable into its own window, none of which ours
+    // could be. Two other requests land here and are answered honestly rather
+    // than exactly:
+    //
+    // - `window` in a browser, where a separate window is not a destination
+    //   worth offering ({@link supportsSeparateWindow}). A tab is not the second
+    //   window that was asked for, but it is a second view; replacing the one
+    //   the person is reading would be strictly worse.
+    // - `tab` on the desktop before anything registered a strip. The URL hits
+    //   the shell's own-origin handler and comes back as a second cockpit
+    //   window — again not what was asked for, and again not wrong.
+    if (supportsNewTab()) {
+      window.open(link.url, '_blank');
+      return true;
+    }
+    // Only the embed reaches here: one pane inside someone else's app, with
+    // nowhere else to put anything. Fall through and open in place.
   }
 
   if (!linkNavigator) {
