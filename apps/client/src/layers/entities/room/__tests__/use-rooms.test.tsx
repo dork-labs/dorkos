@@ -202,7 +202,7 @@ describe('useStartDirectMessage', () => {
     const { result } = renderHook(() => useStartDirectMessage(), {
       wrapper: wrapperFor(transport),
     });
-    await result.current.mutateAsync({ agentPath: '/repo/ana', title: 'Ana' });
+    await result.current.mutateAsync({ agentPaths: ['/repo/ana'], title: 'Ana' });
     expect(transport.createRoom).toHaveBeenCalledWith({
       kind: 'dm',
       title: 'Ana',
@@ -210,6 +210,34 @@ describe('useStartDirectMessage', () => {
       agentPaths: ['/repo/ana'],
     });
     // The second call is what left a DM with nobody in it when it failed.
+    expect(transport.addRoomMember).not.toHaveBeenCalled();
+  });
+
+  it('takes several agents into one conversation, still in one call', async () => {
+    const created = {
+      ...room({ id: 'dm-1', kind: 'dm', slug: null, title: 'Ana and Kai' }),
+      members: [],
+    };
+    const transport = createMockTransport({
+      createRoom: vi.fn().mockResolvedValue(created),
+      addRoomMember: vi.fn().mockResolvedValue({}),
+    });
+    const { result } = renderHook(() => useStartDirectMessage(), {
+      wrapper: wrapperFor(transport),
+    });
+    await result.current.mutateAsync({
+      agentPaths: ['/repo/ana', '/repo/kai'],
+      title: 'Ana and Kai',
+    });
+
+    expect(transport.createRoom).toHaveBeenCalledWith({
+      kind: 'dm',
+      title: 'Ana and Kai',
+      members: [],
+      agentPaths: ['/repo/ana', '/repo/kai'],
+    });
+    // A group is one atomic create too — not a create followed by N joins, any
+    // of which could fail and leave a half-assembled conversation.
     expect(transport.addRoomMember).not.toHaveBeenCalled();
   });
 });

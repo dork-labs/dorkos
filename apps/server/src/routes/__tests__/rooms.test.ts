@@ -69,17 +69,18 @@ const app = createApp();
 finalizeApp(app);
 
 const ANA_PATH = '/agents/ana';
+const BO_PATH = '/agents/bo';
 
-/** Register an agent so `POST /:id/members` can resolve it by directory. */
-function registerAna(db: Db): void {
+/** Register an agent so a room can resolve it by directory. */
+function registerAgent(db: Db, name: string, projectPath: string): void {
   const now = new Date().toISOString();
   db.insert(agents)
     .values({
-      id: 'ULID_ANA',
-      name: 'ana',
-      displayName: 'Ana',
+      id: `ULID_${name.toUpperCase()}`,
+      name,
+      displayName: name[0].toUpperCase() + name.slice(1),
       runtime: 'claude-code',
-      projectPath: ANA_PATH,
+      projectPath,
       behaviorJson: '{"responseMode":"always"}',
       registeredAt: now,
       updatedAt: now,
@@ -102,7 +103,8 @@ describe('/api/rooms', () => {
     vi.clearAllMocks();
     resetAgentIdentityService();
     db = createTestDb();
-    registerAna(db);
+    registerAgent(db, 'ana', ANA_PATH);
+    registerAgent(db, 'bo', BO_PATH);
     setRoomService(createRoomSubsystem({ db }).service);
   });
 
@@ -126,6 +128,75 @@ describe('/api/rooms', () => {
       const res = await request(app).post('/api/rooms').send({ kind: 'channel' });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
+    });
+
+    it('seeds a direct message with several agents in one call', async () => {
+      const res = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana and Bo', agentPaths: [ANA_PATH, BO_PATH] });
+
+      expect(res.status).toBe(201);
+      // Both agents plus the operator, and every one of them resolved.
+      expect(
+        res.body.members
+          .map((m: { author: { displayName: string } }) => m.author.displayName)
+          .sort()
+      ).toEqual(['Ana', 'Bo', 'You']);
+    });
+
+    it('answers a repeated direct message with the room that already holds those people', async () => {
+      const first = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana and Bo', agentPaths: [ANA_PATH, BO_PATH] });
+      const again = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana and Bo again', agentPaths: [BO_PATH, ANA_PATH] });
+
+      // 201 said a room was created; 200 says one was already there. The bodies
+      // are identical, so the status is the only thing that can carry it.
+      expect(first.status).toBe(201);
+      expect(again.status).toBe(200);
+      expect(again.body.id).toBe(first.body.id);
+      expect((await request(app).get('/api/rooms').query({ kind: 'dm' })).body.rooms).toHaveLength(
+        1
+      );
+    });
+
+    it('serializes the same body on both paths, with no bookkeeping field on the wire', async () => {
+      const created = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
+      const matched = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
+
+      // `created` decides the status and then stops existing: the response is
+      // exactly RoomWithRosterSchema, which is what the OpenAPI doc promises.
+      expect(created.body).not.toHaveProperty('created');
+      expect(matched.body).not.toHaveProperty('created');
+      expect(matched.body).toEqual(created.body);
+    });
+
+    it('answers 201 for a channel every time, since only a DM dedupes', async () => {
+      const first = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'One' });
+      const second = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'Two' });
+      expect(first.status).toBe(201);
+      expect(second.status).toBe(201);
+    });
+
+    it('still opens a separate conversation for a subset of a group', async () => {
+      const group = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana and Bo', agentPaths: [ANA_PATH, BO_PATH] });
+      const alone = await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
+
+      expect(alone.status).toBe(201);
+      expect(alone.body.id).not.toBe(group.body.id);
+      expect((await request(app).get('/api/rooms').query({ kind: 'dm' })).body.rooms).toHaveLength(
+        2
+      );
     });
 
     it('409s a duplicate live channel slug', async () => {

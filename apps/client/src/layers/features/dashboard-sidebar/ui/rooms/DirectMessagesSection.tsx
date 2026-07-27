@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { toast } from 'sonner';
-import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import {
   SidebarGroup,
   SidebarMenu,
@@ -8,7 +8,7 @@ import {
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
-import { useStartDirectMessage } from '@/layers/entities/room';
+import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
 import { NewDirectMessageMenu, type DirectMessageCandidate } from './NewDirectMessageMenu';
@@ -32,8 +32,8 @@ interface DirectMessagesSectionProps {
 }
 
 /**
- * The sidebar's "Direct messages" section: one row per one-to-one conversation,
- * with an unread count when you are behind.
+ * The sidebar's "Direct messages" section: one row per conversation — with one
+ * agent or with several — and an unread count when you are behind.
  *
  * Collapsible and persisted via `ui.sidebar.dmsCollapsed`. Like Channels, it is
  * always present — the empty state is what tells a person the feature exists.
@@ -50,36 +50,29 @@ export function DirectMessagesSection({
   const { update } = useUpdateSidebarPrefs();
   const startDirectMessage = useStartDirectMessage();
 
-  // Who you already have a conversation with is read off each DM's ROSTER, not
-  // off its title. Two reasons: a title is editable, so it can drift from who is
-  // actually in the room; and a DM whose join failed has no agent member at all,
-  // so it must not tie up the agent it happens to be named after.
+  // Every agent is offerable, always. This used to exclude anyone already on a
+  // DM's roster, which was how a duplicate one-to-one was prevented — and which
+  // is wrong the moment a conversation can hold several agents, because Ana
+  // alone and Ana + Kai are different conversations and hiding Ana makes the
+  // second one unreachable.
   //
-  // The roster rides along on the list (`RoomSummary.participants`), so this
-  // costs nothing. It used to be one `GET /api/rooms/:id` per direct message,
-  // fired only to answer this question.
-  //
-  // The comparison is `agentRef` — the stable handle the server derives from the
-  // agent's directory, which this side computes from the same directory. It used
-  // to compare display names, because `AuthorRef` offered nothing better; that
-  // made two agents sharing a name indistinguishable here, so opening a DM with
-  // one hid both.
-  const candidates = useMemo<DirectMessageCandidate[]>(() => {
-    const taken = new Set<string>();
-    for (const room of dms) {
-      for (const participant of room.participants ?? []) {
-        if (participant.agentRef) taken.add(participant.agentRef);
-      }
-    }
-    return Object.entries(displayNames)
-      .filter(([agentPath]) => !taken.has(agentAuthorRef(agentPath)))
-      .map(([agentPath, displayName]) => ({ agentPath, displayName }))
-      .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [dms, displayNames]);
+  // The guarantee it was providing did not disappear, it moved: the server
+  // matches a direct message on its exact member set and answers with the room
+  // you already have (`RoomService.createRoom`). That is the only place it can
+  // be made correctly anyway — evaluating it here would mean holding the roster
+  // of every DM, which is the per-room fetch R5 deleted.
+  const candidates = useMemo<DirectMessageCandidate[]>(
+    () =>
+      Object.entries(displayNames)
+        .map(([agentPath, displayName]) => ({ agentPath, displayName }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [displayNames]
+  );
 
-  const handleStart = (candidate: DirectMessageCandidate) => {
+  const handleStart = (chosen: DirectMessageCandidate[]) => {
+    const title = directMessageTitle(chosen.map((c) => c.displayName));
     startDirectMessage.mutate(
-      { agentPath: candidate.agentPath, title: candidate.displayName },
+      { agentPaths: chosen.map((c) => c.agentPath), title },
       {
         onSuccess: (room) =>
           onSelectRoom({
@@ -88,9 +81,7 @@ export function DirectMessagesSection({
             participants: room.members.map((member) => member.author),
           }),
         onError: (err) =>
-          toast.error(
-            err.message || `Could not start a conversation with ${candidate.displayName}`
-          ),
+          toast.error(err.message || `Could not start a conversation with ${title}`),
       }
     );
   };
@@ -102,11 +93,7 @@ export function DirectMessagesSection({
         collapsed={dmsCollapsed}
         onToggle={() => update((prev) => setDmsCollapsed(prev, !prev.dmsCollapsed))}
       />
-      <NewDirectMessageMenu
-        candidates={candidates}
-        hasAnyAgents={Object.keys(displayNames).length > 0}
-        onSelect={handleStart}
-      />
+      <NewDirectMessageMenu candidates={candidates} onStart={handleStart} />
 
       {!dmsCollapsed && (
         <SidebarMenu>
@@ -134,7 +121,7 @@ export function DirectMessagesSection({
               {dms.length === 0 && (
                 <SidebarMenuItem>
                   <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
-                    No messages yet — start one to talk to a single agent on its own.
+                    No messages yet — start one to talk to an agent on its own, or to a few at once.
                   </p>
                 </SidebarMenuItem>
               )}

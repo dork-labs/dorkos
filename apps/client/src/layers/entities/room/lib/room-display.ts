@@ -38,19 +38,61 @@ export function roomDisplayTitle(room: TitleableRoom): string {
 }
 
 /**
+ * How many participants a group conversation names before it starts counting.
+ * Three fits a sidebar row; the fourth is what would truncate mid-word.
+ */
+const NAMED_PARTICIPANTS = 3;
+
+/**
+ * What to call a direct message, from the people in it.
+ *
+ * One name is a one-to-one. Beyond that it reads as a list, and past
+ * {@link NAMED_PARTICIPANTS} it names the first few and counts the rest — a
+ * sidebar row is one line, and a title long enough to need an ellipsis tells a
+ * reader less than "and 3 others" does.
+ *
+ * A title is a label, not an identity: the server matches a conversation on its
+ * member set (`RoomService.createRoom`), so renaming one later never splits it
+ * and two DMs can share a name without confusing anything but a person.
+ *
+ * **The title does not follow the roster.** It is written once, when the
+ * conversation is opened, and `POST /api/rooms/:id/members` has shipped since
+ * R1 — so a room called `Ana` can already hold three agents, and this function
+ * is never re-run to notice. Keeping the roster and the title in step is R6b's,
+ * where adding an agent to a room becomes something the cockpit can do.
+ *
+ * @param names - The participants' display names, in the order they were picked.
+ * @returns The title, or an empty string for no names — which the caller should
+ *   never reach, because a conversation with nobody in it is not one.
+ */
+export function directMessageTitle(names: readonly string[]): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length <= NAMED_PARTICIPANTS) {
+    return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  }
+  const rest = names.length - NAMED_PARTICIPANTS;
+  return `${names.slice(0, NAMED_PARTICIPANTS).join(', ')} and ${rest} ${
+    rest === 1 ? 'other' : 'others'
+  }`;
+}
+
+/**
  * Who a direct message is with.
  *
- * A DM is the operator and one agent, so the counterpart is the agent on the
- * roster — picked by `kind` rather than by position, because matching on a
- * rendered name never was a promise.
+ * A DM holds the operator and one or more agents, and this answers with the
+ * first agent on the roster — picked by `kind` rather than by position, because
+ * matching on a rendered name never was a promise.
  *
  * "The first agent" is only an answer because the server orders a roster
  * deterministically (`RoomStore.listMembers`): oldest membership first, author
  * id breaking the tie that every seeded roster has. Nothing here re-sorts, so
- * the sidebar and the open room's header name the same agent. A DM holding two
- * agents — which `POST /:id/members` permits — gets the first of them and no
- * hint that there is a second; drawing a group is a design question, not a
- * tiebreak, and it belongs with whoever takes it on.
+ * the sidebar and the open room's header name the same agent.
+ *
+ * **A group DM gets the first agent's mark and no hint that there is a second.**
+ * That is deliberate and still owed: R6a made group conversations creatable, and
+ * a group's title already names everyone in it, but a mark that reads as a group
+ * is a design question rather than a tiebreak and has not been answered yet.
  *
  * @param participants - The DM's roster, as `RoomSummary.participants` carries
  *   it. `null` (a channel, a thread, or a payload that predates the field) and

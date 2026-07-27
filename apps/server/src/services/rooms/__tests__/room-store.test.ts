@@ -92,6 +92,136 @@ describe('RoomStore seq allocation', () => {
   });
 });
 
+describe('RoomStore.findDmByMemberSet', () => {
+  let store: RoomStore;
+
+  /**
+   * Seed one room holding exactly these authors.
+   *
+   * @param id - The room id, also its title, so a failure names itself.
+   * @param authorIds - The whole roster.
+   * @param opts.kind - Defaults to `dm`.
+   * @param opts.archived - Archive it after creating it.
+   * @param opts.createdAt - Overrides the timestamp the tie-break reads.
+   */
+  function seedDm(
+    id: string,
+    authorIds: readonly string[],
+    opts: { kind?: 'dm' | 'channel'; archived?: boolean; createdAt?: string } = {}
+  ): void {
+    const createdAt = opts.createdAt ?? '2026-07-26T11:00:00.000Z';
+    store.createRoom(
+      {
+        id,
+        kind: opts.kind ?? 'dm',
+        parentId: null,
+        slug: opts.kind === 'channel' ? id : null,
+        title: id,
+        topic: null,
+        workspaceId: null,
+        rootEntryId: null,
+        createdAt,
+      },
+      authorIds.map((authorId) => ({
+        authorId,
+        responseMode: 'always' as const,
+        joinedAt: createdAt,
+      }))
+    );
+    if (opts.archived) store.updateRoom(id, { archived: true });
+  }
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+  });
+
+  it('finds the DM whose roster is exactly the set asked for', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('dm-ana');
+  });
+
+  it('does not care what order the members were named in', () => {
+    seedDm('dm-group', ['me', 'ana', 'kai']);
+    expect(store.findDmByMemberSet(['kai', 'me', 'ana'])?.id).toBe('dm-group');
+    expect(store.findDmByMemberSet(['ana', 'kai', 'me'])?.id).toBe('dm-group');
+  });
+
+  it('does not match a DM that merely CONTAINS the members asked for', () => {
+    // "Me and Ana" is a different conversation from "me, Ana and Kai". A
+    // superset match here would silently reopen the group chat instead.
+    seedDm('dm-group', ['me', 'ana', 'kai']);
+    expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+
+  it('does not match a DM that holds only SOME of the members asked for', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'ana', 'kai'])).toBeNull();
+  });
+
+  it('does not match a set that overlaps without being equal', () => {
+    // Same size, one member different — the case a bare COUNT(*) check passes.
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'kai'])).toBeNull();
+  });
+
+  it('counts the human, so a DM is not identified by its agents alone', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['ana'])).toBeNull();
+  });
+
+  it('ignores a channel holding exactly those members', () => {
+    seedDm('backend', ['me', 'ana'], { kind: 'channel' });
+    expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+
+  it('matches an archived DM, leaving what to do with it to the caller', () => {
+    seedDm('dm-ana', ['me', 'ana'], { archived: true });
+    const found = store.findDmByMemberSet(['me', 'ana']);
+    expect(found?.id).toBe('dm-ana');
+    expect(found?.archived).toBe(true);
+  });
+
+  // The two tie-break tests below name their rooms so that EVERY order the
+  // query could fall back on — insertion order, primary-key order, `createdAt`
+  // — points at the wrong room. An earlier pair of fixtures happened to sort
+  // the way the assertions wanted, so both passed with the `ORDER BY` deleted:
+  // they certified SQLite's index walk rather than this store's tie-break.
+
+  it('prefers a live DM over an archived one holding the same people', () => {
+    // Only pre-existing data can hold two, so the tie-break has to be stated
+    // rather than left to whichever index the planner reaches for. The archived
+    // one sorts first by id AND is older AND was written first.
+    seedDm('aaa-archived', ['me', 'ana'], {
+      archived: true,
+      createdAt: '2026-07-20T10:00:00.000Z',
+    });
+    seedDm('zzz-live', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('zzz-live');
+  });
+
+  it('takes the oldest when two live DMs hold the same people', () => {
+    // The oldest sorts LAST by id and was written second, so only `createdAt`
+    // can produce this answer.
+    seedDm('aaa-newest', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
+    seedDm('zzz-oldest', ['me', 'ana'], { createdAt: '2026-07-20T10:00:00.000Z' });
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('zzz-oldest');
+  });
+
+  it('collapses a member named twice rather than failing to match', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    expect(store.findDmByMemberSet(['me', 'ana', 'ana'])?.id).toBe('dm-ana');
+  });
+
+  it('answers null for an empty set rather than matching an empty room', () => {
+    seedDm('dm-empty', []);
+    expect(store.findDmByMemberSet([])).toBeNull();
+  });
+
+  it('answers null when there is no DM at all', () => {
+    expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+});
+
 describe('RoomStore never trims the log', () => {
   // Deliberately heavy: proving the absence of a trim means writing past the cap
   // through the real append path, which is 5000+ IMMEDIATE transactions. The

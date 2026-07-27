@@ -29,13 +29,26 @@ const agentLookup = agentLookupFor({
  * @param dmCount - How many direct messages to seed first.
  */
 function rosterReadsForListingDms(dmCount: number): number {
-  const harness = createRoomHarness({ agents: agentLookup });
+  // A DM per AGENT, not `dmCount` DMs with the same agent: a direct message is
+  // idempotent on its member set, so asking for Ana 25 times is one room and
+  // this measurement would quietly become "listing one room, twice" while still
+  // reporting the number the assertion wants.
+  const cast = Object.fromEntries(
+    Array.from({ length: dmCount }, (_, i) => [
+      `/agents/extra-${i}`,
+      { name: `extra-${i}`, displayName: `Extra ${i}` },
+    ])
+  );
+  const harness = createRoomHarness({ agents: agentLookupFor(cast) });
   for (let i = 0; i < dmCount; i++) {
     harness.service.createRoom(
-      { kind: 'dm', title: `Ana ${i}`, members: [], agentPaths: ['/agents/ana'] },
+      { kind: 'dm', title: `Extra ${i}`, members: [], agentPaths: [`/agents/extra-${i}`] },
       harness.human
     );
   }
+  // Asserted here rather than left to the caller: the whole measurement is void
+  // if the seeding did not actually produce `dmCount` distinct rooms.
+  expect(harness.service.listRooms(harness.human, { kind: 'dm' })).toHaveLength(dmCount);
   // `$client` is the better-sqlite3 connection drizzle prepares against.
   const sqlite = (harness.db as unknown as { $client: { prepare: (sql: string) => unknown } })
     .$client;
@@ -757,6 +770,188 @@ describe('RoomService — only the operator changes a roster', () => {
     expect(service.updateMembership(roomId, human, bo, 'always').responseMode).toBe('always');
     service.removeMember(roomId, human, bo);
     expect(service.getRoom(roomId, human)?.members.map((m) => m.authorId)).not.toContain(bo);
+  });
+});
+
+describe('RoomService — a DM is idempotent on its member set', () => {
+  let service: RoomService;
+  let authors: AuthorRegistry;
+  let human: string;
+
+  /** Open a direct message with these agents, named after the first of them. */
+  function openDm(agentPaths: string[], title = 'Conversation'): string {
+    return service.createRoom({ kind: 'dm', title, members: [], agentPaths }, human).id;
+  }
+
+  beforeEach(() => {
+    ({ service, authors, human } = createRoomHarness({ agents: agentLookup }));
+  });
+
+  it('answers with the conversation you already have, rather than a second one', () => {
+    const first = openDm(['/agents/ana'], 'Ana');
+    expect(openDm(['/agents/ana'], 'Ana')).toBe(first);
+    expect(service.listRooms(human, { kind: 'dm' })).toHaveLength(1);
+  });
+
+  it('reports whether it created the room, which the body cannot say', () => {
+    const request = { kind: 'dm' as const, title: 'Ana', members: [], agentPaths: ['/agents/ana'] };
+    expect(service.createRoom(request, human).created).toBe(true);
+    expect(service.createRoom(request, human).created).toBe(false);
+    // A channel never matches an existing room, so it is always a creation.
+    expect(
+      service.createRoom({ kind: 'channel', title: 'Backend', members: [], agentPaths: [] }, human)
+        .created
+    ).toBe(true);
+  });
+
+  it('leaves the conversation where it was in the activity order', () => {
+    // Opening a conversation is not activity in it. Bumping `lastActivityAt`
+    // would float a silent room to the top of a recency-sorted sidebar and tell
+    // the reader something had happened in it.
+    const first = openDm(['/agents/ana'], 'Ana');
+    const before = service.getRoom(first, human)?.lastActivityAt;
+
+    expect(openDm(['/agents/ana'], 'Ana')).toBe(first);
+    expect(service.getRoom(first, human)?.lastActivityAt).toBe(before);
+  });
+
+  it('leaves an un-archived conversation where it was too', () => {
+    const first = openDm(['/agents/ana'], 'Ana');
+    const before = service.getRoom(first, human)?.lastActivityAt;
+    service.updateRoom(first, human, { archived: true });
+
+    const reopened = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(reopened.archived).toBe(false);
+    expect(reopened.lastActivityAt).toBe(before);
+  });
+
+  it('matches whatever order the agents were named in', () => {
+    const group = openDm(['/agents/ana', '/agents/bo'], 'Ana and Bo');
+    expect(openDm(['/agents/bo', '/agents/ana'], 'Bo and Ana')).toBe(group);
+    expect(service.listRooms(human, { kind: 'dm' })).toHaveLength(1);
+  });
+
+  it('keeps a one-to-one and a group holding that agent apart', () => {
+    // Ana alone and Ana + Bo are different conversations. This is the whole
+    // reason the picker may no longer filter out agents that already have a DM.
+    const alone = openDm(['/agents/ana'], 'Ana');
+    const group = openDm(['/agents/ana', '/agents/bo'], 'Ana and Bo');
+
+    expect(group).not.toBe(alone);
+    expect(service.listRooms(human, { kind: 'dm' })).toHaveLength(2);
+  });
+
+  it('does not answer with a group when asked for a smaller conversation inside it', () => {
+    const group = openDm(['/agents/ana', '/agents/bo'], 'Ana and Bo');
+    expect(openDm(['/agents/ana'], 'Ana')).not.toBe(group);
+  });
+
+  it('does not answer with a one-to-one when asked for a group containing it', () => {
+    const alone = openDm(['/agents/ana'], 'Ana');
+    expect(openDm(['/agents/ana', '/agents/bo'], 'Ana and Bo')).not.toBe(alone);
+  });
+
+  it('un-archives the conversation instead of minting one beside it', () => {
+    const first = openDm(['/agents/ana'], 'Ana');
+    service.updateRoom(first, human, { archived: true });
+
+    const reopened = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(reopened.id).toBe(first);
+    expect(reopened.archived).toBe(false);
+    // One room, and the history is still in it — not stranded in an archived twin.
+    expect(service.listRooms(human, { kind: 'dm', includeArchived: true })).toHaveLength(1);
+  });
+
+  it('leaves the existing title alone — asking for a conversation is not renaming it', () => {
+    const first = openDm(['/agents/ana'], 'Ana');
+    service.updateRoom(first, human, { title: 'Deploy questions' });
+
+    const again = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(again.title).toBe('Deploy questions');
+  });
+
+  it('keeps the history and the roster it already had', () => {
+    const first = openDm(['/agents/ana'], 'Ana');
+    service.post(first, { authorId: human, text: 'morning' });
+
+    const again = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(again.members).toHaveLength(2);
+    expect(service.listEntries(again.id, human, { limit: 10 }).map((e) => e.body.text)).toEqual([
+      'morning',
+    ]);
+  });
+
+  it('announces nothing on the global stream when no room was created', () => {
+    openDm(['/agents/ana'], 'Ana');
+    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
+    openDm(['/agents/ana'], 'Ana');
+
+    expect(broadcast.mock.calls.map(([type]) => type)).not.toContain('room_created');
+    broadcast.mockRestore();
+  });
+
+  it('announces the un-archive, so a stale sidebar hears about it', () => {
+    const first = openDm(['/agents/ana'], 'Ana');
+    service.updateRoom(first, human, { archived: true });
+
+    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
+    openDm(['/agents/ana'], 'Ana');
+    expect(broadcast).toHaveBeenCalledWith(
+      'room_updated',
+      expect.objectContaining({ roomId: first, archived: false })
+    );
+    broadcast.mockRestore();
+  });
+
+  it('does not dedupe a channel — two channels may hold the same people', () => {
+    const first = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const second = service.createRoom(
+      { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it('does not let an existing DM turn the operator-only seeding rule into a bypass', () => {
+    // The refusal comes first, so an agent gets the same 403 whether or not the
+    // conversation it named already exists — no probing for one.
+    const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    openDm(['/agents/ana', '/agents/bo'], 'Ana and Bo');
+
+    expect(() =>
+      service.createRoom(
+        { kind: 'dm', title: 'Ana and Bo', members: [], agentPaths: ['/agents/bo'] },
+        ana
+      )
+    ).toThrow(expect.objectContaining({ code: 'OPERATOR_ONLY' }));
+  });
+
+  it('returns the agent its own DM with the operator rather than a second one', () => {
+    const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    const first = service.createRoom(
+      { kind: 'dm', title: 'Ana and you', members: [human], agentPaths: [] },
+      ana
+    );
+    const again = service.createRoom(
+      { kind: 'dm', title: 'Ana and you', members: [human], agentPaths: [] },
+      ana
+    );
+    expect(again.id).toBe(first.id);
   });
 });
 

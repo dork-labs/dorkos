@@ -20,7 +20,7 @@ export { useRoomListStream } from './model/use-room-list-stream';
 export { useMarkRoomRead } from './model/use-mark-room-read';
 export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
 export type { StartDirectMessageInput } from './model/use-create-room';
-export { roomDisplayTitle, authorColor, hasUnread } from './lib/room-display';
+export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { MemberList } from './ui/MemberList';

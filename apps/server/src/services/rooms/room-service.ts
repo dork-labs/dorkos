@@ -80,6 +80,25 @@ export interface PostTrigger {
   depth: number;
 }
 
+/**
+ * A room, plus whether opening it is what brought it into existence.
+ *
+ * The flag exists so `POST /api/rooms` can answer 201 for a room it created and
+ * 200 for a direct message that already held those members. That distinction is
+ * not inferable from the body — a conversation forty messages deep and one
+ * opened a moment ago serialize identically — and a caller that is not the
+ * cockpit (a CLI, an MCP client) has to be able to tell them apart.
+ *
+ * Deliberately an intersection rather than a wrapper object: it is structurally
+ * a `RoomWithRoster` everywhere one is expected, so nothing that only wants the
+ * room has to reach through a field to get it. The route strips it before
+ * serializing, so the wire body stays exactly `RoomWithRosterSchema`.
+ */
+export type OpenedRoom = RoomWithRoster & {
+  /** `false` when an existing direct message was returned instead of a new room. */
+  created: boolean;
+};
+
 /** Orchestration over the store, the roster, the author registry and the streams. */
 export class RoomService {
   private readonly store: RoomStore;
@@ -140,8 +159,8 @@ export class RoomService {
   // === Rooms ===
 
   /**
-   * Create a channel or a DM, seeding its roster with the creator and whoever
-   * the request names — by author id (`members`) or by agent directory
+   * Open a channel or a DM, seeding its roster with the creator and whoever the
+   * request names — by author id (`members`) or by agent directory
    * (`agentPaths`).
    *
    * `agentPaths` is what makes a DM one call. The cockpit knows agents by
@@ -157,11 +176,46 @@ export class RoomService {
    * exist, and the obvious retry works. (The resolution itself is not inside
    * that transaction — it does not need to be, and saying so would be drift.)
    *
+   * **A DM is idempotent on its member set.** Ask for a direct message with
+   * people you already have one with and you get that conversation back, not a
+   * second one beside it. A DM is identified by WHO IS IN IT, so two rooms
+   * holding the same authors are the same room told twice — the failure mode
+   * Teams ships, where duplicate chats are real and you are told to rename them
+   * apart. Slack behaves the way this does.
+   *
+   * It has to be decided here rather than in the picker for two reasons. It is
+   * an idempotency property of the resource, so every caller gets it — the
+   * cockpit, an MCP client, a shell. And a client could only evaluate it by
+   * holding every DM's roster, which is exactly the per-room fetch R5 deleted.
+   *
+   * Three consequences worth stating, because none of them is obvious:
+   *
+   * - **An archived match is un-archived and returned.** Archive is this
+   *   product's reversible "put it away" (spec §12.4 — there is no Leave), so
+   *   re-opening a conversation is what asking for it again means. Minting a
+   *   parallel room would strand the history in the archived one.
+   * - **The existing room keeps its own title.** A request that matched is
+   *   asking for a conversation, not renaming one; silently retitling a room
+   *   somebody had named would be a side effect nobody asked for. Rename is its
+   *   own verb (`PATCH /api/rooms/:id`).
+   * - **The caller is told which one it got**, via {@link OpenedRoom.created},
+   *   because nothing in the body says. This is an upsert on a natural key, not
+   *   a replay of one caller's earlier answer against an idempotency key they
+   *   supplied — the room this matches may have been opened by somebody else
+   *   hours ago — so the honest report is PUT-shaped: 201 for a room that was
+   *   created, 200 for one that was already there.
+   * - **`lastActivityAt` is left alone**, on the matched path and the
+   *   un-archived one alike. Opening a conversation is not activity in it, and
+   *   bumping it would push a silent room to the top of a sidebar sorted by
+   *   recency and tell the reader something happened. A re-opened DM comes back
+   *   where it was.
+   *
    * @param request - The validated create request.
    * @param creatorAuthorId - The author opening the room; joined automatically.
-   * @returns The new room with its roster.
+   * @returns The room with its roster and whether this call created it — new, or
+   *   the one that already held these exact members.
    */
-  createRoom(request: CreateRoomRequest, creatorAuthorId: string): RoomWithRoster {
+  createRoom(request: CreateRoomRequest, creatorAuthorId: string): OpenedRoom {
     const slug = request.kind === 'channel' ? (request.slug ?? slugify(request.title ?? '')) : null;
     if (request.kind === 'channel' && !slug) {
       throw new RoomError(
@@ -206,6 +260,23 @@ export class RoomService {
     // second agent into one is the same amplification lever `addMember` refuses.
     this.requireSeedingAllowed(creator, [...resolved.values()]);
 
+    // Deliberately AFTER that gate, not before. A caller the gate refuses gets
+    // the same 403 whether or not the room it named exists, so this stays a
+    // create path that sometimes answers with an existing room and never a way
+    // to probe for one.
+    if (request.kind === 'dm') {
+      const existing = this.store.findDmByMemberSet([...resolved.keys()]);
+      if (existing) {
+        // `updateRoom` re-checks visibility and broadcasts `room_updated`, which
+        // is what a sidebar holding a stale list needs to hear. Its slug-reclaim
+        // branch is channel-only, so it is inert here.
+        const reopened = existing.archived
+          ? this.updateRoom(existing.id, creatorAuthorId, { archived: false })
+          : this.withRoster(existing);
+        return { ...reopened, created: false };
+      }
+    }
+
     const members = [...resolved.values()].map((author) => ({
       authorId: author.id,
       responseMode: this.roster.seedResponseMode(seeded, author),
@@ -215,7 +286,7 @@ export class RoomService {
     const room = this.store.createRoom(draft, members);
 
     eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
-    return this.withRoster(room);
+    return { ...this.withRoster(room), created: true };
   }
 
   /**
