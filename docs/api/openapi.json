@@ -5097,6 +5097,18 @@
           "displayName": {
             "type": "string",
             "minLength": 1
+          },
+          "emoji": {
+            "type": "string",
+            "description": "Render cache: the emoji avatar, when the author has one."
+          },
+          "color": {
+            "type": "string",
+            "description": "Render cache: the identity colour, when the author has one."
+          },
+          "agentRef": {
+            "type": "string",
+            "description": "Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name."
           }
         },
         "required": [
@@ -5187,6 +5199,15 @@
             },
             "default": [],
             "description": "Author ids to seed the roster with, besides the creator."
+          },
+          "agentPaths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": [],
+            "description": "Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The cockpit knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it."
           }
         },
         "required": [
@@ -12303,7 +12324,7 @@
           "Rooms"
         ],
         "summary": "Create a channel or a DM",
-        "description": "The room and its seeded roster are written in one transaction. Threads are created via `POST /api/rooms/{id}/threads`.",
+        "description": "The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. Threads are created via `POST /api/rooms/{id}/threads`.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12326,6 +12347,16 @@
           },
           "400": {
             "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent caller tried to seed the room with a SECOND agent",
             "content": {
               "application/json": {
                 "schema": {
@@ -12535,7 +12566,7 @@
           "Rooms"
         ],
         "summary": "Post to a room (trigger-only)",
-        "description": "Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body.",
+        "description": "Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body. Every agent member the post addresses is then triggered, bounded by the cascade guard; their replies arrive on the same stream.",
         "parameters": [
           {
             "schema": {
@@ -12606,7 +12637,7 @@
           "Rooms"
         ],
         "summary": "Add a member to a room",
-        "description": "Add by `authorId`, or by `agentPath` to mint an agent author on first use. `responseMode` is seeded from the room kind when omitted.",
+        "description": "Add by `authorId`, or by `agentPath` to mint an agent author on first use. `responseMode` is seeded from the room kind when omitted. Operator-only: an agent that could widen a room-mate addressing could drive replies nobody asked for.",
         "parameters": [
           {
             "schema": {
@@ -12648,6 +12679,16 @@
               }
             }
           },
+          "403": {
+            "description": "Only the local human may change a roster; an agent caller is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No such room, no such author, or no agent registered at that path",
             "content": {
@@ -12667,6 +12708,7 @@
           "Rooms"
         ],
         "summary": "Change a member's per-room response mode",
+        "description": "Operator-only. `responseMode` decides when an agent answers without being addressed, so an agent able to turn it up on a room-mate could manufacture a conversation.",
         "parameters": [
           {
             "schema": {
@@ -12717,6 +12759,16 @@
               }
             }
           },
+          "403": {
+            "description": "Only the local human may change a roster; an agent caller is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No such room, or not a member of it",
             "content": {
@@ -12734,7 +12786,7 @@
           "Rooms"
         ],
         "summary": "Remove a member from a room",
-        "description": "Also drops that member's per-room session binding.",
+        "description": "Operator-only. Also drops that member's per-room session binding.",
         "parameters": [
           {
             "schema": {
@@ -12758,6 +12810,16 @@
         "responses": {
           "204": {
             "description": "Member removed"
+          },
+          "403": {
+            "description": "Only the local human may change a roster; an agent caller is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "No such room, or not a member of it",

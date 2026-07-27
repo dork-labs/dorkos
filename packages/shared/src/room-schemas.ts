@@ -60,16 +60,72 @@ export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
 // === Authors ===
 
 /**
- * How an author appears to a reader: the opaque persisted id plus enough to
- * render it. The `naturalKey` behind the id (an agent's `agentPath`) never
- * leaves the server — a room is a shared surface, and a home-directory path is
- * not something to put on the wire (ADR 260726-170126).
+ * A stable, opaque handle for one agent, derived from its `agentPath`.
+ *
+ * It exists so a reader can ask "which agent is this author?" without the
+ * server putting a home-directory path in front of every member of a room
+ * (ADR 260726-170126). Comparing rendered names was the only alternative, and a
+ * display name is a label: two agents can share one, and renaming an agent
+ * silently changes the answer.
+ *
+ * Deliberately a plain FNV-1a fold rather than a hash from `node:crypto`: this
+ * has to be computable synchronously on BOTH sides — the browser's only digest
+ * API is async, which cannot be used from a render pass. It is an identity
+ * token, not a security boundary; the privacy property it buys is simply that
+ * no path is on the wire.
+ *
+ * @param agentPath - Absolute path to the agent's project directory.
+ * @returns A 16-character lowercase hex handle, stable for that path forever.
+ */
+export function agentAuthorRef(agentPath: string): string {
+  // Two independent FNV-1a-32 folds (different offset bases) concatenated, so
+  // the handle is 64 bits wide rather than 32 — collisions across the handful
+  // of agents on one machine are then not worth reasoning about.
+  const fold = (offset: number): string => {
+    let hash = offset >>> 0;
+    for (let i = 0; i < agentPath.length; i++) {
+      // UTF-16 code units, not UTF-8 bytes — this is not claiming to be the
+      // canonical FNV-1a of the string, only to be the same function on both
+      // sides. Its output is pinned byte-for-byte by a test.
+      hash ^= agentPath.charCodeAt(i);
+      // FNV prime 16777619, via shifts so the product stays inside 32 bits.
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+  };
+  return `${fold(0x811c9dc5)}${fold(0x01000193)}`;
+}
+
+/**
+ * How an author appears to a reader: the opaque persisted id, enough to render
+ * it, and — for an agent — a stable handle to recognise it by. The `naturalKey`
+ * behind the id (an agent's `agentPath`) never leaves the server: a room is a
+ * shared surface, and a home-directory path is not something to put on the wire
+ * (ADR 260726-170126).
+ *
+ * `displayName`, `emoji` and `color` are all the same thing — a render cache
+ * refreshed whenever the author is resolved. None of them is ever the key, and
+ * nothing may look an author up by one.
  */
 export const AuthorRefSchema = z
   .object({
     id: z.string().min(1).describe('Opaque author id (ULID). Stable across agent re-registration.'),
     kind: AuthorKindSchema,
     displayName: z.string().min(1),
+    emoji: z
+      .string()
+      .optional()
+      .describe('Render cache: the emoji avatar, when the author has one.'),
+    color: z
+      .string()
+      .optional()
+      .describe('Render cache: the identity colour, when the author has one.'),
+    agentRef: z
+      .string()
+      .optional()
+      .describe(
+        'Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name.'
+      ),
   })
   .openapi('AuthorRef');
 
@@ -220,6 +276,12 @@ export const CreateRoomRequestSchema = z
       .array(z.string().min(1))
       .default([])
       .describe('Author ids to seed the roster with, besides the creator.'),
+    agentPaths: z
+      .array(z.string().min(1))
+      .default([])
+      .describe(
+        'Agent directories to seed the roster with, minting an author row for any agent that has never been in a room. The cockpit knows agents by path and not by author id, so without this a DM takes two calls and a failed second one leaves a room with nobody in it.'
+      ),
   })
   .refine((v) => v.title !== undefined || v.slug !== undefined, {
     message: 'A room needs a title or a slug',

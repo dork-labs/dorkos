@@ -447,6 +447,43 @@ export class RoomStore {
       .all();
     return rows.map((row) => row.authorId);
   }
+
+  // === Per-room agent sessions ===
+
+  /**
+   * The session an agent member answers in this room with, or `null` when it
+   * has not answered here yet.
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent member.
+   */
+  getRoomSession(roomId: string, authorId: string): string | null {
+    const row = this.db
+      .select()
+      .from(roomSessions)
+      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
+      .get();
+    return row?.sessionId ?? null;
+  }
+
+  /**
+   * Bind an agent member's session for this room. First write wins, mirroring
+   * the runtime binding it will carry (ADR-0255).
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent member.
+   * @param sessionId - The session to bind.
+   * @param createdAt - When the binding was made.
+   * @returns The bound session id — the existing one when there already was one.
+   */
+  bindRoomSession(roomId: string, authorId: string, sessionId: string, createdAt: string): string {
+    this.db
+      .insert(roomSessions)
+      .values({ roomId, authorId, sessionId, createdAt })
+      .onConflictDoNothing()
+      .run();
+    return this.getRoomSession(roomId, authorId) ?? sessionId;
+  }
 }
 
 export type { NewRoom, NewRoomEntry } from './room-rows.js';

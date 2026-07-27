@@ -46,6 +46,19 @@ export const authors = sqliteTable(
     /** Human-readable name, cached for rendering and refreshed on resolve. */
     displayName: text('display_name').notNull(),
 
+    /**
+     * Render cache: the author's emoji avatar (`agents.icon` for an agent), or
+     * null when it has none. Same lifecycle as `display_name` — refreshed on
+     * resolve, never the key, and never looked up by.
+     */
+    emoji: text('emoji'),
+
+    /**
+     * Render cache: the author's identity colour (`agents.color`), or null.
+     * Same lifecycle as `display_name`.
+     */
+    color: text('color'),
+
     createdAt: text('created_at').notNull(),
   },
   (table) => [uniqueIndex('authors_kind_natural_key_unique').on(table.kind, table.naturalKey)]

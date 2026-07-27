@@ -25,7 +25,8 @@ export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, str
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (title: string) => transport.createRoom({ kind: 'channel', title, members: [] }),
+    mutationFn: (title: string) =>
+      transport.createRoom({ kind: 'channel', title, members: [], agentPaths: [] }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: roomKeys.all }),
   });
 }
@@ -33,11 +34,13 @@ export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, str
 /**
  * Start a direct message with one agent.
  *
- * Two calls, because the create endpoint seeds a roster from author ids and an
- * agent that has never spoken has no author row yet — `POST /members` is what
- * mints one from its directory. They are not one transaction: if the join fails
- * the room still exists, so the list is invalidated either way and the caller
- * sees a real error rather than a room that silently has nobody in it.
+ * One call. It used to be two — create, then join by directory — because the
+ * create endpoint only seeded a roster from author ids, and an agent that has
+ * never spoken has no author row to name. That made a failed second call leave
+ * a direct message with nobody in it: a room named after an agent the agent was
+ * not in, which retrying could not repair because the room already existed.
+ * `agentPaths` resolves inside the same transaction, so either the whole
+ * conversation exists or none of it does.
  */
 export function useStartDirectMessage(): UseMutationResult<
   RoomWithRoster,
@@ -48,11 +51,8 @@ export function useStartDirectMessage(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ agentPath, title }: StartDirectMessageInput) => {
-      const room = await transport.createRoom({ kind: 'dm', title, members: [] });
-      await transport.addRoomMember(room.id, { agentPath });
-      return room;
-    },
+    mutationFn: ({ agentPath, title }: StartDirectMessageInput) =>
+      transport.createRoom({ kind: 'dm', title, members: [], agentPaths: [agentPath] }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: roomKeys.all }),
   });
 }

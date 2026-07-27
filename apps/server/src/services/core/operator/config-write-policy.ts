@@ -189,6 +189,13 @@ export const CONFIG_WRITE_POLICY = {
   // while it is inert is what stops it becoming load-bearing while agent-writable.
   'mesh.scanRoots': 'operator-only',
 
+  // How far agents may reply to each other in a room before it stops them
+  // (ADR 260726-170127). Operator-only for the same reason room rosters are: an
+  // agent that can raise its own reply ceiling can spend the operator's model
+  // budget on a conversation nobody asked for, and the whole point of the guard
+  // is that it bounds a loop the participants cannot see themselves in.
+  'rooms.maxAgentDepth': 'operator-only',
+
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',
   'onboarding.startedAt': 'agent-writable',

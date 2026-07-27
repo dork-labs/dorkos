@@ -66,6 +66,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'mesh.scanRoots',
       'providers',
       'relay.dataDir',
+      'rooms.maxAgentDepth',
       'runtimes.codex.binaryPath',
       'runtimes.codex.credentialRef',
       'runtimes.opencode.baseURL',

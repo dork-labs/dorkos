@@ -10,11 +10,14 @@
  */
 import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
+import { configManager } from '../core/config-manager.js';
 import { AuthorRegistry } from './author-registry.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
 import { RoomBroadcaster } from './room-stream.js';
+import type { RoomTurnRunner } from './room-trigger.js';
+import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 
 /** The wired rooms subsystem. */
 export interface RoomSubsystem {
@@ -44,6 +47,8 @@ function createAgentLookup(db: Db): RoomAgentLookup {
         name: row.name,
         displayName: row.displayName ?? row.name,
         responseMode: behavior.success ? behavior.data.responseMode : 'always',
+        emoji: row.icon,
+        color: row.color,
       };
     },
   };
@@ -63,8 +68,13 @@ function safeJson(raw: string): unknown {
  *
  * @param opts.db - The consolidated DB handle.
  * @param opts.agents - Agent lookup override; defaults to the mesh-cache reader.
+ * @param opts.turns - Turn runner override; defaults to the real session path.
  */
-export function createRoomSubsystem(opts: { db: Db; agents?: RoomAgentLookup }): RoomSubsystem {
+export function createRoomSubsystem(opts: {
+  db: Db;
+  agents?: RoomAgentLookup;
+  turns?: RoomTurnRunner;
+}): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const authors = new AuthorRegistry(opts.db);
   const broadcaster = new RoomBroadcaster();
@@ -73,6 +83,10 @@ export function createRoomSubsystem(opts: { db: Db; agents?: RoomAgentLookup }):
     authors,
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),
+    turns: opts.turns ?? createSessionRoomTurnRunner(),
+    // Read per dispatch, not captured once: changing the ceiling in Settings
+    // has to bound the very next cascade, not the next server start.
+    maxAgentDepth: () => configManager.get('rooms').maxAgentDepth,
   });
   return { service, store, authors, broadcaster };
 }
@@ -103,3 +117,4 @@ export function getRoomService(): RoomService {
 export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export type { AuthorRecord } from './author-registry.js';
+export type { RoomTurnRunner } from './room-trigger.js';

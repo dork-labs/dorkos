@@ -1,202 +1,266 @@
 /**
  * The guard's absence is invisible except under a cascade, so this file builds
- * one: two `always` agents in one room, driven around the loop the way R3 will
- * drive it, and asserted to stop.
+ * one — and builds it through the code that ships.
  *
- * The loop below is deliberately written out rather than called, because R1
- * ships the rule and R3 ships the wiring. If the two ever disagree, this test
- * is what says so.
+ * R1's version of this test wrote the loop by hand, because nothing was wired.
+ * This one does not: every reply below is posted by {@link RoomTriggerDispatcher}
+ * off a real committed entry, so a wiring mistake that leaves a hop unguarded
+ * fails here rather than passing beside the thing it was meant to check. The
+ * only stand-in is the turn runner, whose alternative is a model call.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { selectTriggerTargets, type AddressingMember } from '../addressing.js';
+import { buildCascadeNotice, deriveCascade, evaluateCascade } from '../cascade-guard.js';
+import type { AuthorRegistry } from '../author-registry.js';
+import type { RoomService } from '../room-service.js';
 import {
-  buildCascadeNotice,
-  deriveCascade,
-  evaluateCascade,
-  DEFAULT_MAX_AGENT_DEPTH,
-  type CascadeRefusalReason,
-} from '../cascade-guard.js';
-import { AuthorRegistry } from '../author-registry.js';
-import { RoomService } from '../room-service.js';
-import type { RoomAgentLookup } from '../room-errors.js';
-import { RoomStore } from '../room-store.js';
-import { RoomBroadcaster } from '../room-stream.js';
+  agentLookupFor,
+  createRoomHarness,
+  scriptedRunner,
+  type ScriptedTurnRunner,
+} from './room-test-harness.js';
 
-const AGENTS: Record<string, { name: string; displayName: string }> = {
-  '/agents/ana': { name: 'ana', displayName: 'Ana' },
-  '/agents/bo': { name: 'bo', displayName: 'Bo' },
-};
+/** Both agents answer everything — the worst case the guard exists for. */
+const alwaysAgents = agentLookupFor({
+  '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
+  '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'always' },
+});
 
-/** Every agent answers everything — the worst case the guard exists for. */
-const alwaysAgents: RoomAgentLookup = {
-  byPath: (agentPath) => {
-    const agent = AGENTS[agentPath];
-    return agent ? { ...agent, responseMode: 'always' } : null;
-  },
-};
+/**
+ * The ceiling these tests measure against, pinned to a literal rather than read
+ * from config. A test that read the same value the code reads could only prove
+ * the two agree; it could never prove they agree on the right number.
+ */
+const MAX_AGENT_DEPTH = 3;
 
-/** One turn of the cascade the guard bounds, as R3 will drive it. */
-interface CascadeRun {
-  refusals: Array<{ authorId: string; reason: CascadeRefusalReason; depth: number }>;
-  rounds: number;
-}
-
-describe('cascade guard', () => {
-  let db: Db;
+describe('cascade guard, wired', () => {
   let service: RoomService;
   let authors: AuthorRegistry;
+  let runner: ScriptedTurnRunner;
   let room: RoomWithRoster;
   let ana: string;
   let bo: string;
   let human: string;
 
   beforeEach(() => {
-    db = createTestDb();
-    authors = new AuthorRegistry(db);
-    service = new RoomService({
-      store: new RoomStore(db),
-      authors,
-      broadcaster: new RoomBroadcaster(),
+    ({ service, authors, runner, human } = createRoomHarness({
       agents: alwaysAgents,
-    });
+      runner: scriptedRunner(() => 'on it'),
+      maxAgentDepth: MAX_AGENT_DEPTH,
+    }));
 
-    human = authors.localHuman().id;
+    room = service.createRoom(
+      {
+        kind: 'channel',
+        title: 'Backend',
+        members: [],
+        agentPaths: ['/agents/ana', '/agents/bo'],
+      },
+      human
+    );
+    // A channel seeds `mention-only`; both agents answer everything here on
+    // purpose, because that is the shape that loops.
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     bo = authors.resolveAgent('/agents/bo', 'Bo').id;
-
-    room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
-    // Both agents answer everything, in a channel. Without a guard this loops
-    // until somebody notices the bill.
-    service.addMember(room.id, human, { agentPath: '/agents/ana', responseMode: 'always' });
-    service.addMember(room.id, human, { agentPath: '/agents/bo', responseMode: 'always' });
+    service.updateMembership(room.id, human, ana, 'always');
+    service.updateMembership(room.id, human, bo, 'always');
   });
 
-  /** The roster as addressing sees it. */
-  function members(): AddressingMember[] {
-    const current = service.getRoom(room.id, human);
-    return (current?.members ?? []).map((m) => ({
-      authorId: m.authorId,
-      kind: m.author.kind,
-      responseMode: m.responseMode,
-    }));
+  /** Post as the human and wait for every turn it set off to finish. */
+  async function seedAndSettle(text: string): Promise<RoomEntry> {
+    const seed = service.post(room.id, { authorId: human, text });
+    await service.triggersIdle();
+    return seed;
   }
 
-  /**
-   * Drive the cascade to exhaustion: trigger everyone addressing selects, let
-   * the guard veto, write a notice for each veto, and repeat on whatever posted.
-   * `maxRounds` is a test-harness tripwire, NOT the guard — if the guard works,
-   * the loop runs dry long before it.
-   */
-  function runCascade(seed: RoomEntry, maxRounds = 10): CascadeRun {
-    const refusals: CascadeRun['refusals'] = [];
-    let frontier = [seed];
-    let rounds = 0;
-
-    while (frontier.length > 0 && rounds < maxRounds) {
-      rounds += 1;
-      const next: RoomEntry[] = [];
-      for (const entry of frontier) {
-        const targets = selectTriggerTargets({
-          roomKind: 'channel',
-          entry,
-          members: members(),
-        });
-        for (const target of targets) {
-          const decision = evaluateCascade(target, {
-            root: entry.cascadeRoot,
-            depth: entry.cascadeDepth,
-            authorsInCascade: service.authorsInCascade(room.id, entry.cascadeRoot),
-          });
-          if (!decision.allowed) {
-            refusals.push({
-              authorId: target,
-              reason: decision.reason as CascadeRefusalReason,
-              depth: decision.depth,
-            });
-            const name = authors.getById(target)?.displayName ?? 'An agent';
-            service.postNotice(room.id, buildCascadeNotice(name, target), {
-              root: entry.cascadeRoot,
-              depth: decision.depth,
-            });
-            continue;
-          }
-          next.push(
-            service.post(room.id, {
-              authorId: target,
-              text: 'on it',
-              trigger: { root: entry.cascadeRoot, depth: decision.depth },
-            })
-          );
-        }
-      }
-      frontier = next;
-    }
-    return { refusals, rounds };
+  /** Every entry in the room, oldest first. */
+  function log(): RoomEntry[] {
+    return service.listEntries(room.id, human, { limit: 200 });
   }
 
-  it('terminates a two-agent ping-pong instead of running forever', () => {
-    const seed = service.post(room.id, { authorId: human, text: 'what do you two think?' });
-    const run = runCascade(seed);
+  it('terminates a two-agent ping-pong instead of running forever', async () => {
+    await seedAndSettle('what do you two think?');
 
-    // The tripwire was never reached: the guard stopped it, not the harness.
-    expect(run.rounds).toBeLessThan(10);
-    expect(run.refusals.length).toBeGreaterThan(0);
+    // Both agents answered once, and then it stopped. Without the guard this
+    // is the test that never returns.
+    expect(runner.turns.map((t) => t.authorId).sort()).toEqual([ana, bo].sort());
+    expect(log().filter((e) => e.kind === 'post' && e.authorId !== human)).toHaveLength(2);
   });
 
-  it('fires the ancestry rule, and fires it below the depth ceiling', () => {
-    const seed = service.post(room.id, { authorId: human, text: 'thoughts?' });
-    const run = runCascade(seed);
+  it('fires the ancestry rule, and fires it below the depth ceiling', async () => {
+    await seedAndSettle('thoughts?');
 
-    expect(run.refusals.every((r) => r.reason === 'ancestry')).toBe(true);
-    // The load-bearing claim: a pure depth counter would have permitted every
-    // one of these calls and only refused at depth 4.
-    expect(run.refusals.every((r) => r.depth <= DEFAULT_MAX_AGENT_DEPTH)).toBe(true);
-    expect(Math.max(...run.refusals.map((r) => r.depth))).toBeLessThan(DEFAULT_MAX_AGENT_DEPTH + 1);
+    // Nothing ever reached the ceiling: the deepest thing in the room is a
+    // first reply. A pure depth counter would have permitted three more rounds
+    // of model calls before refusing anything.
+    expect(Math.max(...log().map((e) => e.cascadeDepth))).toBe(1);
+    expect(Math.max(...log().map((e) => e.cascadeDepth))).toBeLessThan(MAX_AGENT_DEPTH);
+    expect(log().some((e) => e.kind === 'notice')).toBe(true);
   });
 
-  it('lands a durable notice in the room, in the room own voice', () => {
-    const seed = service.post(room.id, { authorId: human, text: 'thoughts?' });
-    runCascade(seed);
+  it('triggers each agent once per cascade, even before either has answered', async () => {
+    // Both turns are in flight when the first reply lands, so the durable
+    // ancestry query cannot see either of them yet. The claim is what closes
+    // that window; without it each agent is triggered twice per human message.
+    await seedAndSettle('thoughts?');
 
-    const notices = service
-      .listEntries(room.id, human, { limit: 100 })
-      .filter((entry) => entry.kind === 'notice');
+    const perAgent = runner.turns.filter((t) => t.authorId === ana);
+    expect(perAgent).toHaveLength(1);
+    expect(runner.turns).toHaveLength(2);
+  });
 
+  it('lands a durable notice in the room, in the room own voice', async () => {
+    await seedAndSettle('thoughts?');
+
+    const notices = log().filter((entry) => entry.kind === 'notice');
     expect(notices.length).toBeGreaterThan(0);
     expect(notices[0].body.notice).toBe('cascade_stopped');
     expect(notices[0].body.text).toContain('automatic-reply limit');
     expect(notices[0].body.text).not.toMatch(/error|Error|undefined|null/);
-    // Written by the system author, about the agent that went quiet.
     expect(notices[0].authorId).toBe(authors.system().id);
     expect([ana, bo]).toContain(notices[0].body.subjectAuthorId);
   });
 
-  it('keeps the whole cascade traceable to the entry that began it', () => {
-    const seed = service.post(room.id, { authorId: human, text: 'thoughts?' });
-    runCascade(seed);
+  it('says an agent stopped at most once per cascade', async () => {
+    await seedAndSettle('thoughts?');
 
-    const entries = service.listEntries(room.id, human, { limit: 100 });
-    expect(entries.every((entry) => entry.cascadeRoot === seed.id)).toBe(true);
+    const subjects = log()
+      .filter((entry) => entry.kind === 'notice')
+      .map((entry) => entry.body.subjectAuthorId);
+    expect(new Set(subjects).size).toBe(subjects.length);
+  });
+
+  it('keeps the whole cascade traceable to the entry that began it', async () => {
+    const seed = await seedAndSettle('thoughts?');
+
+    expect(log().every((entry) => entry.cascadeRoot === seed.id)).toBe(true);
     expect(service.authorsInCascade(room.id, seed.id).sort()).toEqual(
       [human, ana, bo, authors.system().id].sort()
     );
   });
 
-  it('lets a human re-engage a room the guard has stopped', () => {
-    runCascade(service.post(room.id, { authorId: human, text: 'round one' }));
-    const before = service.listEntries(room.id, human, { limit: 100 }).length;
+  it('lets a human re-engage a room the guard has stopped', async () => {
+    await seedAndSettle('round one');
+    const before = log().length;
+    const turnsBefore = runner.turns.length;
 
-    // A human post always starts a fresh cascade: its own id at depth 0.
-    const second = service.post(room.id, { authorId: human, text: 'round two' });
+    const second = await seedAndSettle('round two');
+
+    // A human post always starts a fresh cascade: its own id at depth 0, which
+    // is exactly what makes the room answerable again.
     expect(second.cascadeRoot).toBe(second.id);
     expect(second.cascadeDepth).toBe(0);
+    expect(runner.turns.length).toBeGreaterThan(turnsBefore);
+    expect(log().length).toBeGreaterThan(before + 1);
+  });
 
-    const run = runCascade(second);
-    expect(service.listEntries(room.id, human, { limit: 200 }).length).toBeGreaterThan(before + 1);
-    expect(run.refusals.length).toBeGreaterThan(0);
+  it('binds one session per agent per room and resumes it next time', async () => {
+    await seedAndSettle('round one');
+    const firstAna = runner.turns.find((t) => t.authorId === ana);
+    expect(firstAna?.sessionId).toBeNull();
+
+    await seedAndSettle('round two');
+    const secondAna = runner.turns.filter((t) => t.authorId === ana)[1];
+    expect(secondAna?.sessionId).not.toBeNull();
+  });
+
+  it('stops replying entirely when the ceiling is zero', async () => {
+    const zero = createRoomHarness({ agents: alwaysAgents, maxAgentDepth: 0 });
+    const quiet = zero.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      zero.human
+    );
+    zero.service.post(quiet.id, { authorId: zero.human, text: 'hello?' });
+    await zero.service.triggersIdle();
+
+    expect(zero.runner.turns).toHaveLength(0);
+    const notices = zero.service
+      .listEntries(quiet.id, zero.human, { limit: 20 })
+      .filter((entry) => entry.kind === 'notice');
+    expect(notices).toHaveLength(1);
+  });
+});
+
+describe('triggering', () => {
+  it('answers a DM without being mentioned, and a channel only when it is', async () => {
+    const agents = agentLookupFor({
+      '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
+    });
+
+    const dm = createRoomHarness({ agents });
+    const dmRoom = dm.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      dm.human
+    );
+    dm.service.post(dmRoom.id, { authorId: dm.human, text: 'morning' });
+    await dm.service.triggersIdle();
+    expect(dm.runner.turns).toHaveLength(1);
+
+    const channel = createRoomHarness({ agents });
+    const channelRoom = channel.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      channel.human
+    );
+    channel.service.post(channelRoom.id, { authorId: channel.human, text: 'morning' });
+    await channel.service.triggersIdle();
+    // A channel seeds `mention-only`, so an unaddressed message triggers nobody.
+    expect(channel.runner.turns).toHaveLength(0);
+
+    channel.service.post(channelRoom.id, { authorId: channel.human, text: 'morning @ana' });
+    await channel.service.triggersIdle();
+    expect(channel.runner.turns).toHaveLength(1);
+  });
+
+  it('posts nothing when the agent says nothing', async () => {
+    const silent = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'ana', displayName: 'Ana' } }),
+      runner: scriptedRunner(() => '   '),
+    });
+    const room = silent.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      silent.human
+    );
+    silent.service.post(room.id, { authorId: silent.human, text: 'hi' });
+    await silent.service.triggersIdle();
+
+    expect(silent.runner.turns).toHaveLength(1);
+    expect(silent.service.listEntries(room.id, silent.human, { limit: 20 })).toHaveLength(1);
+  });
+
+  it('keeps the room usable when a turn throws', async () => {
+    const broken = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'ana', displayName: 'Ana' } }),
+      runner: {
+        turns: [],
+        run: () => Promise.reject(new Error('runtime exploded')),
+      },
+    });
+    const room = broken.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      broken.human
+    );
+
+    broken.service.post(room.id, { authorId: broken.human, text: 'hi' });
+    await expect(broken.service.triggersIdle()).resolves.toBeUndefined();
+
+    // The failure belongs on the agent own session stream, not in the room log
+    // as a stack trace — so the room holds exactly the message that was sent.
+    expect(broken.service.listEntries(room.id, broken.human, { limit: 20 })).toHaveLength(1);
+    // And the next message still triggers: a thrown turn releases its claim.
+    broken.service.post(room.id, { authorId: broken.human, text: 'still there?' });
+    await broken.service.triggersIdle();
+  });
+
+  it('never lets a notice address anybody', async () => {
+    const harness = createRoomHarness({ agents: alwaysAgents, maxAgentDepth: MAX_AGENT_DEPTH });
+    const room = harness.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      harness.human
+    );
+    harness.service.postNotice(room.id, buildCascadeNotice('Ana', 'someone'));
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns).toHaveLength(0);
   });
 });
 
@@ -204,28 +268,29 @@ describe('evaluateCascade', () => {
   const provenance = { root: 'E0', depth: 0, authorsInCascade: ['human'] as string[] };
 
   it('allows a first trigger', () => {
-    expect(evaluateCascade('ana', provenance)).toEqual({ allowed: true, depth: 1 });
+    expect(evaluateCascade('ana', provenance, { maxAgentDepth: 3 })).toEqual({
+      allowed: true,
+      depth: 1,
+    });
   });
 
   it('refuses past the depth ceiling even when nobody repeats', () => {
-    const decision = evaluateCascade('fresh-agent', {
-      root: 'E0',
-      depth: DEFAULT_MAX_AGENT_DEPTH,
-      authorsInCascade: ['human', 'a', 'b', 'c'],
-    });
-    expect(decision).toEqual({
-      allowed: false,
-      depth: DEFAULT_MAX_AGENT_DEPTH + 1,
-      reason: 'depth',
-    });
+    const decision = evaluateCascade(
+      'fresh-agent',
+      { root: 'E0', depth: 3, authorsInCascade: ['human', 'a', 'b', 'c'] },
+      { maxAgentDepth: 3 }
+    );
+    expect(decision).toEqual({ allowed: false, depth: 4, reason: 'depth' });
   });
 
   it('refuses a repeat author well inside the ceiling', () => {
-    expect(evaluateCascade('ana', { ...provenance, authorsInCascade: ['human', 'ana'] })).toEqual({
-      allowed: false,
-      depth: 1,
-      reason: 'ancestry',
-    });
+    expect(
+      evaluateCascade(
+        'ana',
+        { ...provenance, authorsInCascade: ['human', 'ana'] },
+        { maxAgentDepth: 3 }
+      )
+    ).toEqual({ allowed: false, depth: 1, reason: 'ancestry' });
   });
 
   it('honours a caller-supplied ceiling', () => {

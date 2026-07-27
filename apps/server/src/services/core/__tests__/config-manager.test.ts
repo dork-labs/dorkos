@@ -14,6 +14,7 @@ import {
   migrateStatusBarToPins,
   backfillSidebarSettingsDefaults,
   backfillSidebarRoomSections,
+  backfillRoomsDefaults,
   backfillSmartGroupKindDefaults,
   CONFIG_MIGRATIONS,
   backfillRuntimesDefaults,
@@ -1217,6 +1218,29 @@ describe('backfillSidebarRoomSections migration (rooms sidebar, DOR-525)', () =>
     const store = createMockStore({ server: { port: 4242 } });
     backfillSidebarRoomSections(store);
     expect(store.data.ui).toBeUndefined();
+  });
+});
+
+describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () => {
+  it('seeds the section on a config persisted before it existed', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillRoomsDefaults(store);
+    // Pinned to the literal the release ships. Reading the default out of the
+    // schema here would only prove the migration and the schema agree, never
+    // that they agree on a number that bounds anything.
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 3 });
+  });
+
+  it('is idempotent — keeps a ceiling the user already chose', () => {
+    const store = createMockStore({ rooms: { maxAgentDepth: 1 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 1 });
+  });
+
+  it('keeps an explicit zero, which is a real choice and not an absent section', () => {
+    const store = createMockStore({ rooms: { maxAgentDepth: 0 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({ maxAgentDepth: 0 });
   });
 });
 

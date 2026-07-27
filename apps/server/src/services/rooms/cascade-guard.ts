@@ -14,14 +14,12 @@
  * permits N-1 wasted model calls before it fires; the ancestry rule kills
  * A→B→A at the first repeat.
  *
- * Pure — the caller supplies the provenance it read.
+ * Pure — the caller supplies the provenance it read, and the ceiling it is
+ * measuring against. There is deliberately no default ceiling here: the number
+ * lives in `rooms.maxAgentDepth` (user config), and a second copy in this file
+ * would be the one somebody edits when the real one is elsewhere.
  *
- * Wiring status, precisely: {@link deriveCascade} IS live, called by
- * `RoomService.post` to stamp every entry's provenance, because the columns
- * have to be right from the first message or the guard has nothing to read
- * later. {@link evaluateCascade} and {@link buildCascadeNotice} have no
- * production caller yet — R1 ships the rule and its tests, and R3 calls them
- * when it wires triggering.
+ * `room-trigger.ts` is the production caller.
  *
  * @module server/services/rooms/cascade-guard
  */
@@ -56,30 +54,22 @@ export interface CascadeDecision {
 }
 
 /**
- * How many automatic replies deep a cascade may run.
- *
- * A server constant rather than user config for now: nothing triggers until R3,
- * and a config field a user can turn with no observable effect is worse than no
- * field at all. R3 promotes it to `UserConfigSchema` with its migration, where
- * it first means something.
- */
-export const DEFAULT_MAX_AGENT_DEPTH = 3;
-
-/**
  * Decide whether `targetAuthorId` may be triggered from an entry with this
  * provenance.
  *
  * @param targetAuthorId - The agent author the trigger would run.
  * @param provenance - The triggering entry's cascade root, depth, and prior authors.
- * @param opts.maxAgentDepth - The ceiling; defaults to {@link DEFAULT_MAX_AGENT_DEPTH}.
+ * @param opts.maxAgentDepth - How many automatic replies deep a cascade may run
+ *   (`rooms.maxAgentDepth`). Required: this module holds no default, so the
+ *   number a person can change is the only one in play.
  * @returns Whether to trigger, the depth it would carry, and the refusal reason.
  */
 export function evaluateCascade(
   targetAuthorId: string,
   provenance: CascadeProvenance,
-  opts: { maxAgentDepth?: number } = {}
+  opts: { maxAgentDepth: number }
 ): CascadeDecision {
-  const maxAgentDepth = opts.maxAgentDepth ?? DEFAULT_MAX_AGENT_DEPTH;
+  const { maxAgentDepth } = opts;
   const depth = provenance.depth + 1;
 
   if (depth > maxAgentDepth) return { allowed: false, depth, reason: 'depth' };

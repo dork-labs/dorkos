@@ -482,6 +482,17 @@ export const UserConfigSchema = z.object({
       scanRoots: z.array(z.string()).default(() => []),
     })
     .default(() => ({ scanRoots: [] })),
+  rooms: z
+    .object({
+      /**
+       * How many replies in a row agents may send each other before the room
+       * stops them (ADR 260726-170127). Your own messages always start the
+       * count over, so a room the limit has quietened is one message away from
+       * running again. `0` turns automatic replies off entirely.
+       */
+      maxAgentDepth: z.number().int().min(0).max(10).default(3),
+    })
+    .default(() => ({ maxAgentDepth: 3 })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],
     skippedSteps: [],

@@ -1,14 +1,12 @@
 import { useMemo } from 'react';
 import { toast } from 'sonner';
-import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import {
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { useRoomRosters, useStartDirectMessage } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
@@ -27,20 +25,10 @@ interface DirectMessagesSectionProps {
   error: unknown;
   /** Disambiguated agent display names keyed by projectPath — the menu's labels. */
   displayNames: Record<string, string>;
-  /**
-   * Agent manifests keyed by projectPath. Used for the BASE name a room's roster
-   * stores, which is not the disambiguated label above.
-   */
-  agents: Record<string, AgentManifest | null>;
   /** Which room is on screen, so the matching row reads as current. */
   activeRoomId: string | null;
   /** Open a conversation. */
   onSelectRoom: (room: RoomSummary) => void;
-}
-
-/** The name the server records for an agent author when it mints one. */
-function baseAgentName(manifest: AgentManifest | null | undefined, agentPath: string): string {
-  return getAgentDisplayName(manifest, agentPath.split('/').pop() ?? 'Agent');
 }
 
 /**
@@ -55,7 +43,6 @@ export function DirectMessagesSection({
   isLoading,
   error,
   displayNames,
-  agents,
   activeRoomId,
   onSelectRoom,
 }: DirectMessagesSectionProps) {
@@ -66,14 +53,13 @@ export function DirectMessagesSection({
   // Who you already have a conversation with is read off each DM's ROSTER, not
   // off its title. Two reasons: a title is editable, so it can drift from who is
   // actually in the room; and a DM whose join failed has no agent member at all,
-  // so it must not tie up the agent it happens to be named after — which is how
-  // a single failed request could hide an agent from this menu for good.
+  // so it must not tie up the agent it happens to be named after.
   //
-  // The comparison is still a display name, because `AuthorRef` carries no agent
-  // reference by design (spec §3 keeps `agentPath` server-side). It compares the
-  // agent's BASE manifest name — the string the server stored when it minted the
-  // author — rather than the sidebar's disambiguated label, which is the same
-  // except in the collision case, where the disambiguated one would never match.
+  // The comparison is `agentRef` — the stable handle the server derives from the
+  // agent's directory, which this side computes from the same directory. It used
+  // to compare display names, because `AuthorRef` offered nothing better; that
+  // made two agents sharing a name indistinguishable here, so opening a DM with
+  // one hid both.
   const dmRoomIds = useMemo(() => dms.map((room) => room.id), [dms]);
   const rosters = useRoomRosters(dmRoomIds);
 
@@ -81,14 +67,14 @@ export function DirectMessagesSection({
     const taken = new Set<string>();
     for (const members of rosters.values()) {
       for (const member of members) {
-        if (member.author.kind === 'agent') taken.add(member.author.displayName);
+        if (member.author.agentRef) taken.add(member.author.agentRef);
       }
     }
     return Object.entries(displayNames)
-      .filter(([agentPath]) => !taken.has(baseAgentName(agents[agentPath], agentPath)))
+      .filter(([agentPath]) => !taken.has(agentAuthorRef(agentPath)))
       .map(([agentPath, displayName]) => ({ agentPath, displayName }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [rosters, displayNames, agents]);
+  }, [rosters, displayNames]);
 
   const handleStart = (candidate: DirectMessageCandidate) => {
     startDirectMessage.mutate(

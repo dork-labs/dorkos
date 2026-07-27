@@ -51,6 +51,7 @@ describe('UserConfigSchema', () => {
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
+      rooms: { maxAgentDepth: 3 },
       onboarding: {
         completedSteps: [],
         skippedSteps: [],
@@ -350,6 +351,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       relay: { enabled: true, dataDir: null },
       scheduler: { enabled: true, maxConcurrentRuns: 1, timezone: null, retentionCount: 100 },
       mesh: { scanRoots: [] },
+      rooms: { maxAgentDepth: 3 },
       onboarding: {
         completedSteps: [],
         skippedSteps: [],

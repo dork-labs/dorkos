@@ -879,6 +879,25 @@ export function backfillSidebarRoomSections(store: {
 }
 
 /**
+ * Migration body: backfill the `rooms` section (the cascade ceiling agents
+ * reply within, DOR-526) for configs persisted before it existed. Additive +
+ * idempotent: only writes when the key is absent; the schema default also
+ * yields this object on read, so this just writes it through on the upgrade
+ * where it lands.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillRoomsDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('rooms') == null) {
+    store.set('rooms', { maxAgentDepth: 3 });
+  }
+}
+
+/**
  * Migration body: backfill `kind: 'manual'` onto every EXISTING stored group
  * (smart-agent-groups, DOR-338). conf merges top-level defaults SHALLOWLY and
  * never reaches inside array elements, so a `ui.sidebar.groups` array already
@@ -1132,6 +1151,10 @@ export const CONFIG_MIGRATIONS = {
     // and Direct messages sections, DOR-525). Additive + idempotent; both seed
     // expanded so an upgrade shows the new sections rather than hiding them.
     backfillSidebarRoomSections(store);
+    // `rooms.maxAgentDepth` (how far agents may reply to each other before a
+    // room stops them, DOR-526). Additive + idempotent; seeds the shipped
+    // default of 3, so the guard is on for every upgraded install.
+    backfillRoomsDefaults(store);
   },
 } as const;
 

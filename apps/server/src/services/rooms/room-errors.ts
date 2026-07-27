@@ -19,7 +19,8 @@ export type RoomErrorCode =
   | 'SLUG_TAKEN'
   | 'INVALID_SLUG'
   | 'NESTED_THREAD'
-  | 'ROOM_ARCHIVED';
+  | 'ROOM_ARCHIVED'
+  | 'OPERATOR_ONLY';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {
@@ -47,12 +48,19 @@ export interface RoomAgentLookup {
    *
    * @param agentPath - Absolute path to the agent's project directory.
    */
-  byPath(agentPath: string): {
-    /** The agent's handle — what somebody types after an `@`. */
-    name: string;
-    /** The agent's rendered name. */
-    displayName: string;
-    /** The manifest default, which seeds a DM membership. */
-    responseMode: ResponseMode;
-  } | null;
+  byPath(agentPath: string): RoomAgent | null;
+}
+
+/** What the room domain knows about one agent. */
+export interface RoomAgent {
+  /** The agent's handle — what somebody types after an `@`. */
+  name: string;
+  /** The agent's rendered name. */
+  displayName: string;
+  /** The manifest default, which seeds a DM membership. */
+  responseMode: ResponseMode;
+  /** Emoji avatar, cached onto the author row for rendering. */
+  emoji: string | null;
+  /** Identity colour, cached onto the author row for rendering. */
+  color: string | null;
 }

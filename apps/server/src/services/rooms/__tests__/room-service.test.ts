@@ -1,25 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createTestDb } from '@dorkos/test-utils/db';
 import { eq, roomSessions, type Db } from '@dorkos/db';
+import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { AuthorRegistry } from '../author-registry.js';
-import { RoomService } from '../room-service.js';
-import { RoomError, type RoomAgentLookup } from '../room-errors.js';
-import { RoomStore } from '../room-store.js';
-import { RoomBroadcaster } from '../room-stream.js';
+import type { AuthorRegistry } from '../author-registry.js';
+import type { RoomService } from '../room-service.js';
+import { RoomError } from '../room-errors.js';
+import { agentLookupFor, createRoomHarness } from './room-test-harness.js';
 
 /** Ana answers everything by manifest; Bo stays quiet unless mentioned. */
-const agentLookup: RoomAgentLookup = {
-  byPath: (agentPath) => {
-    if (agentPath === '/agents/ana') {
-      return { name: 'ana', displayName: 'Ana', responseMode: 'always' };
-    }
-    if (agentPath === '/agents/bo') {
-      return { name: 'bo', displayName: 'Bo', responseMode: 'silent' };
-    }
-    return null;
-  },
-};
+const agentLookup = agentLookupFor({
+  '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always', emoji: '🐙' },
+  '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'silent' },
+});
 
 describe('RoomService', () => {
   let db: Db;
@@ -28,21 +20,13 @@ describe('RoomService', () => {
   let human: string;
 
   beforeEach(() => {
-    db = createTestDb();
-    authors = new AuthorRegistry(db);
-    service = new RoomService({
-      store: new RoomStore(db),
-      authors,
-      broadcaster: new RoomBroadcaster(),
-      agents: agentLookup,
-    });
-    human = authors.localHuman().id;
+    ({ db, service, authors, human } = createRoomHarness({ agents: agentLookup }));
   });
 
   describe('creating rooms', () => {
     it('derives a channel slug from its title and joins the creator', () => {
       const room = service.createRoom(
-        { kind: 'channel', title: 'Backend Work', members: [] },
+        { kind: 'channel', title: 'Backend Work', members: [], agentPaths: [] },
         human
       );
 
@@ -53,23 +37,26 @@ describe('RoomService', () => {
 
     it('refuses a second live channel on the same slug', () => {
       service.createRoom(
-        { kind: 'channel', slug: 'general', title: 'General', members: [] },
+        { kind: 'channel', slug: 'general', title: 'General', members: [], agentPaths: [] },
         human
       );
       expect(() =>
-        service.createRoom({ kind: 'channel', slug: 'general', title: 'Also', members: [] }, human)
+        service.createRoom(
+          { kind: 'channel', slug: 'general', title: 'Also', members: [], agentPaths: [] },
+          human
+        )
       ).toThrow(RoomError);
     });
 
     it('releases the slug once the channel is archived', () => {
       const first = service.createRoom(
-        { kind: 'channel', slug: 'general', title: 'General', members: [] },
+        { kind: 'channel', slug: 'general', title: 'General', members: [], agentPaths: [] },
         human
       );
       service.updateRoom(first.id, human, { archived: true });
 
       const second = service.createRoom(
-        { kind: 'channel', slug: 'general', title: 'General again', members: [] },
+        { kind: 'channel', slug: 'general', title: 'General again', members: [], agentPaths: [] },
         human
       );
       expect(second.slug).toBe('general');
@@ -77,13 +64,16 @@ describe('RoomService', () => {
 
     it('refuses a channel title with nothing sluggable in it', () => {
       expect(() =>
-        service.createRoom({ kind: 'channel', title: '🎉🎉', members: [] }, human)
+        service.createRoom({ kind: 'channel', title: '🎉🎉', members: [], agentPaths: [] }, human)
       ).toThrow(/slug/i);
     });
 
     it('announces the new room on the global event stream', () => {
       const broadcast = vi.spyOn(eventFanOut, 'broadcast');
-      const room = service.createRoom({ kind: 'dm', title: 'Ana', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'dm', title: 'Ana', members: [], agentPaths: [] },
+        human
+      );
       expect(broadcast).toHaveBeenCalledWith(
         'room_created',
         expect.objectContaining({ roomId: room.id, kind: 'dm' })
@@ -94,13 +84,19 @@ describe('RoomService', () => {
 
   describe('seeding responseMode', () => {
     it('seeds a channel membership to mention-only, whatever the manifest says', () => {
-      const room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+        human
+      );
       const member = service.addMember(room.id, human, { agentPath: '/agents/ana' });
       expect(member.responseMode).toBe('mention-only');
     });
 
     it('seeds a DM membership from the agent manifest', () => {
-      const room = service.createRoom({ kind: 'dm', title: 'Ana', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'dm', title: 'Ana', members: [], agentPaths: [] },
+        human
+      );
       expect(service.addMember(room.id, human, { agentPath: '/agents/ana' }).responseMode).toBe(
         'always'
       );
@@ -110,7 +106,10 @@ describe('RoomService', () => {
     });
 
     it('takes an explicit override over either seed', () => {
-      const room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+        human
+      );
       const member = service.addMember(room.id, human, {
         agentPath: '/agents/ana',
         responseMode: 'direct-only',
@@ -119,7 +118,10 @@ describe('RoomService', () => {
     });
 
     it('does not retroactively change a stored membership when a manifest would differ', () => {
-      const room = service.createRoom({ kind: 'dm', title: 'Ana', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'dm', title: 'Ana', members: [], agentPaths: [] },
+        human
+      );
       const joined = service.addMember(room.id, human, { agentPath: '/agents/ana' });
       service.updateMembership(room.id, human, joined.authorId, 'silent');
       expect(
@@ -129,7 +131,10 @@ describe('RoomService', () => {
     });
 
     it('refuses an agent path nothing is registered at', () => {
-      const room = service.createRoom({ kind: 'dm', title: 'Nobody', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'dm', title: 'Nobody', members: [], agentPaths: [] },
+        human
+      );
       expect(() => service.addMember(room.id, human, { agentPath: '/agents/ghost' })).toThrow(
         RoomError
       );
@@ -141,7 +146,10 @@ describe('RoomService', () => {
     let ana: string;
 
     beforeEach(() => {
-      const room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+        human
+      );
       roomId = room.id;
       ana = service.addMember(roomId, human, { agentPath: '/agents/ana' }).authorId;
     });
@@ -195,7 +203,10 @@ describe('RoomService', () => {
     let ana: string;
 
     beforeEach(() => {
-      const room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
+      const room = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+        human
+      );
       parentId = room.id;
       ana = service.addMember(parentId, human, {
         agentPath: '/agents/ana',
@@ -244,7 +255,10 @@ describe('RoomService', () => {
     let roomId: string;
 
     beforeEach(() => {
-      roomId = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human).id;
+      roomId = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+        human
+      ).id;
       for (const text of ['one', 'two', 'three']) {
         service.post(roomId, { authorId: human, text });
       }
@@ -262,7 +276,10 @@ describe('RoomService', () => {
     });
 
     it('keeps the cursor on the membership, so it is per (member, room)', () => {
-      const other = service.createRoom({ kind: 'channel', title: 'Other', members: [] }, human).id;
+      const other = service.createRoom(
+        { kind: 'channel', title: 'Other', members: [], agentPaths: [] },
+        human
+      ).id;
       service.setReadCursor(roomId, human, 3);
       expect(service.listRooms(human).find((r) => r.id === other)?.unreadCount).toBe(0);
       expect(service.listRooms(human).find((r) => r.id === roomId)?.unreadCount).toBe(0);
@@ -275,7 +292,10 @@ describe('RoomService', () => {
 
   describe('removing members', () => {
     it('drops the membership, and removing twice is a typed refusal', () => {
-      const roomId = service.createRoom({ kind: 'dm', title: 'Ana', members: [] }, human).id;
+      const roomId = service.createRoom(
+        { kind: 'dm', title: 'Ana', members: [], agentPaths: [] },
+        human
+      ).id;
       const ana = service.addMember(roomId, human, { agentPath: '/agents/ana' }).authorId;
 
       service.removeMember(roomId, human, ana);
@@ -284,7 +304,10 @@ describe('RoomService', () => {
     });
 
     it('drops the per-room session binding with the membership', () => {
-      const roomId = service.createRoom({ kind: 'dm', title: 'Ana', members: [] }, human).id;
+      const roomId = service.createRoom(
+        { kind: 'dm', title: 'Ana', members: [], agentPaths: [] },
+        human
+      ).id;
       const ana = service.addMember(roomId, human, { agentPath: '/agents/ana' }).authorId;
       const now = new Date().toISOString();
       db.insert(roomSessions)
@@ -314,51 +337,49 @@ describe('RoomService', () => {
 });
 
 describe('RoomService — atomicity, slug reclaim and visibility', () => {
-  let db: Db;
   let service: RoomService;
   let authors: AuthorRegistry;
   let human: string;
 
   beforeEach(() => {
-    db = createTestDb();
-    authors = new AuthorRegistry(db);
-    service = new RoomService({
-      store: new RoomStore(db),
-      authors,
-      broadcaster: new RoomBroadcaster(),
-      agents: agentLookup,
-    });
-    human = authors.localHuman().id;
+    ({ service, authors, human } = createRoomHarness({ agents: agentLookup }));
   });
 
   it('creates no room at all when a seeded member does not exist', () => {
     expect(() =>
-      service.createRoom({ kind: 'channel', title: 'Backend', members: ['ghost'] }, human)
+      service.createRoom(
+        { kind: 'channel', title: 'Backend', members: ['ghost'], agentPaths: [] },
+        human
+      )
     ).toThrow(RoomError);
 
     // The failure must leave nothing behind: a committed room would hold the
     // slug and turn the obvious retry into a 409 for a room the caller was told
     // did not exist.
     expect(service.listRooms(human, { includeArchived: true })).toEqual([]);
-    expect(service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human).slug).toBe(
-      'backend'
-    );
+    expect(
+      service.createRoom({ kind: 'channel', title: 'Backend', members: [], agentPaths: [] }, human)
+        .slug
+    ).toBe('backend');
   });
 
   it('creates no thread at all when the parent lookup fails mid-way', () => {
-    const room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
+    const room = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      human
+    );
     expect(() => service.createThread(room.id, 'no-such-entry', human)).toThrow(RoomError);
     expect(service.listRooms(human, { kind: 'thread' })).toEqual([]);
   });
 
   it('refuses to un-archive a channel whose slug someone else has taken', () => {
     const first = service.createRoom(
-      { kind: 'channel', slug: 'general', title: 'General', members: [] },
+      { kind: 'channel', slug: 'general', title: 'General', members: [], agentPaths: [] },
       human
     );
     service.updateRoom(first.id, human, { archived: true });
     service.createRoom(
-      { kind: 'channel', slug: 'general', title: 'General II', members: [] },
+      { kind: 'channel', slug: 'general', title: 'General II', members: [], agentPaths: [] },
       human
     );
 
@@ -371,7 +392,7 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
 
   it('un-archives happily when nobody took the slug', () => {
     const room = service.createRoom(
-      { kind: 'channel', slug: 'general', title: 'General', members: [] },
+      { kind: 'channel', slug: 'general', title: 'General', members: [], agentPaths: [] },
       human
     );
     service.updateRoom(room.id, human, { archived: true });
@@ -380,7 +401,10 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
 
   it('shows the operator every room, including ones they never joined', () => {
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
-    const room = service.createRoom({ kind: 'dm', title: 'Ana and Bo', members: [ana] }, ana);
+    const room = service.createRoom(
+      { kind: 'dm', title: 'Ana and Bo', members: [ana], agentPaths: [] },
+      ana
+    );
 
     const listed = service.listRooms(human);
     expect(listed.map((r) => r.id)).toContain(room.id);
@@ -390,15 +414,24 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
   });
 
   it('reports a real unread count for a room the viewer is in', () => {
-    const room = service.createRoom({ kind: 'channel', title: 'Backend', members: [] }, human);
+    const room = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      human
+    );
     service.post(room.id, { authorId: human, text: 'one' });
     expect(service.listRooms(human).find((r) => r.id === room.id)?.unreadCount).toBe(1);
   });
 
   it('shows an agent only the rooms it belongs to', () => {
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
-    const mine = service.createRoom({ kind: 'channel', title: 'Private', members: [] }, human);
-    const shared = service.createRoom({ kind: 'channel', title: 'Shared', members: [] }, human);
+    const mine = service.createRoom(
+      { kind: 'channel', title: 'Private', members: [], agentPaths: [] },
+      human
+    );
+    const shared = service.createRoom(
+      { kind: 'channel', title: 'Shared', members: [], agentPaths: [] },
+      human
+    );
     service.addMember(shared.id, human, { agentPath: '/agents/ana' });
 
     expect(service.listRooms(ana).map((r) => r.id)).toEqual([shared.id]);
@@ -410,7 +443,10 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
 
   it('makes the operator join before speaking, even though they can see everything', () => {
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
-    const theirs = service.createRoom({ kind: 'dm', title: 'Ana only', members: [ana] }, ana);
+    const theirs = service.createRoom(
+      { kind: 'dm', title: 'Ana only', members: [ana], agentPaths: [] },
+      ana
+    );
 
     expect(service.getRoom(theirs.id, human)).not.toBeNull();
     expect(() => service.post(theirs.id, { authorId: human, text: 'hi' })).toThrow(
@@ -419,7 +455,188 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
   });
 
   it('stores an inert response mode for a human, not a restriction', () => {
-    const room = service.createRoom({ kind: 'dm', title: 'Ana', members: [] }, human);
+    const room = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: [] },
+      human
+    );
     expect(room.members.find((m) => m.authorId === human)?.responseMode).toBe('always');
+  });
+});
+
+describe('RoomService — creating a DM in one call', () => {
+  let service: RoomService;
+  let authors: AuthorRegistry;
+  let human: string;
+
+  beforeEach(() => {
+    ({ service, authors, human } = createRoomHarness({ agents: agentLookup }));
+  });
+
+  it('joins the agent named by its directory, seeded from its manifest', () => {
+    const room = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    const ana = room.members.find((m) => m.author.displayName === 'Ana');
+    expect(ana).toBeDefined();
+    // A DM seeds from the manifest, which is what makes the agent answer at all.
+    expect(ana?.responseMode).toBe('always');
+    expect(room.members).toHaveLength(2);
+  });
+
+  it('creates no room at all when the agent path resolves to nothing, and the retry works', () => {
+    expect(() =>
+      service.createRoom(
+        { kind: 'dm', title: 'Ghost', members: [], agentPaths: ['/agents/ghost'] },
+        human
+      )
+    ).toThrow(expect.objectContaining({ code: 'AGENT_NOT_FOUND' }));
+
+    // Nothing half-written: no DM named after an agent that is not in it.
+    expect(service.listRooms(human, { includeArchived: true })).toEqual([]);
+
+    const retried = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(retried.members).toHaveLength(2);
+  });
+
+  it('leaves no room behind when the SECOND of two agents is unknown', () => {
+    expect(() =>
+      service.createRoom(
+        {
+          kind: 'channel',
+          title: 'Backend',
+          members: [],
+          agentPaths: ['/agents/ana', '/agents/ghost'],
+        },
+        human
+      )
+    ).toThrow(expect.objectContaining({ code: 'AGENT_NOT_FOUND' }));
+
+    expect(service.listRooms(human, { includeArchived: true })).toEqual([]);
+    // The slug is free, so the obvious retry is not a 409 for a room the caller
+    // was told did not exist.
+    expect(
+      service.createRoom({ kind: 'channel', title: 'Backend', members: [], agentPaths: [] }, human)
+        .slug
+    ).toBe('backend');
+  });
+
+  it('does not double-join an agent named twice', () => {
+    const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    const room = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [ana], agentPaths: ['/agents/ana'] },
+      human
+    );
+    expect(room.members.map((m) => m.authorId).sort()).toEqual([human, ana].sort());
+  });
+});
+
+describe('RoomService — only the operator changes a roster', () => {
+  let service: RoomService;
+  let authors: AuthorRegistry;
+  let human: string;
+  let roomId: string;
+  let ana: string;
+
+  beforeEach(() => {
+    ({ service, authors, human } = createRoomHarness({ agents: agentLookup }));
+    const room = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    roomId = room.id;
+    ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+  });
+
+  it('refuses an agent adding another member', () => {
+    expect(() => service.addMember(roomId, ana, { agentPath: '/agents/bo' })).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
+    expect(service.getRoom(roomId, human)?.members).toHaveLength(2);
+  });
+
+  it('refuses an agent widening a room-mate response mode', () => {
+    service.addMember(roomId, human, { agentPath: '/agents/bo' });
+    const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+    // This is the amplification lever: `always` on a room-mate means every
+    // message Ana writes gets an answer Ana can then answer.
+    expect(() => service.updateMembership(roomId, ana, bo, 'always')).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
+    expect(
+      service.getRoom(roomId, human)?.members.find((m) => m.authorId === bo)?.responseMode
+    ).toBe('mention-only');
+  });
+
+  it('refuses an agent removing a member', () => {
+    expect(() => service.removeMember(roomId, ana, human)).toThrow(
+      expect.objectContaining({ code: 'OPERATOR_ONLY' })
+    );
+    expect(service.getRoom(roomId, human)?.members.map((m) => m.authorId)).toContain(human);
+  });
+
+  it('refuses an agent conscripting a second agent into a room it opens', () => {
+    expect(() =>
+      service.createRoom({ kind: 'dm', title: 'Bo', members: [], agentPaths: ['/agents/bo'] }, ana)
+    ).toThrow(expect.objectContaining({ code: 'OPERATOR_ONLY' }));
+    expect(service.listRooms(human).map((r) => r.title)).not.toContain('Bo');
+  });
+
+  it('still lets an agent open a room for itself', () => {
+    const own = service.createRoom(
+      { kind: 'dm', title: 'Ana notes', members: [], agentPaths: [] },
+      ana
+    );
+    expect(own.members.map((m) => m.authorId)).toEqual([ana]);
+  });
+
+  it('lets the operator do all three', () => {
+    const bo = service.addMember(roomId, human, { agentPath: '/agents/bo' }).authorId;
+    expect(service.updateMembership(roomId, human, bo, 'always').responseMode).toBe('always');
+    service.removeMember(roomId, human, bo);
+    expect(service.getRoom(roomId, human)?.members.map((m) => m.authorId)).not.toContain(bo);
+  });
+});
+
+describe('RoomService — how an author renders', () => {
+  it('carries the agent emoji and a stable handle, and never its directory', () => {
+    const { service, human } = createRoomHarness({ agents: agentLookup });
+    const room = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    const ana = room.members.find((m) => m.author.kind === 'agent')?.author;
+    expect(ana?.emoji).toBe('🐙');
+    // The handle is derived from the path, so it survives a rename and a mesh
+    // rebuild — but the path itself is not on the wire.
+    expect(ana?.agentRef).toBe(agentAuthorRef('/agents/ana'));
+    expect(JSON.stringify(ana)).not.toContain('/agents/ana');
+  });
+
+  it('refreshes the render cache when the agent gets an emoji it did not have', () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'ana', displayName: 'Ana' } }),
+    });
+    const first = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    expect(first.emoji).toBeNull();
+
+    const refreshed = harness.authors.resolveAgent('/agents/ana', 'Ana', { emoji: '🐙' });
+    expect(refreshed.id).toBe(first.id);
+    expect(harness.authors.getById(first.id)?.emoji).toBe('🐙');
+  });
+
+  it('does not blank the render cache for a caller that only knows the name', () => {
+    const harness = createRoomHarness({ agents: agentLookup });
+    const seeded = harness.authors.resolveAgent('/agents/ana', 'Ana', { emoji: '🐙' });
+
+    // This is the identity-header path: it carries a display name and nothing else.
+    harness.authors.resolveAgent('/agents/ana', 'Ana');
+    expect(harness.authors.getById(seeded.id)?.emoji).toBe('🐙');
   });
 });

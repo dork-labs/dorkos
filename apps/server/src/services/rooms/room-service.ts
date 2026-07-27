@@ -5,11 +5,14 @@
  * may not have a thread for a parent, a channel slug is unique while it is
  * live — and it publishes what happened to the two streams a room fans out on:
  * its own SSE stream for entries and signals, the global `/api/events` stream
- * for lifecycle. Membership lives next door in `room-roster.ts`.
+ * for lifecycle. Membership lives next door in `room-roster.ts`, and turning a
+ * committed post into agent replies lives in `room-trigger.ts`.
  *
- * It deliberately does NOT trigger agents. Addressing and the cascade guard are
- * pure modules with their own tests (`addressing.ts`, `cascade-guard.ts`); R3
- * calls them from here. Posting an entry today reaches its readers and stops.
+ * **Roster writes are the operator's.** Adding, removing, or re-configuring a
+ * member is refused for an agent caller. That was a harmless asymmetry while
+ * nothing read `responseMode`; now that a post triggers turns, an agent that
+ * could widen another agent's addressing could drive replies nobody asked for,
+ * and it would do it from inside the room where it is hardest to notice.
  *
  * @module server/services/rooms/room-service
  */
@@ -29,7 +32,7 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../core/event-fan-out.js';
-import type { AuthorRegistry } from './author-registry.js';
+import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
 import { resolveMentions } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
@@ -37,6 +40,7 @@ import { RoomRoster, type AddMemberInput } from './room-roster.js';
 import type { NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
+import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
 
 /** Everything {@link RoomService} is constructed from. */
 export interface RoomServiceDeps {
@@ -44,9 +48,13 @@ export interface RoomServiceDeps {
   authors: AuthorRegistry;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
+  /** How a triggered agent actually takes its turn. */
+  turns: RoomTurnRunner;
+  /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
+  maxAgentDepth(): number;
 }
 
-/** Optional provenance a post carries when a trigger produced it (R3). */
+/** Provenance a post carries when a trigger produced it. */
 export interface PostTrigger {
   root: string;
   depth: number;
@@ -58,6 +66,7 @@ export class RoomService {
   private readonly authors: AuthorRegistry;
   private readonly broadcaster: RoomBroadcaster;
   private readonly roster: RoomRoster;
+  private readonly triggers: RoomTriggerDispatcher;
 
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
@@ -67,6 +76,20 @@ export class RoomService {
       store: deps.store,
       authors: deps.authors,
       agents: deps.agents,
+    });
+    // The dispatcher writes back through this service (a reply is a post like
+    // any other, mentions and provenance included), so it takes bound methods
+    // rather than the store. They are only ever called after construction.
+    this.triggers = new RoomTriggerDispatcher({
+      store: deps.store,
+      authors: deps.authors,
+      agents: deps.agents,
+      runner: deps.turns,
+      maxAgentDepth: deps.maxAgentDepth,
+      writer: {
+        post: (roomId, input) => this.post(roomId, input),
+        postNotice: (roomId, body, cascade) => this.postNotice(roomId, body, cascade),
+      },
     });
   }
 
@@ -80,10 +103,33 @@ export class RoomService {
     return this.authors;
   }
 
+  /**
+   * Resolve once every turn a post triggered has finished.
+   *
+   * A cascade is asynchronous by construction — posting returns before any
+   * agent has answered — so this is how a caller waits it out without sleeping.
+   */
+  triggersIdle(): Promise<void> {
+    return this.triggers.idle();
+  }
+
   // === Rooms ===
 
   /**
-   * Create a channel or a DM and seed its roster with the creator.
+   * Create a channel or a DM, seeding its roster with the creator and whoever
+   * the request names — by author id (`members`) or by agent directory
+   * (`agentPaths`).
+   *
+   * `agentPaths` is what makes a DM one call. The cockpit knows agents by
+   * directory and nothing else; author ids are minted server-side and the only
+   * surface that resolves one is `POST /:id/members`. So creating a DM used to
+   * mean create-then-join, and a failed join left a direct message with nobody
+   * in it — a room named after an agent that the agent was not in, which no
+   * amount of retrying could repair because the room already existed.
+   *
+   * Everything resolves before a single row is written, inside the transaction
+   * `RoomStore.createRoom` already holds, so an unregistered agent path fails
+   * while the room does not exist and the obvious retry works.
    *
    * @param request - The validated create request.
    * @param creatorAuthorId - The author opening the room; joined automatically.
@@ -113,14 +159,30 @@ export class RoomService {
       createdAt: new Date().toISOString(),
     };
 
-    // Resolve and seed the whole roster BEFORE anything is written. An unknown
-    // author id has to fail while the room does not exist yet — otherwise the
-    // caller gets a 404 for a room that is sitting in the table holding its slug.
+    // Resolve the whole roster BEFORE anything is written. An unknown author id
+    // or an unregistered agent path has to fail while the room does not exist
+    // yet — otherwise the caller gets a 404 for a room that is sitting in the
+    // table holding its slug.
     const joinedAt = draft.createdAt;
     const seeded = { ...draft, archived: false, lastActivityAt: joinedAt };
-    const members = [...new Set([creatorAuthorId, ...request.members])].map((authorId) => ({
-      authorId,
-      responseMode: this.roster.seedResponseMode(seeded, this.roster.requireAuthor(authorId)),
+    const creator = this.roster.requireAuthor(creatorAuthorId);
+    const resolved = new Map<string, AuthorRecord>([[creator.id, creator]]);
+    for (const authorId of request.members) {
+      const author = this.roster.resolve({ authorId });
+      resolved.set(author.id, author);
+    }
+    for (const agentPath of request.agentPaths) {
+      const author = this.roster.resolve({ agentPath });
+      resolved.set(author.id, author);
+    }
+    // Opening a room is not a way around the operator-only roster rule: an agent
+    // may make itself a room (and talk to the person in it), but conscripting a
+    // second agent into one is the same amplification lever `addMember` refuses.
+    this.requireSeedingAllowed(creator, [...resolved.values()]);
+
+    const members = [...resolved.values()].map((author) => ({
+      authorId: author.id,
+      responseMode: this.roster.seedResponseMode(seeded, author),
       joinedAt,
     }));
 
@@ -270,23 +332,27 @@ export class RoomService {
 
   /**
    * Add a member by author id, or by agent directory when the agent has never
-   * been an author before.
+   * been an author before. **Operator-only.**
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must already be on the roster.
+   * @param viewerAuthorId - The caller; must be the local human.
    * @param input - Who to add, and optionally how they should behave.
    */
   addMember(roomId: string, viewerAuthorId: string, input: AddMemberInput): RoomRosterEntry {
-    const member = this.roster.add(this.requireVisibleRoom(roomId, viewerAuthorId), input);
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireOperator(viewerAuthorId, 'who is in a room');
+    const member = this.roster.add(room, input);
     eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
     return member;
   }
 
   /**
-   * Change one membership's per-room response mode.
+   * Change one membership's per-room response mode. **Operator-only** — this is
+   * the setting that decides when an agent answers without being addressed, so
+   * an agent able to turn it up on a room-mate could manufacture a conversation.
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param viewerAuthorId - The caller; must be the local human.
    * @param authorId - The member being changed.
    * @param responseMode - The new override.
    */
@@ -297,18 +363,21 @@ export class RoomService {
     responseMode: ResponseMode
   ): RoomRosterEntry {
     this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireOperator(viewerAuthorId, 'how an agent answers in a room');
     return this.roster.setResponseMode(roomId, authorId, responseMode);
   }
 
   /**
    * Remove a member, dropping its per-room session binding with it.
+   * **Operator-only.**
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param viewerAuthorId - The caller; must be the local human.
    * @param authorId - The member being removed.
    */
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
     this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requireOperator(viewerAuthorId, 'who is in a room');
     this.roster.remove(roomId, authorId);
     eventFanOut.broadcast('room_member_removed', { roomId, authorId });
   }
@@ -355,7 +424,7 @@ export class RoomService {
    * @param input.authorId - Who is posting.
    * @param input.text - What they wrote.
    * @param input.sessionId - The session that produced it, if any.
-   * @param input.trigger - Cascade provenance, when a trigger produced this (R3).
+   * @param input.trigger - Cascade provenance, when a trigger produced this.
    * @returns The committed entry.
    */
   post(
@@ -385,6 +454,11 @@ export class RoomService {
     });
 
     this.publishEntry(entry);
+    // Trigger-only, both ways: the post reaches its readers now, and whoever it
+    // addresses answers on their own schedule. Deliberately not awaited — the
+    // HTTP 202 must not wait on a model call, and the reply arrives on the same
+    // SSE stream as everything else when it comes.
+    this.triggers.dispatch(room, entry);
     return entry;
   }
 
@@ -543,6 +617,42 @@ export class RoomService {
   /** Human authors are the operator; nothing in a single-player cockpit hides from them. */
   private seesEveryRoom(viewerAuthorId: string): boolean {
     return this.authors.getById(viewerAuthorId)?.kind === 'human';
+  }
+
+  /**
+   * Refuse a roster write from anyone but the person running the machine.
+   *
+   * Deliberately a 403 and not a 404: the caller is already a member of a room
+   * it can see, so there is nothing left to hide, and telling an agent "you may
+   * not" is more useful than telling it a room it just read no longer exists.
+   *
+   * @param viewerAuthorId - The caller.
+   * @param what - What they tried to change, for the message.
+   */
+  private requireOperator(viewerAuthorId: string, what: string): void {
+    if (this.authors.getById(viewerAuthorId)?.kind === 'human') return;
+    throw new RoomError('OPERATOR_ONLY', `Only you can change ${what}`);
+  }
+
+  /**
+   * Refuse an agent's attempt to seed a room with a SECOND agent.
+   *
+   * An agent opening a room for itself — a DM with the operator, a scratch
+   * channel — is legitimate and stays allowed. Putting another agent in one is
+   * not: it is `addMember` by a different route, and it would let an agent
+   * assemble a room whose members then answer each other.
+   *
+   * @param creator - The author opening the room.
+   * @param seeded - Every author the new roster will hold.
+   */
+  private requireSeedingAllowed(creator: AuthorRecord, seeded: readonly AuthorRecord[]): void {
+    if (creator.kind === 'human') return;
+    const conscripted = seeded.find(
+      (author) => author.id !== creator.id && author.kind === 'agent'
+    );
+    if (conscripted) {
+      throw new RoomError('OPERATOR_ONLY', 'Only you can put another agent in a room');
+    }
   }
 
   /** Publish a committed entry to the room's readers and bump global activity. */

@@ -147,6 +147,21 @@ The A2A gateway exposes your DorkOS agents to external A2A-compatible clients (o
 
 Mesh is always on. It scans your projects for agent-capable directories and builds a discoverable registry without any additional configuration. See the [Agent Discovery guide](/docs/guides/agent-discovery) for details on registration and access control.
 
+### Rooms
+
+A room is a conversation more than one agent can be in. When you post, every agent the message addresses answers — and because an answer is itself a message, agents can end up replying to each other. This setting is where that stops.
+
+<TypeTable
+  type={{
+    'rooms.maxAgentDepth': {
+      description:
+        'How many replies in a row agents may send each other before the room stops them and says so. Your own messages always start the count over, so a room that has gone quiet is one message away from running again. Set it to 0 to turn automatic replies off. Only you can change this.',
+      type: 'integer (0--10)',
+      default: '3',
+    },
+  }}
+/>
+
 ### Extensions
 
 Extensions add UI, commands, and behavior to DorkOS. Core extensions ship with DorkOS and appear in Settings → Extensions under a "Core extensions" section, each with an enable or disable toggle. Extensions you install yourself appear under "Installed extensions". Toggling in the UI is all most people need. The underlying state lives in `~/.dork/config.json` under the `extensions` key.

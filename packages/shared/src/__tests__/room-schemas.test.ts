@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  agentAuthorRef,
+  AuthorRefSchema,
   canonicalizeEntry,
   CreateRoomRequestSchema,
   RoomEntrySchema,
@@ -138,6 +140,17 @@ describe('CreateRoomRequestSchema', () => {
     expect(CreateRoomRequestSchema.safeParse({ kind: 'dm', title: 'Ana' }).success).toBe(true);
   });
 
+  it('takes agent directories, so a DM is one call', () => {
+    const parsed = CreateRoomRequestSchema.parse({
+      kind: 'dm',
+      title: 'Ana',
+      agentPaths: ['/Users/dorian/agents/ana'],
+    });
+    expect(parsed.agentPaths).toEqual(['/Users/dorian/agents/ana']);
+    // Both seeding lists default, so an existing caller keeps working.
+    expect(CreateRoomRequestSchema.parse({ kind: 'dm', title: 'Ana' }).agentPaths).toEqual([]);
+  });
+
   it('refuses a slug with characters a URL would have to escape', () => {
     expect(CreateRoomRequestSchema.safeParse({ kind: 'channel', slug: 'Back End!' }).success).toBe(
       false
@@ -184,5 +197,49 @@ describe('RoomEventSchema', () => {
 
   it('keeps signature null in v1', () => {
     expect(RoomEntrySchema.parse(entry).signature).toBeNull();
+  });
+});
+
+describe('agentAuthorRef', () => {
+  // Byte-exact, like `canonicalizeEntry`: this handle is persisted in nothing,
+  // but a consumer compares it against one it computed itself, so a change to
+  // the fold silently stops every such comparison matching. Pinning the output
+  // makes that a failing test rather than a menu that quietly goes empty.
+  // Cross-checked against a plain `Math.imul(h, 16777619)` FNV-1a, so this pins
+  // the algorithm and not just whatever the current code happens to emit.
+  it('pins its output for a known path', () => {
+    expect(agentAuthorRef('/Users/dorian/agents/ana')).toBe('ed3a6c6692f64d84');
+  });
+
+  it('is stable, and different for different paths', () => {
+    expect(agentAuthorRef('/agents/ana')).toBe(agentAuthorRef('/agents/ana'));
+    expect(agentAuthorRef('/agents/ana')).not.toBe(agentAuthorRef('/agents/bo'));
+  });
+
+  it('is fixed width and reveals no path', () => {
+    const ref = agentAuthorRef('/Users/dorian/agents/ana');
+    expect(ref).toMatch(/^[0-9a-f]{16}$/);
+    expect(ref).not.toContain('dorian');
+  });
+});
+
+describe('AuthorRefSchema', () => {
+  it('renders an agent with its emoji, colour and handle', () => {
+    const parsed = AuthorRefSchema.parse({
+      id: '01JZAUTHOR',
+      kind: 'agent',
+      displayName: 'Ana',
+      emoji: '🐙',
+      color: '#6366f1',
+      agentRef: agentAuthorRef('/agents/ana'),
+    });
+    expect(parsed.emoji).toBe('🐙');
+    expect(parsed.agentRef).toBe(agentAuthorRef('/agents/ana'));
+  });
+
+  it('leaves every presentation field optional, so a bare author still parses', () => {
+    const parsed = AuthorRefSchema.parse({ id: '01JZ', kind: 'human', displayName: 'You' });
+    expect(parsed.emoji).toBeUndefined();
+    expect(parsed.agentRef).toBeUndefined();
   });
 });

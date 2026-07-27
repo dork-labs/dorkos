@@ -2759,6 +2759,10 @@ const roomValidationError = {
   description: 'Validation error',
   content: { 'application/json': { schema: ErrorResponseSchema } },
 };
+const roomOperatorOnly = {
+  description: 'Only the local human may change a roster; an agent caller is refused',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
 
 registry.registerPath({
   method: 'get',
@@ -2783,7 +2787,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Create a channel or a DM',
   description:
-    'The room and its seeded roster are written in one transaction. Threads are created via `POST /api/rooms/{id}/threads`.',
+    'The room and its seeded roster are written in one transaction, including any agent named by `agentPaths` — so creating a DM is one call and a failed resolve leaves no room behind. Threads are created via `POST /api/rooms/{id}/threads`.',
   request: { body: { content: { 'application/json': { schema: CreateRoomRequestSchema } } } },
   responses: {
     201: {
@@ -2791,6 +2795,10 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomWithRosterSchema } },
     },
     400: roomValidationError,
+    403: {
+      description: 'An agent caller tried to seed the room with a SECOND agent',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
     409: {
       description: 'A live channel already holds that slug',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -2862,7 +2870,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Post to a room (trigger-only)',
   description:
-    'Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body.',
+    'Returns 202 with the entry identity only. The entry itself reaches every reader — including the poster — over `GET /api/rooms/{id}/events`, mirroring `POST /api/sessions/{id}/messages` (ADR-0264). The author is resolved server-side from the caller identity and is never read from the body. Every agent member the post addresses is then triggered, bounded by the cascade guard; their replies arrive on the same stream.',
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: PostToRoomRequestSchema } } },
@@ -2887,7 +2895,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Add a member to a room',
   description:
-    'Add by `authorId`, or by `agentPath` to mint an agent author on first use. `responseMode` is seeded from the room kind when omitted.',
+    'Add by `authorId`, or by `agentPath` to mint an agent author on first use. `responseMode` is seeded from the room kind when omitted. Operator-only: an agent that could widen a room-mate addressing could drive replies nobody asked for.',
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: AddRoomMemberRequestSchema } } },
@@ -2898,6 +2906,7 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomRosterEntrySchema } },
     },
     400: roomValidationError,
+    403: roomOperatorOnly,
     404: {
       description: 'No such room, no such author, or no agent registered at that path',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -2910,6 +2919,8 @@ registry.registerPath({
   path: '/api/rooms/{id}/members/{authorId}',
   tags: ['Rooms'],
   summary: "Change a member's per-room response mode",
+  description:
+    'Operator-only. `responseMode` decides when an agent answers without being addressed, so an agent able to turn it up on a room-mate could manufacture a conversation.',
   request: {
     params: RoomMemberParams,
     body: { content: { 'application/json': { schema: UpdateMembershipRequestSchema } } },
@@ -2920,6 +2931,7 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomRosterEntrySchema } },
     },
     400: roomValidationError,
+    403: roomOperatorOnly,
     404: {
       description: 'No such room, or not a member of it',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -2932,10 +2944,12 @@ registry.registerPath({
   path: '/api/rooms/{id}/members/{authorId}',
   tags: ['Rooms'],
   summary: 'Remove a member from a room',
-  description: "Also drops that member's per-room session binding.",
+  description:
+    "Operator-only. Also drops that member's per-room session binding.",
   request: { params: RoomMemberParams },
   responses: {
     204: { description: 'Member removed' },
+    403: roomOperatorOnly,
     404: {
       description: 'No such room, or not a member of it',
       content: { 'application/json': { schema: ErrorResponseSchema } },

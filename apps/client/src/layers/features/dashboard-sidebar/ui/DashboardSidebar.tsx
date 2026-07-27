@@ -502,7 +502,6 @@ export function DashboardSidebar() {
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
             displayNames={displayNamesRecord}
-            agents={agents ?? {}}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
           />

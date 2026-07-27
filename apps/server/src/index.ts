@@ -700,7 +700,8 @@ async function start() {
   // Rooms subsystem (spec `rooms`, ADR 260726-170125) — channels, DMs and
   // threads. Unconditional: a room is a durable store plus an in-process
   // broadcaster, so an install with no rooms in it costs one object graph and
-  // no background work. Nothing triggers agents from a room yet (R3).
+  // no background work. A post now triggers whoever it addresses, bounded by
+  // the cascade guard (`rooms.maxAgentDepth`, ADR 260726-170127).
   const { service: roomService } = createRoomSubsystem({ db });
   setRoomService(roomService);
   logger.info('[Rooms] RoomService registered');

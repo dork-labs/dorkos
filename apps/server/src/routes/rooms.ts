@@ -44,6 +44,7 @@ const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   INVALID_SLUG: 400,
   NESTED_THREAD: 400,
   ROOM_ARCHIVED: 409,
+  OPERATOR_ONLY: 403,
 };
 
 /**
