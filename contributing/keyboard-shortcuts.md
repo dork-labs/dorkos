@@ -85,9 +85,13 @@ interface UseInteractiveShortcutsOptions {
 | `Cmd+Shift+.`      | Open the Session panel                                       |
 | `Cmd+Shift+A`      | Toggle the agent hub (`use-agent-profile-shortcut.ts`)       |
 | `?`                | Open keyboard shortcuts panel (`use-shortcuts-panel.ts`)     |
-| `Cmd+Shift+D`      | Dev playground                                               |
+| `Cmd+Shift+D`      | Dev playground — **`import.meta.env.DEV` only**              |
 
 `Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `agent-hub` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from both `App.tsx` and `AppShell.tsx`.
+
+**It does not land on the agent hub everywhere, and the handler is not what decides.** The store write always happens, but `agent-hub`'s `visibleWhen` (`app/init-extensions.ts`) admits it only on `/session` or an explicit agent path, and never under `/marketplace`. When the requested tab is not visible, `RightPanelContainer`'s reconciler re-selects the first visible contextual contribution, falling back to the always-present global one — so on Tasks, Activity, Marketplace and the dashboard the chord opens the right panel on **Pulse**. Fix that by changing `visibleWhen`, not the shortcut.
+
+`Cmd+Shift+D` is gated at its listener (`SidebarFooterBar.tsx`: `if (!import.meta.env.DEV) return;`), so it is inert in production while still rendering in the `?` panel from the registry. That is the same registry-vs-handler gap described below, in its milder form: the registry says what is advertised, the handler says what happens.
 
 > **Verify a shortcut by its handler, not by its registry constant.** `use-agent-profile-shortcut.ts` matches the raw `KeyboardEvent` — `(e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'A'` — and never imports `SHORTCUTS.AGENT_PROFILE`; the registry entry only feeds the `?` panel's display string. Grepping for the constant therefore proves nothing about whether a chord works, **in either direction**. Search for a keydown handler on the actual key before concluding a shortcut is dead — an earlier revision of this guide called `Cmd+Shift+A` dead on exactly that bad evidence.
 
@@ -104,8 +108,9 @@ Registered on `document` by `useAppTabShortcuts`
 | `Cmd+Shift+[` / `Ctrl+...` | Previous tab (matched on `event.code`, not `key` — Shift mangles) |
 | `Cmd+Shift+]` / `Ctrl+...` | Next tab (same)                                                   |
 
-**These are live in the desktop app only, and that is not a bug.** Chrome, Safari and Firefox all
-reserve `Cmd/Ctrl+T` and `Cmd/Ctrl+1-9` for their own tabs and hand them to the page uncancellable,
+**These are live in the desktop app only, and that is not a bug.** Chrome, Safari and Firefox bind
+every one of them — `Cmd/Ctrl+T`, `Cmd/Ctrl+1-9` **and** `Cmd/Ctrl+Shift+[`/`]` — to their own tabs
+and hand them to the page uncancellable,
 so on the browser cockpit — the launch-critical surface — the strip's `+` button and its roving
 `tablist` traversal (`Tab` to enter, arrows to move, `Home`/`End`, `Delete` to close) are the whole
 keyboard story. Do not "fix" this by trying to preventDefault harder.

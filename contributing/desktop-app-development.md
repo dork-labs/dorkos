@@ -117,7 +117,7 @@ A Mach-O binary cannot be `dlopen`ed/executed from inside `app.asar`. So `electr
 
 - `better-sqlite3` and `node-pty` (native `.node` addons),
 - `dist/renderer/**` (`express.static` can't range-read from inside asar),
-- `@anthropic-ai/claude-agent-sdk/**` plus **both** per-platform binary packages, `…-darwin-arm64/**` and `…-win32-x64/**` (the `claude` / `claude.exe` executable — see §3). Each packaged target needs its own glob here _and_ its own entry in `package.json`'s `optionalDependencies`; miss either and that target ships without a runnable Claude Code, green,
+- `@anthropic-ai/claude-agent-sdk/**` plus **both** per-platform binary packages, `…-darwin-arm64/**` and `…-win32-x64/**` (the `claude` / `claude.exe` executable — see §3). Each packaged target needs its own glob here _and_ its own os/cpu-guarded entry in `package.json`'s `optionalDependencies`. Miss either half and that target packages green and ships with no runnable Claude Code, a failure that appears only on the platform you missed,
 - `core-extensions/**` (staged into `DORK_HOME` via `fs.cp`).
 
 Unpacking is the **only** way to put a file outside the asar. Do not add a second copy via `extraResources`: the server bundle resolves `node_modules` by walking up from `app.asar/dist/server/`, so it reaches `app.asar/node_modules/<pkg>` (asar-redirected to the unpacked copy) before it could ever see `resources/node_modules/<pkg>`. A duplicate there is unreachable weight that only surfaces the day the two copies carry different ABIs and someone debugs a `NODE_MODULE_VERSION` error against a binary they didn't know existed. One such copy of `better-sqlite3` was carried from the first desktop commit until DOR-536 removed it.
