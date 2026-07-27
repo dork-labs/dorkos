@@ -446,6 +446,62 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
     expect(service.updateRoom(room.id, human, { archived: false }).archived).toBe(false);
   });
 
+  it('moves a channel’s #slug with its title, because the slug IS its name', () => {
+    // A channel row reads `#general`, so a rename that changed only `title`
+    // would land in the database and change nothing anybody could see.
+    const room = service.createRoom(
+      { kind: 'channel', title: 'General', members: [], agentPaths: [] },
+      human
+    );
+    expect(room.slug).toBe('general');
+
+    const renamed = service.updateRoom(room.id, human, { title: 'Backend questions' });
+    expect(renamed.title).toBe('Backend questions');
+    expect(renamed.slug).toBe('backend-questions');
+  });
+
+  it('refuses a rename onto a slug another live channel holds', () => {
+    service.createRoom({ kind: 'channel', title: 'Backend', members: [], agentPaths: [] }, human);
+    const other = service.createRoom(
+      { kind: 'channel', title: 'General', members: [], agentPaths: [] },
+      human
+    );
+
+    expect(() => service.updateRoom(other.id, human, { title: 'Backend' })).toThrow(
+      expect.objectContaining({ code: 'SLUG_TAKEN' })
+    );
+    // Refused whole: the title must not land while the slug is rejected.
+    expect(service.getRoom(other.id, human)?.title).toBe('General');
+  });
+
+  it('lets a channel keep its own slug through a cosmetic rename', () => {
+    const room = service.createRoom(
+      { kind: 'channel', title: 'General', members: [], agentPaths: [] },
+      human
+    );
+    const renamed = service.updateRoom(room.id, human, { title: 'GENERAL' });
+    expect(renamed.title).toBe('GENERAL');
+    expect(renamed.slug).toBe('general');
+  });
+
+  it('refuses a channel name with nothing sluggable in it', () => {
+    const room = service.createRoom(
+      { kind: 'channel', title: 'General', members: [], agentPaths: [] },
+      human
+    );
+    expect(() => service.updateRoom(room.id, human, { title: '!!!' })).toThrow(
+      expect.objectContaining({ code: 'INVALID_SLUG' })
+    );
+  });
+
+  it('renames a direct message without inventing a slug for it', () => {
+    // Only a channel has a name people type; a DM is addressed by who is in it.
+    const dm = service.createRoom({ kind: 'dm', title: 'Ana', members: [], agentPaths: [] }, human);
+    const renamed = service.updateRoom(dm.id, human, { title: 'Ana and Bo' });
+    expect(renamed.title).toBe('Ana and Bo');
+    expect(renamed.slug).toBeNull();
+  });
+
   it('shows the operator every room, including ones they never joined', () => {
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     const room = service.createRoom(

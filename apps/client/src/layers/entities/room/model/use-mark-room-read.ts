@@ -10,7 +10,7 @@
  * @module entities/room/model/use-mark-room-read
  */
 import { useEffect, useRef } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
@@ -78,4 +78,34 @@ export function useMarkRoomRead(
     sentRef.current = marker;
     mutate({ roomId, seq: newestSeq });
   }, [roomId, lastReadSeq, newestSeq, mutate]);
+}
+
+/**
+ * Clear a room's unread badge without opening it — what the sidebar's
+ * "Mark as read" performs.
+ *
+ * Two calls, because the caller has a room summary and not its history: read
+ * the room's newest entry, then move the cursor onto that exact `seq`. It is
+ * deliberately not "set the cursor to a very large number" — the cursor is not
+ * clamped server-side, so an optimistic overshoot would silently swallow the
+ * next messages to arrive as already-read.
+ *
+ * A room with nothing in it resolves without writing anything: there is no seq
+ * to move to, and its badge was already absent.
+ */
+export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (roomId: string) => {
+      const [newest] = await transport.listRoomEntries(roomId, { limit: 1 });
+      if (!newest) return;
+      await transport.setRoomReadCursor(roomId, newest.seq);
+    },
+    onSuccess: (_result, roomId) => {
+      void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
+    },
+  });
 }

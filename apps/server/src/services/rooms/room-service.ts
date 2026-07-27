@@ -424,6 +424,13 @@ export class RoomService {
   /**
    * Patch a room's title, topic, or archived flag.
    *
+   * **Renaming a channel moves its `#slug` with the title.** A channel's name
+   * IS its slug — it is what the sidebar draws, what a person types, and the
+   * only room name the server enforces as unique (§13.1) — so a rename that
+   * changed only `title` would land in the database and change nothing anybody
+   * could see. The new slug is derived exactly as creating the channel would
+   * derive it, and refused on the same two grounds.
+   *
    * @param roomId - The room id.
    * @param viewerAuthorId - The caller; must be on the roster.
    * @param patch - The validated update request.
@@ -441,7 +448,10 @@ export class RoomService {
         throw new RoomError('SLUG_TAKEN', `A channel called #${room.slug} already exists`);
       }
     }
-    const updated = this.store.updateRoom(roomId, patch);
+    const updated = this.store.updateRoom(roomId, {
+      ...patch,
+      ...this.renamedSlug(room, patch.title),
+    });
     if (!updated) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
     eventFanOut.broadcast('room_updated', {
       roomId: updated.id,
@@ -811,6 +821,34 @@ export class RoomService {
   /** Attach the resolved roster to a room. */
   private withRoster(room: Room): RoomWithRoster {
     return { ...room, members: this.roster.list(room.id) };
+  }
+
+  /**
+   * The `slug` half of a channel rename, as a patch fragment to spread.
+   *
+   * Empty for anything that is not a channel getting a new title, and empty
+   * when the new title slugs to what the channel is already called — renaming
+   * `#Backend` to `#backend ` must not report its own slug as taken.
+   *
+   * @param room - The room being patched.
+   * @param title - The requested title, when the patch carries one.
+   * @returns `{ slug }` when the slug moves, otherwise `{}`.
+   */
+  private renamedSlug(room: Room, title: string | undefined): { slug?: string } {
+    if (title === undefined || room.kind !== 'channel') return {};
+    const slug = slugify(title);
+    if (!slug) {
+      throw new RoomError(
+        'INVALID_SLUG',
+        'A channel name needs at least one letter or number in it'
+      );
+    }
+    if (slug === room.slug) return {};
+    const holder = this.store.findLiveChannelBySlug(slug);
+    if (holder && holder.id !== room.id) {
+      throw new RoomError('SLUG_TAKEN', `A channel called #${slug} already exists`);
+    }
+    return { slug };
   }
 }
 

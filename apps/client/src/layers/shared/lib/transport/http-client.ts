@@ -8,12 +8,20 @@ import { setAuthRequired } from '../auth-signal';
 /** Default timeout for fetchJSON requests (ms). */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** Fetch JSON from a URL, throwing on non-OK responses. */
-export async function fetchJSON<T>(
+/**
+ * Perform the request and hand back the raw {@link Response}, throwing on
+ * anything that is not OK.
+ *
+ * Split out of {@link fetchJSON} so a route that answers `204 No Content` can
+ * share exactly this error handling — the auth signal, the `code`/`status` on
+ * the thrown error, the timeout message — without `res.json()` choking on an
+ * empty body.
+ */
+async function request(
   baseUrl: string,
   url: string,
   opts?: RequestInit & { timeout?: number }
-): Promise<T> {
+): Promise<Response> {
   const { timeout = DEFAULT_TIMEOUT_MS, ...requestInit } = opts ?? {};
   const timeoutSignal = AbortSignal.timeout(timeout);
   const signal = requestInit.signal
@@ -51,7 +59,33 @@ export async function fetchJSON<T>(
     }
     throw err;
   }
-  return res.json();
+  return res;
+}
+
+/** Fetch JSON from a URL, throwing on non-OK responses. */
+export async function fetchJSON<T>(
+  baseUrl: string,
+  url: string,
+  opts?: RequestInit & { timeout?: number }
+): Promise<T> {
+  const res = await request(baseUrl, url, opts);
+  return res.json() as Promise<T>;
+}
+
+/**
+ * Call a route that answers with no body (`204 No Content`) and discard the
+ * response, throwing on non-OK exactly as {@link fetchJSON} does.
+ *
+ * `fetchJSON` cannot be used for these: `res.json()` on an empty body rejects
+ * with a parse error, which would surface as "Unexpected end of JSON input" on
+ * a request that in fact succeeded.
+ */
+export async function fetchNoContent(
+  baseUrl: string,
+  url: string,
+  opts?: RequestInit & { timeout?: number }
+): Promise<void> {
+  await request(baseUrl, url, opts);
 }
 
 /**

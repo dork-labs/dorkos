@@ -46,6 +46,8 @@ import type {
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
+  UpdateMembershipRequest,
+  UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type {
   Workspace,
@@ -753,6 +755,10 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
+  async updateRoom(_id: string, _req: UpdateRoomRequest): Promise<RoomWithRoster> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
   async listRoomEntries(_id: string, _query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
     return [];
   },
@@ -762,6 +768,18 @@ export const roomStubs = {
   },
 
   async addRoomMember(_id: string, _req: AddRoomMemberRequest): Promise<RoomRosterEntry> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async updateRoomMember(
+    _id: string,
+    _authorId: string,
+    _req: UpdateMembershipRequest
+  ): Promise<RoomRosterEntry> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async removeRoomMember(_id: string, _authorId: string): Promise<void> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
