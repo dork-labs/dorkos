@@ -22,11 +22,12 @@ The desktop app is the same DorkOS cockpit you'd get from the CLI or Docker, jus
 - **It asks before cutting an agent off**: try to quit while agents are mid-task and DorkOS says how many are still working and lets you keep them going instead.
 - **A second window**: press `Cmd/Ctrl+K`, pick an agent, and choose **Open in New Window** to park it on another screen. **Open Here** and **Open in New Tab** are on the same menu.
 - **Links that behave**: a link to another DorkOS page switches pages instantly without reloading the app, so an agent mid-answer keeps streaming while you look around. A link to anywhere else opens in your browser.
+- **An address you can bookmark**: the app serves the cockpit at `http://localhost:4242`, the same address the CLI uses, and asks for that port again every time you open it. That's what lets you bookmark DorkOS in a browser or point another tool at it. See [Find your address](#find-your-address) below.
 - **A native menu**: About DorkOS, Check for Updates, and Settings (`Cmd/Ctrl+,`), plus a Window menu with Close Tab and Close Window, and a Help menu with links to the docs and to report an issue. On Windows the menu follows the standard File/Edit/View/Window/Help layout instead of a Mac-shaped one.
 - **`dorkos://` links**: click one, like `dorkos://agents`, and it opens the app straight to that screen instead of a browser tab.
 - **Automatic updates**: the app checks for a new version on launch and every four hours, downloads it quietly in the background, and asks you to restart when it's ready. Windows updates use the same mechanism, but since the Windows build itself is unverified, treat that as unverified too.
 - **Claude Code, already inside**: the default agent runtime ships with the app, so you don't need Node.js or a separate Claude Code install to get going.
-- **One copy at a time**: opening the app again just brings the existing window forward instead of starting a second copy.
+- **One copy at a time**: opening the app again just brings the existing window forward instead of starting a second copy. DorkOS also won't start if another DorkOS already has its data folder open, which is what happens when you already have `dorkos` running in a terminal. It says so and stops, rather than letting two servers write over each other.
 - **It says when something breaks**: DorkOS runs a small server in the background to do the actual work. If that server stops, the app tells you what the server said about why and offers to start it again. If starting it keeps failing, it stops offering a button that isn't working and points you at the logs instead.
 
 <Callout type="warn">

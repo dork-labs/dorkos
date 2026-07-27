@@ -41,6 +41,27 @@ You have `dorkos` running in a terminal, and both it and the app want the same D
 
 Quit the one in your terminal (`Ctrl+C`), then open the app again. If you'd rather keep both, start the terminal one against a folder of its own: `DORK_HOME=~/.dork-cli dorkos`.
 
+## "I closed the DorkOS window but it's still running"
+
+That's on purpose. The [desktop app](/docs/getting-started/desktop-app) keeps running when you close its window, so any agents you left working carry on. It tells you this the first time you close the window, once.
+
+Look for the DorkOS icon in the menu bar on macOS, or in the notification area next to the clock on Windows. Click it to open the window again, see how many agents are working, or quit. Closing the window is not quitting, so if you want DorkOS gone, quit from that icon, from the app menu, or with `Cmd+Q` on macOS.
+
+<Callout type="info">
+  This is confirmed on macOS. It's built for Windows too, but not yet confirmed there by a real
+  end-user install. If DorkOS can't create that icon on your machine, it quits when you close the
+  window instead, so you're never left with a running app you can't reach.
+</Callout>
+
+## "Restart Server and Reset All Data don't work in the desktop app"
+
+Both buttons in **Settings → Advanced** now refuse in the desktop app, and say why. The app starts and stops the server itself, so a restart triggered from inside would leave you with no server running at all.
+
+- **To restart**: quit DorkOS and open it again. That does the same thing.
+- **To start over**: quit DorkOS, delete your data folder (`~/.dork`), then open DorkOS again and it will set itself up from scratch. Nothing is deleted while the button is refusing, so a refusal never means you lost anything.
+
+Neither restriction applies when you run DorkOS from the CLI or Docker.
+
 ## "It says my agent isn't ready" or "Claude Code / Codex / OpenCode won't connect"
 
 DorkOS checks two things for each agent tool: is the CLI installed, and are you logged in. When either is missing, DorkOS shows a **Connect** button instead of trying to run a session and failing partway through.

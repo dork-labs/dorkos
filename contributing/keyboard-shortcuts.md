@@ -83,12 +83,13 @@ interface UseInteractiveShortcutsOptions {
 | `Cmd+B` / `Ctrl+B` | Toggle sidebar (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`) |
 | `Cmd+.` / `Ctrl+.` | Toggle the right panel                                       |
 | `Cmd+Shift+.`      | Open the Session panel                                       |
+| `Cmd+Shift+A`      | Toggle the agent hub (`use-agent-profile-shortcut.ts`)       |
 | `?`                | Open keyboard shortcuts panel (`use-shortcuts-panel.ts`)     |
 | `Cmd+Shift+D`      | Dev playground                                               |
 
-> `SHORTCUTS.AGENT_PROFILE` (`mod+shift+a`) is in the registry and therefore in the `?` panel, but
-> nothing listens for it. It is advertised and dead — the same defect DOR-534 removed `⌘1`/`⌘2`/`⌘3`
-> for. Wire it or delete it; do not document it as working.
+`Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `agent-hub` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from both `App.tsx` and `AppShell.tsx`.
+
+> **Verify a shortcut by its handler, not by its registry constant.** `use-agent-profile-shortcut.ts` matches the raw `KeyboardEvent` — `(e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'A'` — and never imports `SHORTCUTS.AGENT_PROFILE`; the registry entry only feeds the `?` panel's display string. Grepping for the constant therefore proves nothing about whether a chord works, **in either direction**. Search for a keydown handler on the actual key before concluding a shortcut is dead — an earlier revision of this guide called `Cmd+Shift+A` dead on exactly that bad evidence.
 
 ### In-window tabs (DOR-540)
 
