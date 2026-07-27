@@ -70,9 +70,12 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
 
-    // A new channel is not a room you may only read.
+    // A new channel is not a room you may only read (DOR-569). The proof is the
+    // post below, not a `toBeEnabled()` on the field: `canSubmit` gates the
+    // submit action, so the textarea stays enabled either way and asserting on
+    // it passes just as happily against the bug. Reverting the fix reddens the
+    // `toHaveCount(1)`, which is the assertion that earns its place here.
     const composer = roomsPage.composer(`#${slug}`);
-    await expect(composer).toBeEnabled();
     await roomsPage.post(`#${slug}`, 'The first thing anyone said here.');
 
     // Nothing is drawn until the server's copy arrives back on the room's
