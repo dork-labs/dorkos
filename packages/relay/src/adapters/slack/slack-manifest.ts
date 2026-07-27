@@ -227,14 +227,18 @@ export const SLACK_MANIFEST: AdapterManifest = {
       key: 'dmPolicy',
       label: 'DM Access',
       type: 'select',
-      required: false,
-      description: 'Control who can DM the bot.',
+      // Required with an explicit default so the form always shows a choice.
+      // Left optional, a person who never touched this field silently got the
+      // permissive value (DOR-604).
+      required: true,
+      default: 'allowlist',
+      description: 'Control who can DM the bot. A DM can start an agent turn on your machine.',
       section: 'Access Control',
       options: [
         {
           label: 'Open (anyone)',
           value: 'open',
-          description: 'Any workspace member can DM the bot.',
+          description: 'Any workspace member can DM the bot, and start a turn on your machine.',
         },
         {
           label: 'Allowlist only',

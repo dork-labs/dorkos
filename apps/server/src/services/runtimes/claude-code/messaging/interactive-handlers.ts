@@ -5,6 +5,7 @@ import type {
   ElicitationResult,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
+import type { PermissionMode } from '@dorkos/shared/schemas';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
 import { randomUUID } from 'node:crypto';
@@ -78,6 +79,88 @@ export const DORKOS_AGENT_TOOLS = new Set([
   'mcp__dorkos__control_ui',
   'mcp__dorkos__get_ui_state',
 ]);
+
+// ---------------------------------------------------------------------------
+// Permission-mode decision table
+// ---------------------------------------------------------------------------
+
+/** What a permission mode says to do with a tool call the safe-lists did not cover. */
+export type ModeDecision = 'allow' | 'ask';
+
+/**
+ * Decide what a session's permission mode does with one tool call.
+ *
+ * This is the gate's closed end: an **exhaustive** switch over
+ * {@link PermissionMode} where every arm names its mode. Adding a member to the
+ * union without deciding here is a `tsc` error, not a silent auto-allow — the
+ * `never` assignment in the `default` arm enforces that, and it is the whole
+ * point of the function.
+ *
+ * ## Why everything but `bypassPermissions` asks
+ *
+ * `canUseTool` is not the first gate — it is the last one. The Claude Code CLI
+ * runs its own permission engine first and only round-trips to this callback for
+ * calls it has **already decided need asking** (`--permission-prompt-tool stdio`;
+ * its `createCanUseTool` returns straight away on `allow`/`deny` and sends a
+ * `can_use_tool` control request only on `ask`). Verified against the shipped
+ * binary at SDK 0.3.177 / CLI 2.1.177:
+ *
+ * - Under `acceptEdits` the CLI auto-allows a write **inside** the allowed
+ *   working directories on its own. An edit that reaches DorkOS is one the CLI
+ *   escalated on purpose — `decisionReason: {type:'workingDir', reason:'Path is
+ *   outside allowed working directories'}`. Auto-accepting it here would
+ *   rubber-stamp exactly that escalation, which is how `~/.ssh/authorized_keys`
+ *   or `~/.zshrc` gets written by an agent that was told to stay in a project.
+ * - Under `acceptEdits` the CLI also auto-allows a 7-command filesystem
+ *   allowlist (`mkdir touch rm rmdir mv cp sed`) and any read-only command.
+ *   Every other shell command — `curl … | sh`, `npm install`, `python x.py` —
+ *   falls through to `ask` and lands here. Returning `allow` for those is what
+ *   let a Slack message run a shell command on the operator's machine (DOR-604).
+ *
+ * So the honest rule is: if a call got this far, someone should look at it. The
+ * shipped description "Auto-accept file edits; still prompt for other tools"
+ * stays true end-to-end — the auto-accepting happens one layer up, where it can
+ * still tell an in-workspace edit from an escape.
+ *
+ * `bypassPermissions` is the sole exception because it means "skip all tool
+ * approval prompts", and the CLI does not consult this callback under it at all.
+ *
+ * @param mode - The session's permission mode.
+ * @returns `'allow'` to run without asking, `'ask'` to raise an approval card.
+ */
+export function resolveModeDecision(mode: PermissionMode): ModeDecision {
+  switch (mode) {
+    // "Skip all tool approval prompts" — this mode IS consent. The CLI resolves
+    // it upstream and never reaches here; DorkOS agrees rather than contradict.
+    case 'bypassPermissions':
+      return 'allow';
+
+    // Every remaining mode asks, each for its own reason:
+    //   `default`     — "Prompt on tool use", exactly as shipped.
+    //   `acceptEdits` — the CLI already auto-accepted in-workspace writes; what
+    //                   reaches here left the working directory.
+    //   `auto`        — research-preview classifier; DorkOS still raises a card.
+    //   `plan`        — read-only planning; the CLI answers writes with "Cannot
+    //                   write to X while in plan mode". Nothing executes here.
+    //   `dontAsk`     — not surfaced by DorkOS and denied upstream by the CLI,
+    //                   so this is unreachable; `ask` is the safe answer anyway.
+    case 'default':
+    case 'acceptEdits':
+    case 'auto':
+    case 'plan':
+    case 'dontAsk':
+      return 'ask';
+
+    default: {
+      // Unreachable while the switch is exhaustive; if a new mode is added to
+      // `PermissionMode` this line stops compiling. At runtime an unknown mode
+      // asks — absence of a rule is never consent.
+      const exhaustive: never = mode;
+      void exhaustive;
+      return 'ask';
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Pending interaction snapshots (serializable re-emit payloads)
@@ -356,8 +439,13 @@ export interface ToolApprovalContext {
 /**
  * Create the `canUseTool` callback for an SDK query.
  *
- * Routes AskUserQuestion to the question handler, tool approvals based on
- * permissionMode, and auto-allows everything else.
+ * Routes `AskUserQuestion` to the question handler, auto-allows the two
+ * safe-listed tool sets ({@link READ_ONLY_TOOLS}, {@link DORKOS_AGENT_TOOLS}),
+ * and hands every remaining tool to {@link resolveModeDecision}, which either
+ * allows it or raises an approval card.
+ *
+ * Nothing reaches a person's machine on a fall-through: a tool that matches no
+ * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks.
  *
  * @param session - The interactive session state (with its permission mode).
  * @param logFn - Debug logger.
@@ -368,7 +456,7 @@ export interface ToolApprovalContext {
  *   is swallowed by the caller's wiring so capture never blocks a tool.
  */
 export function createCanUseTool(
-  session: InteractiveSession & { permissionMode: string },
+  session: InteractiveSession & { permissionMode: PermissionMode },
   logFn: (msg: string, data: Record<string, unknown>) => void,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>
 ): (
@@ -388,7 +476,7 @@ export function createCanUseTool(
       return { behavior: 'allow', updatedInput: input };
     }
 
-    if (session.permissionMode === 'default' || session.permissionMode === 'auto') {
+    if (resolveModeDecision(session.permissionMode) === 'ask') {
       logFn('[canUseTool] requesting approval', {
         toolName,
         permissionMode: session.permissionMode,

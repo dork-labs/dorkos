@@ -14,6 +14,7 @@ import type { AdapterConfig } from '@dorkos/relay';
 import { AdaptersConfigFileSchema } from '@dorkos/shared/relay-schemas';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
+import { carryForwardAdapterDefaults, warnOnOpenDmPolicy } from './safe-defaults.js';
 
 /** Chokidar stability threshold before triggering hot-reload (ms). */
 const CONFIG_STABILITY_THRESHOLD_MS = 150;
@@ -87,8 +88,11 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
     // (defense in depth) without waiting for the next save.
     await repairAdapterConfigPermissions(configPath);
     const sanitized = stripRemovedAdapterTypes(JSON.parse(raw));
-    const parsed = AdaptersConfigFileSchema.safeParse(sanitized);
+    // Stamp legacy entries before any schema default can fire — once
+    // `SlackAdapterConfigSchema` applies its own default the old value is gone.
+    const parsed = AdaptersConfigFileSchema.safeParse(carryForwardAdapterDefaults(sanitized));
     if (parsed.success) {
+      warnOnOpenDmPolicy(parsed.data.adapters);
       return parsed.data.adapters;
     } else {
       logger.warn(

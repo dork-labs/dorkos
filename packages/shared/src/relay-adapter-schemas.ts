@@ -119,7 +119,14 @@ export const SlackAdapterConfigSchema = z
     nativeStreaming: z.boolean().default(true),
     typingIndicator: z.enum(['none', 'reaction']).default('reaction'),
     respondMode: z.enum(['always', 'mention-only', 'thread-aware']).default('thread-aware'),
-    dmPolicy: z.enum(['open', 'allowlist']).default('open'),
+    /**
+     * Who may DM the bot. A direct message starts an agent turn on the
+     * operator's machine, so this defaults to `'allowlist'` — an integration
+     * nobody configured answers nobody, rather than answering the whole
+     * workspace (DOR-604, ADR 260727-181825). Integrations that predate this
+     * default keep `'open'`; see `services/relay/safe-defaults.ts`.
+     */
+    dmPolicy: z.enum(['open', 'allowlist']).default('allowlist'),
     dmAllowlist: z.array(z.string()).default([]),
     channelOverrides: z
       .record(
@@ -328,7 +335,15 @@ export const AdapterBindingSchema = z
     channelType: ChannelTypeSchema.optional(),
     sessionStrategy: SessionStrategySchema.default('per-chat'),
     label: z.string().default(''),
-    permissionMode: PermissionModeSchema.optional().default('acceptEdits'),
+    /**
+     * The permission mode turns from this binding run in. Defaults to
+     * `'default'` — the prompting mode — because a binding carries messages from
+     * off this machine and nobody picked a mode for it (DOR-604,
+     * ADR 260727-181825). Non-optional in the parsed shape, so there is exactly
+     * one place this value is decided; bindings that predate the field are
+     * carried forward at `'acceptEdits'` in `services/relay/safe-defaults.ts`.
+     */
+    permissionMode: PermissionModeSchema.default('default'),
     /**
      * When false, the binding is paused — the router skips it for both
      * inbound delivery and agent-initiated publishes. The binding remains

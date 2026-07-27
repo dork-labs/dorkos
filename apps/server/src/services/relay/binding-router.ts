@@ -32,7 +32,13 @@ import { parseHumanSubject } from './human-subject.js';
 
 /** Minimal interface for AgentManager session creation. */
 export interface AgentSessionCreator {
-  createSession(cwd: string, permissionMode?: PermissionMode): Promise<{ id: string }>;
+  /**
+   * @param cwd - Working directory for the new session.
+   * @param permissionMode - Required, and deliberately so: an optional mode here
+   *   invited a second `?? 'acceptEdits'` fallback to decide it (DOR-604). The
+   *   caller resolves it from the binding, which always carries one.
+   */
+  createSession(cwd: string, permissionMode: PermissionMode): Promise<{ id: string }>;
 }
 
 /** Minimal interface for RelayCore publish and subscription. */
@@ -306,7 +312,10 @@ export class BindingRouter {
               __bindingPermissions: {
                 canReply: binding.canReply,
                 canInitiate: binding.canInitiate,
-                permissionMode: binding.permissionMode ?? 'acceptEdits',
+                // No fallback: `AdapterBindingSchema` resolves this on parse and
+                // `safe-defaults.ts` carries legacy entries forward, so the mode
+                // is decided in exactly one place (DOR-604).
+                permissionMode: binding.permissionMode,
               },
             }
           : envelope.payload;

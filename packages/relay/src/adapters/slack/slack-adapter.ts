@@ -95,7 +95,11 @@ export class SlackAdapter extends BaseRelayAdapter {
     return {
       eventId,
       respondMode: respondModeOverride ?? this.config.respondMode ?? 'thread-aware',
-      dmPolicy: this.config.dmPolicy ?? 'open',
+      // Fall back to the restrictive policy, not the permissive one: a config
+      // that reached here without a `dmPolicy` went through neither the schema
+      // default nor the legacy carry-forward, so nothing about it says the
+      // operator wanted the whole workspace to be able to DM (DOR-604).
+      dmPolicy: this.config.dmPolicy ?? 'allowlist',
       dmAllowlist: allowlist,
       channelOverrides: overrides,
       threadTracker: this.threadTracker,
