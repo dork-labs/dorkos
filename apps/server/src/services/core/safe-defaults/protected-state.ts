@@ -34,41 +34,62 @@
  *    file records that the person answered a consent prompt, their answer comes
  *    back intact, every channel together with the flag that says they answered.
  *    Atomically: carrying `userHasDecided` alone would open the Tier 1 send gate
- *    (`hasTier1SendGate`) onto default-ON channels, which is worse than carrying
- *    nothing.
+ *    (`hasTier1SendGate`) onto whatever the channels defaulted to, which is
+ *    worse than carrying nothing.
  * 2. **A value more protective than the default.** {@link PROTECTIVE_CARRYOVERS}
  *    lists every leaf whose default sits on the permissive side, with the
- *    direction that protects. A stored value on the protective side is carried;
- *    a stored value on the permissive side is not, so recovery can only ever
- *    land at or below a fresh install's exposure.
+ *    direction that protects.
  *
- * A leaf whose default is ALREADY the protective option needs no entry here:
- * the wipe lands on it for free (`tunnel.enabled`, `approvals.standingGrants`,
- * `extensions.approvedToRun`, `auth`-adjacent secrets, and the Tier 2 telemetry
- * channels are all in that group). Only the permissive-default leaves can lose
- * something, so only they are listed.
+ * ## The one invariant: carryover is monotone toward protection
  *
- * ## Everything carried is re-validated
+ * **Recovery can only ever land at or below a fresh install's exposure.** A
+ * stored value on the protective side is carried; a stored value on the
+ * permissive side is not, and it does not matter which side the default happens
+ * to sit on, because every comparison is against the fresh value rather than a
+ * hardcoded constant. A decision that cannot be reproduced within that bound is
+ * dropped entirely and the notice is left armed, so the person is asked again
+ * rather than silently re-enrolled or silently opted out.
  *
- * The source is a file that just FAILED validation. Writing any of it back
- * unchecked would re-condemn the fresh store and loop the recovery forever, so
- * every salvaged value is parsed against its own narrow schema and dropped on
- * its own if it does not hold. One unreadable field never costs another field.
+ * A leaf whose default is ALREADY the protective option needs no entry in
+ * {@link PROTECTIVE_CARRYOVERS} for its own sake — a wipe lands on it for free.
+ * Some are listed anyway because a person can move PAST the default: a room
+ * spend cap ships at a real bound and can still be tightened further.
+ *
+ * ## Everything carried is proved against the real schema
+ *
+ * The source is a file that just FAILED validation, and all of this runs inside
+ * the recovery `catch` — the last-resort always-boots guarantee. A value written
+ * back unchecked is re-validated by `conf`'s Ajv on `set()`, and that throw
+ * escapes the catch and takes down the boot this code exists to rescue.
+ *
+ * A `typeof` check is not enough: `trustWindowMinutes: 1` is a number and
+ * violates `.min(5)`; `standingGrantsVoidBefore: '2026-07-27'` is a string and
+ * violates `.datetime()`. So every candidate is parsed against its real section
+ * schema before being promised ({@link sectionSchemaAccepts}), each section is
+ * re-checked as assembled, and each write is wrapped. Values are judged one at a
+ * time, so one unreadable field never costs another, and a section that still
+ * cannot be written is dropped and logged rather than left half-applied.
  *
  * @module services/core/safe-defaults/protected-state
  */
 import { z } from 'zod';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 
 /**
  * The later of two posture-floor instants, treating a missing one as "no floor".
  *
- * Both values are `Date.prototype.toISOString()` output — fixed-width UTC — so
- * ordering them as text orders them as instants, the same property the grant
- * store's own comparison relies on. The schema pins the format
- * (`standingGrantsVoidBefore` is `z.string().datetime().nullable()`), so a value
- * that reaches here through any validated path is comparable this way.
+ * Ordering fixed-width UTC strings as text orders them as instants, the same
+ * property the grant store's own comparison relies on.
+ *
+ * That holds ONLY for genuine `Date.prototype.toISOString()` output, so **every
+ * caller must validate first**. This is not a theoretical caveat: the salvage
+ * path reads from a file that already failed validation, and
+ * `'December 31, 2020'` sorts above every real 2026 timestamp as text, which
+ * would LOWER a floor that had already voided standing permissions. The
+ * `'later'` branch of `moreProtective` checks {@link IsoInstantSchema} before
+ * calling for exactly that reason.
  *
  * @param a - One instant, or `null`.
  * @param b - The other instant, or `null`.
@@ -134,6 +155,39 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'The external /mcp tool endpoint defaults ON. Someone who closed it should not have it re-opened by a wipe.',
   },
   {
+    path: 'agentContext.relayTools',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Agent-to-agent messaging tools default ON. Someone who took them away from their agents should not have them handed back by a wipe.',
+  },
+  {
+    path: 'agentContext.meshTools',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason: 'Agent discovery tools default ON; turning them off is a deliberate narrowing.',
+  },
+  {
+    path: 'agentContext.adapterTools',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Chat-adapter tools default ON and are the surface an agent uses to speak on an outside channel.',
+  },
+  {
+    path: 'agentContext.tasksTools',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason: 'Scheduled-work tools default ON and are how an agent arranges unattended runs.',
+  },
+  {
+    path: 'harness.autoSync',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Harness Sync defaults ON and writes into the harness directories of projects on disk. Someone who stopped those writes should not have them resume silently.',
+  },
+  {
     path: 'approvals.standingGrantsVoidBefore',
     direction: 'later',
     reason:
@@ -169,6 +223,17 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
  * channel absent from the stored file comes back OFF rather than at its
  * schema default — the same reasoning `backfillTelemetryUsageChannel` applies on
  * the upgrade path.
+ */
+const PROTECTIVE_TELEMETRY_VALUE = false;
+
+/**
+ * The telemetry channels, and the value each takes for someone who answered a
+ * consent prompt that did not yet mention the channel.
+ *
+ * Every one of them protects by being OFF, which is what
+ * {@link PROTECTIVE_TELEMETRY_VALUE} states once for all of them. A new channel
+ * that did NOT have that property could not be clamped by this code and would
+ * need its own rule — the drift test over this list is what surfaces one.
  */
 const TELEMETRY_CHANNELS = [
   'install',
@@ -226,6 +291,37 @@ function readPath(root: unknown, path: string): unknown {
   return cursor;
 }
 
+/**
+ * Whether a candidate top-level section would survive the real schema.
+ *
+ * This is the load-bearing check, and it has to be the SCHEMA rather than a
+ * `typeof`. Everything here runs inside the recovery `catch`, so a value written
+ * back unchecked is re-validated by `conf`'s Ajv on `set()`, and that throw
+ * escapes the catch and takes down the boot this code exists to rescue. A
+ * type-correct value is not a valid one: `approvals.trustWindowMinutes: 1` is a
+ * number and violates `.min(5)`; `standingGrantsVoidBefore: '2026-07-27'` is a
+ * string and violates `.datetime()`.
+ *
+ * Parses the whole assembled section rather than the leaf alone, which needs no
+ * Zod-internals walk to find a leaf schema and catches cross-field rules for
+ * free. The base is always the fresh section, which is valid by construction, so
+ * a failure is attributable to the one carried value.
+ *
+ * @param section - Top-level config key (e.g. `approvals`).
+ * @param draft - The candidate value for that whole section.
+ */
+function sectionSchemaAccepts(section: string, draft: unknown): boolean {
+  const shape = UserConfigSchema.shape as Record<string, z.ZodType | undefined>;
+  const schema = shape[section];
+  // An unknown section is refused rather than trusted: carrying a value we
+  // cannot validate is the exact failure this function exists to prevent.
+  if (!schema) return false;
+  return schema.safeParse(draft).success;
+}
+
+/** A strict ISO-8601 instant, matching `z.string().datetime()` on the leaf. */
+const IsoInstantSchema = z.string().datetime();
+
 /** Write a dot-path into a nested patch object, creating containers as needed. */
 function writePath(root: Record<string, unknown>, path: string, value: unknown): void {
   const parts = path.split('.');
@@ -241,31 +337,66 @@ function writePath(root: Record<string, unknown>, path: string, value: unknown):
 }
 
 /**
- * Recover a person's telemetry answer from a stored config, whole or not at all.
+ * Recover a person's telemetry answer from a stored config, clamped so that
+ * recovery can never land above a fresh install's exposure.
  *
- * Returns a complete `telemetry` block only when the stored file says the person
- * answered a consent prompt (`userHasDecided === true`). Their channel values
- * come back exactly as they set them; a channel the file does not mention comes
- * back OFF, because their answer never covered it. `lastPromptedVersion` rides
- * along so the notice does not re-appear for someone who already decided.
+ * ## Carryover is monotone toward protection
  *
- * Returns `undefined` for a never-answered install. That is the safe direction:
- * without a decision to preserve, the fresh defaults apply and the
- * notice-before-first-send gate holds every Tier 1 channel until the first-run
- * notice is shown again.
+ * Every channel here protects by being OFF, so a stored `false` is carried and a
+ * stored `true` is NOT — it falls back to whatever a fresh config carries. The
+ * clamp is written against `fresh` rather than against a hardcoded `false`, so
+ * it stays correct whichever way the defaults sit: it can only ever move the
+ * result toward protection or leave it where a fresh install would be.
+ *
+ * ## Why a clamped "yes" drops the decision flag too
+ *
+ * If nothing had to be clamped, the person's answer is reproduced exactly and
+ * `userHasDecided` rides along, so they are not asked again.
+ *
+ * If anything WAS clamped, their stored answer and the recovered state disagree.
+ * Carrying `userHasDecided` then would record "this person has answered" over a
+ * set of values they did not choose, silently converting a yes into a no and
+ * suppressing the notice that would have let them say yes again. So the decision
+ * flag is dropped and the notice stays armed: the honest outcome of losing a
+ * consent decision is to ask, not to assume in either direction.
+ *
+ * A never-answered install returns `undefined` for the same reason — there is no
+ * decision to preserve, and the notice gate holds every channel until it shows.
+ *
+ * Never returns a bare `userHasDecided`: the flag only ever travels with a full
+ * set of channel values, so it cannot open the send gate onto defaults.
  *
  * @param stored - The parsed contents of the config file being replaced.
- * @returns The person's answer, or `undefined` when they never gave one.
+ * @param freshTelemetry - The `telemetry` block a fresh config carries.
+ * @returns The recoverable answer, or `undefined` when none should be carried.
  */
-export function salvageTelemetryDecision(stored: unknown): UserConfig['telemetry'] | undefined {
+export function salvageTelemetryDecision(
+  stored: unknown,
+  freshTelemetry: unknown
+): UserConfig['telemetry'] | undefined {
   const parsed = StoredTelemetrySchema.safeParse(readPath(stored, 'telemetry'));
   if (!parsed.success) return undefined;
   const telemetry = parsed.data;
   if (telemetry.userHasDecided !== true) return undefined;
 
-  const channels = Object.fromEntries(
-    TELEMETRY_CHANNELS.map((channel) => [channel, telemetry[channel] ?? false])
-  ) as Record<(typeof TELEMETRY_CHANNELS)[number], boolean>;
+  const fresh = StoredTelemetrySchema.safeParse(freshTelemetry);
+  if (!fresh.success) return undefined;
+
+  let clamped = false;
+  const channels = {} as Record<(typeof TELEMETRY_CHANNELS)[number], boolean>;
+  for (const channel of TELEMETRY_CHANNELS) {
+    // A channel the file does not mention was never covered by their answer, so
+    // it takes the protective value rather than the schema default.
+    const chosen = telemetry[channel] ?? PROTECTIVE_TELEMETRY_VALUE;
+    const freshValue = fresh.data[channel] ?? PROTECTIVE_TELEMETRY_VALUE;
+    const value = chosen === PROTECTIVE_TELEMETRY_VALUE ? chosen : freshValue;
+    if (value !== chosen) clamped = true;
+    channels[channel] = value;
+  }
+
+  // Their answer could not be reproduced as given: ask again rather than record
+  // a decision they did not make.
+  if (clamped) return undefined;
 
   return {
     ...channels,
@@ -299,12 +430,14 @@ function moreProtective(
       return stored < fresh ? stored : undefined;
     }
     case 'later': {
-      if (typeof stored !== 'string') return undefined;
-      // Only a real timestamp is comparable as text; anything else is dropped
-      // rather than allowed to sort above every genuine floor.
-      if (Number.isNaN(Date.parse(stored))) return undefined;
-      const freshFloor = typeof fresh === 'string' ? fresh : null;
-      const winner = latestInstant(freshFloor, stored);
+      // Validated as a strict ISO instant BEFORE comparing, not merely parsed as
+      // a date. `latestInstant` orders fixed-width UTC strings as text, and that
+      // only orders instants when both really are fixed-width UTC: `Date.parse`
+      // accepts `'December 31, 2020'`, which sorts above every genuine 2026
+      // floor and would lower a floor that had already voided permissions.
+      if (!IsoInstantSchema.safeParse(stored).success) return undefined;
+      const freshFloor = IsoInstantSchema.safeParse(fresh).success ? (fresh as string) : null;
+      const winner = latestInstant(freshFloor, stored as string);
       return winner !== null && winner !== fresh ? winner : undefined;
     }
   }
@@ -314,9 +447,11 @@ function moreProtective(
  * Collect everything worth carrying from a config that is about to be replaced.
  *
  * Pure: reads the two inputs and returns a description of what to re-apply.
- * Never throws — a wholly unreadable input yields an empty result, because the
- * caller is already on a failure path and a throw here would take down the
- * boot it is trying to rescue.
+ * Never throws, and the result is guaranteed to satisfy the real schema — a
+ * candidate that would not is dropped here rather than written and rejected by
+ * Ajv inside the recovery catch, where the throw would take down the boot this
+ * is trying to rescue. Each leaf is judged on its own, so one unreadable value
+ * never costs another.
  *
  * @param stored - The parsed contents of the file being replaced. Pass
  *   `undefined` when the file could not be parsed at all.
@@ -327,15 +462,30 @@ export function salvageProtectedState(stored: unknown, fresh: unknown): Salvaged
   const salvaged: SalvagedProtections = { leaves: {} };
   if (stored === null || typeof stored !== 'object') return salvaged;
 
-  const telemetry = salvageTelemetryDecision(stored);
-  if (telemetry) salvaged.telemetry = telemetry;
+  const telemetry = salvageTelemetryDecision(stored, readPath(fresh, 'telemetry'));
+  if (telemetry && sectionSchemaAccepts('telemetry', telemetry)) salvaged.telemetry = telemetry;
 
   for (const entry of PROTECTIVE_CARRYOVERS) {
-    // A carried decision already restored the whole telemetry block verbatim;
+    // A carried decision already restored the whole telemetry block;
     // re-deciding its channels leaf by leaf could only contradict it.
     if (salvaged.telemetry && entry.path.startsWith('telemetry.')) continue;
     const value = moreProtective(entry, readPath(stored, entry.path), readPath(fresh, entry.path));
-    if (value !== undefined) salvaged.leaves[entry.path] = value;
+    if (value === undefined) continue;
+
+    // Prove the carried value against the real schema before promising it. The
+    // base is the fresh section, valid by construction, so a rejection here is
+    // attributable to this one value.
+    const [section, ...rest] = entry.path.split('.');
+    if (section === undefined || rest.length === 0) continue;
+    const freshSection = readPath(fresh, section);
+    const draft =
+      freshSection !== null && typeof freshSection === 'object'
+        ? { ...(freshSection as Record<string, unknown>) }
+        : {};
+    writePath(draft, rest.join('.'), value);
+    if (!sectionSchemaAccepts(section, draft)) continue;
+
+    salvaged.leaves[entry.path] = value;
   }
 
   return salvaged;
@@ -361,6 +511,17 @@ export interface ProtectedStateStore {
  * Logs one line per section it restored. A person whose config was just replaced
  * should be able to read the boot log and see which of their choices came back.
  *
+ * ## Nothing here may throw
+ *
+ * This runs inside the recovery `catch`, which is the last-resort always-boots
+ * guarantee. {@link salvageProtectedState} has already proved every value
+ * against the schema, so the checks below are the second half of a belt and
+ * braces: the section is re-validated as assembled, and each `set` is wrapped,
+ * because the whole point of this code path is that it runs when assumptions
+ * have already failed. A section that still cannot be written is dropped and
+ * logged, and the remaining sections are unaffected — no partial write, no
+ * escaping throw.
+ *
  * @param store - The freshly-created store to write into.
  * @param salvaged - The output of {@link salvageProtectedState}.
  * @returns The dot-paths actually restored, for logging and tests.
@@ -369,8 +530,11 @@ export function applyProtectedState(
   store: ProtectedStateStore,
   salvaged: SalvagedProtections
 ): string[] {
-  const restored: string[] = [];
+  const labels = new Map<string, string[]>();
   const sections = new Map<string, Record<string, unknown>>();
+  const label = (name: string, text: string): void => {
+    labels.set(name, [...(labels.get(name) ?? []), text]);
+  };
 
   const section = (name: string): Record<string, unknown> => {
     const existing = sections.get(name);
@@ -391,7 +555,7 @@ export function applyProtectedState(
     // test over {@link TELEMETRY_CHANNELS} is what stops such a channel from
     // quietly defaulting ON for someone who already answered.
     sections.set('telemetry', { ...section('telemetry'), ...salvaged.telemetry });
-    restored.push('telemetry (your consent choice)');
+    label('telemetry', 'telemetry (your consent choice)');
   }
 
   for (const [path, value] of Object.entries(salvaged.leaves)) {
@@ -400,10 +564,27 @@ export function applyProtectedState(
     const draft = section(top);
     if (rest.length === 0) continue;
     writePath(draft, rest.join('.'), value);
-    restored.push(path);
+    label(top, path);
   }
 
-  for (const [name, value] of sections) store.set(name, value);
+  const restored: string[] = [];
+  for (const [name, value] of sections) {
+    if (!sectionSchemaAccepts(name, value)) {
+      logger.warn(`[Config] Could not keep your ${name} settings: they no longer fit the schema.`);
+      continue;
+    }
+    try {
+      store.set(name, value);
+    } catch (error) {
+      // Booting matters more than any one setting. Drop this section, say so,
+      // and carry on with the rest.
+      logger.warn(
+        `[Config] Could not keep your ${name} settings: ${error instanceof Error ? error.message : String(error)}`
+      );
+      continue;
+    }
+    restored.push(...(labels.get(name) ?? []));
+  }
   return restored;
 }
 

@@ -29,6 +29,17 @@ function createStore(initial: Record<string, unknown>) {
   };
 }
 
+const FRESH_TELEMETRY = {
+  userHasDecided: false,
+  install: false,
+  heartbeat: false,
+  errorReporting: false,
+  lastPromptedVersion: null,
+  usage: false,
+  linkAnalyticsToAccount: false,
+  aiMetadata: false,
+};
+
 /** A telemetry block as it stands for someone who answered "no" to everything. */
 const OPTED_OUT = {
   userHasDecided: true,
@@ -43,27 +54,57 @@ const OPTED_OUT = {
 
 describe('salvageTelemetryDecision', () => {
   it('carries an explicit opt-out back verbatim', () => {
-    expect(salvageTelemetryDecision({ telemetry: OPTED_OUT })).toEqual(OPTED_OUT);
+    expect(salvageTelemetryDecision({ telemetry: OPTED_OUT }, FRESH_TELEMETRY)).toEqual(OPTED_OUT);
   });
 
-  it('carries an explicit opt-IN back verbatim too — a decision is a decision', () => {
+  it('does NOT carry an opt-IN, because it cannot be reproduced within the bound', () => {
+    // Carryover is monotone toward protection: with the channels defaulting
+    // off, "yes" cannot come back without raising exposure above a fresh
+    // install. Dropping the decision leaves the notice armed, so the person is
+    // asked again rather than silently opted out.
     const optedIn = { ...OPTED_OUT, install: true, heartbeat: true, usage: true };
-    expect(salvageTelemetryDecision({ telemetry: optedIn })).toEqual(optedIn);
+    expect(salvageTelemetryDecision({ telemetry: optedIn }, FRESH_TELEMETRY)).toBeUndefined();
+  });
+
+  it('never carries a Tier 2 channel that was left on', () => {
+    // The reviewer's case: one `true` read out of a file that just failed
+    // validation must not re-enable error reporting or the account link.
+    const leaky = {
+      ...OPTED_OUT,
+      errorReporting: true,
+      linkAnalyticsToAccount: true,
+      aiMetadata: true,
+    };
+    expect(salvageTelemetryDecision({ telemetry: leaky }, FRESH_TELEMETRY)).toBeUndefined();
+  });
+
+  it('carries an opt-IN when a fresh install would be there anyway', () => {
+    // The clamp is written against `fresh`, not a hardcoded false, so it stays
+    // correct if the Tier 1 defaults are ever flipped back.
+    const freshOn = { ...FRESH_TELEMETRY, install: true, heartbeat: true, usage: true };
+    const optedIn = { ...OPTED_OUT, install: true, heartbeat: true, usage: true };
+    expect(salvageTelemetryDecision({ telemetry: optedIn }, freshOn)).toEqual(optedIn);
   });
 
   it('returns nothing for a never-answered install, so the notice gate re-arms', () => {
     expect(
-      salvageTelemetryDecision({ telemetry: { userHasDecided: false, install: true } })
+      salvageTelemetryDecision(
+        { telemetry: { userHasDecided: false, install: true } },
+        FRESH_TELEMETRY
+      )
     ).toBeUndefined();
-    expect(salvageTelemetryDecision({ telemetry: {} })).toBeUndefined();
-    expect(salvageTelemetryDecision({})).toBeUndefined();
+    expect(salvageTelemetryDecision({ telemetry: {} }, FRESH_TELEMETRY)).toBeUndefined();
+    expect(salvageTelemetryDecision({}, FRESH_TELEMETRY)).toBeUndefined();
   });
 
   it('never returns a bare userHasDecided — that would open the gate onto default-ON channels', () => {
     // The exact shape of the reported defect: a decision flag with no channel
     // values beside it. Every channel must come back, and a channel the person
     // was never asked about comes back OFF.
-    const salvaged = salvageTelemetryDecision({ telemetry: { userHasDecided: true } });
+    const salvaged = salvageTelemetryDecision(
+      { telemetry: { userHasDecided: true } },
+      FRESH_TELEMETRY
+    );
     expect(salvaged).toEqual({
       userHasDecided: true,
       install: false,
@@ -77,14 +118,19 @@ describe('salvageTelemetryDecision', () => {
   });
 
   it('drops a garbage block rather than carrying it into a fresh file', () => {
-    expect(salvageTelemetryDecision({ telemetry: 'nonsense' })).toBeUndefined();
-    expect(salvageTelemetryDecision({ telemetry: { userHasDecided: 'yes' } })).toBeUndefined();
+    expect(salvageTelemetryDecision({ telemetry: 'nonsense' }, FRESH_TELEMETRY)).toBeUndefined();
+    expect(
+      salvageTelemetryDecision({ telemetry: { userHasDecided: 'yes' } }, FRESH_TELEMETRY)
+    ).toBeUndefined();
   });
 
   it('ignores a non-boolean channel value but keeps the rest of the decision', () => {
-    const salvaged = salvageTelemetryDecision({
-      telemetry: { ...OPTED_OUT, install: 'maybe' },
-    });
+    const salvaged = salvageTelemetryDecision(
+      {
+        telemetry: { ...OPTED_OUT, install: 'maybe' },
+      },
+      FRESH_TELEMETRY
+    );
     // `install` could not be read, so it falls to the protective OFF rather than
     // to the schema's permissive default.
     expect(salvaged?.install).toBe(false);
@@ -109,11 +155,11 @@ describe('salvageProtectedState', () => {
     expect(salvaged.leaves).toEqual({});
   });
 
-  it('carries a decision to KEEP sharing — that is the case that can now be lost', () => {
-    // With the defaults off, the value a wipe would destroy is an explicit yes.
+  it('drops a decision to keep sharing rather than raising exposure', () => {
     const sharing = { ...OPTED_OUT, install: true, heartbeat: true, usage: true };
     const salvaged = salvageProtectedState({ telemetry: sharing }, fresh);
-    expect(salvaged.telemetry).toEqual(sharing);
+    expect(salvaged.telemetry).toBeUndefined();
+    expect(salvaged.leaves).toEqual({});
   });
 
   it('never carries a value more permissive than a fresh install', () => {
@@ -167,14 +213,11 @@ describe('salvageProtectedState', () => {
   });
 
   it('lets a carried decision own the telemetry block outright', () => {
-    // With a decision present the per-leaf rules must not also fire, or the two
-    // could contradict each other on the same field.
-    const salvaged = salvageProtectedState(
-      { telemetry: { ...OPTED_OUT, install: true, heartbeat: true } },
-      fresh
-    );
-    expect(salvaged.telemetry?.install).toBe(true);
-    expect(Object.keys(salvaged.leaves)).not.toContain('telemetry.install');
+    // When a decision IS carried, the per-leaf rules must not also fire on
+    // telemetry, or the two could contradict each other on the same field.
+    const salvaged = salvageProtectedState({ telemetry: OPTED_OUT }, fresh);
+    expect(salvaged.telemetry).toEqual(OPTED_OUT);
+    expect(Object.keys(salvaged.leaves).filter((p) => p.startsWith('telemetry.'))).toEqual([]);
   });
 });
 
@@ -332,6 +375,61 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     expect(manager.get('server').port).toBe(4242);
   });
 
+  /**
+   * The last-resort always-boots guarantee. Every input below is type-correct
+   * and schema-INVALID, which is what a `typeof` check waves through: it was
+   * then written back inside the recovery catch, Ajv threw on `set()`, and the
+   * throw escaped past `initConfigManager` so the server did not start at all.
+   * These are the four inputs that reproduced it, plus the partial write.
+   */
+  describe('a carried value can never stop the server booting', () => {
+    const OUT_OF_RANGE: Array<[string, Record<string, unknown>]> = [
+      ['a trust window below the schema minimum', { approvals: { trustWindowMinutes: 1 } }],
+      ['a negative room depth', { rooms: { maxAgentDepth: -1 } }],
+      ['a date-only void floor', { approvals: { standingGrantsVoidBefore: '2026-07-27' } }],
+      [
+        'a human-readable void floor',
+        { approvals: { standingGrantsVoidBefore: 'December 31, 2020' } },
+      ],
+    ];
+
+    for (const [name, stored] of OUT_OF_RANGE) {
+      it(`boots past ${name}, and does not carry it`, () => {
+        const { dir } = seedInvalidConfig(stored);
+        const manager = new ConfigManager(dir);
+        expect(manager.validate()).toEqual({ valid: true });
+        // Dropped, not clamped: we do not invent a value the person never chose.
+        expect(manager.get('approvals').trustWindowMinutes).toBe(480);
+        expect(manager.get('approvals').standingGrantsVoidBefore).toBeNull();
+        expect(manager.get('rooms').maxAgentDepth).toBe(3);
+      });
+    }
+
+    it('drops only the bad value and still carries the good ones', () => {
+      // One unreadable field must never cost another, and the write must not
+      // land half-applied across sections.
+      const { dir } = seedInvalidConfig({
+        auth: { enabled: true },
+        mcp: { enabled: false },
+        approvals: { trustWindowMinutes: 2 },
+      });
+      const manager = new ConfigManager(dir);
+      expect(manager.validate()).toEqual({ valid: true });
+      expect(manager.get('auth').enabled).toBe(true);
+      expect(manager.get('mcp').enabled).toBe(false);
+      expect(manager.get('approvals').trustWindowMinutes).toBe(480);
+    });
+
+    it('keeps the fresh void floor when the stored one is unparseable garbage', () => {
+      // "December 31, 2020" sorts above every real timestamp as text, so an
+      // unvalidated compare would LOWER a floor that had voided permissions.
+      const { dir } = seedInvalidConfig({
+        approvals: { standingGrantsVoidBefore: 'December 31, 2020' },
+      });
+      expect(new ConfigManager(dir).get('approvals').standingGrantsVoidBefore).toBeNull();
+    });
+  });
+
   it('keeps a privacy choice across a full reset()', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-safe-reset-'));
     dirs.push(dir);
@@ -341,10 +439,9 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
 
     manager.reset();
 
-    // Preferences go, as a reset should. The protection stays.
+    // Preferences go, as a reset should. The protection stays, whole.
     expect(manager.get('server').port).toBe(4242);
-    expect(manager.get('telemetry').install).toBe(false);
-    expect(manager.get('telemetry').userHasDecided).toBe(true);
+    expect(manager.get('telemetry')).toEqual(OPTED_OUT);
   });
 
   it('still resets telemetry when that section is named outright', () => {
@@ -361,7 +458,7 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     expect(manager.get('telemetry').install).toBe(false);
   });
 
-  it('keeps a decision to keep sharing across a full reset()', () => {
+  it('a reset never raises exposure, and re-arms the notice instead', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-safe-reset-'));
     dirs.push(dir);
     const manager = new ConfigManager(dir);
@@ -369,7 +466,16 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
 
     manager.reset();
 
-    expect(manager.get('telemetry').install).toBe(true);
-    expect(manager.get('telemetry').userHasDecided).toBe(true);
+    // Every channel, not just the one an earlier version of this test checked.
+    const telemetry = manager.get('telemetry');
+    expect(telemetry.install).toBe(false);
+    expect(telemetry.heartbeat).toBe(false);
+    expect(telemetry.usage).toBe(false);
+    expect(telemetry.errorReporting).toBe(false);
+    expect(telemetry.linkAnalyticsToAccount).toBe(false);
+    expect(telemetry.aiMetadata).toBe(false);
+    // The notice is armed again, so they get asked rather than silently opted out.
+    expect(telemetry.userHasDecided).toBe(false);
+    expect(telemetry.lastPromptedVersion).toBeNull();
   });
 });

@@ -5,8 +5,10 @@
  * The anonymous channels (heartbeat, install, feature usage) are opt-IN: they
  * send nothing until a person turns them on. The notice still runs first, and
  * the send gate below still holds every channel until it has been shown, so the
- * ordering guarantee survives the posture change as a second gate. This module owns two pure pieces so the
- * boot sequence in `index.ts` stays thin and the ordering is unit-testable:
+ * ordering guarantee survives the posture change as a second gate.
+ *
+ * This module owns two pure pieces so the boot sequence in `index.ts` stays thin
+ * and the ordering is unit-testable:
  *
  * 1. {@link decideTier1Boot} — given the telemetry consent snapshot read at
  *    startup, decides whether Tier 1 senders may fire on THIS boot (the
