@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Conf, { type Schema } from 'conf';
 import { z } from 'zod';
 import * as semver from 'semver';
-import {
-  UserConfigSchema,
-  USER_CONFIG_DEFAULTS,
-  normalizeSidebarPrefs,
-} from '@dorkos/shared/config-schema';
+import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   ConfigManager,
   initConfigManager,
@@ -39,6 +35,7 @@ import {
   backfillTelemetryAiMetadataChannel,
   scrubRetiredOnboardingSteps,
 } from '../config-manager.js';
+import { applyConfigPatch } from '../operator/config-patch.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -2336,13 +2333,11 @@ describe('a config written before DOR-579 survives the migration being skipped',
     expect(telemetry.heartbeat).toBe(false);
   });
 
-  it('keeps the sidebar organization, and it reads back canonical', () => {
+  it('reads the sidebar back canonical, with the groups intact', () => {
     const { manager } = bootOverPriorShape();
-    // Stored as-is (nothing rewrote the file) …
-    const stored = manager.getAll().ui.sidebar;
-    // … and the read-time conversion every consumer goes through yields the
+    // ConfigManager is the server's read boundary: every consumer sees the
     // canonical encoding, so the groups are intact rather than empty.
-    const prefs = normalizeSidebarPrefs(stored);
+    const prefs = manager.getAll().ui.sidebar;
     expect(prefs.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
     expect(prefs.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
     expect(prefs.groups).toHaveLength(1);
@@ -2351,6 +2346,80 @@ describe('a config written before DOR-579 survives the migration being skipped',
       { kind: 'agent', path: '/projects/gamma' },
     ]);
     expect(prefs.groups[0]!.name).toBe('Clients');
+  });
+
+  it('normalizes the ui section read on its own, not just the whole config', () => {
+    // `GET /api/config` reads `configManager.get('ui')`, a different path from
+    // `getAll()`. Both are read boundaries and both have to convert.
+    const { manager } = bootOverPriorShape();
+    const sidebar = manager.get('ui').sidebar;
+    expect(sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(sidebar.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+  });
+
+  it('converts on READ without rewriting the file', () => {
+    // The conversion is a read boundary, not a hidden migration: the bytes on
+    // disk keep the old encoding until something actually writes.
+    const { configPath } = bootOverPriorShape();
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { groups: Record<string, unknown>[] } };
+    };
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toEqual([
+      '/projects/alpha',
+      '/projects/gamma',
+    ]);
+    expect(onDisk.ui.sidebar.groups[0]!.items).toBeUndefined();
+  });
+
+  // ── The write path (applyConfigPatch) ──
+  //
+  // `applyConfigPatch` reads the current config, deep-merges the patch, and
+  // re-validates the WHOLE result with Zod — which is strict, and deliberately
+  // never widened the way conf's Ajv schema was. So the read boundary above is
+  // what keeps writes working at all on an un-migrated install; without it a
+  // legacy `pinned` refuses every write (the merge carries the untouched
+  // `ui.sidebar` into validation), and a legacy `agentPaths` is silently
+  // stripped by Zod and persisted as an empty group.
+
+  it('accepts a patch that has nothing to do with the sidebar', () => {
+    const { dir } = bootOverPriorShape();
+    initConfigManager(dir);
+    const result = applyConfigPatch({ logging: { level: 'debug' } });
+    expect(result.ok, JSON.stringify('details' in result ? result.details : result)).toBe(true);
+  });
+
+  it('keeps the groups when a patch touches the ui section', () => {
+    // The assertion that matters: `ok: true` alone would still pass if the
+    // groups had been silently emptied on the way through.
+    const { dir } = bootOverPriorShape();
+    const manager = initConfigManager(dir);
+    const result = applyConfigPatch({ ui: { theme: 'dark' } });
+    expect(result.ok).toBe(true);
+    const groups = manager.getAll().ui.sidebar.groups;
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
+    expect(manager.getAll().ui.theme).toBe('dark');
+  });
+
+  it('converges the file to the canonical encoding on the first write', () => {
+    const { dir, configPath } = bootOverPriorShape();
+    initConfigManager(dir);
+    expect(applyConfigPatch({ ui: { theme: 'dark' } }).ok).toBe(true);
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { pinned: unknown; groups: Record<string, unknown>[] } };
+    };
+    expect(onDisk.ui.sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
+    expect(onDisk.ui.sidebar.groups[0]!.agentPaths).toBeUndefined();
+    expect(onDisk.ui.sidebar.groups[0]!.items).toEqual([
+      { kind: 'agent', path: '/projects/alpha' },
+      { kind: 'agent', path: '/projects/gamma' },
+    ]);
   });
 
   it('accepts a config already in the canonical encoding too', () => {

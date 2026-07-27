@@ -66,6 +66,7 @@ import {
   SidebarItemRefSchema,
   SidebarGroupSchema,
   toSidebarItemRef,
+  normalizeSidebarPrefs,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger } from '../../lib/logger.js';
@@ -1327,13 +1328,23 @@ export const CONFIG_MIGRATIONS = {
  * operator disclosure walker and the OpenAPI export — both of which build their
  * own schema without this override.
  *
+ * ## One thing not to assume
+ *
+ * `SidebarItemRefSchema` is used at THREE sites (`pinned`, `muted`, and each
+ * group's `items`), but this fires ONCE for it — Zod emits the node a single
+ * time and clones it into each site afterwards, so one widening reaches all
+ * three. That is Zod's un-referencing pass, an implementation detail rather
+ * than a contract. The fixture in `'a config written before DOR-579 is not
+ * condemned'` exercises all three lists together precisely so a Zod change that
+ * stopped sharing the node, or a regression widening only one site, goes red
+ * rather than silently leaving two paths condemning the file.
+ *
  * ## Removing it
  *
  * This is back-compat for ONE release: delete this function and its `override`
  * once the DOR-579 migration has shipped, together with the read-time
- * `normalizeSidebarPrefs` conversion. `'a config written before DOR-579 is not
- * condemned'` in `__tests__/config-manager.test.ts` fails if it is removed
- * early.
+ * `normalizeSidebarPrefs` conversion and `ConfigManager.canonicalUi`. The tests
+ * named above fail if it is removed early.
  *
  * @param ctx - The `z.toJSONSchema` override context for one schema node.
  */
@@ -1449,12 +1460,54 @@ export class ConfigManager {
     return this._isFirstRun;
   }
 
-  /** Get a top-level config section */
-  get<K extends keyof UserConfig>(key: K): UserConfig[K] {
-    return this.store.get(key);
+  /**
+   * Put a stored `ui` section into the canonical sidebar encoding.
+   *
+   * **This class is the server's read boundary for the legacy encoding.** A
+   * `ui.sidebar` written before DOR-579 holds bare agent paths and
+   * `groups[].agentPaths`; the widened conf schema lets conf LOAD that file, but
+   * the declared `UserConfig` type says otherwise, and every server-side reader
+   * believes the type. Normalizing here — rather than at each consumer — is what
+   * makes the type true at the one place the value is handed out, so a new
+   * reader cannot reintroduce the gap by forgetting to convert.
+   *
+   * It matters most on the WRITE path: `applyConfigPatch` merges a patch onto
+   * this value and re-validates with Zod, which is strict. Un-normalized, a
+   * legacy `pinned` fails that validation and every config write is refused —
+   * theme, telemetry consent, onboarding, all of it — and a legacy `agentPaths`
+   * is silently stripped by Zod and persisted as an empty group.
+   *
+   * Returns its input unchanged once the file is canonical, so callers keep
+   * referential equality and the steady state costs one scan per list.
+   *
+   * Removed with the rest of the DOR-579 back-compat, one release on.
+   *
+   * @param ui - The stored `ui` section, in either encoding.
+   */
+  private canonicalUi(ui: UserConfig['ui']): UserConfig['ui'] {
+    const sidebar = ui?.sidebar;
+    if (!sidebar) return ui;
+    const normalized = normalizeSidebarPrefs(sidebar);
+    return normalized === sidebar ? ui : { ...ui, sidebar: normalized };
   }
 
-  /** Get a nested value via dot-path (e.g., 'server.port') */
+  /** Get a top-level config section */
+  get<K extends keyof UserConfig>(key: K): UserConfig[K] {
+    const value = this.store.get(key);
+    // `ui` is the only section that can carry the pre-DOR-579 sidebar encoding.
+    return key === 'ui' ? (this.canonicalUi(value as UserConfig['ui']) as UserConfig[K]) : value;
+  }
+
+  /**
+   * Get a nested value via dot-path (e.g., 'server.port').
+   *
+   * Reads the store verbatim, so a dot-path INTO `ui.sidebar` on a config that
+   * predates DOR-579 reports the stored encoding rather than the canonical one.
+   * That is deliberate: this is the "show me what is on disk" accessor behind
+   * `dorkos config get`, and no code path derives behaviour from it. Everything
+   * that acts on the sidebar goes through {@link ConfigManager.get} or
+   * {@link ConfigManager.getAll}, which normalize.
+   */
   getDot(key: string): unknown {
     return this.store.get(key as keyof UserConfig);
   }
@@ -1480,9 +1533,14 @@ export class ConfigManager {
     return result;
   }
 
-  /** Get the full config object */
+  /**
+   * Get the full config object, in the canonical sidebar encoding
+   * (see {@link ConfigManager.canonicalUi}).
+   */
   getAll(): UserConfig {
-    return this.store.store;
+    const config = this.store.store;
+    const ui = this.canonicalUi(config.ui);
+    return ui === config.ui ? config : { ...config, ui };
   }
 
   /** Reset a specific key or all keys to defaults */

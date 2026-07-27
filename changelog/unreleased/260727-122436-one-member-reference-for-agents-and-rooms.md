@@ -2,6 +2,7 @@
 covers:
   - 'refactor(sidebar): one member reference for agents and rooms (DOR-579)'
   - 'fix(config): keep reading a sidebar written by an older version (DOR-579)'
+  - 'fix(config): make ConfigManager the read boundary for the legacy sidebar (DOR-579)'
 ---
 
 ### Changed
