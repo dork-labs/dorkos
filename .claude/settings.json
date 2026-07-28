@@ -48,6 +48,10 @@
           {
             "type": "command",
             "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/file-guard.mjs"
+          },
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node .claude/hooks/git-guard.mjs"
           }
         ]
       }
