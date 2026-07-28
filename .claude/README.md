@@ -10,8 +10,8 @@ This directory contains the **Claude Code Harness** — the customization framew
 | ------------- | ----- | ---------------------------------------------------------------------------- |
 | Commands      | 42    | `.claude/commands/`                                                          |
 | Agents        | 7     | `.claude/agents/`                                                            |
-| Skills        | 31    | `.claude/skills/` (13 Claude-only dirs + 18 symlinks into `.agents/skills/`) |
-| Shared Skills | 18    | `.agents/skills/` (canonical, projected to other harnesses)                  |
+| Skills        | 32    | `.claude/skills/` (13 Claude-only dirs + 19 symlinks into `.agents/skills/`) |
+| Shared Skills | 19    | `.agents/skills/` (canonical, projected to other harnesses)                  |
 | Rules         | 12    | `.claude/rules/`                                                             |
 | Claude Hooks  | 10    | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
@@ -89,6 +89,7 @@ Skills load their description into every session (the retrieval index) and their
 | `visual-companion`               | Browser-based visual mockups/diagrams                                     |
 | `working-in-worktrees`           | Worktree isolation decision + mechanics                                   |
 | `writing-adrs`                   | ADR quality, significance rubric, lifecycle                               |
+| `writing-blog-posts`             | Non-release blog posts (release posts belong to `/system:release` 6.7)    |
 | `writing-changelogs`             | Human-friendly changelog entries                                          |
 | `writing-developer-guides`       | Guide structure for AI consumption (contributing/)                        |
 | `writing-for-humans`             | Plain-language standard for all user-facing prose (9th-grade readability) |
