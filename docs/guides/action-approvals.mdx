@@ -154,14 +154,14 @@ Saying yes is your half of this. An agent that asks for something is never allow
   and is deliberately pretending to be you. Nothing on the same machine can, with no password in
   the way.
 
-Turn on **Require login** (Settings, under Security) and that changes: answering a request then
-needs a real account, and a program with no account cannot answer at all. If you run agents you
-don't fully trust, or you reach DorkOS from another device, turn it on.
+Turn on **Require login** (Settings, under Security) and that changes: answering a request then has
+to happen in DorkOS itself, in a browser you are signed in to. An API key is not enough, on purpose.
+Your agents hold one of your keys so they can run `dorkos` commands, and if a key could answer
+requests, an agent could approve its own work. So it cannot. If you run agents you don't fully
+trust, or you reach DorkOS from another device, turn login on.
 
-Worth knowing either way: a real account is what gets checked, not a real person. If you hand a
-program one of your API keys, it can answer requests the way you would. Your activity feed says
-"a signed-in account" rather than "a person" for exactly that reason. So give out API keys the way
-you would give out your password.
+That also means there is no way to say yes from a script or a terminal while login is on. That is
+the point of it, not a gap.
 
 </Callout>
 

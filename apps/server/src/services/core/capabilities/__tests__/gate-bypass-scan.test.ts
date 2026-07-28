@@ -98,7 +98,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'sourceManager.add(',
     allowed: {
       'routes/marketplace.ts':
-        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller, with no approval that could unlock it (DOR-502)',
+        'the cockpit + CLI REST route — refuses any caller the agent bar (resolveDecisionAuthority) turns away, with no approval that could unlock it (DOR-502). Deliberately NOT the cookie bar: `dorkos marketplace add` is a terminal verb whose only credential is an API key, so demanding a cookie is a lockout (source-write-policy.ts)',
       'services/marketplace-mcp/personal-marketplace.ts':
         'the boot-time bootstrap of the local personal marketplace; no request reaches it and the source it registers is always a file:// URL under this dork home',
     },
@@ -108,7 +108,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'sourceManager.remove(',
     allowed: {
       'routes/marketplace.ts':
-        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller (DOR-502)',
+        'the cockpit + CLI REST route — refuses any caller the agent bar (resolveDecisionAuthority) turns away (DOR-502); see the add entry above for why the cookie bar is not copied here',
     },
   },
   {
@@ -149,7 +149,26 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     },
   },
   {
+    what: 'records the YES that lets a destructive action through, which is the whole gate',
+    call: 'approvals.grant(',
+    allowed: {
+      'routes/approvals.ts':
+        'the cockpit route a person answers on — runs the agent bar, the requester bar, and under login the cookie bar, so an API key cannot answer for a person (DOR-474)',
+    },
+  },
+  {
+    what: 'records a NO, which buries the card a person would otherwise have answered',
+    call: 'approvals.deny(',
+    allowed: {
+      'routes/approvals.ts': 'the same route, guarded the same way — see the grant entry above',
+    },
+  },
+  {
     what: 'mints the marker that skips the tier gate entirely',
+    // Since DOR-474 a marker also requires a session cookie whenever login is on,
+    // because the two-step path it stands in for (ask, then grant) requires one.
+    // The package-source routes are NOT on this list any more for that reason: they
+    // wanted the agent bar, not this marker, and now read the resolver directly.
     call: 'trustedCaller(',
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',

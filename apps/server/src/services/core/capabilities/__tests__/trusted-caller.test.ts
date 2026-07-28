@@ -165,6 +165,34 @@ describe('who may be trusted', () => {
     ).toBeUndefined();
   });
 
+  it('refuses a per-user API key when login is on — a program is not a person (DOR-474)', () => {
+    // The invariant this module rests on is two-directional: whoever may DECIDE an
+    // approval may act without one. `POST /api/approvals/:id/grant` refuses this
+    // caller, so minting a marker for it would make the shortcut STRONGER than the
+    // thing it stands in for.
+    expect(
+      trustedCaller({
+        agentIdentityPresented: false,
+        approvalTokenPresented: false,
+        user: { userId: 'user_program', credential: 'api-key' },
+        loginEnabled: () => true,
+      })
+    ).toBeUndefined();
+  });
+
+  it('mints for a person with a session cookie when login is on', () => {
+    expect(
+      isTrustedCaller(
+        trustedCaller({
+          agentIdentityPresented: false,
+          approvalTokenPresented: false,
+          user: { userId: 'user_owner', credential: 'cookie' },
+          loginEnabled: () => true,
+        })
+      )
+    ).toBe(true);
+  });
+
   it('mints for a bare caller with login off — the cockpit', () => {
     // Stated honestly rather than dressed up: with login off this is also what a
     // program running curl on the same machine looks like, which is exactly what

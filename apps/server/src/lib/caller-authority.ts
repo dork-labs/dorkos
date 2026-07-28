@@ -35,6 +35,13 @@
  * {@link requireOperatorCookie} composes both, for the one surface that needs
  * both: creating a standing permission.
  *
+ * Since DOR-474, DECIDING an approval runs
+ * {@link requireOperatorCookieUnderLogin} too, and not only when the caller asked
+ * for a standing permission: an agent legitimately holds one of the person's API
+ * keys, so under login-on it could otherwise answer the very request it made.
+ * `trustedCaller` applies the same bar for the same reason, which is what keeps
+ * "whoever may decide may act without one" true in both directions.
+ *
  * They live here for the same anti-divergence reason as the reader above —
  * several routes enforce them and they must not mean different things by it.
  *
@@ -192,6 +199,9 @@ export function requireStandingGrantsLogin(
  * @param subject - What the caller tried to change, as the refusal names it, so
  *   one bar can serve several surfaces without any of them inheriting another's
  *   wording. Reads as "Only a person signed in to DorkOS can change {subject}".
+ *   A surface whose effect is not a CHANGE to something (deciding an approval) may
+ *   keep the status and code and answer with its own sentence, the way
+ *   `routes/config.ts` already does.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns `undefined` when login is off, or when the caller presented a session
  *   cookie. Otherwise the refusal to answer with.

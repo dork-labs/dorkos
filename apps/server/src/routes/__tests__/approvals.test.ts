@@ -312,7 +312,9 @@ describe('approvals routes', () => {
       it('lets a signed-in person decide, and records who', async () => {
         const ticket = requestOne();
 
-        const res = await request(buildApp({ loginEnabled: true, user: { userId: 'user_123' } }))
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_123', credential: 'cookie' } })
+        )
           .post(`/api/approvals/${ticket.approvalId}/grant`)
           .send();
 
@@ -330,13 +332,49 @@ describe('approvals routes', () => {
         const ticket = requestOne();
 
         const res = await request(
-          buildApp({ loginEnabled: true, user: { userId: 'user_123' }, agentIdentity: true })
+          buildApp({
+            loginEnabled: true,
+            user: { userId: 'user_123', credential: 'cookie' },
+            agentIdentity: true,
+          })
         )
           .post(`/api/approvals/${ticket.approvalId}/grant`)
           .send();
 
         expect(res.status).toBe(403);
         expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
+      });
+
+      it('refuses a plain grant from a per-user API key, and leaves it pending (DOR-474)', async () => {
+        // The residual `decision-authority.ts` named. An agent legitimately holds
+        // this credential, so accepting it here let the caller that ASKED for the
+        // approval answer it. `standing: true` was never the only way in.
+        const ticket = requestOne();
+
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+        )
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send();
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_cookie_required');
+        expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+        expect(emitted, 'a refused decision writes no Activity record').toEqual([]);
+      });
+
+      it('refuses a deny from a per-user API key, so an agent cannot bury the card', async () => {
+        const ticket = requestOne();
+
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+        )
+          .post(`/api/approvals/${ticket.approvalId}/deny`)
+          .send({ reason: 'nothing to see here' });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_cookie_required');
+        expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
       });
     });
 
