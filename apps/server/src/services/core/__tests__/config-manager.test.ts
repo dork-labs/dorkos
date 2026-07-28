@@ -1236,6 +1236,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 3,
       maxAutomaticTurnsPerRoomPerHour: 60,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1252,6 +1254,10 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 1,
       maxAutomaticTurnsPerRoomPerHour: 5,
       maxAutomaticTurnsTotalPerHour: 9,
+      // Untouched above, seeded here: the two wait bounds are new keys on a
+      // block that predates them, which is the additive half of the same rule.
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1268,6 +1274,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 0,
       maxAutomaticTurnsPerRoomPerHour: 0,
       maxAutomaticTurnsTotalPerHour: 0,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1281,6 +1289,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 1,
       maxAutomaticTurnsPerRoomPerHour: 60,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1296,6 +1306,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 2,
       maxAutomaticTurnsPerRoomPerHour: 7,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 });

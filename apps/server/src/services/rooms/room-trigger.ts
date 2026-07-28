@@ -25,10 +25,22 @@
  *    guard alongside the query, so the rule is the same rule whatever the
  *    scheduler does.
  *
- * 3. **A refusal is visible.** It writes a `notice` into the room, once per
- *    agent per cascade. A silently dropped trigger is indistinguishable from a
- *    broken agent, and in a shared room the person who notices is not the
- *    person who configured it.
+ * 3. **Every way an agent can fail to answer is visible, and said once.** The
+ *    guard refusing it, its session being busy, its turn failing: each writes a
+ *    `notice` into the room. A silently dropped trigger is indistinguishable
+ *    from a broken agent, and in a shared room the person who notices is not
+ *    the person who configured it. But a notice per refusal is its own failure
+ *    — over-participation, not silence, is what people complain about — so each
+ *    is damped, and the two kinds are damped on DIFFERENT keys: the guard's per
+ *    cascade, because that is what its rule is about, and a busy or failed
+ *    agent's per `(room, agent)` until it answers again, because every message
+ *    a person sends starts its own cascade and a cascade key would never
+ *    collide. The one silence that stays silent is an agent that ran a turn and
+ *    chose to say nothing, because that is conduct rather than a fault.
+ *
+ * 4. **A slow turn is late, never lost.** When a turn outruns the room's wait
+ *    the room stops waiting, not the turn — the answer is posted when it lands,
+ *    saying how long it took (room-participation spec, §5 edge case 6).
  *
  * The turn itself is behind {@link RoomTurnRunner}, so this file has no
  * knowledge of sessions, runtimes or locks — `room-turn-runner.ts` holds that,
@@ -41,7 +53,14 @@ import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas
 import { logger } from '../../lib/logger.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import type { AuthorRegistry } from './author-registry.js';
-import { buildBudgetNotice, buildCascadeNotice, evaluateCascade } from './cascade-guard.js';
+import { evaluateCascade } from './cascade-guard.js';
+import {
+  buildBudgetNotice,
+  buildBusyNotice,
+  buildCascadeNotice,
+  buildTurnFailedNotice,
+  withLateAnswerNote,
+} from './room-notices.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 import type { BudgetRefusalScope, RoomTurnBudget } from './turn-budget.js';
@@ -64,15 +83,46 @@ export interface RoomTurnRequest {
   authorName: string;
 }
 
+/**
+ * Why a turn produced no answer, when a member has to be told.
+ *
+ * Absent means the turn ran normally — a `null` `text` alongside no reason is
+ * an agent that chose to stay quiet, which is conduct, not a fault, and the
+ * room says nothing about it.
+ *
+ * - `busy` — another writer held the agent's session, so no turn ran.
+ * - `failed` — a turn ran and ended in an error, or never finished at all.
+ */
+export type RoomTurnUnanswered = 'busy' | 'failed';
+
+/** What a turn produced, however long it took to produce it. */
+export interface RoomTurnReply {
+  /** What the agent said, or `null` when it said nothing worth posting. */
+  text: string | null;
+  /** Set when the room got no answer for a reason a member should see. */
+  unanswered?: RoomTurnUnanswered;
+}
+
+/** An answer that arrived after the room stopped waiting for it. */
+export interface LateRoomReply extends RoomTurnReply {
+  /** How long the answer took, from the trigger to the turn closing. */
+  waitedMs: number;
+}
+
 /** What one agent turn produced. */
-export interface RoomTurnResult {
+export interface RoomTurnResult extends RoomTurnReply {
   /**
    * The session the turn ran on. Bound to `(room, agent)` first-write-wins, so
    * an agent keeps one thread of context per room.
    */
   sessionId: string;
-  /** What the agent said, or `null` when it said nothing worth posting. */
-  text: string | null;
+  /**
+   * Set when the turn outran the room's wait and is still running. Resolves
+   * when it finally closes, and its answer is posted then — late, and saying
+   * so. Cancelling instead was considered and rejected: silence is the worse
+   * failure (room-participation spec, constraint 6).
+   */
+  late?: Promise<LateRoomReply>;
 }
 
 /** The seam between a room and the turn machinery. */
@@ -118,12 +168,12 @@ export interface RoomTriggerDeps {
 }
 
 /**
- * How many `(room, cascade, author)` refusals to remember before forgetting the
- * oldest. Refusal notices are deduped in memory rather than by querying the log,
- * because "has this cascade already said Ana stopped?" is a question about a
- * JSON body, and one bounded set beats a `LIKE` over every entry. Losing the set
- * on restart costs at most one repeated notice in a cascade that survived a
- * restart, which is not a thing that happens.
+ * How many keys either notice memory holds before forgetting the oldest.
+ *
+ * Notices are deduped in memory rather than by querying the log, because "has
+ * the room already said Ana is busy?" is a question about a JSON body, and one
+ * bounded set beats a `LIKE` over every entry. Losing a set on restart costs at
+ * most one repeated line.
  */
 const NOTICE_MEMORY = 512;
 
@@ -150,8 +200,31 @@ export class RoomTriggerDispatcher {
    * `(room, cascade, author)` triples a CASCADE refusal notice has already
    * named. Bounded FIFO: a cascade is short-lived, so forgetting the oldest
    * costs at most one repeated line.
+   *
+   * Per CASCADE is the right lifetime for this one and the wrong one for the
+   * set below — see its doc. The rooms spec says so directly: "one notice per
+   * agent per cascade, not per refusal… a later cascade may legitimately
+   * notice again."
    */
   private readonly noticedCascades = new Set<string>();
+
+  /**
+   * `(room, author)` pairs the room has already reported as not answering,
+   * because the agent was busy or its turn failed.
+   *
+   * **Keyed on the agent, NOT the cascade, and that is the whole point.** Every
+   * message a person sends starts its own cascade root, so a cascade-keyed
+   * memory never collides for this case: four messages to a busy agent produced
+   * four identical apologies while the doc beside them claimed one. That is the
+   * same trap the depth-refusal branch in `claimTargets` is deliberately not
+   * walking into, and it does not get a pass here because the copy is nicer.
+   *
+   * Re-armed on recovery rather than on a clock, the way {@link
+   * RoomTriggerDispatcher.noticedBudget} re-arms: the moment that agent takes a
+   * turn in that room without a reason to refuse it, the block is over and the
+   * NEXT one is news again. No timer, no staleness, and nothing to tune.
+   */
+  private readonly noticedSilence = new Set<string>();
 
   /**
    * Rooms that have already been told they are out of budget.
@@ -193,14 +266,9 @@ export class RoomTriggerDispatcher {
     if (targets.length === 0) return;
 
     this.inFlight += 1;
-    void Promise.all(targets.map((target) => this.runOne(room, entry, target))).finally(() => {
-      this.inFlight -= 1;
-      if (this.inFlight === 0) {
-        const waiters = this.settled;
-        this.settled = [];
-        for (const resolve of waiters) resolve();
-      }
-    });
+    void Promise.all(targets.map((target) => this.runOne(room, entry, target))).finally(() =>
+      this.settleOne()
+    );
   }
 
   /**
@@ -209,10 +277,22 @@ export class RoomTriggerDispatcher {
    * Exists for tests and for a graceful shutdown: a cascade is asynchronous by
    * construction, so "did the room settle" is otherwise unanswerable without a
    * sleep, and a test that sleeps is a test that flakes.
+   *
+   * A turn the room has stopped WAITING for still counts as in flight, because
+   * its answer is still coming: the room posts it late rather than dropping it.
    */
   idle(): Promise<void> {
     if (this.inFlight === 0) return Promise.resolve();
     return new Promise((resolve) => this.settled.push(resolve));
+  }
+
+  /** Drop one in-flight dispatch, waking `idle()` waiters when the last lands. */
+  private settleOne(): void {
+    this.inFlight -= 1;
+    if (this.inFlight !== 0) return;
+    const waiters = this.settled;
+    this.settled = [];
+    for (const resolve of waiters) resolve();
   }
 
   /**
@@ -265,11 +345,43 @@ export class RoomTriggerDispatcher {
         // produced five such lines, one per room-mate, and the dedupe never
         // engaged because each post is its own root.
         //
-        // Ancestry refusals are always announced: they mean the target really
-        // is already in this cascade, so an exchange really did run.
+        // THIS SILENCE IS DELIBERATE, and it survived a second look during
+        // DOR-621 — which added notices to every other quiet path in this file.
+        // It reads like a hole in "a refusal is visible" and it is not, for
+        // three reasons worth having in front of you before you close it:
+        //
+        //   1. `deriveCascade` stamps such a post AT the ceiling
+        //      (`cascade-guard.ts`), not at depth 0. So this refusal fires at
+        //      EVERY `maxAgentDepth`, for every room-mate, on every post an
+        //      agent makes outside a turn. Copy that offers to raise a limit is
+        //      inert here: no limit was reached, and raising it changes nothing.
+        //   2. The `(room, cascade, author)` damping key CANNOT repeat here,
+        //      because each such post is its own cascade root. Whatever notice
+        //      you add is written once per post per room-mate, forever. Closing
+        //      this needs a key that repeats — keyed on the room and the quiet
+        //      agent, re-armed the way `noticedBudget` re-arms — not this one.
+        //   3. A test pinned at `maxAgentDepth: 0` passes while the spraying
+        //      case is broken, because 0 is the one value that makes the shape
+        //      look sane. Any test here must use a realistic ceiling.
+        //
+        // The invariant is served differently: nothing was ever triggered, so
+        // there is no agent that went quiet on you. `room-silence.test.ts` pins
+        // BOTH sides of that narrowness — the silence here, and the two real
+        // refusals that must still speak (an ancestry stop, and a chain that
+        // reaches the depth ceiling), so this cannot be widened into a spray or
+        // narrowed into a general hush without something going red.
+        //
+        // On the two terms below: `fromRealChain` is the load-bearing one, and
+        // the `ancestry` term is a guard rather than a discriminator. Every
+        // reachable ancestry refusal ALSO has `fromRealChain` true, because a
+        // cascade whose root is this entry contains only this entry (plus
+        // system notices), so the target cannot already be in it. Kept because
+        // that is a property of `deriveCascade` in another module, not of
+        // anything here, and it costs one comparison to not depend on it.
         const fromRealChain = entry.cascadeRoot !== entry.id;
         if (decision.reason === 'ancestry' || fromRealChain) {
-          this.writeRefusalNotice(room, entry, authorId, record?.displayName ?? 'An agent');
+          const name = record?.displayName ?? 'An agent';
+          this.announce(room, entry, authorId, buildCascadeNotice(name, authorId));
         }
         continue;
       }
@@ -381,57 +493,194 @@ export class RoomTriggerDispatcher {
         authorName: author?.displayName ?? 'Someone',
       });
 
-      const text = result.text?.trim();
-      if (!text) return;
-      this.deps.writer.post(room.id, {
-        authorId: target.authorId,
-        text,
-        sessionId: result.sessionId,
-        trigger: { root: entry.cascadeRoot, depth: target.depth },
-      });
+      // Armed BEFORE this dispatch settles, so `idle()` cannot report a room
+      // quiet while an answer is still on its way to it.
+      if (result.late) {
+        this.deliverLate({
+          room,
+          entry,
+          target,
+          sessionId: result.sessionId,
+          late: result.late,
+        });
+      }
+      this.deliver({ room, entry, target, reply: result, sessionId: result.sessionId });
     } catch (err) {
-      // A runtime that fails is not a cascade refusal, so it writes no notice:
-      // the failure belongs on the agent's own session stream, where the turn
-      // machinery already surfaces it, and duplicating it here would put a
-      // stack-trace-shaped event in a room's permanent record.
+      // The failure detail belongs on the agent's own session stream, where the
+      // turn machinery already surfaces it — a room log is no place for a stack
+      // trace. But the FACT belongs here: a turn that threw and said nothing is
+      // indistinguishable from an agent that ignored you (DOR-621).
       logger.warn('[rooms] triggered turn failed', {
         roomId: room.id,
         authorId: target.authorId,
         error: err instanceof Error ? err.message : String(err),
       });
+      this.reportSilence(room, entry, target, 'failed');
     } finally {
       this.claimed.delete(key);
     }
   }
 
-  /** Write the room's "they stopped replying" notice, at most once per cascade. */
-  private writeRefusalNotice(
+  /**
+   * Put one turn's outcome into the room: the answer, or why there is none.
+   *
+   * @param opts.reply - What the turn produced, from the runner.
+   * @param opts.sessionId - The session it ran on, carried onto the post.
+   * @param opts.late - Set on a late answer, so the post can say which message
+   *   it is answering and how long it took.
+   */
+  private deliver(opts: {
+    room: Room;
+    entry: RoomEntry;
+    target: TriggerTarget;
+    reply: RoomTurnReply;
+    sessionId: string;
+    late?: { waitedMs: number };
+  }): void {
+    const { room, entry, target, reply } = opts;
+    if (reply.unanswered) {
+      this.reportSilence(room, entry, target, reply.unanswered);
+      return;
+    }
+
+    // The turn ran and nothing refused it, so whatever was blocking this agent
+    // here is over. Recovery IS the re-arm: the next time it cannot answer, the
+    // room says so again.
+    this.noticedSilence.delete(silenceKey(room.id, target.authorId));
+
+    const said = reply.text?.trim();
+    // An agent with nothing to say is exercising judgment, not failing. Only a
+    // named `unanswered` above earns a notice.
+    if (!said) return;
+    const text =
+      opts.late === undefined
+        ? said
+        : withLateAnswerNote(said, { waitedMs: opts.late.waitedMs, question: entry.body.text });
+    this.deps.writer.post(room.id, {
+      authorId: target.authorId,
+      text,
+      sessionId: opts.sessionId,
+      trigger: { root: entry.cascadeRoot, depth: target.depth },
+    });
+  }
+
+  /**
+   * Post an answer the room stopped waiting for, once it lands.
+   *
+   * The turn was never cancelled, so this is the answer to a real question that
+   * a real person asked — it goes in, saying how long it took. The claim on
+   * `(room, cascade, author)` is already gone by then, which is correct: the
+   * cascade stamp is passed explicitly, so the guard still sees the hop.
+   *
+   * @param opts.late - The runner's promise of the eventual outcome.
+   */
+  private deliverLate(opts: {
+    room: Room;
+    entry: RoomEntry;
+    target: TriggerTarget;
+    sessionId: string;
+    late: Promise<LateRoomReply>;
+  }): void {
+    this.inFlight += 1;
+    void opts.late
+      .then((reply) =>
+        this.deliver({
+          room: opts.room,
+          entry: opts.entry,
+          target: opts.target,
+          reply,
+          sessionId: opts.sessionId,
+          late: { waitedMs: reply.waitedMs },
+        })
+      )
+      .catch((err) => {
+        logger.warn('[rooms] a late answer never landed', {
+          roomId: opts.room.id,
+          authorId: opts.target.authorId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => this.settleOne());
+  }
+
+  /**
+   * Say once, until that agent answers again, that it did not answer here.
+   *
+   * The damping key is `(room, agent)`, never the cascade. A person sending
+   * four messages to a busy agent mints four cascade roots, so a cascade-keyed
+   * memory would put four apologies in the room while claiming to write one —
+   * the exact over-participation this whole programme exists to prevent (E17).
+   * The block clears the moment that agent takes a turn there, in {@link
+   * RoomTriggerDispatcher.deliver}.
+   *
+   * @param reason - Why it stayed quiet, which picks the words.
+   */
+  private reportSilence(
     room: Room,
     entry: RoomEntry,
-    authorId: string,
-    displayName: string
+    target: TriggerTarget,
+    reason: RoomTurnUnanswered
   ): void {
+    const key = silenceKey(room.id, target.authorId);
+    if (this.noticedSilence.has(key)) return;
+    const body =
+      reason === 'busy'
+        ? buildBusyNotice(target.displayName, target.authorId)
+        : buildTurnFailedNotice(target.displayName, target.authorId);
+    if (this.writeNotice(room, entry, target.authorId, body)) {
+      remember(this.noticedSilence, key);
+    }
+  }
+
+  /**
+   * Say once, per agent per cascade, that the guard stopped an exchange.
+   *
+   * Per cascade because that is what the rule is about: this conversation went
+   * around enough times, and a later one may legitimately say so again (rooms
+   * spec §6). Deliberately a different memory from {@link
+   * RoomTriggerDispatcher.noticedSilence}, which answers a different question
+   * with a different lifetime.
+   *
+   * @param body - The notice copy, from `room-notices.ts`.
+   */
+  private announce(room: Room, entry: RoomEntry, authorId: string, body: RoomEntryBody): void {
     const key = claimKey(room.id, entry.cascadeRoot, authorId);
     if (this.noticedCascades.has(key)) return;
+    // Remembered only once it is actually in the log. Marking first meant a
+    // cascade whose FIRST notice threw went silent for good — precisely the
+    // state the notice exists to prevent.
+    if (this.writeNotice(room, entry, authorId, body)) remember(this.noticedCascades, key);
+  }
+
+  /**
+   * Write one notice into the room, reporting whether it landed.
+   *
+   * @returns `false` when the write failed, so no caller records a line the
+   *   room never got.
+   */
+  private writeNotice(
+    room: Room,
+    entry: RoomEntry,
+    authorId: string | null,
+    body: RoomEntryBody
+  ): boolean {
     try {
-      this.deps.writer.postNotice(room.id, buildCascadeNotice(displayName, authorId), {
+      this.deps.writer.postNotice(room.id, body, {
         root: entry.cascadeRoot,
         depth: entry.cascadeDepth,
       });
-      // Remembered only once it is actually in the log. Marking first meant a
-      // cascade whose FIRST notice threw went silent for good — precisely the
-      // state the notice exists to prevent.
-      this.rememberCascade(key);
+      return true;
     } catch (err) {
       // Refusals are evaluated synchronously inside `post`, so a throw here
       // would surface as a failure of the message that was already committed —
       // the poster would see their own successful post 500. The room being
       // archived between the post and the notice is the reachable case.
-      logger.warn('[rooms] could not write a refusal notice', {
+      logger.warn('[rooms] could not write a room notice', {
         roomId: room.id,
         authorId,
         error: err instanceof Error ? err.message : String(err),
       });
+      return false;
     }
   }
 
@@ -448,27 +697,9 @@ export class RoomTriggerDispatcher {
    */
   private writeBudgetNotice(room: Room, entry: RoomEntry, scope: BudgetRefusalScope): void {
     if (this.noticedBudget.has(room.id)) return;
-    try {
-      this.deps.writer.postNotice(room.id, buildBudgetNotice(scope), {
-        root: entry.cascadeRoot,
-        depth: entry.cascadeDepth,
-      });
+    if (this.writeNotice(room, entry, null, buildBudgetNotice(scope))) {
       this.noticedBudget.add(room.id);
-    } catch (err) {
-      logger.warn('[rooms] could not write a budget notice', {
-        roomId: room.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
-  }
-
-  /** Record that a cascade notice landed, evicting the oldest when full. */
-  private rememberCascade(key: string): void {
-    if (this.noticedCascades.size >= NOTICE_MEMORY) {
-      const oldest = this.noticedCascades.values().next().value;
-      if (oldest !== undefined) this.noticedCascades.delete(oldest);
-    }
-    this.noticedCascades.add(key);
   }
 
   /** Author ids with a turn in flight in one cascade. */
@@ -514,4 +745,30 @@ const CLAIM_KEY_SEPARATOR = '\u0000';
  */
 function claimKey(roomId: string, cascadeRoot: string, authorId: string): string {
   return [roomId, cascadeRoot, authorId].join(CLAIM_KEY_SEPARATOR);
+}
+
+/**
+ * A `(room, agent)` key: what the room has already said about one agent being
+ * unable to answer, with no cascade in it. The absence of the cascade is the
+ * whole design — see `noticedSilence`.
+ */
+function silenceKey(roomId: string, authorId: string): string {
+  return [roomId, authorId].join(CLAIM_KEY_SEPARATOR);
+}
+
+/**
+ * Record a key, evicting the oldest when the set is full.
+ *
+ * Bounded because these sets are only ever added to by traffic: a room nobody
+ * is watching should not be able to grow one without limit.
+ *
+ * @param seen - The FIFO set to record into.
+ * @param key - The key that just earned its place.
+ */
+function remember(seen: Set<string>, key: string): void {
+  if (seen.size >= NOTICE_MEMORY) {
+    const oldest = seen.values().next().value;
+    if (oldest !== undefined) seen.delete(oldest);
+  }
+  seen.add(key);
 }
