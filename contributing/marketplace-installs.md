@@ -253,7 +253,12 @@ The builder (`services/marketplace/permission-preview.ts`) walks the staged pack
   The cockpit's default install scope is global, so "will run" would over-claim in the common case; both preview surfaces therefore say the package **"declares"** these commands. The preview still reports them for every type and scope, because the file does land on disk, a later project-scoped install would surface them for approval, and under-reporting a shell command is the dangerous direction. The two surfaces answer different questions: the preview is what a person reads _before installing_, and the DOR-522 card is what they answer _before those commands can run_. Note that `packages/marketplace/src/package-validator.ts` has no `hooks` check, so nothing rejects a decorative `hooks/hooks.json` on a Shape or agent.
 
 - `.dork/tasks/*/SKILL.md` for scheduled jobs (name, cron, `permissions`, `enabled`).
-- `manifest.schedules` for a Shape's scheduled jobs. `startsEnabled` reports the manifest's declared intent; `apply-shape.ts` may additionally force a schedule off when its bound agent is missing at apply time, which the preview cannot know in advance, so it shows the more permissive outcome.
+- `manifest.schedules` for a Shape's scheduled jobs. Both disclosed fields report what the install will ACTUALLY do, not what the manifest asked for, because two apply-time rules override it (DOR-607) and echoing the raw declaration would be wrong in the alarming direction:
+  - `permissionMode` runs through `clampSchedulePermissionMode` — the same function `apply-shape.ts` uses, imported rather than copied, so the preview cannot drift into warning about a `bypassPermissions` job the installer would never create.
+  - `startsEnabled` reads `startEnabled`. The retired `startDisabled` is deliberately not consulted: it survives in the schema only so apply-time can tell an author it is stale, and inverting an absent key would report every schedule in a modern manifest as starting switched on.
+
+  `apply-shape.ts` may still force a schedule off when its bound agent is missing at apply time, which the preview cannot know in advance, so a `true` remains the more permissive of the two outcomes.
+
 - `.dork/adapters/*/manifest.json` for adapter requirements.
 - The `requires` field on the top-level manifest for dependency resolution against the installed set.
 

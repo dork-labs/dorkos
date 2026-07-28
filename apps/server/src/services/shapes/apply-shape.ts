@@ -51,10 +51,17 @@ const CLAMPED_PERMISSION_MODE = 'acceptEdits' as const;
  * error at install time that names no consequence. Raising it back is a person's
  * call, in the cockpit, on a task they can see.
  *
+ * Exported because the install permission preview
+ * (`services/marketplace/permission-preview.ts`) has to disclose the mode a
+ * schedule will ACTUALLY get, not the one it asked for. A second copy of this
+ * rule there could drift from this one, and the direction it would drift is a
+ * preview warning a person about an unattended `bypassPermissions` job the
+ * installer would never create.
+ *
  * @param declared - The mode the manifest asked for.
  * @returns The mode to create the schedule with, and whether it was clamped.
  */
-function clampSchedulePermissionMode(declared: PermissionMode): {
+export function clampSchedulePermissionMode(declared: PermissionMode): {
   mode: PermissionMode;
   clamped: boolean;
 } {

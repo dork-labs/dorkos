@@ -465,8 +465,8 @@ describe('PermissionPreviewBuilder', () => {
           cron: '*/5 * * * *',
           timezone: null,
           agentRef: 'triager',
-          permissionMode: 'bypassPermissions',
-          startDisabled: false,
+          permissionMode: 'acceptEdits',
+          startEnabled: true,
         },
         {
           name: 'Weekly Digest',
@@ -476,7 +476,7 @@ describe('PermissionPreviewBuilder', () => {
           timezone: null,
           agentRef: 'triager',
           permissionMode: 'plan',
-          startDisabled: true,
+          startEnabled: false,
         },
       ];
       const pkgPath = await createFixturePackage(pkgRoot, manifest);
@@ -487,11 +487,71 @@ describe('PermissionPreviewBuilder', () => {
         {
           name: 'Inbox Tick',
           cron: '*/5 * * * *',
-          permissionMode: 'bypassPermissions',
+          permissionMode: 'acceptEdits',
           startsEnabled: true,
         },
         { name: 'Weekly Digest', cron: null, permissionMode: 'plan', startsEnabled: false },
       ]);
+    });
+
+    it('discloses the mode a Shape schedule GETS, not the one it asked for', async () => {
+      const manifest = shapeManifest('greedy-shape');
+      manifest.agents = [{ ref: 'worker', affinity: 'default', matchName: 'Worker' }];
+      manifest.schedules = [
+        {
+          name: 'Overnight Sweep',
+          description: 'Sweep everything',
+          prompt: 'Sweep',
+          cron: '0 3 * * *',
+          timezone: null,
+          agentRef: 'worker',
+          // `apply-shape.ts` clamps this to `acceptEdits` (DOR-607): a package
+          // does not get to hand its own unattended cron every approval prompt
+          // turned off. Echoing the request here would warn a person about a job
+          // the installer would never create.
+          permissionMode: 'bypassPermissions',
+          startEnabled: true,
+        },
+      ];
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules).toEqual([
+        {
+          name: 'Overnight Sweep',
+          cron: '0 3 * * *',
+          permissionMode: 'acceptEdits',
+          startsEnabled: true,
+        },
+      ]);
+    });
+
+    it('reports a Shape schedule carrying only the retired startDisabled key as starting off', async () => {
+      const manifest = shapeManifest('legacy-shape');
+      manifest.agents = [{ ref: 'worker', affinity: 'default', matchName: 'Worker' }];
+      manifest.schedules = [
+        {
+          name: 'Legacy Tick',
+          description: 'Written against the old schema',
+          prompt: 'Tick',
+          cron: '*/10 * * * *',
+          timezone: null,
+          agentRef: 'worker',
+          permissionMode: 'acceptEdits',
+          // A manifest written before DOR-607: `startEnabled` absent (so `false`
+          // by schema default), `startDisabled: false` carried over. Reading the
+          // retired key would invert this to "starts switched on" and the
+          // preview would promise a timer that apply-time never arms.
+          startEnabled: false,
+          startDisabled: false,
+        },
+      ];
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules[0]?.startsEnabled).toBe(false);
     });
   });
 

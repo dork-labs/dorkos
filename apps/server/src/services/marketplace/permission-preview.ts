@@ -18,6 +18,7 @@ import { PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { clampSchedulePermissionMode } from '../shapes/apply-shape.js';
 import { installRootDirForType } from './lib/install-roots.js';
 import type {
   ConflictReport,
@@ -195,19 +196,31 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
  * Read a Shape manifest's declared `schedules[]`. Non-Shape manifests carry no
  * such field and yield nothing.
  *
- * `startsEnabled` reports the manifest's declared intent (`!startDisabled`).
- * `apply-shape.ts` additionally forces a schedule disabled when its bound agent
- * is missing at apply time, which cannot be known before the install runs — so
- * the preview shows the more permissive of the two outcomes rather than
- * promising a job will stay off.
+ * Both fields report what the install will ACTUALLY do, not what the package
+ * asked for, because two apply-time rules override the manifest and a preview
+ * that echoed the raw declaration would be wrong in the alarming direction:
+ *
+ * - `permissionMode` is run through the same clamp `apply-shape.ts` applies, so
+ *   a Shape that requests `bypassPermissions` is disclosed as the mode it
+ *   actually gets. Echoing the request would warn a person that an unattended
+ *   job can run any command when the installer would never allow it.
+ * - `startsEnabled` reads `startEnabled`, the field that decides this since
+ *   DOR-607. The retired `startDisabled` is deliberately NOT consulted: it is
+ *   declared in the schema only so apply-time can tell an author it is stale,
+ *   and nothing reads its value. Inverting it here would report every schedule
+ *   in a modern manifest as starting switched on, since the key is absent.
+ *
+ * `apply-shape.ts` may still force a schedule off when its bound agent is
+ * missing at apply time, which cannot be known before the install runs, so a
+ * `true` here remains the more permissive of the two possible outcomes.
  */
 function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSchedule[] {
   if (manifest.type !== 'shape') return [];
   return manifest.schedules.map((schedule) => ({
     name: schedule.name,
     cron: schedule.cron,
-    permissionMode: schedule.permissionMode,
-    startsEnabled: !schedule.startDisabled,
+    permissionMode: clampSchedulePermissionMode(schedule.permissionMode).mode,
+    startsEnabled: schedule.startEnabled,
   }));
 }
 
