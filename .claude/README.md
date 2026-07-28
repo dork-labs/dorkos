@@ -18,7 +18,7 @@ This directory contains the **Claude Code Harness** — the customization framew
 | ADRs          | 249   | `decisions/` (+87 archived)                                                  |
 | Guides        | 28    | `contributing/` (+ INDEX.md)                                                 |
 
-Both Skills rows are derived, not independent: the table in [Skills (Model-Invoked)](#skills-model-invoked) lists every skill by name and is the source of truth. Skills = that table's row count; Shared Skills = its rows that are not Claude-only. Add a skill in one place and these two numbers follow. They drifted by 2 before 2026-07-28 because nothing tied them to the list.
+Both Skills rows are derived, not independent: the table in [Skills (Model-Invoked)](#skills-model-invoked) lists every skill by name and is the source of truth. **Skills** = that table's row count, which you can check by counting without leaving the section. **Shared Skills** = the subset that lives in `.agents/skills/`, which the table does not mark, so that one still needs `git ls-tree HEAD .agents/skills/` to confirm. They drifted by 2 before 2026-07-28 because nothing tied them to the list at all. Marking the shared rows in the table would make the second number self-checking too, and is worth doing the next time this table is edited for another reason.
 
 The `/flow` workflow engine (commands + stage skills) is **not** in this repo — it lives in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`; ADR-0297) and its commands exist only when loaded via `--plugin-dir`.
 
