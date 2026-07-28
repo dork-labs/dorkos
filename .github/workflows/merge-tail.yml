@@ -203,12 +203,23 @@ jobs:
             echo "::error::merge-tail is inert: $perm_denied arm attempt(s) refused for lack of permission."
             exit 1
           fi
+          # `if`, NOT `[[ ... ]] && echo`. GitHub runs this block with `bash -e`
+          # (`shell: /usr/bin/bash -e {0}`), and a trailing `&&` chain whose test
+          # is false returns 1 — as the last command in the group that failed the
+          # whole step. Every non-dry-run tick reported failure for that reason
+          # alone, while doing its job correctly, which is a workflow crying wolf
+          # about itself. `set -e` is not in this script's own `set` line; it
+          # arrives from the shell GitHub picks.
           {
             echo "### merge-tail"
             echo
             echo "- armed: $armed"
             echo "- skipped: $skipped"
             echo "- arm failed: $failed"
-            [[ "$DRY_RUN" == "true" ]] && echo "- (dry run: nothing was actually armed)"
-            [[ "$perm_denied" -gt 0 ]] && echo "- **permission denied on $perm_denied arm(s) — this workflow is inert**"
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "- (dry run: nothing was actually armed)"
+            fi
+            if [[ "$perm_denied" -gt 0 ]]; then
+              echo "- **permission denied on $perm_denied arm(s) — this workflow is inert**"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
