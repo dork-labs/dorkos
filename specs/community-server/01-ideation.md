@@ -109,7 +109,11 @@ A new, self-hostable app that **copies** `apps/site`'s proven auth setup (Better
 
 **Why Buzz is second and read-only.** An interface with one implementation is a fake abstraction, and the review exchange flagged exactly that risk. But **the MVP is not expressible on Nostr**: NIP-01 has no membership, no roster, no invites, no read cursors, and identity _is_ a keypair. Buzz-first would put the MVP behind an integration that structurally cannot deliver it.
 
-Read-only is the resolution. It is small, it is real (point it at a live relay, not a mock), and it is genuinely foreign — WebSocket vs SSE, filters vs room ids, tags vs threads, no membership. It forces `canPost: false` / `hasRoster: false` to exist from day one, which is what stops our own server's assumptions being baked into the interface. Posting to Buzz comes later, when key handling earns its complexity.
+Read-only is the resolution. It is small, it is real (point it at a live relay, not a mock), and it is genuinely foreign — WebSocket vs SSE, filters vs room ids, tags on messages vs child rooms. It forces `canPost: false` to exist from day one, which is what stops our own server's assumptions being baked into the interface. Posting to Buzz comes later, when key handling earns its complexity.
+
+**Corrected 2026-07-27 by `specs/community-adapter/` (`260727-221432`): "no membership" and `hasRoster: false` were wrong, and contradicted the spike this paragraph cites.** Buzz serves a per-channel roster with per-member roles as relay-signed kind:39002 (`side_effects.rs:1092-1107`); the spike's own capability table records `list members: **yes**`, and calls it better developed than expected. All three backends enumerate members, so **`listMembers` is universal and there is no roster capability flag** — what differs between backends is the _role vocabulary_, not whether a roster exists. Read cursors were wrong for the same reason: Buzz has NIP-RS kind:30078, which is client-opaque rather than absent, and `'client-opaque'` is not `'none'`.
+
+The lesson is worth keeping next to the error: this paragraph was written before the spike and never revisited after it, so a pre-spike belief survived in prose next to a citation of the evidence that falsified it.
 
 **Amended 2026-07-27, after the spike** (`research/20260727_buzz-protocol-capability-spike.md`, Buzz @ `654f384906b5c7`). The premise that reads need no keypair was **wrong**, and the correction matters:
 

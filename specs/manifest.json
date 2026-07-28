@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260727-221432",
+      "slug": "community-adapter",
+      "title": "CommunityAdapter — one port for local rooms, Buzz, and apps/community",
+      "created": "2026-07-27",
+      "status": "specified"
+    },
+    {
       "id": "260727-161438",
       "slug": "invites",
       "title": "Invites — a second person on one install",
