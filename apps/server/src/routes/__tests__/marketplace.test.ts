@@ -142,7 +142,9 @@ function buildEmptyPermissionPreview(): PermissionPreview {
   return {
     fileChanges: [],
     extensions: [],
-    tasks: [],
+    hooks: [],
+    unreadableHooks: [],
+    schedules: [],
     secrets: [],
     externalHosts: [],
     requires: [],
@@ -1030,6 +1032,58 @@ describe('Marketplace Routes', () => {
     });
 
     it('the person in the cockpit is not asked to approve their own click', async () => {
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'demo-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/demo-plugin/uninstall')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(uninstallFlow.uninstall).toHaveBeenCalled();
+    });
+
+    it('a caller holding only an API key gets an approval card, with login ON (DOR-474)', async () => {
+      // The act-without-deciding half of DOR-474. `trustedCaller` mints the marker
+      // that skips this gate, and it used to mint one for any caller `sessionGate`
+      // authenticated — including an agent using the key it legitimately inherits
+      // from `~/.dork/api-key`. Closing only the decide endpoint would have left
+      // this open, which is strictly worse: the shortcut would grant more than
+      // deciding does.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_program', credential: 'api-key' };
+      // Primed so that if the gate ever reopens this answers a clean 200 rather
+      // than a 500 from an unstubbed flow. The failure then reads as "it ran",
+      // which is the thing under test.
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'demo-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/demo-plugin/uninstall')
+        .send({ purge: true });
+
+      expect(res.status).toBe(202);
+      expect(res.body.status).toBe('approval_required');
+      // The subject: nothing was removed, and a person now has a card to answer.
+      expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+    });
+
+    it('the person with a session cookie is still not asked, with login ON', async () => {
+      // The other half. Without this, refusing everybody under login would look
+      // like a fix rather than the outage it would be.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+      signedInUser = { userId: 'user_owner', credential: 'cookie' };
       uninstallFlow.uninstall.mockResolvedValue({
         ok: true,
         packageName: 'demo-plugin',

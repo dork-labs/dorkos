@@ -132,7 +132,15 @@ const SESSION_EVENT_TYPES = [
   'devtools_capture_request',
 ] as const;
 
-/** The 3 {@link SessionListEvent} `type` discriminants the global stream emits. */
+/**
+ * The {@link SessionListEvent} `type` discriminants the global stream emits.
+ *
+ * The gate every session-list event the HTTP cockpit receives passes through: a
+ * name the server broadcasts but this array omits gets no listener, and
+ * `EventSource` drops the frame in silence. Pinned against `SessionListEventSchema`
+ * in `__tests__/stream-manager.test.ts` (DOR-548). A second, independent copy of
+ * this allowlist lives in `session-stream-methods.ts` and is pinned there.
+ */
 const SESSION_LIST_EVENT_TYPES = ['session_upserted', 'session_removed', 'session_status'] as const;
 
 /**
@@ -771,7 +779,7 @@ export class StreamManager {
   }
 
   /**
-   * Build the global-stream handlers: the 3 session-list event names (validated,
+   * Build the global-stream handlers: the {@link SESSION_LIST_EVENT_TYPES} names (validated,
    * forwarded to the binding) plus the {@link GENERIC_EVENTS} (dispatched verbatim
    * to {@link subscribeEvent} subscribers, looked up live at dispatch time).
    */

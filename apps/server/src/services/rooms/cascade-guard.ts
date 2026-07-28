@@ -19,11 +19,13 @@
  * lives in `rooms.maxAgentDepth` (user config), and a second copy in this file
  * would be the one somebody edits when the real one is elsewhere.
  *
- * `room-trigger.ts` is the production caller.
+ * A refusal here is visible: `room-trigger.ts`, the production caller, writes
+ * the room's own-voice `notice` for it. The words live in `room-notices.ts`
+ * with every other thing the room says about itself.
  *
  * @module server/services/rooms/cascade-guard
  */
-import type { AuthorKind, RoomEntryBody } from '@dorkos/shared/room-schemas';
+import type { AuthorKind } from '@dorkos/shared/room-schemas';
 
 /** Why a trigger was refused. */
 export type CascadeRefusalReason = 'depth' | 'ancestry';
@@ -138,46 +140,4 @@ export function deriveCascade(
   }
   if (opts.authorKind === 'human') return { cascadeRoot: entryId, cascadeDepth: 0 };
   return { cascadeRoot: entryId, cascadeDepth: opts.maxAgentDepth };
-}
-
-/**
- * The durable `notice` a cascade refusal writes into the room.
- *
- * A silently dropped trigger is indistinguishable from a broken agent, and in a
- * shared room the person who notices is not the person who configured it. So
- * the room says what happened in its own voice — no stack trace, no reason code
- * in the prose — and says what to do about it.
- *
- * @param agentName - Display name of the agent that did not reply.
- * @param subjectAuthorId - Author id of that agent, for rendering.
- */
-export function buildCascadeNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
-  return {
-    text: `${agentName} stopped replying here — this back-and-forth hit its automatic-reply limit. Send a message to pick it back up.`,
-    notice: 'cascade_stopped',
-    subjectAuthorId,
-  };
-}
-
-/**
- * The durable `notice` the room writes when it runs out of hourly budget.
- *
- * Deliberately different words from the cascade notice, because it is a
- * different thing and the person reading it needs to act differently: the
- * cascade one means "this conversation went around enough times", and one
- * message restarts it. This one means "all the automatic replying that may
- * happen for now has happened", and another message will not change that.
- *
- * @param scope - Which cap refused. The two send a reader to different
- *   settings, and saying "this room" when the whole install is out would send
- *   them to the wrong one.
- */
-export function buildBudgetNotice(scope: 'room' | 'global' = 'room'): RoomEntryBody {
-  return {
-    text:
-      scope === 'global'
-        ? 'DorkOS has used up its automatic replies for the hour, across all your rooms. They will pick up again shortly — or raise the limit in Settings.'
-        : 'This room has used up its automatic replies for the hour. It will pick up again shortly — or raise the limit in Settings if this room is meant to be this busy.',
-    notice: 'budget_reached',
-  };
 }

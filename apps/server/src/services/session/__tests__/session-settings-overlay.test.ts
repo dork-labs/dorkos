@@ -2,6 +2,10 @@
  * Unit tests for the shared persisted-settings overlay (ADR-0260, DOR-463) —
  * the ONE resolver every session read path uses, so the list endpoint, the
  * detail endpoint, and the `/events` ctx cannot key the store differently.
+ *
+ * It resolves exactly ONE key per session (DOR-493). Trying a list of candidate
+ * ids made the answer depend on which id a caller asked by; the runtime now
+ * moves the row when it rebinds a session, so there is nothing to choose.
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
@@ -86,53 +90,32 @@ describe('applyStoredSettings', () => {
 
 describe('overlayStoredSettings', () => {
   it('keys each session by its runtime canonical id, not the id it is listed under', () => {
-    // The regression: the row lives under the canonical id (where PATCH wrote
-    // it) while the session is listed under the id DorkOS minted. The canonical
-    // key leads; the session's own id trails it as a fallback.
+    // The row lives under the canonical id (where PATCH wrote it, and where the
+    // runtime re-keys it on rebind) while the session is listed under the id
+    // DorkOS minted. Exactly one key is read — the canonical one.
     const sessions = [makeSession('request-id', 'fake')];
     const port = makePort({ canonical: { permissionMode: 'plan' } }, { 'request-id': 'canonical' });
 
     overlayStoredSettings(sessions, port);
 
-    expect(port.readKeys).toEqual([['canonical', 'request-id']]);
+    expect(port.readKeys).toEqual([['canonical']]);
     expect(sessions[0]!.permissionMode).toBe('plan');
   });
 
-  it('prefers the canonical row over one stored under the session id', () => {
+  it('reads the canonical key ONLY — a row under a retired id is not consulted', () => {
+    // No reader chooses among keys (DOR-493). A row can only be stranded under a
+    // retired id if the re-key failed to run, and answering from it would make
+    // the mode depend on which id the caller happened to ask by.
     const sessions = [makeSession('request-id', 'fake')];
     const port = makePort(
-      { canonical: { permissionMode: 'plan' }, 'request-id': { permissionMode: 'acceptEdits' } },
+      { 'request-id': { permissionMode: 'acceptEdits' } },
       { 'request-id': 'canonical' }
     );
 
     overlayStoredSettings(sessions, port);
 
-    expect(sessions[0]!.permissionMode).toBe('plan');
-  });
-
-  it('falls back to the REQUESTED id for a single-session read of a retired id', () => {
-    // `GET /api/sessions/:id` is the one route that still accepts a retired id;
-    // the session it returns is the successor, so the successor's id is not
-    // where a pre-alias row lives.
-    const sessions = [makeSession('canonical', 'fake')];
-    const port = makePort({ retired: { permissionMode: 'plan' } }, {});
-
-    overlayStoredSettings(sessions, port, 'retired');
-
-    expect(port.readKeys).toEqual([['canonical', 'retired']]);
-    expect(sessions[0]!.permissionMode).toBe('plan');
-  });
-
-  it('ignores a requested-id fallback for a multi-session listing', () => {
-    // No per-row request id exists for a listing; applying one id to every row
-    // would cross-contaminate them.
-    const sessions = [makeSession('a', 'fake'), makeSession('b', 'fake')];
-    const port = makePort({ retired: { permissionMode: 'plan' } }, {});
-
-    overlayStoredSettings(sessions, port, 'retired');
-
-    expect(port.readKeys[0]).toEqual(['a', 'b']);
-    expect(sessions.map((s) => s.permissionMode)).toEqual(['default', 'default']);
+    expect(port.readKeys).toEqual([['canonical']]);
+    expect(sessions[0]!.permissionMode).toBe('default');
   });
 
   it('reads every key in ONE batch query — no N+1', () => {
@@ -154,8 +137,8 @@ describe('overlayStoredSettings', () => {
 
     overlayStoredSettings(sessions, port);
 
-    // 'new' is queried once even though both rows resolve to it.
-    expect(port.readKeys[0]).toEqual(['new', 'old']);
+    // 'new' is queried once even though both sessions resolve to it.
+    expect(port.readKeys[0]).toEqual(['new']);
     expect(sessions[0]!.permissionMode).toBe('bypassPermissions');
     expect(sessions[1]!.permissionMode).toBe('bypassPermissions');
   });

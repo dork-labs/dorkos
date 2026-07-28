@@ -15,6 +15,9 @@ vi.mock('../../../lib/logger.js', () => ({
   },
 }));
 
+/** True when this process can bypass a `chmod` file permission (root on POSIX). */
+const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
 /** Create a minimal ExtensionRecord pointing at the given directory. */
 function makeRecord(id: string, extDir: string): ExtensionRecord {
   return {
@@ -108,6 +111,45 @@ describe('ExtensionCompiler', () => {
       expect(result.sourceHash).toBe(contentHash(jsSource));
     }
   });
+
+  it.skipIf(isRoot)(
+    'reports an error, not a silent success, when a pre-compiled bundle cannot be cached',
+    async () => {
+      // Regression coverage: unlike TypeScript compilation, a pre-compiled
+      // extension's disk cache IS the delivery mechanism — compile()'s
+      // in-memory `code` is discarded by applyCompileResult, and the
+      // bundle is served later, from disk, by readBundle(). A version of
+      // this method used to swallow a write failure and report success
+      // anyway, which left the extension looking healthy
+      // (compiled/bundleReady) while readBundle() returned null forever.
+      const extDir = path.join(tmpDir, 'uncacheable-js-ext');
+      await fs.mkdir(extDir, { recursive: true });
+      const jsSource = 'export function activate() {}';
+      await fs.writeFile(path.join(extDir, 'index.js'), jsSource);
+
+      // Pre-create the cache dir read-only: ensureCacheDir's mkdir
+      // succeeds trivially (the dir already exists), but the write that
+      // actually persists the bundle fails.
+      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
+      await fs.mkdir(cacheDir, { recursive: true });
+      await fs.chmod(cacheDir, 0o555);
+
+      let result: Awaited<ReturnType<typeof compiler.compile>>;
+      try {
+        result = await compiler.compile(makeRecord('uncacheable-js-ext', extDir));
+      } finally {
+        await fs.chmod(cacheDir, 0o755);
+      }
+
+      expect('error' in result).toBe(true);
+      if (!('error' in result)) throw new Error('expected error result');
+      expect(result.error.message).toContain('cache the pre-compiled bundle');
+
+      // Consistent with the error: there is nothing to read back either.
+      const bundle = await compiler.readBundle('uncacheable-js-ext', result.sourceHash);
+      expect(bundle).toBeNull();
+    }
+  );
 
   // === 3. No entry point ===
 
@@ -264,6 +306,29 @@ describe('ExtensionCompiler', () => {
     const cleaned = await missingCompiler.cleanStaleCache();
     expect(cleaned).toBe(0);
   });
+
+  it.skipIf(isRoot)(
+    'does not throw when a cache subdirectory cannot be read (EACCES, not missing)',
+    async () => {
+      // Regression coverage: a bare `fs.readdir` outside any try/catch used
+      // to run first thing in `cleanStaleCache()` — called before discovery
+      // even starts in `ExtensionManager.initialize()` — so a transient
+      // EMFILE/EACCES there (as opposed to the directory simply not
+      // existing yet, the case the old code's `fs.access` pre-check
+      // handled) took the entire extension system down for that boot.
+      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
+      await fs.mkdir(cacheDir, { recursive: true });
+      // Write-and-execute only: the directory exists (unlike the "does not
+      // exist" case above) but cannot be LISTED.
+      await fs.chmod(cacheDir, 0o333);
+
+      try {
+        await expect(compiler.cleanStaleCache()).resolves.toBe(0);
+      } finally {
+        await fs.chmod(cacheDir, 0o755);
+      }
+    }
+  );
 
   // === 10. External packages ===
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { sessionRouteLoader, sessionLoaderDeps, sessionSearchSchema } from '../router';
 import type { Session } from '@dorkos/shared/types';
+import { sessionKeys } from '@/layers/entities/session';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -101,7 +102,7 @@ describe('sessionRouteLoader', () => {
         runtime: 'claude-code',
       },
     ];
-    queryClient.setQueryData(['sessions', null], sessions);
+    queryClient.setQueryData(sessionKeys.list(null), sessions);
 
     const result = callLoader('');
     expect(result.redirected).toBe(true);
@@ -134,7 +135,7 @@ describe('sessionRouteLoader', () => {
         runtime: 'claude-code',
       },
     ];
-    queryClient.setQueryData(['sessions', '/my/project'], sessions);
+    queryClient.setQueryData(sessionKeys.list('/my/project'), sessions);
 
     const result = callLoader('?dir=/my/project');
     expect(result.redirected).toBe(true);
@@ -162,7 +163,7 @@ describe('sessionRouteLoader', () => {
         runtime: 'claude-code',
       },
     ];
-    queryClient.setQueryData(['sessions', null], sessions);
+    queryClient.setQueryData(sessionKeys.list(null), sessions);
 
     const result = callLoader('?runtime=opencode');
     expect(result.redirected).toBe(true);
@@ -181,7 +182,7 @@ describe('sessionRouteLoader', () => {
   });
 
   it('uses correct cache key with dir param', () => {
-    // Sessions are cached under ['sessions', dir] — dir=null when absent
+    // Sessions are cached per directory — dir=null when absent
     const sessionsForProject: Session[] = [
       {
         id: 'proj-s1',
@@ -193,9 +194,9 @@ describe('sessionRouteLoader', () => {
       },
     ];
     // Put sessions under the wrong key (null instead of dir)
-    queryClient.setQueryData(['sessions', null], sessionsForProject);
+    queryClient.setQueryData(sessionKeys.list(null), sessionsForProject);
 
-    // Loader should look under ['sessions', '/my/project'] — will find nothing
+    // Loader should look under the '/my/project' list — will find nothing
     const result = callLoader('?dir=/my/project');
     expect(result.redirected).toBe(true);
     const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
@@ -218,7 +219,7 @@ describe('sessionRouteLoader', () => {
         runtime: 'claude-code',
       },
     ];
-    queryClient.setQueryData(['sessions', null], sessions);
+    queryClient.setQueryData(sessionKeys.list(null), sessions);
 
     const result = callLoader(
       '?session=11111111-1111-4111-8111-111111111111&runtime=codex&prompt=hello'
@@ -240,7 +241,7 @@ describe('sessionRouteLoader', () => {
         runtime: 'claude-code',
       },
     ];
-    queryClient.setQueryData(['sessions', null], sessions);
+    queryClient.setQueryData(sessionKeys.list(null), sessions);
 
     const result = callLoader('?prompt=hello&runtime=codex');
     expect(result.redirected).toBe(true);

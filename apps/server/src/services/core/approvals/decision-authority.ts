@@ -23,13 +23,24 @@
  * sends or omits.
  *
  * State the converse too, because it is the part that is easy to leave unsaid: a
- * PROGRAM holding a valid credential CAN decide. A per-user API key satisfies
- * `sessionGate` exactly as a person's cookie does (DOR-474), so an agent handed
- * one, that also sheds its `X-DorkOS-Agent` header, reaches this path. The header
- * check above refuses it before the posture is ever consulted, which is why an
- * honest agent still cannot — but "authenticated" means the credential was valid,
- * never that a human was present. The Activity record this produces says
- * "a signed-in account", not "a person", for that reason.
+ * PROGRAM holding a valid credential clears THIS resolver. A per-user API key
+ * satisfies `sessionGate` exactly as a person's cookie does, so an agent handed
+ * one, that also sheds its `X-DorkOS-Agent` header, reaches this path and is
+ * allowed here. "Authenticated" means the credential was valid, never that a human
+ * was present, and the Activity record this produces says "a signed-in account",
+ * not "a person", for that reason.
+ *
+ * **That is why this resolver is no longer the last word on DECIDING** (DOR-474).
+ * An agent legitimately holds one of those keys — it is how a Codex or OpenCode
+ * agent reaches the operator surface at all when login is on — so the caller that
+ * ASKED for an approval could answer it. `POST /api/approvals/:id/grant` and
+ * `/deny` now run a second bar on top of this one,
+ * `requireOperatorCookieUnderLogin`, which refuses every credential but a session
+ * cookie while login is on. `trustedCaller` applies the same bar, so the invariant
+ * it rests on — whoever may decide may act without one — still holds in both
+ * directions. This resolver was deliberately NOT changed: `GET /grants` and
+ * `DELETE /grants/:id` still ride on it alone, and so does the package-source bar
+ * (DOR-502), which must keep accepting the operator's own terminal.
  *
  * ## `local-trust` — the default posture, stated honestly
  *

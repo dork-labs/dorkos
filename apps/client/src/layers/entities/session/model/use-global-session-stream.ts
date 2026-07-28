@@ -3,7 +3,7 @@
  *
  * Mounted ONCE at the app shell. Opens the global `/api/events` session-list
  * stream and reflects the live {@link useSessionListStore} `sessions` map into the
- * shared TanStack Query `['sessions', cwd]` cache, so the sidebar and every other
+ * shared TanStack Query session-list cache ({@link sessionKeys.list}), so the sidebar and every other
  * consumer of that cache stay accurate after a hard refresh and update live —
  * with NO timer poll (the 5s/60s poll this replaces is removed from
  * `use-sessions.ts`; ADR-0265).
@@ -20,7 +20,9 @@ import type { Session } from '@dorkos/shared/types';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { initSessionStreamBinding } from './session-stream-binding';
 import { useSessionListStore } from './session-list-store';
-import { RECENT_SESSIONS_KEY } from './use-recent-sessions';
+// Same-slice import via the sibling module (not the entities/session barrel) to
+// avoid a self-referential barrel import within this slice.
+import { sessionKeys } from '../api/query-keys';
 
 /**
  * Invalidate the cross-agent Recent-sessions query (DOR-329) so the sidebar's
@@ -31,16 +33,15 @@ import { RECENT_SESSIONS_KEY } from './use-recent-sessions';
  * @param queryClient - The TanStack Query client whose recent-sessions query to refresh.
  */
 function invalidateRecentSessions(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ queryKey: RECENT_SESSIONS_KEY });
+  void queryClient.invalidateQueries({ queryKey: sessionKeys.recentRoot });
 }
 
 /**
- * Upsert a single session into its cwd-keyed `['sessions', cwd]` cache, keeping the
+ * Upsert a single session into its cwd-keyed {@link sessionKeys.list} cache, keeping the
  * list sorted most-recent-first (the order `sessionRouteLoader` relies on).
  */
 function upsertSessionInCache(queryClient: QueryClient, session: Session): void {
-  const key = ['sessions', session.cwd ?? null] as const;
-  queryClient.setQueryData<Session[]>(key, (old) => {
+  queryClient.setQueryData<Session[]>(sessionKeys.list(session.cwd ?? null), (old) => {
     const list = old ?? [];
     const next = list.some((s) => s.id === session.id)
       ? list.map((s) => (s.id === session.id ? session : s))
@@ -52,13 +53,13 @@ function upsertSessionInCache(queryClient: QueryClient, session: Session): void 
 
 /** Remove a session by id from its (last-known) cwd-keyed cache. */
 function removeSessionFromCache(queryClient: QueryClient, id: string, cwd: string | null): void {
-  queryClient.setQueryData<Session[]>(['sessions', cwd], (old) =>
+  queryClient.setQueryData<Session[]>(sessionKeys.list(cwd), (old) =>
     old ? old.filter((s) => s.id !== id) : old
   );
 }
 
 /**
- * Resolve newly-retired request UUIDs in EVERY `['sessions', *]` cache. The
+ * Resolve newly-retired request UUIDs in EVERY session-list cache. The
  * placeholder row a first message optimistically inserts under the client UUID
  * is never in the list store (only the canonical id is ever upserted from
  * disk), so the map reconcile above can't touch it — without this sweep the
@@ -72,6 +73,11 @@ function removeSessionFromCache(queryClient: QueryClient, id: string, cwd: strin
  * keys because the retire announce's `cwd` is optional while the placeholder
  * was keyed by the operator's `selectedCwd`.
  *
+ * Every key under {@link sessionKeys.listRoot} is rewritten as an array here, so
+ * that prefix must never gain an entry holding anything else — the cross-agent
+ * recent-sessions envelope used to live under it and this sweep threw on it
+ * (DOR-497).
+ *
  * @param queryClient - The TanStack Query client whose caches to sweep.
  * @param next - The new `rekeys` map from the list store.
  * @param prev - The previously reconciled `rekeys` map.
@@ -84,7 +90,7 @@ export function reconcileRetiredSessions(
 ): void {
   const retired = new Set(Object.keys(next).filter((id) => !(id in prev)));
   if (retired.size === 0) return;
-  queryClient.setQueriesData<Session[]>({ queryKey: ['sessions'] }, (old) => {
+  queryClient.setQueriesData<Session[]>({ queryKey: sessionKeys.listRoot }, (old) => {
     if (!old?.some((s) => retired.has(s.id))) return old;
     return old.flatMap((row) => {
       if (!retired.has(row.id)) return [row];
@@ -97,7 +103,7 @@ export function reconcileRetiredSessions(
 
 /**
  * Reconcile a {@link useSessionListStore} `sessions`-map transition into the
- * `['sessions', cwd]` query caches. Patches ONLY the sessions whose object
+ * {@link sessionKeys.list} query caches. Patches ONLY the sessions whose object
  * identity changed (immer preserves identity for untouched entries) and removes
  * ids dropped from the map — never rebuilds a cache wholesale.
  *
@@ -122,7 +128,7 @@ export function reconcileSessionsCache(
 }
 
 /**
- * Open the global session-list stream and keep the `['sessions', cwd]` query
+ * Open the global session-list stream and keep the {@link sessionKeys.list} query
  * caches in sync with the live store. Call exactly once, high in the tree
  * (the app shell). Idempotent connection setup (StrictMode/HMR-safe).
  */

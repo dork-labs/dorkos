@@ -2,7 +2,12 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import { PackageTypeSchema } from '@dorkos/marketplace';
+// The narrow subpath, not the package root: this is a DRIFT GUARD over
+// `PackageTypeSchema.options`, so it must read the schema from SOURCE (aliased in
+// `apps/server/vitest.config.ts`). Aliasing the root would drag the whole
+// marketplace index through every worker's transform; the subpath is zod and
+// nothing else.
+import { PackageTypeSchema } from '@dorkos/marketplace/package-types';
 import {
   INSTALL_ROOT_DIR_BY_TYPE,
   INSTALL_ROOT_DIRS,

@@ -83,15 +83,22 @@ describe('the pack teaches the world as it actually is', () => {
     // floor is what makes "we fixed the words" and "the fix shipped" the same
     // event: the corrected body cannot land without the bump that delivers it.
     //
-    // KNOWN LIMIT, and it is the one that actually bit. A floor cannot see "equal
-    // to what `main` already ships". DOR-502 and DOR-509 were written in parallel,
-    // both bumped 4 to 5, and the second branch sat at 5 with a floor of 5 while
-    // delivering nothing: `seed.ts` upgrades only on a strictly LOWER stored stamp,
-    // so an equal version is a silent no-op, and the conflict resolution that
-    // causes it touches one digit. A local test cannot close this, because "higher
-    // than the merge base" is a fact about two commits, not about the working tree,
-    // and a test that skips when the base ref is missing is an inert guard wearing
-    // a green check. It belongs in CI with `fetch-depth: 0` (DOR-546).
+    // KNOWN LIMIT of the floor, and it is the one that actually bit. A floor
+    // cannot see "equal to what `main` already ships". DOR-502 and DOR-509 were
+    // written in parallel, both bumped 4 to 5, and the second branch sat at 5 with
+    // a floor of 5 while delivering nothing: `seed.ts` upgrades only on a strictly
+    // LOWER stored stamp, so an equal version is a silent no-op, and the conflict
+    // resolution that causes it touches one digit. No local test can close that,
+    // because "higher than the merge base" is a fact about two commits, not about
+    // the working tree, and a test that skips when the base ref is missing is an
+    // inert guard wearing a green check.
+    //
+    // So it is closed in CI instead, by
+    // `.github/workflows/operating-skills-version-check.yml`, which checks out with
+    // `fetch-depth: 0` and requires this constant to be strictly greater than the
+    // base branch's whenever the seeded pack content changes (DOR-546). This floor
+    // stays as the local half: it fails the moment you edit a skill body without
+    // bumping, without waiting for a push.
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(6);
   });
 

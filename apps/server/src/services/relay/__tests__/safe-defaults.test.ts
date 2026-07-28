@@ -4,7 +4,11 @@ import {
   carryForwardAdapterDefaults,
   warnOnOpenDmPolicy,
 } from '../safe-defaults.js';
-import { AdapterBindingSchema, SlackAdapterConfigSchema } from '@dorkos/shared/relay-schemas';
+import {
+  AdapterBindingSchema,
+  SlackAdapterConfigSchema,
+  TelegramAdapterConfigSchema,
+} from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../lib/logger.js';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -123,6 +127,33 @@ describe('carryForwardAdapterDefaults', () => {
       adapters: { config: Record<string, unknown> }[];
     };
     expect(carried.adapters[0].config).not.toHaveProperty('dmPolicy');
+  });
+
+  it('does not carry a stored Telegram integration forward to always (DOR-619)', () => {
+    // The deliberate counter-example to the Slack cases above, and the one
+    // place the no-carry-forward decision is pinned rather than described.
+    //
+    // `dmPolicy` is carried forward because a person had implicitly chosen a
+    // working configuration. Telegram never exposed a respond mode, so nobody
+    // chose "answer every message in every group" — that is the defect, not a
+    // preference, and every stored integration predates the field. Carrying it
+    // forward would mean the fix reached only installs created after it.
+    const telegram = {
+      id: 'tg',
+      type: 'telegram',
+      enabled: true,
+      config: { token: '123:ABC', mode: 'polling', streaming: true },
+    };
+
+    const carried = carryForwardAdapterDefaults({ adapters: [telegram] }) as {
+      adapters: { config: Record<string, unknown> }[];
+    };
+
+    // Untouched here, and therefore landing on the safe value at the schema.
+    expect(carried.adapters[0].config).not.toHaveProperty('respondMode');
+    expect(TelegramAdapterConfigSchema.parse(carried.adapters[0].config).respondMode).toBe(
+      'thread-aware'
+    );
   });
 });
 

@@ -9,6 +9,7 @@ import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { useRecentSessions } from '../model/use-recent-sessions';
+import { sessionKeys } from '../api/query-keys';
 
 const envelope: RecentSessionsResponse = {
   sessions: [
@@ -59,14 +60,25 @@ describe('useRecentSessions', () => {
     expect(transport.listRecentSessions).toHaveBeenCalledWith(10);
   });
 
-  it("uses queryKey ['sessions','recent',limit] and a 30s staleTime", async () => {
+  it('holds each page for 30s before it will refetch', async () => {
     const { queryClient, wrapper } = createHarness();
 
     const { result } = renderHook(() => useRecentSessions(7), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const query = queryClient.getQueryCache().find({ queryKey: ['sessions', 'recent', 7] });
+    const query = queryClient.getQueryCache().find({ queryKey: sessionKeys.recent(7) });
     expect(query).toBeDefined();
     expect(query!.observers[0]!.options.staleTime).toBe(30_000);
+  });
+
+  it('does not park its envelope under the per-directory session lists', () => {
+    // Everything under the list prefix is rewritten as a `Session[]` by the
+    // retired-session sweep, and this query's value is an envelope object. It
+    // lived under that prefix once and the sweep threw on it (DOR-497).
+    //
+    // Red when: the recent-sessions key moves back under the list prefix.
+    const listPrefix = [...sessionKeys.listRoot];
+    expect(sessionKeys.recent(10).slice(0, listPrefix.length)).not.toEqual(listPrefix);
+    expect(sessionKeys.recentRoot.slice(0, listPrefix.length)).not.toEqual(listPrefix);
   });
 });

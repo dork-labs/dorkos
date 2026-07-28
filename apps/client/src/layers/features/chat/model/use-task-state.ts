@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
-import { QUERY_TIMING } from '@/layers/shared/lib';
+import { QUERY_TIMING, isSessionRequestReady } from '@/layers/shared/lib';
 import type { TaskItem, TaskUpdateEvent, SessionTaskStatus } from '@dorkos/shared/types';
 
 /** Check if a task is blocked by any incomplete dependency. */
@@ -96,10 +96,12 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
   // Load historical tasks via TanStack Query (polled while a turn streams)
   const { data: initialTasks } = useQuery({
     queryKey: ['tasks', sessionId, selectedCwd],
-    queryFn: () => transport.getTasks(sessionId!, selectedCwd ?? undefined),
+    queryFn: () => transport.getTasks(sessionId!, selectedCwd!),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
-    enabled: !!sessionId,
+    // Waits for the working directory too — a fetch keyed on a directory the
+    // store has not resolved yet is one the server always refuses (DOR-495).
+    enabled: isSessionRequestReady(sessionId, selectedCwd),
     refetchInterval: () => {
       if (!enableMessagePolling) return false;
       if (isStreaming) return false;

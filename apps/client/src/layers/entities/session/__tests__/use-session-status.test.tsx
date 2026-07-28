@@ -12,10 +12,12 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { useSessionStatus } from '../model/use-session-status';
 import { useSessionSettingsOverridesStore } from '../model/session-settings-overrides';
 
-// Mock app store (selectedCwd)
+// Mock app store (selectedCwd). A resolved directory, because a session query
+// correctly refuses to fire without one (DOR-495) — `null` is the app's
+// pre-startup state, not a state any session request is made in.
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: vi.fn((selector: (s: { selectedCwd: string | null }) => unknown) =>
-    selector({ selectedCwd: null })
+    selector({ selectedCwd: '/test/cwd' })
   ),
 }));
 

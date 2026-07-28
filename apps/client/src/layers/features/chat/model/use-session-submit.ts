@@ -34,6 +34,7 @@ import {
   insertOptimisticSession,
   useSessionListStore,
   useSessionStreamStore,
+  sessionKeys,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
@@ -284,7 +285,7 @@ export function useSessionSubmit({
       // runtime hint below. (A stale/empty cache can misread an existing
       // session as new; the resulting extra hint is harmless — the server's
       // persistSessionRuntime is first-write-wins.)
-      const sessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
+      const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
       const isNewSession = !sessions.some((s) => s.id === targetSessionId);
 
       // Optimistically insert a placeholder session if not yet in the cache so
@@ -373,7 +374,7 @@ export function useSessionSubmit({
           // birth record; idempotent with the retire-announce migration).
           useAgentBirthStore.getState().migrate(targetSessionId, canonicalId);
 
-          const cachedSessions = queryClient.getQueryData<Session[]>(['sessions', cwd]) ?? [];
+          const cachedSessions = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
           const optimisticEntry = cachedSessions.find((s) => s.id === targetSessionId);
           if (optimisticEntry && !cachedSessions.some((s) => s.id === canonicalId)) {
             insertOptimisticSession(queryClient, cwd, { ...optimisticEntry, id: canonicalId });
@@ -381,7 +382,7 @@ export function useSessionSubmit({
           // Drop the stale client-UUID row — without this the sidebar shows a
           // ghost duplicate ("Session xxxxxxxx" pointing at a dead id) until the
           // next list refetch, which no longer happens on a timer.
-          queryClient.setQueryData<Session[]>(['sessions', cwd], (prev) =>
+          queryClient.setQueryData<Session[]>(sessionKeys.list(cwd), (prev) =>
             prev?.filter((s) => s.id !== targetSessionId)
           );
 

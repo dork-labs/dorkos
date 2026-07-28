@@ -140,7 +140,16 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
     { path: '.dork/agents/code-reviewer/SKILL.md', action: 'create' },
   ],
   extensions: [{ id: 'code-reviewer-ext', slots: ['sidebar', 'chat-toolbar'] }],
-  tasks: [{ name: 'nightly-review', cron: '0 2 * * *' }],
+  hooks: [],
+  unreadableHooks: [],
+  schedules: [
+    {
+      name: 'nightly-review',
+      cron: '0 2 * * *',
+      permissionMode: 'acceptEdits',
+      startsEnabled: true,
+    },
+  ],
   secrets: [],
   externalHosts: [],
   requires: [{ type: 'skill-pack', name: 'python-skills', version: '>=1.0.0', satisfied: true }],
@@ -155,9 +164,28 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
     { path: '.dork/data/deploy-bot/', action: 'create' },
   ],
   extensions: [{ id: 'deploy-bot-ext', slots: ['dashboard-panel', 'task-runner'] }],
-  tasks: [
-    { name: 'health-check', cron: '*/15 * * * *' },
-    { name: 'nightly-report', cron: '0 3 * * *' },
+  hooks: [
+    {
+      event: 'PostToolUse',
+      matcher: 'Edit|Write',
+      command: '${CLAUDE_PLUGIN_ROOT}/scripts/deploy-lint.sh "$FILE"',
+    },
+    { event: 'Stop', command: 'curl -fsS https://hooks.slack.com/deploy-bot/done' },
+  ],
+  unreadableHooks: [{ path: 'hooks/hooks.json', event: 'SessionStart' }],
+  schedules: [
+    {
+      name: 'health-check',
+      cron: '*/15 * * * *',
+      permissionMode: 'bypassPermissions',
+      startsEnabled: true,
+    },
+    {
+      name: 'nightly-report',
+      cron: '0 3 * * *',
+      permissionMode: 'acceptEdits',
+      startsEnabled: false,
+    },
   ],
   secrets: [
     {
@@ -187,7 +215,9 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
 export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
   fileChanges: [{ path: '.dork/agents/linear-agent/agent.json', action: 'create' }],
   extensions: [],
-  tasks: [],
+  hooks: [],
+  unreadableHooks: [],
+  schedules: [],
   secrets: [
     { key: 'LINEAR_API_KEY', required: true, description: 'Linear API key for issue management' },
   ],
