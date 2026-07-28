@@ -106,16 +106,13 @@ function canonicalize(p: string): string {
  * different route still matches — and, in the other direction, a symlink planted
  * inside the agents directory that points at somebody's repository does not.
  *
- * Deliberately scoped to `<dorkHome>/agents` and nothing else. It is tempting to
- * also accept `config.agents.defaultDirectory`, because in a DEV tree the two
- * diverge: `expandTilde()` expands that setting against the operator's real home
- * (`lib/boundary.ts`) while `dorkHome` is the tree-local `.temp/.dork`, so an
- * agent created from a dev server lands outside this boundary and is not
- * repaired. Do not widen it. That divergence is DOR-662 — a dev tree writing
- * into the real home is the bug, not the boundary — and unioning the two would
- * make a dev server's boot backfill write into the operator's real `~/.dork`,
- * which is the very escape DOR-662 exists to close. Fixing DOR-662 closes the
- * coverage gap here with no change to this function.
+ * Deliberately scoped to `<dorkHome>/agents` and nothing else. Since DOR-662
+ * that is where DorkOS puts every agent it creates — production, dev, Docker and
+ * tests alike — because the shipped `agents.defaultDirectory` is a portable
+ * spelling of `{dorkHome}/agents` rather than a path to expand
+ * (`lib/agents-home.ts`). Do not widen it to accept that setting blindly: a
+ * person who points it somewhere of their own means somewhere of their own, and
+ * those agents stay out of scope for an unprompted boot-time write (DOR-664).
  *
  * @param dir - Absolute path to an agent workspace.
  * @param dorkHome - Resolved DorkOS data directory.
@@ -246,9 +243,9 @@ export function projectAgentWorkspace(agentDir: string): AgentWorkspaceProjectio
  * The asymmetry with the creation path is deliberate: creating an agent at a
  * path outside dork home DOES project there, because a person just asked DorkOS
  * to set that workspace up and the projection is part of what they asked for.
- * Booting asks for nothing. The honest cost is that an agent that already
- * existed outside dork home is not repaired here; it picks the projection up the
- * next time something writes to it.
+ * Booting asks for nothing. The honest cost is that an agent living outside dork
+ * home is never repaired by this pass; giving those a user-initiated repair is
+ * DOR-664.
  *
  * Idempotent (the engine's apply is write-if-absent and self-healing) and
  * best-effort per workspace, so one unreadable home never stops the rest. It

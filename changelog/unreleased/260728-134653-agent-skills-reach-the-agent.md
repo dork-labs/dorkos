@@ -2,6 +2,7 @@
 covers:
   - 'fix(agents): project seeded agent skills so Claude Code can read them (DOR-659)'
   - 'fix(agents): say what actually happened when only some agents fail to link (DOR-659)'
+  - 'docs(agents): the backfill boundary no longer describes DOR-662 as pending (DOR-659)'
 ---
 
 ### Fixed
