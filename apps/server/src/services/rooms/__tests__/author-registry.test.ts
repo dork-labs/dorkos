@@ -127,3 +127,152 @@ describe('AuthorRegistry', () => {
     expect(toAuthorRef(registry.localHuman()).agentRef).toBeUndefined();
   });
 });
+
+/**
+ * The account binding (spec `invites` §4.1–§4.4). The property that matters is
+ * that the opaque `id` does not move: every `room_entries.author_id`, every
+ * `room_members` row and every read cursor points at it, and the whole
+ * justification for the opaque-id indirection is that this can happen without
+ * rewriting one of them.
+ */
+describe('AuthorRegistry — binding a human author to an account', () => {
+  let db: Db;
+  let registry: AuthorRegistry;
+
+  beforeEach(() => {
+    db = createTestDb();
+    registry = new AuthorRegistry(db);
+  });
+
+  it('rebinds the local sentinel in place, keeping its id', () => {
+    const sentinel = registry.localHuman();
+
+    const bound = registry.bindOwner('user-dorian');
+
+    expect(bound.id).toBe(sentinel.id);
+    expect(bound.naturalKey).toBe('user:user-dorian');
+    // One row, not two: nothing was left behind for a later resolve to find.
+    expect(db.select().from(authors).where(eq(authors.kind, 'human')).all()).toHaveLength(1);
+  });
+
+  it('leaves the owner rendering as "You", now and forever', () => {
+    // `authors.display_name` is ONE column per author, so writing the account
+    // name here would not label the owner going forward — it would relabel
+    // every message they had ever written, retroactively, the moment they
+    // turned login on. D6 keeps this install single-user, so the only person
+    // who reads this roster is the owner, and "You" is the right word.
+    const sentinel = registry.localHuman();
+    expect(sentinel.displayName).toBe('You');
+
+    const bound = registry.bindOwner('user-dorian');
+
+    expect(bound.displayName).toBe('You');
+    expect(registry.getById(sentinel.id)?.displayName).toBe('You');
+  });
+
+  it('is idempotent, and keeps the same id and name on every call after', () => {
+    const first = registry.bindOwner('user-dorian');
+    const second = registry.bindOwner('user-dorian');
+
+    expect(second.id).toBe(first.id);
+    expect(second.displayName).toBe('You');
+  });
+
+  it('mints a fresh row when there is no sentinel to adopt', () => {
+    const bound = registry.bindOwner('user-dorian');
+    expect(bound.naturalKey).toBe('user:user-dorian');
+    expect(registry.getById(bound.id)?.displayName).toBe('You');
+  });
+
+  it('never lets a second account inherit the sentinel', () => {
+    // The reason `human()` and `bindOwner()` are different methods. D6 says a
+    // second local account cannot exist; this is the guard that makes the
+    // failure survivable if that ever stopped being true, because adopting
+    // `'local'` would hand over the owner's messages, memberships and cursors.
+    const sentinel = registry.localHuman();
+
+    const someone = registry.human('user-priya');
+
+    expect(someone.id).not.toBe(sentinel.id);
+    expect(registry.getById(sentinel.id)?.naturalKey).toBe('local');
+    expect(registry.getById(sentinel.id)?.displayName).toBe('You');
+  });
+});
+
+describe('AuthorRegistry — who the owner is', () => {
+  let db: Db;
+  let registry: AuthorRegistry;
+
+  beforeEach(() => {
+    db = createTestDb();
+    registry = new AuthorRegistry(db);
+  });
+
+  it('is the local sentinel while the install has no accounts', () => {
+    const sentinel = registry.localHuman();
+    expect(registry.isOwner(sentinel.id, null)).toBe(true);
+  });
+
+  it('is the bound account, and nobody else, once one exists', () => {
+    const owner = registry.bindOwner('user-dorian');
+    const someone = registry.human('user-priya');
+
+    expect(registry.isOwner(owner.id, 'user-dorian')).toBe(true);
+    expect(registry.isOwner(someone.id, 'user-dorian')).toBe(false);
+  });
+
+  it('is nobody an agent or the system author could be', () => {
+    const ana = registry.resolveAgent(ANA_PATH, 'Ana');
+    const system = registry.system();
+
+    expect(registry.isOwner(ana.id, null)).toBe(false);
+    expect(registry.isOwner(system.id, null)).toBe(false);
+    expect(registry.isOwner(ana.id, 'user-dorian')).toBe(false);
+  });
+
+  it('is not a stray local author once the install has an owner account', () => {
+    // The state a rollback or a hand-edited database could leave: a sentinel
+    // beside a bound row. The bound row is the owner; the sentinel is not.
+    registry.bindOwner('user-dorian');
+    const stray = registry.localHuman();
+
+    expect(registry.isOwner(stray.id, 'user-dorian')).toBe(false);
+  });
+
+  it('is nobody at all when the author id names no row', () => {
+    expect(registry.isOwner('01JZZZZZZZZZZZZZZZZZZZZZZZ', null)).toBe(false);
+  });
+
+  it('refuses a non-human author holding the owner natural key', () => {
+    // `isOwner` guards on `kind` BEFORE it compares natural keys, and this is
+    // the only test that proves it. Every other assertion here is satisfied
+    // twice over — an agent's natural key is an absolute `agentPath`, so it
+    // fails the key comparison as well — which means deleting the kind guard
+    // leaves the whole suite green while these two rows become the owner.
+    //
+    // Unreachable today (agent natural keys come from `resolveAgent`, and a
+    // path is absolute), so this is not a live hole. It is a guard with no
+    // test, which is how guards get refactored away.
+    const mimicsSentinel = registry.resolve({
+      kind: 'agent',
+      naturalKey: 'local',
+      displayName: 'Impostor',
+    });
+    const mimicsAccount = registry.resolve({
+      kind: 'agent',
+      naturalKey: 'user:user-dorian',
+      displayName: 'Impostor',
+    });
+
+    expect(registry.isOwner(mimicsSentinel.id, null)).toBe(false);
+    expect(registry.isOwner(mimicsAccount.id, 'user-dorian')).toBe(false);
+
+    // And the same shape as the system author, which is the other non-human kind.
+    const systemMimic = registry.resolve({
+      kind: 'system',
+      naturalKey: 'local',
+      displayName: 'Impostor',
+    });
+    expect(registry.isOwner(systemMimic.id, null)).toBe(false);
+  });
+});

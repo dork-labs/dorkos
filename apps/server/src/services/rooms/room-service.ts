@@ -8,21 +8,37 @@
  * for lifecycle. Membership lives next door in `room-roster.ts`, and turning a
  * committed post into agent replies lives in `room-trigger.ts`.
  *
- * **Roster writes are the operator's — as far as identity can tell.** Adding,
- * removing, or re-configuring a member is refused for a caller the server
- * resolves as an agent. That was a harmless asymmetry while nothing read
- * `responseMode`; now that a post triggers turns, an agent that could widen
- * another agent's addressing could drive replies nobody asked for, from inside
- * the room where it is hardest to notice.
+ * **Roster writes are the owner's — as far as identity can tell.** Adding,
+ * removing, or re-configuring a member is refused for anyone the server does
+ * not resolve as this install's owner. That was a harmless asymmetry while
+ * nothing read `responseMode`; now that a post triggers turns, an agent that
+ * could widen another agent's addressing could drive replies nobody asked for,
+ * from inside the room where it is hardest to notice.
  *
- * Read "an agent caller" literally: it means a request the server resolved to an
- * agent. In the DEFAULT posture (`auth.enabled` off) a request carrying no
- * `X-DorkOS-Agent` header resolves to the local human, so a program on this
- * machine clears every gate in this file by omitting a header. That is the
- * documented DOR-505 residual, not a hole this domain opened or can close —
- * with login off there is nothing left to tell a local program from the person
- * at the keyboard. Turning **Require login** on is what makes these gates mean
- * what they say.
+ * **Those three are the whole list. `updateRoom` is deliberately not on it** —
+ * a room's title, topic and archived flag are writable by any member, so an
+ * agent can rename or archive a room it belongs to. That is pre-existing and
+ * survives DOR-598 unchanged, and it is not a gate anyone forgot: the naive fix
+ * (`requireOperator` in `updateRoom`) breaks `createRoom`'s DM un-archive path,
+ * where the caller re-opening its own archived direct message may legitimately
+ * be that agent. Closing it properly means splitting the re-open out first.
+ * Tracked as DOR-608; do not add the gate without that split.
+ *
+ * **The gates ask who the OWNER is, never whether the author is a human**
+ * (DOR-598). Those were the same question only while this table held exactly one
+ * human author. It will not: joining a community fills it with other humans —
+ * cached remote members whose messages you hold (ADR 260727-184933 D6) — and
+ * none of them operates this machine. Ownership is injected as `isOwnerAuthor`
+ * rather than read here, because whether an account exists is not a room's
+ * business to know.
+ *
+ * Read "not the owner" literally: it means a request the server resolved to
+ * somebody else. In the DEFAULT posture (`auth.enabled` off) a request carrying
+ * no `X-DorkOS-Agent` header resolves to the owner, so a program on this machine
+ * clears every gate in this file by omitting a header. That is the documented
+ * DOR-505 residual, not a hole this domain opened or can close — with login off
+ * there is nothing left to tell a local program from the person at the keyboard.
+ * Turning **Require login** on is what makes these gates mean what they say.
  *
  * What holds regardless is `turn-budget.ts`, which counts without asking who is
  * calling: a per-room cap on what any ONE room may spend, and a global cap on
@@ -72,6 +88,14 @@ export interface RoomServiceDeps {
   budget: RoomTurnBudget;
   /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
   maxAgentDepth(): number;
+  /**
+   * Whether this author is the person who owns the install.
+   *
+   * Injected in the same style as {@link RoomServiceDeps.maxAgentDepth}, so this
+   * domain still reads no config and no auth module: who the owner is depends on
+   * whether an account exists, which is not a room's business to know.
+   */
+  isOwnerAuthor(authorId: string): boolean;
 }
 
 /** Provenance a post carries when a trigger produced it. */
@@ -108,12 +132,15 @@ export class RoomService {
   private readonly triggers: RoomTriggerDispatcher;
   /** The live `rooms.maxAgentDepth`. Read per write, so a change takes effect. */
   private readonly maxAgentDepth: () => number;
+  /** Whether an author is the install's owner. Read per check, never captured. */
+  private readonly isOwnerAuthor: (authorId: string) => boolean;
 
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
     this.maxAgentDepth = deps.maxAgentDepth;
+    this.isOwnerAuthor = deps.isOwnerAuthor;
     this.roster = new RoomRoster({
       store: deps.store,
       authors: deps.authors,
@@ -272,7 +299,7 @@ export class RoomService {
         // branch is channel-only, so it is inert here.
         const reopened = existing.archived
           ? this.updateRoom(existing.id, creatorAuthorId, { archived: false })
-          : this.withRoster(existing);
+          : this.withRoster(existing, creatorAuthorId);
         return { ...reopened, created: false };
       }
     }
@@ -286,7 +313,7 @@ export class RoomService {
     const room = this.store.createRoom(draft, members);
 
     eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
-    return { ...this.withRoster(room), created: true };
+    return { ...this.withRoster(room, creatorAuthorId), created: true };
   }
 
   /**
@@ -352,7 +379,7 @@ export class RoomService {
       title: thread.title,
       parentId: parent.id,
     });
-    return this.withRoster(thread);
+    return this.withRoster(thread, viewerAuthorId);
   }
 
   /**
@@ -360,13 +387,15 @@ export class RoomService {
    *
    * Two different answers, on purpose:
    *
-   * - **A human sees every room.** This is a single-player cockpit and the
-   *   caller is the person running it; hiding rooms from the operator would be
-   *   absurd. "Membership-scoped" in ADR 260726-170125 describes the model, not
-   *   an authorization rule against its owner.
-   * - **An agent sees only rooms it belongs to.** That boundary is real: an
-   *   agent enumerating the operator's DMs with other agents is a leak, and it
-   *   costs one join to prevent.
+   * - **The owner sees every room.** This is their machine; hiding rooms from
+   *   the person running it would be absurd. "Membership-scoped" in
+   *   ADR 260726-170125 describes the model, not an authorization rule against
+   *   its owner. Owner-identity, not author kind: the same table will hold
+   *   other humans once a community is joined (ADR 260727-184933 D6), and none
+   *   of them is the operator of this machine.
+   * - **Everybody else sees only rooms they belong to.** That boundary is real:
+   *   an agent enumerating the operator's DMs with other agents is a leak, and
+   *   it costs one join to prevent.
    *
    * `unreadCount` is `null` for a room the viewer is not a member of. Unread is
    * a property of a read cursor, and a non-member has none — reporting the
@@ -412,13 +441,14 @@ export class RoomService {
    * One room with its roster, as this viewer may see it.
    *
    * @param roomId - The room id.
-   * @param viewerAuthorId - The caller. A human sees any room; an agent only its own.
+   * @param viewerAuthorId - The caller. The owner sees any room; everybody else
+   *   only the ones they belong to.
    * @returns The room, or `null` when it does not exist or the viewer may not see it.
    */
   getRoom(roomId: string, viewerAuthorId: string): RoomWithRoster | null {
     const room = this.store.getRoom(roomId);
     if (!room || !this.canSee(roomId, viewerAuthorId)) return null;
-    return this.withRoster(room);
+    return this.withRoster(room, viewerAuthorId);
   }
 
   /**
@@ -467,7 +497,7 @@ export class RoomService {
       title: updated.title,
       archived: updated.archived,
     });
-    return this.withRoster(updated);
+    return this.withRoster(updated, viewerAuthorId);
   }
 
   // === Membership ===
@@ -477,7 +507,7 @@ export class RoomService {
    * been an author before. **Operator-only.**
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be the local human.
+   * @param viewerAuthorId - The caller; must be the install's owner.
    * @param input - Who to add, and optionally how they should behave.
    */
   addMember(roomId: string, viewerAuthorId: string, input: AddMemberInput): RoomRosterEntry {
@@ -494,7 +524,7 @@ export class RoomService {
    * an agent able to turn it up on a room-mate could manufacture a conversation.
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be the local human.
+   * @param viewerAuthorId - The caller; must be the install's owner.
    * @param authorId - The member being changed.
    * @param responseMode - The new override.
    */
@@ -514,7 +544,7 @@ export class RoomService {
    * **Operator-only.**
    *
    * @param roomId - The room.
-   * @param viewerAuthorId - The caller; must be the local human.
+   * @param viewerAuthorId - The caller; must be the install's owner.
    * @param authorId - The member being removed.
    */
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
@@ -575,9 +605,9 @@ export class RoomService {
   ): RoomEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
-    // Seeing a room is not being in it. A human can see every room but still
-    // has to join one before speaking in it; for an agent the visibility check
-    // above already required membership, so this is a no-op.
+    // Seeing a room is not being in it. The owner can see every room but still
+    // has to join one before speaking in it; for everybody else the visibility
+    // check above already required membership, so this is a no-op.
     if (!this.store.getMember(roomId, input.authorId)) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
@@ -686,7 +716,7 @@ export class RoomService {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const entries = this.store.listEntries(roomId, { limit: historyLimit });
     return {
-      room: this.withRoster(room),
+      room: this.withRoster(room, viewerAuthorId),
       entries,
       cursor: entries.length > 0 ? entries[entries.length - 1].seq : 0,
     };
@@ -768,47 +798,65 @@ export class RoomService {
   }
 
   /**
-   * Whether this caller may see a room at all: the operator may see every room,
-   * an agent only the ones it belongs to.
+   * Whether this caller may see a room at all: the owner may see every room,
+   * everybody else only the ones they belong to.
    */
   private canSee(roomId: string, viewerAuthorId: string): boolean {
     if (this.seesEveryRoom(viewerAuthorId)) return true;
     return this.store.getMember(roomId, viewerAuthorId) !== null;
   }
 
-  /** Human authors are the operator; nothing in a single-player cockpit hides from them. */
+  /**
+   * The owner sees every room; nothing on their own machine hides from them.
+   *
+   * This used to read `kind === 'human'`, which was only ever the same question
+   * while an install minted exactly one human author. A second one — an invited
+   * person — would have passed it and read every room on the install, the
+   * owner's DMs with agents included.
+   */
   private seesEveryRoom(viewerAuthorId: string): boolean {
-    return this.authors.getById(viewerAuthorId)?.kind === 'human';
+    return this.isOwnerAuthor(viewerAuthorId);
   }
 
   /**
-   * Refuse a roster write from anyone but the person running the machine.
+   * Refuse a roster write from anyone but the person who owns the install.
    *
    * Deliberately a 403 and not a 404: the caller is already a member of a room
    * it can see, so there is nothing left to hide, and telling an agent "you may
    * not" is more useful than telling it a room it just read no longer exists.
    *
+   * Same correction as {@link RoomService.seesEveryRoom}: on `kind === 'human'`
+   * a second person could have rewritten any roster in any room.
+   *
    * @param viewerAuthorId - The caller.
    * @param what - What they tried to change, for the message.
    */
   private requireOperator(viewerAuthorId: string, what: string): void {
-    if (this.authors.getById(viewerAuthorId)?.kind === 'human') return;
+    if (this.isOwnerAuthor(viewerAuthorId)) return;
     throw new RoomError('OPERATOR_ONLY', `Only you can change ${what}`);
   }
 
   /**
-   * Refuse an agent's attempt to seed a room with a SECOND agent.
+   * Refuse a non-owner's attempt to seed a room with an agent that is not
+   * itself.
    *
-   * An agent opening a room for itself — a DM with the operator, a scratch
-   * channel — is legitimate and stays allowed. Putting another agent in one is
-   * not: it is `addMember` by a different route, and it would let an agent
+   * A caller opening a room for itself — a DM with the owner, a scratch channel
+   * — is legitimate and stays allowed. Putting somebody else's agent in one is
+   * not: it is `addMember` by a different route, and it would let the caller
    * assemble a room whose members then answer each other.
+   *
+   * This reads owner-identity rather than `kind === 'human'` for the same reason
+   * {@link RoomService.requireOperator} does, and it is not a formality: `/api/rooms`
+   * is reachable by a member (her own rooms live behind it), so on the old test
+   * an invited person could have assembled exactly the amplification room this
+   * refuses an agent — spending the owner's model quota, with the server
+   * process's filesystem access, in a room she made herself.
    *
    * @param creator - The author opening the room.
    * @param seeded - Every author the new roster will hold.
    */
   private requireSeedingAllowed(creator: AuthorRecord, seeded: readonly AuthorRecord[]): void {
-    if (creator.kind === 'human') return;
+    if (this.isOwnerAuthor(creator.id)) return;
     const conscripted = seeded.find(
       (author) => author.id !== creator.id && author.kind === 'agent'
     );
@@ -827,9 +875,20 @@ export class RoomService {
     });
   }
 
-  /** Attach the resolved roster to a room. */
-  private withRoster(room: Room): RoomWithRoster {
-    return { ...room, members: this.roster.list(room.id) };
+  /**
+   * Attach the resolved roster to a room, and say which of its members the
+   * reader is.
+   *
+   * `viewerAuthorId` is the id this call was already scoped by, so it is the
+   * authoritative answer to "which one am I" rather than something a client can
+   * infer. It is not necessarily ON the roster: the owner sees rooms they have
+   * not joined, and a reader who is not a member has no membership to find.
+   *
+   * @param room - The room.
+   * @param viewerAuthorId - The caller this room was resolved for.
+   */
+  private withRoster(room: Room, viewerAuthorId: string): RoomWithRoster {
+    return { ...room, members: this.roster.list(room.id), viewerAuthorId };
   }
 
   /**

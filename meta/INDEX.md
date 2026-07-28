@@ -34,6 +34,11 @@ strategy; the Q1 docs remain canonical until the edits in
   thinking behind the `/flow` engine. Carries a staleness banner.
 - [`customer-voice.md`](customer-voice.md): real developer frustrations DorkOS
   solves, in the customers' own words.
+- [`agent-etiquette.md`](agent-etiquette.md): the standard for how an agent
+  conducts itself in a room, DM or channel it shares with other people and other
+  agents. Written 2026-07-27 alongside the room primitive; unlike the rest of
+  this directory it is current, and it is meant to be checked against real
+  transcripts rather than read once.
 
 ## Value architecture (method)
 

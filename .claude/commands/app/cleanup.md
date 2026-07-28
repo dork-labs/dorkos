@@ -226,7 +226,8 @@ pnpm lint
 If validation fails:
 
 - Report which fix caused the issue
-- Suggest rollback: `git checkout -- .`
+- Suggest rollback (see Rollback Strategy below — never `git checkout -- .`, which
+  the git-guard hook refuses because it also destroys edits cleanup never made)
 - Stop and let user decide
 
 **For `fix` mode**: Continue to Phase 6 (commit).
@@ -419,13 +420,20 @@ Radix deps as unused.
 If cleanup breaks something:
 
 ```bash
-# Undo all changes
-git checkout -- .
-
-# Or revert the commit
+# Already committed? Revert the commit. This is the safe default: it undoes
+# exactly what cleanup did and touches nothing else.
 git revert HEAD
 pnpm install
+
+# Not committed yet? Undo cleanup's edits file by file, reading each one first.
+git diff <path>
+git checkout <sha-before-cleanup> -- <path>
 ```
+
+Do not reach for `git checkout -- .` or `git stash`. The git-guard hook refuses
+both (`.claude/hooks/git-guard.mjs`): they throw away every uncommitted change in
+the tree, including work cleanup never touched, and the stash is shared with
+every other worktree.
 
 ---
 

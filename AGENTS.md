@@ -12,7 +12,7 @@ World-class UI/UX **and** world-class DX, neither negotiable. Every interaction 
 
 **Codebase excellence:** study existing patterns before writing new code and follow them — consistency is a feature; diverging needs justification. Never leave things incomplete: no lingering TODOs, no half-finished migrations, no dead code, no tolerated legacy patterns — when something is superseded, remove it. Have the courage to refactor even when it's hard. If something weird must stay, comment _why_; otherwise refactor it. Simplicity is an active pursuit — the codebase gets cleaner over time.
 
-**Decision filters:** describe what happens for the user, not how the system works internally ("get a Telegram message when your agent finishes"). Every element justifies its existence — if removing it wouldn't hurt the user, remove it. Be honest by design: no dark patterns, no hype language. Would Kai find it valuable, and does it respect Priya's flow? The product feels like a control panel, not a consumer app. (Design mentors — Jobs, Ive, Rams — in `meta/brand-foundation.md`.) All user-facing prose (changelog, release notes, READMEs, docs guides, UI copy, error messages) follows the `writing-for-humans` skill: plain enough for a smart 9th grader who doesn't code.
+**Decision filters:** describe what happens for the user, not how the system works internally ("get a Telegram message when your agent finishes"). Every element justifies its existence — if removing it wouldn't hurt the user, remove it. Be honest by design: no dark patterns, no hype language. Would Kai find it valuable, and does it respect Priya's flow? The product feels like a control panel, not a consumer app. (Design mentors — Jobs, Ive, Rams — in `meta/brand-foundation.md`.) All user-facing prose (changelog, release notes, READMEs, docs guides, UI copy, error messages) follows the `writing-for-humans` skill: plain enough for a smart 9th grader who doesn't code. How an agent **behaves** in a room, DM or channel shared with other people and other agents follows [meta/agent-etiquette.md](meta/agent-etiquette.md): present, useful, and mostly quiet. Over-participation, not silence, is the failure mode users complain about.
 
 ## Monorepo Structure
 
@@ -134,7 +134,8 @@ Non-negotiable, enforced by ESLint/CI/convention:
 3. **`os.homedir()` banned** — use `lib/dork-home.ts` (sole carve-out: that file)
 4. **TSDoc on exports** — enforced by `eslint-plugin-jsdoc`
 5. **Prettier + Tailwind class sorting** are automatic — never hand-sort
-6. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
+6. **`git stash` and `git checkout -- <path>` are refused** — the stash is shared by every worktree and holds your auto-checkpoints; the pathspec checkout silently reverts uncommitted work. Both have eaten work here. Park files in the session scratchpad and restore with `cp`. Enforced by `.claude/hooks/git-guard.mjs`; `git stash list`/`show` and branch switching still work
+7. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
 
 ## Testing
 

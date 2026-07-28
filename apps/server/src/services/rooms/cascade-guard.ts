@@ -90,7 +90,7 @@ export function evaluateCascade(
  * **What `authorKind` is worth, precisely.** It is as good as the answer to
  * "who is calling", and in the DEFAULT posture that answer is weak: with
  * `auth.enabled` off, `resolveCaller` reads a request carrying no
- * `X-DorkOS-Agent` header as the local human, so a program on this machine
+ * `X-DorkOS-Agent` header as the owner's own human author, so a program on this machine
  * becomes `'human'` here by *omitting* a header. That is the documented DOR-505
  * residual (`lib/caller-authority.ts` names the same move) and it is not
  * closable from this module — with login off there is nothing left to tell a

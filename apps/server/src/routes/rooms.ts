@@ -9,8 +9,9 @@
  *   (ADR-0264). The poster is a reader too, so it gets its own entry back on
  *   the stream and has one delivery path rather than two.
  * - **The caller is resolved to an author, never trusted from the body.** An
- *   agent presenting `X-DorkOS-Agent` posts as itself; anyone else posts as the
- *   single local human author v1 mints.
+ *   agent presenting `X-DorkOS-Agent` posts as itself; anyone else posts as
+ *   this install's owner. `resolveCaller` owns that decision and its three
+ *   branches; every handler here just takes the id it hands back.
  *
  * @module routes/rooms
  */
