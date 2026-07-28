@@ -52,6 +52,9 @@ import { AGENTS_SKILLS_DIR, CLAUDE_PLUGIN_ROOT_TOKEN } from '../scan/scanner.js'
 /** Repo-relative Claude Code project slash-command dir (holds authored + wrapper commands). */
 export const CLAUDE_COMMANDS_DIR = '.claude/commands';
 
+/** Package types whose content projects to harnesses (skills/tasks/hooks live here). */
+export const PROJECTABLE_PLUGIN_TYPES: ReadonlySet<string> = new Set(['plugin', 'skill-pack']);
+
 /** Repo-relative Claude Code project skills dir (authored + namespaced installed symlinks). */
 export const CLAUDE_SKILLS_DIR = '.claude/skills';
 
@@ -257,6 +260,59 @@ export function rewritePluginRootInHooks(
         command: h.command.split(CLAUDE_PLUGIN_ROOT_TOKEN).join(absInstallDir),
       })),
     }));
+  }
+  return out;
+}
+
+/** One installed package's hooks, reduced to the literal commands they would run. */
+export interface ProjectedPluginHooks {
+  /** The package that declared them. */
+  packageName: string;
+  /**
+   * Every command string, in plan order, exactly as it would be written into a
+   * harness's hook config — `${CLAUDE_PLUGIN_ROOT}` already resolved, so this is
+   * the text a shell would actually execute.
+   */
+  commands: string[];
+}
+
+/**
+ * Enumerate the shell commands each installed package's hooks would install into
+ * the project's harnesses.
+ *
+ * This is the "what am I about to be asked to allow" question, answered without
+ * building or applying a plan: a package's hooks reach BOTH
+ * `.claude/settings.local.json` (the merge) and the generated Codex/Cursor/Copilot
+ * hook files (folded into {@link buildPlan}'s merged hooks), so a caller deciding
+ * whether to let a package's hooks project needs one list per package, not one per
+ * target file.
+ *
+ * Only project-scoped, projectable-type packages are listed, matching what
+ * {@link buildPlan} would actually project — a global install records no hooks at
+ * all (see `sources/installed.ts`), and a non-portable package type never
+ * contributes.
+ *
+ * Pure: no filesystem access, no ordering surprises. `repoRoot` is used only to
+ * resolve each package's install dir into the commands' absolute paths.
+ *
+ * @param plugins - the scanned installed plugins.
+ * @param repoRoot - absolute repo root, used to resolve `${CLAUDE_PLUGIN_ROOT}`.
+ * @returns one entry per hook-declaring package (packages with no hooks are omitted).
+ */
+export function projectedHookCommands(
+  plugins: readonly InstalledPlugin[],
+  repoRoot: string
+): ProjectedPluginHooks[] {
+  const out: ProjectedPluginHooks[] = [];
+  for (const plugin of plugins) {
+    if (plugin.scope !== 'project' || !PROJECTABLE_PLUGIN_TYPES.has(plugin.type)) continue;
+    if (!plugin.relDir) continue;
+    const rewritten = rewritePluginRootInHooks(plugin.hooks, join(repoRoot, plugin.relDir));
+    if (!rewritten) continue;
+    const commands = Object.values(rewritten).flatMap((groups) =>
+      groups.flatMap((group) => group.hooks.map((hook) => hook.command))
+    );
+    if (commands.length > 0) out.push({ packageName: plugin.name, commands });
   }
   return out;
 }

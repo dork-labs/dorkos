@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
-import { mergeHookConfigs } from '../installed-projector.js';
+import { mergeHookConfigs, projectedHookCommands } from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
 import type { InstalledPlugin } from '../../sources/installed.js';
@@ -318,5 +318,118 @@ describe('mergeHookConfigs', () => {
     ]);
     expect(merged).not.toHaveProperty('Bad');
     expect(merged.Stop).toHaveLength(1);
+  });
+});
+
+describe('projectedHookCommands', () => {
+  it('lists the literal commands a package would install, with the plugin root resolved', () => {
+    const plugin: InstalledPlugin = {
+      ...projectPlugin,
+      hooks: {
+        Stop: [
+          { hooks: [{ type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/x.mjs"' }] },
+        ],
+        PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo two' }] }],
+      },
+    };
+    expect(projectedHookCommands([plugin], '/repo')).toEqual([
+      {
+        packageName: 'acme',
+        commands: ['node "/repo/.dork/plugins/acme/hooks/x.mjs"', 'echo two'],
+      },
+    ]);
+  });
+
+  it('omits a package with no hooks', () => {
+    expect(projectedHookCommands([{ ...projectPlugin, hooks: undefined }], '/repo')).toEqual([]);
+  });
+
+  it('omits what buildPlan would never project: global scope and non-portable types', () => {
+    const global: InstalledPlugin = {
+      name: 'global-pkg',
+      type: 'plugin',
+      scope: 'global',
+      skills: [],
+      commands: [],
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo global' }] }] },
+      layers: ['hooks'],
+    };
+    const shape: InstalledPlugin = { ...projectPlugin, name: 'a-shape', type: 'shape' };
+    expect(projectedHookCommands([global, shape], '/repo')).toEqual([]);
+  });
+});
+
+describe('buildPlan hook gate (DOR-522)', () => {
+  /** Every command string the plan would write into any harness's hook config. */
+  function plannedCommands(plan: ReturnType<typeof buildPlan>): string[] {
+    const out: string[] = [];
+    for (const action of plan.actions) {
+      if (action.artifact !== 'hook') continue;
+      const content = getActionContent(action);
+      if (content) out.push(content);
+    }
+    return out;
+  }
+
+  it('withholds a disallowed package from BOTH the settings merge and the generated hook files', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [projectPlugin],
+        allowPluginHooks: () => false,
+      });
+      expect(plannedCommands(plan).join('\n')).not.toContain('echo from-plugin');
+      // The rest of the package still projects: the gate is on hooks alone.
+      expect(plan.actions.some((a) => a.artifact === 'skill' && a.name === 'acme__alpha')).toBe(
+        true
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('projects the same package once it is allowed', () => {
+    const repo = emptyRepo();
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [projectPlugin],
+        allowPluginHooks: (name) => name === 'acme',
+      });
+      expect(plannedCommands(plan).join('\n')).toContain('echo from-plugin');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it('gates per package, not all-or-nothing', () => {
+    const repo = emptyRepo();
+    const other: InstalledPlugin = {
+      ...projectPlugin,
+      name: 'other',
+      relDir: '.dork/plugins/other',
+      skills: [],
+      commands: [],
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo from-other' }] }] },
+    };
+    try {
+      const plan = buildPlan({
+        repoRoot: repo,
+        manifest: MANIFEST,
+        agentsMdExists: false,
+        installedPlugins: [projectPlugin, other],
+        allowPluginHooks: (name) => name === 'other',
+      });
+      const commands = plannedCommands(plan).join('\n');
+      expect(commands).toContain('echo from-other');
+      expect(commands).not.toContain('echo from-plugin');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

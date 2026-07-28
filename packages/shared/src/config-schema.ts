@@ -896,8 +896,21 @@ export const UserConfigSchema = z.object({
        * projection manually via `dorkos harness sync`.
        */
       autoSync: z.boolean().default(true),
+      /**
+       * The hook projections a person has allowed: installed packages that may
+       * write shell commands into the files a coding agent runs on their behalf
+       * (`.claude/settings.local.json`, `.codex/hooks.json`, and the rest).
+       *
+       * Each entry is `<packageName>@<digest>`, where the digest covers the
+       * project and the exact commands that were shown on the approval card
+       * (`services/harness/hook-approval.ts`). Binding the digest rather than the
+       * name alone is what makes an update that changes a package's commands ask
+       * again instead of riding an old yes. Empty by default: nothing writes a
+       * hook until somebody says so.
+       */
+      approvedHooks: z.array(z.string()).default(() => []),
     })
-    .default(() => ({ autoSync: true })),
+    .default(() => ({ autoSync: true, approvedHooks: [] })),
   workbench: z
     .object({
       /**

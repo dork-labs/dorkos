@@ -38,10 +38,8 @@ import {
   dropWholePlugin,
   mergeHookConfigs,
   rewritePluginRootInHooks,
+  PROJECTABLE_PLUGIN_TYPES,
 } from './installed-projector.js';
-
-/** Package types whose content projects to harnesses (skills/tasks/hooks live here). */
-const PROJECTABLE_PLUGIN_TYPES = new Set(['plugin', 'skill-pack']);
 
 /** Project a single skill to one harness. */
 function planSkill(
@@ -296,8 +294,16 @@ function planCommands(harness: HarnessId): ProjectionAction {
  * layers drop with reasons. Global-scoped installs and non-plugin package types
  * are dropped (reported, never projected by a project sync).
  *
+ * `input.allowPluginHooks` is the one lever over WHICH installed packages get to
+ * contribute hooks. It gates hooks and nothing else: a package it excludes still
+ * projects its skills and commands, it simply contributes no shell commands to any
+ * harness. Omitting it projects every package's hooks, which is what a person
+ * running `dorkos harness sync` in their own terminal asks for. See
+ * {@link projectedHookCommands} for the list a caller needs to decide.
+ *
  * @param input - the repo root, validated manifest, optional Claude hooks,
- *   whether a canonical `AGENTS.md` exists, and any installed plugins.
+ *   whether a canonical `AGENTS.md` exists, any installed plugins, and an optional
+ *   per-package gate on hook contribution.
  * @returns the actionable projections, the honest drop list, and any warnings
  *   about projections that landed but may not work in the target harness.
  */
@@ -307,6 +313,7 @@ export function buildPlan(input: {
   claudeHooks?: ClaudeHooksConfig;
   agentsMdExists: boolean;
   installedPlugins?: InstalledPlugin[];
+  allowPluginHooks?: (packageName: string) => boolean;
 }): ProjectionPlan {
   const { repoRoot, manifest, claudeHooks, agentsMdExists, installedPlugins = [] } = input;
   const skills = scanSkills(repoRoot);
@@ -322,6 +329,15 @@ export function buildPlan(input: {
   );
   const globalInstalls = installedPlugins.filter((p) => p.scope === 'global');
 
+  // Which packages may contribute shell commands. Applied HERE, before the hooks
+  // are folded in, because a package's hooks reach every enabled harness — the
+  // generated `.codex/hooks.json` and friends below, as well as the Claude Code
+  // settings merge further down. Filtering either target alone would leave the
+  // other one writing the same commands (DOR-522).
+  const hookContributors = input.allowPluginHooks
+    ? projectable.filter((p) => input.allowPluginHooks?.(p.name))
+    : projectable;
+
   // Fold installed-plugin hooks into the authored hooks so Codex gets one merged
   // hooks file (it reads a single `.codex/hooks.json`). An installed plugin's
   // install root is known at plan time, so its `${CLAUDE_PLUGIN_ROOT}` is rewritten
@@ -330,7 +346,7 @@ export function buildPlan(input: {
   // (unknown root) or other unresolved `${CLAUDE_*}` tokens to earn a warning.
   const mergedHooks = mergeHookConfigs([
     claudeHooks,
-    ...projectable.map((p) =>
+    ...hookContributors.map((p) =>
       p.relDir ? rewritePluginRootInHooks(p.hooks, join(repoRoot, p.relDir)) : p.hooks
     ),
   ]);
@@ -355,7 +371,7 @@ export function buildPlan(input: {
   // `.claude/settings.local.json` (one action for all plugins). Codex already
   // gets them folded into its generated hooks file above.
   if (manifest.harnesses.includes('claude-code')) {
-    const hooksMerge = planInstalledPluginHooks(projectable, repoRoot);
+    const hooksMerge = planInstalledPluginHooks(hookContributors, repoRoot);
     if (hooksMerge) all.push(hooksMerge);
   }
 
