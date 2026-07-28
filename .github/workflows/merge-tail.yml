@@ -1,0 +1,165 @@
+name: merge-tail
+
+# Arm auto-merge on pull requests that are finished.
+#
+# Why this exists: nothing in this repo ever armed auto-merge. ADR-0276's
+# auto-merge recovery ladder is real but lives in the flow plugin behind
+# autonomous Pulse mode (`enabled: false` in v1); outside that loop
+# `flow__flow-drain` stops agents at the review gate, and the `gh pr merge --auto`
+# line in the creating-pull-requests skill is prose nothing executes. The result
+# was finished, green, reviewed PRs sitting open until a human armed each one by
+# hand. This is that hand.
+#
+# What it deliberately does NOT do: update branches. Under
+# `required_status_checks.strict` an armed PR still stalls at BEHIND, and the fix
+# for that is the merge queue, not a bot. A branch update pushed with
+# GITHUB_TOKEN creates its `synchronize` run in an approval-required state, so
+# automating it here would trade one deadlock for another and need a PAT to
+# escape. The queue removes the problem instead of automating around it.
+#
+# The arming decision lives in scripts/should-arm-automerge.sh, fixture-pinned by
+# scripts/test-should-arm-automerge.sh, because the failure mode of this workflow
+# is silent: a refusal that stops matching keeps returning ARM and the first
+# symptom is unreviewed code on main.
+#
+# KNOWN, BOUNDED COST — a merge armed here does not run the `push: main`
+# workflows. GitHub suppresses downstream runs for anything triggered by
+# GITHUB_TOKEN, and that includes the merge an armed auto-merge performs
+# (peter-evans/enable-pull-request-automerge documents the same behaviour: "if
+# you use the default GITHUB_TOKEN ... the merge will not trigger further
+# workflow runs"). So typecheck, cli-smoke-test, docs-openapi-check and
+# scripts-test lose their post-merge run on `main` for PRs armed by this
+# workflow.
+#
+# Why that is acceptable rather than a hole: while
+# `required_status_checks.strict` is on, a PR's checks already ran against a
+# branch that was up to date with `main`, so the post-merge run re-tests a tree
+# it has effectively already tested. What is genuinely lost is turbo cache
+# warming from `main` and confirmation for anything that lands by another route.
+# The merge queue closes it properly by running the suite on `merge_group`
+# against the real merged result, which is strictly better signal than either.
+#
+# The escape hatch, if the post-merge runs turn out to matter before then: give
+# this workflow a `repo`-scoped PAT instead of `github.token`. That was
+# deliberately declined here to avoid provisioning a credential for code the
+# merge queue deletes.
+
+on:
+  schedule:
+    # Every 10 minutes. The window only has to be short relative to how long a
+    # finished PR should wait, not to how fast main moves.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report the verdict for every open PR without arming anything'
+        type: boolean
+        default: false
+
+# Never let two ticks arm the same PR concurrently.
+concurrency:
+  group: merge-tail
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+
+jobs:
+  arm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Arm auto-merge on finished PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -uo pipefail
+
+          # Every payload is composed from FILES with `jq -s`, never from shell
+          # interpolation. A multi-line gh error captured into a shell variable
+          # and passed to --argjson is a parse failure that reads as an
+          # unreadable payload, which is indistinguishable from a real refusal.
+          work=$(mktemp -d)
+          armed=0; skipped=0; failed=0
+
+          gh pr list --repo "$REPO" --state open --limit 100 \
+            --json number --jq '.[].number' > "$work/prs.txt" || {
+              echo "::error::could not list pull requests"; exit 1; }
+
+          echo "Open PRs: $(wc -l < "$work/prs.txt" | tr -d ' ')"
+          echo
+
+          while read -r pr; do
+            [[ -n "$pr" ]] || continue
+
+            if ! gh pr view "$pr" --repo "$REPO" \
+                 --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels \
+                 > "$work/meta.json" 2>"$work/err.txt"; then
+              echo "PR #$pr -> SKIP could-not-read-pr ($(tr '\n' ' ' < "$work/err.txt" | cut -c1-120))"
+              skipped=$(( skipped + 1 )); continue
+            fi
+
+            # `gh pr checks` exits non-zero when any check is failing or pending,
+            # which is information we want, not an error. Keep the output and let
+            # the gate judge it; only an unparseable body is a real failure.
+            gh pr checks "$pr" --repo "$REPO" --json name,bucket > "$work/checks.json" 2>/dev/null
+            jq -e . "$work/checks.json" >/dev/null 2>&1 || echo '[]' > "$work/checks.json"
+
+            gh api graphql -F number="$pr" -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query='
+              query($owner:String!,$name:String!,$number:Int!){
+                repository(owner:$owner,name:$name){
+                  pullRequest(number:$number){
+                    reviewThreads(last:100){ nodes{ isResolved } } } } }' \
+              > "$work/threads.json" 2>/dev/null
+            threads=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]?
+                           | select(.isResolved == false)] | length' \
+                      "$work/threads.json" 2>/dev/null)
+            # An unreadable thread count must not read as zero. Zero means
+            # "checked, none open"; unknown means "do not arm".
+            if ! [[ "$threads" =~ ^[0-9]+$ ]]; then
+              echo "PR #$pr -> SKIP could-not-read-review-threads"
+              skipped=$(( skipped + 1 )); continue
+            fi
+
+            jq -s --argjson t "$threads" \
+              '.[0] + {checks: .[1], unresolvedThreads: $t}' \
+              "$work/meta.json" "$work/checks.json" > "$work/payload.json"
+
+            verdict=$(./scripts/should-arm-automerge.sh "$work/payload.json")
+
+            if [[ "$verdict" != "ARM" ]]; then
+              echo "PR #$pr -> $verdict"
+              skipped=$(( skipped + 1 )); continue
+            fi
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "PR #$pr -> ARM (dry run, not armed)"
+              armed=$(( armed + 1 )); continue
+            fi
+
+            if out=$(gh pr merge --auto --squash "$pr" --repo "$REPO" 2>&1); then
+              echo "PR #$pr -> ARMED"
+              armed=$(( armed + 1 ))
+            else
+              # Losing a race (the PR merged or closed between the read and the
+              # write) is normal and not a failure of this workflow.
+              echo "PR #$pr -> ARM FAILED: $(tr '\n' ' ' <<<"$out" | cut -c1-160)"
+              failed=$(( failed + 1 ))
+            fi
+          done < "$work/prs.txt"
+
+          echo
+          echo "armed=$armed skipped=$skipped failed=$failed"
+          {
+            echo "### merge-tail"
+            echo
+            echo "- armed: $armed"
+            echo "- skipped: $skipped"
+            echo "- arm failed: $failed"
+            [[ "$DRY_RUN" == "true" ]] && echo "- (dry run: nothing was actually armed)"
+          } >> "$GITHUB_STEP_SUMMARY"
