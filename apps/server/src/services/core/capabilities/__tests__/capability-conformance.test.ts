@@ -100,7 +100,9 @@ let uninstallReached = false;
 const emptyPreview = {
   fileChanges: [],
   extensions: [],
-  tasks: [],
+  hooks: [],
+  unreadableHooks: [],
+  schedules: [],
   secrets: [],
   externalHosts: [],
   requires: [],
