@@ -15,6 +15,7 @@
   },
   "scripts": {
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {

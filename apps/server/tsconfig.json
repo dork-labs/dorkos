@@ -106,7 +106,6 @@
     "src/services/marketplace/__tests__/flows/update.test.ts", // 1
     "src/services/marketplace/__tests__/integration.test.ts", // 1
     "src/services/marketplace/__tests__/marketplace-installer.test.ts", // 8
-    "src/services/marketplace/__tests__/permission-preview.test.ts", // 1
     "src/services/marketplace/__tests__/telemetry-hook.test.ts", // 1
     "src/services/marketplace/__tests__/telemetry-privacy.test.ts", // 1
     "src/services/marketplace/__tests__/telemetry-reporter.test.ts", // 1

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 // Steer the three resolution primitives per test.
 const h = vi.hoisted(() => ({
@@ -34,7 +34,7 @@ vi.mock('node:child_process', () => ({
 const { checkClaude } = await import('../check-claude.js');
 
 describe('checkClaude', () => {
-  let mockConsoleWarn: ReturnType<typeof vi.spyOn>;
+  let mockConsoleWarn: MockInstance<typeof console.warn>;
 
   beforeEach(() => {
     vi.clearAllMocks();

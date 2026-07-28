@@ -64,7 +64,9 @@ function permissionPreview(overrides: Partial<PermissionPreview> = {}): Permissi
   return {
     fileChanges: [],
     extensions: [],
-    tasks: [],
+    hooks: [],
+    unreadableHooks: [],
+    schedules: [],
     secrets: [],
     externalHosts: [],
     requires: [],

@@ -44,6 +44,9 @@ function linearOpsManifest(scheduleOverrides: Record<string, unknown> = {}): Sha
         cron: '*/15 * * * *',
         agentRef: 'linear-tender',
         permissionMode: 'acceptEdits',
+        // Explicit: `startEnabled` defaults to false (DOR-607), and these tests
+        // are about the tick turning ON when its agent finally shows up.
+        startEnabled: true,
         ...scheduleOverrides,
       },
     ],
@@ -118,6 +121,7 @@ describe('rebindShapeSchedulesForAgent', () => {
           cron: '*/15 * * * *',
           agentRef: 'tender',
           permissionMode: 'acceptEdits',
+          startEnabled: true,
         },
       ],
     });
@@ -168,13 +172,13 @@ describe('rebindShapeSchedulesForAgent', () => {
     ]);
   });
 
-  it('re-binds a startDisabled schedule but keeps it disabled', async () => {
+  it('re-binds a schedule that does not start enabled, but keeps it off', async () => {
     const { service, rebindSchedule } = makeScheduleService([
       { name: 'inbox-tick', agentId: null, enabled: false, shapeOrigin: 'linear-ops' },
     ]);
 
     const rebound = await rebindShapeSchedulesForAgent(LINEAR_TENDER_AGENT, {
-      listShapes: () => [linearOpsManifest({ startDisabled: true })],
+      listShapes: () => [linearOpsManifest({ startEnabled: false })],
       scheduleService: service,
     });
 

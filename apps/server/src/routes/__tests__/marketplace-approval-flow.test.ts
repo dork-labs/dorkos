@@ -27,7 +27,9 @@ import { createApprovalsRouter } from '../approvals.js';
 const EMPTY_PREVIEW = {
   fileChanges: [],
   extensions: [],
-  tasks: [],
+  hooks: [],
+  unreadableHooks: [],
+  schedules: [],
   secrets: [],
   externalHosts: [],
   requires: [],

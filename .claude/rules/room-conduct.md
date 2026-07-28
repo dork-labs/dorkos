@@ -6,8 +6,13 @@ paths: apps/server/src/services/rooms/**/*.ts, apps/client/src/layers/**/rooms/*
 
 You are editing code that decides when an agent speaks to other people. Read
 [`meta/agent-etiquette.md`](../../meta/agent-etiquette.md) before changing
-behavior, and [`specs/room-participation/01-ideation.md`](../../specs/room-participation/01-ideation.md)
-for the mechanisms and their rationale.
+behavior, and
+[`specs/room-participation/02-specification.md`](../../specs/room-participation/02-specification.md)
+for the mechanisms, their phasing and their tests.
+[`01-ideation.md`](../../specs/room-participation/01-ideation.md) beside it holds
+the reasoning and the twelve constraints that are settled; the specification is
+the one to trust where they differ, because it corrects four things the ideation
+got wrong about this code.
 
 ## The split that must not collapse
 

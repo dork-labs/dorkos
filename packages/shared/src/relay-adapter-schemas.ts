@@ -59,6 +59,45 @@ export const PluginSourceSchema = z
 
 export type PluginSource = z.infer<typeof PluginSourceSchema>;
 
+/**
+ * When a chat integration answers a message in a group conversation.
+ *
+ * DMs are outside this decision on every platform: a direct message is
+ * addressed to the bot by construction, so this never gates one. What does gate
+ * a DM is per-platform and not implied here — Slack has `dmPolicy`, Telegram
+ * has no such field and answers every direct message. These values only decide
+ * group behavior.
+ *
+ * - `'always'` — answer every message in the group. An agent wins every race
+ *   for the next turn, so this is the setting that produces the bot nobody can
+ *   hear over.
+ * - `'mention-only'` — answer only when the message names the bot.
+ * - `'thread-aware'` — answer when the message names the bot, and keep
+ *   answering inside a conversation the bot already joined without needing to
+ *   be named again. Each platform supplies its own notion of "already joined":
+ *   Slack tracks thread participation, Telegram treats a reply to one of the
+ *   bot's own messages as the same thing.
+ *
+ * Shared by every adapter on purpose. A second enum with the same three
+ * meanings is how two integrations drift into behaving differently for the
+ * same words.
+ */
+export const RespondModeSchema = z.enum(['always', 'mention-only', 'thread-aware']);
+
+export type RespondMode = z.infer<typeof RespondModeSchema>;
+
+/**
+ * The one place the respond-mode default is stated.
+ *
+ * Every adapter schema below defaults to this, and any code that has to resolve
+ * a respond mode outside the schema reads this constant rather than restating a
+ * literal. It used to be restated: the Slack schema said `'thread-aware'` while
+ * three call sites in the Slack adapter's inbound handler fell back to
+ * `'always'`, so whether an unconfigured integration flooded a channel depended
+ * on whether its config had happened to travel through the schema (DOR-623).
+ */
+export const DEFAULT_RESPOND_MODE: RespondMode = 'thread-aware';
+
 export const TelegramAdapterConfigSchema = z
   .object({
     /** Bot token — a credential reference at rest (see {@link AdapterSecretSchema}). */
@@ -69,6 +108,27 @@ export const TelegramAdapterConfigSchema = z
     /** Webhook validation secret — a credential reference at rest (see {@link AdapterSecretSchema}). */
     webhookSecret: AdapterSecretSchema.optional(),
     streaming: z.boolean().default(true),
+    /**
+     * When the bot answers in a group or supergroup — see
+     * {@link RespondModeSchema}. Private chats always get an answer and are
+     * unaffected by this.
+     *
+     * Telegram had no such setting and answered every message in every group,
+     * which is how two bots in one group answered each other without end
+     * (DOR-619). `'thread-aware'` here means: the message names the bot
+     * (`@botname`, a `/command@botname`, or a direct user mention), or it
+     * replies to a message the bot itself sent.
+     *
+     * Unlike `dmPolicy`, this deliberately has **no carry-forward and no
+     * startup warning** (`services/relay/safe-defaults.ts`). Both of those
+     * exist to preserve, and then confess, a permissive value an operator had
+     * implicitly chosen. Neither applies here: Telegram never exposed this
+     * setting, so nobody chose the old behavior, and every stored integration
+     * moves to the *safer* value rather than keeping a risky one. There is no
+     * preserved exposure to warn about — and the property that actually keeps
+     * the room safe, the bot-loop guard, is a mechanism no setting can reach.
+     */
+    respondMode: RespondModeSchema.default(DEFAULT_RESPOND_MODE),
     /**
      * Telegram user IDs who may approve a tool call this agent asks about.
      * Empty by default, and empty authorizes nobody (DOR-609).
@@ -123,7 +183,11 @@ export const SlackAdapterConfigSchema = z
     streaming: z.boolean().default(true),
     nativeStreaming: z.boolean().default(true),
     typingIndicator: z.enum(['none', 'reaction']).default('reaction'),
-    respondMode: z.enum(['always', 'mention-only', 'thread-aware']).default('thread-aware'),
+    /**
+     * When the bot answers in a channel — see {@link RespondModeSchema}. DMs
+     * are gated by {@link SlackAdapterConfigSchema.shape.dmPolicy} instead.
+     */
+    respondMode: RespondModeSchema.default(DEFAULT_RESPOND_MODE),
     /**
      * Who may DM the bot. A direct message starts an agent turn on the
      * operator's machine, so this defaults to `'allowlist'` — an integration
@@ -152,7 +216,7 @@ export const SlackAdapterConfigSchema = z
         z.string(),
         z.object({
           enabled: z.boolean().optional(),
-          respondMode: z.enum(['always', 'mention-only', 'thread-aware']).optional(),
+          respondMode: RespondModeSchema.optional(),
         })
       )
       .default({}),

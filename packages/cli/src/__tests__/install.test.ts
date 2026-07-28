@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 import { parseInstallArgs, runInstall } from '../commands/install.js';
 
@@ -22,7 +22,9 @@ const PREVIEW_BODY = {
   preview: {
     fileChanges: [{ path: 'foo.ts', action: 'create' as const }],
     extensions: [],
-    tasks: [],
+    hooks: [],
+    unreadableHooks: [],
+    schedules: [],
     secrets: [],
     externalHosts: [],
     requires: [],
@@ -94,8 +96,8 @@ describe('parseInstallArgs', () => {
 });
 
 describe('runInstall', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: MockInstance<typeof console.log>;
+  let errSpy: MockInstance<typeof console.error>;
   let originalIsTTY: boolean | undefined;
 
   beforeEach(() => {
