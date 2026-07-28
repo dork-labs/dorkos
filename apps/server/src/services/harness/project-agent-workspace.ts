@@ -255,10 +255,12 @@ export function projectAgentWorkspace(agentDir: string): AgentWorkspaceProjectio
  * yields to the event loop between workspaces, which is what lets a caller fire
  * it off at boot without delaying anything else coming up.
  *
- * The single summary line is a WARNING when the pass had agents to repair and
- * repaired none of them, or when any workspace failed. A repair that quietly
- * does nothing on every boot is the worst outcome this function has, so it does
- * not get to hide at info level.
+ * The single summary line reports one of three outcomes, and says which:
+ * repaired nothing (warn — the worst outcome this function has, so it does not
+ * get to hide at info level), repaired some but not all (warn, naming both
+ * counts), or clean (info). They are kept distinct because a line claiming a
+ * total failure that did not happen sends whoever reads it hunting for the
+ * wrong problem.
  *
  * @param workspaces - Absolute paths to every registered agent workspace.
  * @param dorkHome - Resolved DorkOS data directory (see `lib/dork-home.ts`).
@@ -288,11 +290,15 @@ export async function backfillAgentWorkspaceProjections(
     else summary.failed += 1;
   }
 
-  const repairedNothing = summary.total > 0 && summary.projected === 0;
-  if (repairedNothing || summary.failed > 0) {
+  if (summary.total > 0 && summary.projected === 0) {
     logger.warn('[HarnessSync] Agent workspace skill projection backfill repaired nothing', {
       ...summary,
       hint: 'Registered agents were found but none had their skills linked. Run `dorkos harness sync --fix` in the agent workspace to see why.',
+    });
+  } else if (summary.failed > 0) {
+    logger.warn('[HarnessSync] Agent workspace skill projection backfill partly failed', {
+      ...summary,
+      hint: `Linked ${summary.projected} agent workspace(s); ${summary.failed} failed. Each failure was logged above with its workspace path — run \`dorkos harness sync --fix\` in those to see why.`,
     });
   } else {
     logger.info('[HarnessSync] Agent workspace skill projection backfill complete', summary);

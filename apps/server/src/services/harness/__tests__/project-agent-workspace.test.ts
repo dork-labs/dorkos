@@ -411,10 +411,16 @@ describe('backfillAgentWorkspaceProjections', () => {
     await backfillAgentWorkspaceProjections([broken], tmpRoot);
 
     expect(logger.info).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      '[HarnessSync] Agent workspace skill projection backfill repaired nothing',
-      expect.objectContaining({ total: 1, projected: 0, failed: 1 })
+    // Exactly one summary line, and it is the total-failure wording — not the
+    // partial one, which would understate a boot that linked nothing at all.
+    const summaryLines = vi
+      .mocked(logger.warn)
+      .mock.calls.filter(([msg]) => String(msg).includes('backfill'));
+    expect(summaryLines).toHaveLength(1);
+    expect(summaryLines[0]?.[0]).toBe(
+      '[HarnessSync] Agent workspace skill projection backfill repaired nothing'
     );
+    expect(summaryLines[0]?.[1]).toMatchObject({ total: 1, projected: 0, failed: 1 });
   });
 
   it('does not mistake a sibling of the agents directory for one of its own', async () => {
@@ -455,12 +461,22 @@ describe('backfillAgentWorkspaceProjections', () => {
     expect(lstatSync(join(healthy, '.claude', 'skills', 'operating-dorkos')).isSymbolicLink()).toBe(
       true
     );
-    // One summary line for the pass, not one per agent. It is a warning here
-    // rather than an info because one workspace failed.
+    // One summary line for the pass, not one per agent. It warns because a
+    // workspace failed — but it must NOT claim nothing was repaired, because one
+    // workspace was. A log that overstates the damage sends whoever reads it
+    // hunting for a total failure that did not happen.
     const summaryLines = vi
       .mocked(logger.warn)
-      .mock.calls.filter(([msg]) => String(msg).includes('backfill repaired nothing'));
+      .mock.calls.filter(([msg]) => String(msg).includes('backfill'));
     expect(summaryLines).toHaveLength(1);
+    expect(summaryLines[0]?.[0]).toBe(
+      '[HarnessSync] Agent workspace skill projection backfill partly failed'
+    );
+    expect(summaryLines[0]?.[1]).toMatchObject({
+      projected: 1,
+      failed: 1,
+      hint: expect.stringContaining('Linked 1 agent workspace(s); 1 failed'),
+    });
     expect(logger.info).not.toHaveBeenCalled();
   });
 
