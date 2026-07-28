@@ -20,6 +20,13 @@ const FLEET = [
   { agentPath: '/w/bo', displayName: 'Bo' },
 ];
 
+/**
+ * Three agents where the query `a` matches TWO of them (Ana, Kai) and not Bo.
+ * That is what lets a test type a query and hover a different match at the same
+ * time — the state the announced/added desync lived in.
+ */
+const TRIO = [...FLEET, { agentPath: '/w/kai', displayName: 'Kai' }];
+
 function renderPicker(submitDisabled: boolean) {
   const onSubmit = vi.fn();
   render(
@@ -80,55 +87,133 @@ describe('AgentChipPicker submitDisabled', () => {
 });
 
 /**
- * Enter belongs to the keyboard, and a hovered row is not the keyboard.
+ * What is announced is what Enter does.
  *
- * The trap this closes: assembling a selection by clicking leaves the cursor
- * resting on whichever agent slid up into the vacated row, so the next Enter —
- * the one a reader presses to finish — used to ADD that agent instead of
- * committing. jsdom is where this is testable at all; a screenshot cannot show
- * where a cursor is.
+ * This is the actual property, asserted as an invariant rather than as a list
+ * of cases — the defect it exists against was found by combining a query with a
+ * hover, which is a state nobody thought to write a case for. The invariant
+ * catches that combination and every other one without anybody having to
+ * imagine it.
+ *
+ * The trap underneath: assembling a selection by clicking leaves the cursor
+ * resting on whichever agent slid up into the vacated row, so the Enter a
+ * reader presses to finish used to add that agent instead of committing.
  */
-describe('AgentChipPicker Enter and the pointer', () => {
-  it('commits when Enter follows a HOVER, rather than adding the hovered agent', () => {
-    const { onSubmit, field } = renderFresh();
+describe('AgentChipPicker: the announced row IS the Enter target', () => {
+  /** The option `aria-activedescendant` names, or null when nothing is announced. */
+  function announced(): string | null {
+    const field = screen.getByLabelText('Search agents');
+    const id = field.getAttribute('aria-activedescendant');
+    if (!id) return null;
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`aria-activedescendant points at ${id}, which is not in the document`);
+    return el.textContent;
+  }
 
-    // Assemble by pointer, the way the trap is reached.
+  /** Every option the list currently draws as selected. Must never exceed one. */
+  function selectedOptions(): string[] {
+    return screen
+      .queryAllByRole('option')
+      .filter((el) => el.getAttribute('aria-selected') === 'true')
+      .map((el) => el.textContent ?? '');
+  }
+
+  /**
+   * The gestures worth reaching this state through. Each leaves the picker in a
+   * different combination of query and highlight — including the one the fix
+   * was found by, a live query with the cursor over a DIFFERENT match.
+   */
+  const GESTURES: Array<{ name: string; drive: (field: HTMLElement) => void }> = [
+    { name: 'nothing touched', drive: () => {} },
+    {
+      name: 'a query typed',
+      drive: (field) => fireEvent.change(field, { target: { value: 'a' } }),
+    },
+    {
+      name: 'arrowed down once',
+      drive: (field) => fireEvent.keyDown(field, { key: 'ArrowDown' }),
+    },
+    {
+      name: 'arrowed down twice',
+      drive: (field) => {
+        fireEvent.keyDown(field, { key: 'ArrowDown' });
+        fireEvent.keyDown(field, { key: 'ArrowDown' });
+      },
+    },
+    {
+      name: 'hovered a row',
+      drive: () => fireEvent.mouseEnter(screen.getByRole('option', { name: 'Bo' })),
+    },
+    {
+      name: 'a query typed AND a different match hovered',
+      drive: (field) => {
+        // The state the desynchronised version got wrong: it announced Bo and
+        // added Ana. Reached only by hovering WITHOUT clicking, which is why
+        // every earlier test walked past it.
+        fireEvent.change(field, { target: { value: 'a' } });
+        fireEvent.mouseEnter(screen.getByRole('option', { name: 'Kai' }));
+      },
+    },
+    {
+      name: 'arrowed, then a different row hovered',
+      drive: (field) => {
+        fireEvent.keyDown(field, { key: 'ArrowDown' });
+        fireEvent.mouseEnter(screen.getByRole('option', { name: 'Kai' }));
+      },
+    },
+  ];
+
+  it.each(GESTURES)('after $name, Enter acts on exactly what was announced', ({ drive }) => {
+    const { onSubmit, field } = renderFresh(TRIO);
+    drive(field());
+
+    // The list may draw at most one selected row, and it must be the announced
+    // one — two "highlights" would make the invariant meaningless.
+    const announcedRow = announced();
+    expect(selectedOptions()).toEqual(announcedRow === null ? [] : [announcedRow]);
+
+    fireEvent.keyDown(field(), { key: 'Enter' });
+
+    if (announcedRow === null) {
+      // Nothing announced means nothing to add. Enter either commits (empty
+      // field) or is inert (a query nobody matches) — never adds.
+      expect(screen.queryByRole('button', { name: /^Remove / })).not.toBeInTheDocument();
+    } else {
+      // And when something IS announced, Enter adds that one and no other.
+      expect(onSubmit).not.toHaveBeenCalled();
+      const chips = screen
+        .getAllByRole('button', { name: /^Remove / })
+        .map((el) => el.getAttribute('aria-label')?.replace('Remove ', ''));
+      expect(chips).toEqual([announcedRow]);
+    }
+  });
+
+  it('commits after a hover, rather than adding the hovered agent', () => {
+    // The trap, end to end: assemble by pointer, then finish with the key.
+    const { onSubmit, field } = renderFresh(TRIO);
+
     fireEvent.change(field(), { target: { value: 'Ana' } });
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     // The cursor is now resting on whoever took the vacated row.
     fireEvent.mouseEnter(screen.getByRole('option', { name: 'Bo' }));
     fireEvent.keyDown(field(), { key: 'Enter' });
 
-    // Ana alone, and Bo is NOT along for the ride.
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith([{ agentPath: '/w/ana', displayName: 'Ana' }]);
   });
 
   it('still adds when Enter follows an ARROW key', () => {
-    const { onSubmit, field } = renderFresh();
+    const { onSubmit, field } = renderFresh(TRIO);
 
     fireEvent.keyDown(field(), { key: 'ArrowDown' });
     fireEvent.keyDown(field(), { key: 'Enter' });
 
-    // Added, not committed: one chip and nothing submitted yet.
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
   });
 
-  it('lets an arrow key take the highlight back off the pointer', () => {
-    const { onSubmit, field } = renderFresh();
-
-    // Hover Bo, then steer with the keyboard: the aim is the reader's again.
-    fireEvent.mouseEnter(screen.getByRole('option', { name: 'Bo' }));
-    fireEvent.keyDown(field(), { key: 'ArrowDown' });
-    fireEvent.keyDown(field(), { key: 'Enter' });
-
-    expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /^Remove / })).toBeInTheDocument();
-  });
-
   it('still adds the first match when Enter follows TYPING', () => {
-    const { onSubmit, field } = renderFresh();
+    const { onSubmit, field } = renderFresh(TRIO);
 
     fireEvent.change(field(), { target: { value: 'Bo' } });
     fireEvent.keyDown(field(), { key: 'Enter' });
@@ -138,7 +223,7 @@ describe('AgentChipPicker Enter and the pointer', () => {
   });
 
   it('stays inert when a query matches nobody', () => {
-    const { onSubmit, field } = renderFresh();
+    const { onSubmit, field } = renderFresh(TRIO);
 
     fireEvent.change(field(), { target: { value: 'Ana' } });
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));

@@ -3,11 +3,7 @@ import { useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { Skeleton } from '@/layers/shared/ui';
 import { useMarkRoomRead, useRoom, useRoomEntries, useRoomStream } from '@/layers/entities/room';
-import {
-  RoomMembersDialog,
-  useAgentPickerCandidates,
-  type MembersDialogIntent,
-} from '@/layers/features/room-membership';
+import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { RoomComposer } from './RoomComposer';
@@ -30,11 +26,8 @@ export function ChannelsPage() {
   const stream = useRoomStream(roomId, entriesQuery.isSuccess);
   // Two of spec §14.3's three entry points are on this page — the header's
   // roster and the empty state — and both open the one panel the sidebar's row
-  // menu opens. The fleet is read here rather than passed down, because this
-  // page is on screen when the sidebar is a closed drawer; it is the same hook
-  // the sidebar calls, so both get the same agents and the same answer about
-  // whether the fleet could be read at all.
-  const agents = useAgentPickerCandidates();
+  // menu opens. The panel reads its own fleet, which is what lets this page
+  // open it without holding one; the sidebar may be a closed drawer here.
   const [membersIntent, setMembersIntent] = useState<MembersDialogIntent | null>(null);
 
   const room = roomQuery.data;
@@ -153,7 +146,6 @@ export function ChannelsPage() {
           open
           onOpenChange={(next) => !next && setMembersIntent(null)}
           intent={membersIntent}
-          agents={agents}
         />
       )}
     </div>

@@ -35,7 +35,6 @@ import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
-import { useAgentPickerCandidates } from '@/layers/features/room-membership';
 import { AgentListItem } from './AgentListItem';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarNavHeader } from './SidebarNavHeader';
@@ -152,11 +151,6 @@ export function DashboardSidebar() {
     () => ({ displayNames: displayNamesRecord, agentActivity }),
     [displayNamesRecord, agentActivity]
   );
-  // The fleet as the room pickers read it. The SAME hook the open room uses, so
-  // the two never disagree about who is offerable, what they are called, what
-  // order they come in, or whether the answer is known yet — an empty list from
-  // a failed read must not read as "you have no agents" in either place.
-  const agentRoster = useAgentPickerCandidates();
 
   // ── Attention + mute (DOR-339): one attention-map subscription for the whole
   // sidebar, and the individually-muted path set every section's filter and
@@ -491,7 +485,6 @@ export function DashboardSidebar() {
             error={roomsQuery.error}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
-            agents={agentRoster}
             onOpenAgentProfile={handleOpenProfile}
           />
 
@@ -499,7 +492,6 @@ export function DashboardSidebar() {
             dms={dms}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
-            agents={agentRoster}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onOpenAgentProfile={handleOpenProfile}

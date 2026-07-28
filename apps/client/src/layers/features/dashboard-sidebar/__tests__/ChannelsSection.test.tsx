@@ -8,15 +8,22 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
-import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { ChannelsSection } from '../ui/rooms/ChannelsSection';
 
 /**
- * A fleet that has been read successfully. Named for the state rather than
- * defaulted into one — the loading and failed rosters render something else,
- * and those are asserted in `AgentRosterPicker.test.tsx`.
+ * The fleet the create dialog reads for itself. Mocked at the hook, because the
+ * dialog fetches it rather than taking it from this section — see the module
+ * doc on `features/room-membership`.
  */
-function settled(candidates: AgentPickerCandidate[] = []): AgentRoster {
+const { mockRosterRef } = vi.hoisted(() => ({
+  mockRosterRef: { current: null as unknown },
+}));
+vi.mock('@/layers/features/room-membership/model/use-agent-picker-candidates', () => ({
+  useAgentPickerCandidates: () => mockRosterRef.current,
+}));
+
+/** A fleet that has been read successfully. The state is named, never defaulted. */
+function settled(candidates: { agentPath: string; displayName: string }[] = []) {
   return { candidates, isLoading: false, isError: false, retry: vi.fn() };
 }
 
@@ -100,7 +107,6 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
       error={null}
       activeRoomId={null}
       onSelectRoom={vi.fn()}
-      agents={settled()}
       onOpenAgentProfile={vi.fn()}
       {...overrides}
     />,
@@ -109,6 +115,7 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
 }
 
 beforeEach(() => {
+  mockRosterRef.current = settled();
   mockCollapsed = false;
   mockUpdate.mockClear();
   mockCreate.mockClear();
@@ -216,7 +223,8 @@ describe('ChannelsSection', () => {
     // The whole point of DOR-599: the "+" no longer drops an inline name field
     // that can only ever make an empty channel. It opens the dialog that asks
     // both questions, with the fleet in it.
-    renderSection({ agents: settled([{ agentPath: '/w/ana', displayName: 'Ana' }]) });
+    mockRosterRef.current = settled([{ agentPath: '/w/ana', displayName: 'Ana' }]);
+    renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'New channel' }));
 
     const dialog = screen.getByRole('dialog');

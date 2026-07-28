@@ -182,8 +182,11 @@ describe('ChannelsPage members-panel entry points', () => {
 
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByText('Members of #general')).toBeInTheDocument();
+    // Awaited: the panel reads its own fleet, so the field arrives with the
+    // answer rather than with the dialog.
+    const search = await within(panel).findByLabelText('Search agents');
     // The roster half, because that is what the header asked for.
-    expect(within(panel).getByLabelText('Search agents')).not.toHaveFocus();
+    expect(search).not.toHaveFocus();
   });
 
   it('makes the empty state say what is wrong, and gives it the button it promises', async () => {
@@ -203,7 +206,10 @@ describe('ChannelsPage members-panel entry points', () => {
     const panel = await screen.findByRole('dialog');
     expect(within(panel).getByText('Members of #general')).toBeInTheDocument();
     // "Add agents…" lands on the picker, so the next keystroke is a search.
-    await waitFor(() => expect(within(panel).getByLabelText('Search agents')).toHaveFocus());
+    // Awaited: the panel reads its own fleet, so the field arrives with the
+    // answer rather than with the dialog.
+    const search = await within(panel).findByLabelText('Search agents');
+    await waitFor(() => expect(search).toHaveFocus());
   });
 
   it('stops telling a peopled room it is empty of agents', async () => {

@@ -28,7 +28,8 @@ import {
   useSetMemberResponseMode,
   RESPONSE_MODE_OPTIONS,
 } from '@/layers/entities/room';
-import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
 
 /** Which half of the panel the reader asked for, so that half gets the focus. */
@@ -53,8 +54,6 @@ interface RoomMembersDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Which entry point opened it — "Members…" lands on the roster, "Add agents…" on the picker. */
   intent: MembersDialogIntent;
-  /** Every agent in the fleet, and whether that is known. Whoever is already in the room is filtered out here. */
-  agents: AgentRoster;
 }
 
 /**
@@ -79,13 +78,11 @@ interface RoomMembersDialogProps {
  * a room you created would make it invisible with no route back, which is the
  * same reason there is no "Leave".
  */
-export function RoomMembersDialog({
-  room,
-  open,
-  onOpenChange,
-  intent,
-  agents,
-}: RoomMembersDialogProps) {
+export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMembersDialogProps) {
+  // Read here rather than handed down: this panel opens from three places (the
+  // sidebar row, the room header, the empty state) and only one of them has a
+  // fleet to give it.
+  const agents = useAgentPickerCandidates();
   // The list payload carries a DM's participants but never a channel's roster,
   // and never anyone's response mode — so the panel reads the room itself, and
   // only while it is open.
@@ -97,6 +94,29 @@ export function RoomMembersDialog({
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLElement | null>(null);
+  /** Whether the "add" intent has already been handed its field. Once only. */
+  const searchFocused = useRef(false);
+
+  /**
+   * Give the search field the focus the "add" entry point asked for, as soon as
+   * there IS a field.
+   *
+   * `onOpenAutoFocus` fires once, when the dialog opens, and the field it wants
+   * arrives later than that whenever the fleet has to be read first. So the
+   * intent is honoured again here — once, and only while focus is still inside
+   * the dialog, so a reader who has already tabbed somewhere else does not have
+   * it yanked back mid-keystroke.
+   */
+  useEffect(() => {
+    if (intent !== 'add' || searchFocused.current) return;
+    const field = searchRef.current;
+    if (!field) return;
+    const content = contentRef.current;
+    if (content && !content.contains(document.activeElement)) return;
+    searchFocused.current = true;
+    field.focus();
+  }, [intent, agents.isLoading, agents.isError]);
 
   // The confirmation takes the focus so it can be answered from the keyboard
   // without hunting for it, and so a screen reader reads what it is confirming.
@@ -175,9 +195,17 @@ export function RoomMembersDialog({
         // mount is simply overwritten, and the reader is left typing into a
         // sidebar. Focus placed by the dialog is inside its focus scope, which
         // Radix defends against exactly that.
+        //
+        // With intent "add" the field may not exist YET — the panel reads its
+        // own fleet, so the picker draws a shape while that lands. Focus goes
+        // to the content in the meantime and {@link useFocusSearchWhenReady}
+        // hands it on the moment the field appears; without that, "Add
+        // agents…" on a cold read left the reader nowhere.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          const target = intent === 'add' ? searchRef.current : event.currentTarget;
+          const target =
+            intent === 'add' ? (searchRef.current ?? event.currentTarget) : event.currentTarget;
+          contentRef.current = event.currentTarget as HTMLElement;
           (target as HTMLElement | null)?.focus();
         }}
         onEscapeKeyDown={handleEscapeKeyDown}

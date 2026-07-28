@@ -14,10 +14,26 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
-import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { ChannelCreateDialog } from '../ui/ChannelCreateDialog';
+
+/**
+ * The fleet this surface reads for itself.
+ *
+ * Mocked at the hook rather than injected as a prop, because the component now
+ * fetches it — which is the point of the slice owning it. Every test names the
+ * state it is about; the hook's own three-state behaviour is asserted in
+ * `use-agent-picker-candidates.test.tsx`, and the rendering of each state in
+ * `AgentRosterPicker.test.tsx`.
+ */
+const { mockRosterRef } = vi.hoisted(() => ({
+  mockRosterRef: { current: null as unknown },
+}));
+vi.mock('../model/use-agent-picker-candidates', () => ({
+  useAgentPickerCandidates: () => mockRosterRef.current,
+}));
 
 const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: toastError } }));
@@ -36,7 +52,7 @@ const AGENTS = [
  * defaulted into one — the loading and failed rosters render something else
  * entirely, and this dialog is asserted against those too.
  */
-function settled(candidates: AgentPickerCandidate[] = AGENTS): AgentRoster {
+function settled(candidates: AgentPickerCandidate[] = AGENTS) {
   return { candidates, isLoading: false, isError: false, retry: vi.fn() };
 }
 
@@ -61,7 +77,9 @@ function made(): RoomWithRoster {
 function renderDialog(
   overrides: {
     transport?: Partial<Transport>;
-    agents?: AgentRoster;
+    agents?:
+      | ReturnType<typeof settled>
+      | { candidates: []; isLoading: boolean; isError: boolean; retry: () => void };
     onCreated?: () => void;
     onOpenChange?: (open: boolean) => void;
   } = {}
@@ -80,11 +98,12 @@ function renderDialog(
       </TransportProvider>
     </QueryClientProvider>
   );
+  // Set before render: the picker reads the roster on its first pass.
+  mockRosterRef.current = overrides.agents ?? settled();
   render(
     <ChannelCreateDialog
       open
       onOpenChange={overrides.onOpenChange ?? vi.fn()}
-      agents={overrides.agents ?? settled()}
       onCreated={overrides.onCreated ?? vi.fn()}
     />,
     { wrapper }

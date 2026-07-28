@@ -12,8 +12,9 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
-import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useCreateChannel } from '@/layers/entities/room';
+import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
 
 /** Longest channel name the server accepts (`CreateRoomRequestSchema.title`). */
@@ -23,8 +24,6 @@ interface ChannelCreateDialogProps {
   /** Whether the dialog is on screen. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Every agent in the fleet, sorted by name, and whether that is known yet. */
-  agents: AgentRoster;
   /** The channel that was made, so the caller can open it. */
   onCreated: (room: RoomWithRoster) => void;
 }
@@ -57,12 +56,10 @@ interface ChannelCreateDialogProps {
  * it or does not exist at all. A failure leaves the dialog open with the name
  * and the chips still in it, because the retry is the same request.
  */
-export function ChannelCreateDialog({
-  open,
-  onOpenChange,
-  agents,
-  onCreated,
-}: ChannelCreateDialogProps) {
+export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCreateDialogProps) {
+  // The fleet is read here rather than handed down, so the sidebar that mounts
+  // this never has to hold it — see the module doc on `features/room-membership`.
+  const agents = useAgentPickerCandidates();
   const [name, setName] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);

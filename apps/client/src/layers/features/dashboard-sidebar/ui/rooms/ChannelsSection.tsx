@@ -8,7 +8,6 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
-import type { AgentRoster } from '@/layers/entities/agent';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
@@ -32,8 +31,6 @@ interface ChannelsSectionProps {
   activeRoomId: string | null;
   /** Open a channel. */
   onSelectRoom: (room: RoomSummary) => void;
-  /** Every agent in the fleet, sorted by name — what a row's "Add agents…" offers. */
-  agents: AgentRoster;
   /** Open an agent's profile in the right-panel hub. */
   onOpenAgentProfile: (agentPath: string) => void;
 }
@@ -56,7 +53,6 @@ export function ChannelsSection({
   error,
   activeRoomId,
   onSelectRoom,
-  agents,
   onOpenAgentProfile,
 }: ChannelsSectionProps) {
   const { channelsCollapsed } = useSidebarPrefs();
@@ -80,7 +76,6 @@ export function ChannelsSection({
         <ChannelCreateDialog
           open
           onOpenChange={(next) => !next && setCreating(false)}
-          agents={agents}
           // A channel's mark is `#`, so the list never carries its roster.
           onCreated={(room) => onSelectRoom({ ...room, unreadCount: 0, participants: null })}
         />
@@ -106,7 +101,6 @@ export function ChannelsSection({
                   room={room}
                   isActive={room.id === activeRoomId}
                   onSelect={() => onSelectRoom(room)}
-                  agents={agents}
                   onOpenAgentProfile={onOpenAgentProfile}
                 />
               ))}
