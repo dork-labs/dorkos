@@ -312,7 +312,9 @@ describe('approvals routes', () => {
       it('lets a signed-in person decide, and records who', async () => {
         const ticket = requestOne();
 
-        const res = await request(buildApp({ loginEnabled: true, user: { userId: 'user_123' } }))
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_123', credential: 'cookie' } })
+        )
           .post(`/api/approvals/${ticket.approvalId}/grant`)
           .send();
 
@@ -330,7 +332,11 @@ describe('approvals routes', () => {
         const ticket = requestOne();
 
         const res = await request(
-          buildApp({ loginEnabled: true, user: { userId: 'user_123' }, agentIdentity: true })
+          buildApp({
+            loginEnabled: true,
+            user: { userId: 'user_123', credential: 'cookie' },
+            agentIdentity: true,
+          })
         )
           .post(`/api/approvals/${ticket.approvalId}/grant`)
           .send();
@@ -338,9 +344,92 @@ describe('approvals routes', () => {
         expect(res.status).toBe(403);
         expect(res.body.code).toBe('AGENT_CANNOT_DECIDE');
       });
+
+      it('refuses a plain grant from a per-user API key, and leaves it pending (DOR-474)', async () => {
+        // The residual `decision-authority.ts` named. An agent legitimately holds
+        // this credential, so accepting it here let the caller that ASKED for the
+        // approval answer it. `standing: true` was never the only way in.
+        const ticket = requestOne();
+
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+        )
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .send();
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_cookie_required');
+        expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+        expect(emitted, 'a refused decision writes no Activity record').toEqual([]);
+      });
+
+      it('refuses a deny from a per-user API key, so an agent cannot bury the card', async () => {
+        const ticket = requestOne();
+
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+        )
+          .post(`/api/approvals/${ticket.approvalId}/deny`)
+          .send({ reason: 'nothing to see here' });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('operator_cookie_required');
+        expect(approvals.consume(ticket.token, BINDING).outcome).toBe('pending');
+      });
+
+      it('still lets a key holder READ what is pending and what is live', async () => {
+        // Deliberately unchanged. The bar is on ANSWERING, and widening it to the
+        // reads would be a different decision than DOR-474 asked for. Pinned so
+        // that a later "harden the whole router" change has to argue for it.
+        const keyApp = buildApp({
+          loginEnabled: true,
+          user: { userId: 'user_program', credential: 'api-key' },
+        });
+        requestOne();
+
+        expect((await request(keyApp).get('/api/approvals/pending')).status).toBe(200);
+        expect((await request(keyApp).get('/api/approvals/grants')).status).toBe(200);
+      });
+
+      it('still lets a key holder END a standing permission', async () => {
+        // Also unchanged, for the reason the route already gives: ending a
+        // permission NARROWS what an agent may do. A bar here would be a refusal
+        // that makes DorkOS less safe, not more.
+        const row = grants.create({
+          agentPath: AGENT_IDENTITY.agentPath,
+          capabilityId: 'marketplace.uninstall',
+          windowMinutes: 480,
+          grantedBy: 'user_owner',
+          posture: 'signed-in-operator',
+        });
+
+        const res = await request(
+          buildApp({ loginEnabled: true, user: { userId: 'user_program', credential: 'api-key' } })
+        ).delete(`/api/approvals/grants/${row.id}`);
+
+        expect(res.status).toBe(200);
+        expect(grants.list()).toEqual([]);
+      });
     });
 
     describe('with login disabled (the default posture)', () => {
+      it('answers both ways with no credential at all, because nobody has a cookie here', async () => {
+        // The half of DOR-474 that must NOT change. With login off there is no
+        // cookie for the person in the cockpit either, so a bar that applied in this
+        // posture would make every approval unanswerable — a worse bug than the one
+        // it closes. This is the test that catches that mistake.
+        const yes = requestOne();
+        const no = requestOne();
+
+        expect(
+          (await request(app).post(`/api/approvals/${yes.approvalId}/grant`).send()).status
+        ).toBe(200);
+        expect(
+          (await request(app).post(`/api/approvals/${no.approvalId}/deny`).send()).status
+        ).toBe(200);
+        expect(approvals.consume(yes.token, BINDING).outcome).toBe('granted');
+      });
+
       it('records the decision as local-trust, so an unverifiable yes is still visible', async () => {
         const ticket = requestOne();
 

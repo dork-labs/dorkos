@@ -84,8 +84,7 @@ function makeSession(): AgentSession {
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
   return {
     cwd: '/mock/project',
-    sdkSessionIndex: new Map(),
-    sessionMapKey: 's1',
+    onSdkSessionRebind: async () => {},
     ...overrides,
   };
 }

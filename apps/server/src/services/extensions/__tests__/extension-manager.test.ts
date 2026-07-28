@@ -110,6 +110,41 @@ describe('ExtensionManager', () => {
     expect(mockCompile).toHaveBeenCalledWith(enabledRecord);
   });
 
+  it('does not let one extension throwing during compileEnabled stop the rest from compiling', async () => {
+    // Regression coverage: a transient failure (an EMFILE reading one
+    // extension's entry point, say) used to reject uncaught from
+    // compiler.compile(), which this loop did not catch — one bad
+    // extension took every extension queued after it down with it, none
+    // of them ending up compiled for that boot.
+    const throwsRecord = makeRecord('throws-ext', { status: 'enabled' });
+    const survivesRecord = makeRecord('survives-ext', { status: 'enabled' });
+    mockConfigGet.mockReturnValue({
+      enabled: ['throws-ext', 'survives-ext'],
+      disabled: [],
+      approvedToRun: ['throws-ext', 'survives-ext'],
+    });
+    mockDiscover.mockResolvedValue([throwsRecord, survivesRecord]);
+    mockCompile.mockImplementation(async (record: ExtensionRecord) => {
+      if (record.id === 'throws-ext') {
+        throw new Error('EMFILE: too many open files');
+      }
+      return { code: 'compiled code', sourceHash: 'abc123' };
+    });
+
+    const { logger } = await import('../../../lib/logger.js');
+    await manager.initialize('/my/project');
+
+    // The extension after the throwing one still compiled.
+    expect(survivesRecord.status).toBe('compiled');
+    // The failure is not silently swallowed — it is named, visible, and
+    // the record reflects it instead of being left in limbo.
+    expect(throwsRecord.status).toBe('compile_error');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('throws-ext'),
+      expect.any(Error)
+    );
+  });
+
   // === 2. Enable flow ===
 
   it('enables an extension: disabled -> enabled -> compiled, adds to config', async () => {

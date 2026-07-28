@@ -55,6 +55,7 @@ import {
   useSessionChatStore,
   useSessionListStore,
   useSessionStreamStore,
+  sessionKeys,
 } from '@/layers/entities/session';
 import { resetSessionStreamBinding } from '@/layers/entities/session';
 import { TIMING } from '@/layers/shared/lib';
@@ -198,7 +199,8 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     // Sidebar cache: the canonical row replaced the client-UUID row — no ghost
     // duplicate entry pointing at the dead id (nothing refetches it away now
     // that the sessions poll is gone).
-    const sessions = queryClient.getQueryData<{ id: string }[]>(['sessions', '/test/cwd']) ?? [];
+    const sessions =
+      queryClient.getQueryData<{ id: string }[]>(sessionKeys.list('/test/cwd')) ?? [];
     expect(sessions.some((s) => s.id === 'sdk-canonical')).toBe(true);
     expect(sessions.some((s) => s.id === 'client-uuid')).toBe(false);
   });
@@ -406,10 +408,9 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(postMessage.mock.calls[0][3]).toMatchObject({ runtime: 'opencode' });
     // The optimistic sidebar row is seeded with the SELECTED runtime, not a
     // hardcoded placeholder.
-    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>([
-      'sessions',
-      '/test/cwd',
-    ]);
+    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>(
+      sessionKeys.list('/test/cwd')
+    );
     expect(sessions?.find((s) => s.id === 's1')?.runtime).toBe('opencode');
 
     // Settle the turn so a second send is allowed.
@@ -490,10 +491,9 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       await result.current.handleSubmit();
     });
 
-    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>([
-      'sessions',
-      '/test/cwd',
-    ]);
+    const sessions = queryClient.getQueryData<{ id: string; runtime: string }[]>(
+      sessionKeys.list('/test/cwd')
+    );
     expect(sessions?.find((s) => s.id === 's1')?.runtime).toBe('opencode');
     // Default alone is NOT an explicit selection — still no hint on the wire.
     expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');

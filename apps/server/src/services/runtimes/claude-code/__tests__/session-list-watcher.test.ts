@@ -89,6 +89,27 @@ describe('watchSessionList', () => {
     for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
   }
 
+  /**
+   * Like `flushIo`, but keeps turning the real event loop until `settled()`
+   * reports the scan has landed, up to a generous bound.
+   *
+   * A fixed turn count is a guess about how many event-loop turns some real fs
+   * I/O needs, and the guess is machine-dependent: 10 turns is plenty on a
+   * developer SSD and not always enough on a CI runner, where this suite's
+   * missing-root case failed twice with the assertion simply never having
+   * anything to read yet. Waiting on the condition instead of on a number is
+   * what `.claude/rules/testing.md` asks for, and it cannot flake in the fast
+   * direction either — it returns as soon as the work is done.
+   *
+   * Fake timers are on for `setTimeout` here, so `vi.waitFor` is not usable;
+   * `setImmediate` is deliberately left real (see the `toFake` list above).
+   */
+  async function flushIoUntil(settled: () => boolean, turns = 500): Promise<void> {
+    for (let i = 0; i < turns && !settled(); i++) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
   afterEach(async () => {
     vi.useRealTimers();
     await rm(projectsRoot, { recursive: true, force: true });
@@ -264,7 +285,10 @@ describe('watchSessionList', () => {
     const missingRoot = join(projectsRoot, 'does-not-exist');
     (reader.getProjectsRoot as ReturnType<typeof vi.fn>).mockReturnValue(missingRoot);
     const it = start();
-    await flushIo();
+    // Wait for the scan to actually report, not for a fixed number of turns:
+    // this is the assertion that went red twice in CI purely because the
+    // detached scan had not finished inside 10 turns on a slower disk.
+    await flushIoUntil(() => vi.mocked(logger.debug).mock.calls.length > 0);
 
     expect(logger.warn).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(

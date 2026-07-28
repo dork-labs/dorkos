@@ -22,6 +22,7 @@ import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
+import { sessionKeys } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 
 // ── Router context ──────────────────────────────────────────
@@ -186,7 +187,7 @@ export function sessionRouteLoader({
   // deliberately NOT propagated onto the auto-select-existing-session redirect:
   // a seed must never ride an existing session (defense-in-depth atop
   // ChatPanel's empty-only guard).
-  const sessions = queryClient.getQueryData<Session[]>(['sessions', dir ?? null]);
+  const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(dir ?? null));
 
   if (sessions && sessions.length > 0) {
     // Auto-select most recent session (no prompt seed — see above)

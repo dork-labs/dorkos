@@ -50,9 +50,31 @@ export class SessionStore {
     this.defaultPermissionMode = defaultMode;
   }
 
-  /** Expose the reverse index for message-sender's SDK session remapping. */
-  getSdkSessionIndex(): Map<string, string> {
-    return this.sdkSessionIndex;
+  /**
+   * Adopt a new canonical SDK session id for a live session, called by the
+   * message sender the moment the SDK assigns one (the first turn of a brand-new
+   * session, or a resume that starts a fresh transcript).
+   *
+   * Two things move together, which is the whole point of doing it here: the
+   * reverse index, so lookups by either id still land on this session, AND the
+   * durable settings row, so the id every future read asks by is the id the
+   * operator's chosen permission mode is stored under. Leaving the row on the
+   * old id would silently revert the ENFORCED mode to the runtime default on the
+   * first turn after an eviction or a restart (DOR-493).
+   *
+   * @param previousSdkSessionId - The canonical id held until now
+   * @param nextSdkSessionId - The canonical id the SDK just assigned
+   * @param sessionMapKey - The key this session is stored under in the session map
+   */
+  async rebindSdkSession(
+    previousSdkSessionId: string,
+    nextSdkSessionId: string,
+    sessionMapKey: string
+  ): Promise<void> {
+    if (previousSdkSessionId === nextSdkSessionId) return;
+    this.sdkSessionIndex.delete(previousSdkSessionId);
+    this.sdkSessionIndex.set(nextSdkSessionId, sessionMapKey);
+    await this.settingsPort?.rekeySessionSettings(previousSdkSessionId, nextSdkSessionId);
   }
 
   /** Find a session by map key or SDK session ID (O(1) via reverse index). */

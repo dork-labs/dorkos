@@ -169,8 +169,13 @@ export interface MessageSenderOpts {
   onSubagentsReceived?: (
     agents: Array<{ name: string; description: string; model?: string }>
   ) => void;
-  sdkSessionIndex: Map<string, string>;
-  sessionMapKey: string;
+  /**
+   * Report that the SDK bound this session to a NEW canonical id mid-turn. The
+   * session store owns every lookup keyed by that id (its reverse index and the
+   * durable settings row), so the sender only announces the change. Awaited, so
+   * the move is complete before the turn produces more events.
+   */
+  onSdkSessionRebind: (previousSdkSessionId: string, nextSdkSessionId: string) => Promise<void>;
   /**
    * Thinking capability of the session's selected model, resolved from the model
    * cache at send time. Drives whether we attach an adaptive `thinking` config (see
@@ -848,10 +853,12 @@ export async function* executeSdkQuery(
         eventCount++;
         yield event;
       }
-      // Update reverse index if sdk-event-mapper assigned a new SDK session ID
+      // sdk-event-mapper assigned a new SDK session ID — hand the rebind to the
+      // session store, which owns everything keyed by it (reverse index +
+      // durable settings row). Awaited so the settings row has moved before the
+      // turn continues, and any later read by the canonical id finds it.
       if (session.sdkSessionId !== prevSdkId) {
-        opts.sdkSessionIndex.delete(prevSdkId);
-        opts.sdkSessionIndex.set(session.sdkSessionId, opts.sessionMapKey);
+        await opts.onSdkSessionRebind(prevSdkId, session.sdkSessionId);
       }
     }
   } catch (err) {

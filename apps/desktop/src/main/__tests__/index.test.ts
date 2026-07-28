@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('electron', () => import('./electron-mock'));
 // Windows are stubbed, but `isWebLink` is kept real: the `open-external` tests
@@ -162,8 +162,26 @@ describe('single-instance lock (A1)', () => {
 });
 
 describe('dorkos:// deep links (D2) and the pending-navigation handoff (D3)', () => {
+  // `../index` only registers the `open-url` listener when
+  // `process.platform === 'darwin'` (it is a macOS-only Electron event), and it
+  // decides that at import time. Without pinning the platform these tests emit
+  // `open-url` at a listener that was never registered, so every assertion
+  // about it reads zero calls.
+  //
+  // That made the four of them pass on a developer Mac and fail everywhere
+  // else. Nothing caught it, because until DOR-544 no CI job ran the tests —
+  // the first CI run of this suite, on ubuntu-latest, was also the first time
+  // anyone saw them red. The sibling block below pins `win32` for the argv
+  // delivery path for the same reason.
+  const originalPlatform = process.platform;
+
   beforeEach(() => {
     vi.resetModules();
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   });
 
   /** Look up the handler `../index` registered for `ipcMain.handle(channel, ...)`. */

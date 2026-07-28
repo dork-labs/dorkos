@@ -136,11 +136,10 @@ router.get('/:id', async (req, res) => {
   if (!session.runtime) session.runtime = runtime.type;
   // Overlay persisted settings (ADR-0260) so the toolbar reflects the operator's
   // chosen mode/model/etc., not just what the transcript recorded. Same shared
-  // resolver (and therefore the same key) as the list endpoint above. The
-  // REQUESTED id is threaded through as a last-resort key: this is the one route
-  // that still accepts a retired id, and a row written before the runtime bound
-  // the alias lives under it.
-  overlayStoredSettings([session], runtimeRegistry, sessionId);
+  // resolver (and therefore the same single key) as the list endpoint above —
+  // including when this route is reached by a retired id, since the resolver
+  // keys off the session it actually resolved, not the id asked for.
+  overlayStoredSettings([session], runtimeRegistry);
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
   applyTaskOriginOverlay([session], resolveTaskOrigins);
   res.json(session);

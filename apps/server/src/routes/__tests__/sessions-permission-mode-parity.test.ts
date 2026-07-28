@@ -215,11 +215,16 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     expect(rows[0]!.permissionMode).toBe('plan');
   });
 
-  it('finds a row written BEFORE the runtime bound an alias, reading by that id', async () => {
-    // The operator sets a mode while the runtime is not tracking the session,
-    // so PATCH writes under the raw id; a later turn then binds a different
-    // canonical id. Reading only the canonical key would strand that row and
-    // silently show the runtime-derived mode instead of the operator's choice.
+  it('carries a row written BEFORE the alias onto the canonical id', async () => {
+    // The operator sets a mode while the runtime is not tracking the session, so
+    // PATCH writes under the raw id; a later turn then binds a different
+    // canonical id. The adapter MOVES the row as it rebinds (DOR-493), so no
+    // reader has to know the row was ever filed anywhere else.
+    //
+    // Claude-code-only: codex, opencode and test-mode all return `undefined`
+    // unconditionally from `getInternalSessionId`, so they never alias and never
+    // re-key. Here the fake stands in for the adapter — the real wiring is
+    // covered by `session-settings-rekey.test.ts`.
     runtime.listSessions.mockResolvedValue([makeSession(RETIRED_ID)]);
     await request(app).patch(`/api/sessions/${RETIRED_ID}`).send({ permissionMode: 'plan' });
     await Promise.all(pendingWrites);
@@ -229,37 +234,21 @@ describe('permissionMode parity between GET /api/sessions and GET /api/sessions/
     const before = await expectListDetailParity();
     expect(before[0]!.permissionMode).toBe('plan');
 
-    // Now the runtime binds a different canonical id for it.
+    // The turn binds a different canonical id, and the row goes with it.
     withAlias();
+    await runtimeRegistry.rekeySessionSettings(RETIRED_ID, CANONICAL_ID);
     runtime.listSessions.mockResolvedValue([makeSession(RETIRED_ID), makeSession(CANONICAL_ID)]);
 
-    // Parity still holds across the whole listing, and the pre-alias row is
-    // still reachable when the session is read under the id it was written for
-    // — the dual-key read.
-    //
-    // It is NOT recoverable from the canonical id alone: the alias maps retired
-    // -> canonical only, never back, so the canonical row falls through to its
-    // own runtime-derived value. That is benign for DISPLAY because the
-    // successor transcript re-records the operator's mode — but NOT via
-    // hydration. `ensureForMessage` hydrates from the store only when the
-    // session is ABSENT from memory (`session-store.ts:140-141`), and through an
-    // alias it is present; the mode carried into that turn is the in-memory
-    // session's own `permissionMode`, set by the PATCH that also wrote the row.
-    //
-    // The gap that leaves, for whoever meets it next: after idle eviction or a
-    // restart, a turn sent under the CANONICAL id finds no in-memory session,
-    // hydrates `getSessionSettings(canonical)`, misses the row still filed under
-    // the raw id, and falls back to `defaultPermissionMode`
-    // (`session-store.ts:155-157`). That is ENFORCEMENT, not display, and it
-    // predates this change — the durable fix is to re-key the `session_metadata`
-    // row when the adapter binds a new canonical id, which would also delete
-    // this fallback outright.
-    //
-    // Claude-code-only: codex, opencode and test-mode all return `undefined`
-    // unconditionally from `getInternalSessionId`, so they never alias.
     await expectListDetailParity();
+    // Both ids answer with the operator's choice, over two DIFFERENT
+    // runtime-derived modes ('default' for the retired id, 'bypassPermissions'
+    // for the canonical one) — so neither answer can be coming from the
+    // transcript.
     const retiredRead = await request(app).get(`/api/sessions/${RETIRED_ID}`);
+    expect(retiredRead.body.id).toBe(CANONICAL_ID);
     expect(retiredRead.body.permissionMode).toBe('plan');
+    const canonicalRead = await request(app).get(`/api/sessions/${CANONICAL_ID}`);
+    expect(canonicalRead.body.permissionMode).toBe('plan');
   });
 
   it('agrees with no aliasing at all (the ordinary session)', async () => {

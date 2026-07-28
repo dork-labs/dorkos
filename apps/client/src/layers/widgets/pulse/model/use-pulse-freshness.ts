@@ -10,7 +10,7 @@
  * topology is not uniform:
  *
  *  • **Attention → stalled sessions** already updates live: `useAttentionItems`
- *    reads the `['sessions', cwd]` cache, which `useGlobalSessionStream` keeps in
+ *    reads the session-list cache, which `useGlobalSessionStream` keeps in
  *    lockstep with the `session_upserted`/`session_removed` list events (ADR-0265).
  *    The stalled-vs-idle threshold is time-based and re-derives on the `useNow`
  *    tick. So this bridge deliberately does NOT touch sessions — that would be a
