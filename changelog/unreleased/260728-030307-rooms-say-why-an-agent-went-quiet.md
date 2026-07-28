@@ -1,6 +1,9 @@
 ---
 covers:
-  - "fix(rooms): say something when an agent cannot take a turn (DOR-621)"
+  - 'fix(rooms): say something when an agent cannot take a turn (DOR-621)'
+  - 'test(rooms): pin the wait/ceiling clamp, which nothing could have caught'
+  - "fix(rooms): bound each turn's collector, and damp the notice on a key that repeats (DOR-621)"
+  - 'chore(changelog): fold the generated fragment into the written one'
 ---
 
 ### Fixed
