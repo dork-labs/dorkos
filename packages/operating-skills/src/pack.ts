@@ -10,6 +10,7 @@ import { managingAgents } from './skills/managing-agents.js';
 import { schedulingTasks } from './skills/scheduling-tasks.js';
 import { usingTheMarketplace } from './skills/using-the-marketplace.js';
 import { readingActivity } from './skills/reading-activity.js';
+import { answeringDorkosQuestions } from './skills/answering-dorkos-questions.js';
 
 /** One authored skill in the pack: its kebab-case name, discovery description, and body. */
 export interface OperatingSkill {
@@ -62,8 +63,33 @@ export interface OperatingSkill {
  *   only on a strictly lower stored stamp, so the second PR to merge must re-bump
  *   rather than resolve the conflict by keeping its own number. That is not
  *   hypothetical, it is what happened here and what review caught.
+ * - 7: the pack learns to look things up (DOR-661). Versions 1 to 6 taught an
+ *   agent how to ACT through DorkOS and nothing about how to ANSWER for it, so
+ *   "how does Relay work?" was answered from whatever the model remembered. Every
+ *   agent has always been handed two documentation URLs in its `<dorkos_context>`
+ *   block with no procedure attached. The new `answering-dorkos-questions` skill
+ *   is that procedure: search `<base>/api/search`, fetch the single page it names
+ *   from `<base>/llms.mdx/docs/...`, never the ~875 KB `llms-full.txt` corpus, and
+ *   derive every URL from the context block rather than a remembered host (DOR-660
+ *   removed exactly that hardcoding one layer down, and a literal URL here would
+ *   re-introduce it). It also says what to do when the docs do not answer: say so,
+ *   and never vouch for a feature the page does not.
+ *
+ *   A brand-new skill seeds itself without a bump (`seed.ts` writes any absent
+ *   file), so the bump is here for the OTHER half of this change: `operating-dorkos`
+ *   names the new sibling, and an already-seeded file is only rewritten on a
+ *   strictly higher stamp.
+ *
+ *   Be precise about who that reaches, because the History above reads as though a
+ *   bump reaches every agent and it does not. `seedOperatingSkills` is called from
+ *   exactly two places: `ensureDorkBot` on every boot, and `agent-creator` when an
+ *   agent is created. So a bump reaches DorkBot's workspace and nothing else that
+ *   already exists; a user's own agent, seeded once at creation, is never re-seeded
+ *   and keeps the pack version it was born with. New agents get the current pack
+ *   because they are new, not because of the stamp. DOR-671 tracks that gap; do not
+ *   close it here.
  */
-export const OPERATING_SKILLS_VERSION = 6;
+export const OPERATING_SKILLS_VERSION = 7;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
@@ -75,4 +101,5 @@ export const OPERATING_SKILLS_PACK: readonly OperatingSkill[] = [
   schedulingTasks,
   usingTheMarketplace,
   readingActivity,
+  answeringDorkosQuestions,
 ];

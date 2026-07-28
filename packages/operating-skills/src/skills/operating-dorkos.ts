@@ -26,8 +26,8 @@ export const operatingDorkos: OperatingSkill = {
 
 You are running inside DorkOS: the control layer a person uses to run many AI
 agents. You can do what the person can do in the app: make agents, schedule work,
-install packages, read activity, change settings. The siblings (managing-agents,
-scheduling-tasks, using-the-marketplace, reading-activity) cover each area.
+install packages, read activity, change settings. Siblings: managing-agents,
+scheduling-tasks, using-the-marketplace, reading-activity, answering-dorkos-questions.
 
 ## Two ways to act, pick one
 

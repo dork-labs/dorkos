@@ -123,7 +123,7 @@ describe('createAgentWorkspace rollback', () => {
       AgentCreationError
     );
 
-    // .agents/, .agents/skills/, the five per-skill folders, .claude/ and
+    // .agents/, .agents/skills/, the six per-skill folders, .claude/ and
     // .github/ are all created on the way in and must all be pruned.
     expect(await listTree(projectDir)).toEqual([]);
   });
