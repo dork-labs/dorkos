@@ -28,13 +28,17 @@
  *    same *shape* a genuine compile error has, distinguished only by
  *    esbuild's own "Cannot read file ...: permission denied" prose (see
  *    `ESBUILD_IO_FAILURE_PATTERNS` in `extension-compiler.ts`).
- * 3. esbuild also reads the entry point's CONTAINING DIRECTORY on every
- *    build, before reading any file — confirmed here with a ZERO-import
+ * 3. esbuild also reads the entry point's CONTAINING DIRECTORY before
+ *    reading the entry point itself — confirmed here with a ZERO-import
  *    entry point, so there is nothing else the failure could be attributed
- *    to. Under real file-descriptor exhaustion this directory read is hit
- *    first, making "Cannot read directory ...: too many open files" a more
- *    likely manifestation of a real incident than the file-level cases
- *    above, not a rarer one.
+ *    to. Specifically this fixture (`chmod 0111`) exercises `loadAsFile`'s
+ *    directory listing, one of two separate directory reads in esbuild's
+ *    resolver (see `ESBUILD_IO_FAILURE_PATTERNS` in `extension-compiler.ts`
+ *    for the other, which swallows exactly this permission case and so
+ *    isn't reachable this way) — real `EMFILE`/`ENOSPC` would hit both.
+ *    Either way, a directory read happens before any file read, making it
+ *    at least as likely a manifestation of real resource exhaustion as the
+ *    file-level cases above, not a rarer one.
  *
  * `chmod 000`/`chmod 0111` do not block root from reading (root can
  * override a file's permission bits on POSIX), so this suite is skipped
@@ -166,9 +170,12 @@ describe.skipIf(isRoot)('ExtensionCompiler — real filesystem, unreadable files
     // Execute-only: the directory can still be TRAVERSED into by a known
     // filename (Node's own fs.readFile of server.ts needs no more than
     // that, so it stays unaffected — this test is only about esbuild's
-    // OWN directory read), but it cannot be LISTED, which is what
-    // esbuild's directory-info cache needs and what a real EMFILE would
-    // also block.
+    // OWN directory read), but it cannot be LISTED. esbuild's resolver
+    // reads the directory listing while checking whether the entry point
+    // exists as a file (`loadAsFile`, called before opening it) — that is
+    // what this specific permission denies; a real EMFILE would also hit
+    // the resolver's separate, longer-lived directory-info cache read,
+    // which this fixture does not reach (it swallows EACCES/EPERM).
     await fs.chmod(extDir, 0o111);
 
     const record = makeServerRecord('unreadable-dir-ext', extDir, serverPath);

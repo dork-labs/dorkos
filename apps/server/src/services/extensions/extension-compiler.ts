@@ -53,32 +53,44 @@ const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
  *   what's on the other end. So `location` is present in one case and
  *   absent in the other for the identical message template — matching
  *   MUST NOT require its absence.
- * - `Cannot read directory %q: %s` — esbuild reads the entry point's
- *   containing directory on every build, before reading any file, to
- *   build its directory-info cache. Empirically verified: `chmod 0111`
- *   (execute-only — the directory can still be traversed into by a known
- *   filename, so this does not confound the two `fs.readFile` calls
- *   `compile()`/`compileServer()` make before esbuild runs, which need no
- *   `readdir` permission) on a ZERO-import entry point's own directory
- *   rejects with a `BuildFailure` carrying a POPULATED, two-entry
- *   `errors[]`: `Cannot read directory %q: %s` alongside a
- *   `Could not resolve %q` for the entry point itself (both
- *   `location: null`). Because this fires before ANY file read — even for
- *   an entry point with zero imports — it is the most likely shape of a
- *   real file-descriptor exhaustion hit, not an edge case.
+ * - `Cannot read directory %q: %s` — esbuild's resolver batches file-
+ *   existence checks by reading a directory's listing once rather than
+ *   `stat`-ing each candidate name (`resolver.go`'s `loadAsFile`, called
+ *   while resolving the entry point itself — before opening any file).
+ *   Empirically verified: `chmod 0111` (execute-only — the directory can
+ *   still be traversed into by a known filename, so this does not confound
+ *   the two `fs.readFile` calls `compile()`/`compileServer()` make before
+ *   esbuild runs, which need no `readdir` permission) on a ZERO-import
+ *   entry point's own directory rejects with a `BuildFailure` carrying a
+ *   POPULATED, two-entry `errors[]`: `Cannot read directory %q: %s`
+ *   alongside a `Could not resolve %q` for the entry point itself (both
+ *   `location: null`). A *second*, separately-cached directory read
+ *   exists too — `resolver.go`'s `dirInfoUncached`, used for
+ *   `package.json`/`node_modules`/tsconfig lookups — but it explicitly
+ *   swallows `EACCES`/`EPERM` ("just pretend this directory is empty"),
+ *   so it does not fire under this fixture's permission-based repro; it
+ *   would under a real `EMFILE`/`ENOSPC`, which that swallow does not
+ *   cover. Either way, a directory read happens before any file read,
+ *   for every build, even one with zero imports — this is the likely
+ *   shape of a real file-descriptor-exhaustion hit on a file the resolver
+ *   still has an fd budget for, not an edge case.
  *
  * Two more openers exist in the binary but were traced through esbuild's
  * Go source rather than triggered live, and are matched here defensively:
  *
  * - `Failed to read file %q: %s` / `Failed to read directory %q: %s` —
- *   every call site found (`internal/resolver/resolver.go`,
- *   `package_json.go`, `yarnpnp.go`) only reaches
- *   `r.debugLogs.addNote(...)`, gated behind `r.debugLogs != nil`. Under
- *   our `logLevel: 'silent'` usage that debug logger is never created, so
- *   this text cannot currently reach `errors[]` — every corresponding
- *   user-facing error at those same call sites uses `Cannot read`
- *   instead. Included anyway in case a future esbuild version — or a call
- *   site this trace missed — promotes it to a real error.
+ *   every call site found across `internal/resolver/resolver.go`,
+ *   `package_json.go`, and `yarnpnp.go` reaches only
+ *   `r.debugLogs.addNote(...)`, gated behind `r.debugLogs != nil`; two more
+ *   in `internal/bundler/bundler.go` reach `s.log.AddID(..., logger.Debug,
+ *   ...)` instead, gated by log *severity* rather than that nil check.
+ *   Both mechanisms land on the same outcome under our usage: `logLevel:
+ *   'silent'` means no debug logger is ever created and `Debug`-severity
+ *   messages are always filtered, so this text cannot currently reach
+ *   `errors[]` by either path — every corresponding user-facing error at
+ *   those same call sites uses `Cannot read` instead. Included anyway in
+ *   case a future esbuild version — or a call site this trace missed —
+ *   promotes it to a real error.
  *
  * Deliberately NOT matched: `Cannot read file: %s` (no quoted path).
  * Traced to two call sites in `internal/bundler/bundler.go`, both firing
@@ -162,33 +174,57 @@ function hasLocationlessTextMatch(
  * This is a two-part test, because esbuild surfaces environment failures
  * two different ways depending on *when* they happen:
  *
- * 1. **Before esbuild's binary even starts** (the `@esbuild/<platform>`
- *    package is missing, `child_process.spawn` itself fails): rejects with
- *    a plain `Error` that has no `errors` array at all. Caught by the
- *    shape check below.
+ * 1. **Before esbuild's binary even starts, when `build()`'s promise still
+ *    rejects cleanly** — the `@esbuild/<platform>` package is missing
+ *    (`generateBinPath()` in esbuild's own `lib/main.js`): rejects with a
+ *    plain `Error` that has no `errors` array at all. Caught by the shape
+ *    check below.
  * 2. **While esbuild's binary is running but can't read a file OR
  *    directory** — the entry point itself, its containing directory (read
- *    on every build, before any file — see
- *    {@link ESBUILD_IO_FAILURE_PATTERNS}), or anything it imports —
- *    because of `EMFILE`, `ENOSPC`, `ENOMEM`, `EACCES`, or similar: rejects
- *    with a real `BuildFailure` carrying a POPULATED `errors[]` — the same
- *    shape a genuine compile error has, with or without a `location`
- *    depending on which path could not be read. Shape alone cannot tell
- *    this apart from a real error; only the message text can.
+ *    before any file — see {@link ESBUILD_IO_FAILURE_PATTERNS}), or
+ *    anything it imports — because of `EMFILE`, `ENOSPC`, `ENOMEM`,
+ *    `EACCES`, or similar: rejects with a real `BuildFailure` carrying a
+ *    POPULATED `errors[]` — the same shape a genuine compile error has,
+ *    with or without a `location` depending on which path could not be
+ *    read. Shape alone cannot tell this apart from a real error; only the
+ *    message text can.
  *
  * Either way, the failure is not a deterministic property of the
  * extension's content hash, so caching it would brick the extension on
  * every future start — including after the environment recovers — for a
  * problem the extension author never had a chance to cause.
  *
- * A deliberate tradeoff: this also classifies a PERMANENTLY unreadable
- * file (a root-owned leftover from a broken install, a `chmod 000`
- * file shipped inside a package) as an environment failure forever, since
- * nothing here can tell "permanently broken" apart from "broken right
- * now." That extension pays a full esbuild invocation (bounded, roughly
- * 20-90ms) on every boot instead of replaying a cached error — worse than
- * ideal, but the right side to be wrong on: the alternative is exactly the
- * bricking bug this file exists to fix, just for a narrower trigger.
+ * **A known gap this function cannot close**, because it never runs for
+ * it: when `child_process.spawn` itself fails — the calling process's OWN
+ * file descriptors are exhausted, as opposed to the platform package
+ * being absent — esbuild's `lib/main.js` calls `child.stdin.on('error',
+ * ...)` on a `ChildProcess` whose stdio streams were never wired up
+ * (`child.stdin` is `undefined` when `spawn()` fails), which throws
+ * synchronously rather than producing a normal promise rejection. That
+ * becomes an unhandled `error` event, which Node treats as fatal, which
+ * this codebase's own `uncaughtException` handler
+ * (`apps/server/src/index.ts`) currently answers with `process.exit(1)` —
+ * the whole server, not just the extension subsystem, before `build()`'s
+ * promise ever settles and before this file gets a chance to run. Per-
+ * process fd limits mean the DorkOS server exhausting its own descriptors
+ * does not also exhaust the esbuild child's (it gets a fresh table), so
+ * this is specifically about the fd pressure at the moment of `spawn()`
+ * itself, not pressure inside the compiled child process. No mitigation
+ * for this ships in this file; a pre-flight warm build at server startup
+ * (while descriptors are plentiful, to populate esbuild's cached
+ * `longLivedService` before the pressure that would otherwise hit
+ * `spawn()`) was considered and deliberately deferred rather than rushed
+ * in alongside everything else here — tracked as a follow-up.
+ *
+ * A deliberate tradeoff on the part this function DOES cover: it also
+ * classifies a PERMANENTLY unreadable file (a root-owned leftover from a
+ * broken install, a `chmod 000` file shipped inside a package) as an
+ * environment failure forever, since nothing here can tell "permanently
+ * broken" apart from "broken right now." That extension pays a full
+ * esbuild invocation (bounded, roughly 20-90ms) on every boot instead of
+ * replaying a cached error — worse than ideal, but the right side to be
+ * wrong on: the alternative is exactly the bricking bug this file exists
+ * to fix, just for a narrower trigger.
  *
  * @param err - The value esbuild's `build()` rejected with.
  * @returns `true` when `err` describes the environment, not the source.
@@ -226,17 +262,20 @@ function isLegacyTransientCachedError(cached: CompilationError): boolean {
 }
 
 /**
- * Build the error result for a failure to read an already-discovered entry
- * file — the plain `fs.readFile` `compile()`/`compileServer()` each do
- * before esbuild ever runs, to compute the content hash a cache entry
- * would be keyed by.
+ * Build the error result for an unexpected filesystem failure outside of
+ * esbuild itself — reading the entry file before esbuild ever runs,
+ * persisting a compiled or pre-compiled bundle to cache. `what` names the
+ * operation that failed (e.g. `'read the entry point'`,
+ * `'cache the pre-compiled bundle'`) so the message reflects what actually
+ * broke rather than always claiming "compilation failed."
  *
- * There is no source to hash here, so the caller returns `sourceHash: ''`
- * and — exactly like {@link resolveEntryPoint}'s own "no entry point"
- * error — nothing is ever written to `.error.json`: there is no key to
- * write it under. That makes this failure uncacheable by construction, not
- * by a special case; the one thing this function does is stop it from
- * reaching the caller as an uncaught rejection instead of a result.
+ * The `sourceHash` a caller attaches separately decides whether this is
+ * cacheable: a pre-read failure has none to key a `.error.json` by (see
+ * {@link resolveEntryPoint}'s identical "no entry point" case), so it is
+ * uncacheable by construction; a write-after-successful-compile failure
+ * DOES have one, but nothing here writes anything under it either —
+ * there is no point persisting an error about a directory that just
+ * proved it can't be written to.
  *
  * Reuses {@link isEnvironmentFailure} for the log framing rather than
  * assuming: a plain Node `fs` error (`EACCES`, `EMFILE`, `ENOENT`, ...) has
@@ -247,19 +286,23 @@ function isLegacyTransientCachedError(cached: CompilationError): boolean {
  * divergent one.
  *
  * @param extId - Extension identifier.
- * @param err - The value the failed `fs.readFile` rejected with.
+ * @param err - The value the failed filesystem operation rejected with.
+ * @param what - What the compiler was trying to do (used in the message).
  * @param prefix - Optional prefix for log messages (e.g. `'Server '`).
- * @returns A structured error describing the read failure.
+ * @returns A structured error describing the failure.
  */
-function buildReadFailureError(extId: string, err: unknown, prefix = ''): CompilationError {
+function buildIoFailureError(
+  extId: string,
+  err: unknown,
+  what: string,
+  prefix = ''
+): CompilationError {
   const message = err instanceof Error ? err.message : String(err);
   const framing = isEnvironmentFailure(err) ? ' (not cached — will retry next compile)' : '';
-  logger.error(
-    `[Extensions] ${prefix}Could not read entry point for ${extId}${framing}: ${message}`
-  );
+  logger.error(`[Extensions] ${prefix}Could not ${what} for ${extId}${framing}: ${message}`);
   return {
     code: 'compilation_failed',
-    message: `${prefix}Could not read entry point for ${extId}`,
+    message: `${prefix}Could not ${what} for ${extId}`,
     errors: [{ text: message }],
   };
 }
@@ -300,7 +343,7 @@ export class ExtensionCompiler {
     try {
       source = await fs.readFile(entryPath, 'utf-8');
     } catch (err) {
-      return { error: buildReadFailureError(record.id, err), sourceHash: '' };
+      return { error: buildIoFailureError(record.id, err, 'read the entry point'), sourceHash: '' };
     }
     const sourceHash = this.computeSourceHash(source);
 
@@ -340,7 +383,10 @@ export class ExtensionCompiler {
     try {
       source = await fs.readFile(record.serverEntryPath, 'utf-8');
     } catch (err) {
-      return { error: buildReadFailureError(record.id, err, 'Server '), sourceHash: '' };
+      return {
+        error: buildIoFailureError(record.id, err, 'read the entry point', 'Server '),
+        sourceHash: '',
+      };
     }
     const sourceHash = this.computeSourceHash(source);
 
@@ -450,12 +496,27 @@ export class ExtensionCompiler {
     }
   }
 
-  /** Handle a pre-compiled JS extension — cache for consistent serving. */
+  /**
+   * Handle a pre-compiled JS extension — cache for consistent serving.
+   *
+   * Unlike TypeScript compilation, caching here is NOT an optimization:
+   * `applyCompileResult` (`extension-manager.ts`) keeps only `sourceHash`
+   * and `bundleReady` from a successful result and discards `code` — the
+   * bundle is served later, from disk, by {@link readBundle}. Nothing else
+   * ever holds onto the in-memory `source` this method was handed. So a
+   * failed write here MUST be reported as an error, not swallowed into a
+   * success: reporting success while the disk write failed would produce
+   * an extension the UI shows as `compiled`/`bundleReady: true` whose
+   * bundle then 404s the moment anything actually asks for it — silently
+   * broken, worse than a visible `compile_error`.
+   */
   private async handlePrecompiled(
     extId: string,
     source: string,
     sourceHash: string
-  ): Promise<{ code: string; sourceHash: string }> {
+  ): Promise<
+    { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
+  > {
     await this.ensureCacheDir();
     const cachedPath = path.join(this.cacheDir, `${extId}.${sourceHash}.js`);
 
@@ -464,18 +525,17 @@ export class ExtensionCompiler {
       const cached = await fs.readFile(cachedPath, 'utf-8');
       return { code: cached, sourceHash };
     } catch {
-      try {
-        await fs.writeFile(cachedPath, source, 'utf-8');
-      } catch (err) {
-        // Caching a pre-compiled bundle is an optimization, not a
-        // requirement — the source is already in hand either way. Log and
-        // serve it uncached this once rather than fail the whole request.
-        logger.warn(
-          `[Extensions] Could not cache the pre-compiled bundle for ${extId}: ` +
-            `${err instanceof Error ? err.message : String(err)}`
-        );
-      }
+      // Cache miss — persist it. This IS the delivery mechanism.
+    }
+
+    try {
+      await fs.writeFile(cachedPath, source, 'utf-8');
       return { code: source, sourceHash };
+    } catch (err) {
+      return {
+        error: buildIoFailureError(extId, err, 'cache the pre-compiled bundle'),
+        sourceHash,
+      };
     }
   }
 
@@ -573,7 +633,17 @@ export class ExtensionCompiler {
     return this.runServerEsbuild(extId, entryPath, sourceHash, cachedJsPath, cachedErrorPath);
   }
 
-  /** Run esbuild compilation for client-side extensions and cache the result. */
+  /**
+   * Run esbuild compilation for client-side extensions and cache the result.
+   *
+   * Two separate `try` blocks, deliberately: a failure from `build()`
+   * itself goes through {@link handleEsbuildError} and is worded as a
+   * compilation failure, because it is one. A failure writing the
+   * already-successful result to cache is a DIFFERENT failure — esbuild
+   * did its job — and must not be reported as "Compilation failed for
+   * <id>" with a confusing `ENOENT: ... open '<cache path>'` underneath
+   * it; {@link buildIoFailureError} words it as what it actually is.
+   */
   private async runEsbuild(
     extId: string,
     entryPath: string,
@@ -583,6 +653,8 @@ export class ExtensionCompiler {
   ): Promise<
     { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
   > {
+    let code: string;
+    let sizeKb: number;
     try {
       const result = await build({
         entryPoints: [entryPath],
@@ -599,32 +671,34 @@ export class ExtensionCompiler {
         loader: { '.ts': 'tsx' },
       });
 
-      const code = result.outputFiles?.[0]?.text ?? '';
-
-      // Bundle size warning
-      const sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
+      code = result.outputFiles?.[0]?.text ?? '';
+      sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
       if (sizeKb > BUNDLE_SIZE_WARNING_KB) {
         logger.warn(
           `[Extensions] Bundle for ${extId} is ${sizeKb.toFixed(0)}KB (exceeds ${BUNDLE_SIZE_WARNING_KB}KB guideline)`
         );
       }
-
-      // Write to cache, delete any stale error
-      await fs.writeFile(cachedJsPath, code, 'utf-8');
-      try {
-        await fs.unlink(cachedErrorPath);
-      } catch {
-        /* no stale error */
-      }
-
-      logger.info(`[Extensions] Compiled ${extId} (${sizeKb.toFixed(1)}KB)`);
-      return { code, sourceHash };
     } catch (err) {
       return this.handleEsbuildError(extId, err, cachedErrorPath, sourceHash);
     }
+
+    try {
+      await fs.writeFile(cachedJsPath, code, 'utf-8');
+      await fs.unlink(cachedErrorPath).catch(() => {
+        /* no stale error */
+      });
+      logger.info(`[Extensions] Compiled ${extId} (${sizeKb.toFixed(1)}KB)`);
+      return { code, sourceHash };
+    } catch (err) {
+      return { error: buildIoFailureError(extId, err, 'cache the compiled bundle'), sourceHash };
+    }
   }
 
-  /** Run esbuild compilation for server-side extensions and cache the result. */
+  /**
+   * Run esbuild compilation for server-side extensions and cache the result.
+   * See {@link runEsbuild} for why compile failures and cache-write
+   * failures are handled in separate `try` blocks.
+   */
   private async runServerEsbuild(
     extId: string,
     entryPath: string,
@@ -634,6 +708,8 @@ export class ExtensionCompiler {
   ): Promise<
     { code: string; sourceHash: string } | { error: CompilationError; sourceHash: string }
   > {
+    let code: string;
+    let sizeKb: number;
     try {
       const result = await build({
         entryPoints: [entryPath],
@@ -649,26 +725,29 @@ export class ExtensionCompiler {
         loader: { '.ts': 'tsx' },
       });
 
-      const code = result.outputFiles?.[0]?.text ?? '';
-
-      const sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
+      code = result.outputFiles?.[0]?.text ?? '';
+      sizeKb = Buffer.byteLength(code, 'utf-8') / 1024;
       if (sizeKb > BUNDLE_SIZE_WARNING_KB) {
         logger.warn(
           `[Extensions] Server bundle for ${extId} is ${sizeKb.toFixed(0)}KB (exceeds ${BUNDLE_SIZE_WARNING_KB}KB guideline)`
         );
       }
+    } catch (err) {
+      return this.handleEsbuildError(extId, err, cachedErrorPath, sourceHash, 'Server ');
+    }
 
+    try {
       await fs.writeFile(cachedJsPath, code, 'utf-8');
-      try {
-        await fs.unlink(cachedErrorPath);
-      } catch {
+      await fs.unlink(cachedErrorPath).catch(() => {
         /* no stale error */
-      }
-
+      });
       logger.info(`[Extensions] Compiled server bundle for ${extId} (${sizeKb.toFixed(1)}KB)`);
       return { code, sourceHash };
     } catch (err) {
-      return this.handleEsbuildError(extId, err, cachedErrorPath, sourceHash, 'Server ');
+      return {
+        error: buildIoFailureError(extId, err, 'cache the compiled bundle', 'Server '),
+        sourceHash,
+      };
     }
   }
 
@@ -750,9 +829,10 @@ export class ExtensionCompiler {
    * swallowed rather than propagated, so callers degrade to operating
    * without a persistent cache for this attempt instead of crashing. A
    * downstream read against a still-missing directory reports a harmless
-   * cache miss; a downstream write fails the same way and is already
-   * handled as its own environment failure (see {@link handleEsbuildError}
-   * and the write guards in {@link handlePrecompiled}).
+   * cache miss; a downstream write fails the same way and is handled as
+   * its own clearly-worded failure by whichever caller made it — see
+   * {@link buildIoFailureError} and its use in {@link handlePrecompiled},
+   * {@link runEsbuild}, and {@link runServerEsbuild}.
    *
    * @param dir - The directory to create. Defaults to the client-side cache root.
    */

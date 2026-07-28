@@ -112,6 +112,45 @@ describe('ExtensionCompiler', () => {
     }
   });
 
+  it.skipIf(isRoot)(
+    'reports an error, not a silent success, when a pre-compiled bundle cannot be cached',
+    async () => {
+      // Regression coverage: unlike TypeScript compilation, a pre-compiled
+      // extension's disk cache IS the delivery mechanism — compile()'s
+      // in-memory `code` is discarded by applyCompileResult, and the
+      // bundle is served later, from disk, by readBundle(). A version of
+      // this method used to swallow a write failure and report success
+      // anyway, which left the extension looking healthy
+      // (compiled/bundleReady) while readBundle() returned null forever.
+      const extDir = path.join(tmpDir, 'uncacheable-js-ext');
+      await fs.mkdir(extDir, { recursive: true });
+      const jsSource = 'export function activate() {}';
+      await fs.writeFile(path.join(extDir, 'index.js'), jsSource);
+
+      // Pre-create the cache dir read-only: ensureCacheDir's mkdir
+      // succeeds trivially (the dir already exists), but the write that
+      // actually persists the bundle fails.
+      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
+      await fs.mkdir(cacheDir, { recursive: true });
+      await fs.chmod(cacheDir, 0o555);
+
+      let result: Awaited<ReturnType<typeof compiler.compile>>;
+      try {
+        result = await compiler.compile(makeRecord('uncacheable-js-ext', extDir));
+      } finally {
+        await fs.chmod(cacheDir, 0o755);
+      }
+
+      expect('error' in result).toBe(true);
+      if (!('error' in result)) throw new Error('expected error result');
+      expect(result.error.message).toContain('cache the pre-compiled bundle');
+
+      // Consistent with the error: there is nothing to read back either.
+      const bundle = await compiler.readBundle('uncacheable-js-ext', result.sourceHash);
+      expect(bundle).toBeNull();
+    }
+  );
+
   // === 3. No entry point ===
 
   it('returns error when neither index.js nor index.ts exists', async () => {
