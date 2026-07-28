@@ -34,7 +34,7 @@ The same rule applies to your own numbers. Every threshold in the rooms design i
 
 ## What this skill does not cover
 
-**Release posts.** `/system:release` Phase 6.7 (`.claude/commands/system/release.md:395-427`) scaffolds `blog/dorkos-X-Y-Z.mdx`, and the release commit stages it. Entry quality inside it comes from `writing-changelogs`. If a release post needs to be better, edit that phase's template. Do not build a second authority over a file another command writes, because the two will drift the way the hand-written `## Install / Update` section already has.
+**Release posts.** `/system:release` Phase 6.7 (`.claude/commands/system/release.md:395-428`) scaffolds `blog/dorkos-X-Y-Z.mdx`, and the release commit stages it. Entry quality inside it comes from `writing-changelogs`. If a release post needs to be better, edit that phase's template. Do not build a second authority over a file another command writes, because the two will drift the way the hand-written `## Install / Update` section already has.
 
 ## Readability
 
@@ -181,7 +181,7 @@ Two limits:
 ## Voice and lines you may use
 
 - **"You, Multiplied." is hero-only.** Do not open a blog post with it.
-- **"Intelligence doesn't scale. Coordination does." is licensed here.** `meta/brand-foundation.md:434` reserves the manifesto line for "essays, the litepaper, comparison/anti-positioning surfaces." A blog essay is that surface, and the only one where the line belongs.
+- **"Intelligence doesn't scale. Coordination does." is licensed here.** `meta/brand-foundation.md:434` reserves the manifesto line for "essays, the litepaper, comparison/anti-positioning surfaces, and the Show HN comment thread." A blog essay is that surface, and the only writing surface here where the line belongs.
 - **Byline: a named human.** Every one of the 61 existing posts says `DorkOS Team`, which is right for a release note and wrong for an opinion piece. A corporate byline on an argument reads as content marketing. The evidence is a consistent pattern across every strong exemplar in the research rather than a controlled finding, and it is worth following anyway: no one signs an essay "the team."
 
 ## Humor
@@ -190,7 +190,9 @@ Forced humor is worse than none, and worse than dryness.
 
 **Fits this brand:** dry understatement, precise observation of something genuinely absurd, self-deprecation about our own mistakes. **Does not:** puns, exclamation marks, memes, quirky-startup voice, jokes at a competitor's expense, and anything you would have to explain to a reader in another timezone or language.
 
-The model is the Buzz reply storm in the worked example below, and it contains no joke. Every agent was politely announcing that it would stop replying, and the announcing is what kept the conversation alive. Nobody wrote a punchline. It is funny because it is precisely described and true.
+**Apply the lens to ourselves first.** `decisions/0070-per-agent-tool-filtering-via-allowedtools.md:45` on a security option we misread and shipped wrong for three months: "The option was misread on day one. Nothing drifted underneath us." That is dry, self-deprecating, funny, and true, and no part of it is phrasing. It is the shape to aim for.
+
+**Then outward, carefully.** The Buzz reply storm in the worked example below contains no joke either. Every agent was politely announcing that it would stop replying, and the announcing is what kept the conversation alive. It is funny because it is precisely described and true. But it is somebody else's production failure, so the frame is analysis, not mockery: it belongs in a post because it teaches something true about multi-agent systems, and anyone reusing it owes Block the same honesty about what they got right that the competitor rule above demands. Precision about a failure is the technique. A named competitor is not the punchline.
 
 So: **the humor comes from accuracy, not decoration.** If a line is funny because of how it is phrased rather than what it observes, cut it. If the funny version of a sentence is less true than the plain version, it is not funny, and the sentence loses. One test before you keep a joke: would this still read well in six months, to someone who does not know us?
 
@@ -198,15 +200,15 @@ So: **the humor comes from accuracy, not decoration.** If a line is funny becaus
 
 Frontmatter is validated by a Zod schema at `apps/site/source.config.ts:14-28`. Unknown keys pass silently and do nothing; a missing required field or a `category` outside the enum fails the site build.
 
-| Field         | Required | Notes                                                                                |
-| ------------- | -------- | ------------------------------------------------------------------------------------ |
-| `title`       | yes      | Also the version source. See the semver trap below                                   |
-| `date`        | yes      | `YYYY-MM-DD`. Rendered as UTC everywhere                                             |
-| `description` | no       | Set it. See below                                                                    |
-| `author`      | no       | A name. Absent, the JSON-LD publisher falls back from `Person` to `Organization`     |
-| `category`    | no       | `release` \| `tutorial` \| `announcement` \| `news`. Never `release` for these posts |
-| `tags`        | no       | `string[]`. Feeds the OG tags and renders as pills                                   |
-| `image`       | no       | Declared in the schema and read by nothing. Use inline markdown images instead       |
+| Field         | Required | Notes                                                                                                                                    |
+| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`       | yes      | Also the version source. See the semver trap below                                                                                       |
+| `date`        | yes      | `YYYY-MM-DD`. Rendered as UTC everywhere                                                                                                 |
+| `description` | no       | Set it. See below                                                                                                                        |
+| `author`      | no       | A name. Absent, the JSON-LD `author` switches from `Person` to `Organization` (`page.tsx:152-159`; `publisher` is always `Organization`) |
+| `category`    | no       | `release` \| `tutorial` \| `announcement` \| `news`. Never `release` for these posts                                                     |
+| `tags`        | no       | `string[]`. Feeds the OG tags and renders as pills                                                                                       |
+| `image`       | no       | Declared in the schema and read by nothing. Use inline markdown images instead                                                           |
 
 Five things that will otherwise bite you:
 
@@ -223,7 +225,7 @@ Five things that will otherwise bite you:
 - **Plain markdown.** All 11 images in the corpus are `![alt](/product/archive/vX.Y.Z/shot.png)`, pointing at a frozen release archive.
 - **`<ProductShot id="…" alt="…" />`.** The blog template renders MDX with `getMDXComponents()` (`page.tsx:253`), the same set the docs get, so this component works in a blog post and plays a loop where the shot has one. Two catches: it throws on an unregistered id, and the guard test only scans `docs/` (`shots.test.ts`, `DOCS_ROOT`), so nothing catches a bad id in `blog/` before the build breaks. Check the id against `apps/e2e/capture/shots.ts` yourself.
 
-**Never hand-place a file in `apps/site/public/product/`.** That directory belongs to the capture pipeline, and `resetOutputDir()` (`apps/e2e/capture/optimize.ts:493-503`) deletes every `.png` and `.webm` at its top level before each `capture:process` run. Your image disappears at the next capture and nobody will connect the two events. Product media is `capturing-product-media`'s job end to end: registry, capture, human overrides, frozen archives. A post that needs a shot of the product asks that pipeline for one. A post that needs its own non-product image puts it under `apps/site/public/blog/<post-slug>/`, which nothing else writes to.
+**Never hand-place a file in `apps/site/public/product/`.** That directory belongs to the capture pipeline, and `resetOutputDir()` (`apps/e2e/capture/optimize.ts:493-501`) deletes every `.png` and `.webm` at its top level before each `capture:process` run. Your image disappears at the next capture and nobody will connect the two events. Product media is `capturing-product-media`'s job end to end: registry, capture, human overrides, frozen archives. A post that needs a shot of the product asks that pipeline for one. A post that needs its own non-product image puts it under `apps/site/public/blog/<post-slug>/`, which nothing else writes to.
 
 **What to reach for, in this order.**
 
