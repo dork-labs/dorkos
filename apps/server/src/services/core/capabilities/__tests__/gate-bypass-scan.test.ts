@@ -266,8 +266,16 @@ const SOURCES = await productionSources(SERVER_SRC);
  * what is a string, what is a comment, and — the part no regex can do at all —
  * whether a `/` opens a regular expression or is division. The literal ranges it
  * reports are blanked out in place (newlines preserved, so offsets and line
- * numbers still line up), and only THEN are comments removed, which is now
- * unambiguous because no string survives to hide a delimiter in.
+ * numbers still line up), and only THEN are comments removed.
+ *
+ * **Blanking literals first removes one hazard, not both.** It guarantees no
+ * comment delimiter survives inside a STRING, so the block-comment replace below
+ * cannot be opened by string content. It guarantees nothing about a delimiter
+ * inside a COMMENT — comments are still matched by regex, so the two comment
+ * forms must be removed in a way that cannot feed each other. That is why line
+ * comments are stripped to end-of-line rather than by dropping whole lines; the
+ * earlier whole-line version left a trailing comment's `/*` to open a fake block
+ * span. See the comment at the `replace` calls for the reproduction.
  *
  * ## What it still cannot see
  *
@@ -276,6 +284,16 @@ const SOURCES = await productionSources(SERVER_SRC);
  * direction, and it fails loudly rather than silently. Aliasing
  * (`const f = applyShape; f()`) and dynamic dispatch remain out of reach, as the
  * module TSDoc says.
+ *
+ * Note which direction the literal-blanking can err in, because it is easy to
+ * mis-tune: a call expression can never exist inside a string literal, so
+ * blanking string content is INCAPABLE of hiding a call. A file that blanks to
+ * almost nothing (`lib/git-safety.ts` is mostly a table of banned command
+ * strings) is this working, not failing. Do not tune toward a retention floor —
+ * that would mean deliberately leaving string content in, which is where the
+ * false positives come from. The one over-blanking class that COULD hide a call
+ * is a template substitution, and that is why only the literal chunks are blanked
+ * while recursion continues into `${…}`.
  *
  * @param text - The file's full source.
  * @returns The same source with comments and string/regex literals blanked.
@@ -313,31 +331,66 @@ function codeOnly(text: string): string {
   };
   visit(source);
 
-  // Comments last, and now safely: the parser already took every string out, so
-  // a `/*` that survives to here is a genuine comment start. Line comments first
-  // for the `index.ts:322` case; block comments after.
+  // Comments last. Line comments are removed to END OF LINE — not by dropping
+  // whole lines — and that distinction is the whole of the residual this closes.
+  //
+  // The whole-line filter (`!line.trim().startsWith('//')`) misses a TRAILING
+  // comment, so its `/*` survived into the block replace below and opened a span
+  // that the next genuine doc block closed, swallowing the code between:
+  //
+  //   export const a = 1; // route glob /api/auth/*
+  //   export function b() { return applyShape('victim'); }   // ← not reported
+  //   /** an ordinary doc block, which closes the fake span */
+  //
+  // Reproduced, and pinned to trailing comments specifically: the same file
+  // without that comment reports the call, and the sibling cases (a trailing
+  // `*/`, a string containing `/*`) were already correct.
+  //
+  // `\/\/.*$` was UNSAFE under every previous pipeline, which is exactly why it
+  // was not used: a string could contain `//` (every `https://` URL does), so it
+  // would have eaten real code. Literals are blanked by the parser BEFORE this
+  // line now, so no `//` can survive inside one and the objection is gone. Do not
+  // "simplify" this back to a line filter.
   return chars
     .join('')
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//'))
-    .join('\n')
+    .replace(/\/\/.*$/gm, '')
     .replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
+/**
+ * Every source, read and lexed ONCE, as `[relative path, code-only text]`.
+ *
+ * Hoisted because the corpus is static and the parser is not free: one lexing
+ * pass over the 454 server sources costs ~970ms (the regex pipeline it replaced
+ * cost ~29ms). `callersOf` used to re-read and re-lex all of them per protected
+ * effect, so the twelve assertions below spent ~11.7s between them — against
+ * vitest's 5s DEFAULT per-test timeout. Under load that failed three assertions
+ * on time alone, which is a flaky CI job that says "ungated caller" when it means
+ * "slow". Lexing once is ~12x cheaper and makes the whole file ~1s.
+ *
+ * The timeout is deliberately NOT raised instead: the work was gratuitous, and a
+ * raised timeout would keep it while hiding the next regression in cost.
+ */
+const LEXED: readonly (readonly [string, string])[] = await Promise.all(
+  SOURCES.map(
+    async (file) =>
+      [path.relative(SERVER_SRC, file), codeOnly(await readFile(file, 'utf-8'))] as const
+  )
+);
+
 /** Files that call `call`, as paths relative to `apps/server/src`. */
-async function callersOf(call: string): Promise<string[]> {
+function callersOf(call: string): string[] {
   const hits: string[] = [];
-  for (const file of SOURCES) {
-    const text = await readFile(file, 'utf-8');
-    // Ignore the token where it only appears inside prose: a TSDoc or a `//`
-    // comment naming the function is documentation, not a call path.
-    const code = codeOnly(text);
-    // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
-    // call to `trustedCaller(` — a plain substring match reports the guard itself
-    // as a bypass. A leading `.` is deliberately allowed, because a receiver
-    // (`deps.uninstallFlow.uninstall(`) is still that call.
-    const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace('(', '\\(')}`);
-    if (pattern.test(code)) hits.push(path.relative(SERVER_SRC, file));
+  // The token is ignored where it only appears inside prose: a TSDoc or a `//`
+  // comment naming the function is documentation, not a call path. That removal
+  // already happened in `codeOnly`, when the corpus was lexed.
+  // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
+  // call to `trustedCaller(` — a plain substring match reports the guard itself
+  // as a bypass. A leading `.` is deliberately allowed, because a receiver
+  // (`deps.uninstallFlow.uninstall(`) is still that call.
+  const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace('(', '\\(')}`);
+  for (const [relative, code] of LEXED) {
+    if (pattern.test(code)) hits.push(relative);
   }
   return hits.sort();
 }
@@ -350,8 +403,8 @@ describe('no ungated path reaches a protected effect', () => {
   });
 
   for (const effect of PROTECTED_EFFECTS) {
-    it(`${effect.call} is called only by modules that gate it`, async () => {
-      const actual = await callersOf(effect.call);
+    it(`${effect.call} is called only by modules that gate it`, () => {
+      const actual = callersOf(effect.call);
       const allowed = Object.keys(effect.allowed).sort();
       const unexpected = actual.filter((f) => !allowed.includes(f));
       const missing = allowed.filter((f) => !actual.includes(f));

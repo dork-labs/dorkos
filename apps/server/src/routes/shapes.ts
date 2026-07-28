@@ -133,7 +133,7 @@ function requireShapeSlug(name: string, res: Response): string | null {
  * reconcile the two rather than quietly create a second action sharing one
  * approval id space.
  */
-const APPLY_SHAPE_ACTION: GatedAction = {
+export const APPLY_SHAPE_ACTION: GatedAction = {
   id: 'shapes.apply',
   title: 'Switch to a Shape',
   tier: 'destructive',

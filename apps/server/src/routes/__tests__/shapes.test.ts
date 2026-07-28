@@ -24,7 +24,7 @@ import {
 } from '../../services/core/capabilities/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
-import { createShapesRouter } from '../shapes.js';
+import { APPLY_SHAPE_ACTION, createShapesRouter } from '../shapes.js';
 
 // Local login off — the DEFAULT posture, and therefore the one the gate has to be
 // right in. `resolveDecisionAuthority` reads this to decide whether a caller with
@@ -374,6 +374,16 @@ describe('shapes router', () => {
      * composes EVERY domain unconditionally — a domain gated behind absent deps
      * would be missing from the boot registry and this check would pass by not
      * looking.
+     *
+     * Its own limit, stated rather than implied: that composer's domain list is
+     * HARDCODED, so a fourth domain wired into boot but never added there is
+     * invisible here. Partly mitigated by the same composer driving the static
+     * OpenAPI export, which has its own freshness gate in CI — a domain missing
+     * from it tends to surface there first.
+     *
+     * The id comes from {@link APPLY_SHAPE_ACTION} rather than a literal, so
+     * renaming the action moves the reservation with it instead of leaving this
+     * guarding a name nothing uses.
      */
     it('reserves the shapes.apply id — no capability may claim it while the route owns it', () => {
       const ids = composeCapabilityRegistryForDocs().capabilities.map((cap) => cap.id);
@@ -381,8 +391,8 @@ describe('shapes router', () => {
       // Not empty, or the filter below proves nothing.
       expect(ids.length).toBeGreaterThan(10);
       expect(
-        ids.filter((id) => id === 'shapes.apply'),
-        'a capability now claims `shapes.apply`, which the Shapes route already uses as a ' +
+        ids.filter((id) => id === APPLY_SHAPE_ACTION.id),
+        `a capability now claims \`${APPLY_SHAPE_ACTION.id}\`, which the Shapes route already uses as a ` +
           'GatedAction id. Two actions sharing one id share one approval binding space. ' +
           'Migrate the route onto the capability (delete APPLY_SHAPE_ACTION and use ' +
           'authorizeCapability) rather than letting both exist.'
