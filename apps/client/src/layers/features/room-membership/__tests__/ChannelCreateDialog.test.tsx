@@ -14,6 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { ChannelCreateDialog } from '../ui/ChannelCreateDialog';
@@ -24,11 +25,20 @@ vi.mock('sonner', () => ({ toast: { error: toastError } }));
 beforeEach(() => toastError.mockClear());
 afterEach(cleanup);
 
-const FLEET = [
+const AGENTS = [
   { agentPath: '/w/ana', displayName: 'Ana' },
   { agentPath: '/w/bo', displayName: 'Bo' },
   { agentPath: '/w/kai', displayName: 'Kai' },
 ];
+
+/**
+ * A fleet that has been read successfully. Named for the state rather than
+ * defaulted into one — the loading and failed rosters render something else
+ * entirely, and this dialog is asserted against those too.
+ */
+function settled(candidates: AgentPickerCandidate[] = AGENTS): AgentRoster {
+  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
+}
 
 function made(): RoomWithRoster {
   return {
@@ -51,7 +61,7 @@ function made(): RoomWithRoster {
 function renderDialog(
   overrides: {
     transport?: Partial<Transport>;
-    agents?: typeof FLEET;
+    agents?: AgentRoster;
     onCreated?: () => void;
     onOpenChange?: (open: boolean) => void;
   } = {}
@@ -74,7 +84,7 @@ function renderDialog(
     <ChannelCreateDialog
       open
       onOpenChange={overrides.onOpenChange ?? vi.fn()}
-      agents={overrides.agents ?? FLEET}
+      agents={overrides.agents ?? settled()}
       onCreated={overrides.onCreated ?? vi.fn()}
     />,
     { wrapper }
@@ -95,6 +105,54 @@ function pick(displayName: string) {
 }
 
 describe('ChannelCreateDialog', () => {
+  it('does not claim an agent is picked before one is', () => {
+    // The button renders before anything is chosen, so its label is the FIRST
+    // thing a reader sees. A `count > 1 ? … : '…1 agent'` ternary reads
+    // "Create channel with 1 agent" over an empty selection, which states
+    // something false about the room they are about to make. The zero case is
+    // its own branch precisely because nothing navigates you past it.
+    renderDialog();
+
+    expect(screen.getByRole('button', { name: 'Create channel' })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: /Create channel with 1 agent/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('counts the agents it actually has, in singular and plural', () => {
+    renderDialog();
+    nameIt('Backend');
+
+    pick('Ana');
+    expect(screen.getByRole('button', { name: 'Create channel with 1 agent' })).toBeEnabled();
+    pick('Kai');
+    expect(screen.getByRole('button', { name: 'Create channel with 2 agents' })).toBeEnabled();
+  });
+
+  it('never tells someone with agents that they have none', () => {
+    // The roster could not be read. That is not the same claim as an empty
+    // account, and this dialog must not make the wrong one.
+    const retry = vi.fn();
+    renderDialog({ agents: { candidates: [], isLoading: false, isError: true, retry } });
+
+    expect(screen.queryByText(/You have not added any agents yet/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(/Couldn't read your agents/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('still lets you make the channel while the fleet is unreadable', () => {
+    // The deliberate empty path does not depend on the roster, so a failed read
+    // must not take the whole dialog down with it.
+    const { transport } = renderDialog({
+      agents: { candidates: [], isLoading: false, isError: true, retry: vi.fn() },
+    });
+    nameIt('Backend');
+
+    expect(screen.getByRole('button', { name: 'Create it without agents' })).toBeEnabled();
+    expect(transport.createRoom).not.toHaveBeenCalled();
+  });
+
   it('creates the channel and its roster in ONE call', async () => {
     const onCreated = vi.fn();
     const { transport } = renderDialog({ onCreated });
@@ -177,7 +235,7 @@ describe('ChannelCreateDialog', () => {
   });
 
   it('offers the empty path — and only that — to someone with no agents at all', () => {
-    renderDialog({ agents: [] });
+    renderDialog({ agents: settled([]) });
 
     nameIt('Backend');
     expect(screen.getByText(/You have not added any agents yet/i)).toBeInTheDocument();

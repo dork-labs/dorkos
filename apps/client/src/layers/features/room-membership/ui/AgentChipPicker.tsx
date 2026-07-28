@@ -85,18 +85,29 @@ interface AgentChipPickerProps {
  * things. All three are worth stating in full, because every bug this component
  * has had was two of them collapsing into each other:
  *
- * 1. **An agent is highlighted** → add it. So `an` `⏎` `ka` `⏎` `⏎` assembles a
- *    group and commits it without touching the mouse.
- * 2. **Nothing is highlighted, the field is empty, and nobody was pointed at**
- *    → commit. All three, not just the first: committing is the only branch
- *    that acts on its own, so it answers only to a reader who has asked for
- *    nothing else.
+ * 1. **The KEYBOARD is aimed at an agent** → add it. Either the reader arrowed
+ *    onto it, or they typed a query and it is the first match. So `an` `⏎` `ka`
+ *    `⏎` `⏎` assembles a group and commits it without touching the mouse.
+ * 2. **The keyboard is aimed at nothing and the field is empty** → commit.
+ *    Both, not just the first: committing is the only branch that acts on its
+ *    own, so it answers only to a reader who has asked for nothing else.
  * 3. **Anything else** → nothing at all. That covers a query nobody matches
  *    (typing `Kia` for Kai and pressing Enter to try again must not commit the
- *    half-assembled selection and throw the rest away) and a highlight whose
- *    agent has since left the list — a mesh rebuild can do that under an open
- *    picker, and "aimed at somebody who is gone" must not read as "aimed at
- *    nobody" at the one gate where the difference costs an action.
+ *    half-assembled selection and throw the rest away) and a keyboard highlight
+ *    whose agent has since left the list — a mesh rebuild can do that under an
+ *    open picker, and "aimed at somebody who is gone" must not read as "aimed
+ *    at nobody" at the one gate where the difference costs an action.
+ *
+ * **A hovered option is highlighted but is not aimed at.** The pointer borrows
+ * the highlight so the list still tracks the cursor, and it never borrows the
+ * Enter key: hovering an option and pressing Enter commits the selection, it
+ * does not add whatever the cursor happens to be resting on. This matters
+ * because assembling a selection by clicking leaves the cursor sitting over
+ * whichever agent slid up into the vacated row, so the pointer path and the
+ * keyboard path would otherwise disagree about what Enter means at exactly the
+ * moment a reader reaches for it to finish. Arrowing from a hovered row is
+ * still keyboard aim — it starts where the cursor left off and Enter adds
+ * again.
  *
  * - **Backspace** on an empty field takes back the last agent picked.
  * - **↓ / ↑** move the highlight; Escape belongs to whatever is holding this —
@@ -142,10 +153,13 @@ export function AgentChipPicker({
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<AgentPickerCandidate[]>([]);
   /**
-   * The agent the reader pointed at, by directory. `null` means "nobody has
-   * said", which is not the same as "nothing is highlighted" — see `active`.
+   * What the highlight is resting on, and how it got there. `null` means
+   * "nobody has said", which is not the same as "nothing is highlighted" — see
+   * `active`. `from` is what separates a reader steering with the arrow keys
+   * from a cursor that merely passed over the list: only the former earns
+   * Enter.
    */
-  const [aimedAt, setAimedAt] = useState<string | null>(null);
+  const [aim, setAim] = useState<{ path: string; from: 'keyboard' | 'pointer' } | null>(null);
   const ownRef = useRef<HTMLInputElement>(null);
   const fieldRef = inputRef ?? ownRef;
   const listId = useId();
@@ -171,16 +185,21 @@ export function AgentChipPicker({
   // default instead of pointing at whoever took its place. Typing implies a
   // target and an empty field does not, which is what leaves Enter free to
   // commit the selection.
-  const active =
-    (aimedAt ? matches.find((c) => c.agentPath === aimedAt) : undefined) ??
-    (needle ? matches[0] : undefined) ??
-    null;
+  const aimed = aim ? (matches.find((c) => c.agentPath === aim.path) ?? null) : null;
+  const typed = needle ? (matches[0] ?? null) : null;
+  /** What the list draws as highlighted — the pointer counts here. */
+  const active = aimed ?? typed;
   const activeIndex = active ? matches.indexOf(active) : -1;
+  /**
+   * What Enter would add. The pointer is deliberately absent: it may light a row
+   * up, but it never turns the key that acts on it.
+   */
+  const enterTarget = (aim?.from === 'keyboard' ? aimed : null) ?? typed;
 
   function add(candidate: AgentPickerCandidate) {
     setChosen((prev) => [...prev, candidate]);
     setQuery('');
-    setAimedAt(null);
+    setAim(null);
     fieldRef.current?.focus();
   }
 
@@ -198,21 +217,23 @@ export function AgentChipPicker({
           ? 0
           : matches.length - 1
         : Math.min(Math.max(activeIndex + step, 0), matches.length - 1);
-    setAimedAt(matches[next].agentPath);
+    setAim({ path: matches[next].agentPath, from: 'keyboard' });
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
-      if (active) add(active);
-      // Three conditions, none of them redundant. `!needle` keeps a query
-      // nobody matches from committing under a reader who is mid-correction.
-      // `!aimedAt` keeps a highlight whose agent has since left the list — a
-      // mesh rebuild can do that under an open picker — from reading as "nobody
-      // was ever pointed at". Everywhere else a vanished aim is harmless,
-      // because it falls through to the first match or goes inert; this is the
-      // only rung that turns it into an action.
-      else if (!needle && !aimedAt) commit();
+      if (enterTarget) add(enterTarget);
+      // Two conditions, neither redundant. `!needle` keeps a query nobody
+      // matches from committing under a reader who is mid-correction. The
+      // keyboard-aim check keeps a highlight whose agent has since left the
+      // list — a mesh rebuild can do that under an open picker — from reading
+      // as "nobody was ever aimed"; everywhere else a vanished aim is harmless,
+      // because it falls through to the first match or goes inert, and this is
+      // the only rung that turns it into an action. A POINTER aim is
+      // deliberately not checked: a cursor resting on a row is not a reader
+      // asking for it, which is the whole of the rule above.
+      else if (!needle && aim?.from !== 'keyboard') commit();
       return;
     }
     if (event.key === 'Backspace' && query === '' && chosen.length > 0) {
@@ -287,10 +308,10 @@ export function AgentChipPicker({
           placeholder={chosen.length > 0 ? 'Add another' : 'Search agents'}
           onChange={(event) => {
             setQuery(event.target.value);
-            // The aim is whoever the reader last pointed at, and typing is not
-            // pointing — dropping it lets the derived default (the first match,
-            // or nothing at all) take over again.
-            setAimedAt(null);
+            // The aim is whoever the reader last steered onto or hovered, and
+            // typing is neither — dropping it lets the derived default (the
+            // first match, or nothing at all) take over again.
+            setAim(null);
           }}
           onKeyDown={handleKeyDown}
           className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-1 text-sm outline-hidden md:py-0.5"
@@ -326,9 +347,10 @@ export function AgentChipPicker({
               role="option"
               aria-selected={index === activeIndex}
               // The input keeps focus, so the highlight is what a keyboard
-              // reader follows and the pointer only ever borrows it.
+              // reader follows and the pointer only ever borrows it — the
+              // highlight, and never the Enter key that acts on it.
               onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setAimedAt(candidate.agentPath)}
+              onMouseEnter={() => setAim({ path: candidate.agentPath, from: 'pointer' })}
               onClick={() => add(candidate)}
               className={cn(
                 'flex min-h-11 cursor-pointer items-center truncate rounded-sm px-2 py-2 text-sm md:min-h-0 md:py-1.5',

@@ -6,11 +6,7 @@ import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { toast } from 'sonner';
-import {
-  disambiguateDisplayNames,
-  toAgentPickerCandidates,
-  useResolvedAgents,
-} from '@/layers/entities/agent';
+import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import {
   useConfig,
   useSidebarPrefs,
@@ -39,6 +35,7 @@ import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useAgentPickerCandidates } from '@/layers/features/room-membership';
 import { AgentListItem } from './AgentListItem';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarNavHeader } from './SidebarNavHeader';
@@ -155,16 +152,11 @@ export function DashboardSidebar() {
     () => ({ displayNames: displayNamesRecord, agentActivity }),
     [displayNamesRecord, agentActivity]
   );
-  // The fleet as the room pickers read it: one sorted list, derived once, so
-  // starting a conversation and adding agents to an existing room offer exactly
-  // the same agents in exactly the same order. Built by the same entity-layer
-  // helper `useAgentPickerCandidates` uses, so the open room — which has no
-  // sidebar to ask — offers that same list rather than one that merely
-  // resembles it.
-  const agentCandidates = useMemo(
-    () => toAgentPickerCandidates(displayNamesRecord),
-    [displayNamesRecord]
-  );
+  // The fleet as the room pickers read it. The SAME hook the open room uses, so
+  // the two never disagree about who is offerable, what they are called, what
+  // order they come in, or whether the answer is known yet — an empty list from
+  // a failed read must not read as "you have no agents" in either place.
+  const agentRoster = useAgentPickerCandidates();
 
   // ── Attention + mute (DOR-339): one attention-map subscription for the whole
   // sidebar, and the individually-muted path set every section's filter and
@@ -499,7 +491,7 @@ export function DashboardSidebar() {
             error={roomsQuery.error}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
-            agents={agentCandidates}
+            agents={agentRoster}
             onOpenAgentProfile={handleOpenProfile}
           />
 
@@ -507,7 +499,7 @@ export function DashboardSidebar() {
             dms={dms}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
-            agents={agentCandidates}
+            agents={agentRoster}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onOpenAgentProfile={handleOpenProfile}

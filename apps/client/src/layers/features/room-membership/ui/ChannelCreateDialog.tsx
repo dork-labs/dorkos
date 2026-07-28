@@ -12,9 +12,9 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { useCreateChannel } from '@/layers/entities/room';
-import { AgentChipPicker } from './AgentChipPicker';
+import { AgentRosterPicker } from './AgentRosterPicker';
 
 /** Longest channel name the server accepts (`CreateRoomRequestSchema.title`). */
 const MAX_NAME = 200;
@@ -23,8 +23,8 @@ interface ChannelCreateDialogProps {
   /** Whether the dialog is on screen. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Every agent in the fleet, sorted by name. */
-  agents: AgentPickerCandidate[];
+  /** Every agent in the fleet, sorted by name, and whether that is known yet. */
+  agents: AgentRoster;
   /** The channel that was made, so the caller can open it. */
   onCreated: (room: RoomWithRoster) => void;
 }
@@ -143,11 +143,21 @@ export function ChannelCreateDialog({
               They join when the channel is made and can read everything said in it. In a channel an
               agent replies when you @mention it, until you say otherwise.
             </p>
-            <AgentChipPicker
-              candidates={agents}
+            <AgentRosterPicker
+              roster={agents}
               onSubmit={create}
+              // Three cases, and the zero one is not decoration: this button
+              // renders before anything is picked, so a label that claims "1
+              // agent" states something false about the selection every time
+              // the dialog opens. It is disabled there — the picker above is
+              // what to do next, and the quiet button below is the way out
+              // without anybody.
               submitLabel={(count) =>
-                count > 1 ? `Create channel with ${count} agents` : 'Create channel with 1 agent'
+                count === 0
+                  ? 'Create channel'
+                  : count === 1
+                    ? 'Create channel with 1 agent'
+                    : `Create channel with ${count} agents`
               }
               emptyRosterMessage="You have not added any agents yet. You can still make the channel and put agents in it later."
               allChosenMessage="That is every agent you have."

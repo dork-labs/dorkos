@@ -9,6 +9,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { RoomRow } from '../ui/rooms/RoomRow';
 
 // ---------------------------------------------------------------------------
@@ -49,7 +50,17 @@ function oneToOne(agentPath: string): RoomSummary {
   });
 }
 
-const FLEET = [{ agentPath: '/repo/ana', displayName: 'Ana' }];
+/**
+ * A fleet that has been read successfully. Named for the state rather than
+ * defaulted into one: a roster that could not be read looks nothing like this,
+ * and a helper that quietly said `isError: false` everywhere is how that path
+ * goes untested.
+ */
+function settled(candidates: AgentPickerCandidate[]): AgentRoster {
+  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
+}
+
+const FLEET = settled([{ agentPath: '/repo/ana', displayName: 'Ana' }]);
 
 /** What `getRoom` answers with for the members panel: the operator plus Ana. */
 function roomWithRoster() {
@@ -86,7 +97,7 @@ function renderRow(
   opts: {
     transport?: Transport;
     onOpenAgentProfile?: (path: string) => void;
-    agents?: { agentPath: string; displayName: string }[];
+    agents?: AgentRoster;
   } = {}
 ) {
   const transport = opts.transport ?? createMockTransport();
@@ -256,7 +267,7 @@ describe('RoomRow surfaces opened from the menu', () => {
     });
     renderRow(channel(), {
       transport,
-      agents: [...FLEET, { agentPath: '/repo/bo', displayName: 'Bo' }],
+      agents: settled([...FLEET.candidates, { agentPath: '/repo/bo', displayName: 'Bo' }]),
     });
     fireEvent.click(within(openDropdown()).getByText('Add agents…'));
 

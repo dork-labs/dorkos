@@ -8,7 +8,17 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { ChannelsSection } from '../ui/rooms/ChannelsSection';
+
+/**
+ * A fleet that has been read successfully. Named for the state rather than
+ * defaulted into one — the loading and failed rosters render something else,
+ * and those are asserted in `AgentRosterPicker.test.tsx`.
+ */
+function settled(candidates: AgentPickerCandidate[] = []): AgentRoster {
+  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
+}
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -90,7 +100,7 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
       error={null}
       activeRoomId={null}
       onSelectRoom={vi.fn()}
-      agents={[]}
+      agents={settled()}
       onOpenAgentProfile={vi.fn()}
       {...overrides}
     />,
@@ -206,7 +216,7 @@ describe('ChannelsSection', () => {
     // The whole point of DOR-599: the "+" no longer drops an inline name field
     // that can only ever make an empty channel. It opens the dialog that asks
     // both questions, with the fleet in it.
-    renderSection({ agents: [{ agentPath: '/w/ana', displayName: 'Ana' }] });
+    renderSection({ agents: settled([{ agentPath: '/w/ana', displayName: 'Ana' }]) });
     fireEvent.click(screen.getByRole('button', { name: 'New channel' }));
 
     const dialog = screen.getByRole('dialog');

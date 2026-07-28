@@ -11,6 +11,7 @@
  * @module features/room-membership
  */
 export { AgentChipPicker } from './ui/AgentChipPicker';
+export { AgentRosterPicker } from './ui/AgentRosterPicker';
 export { ChannelCreateDialog } from './ui/ChannelCreateDialog';
 export { RoomMembersDialog } from './ui/RoomMembersDialog';
 export type { MembersDialogIntent, MembersDialogRoom } from './ui/RoomMembersDialog';

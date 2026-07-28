@@ -14,6 +14,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { RoomMembersDialog } from '../ui/RoomMembersDialog';
 
 // ---------------------------------------------------------------------------
@@ -69,16 +70,25 @@ function roster(members: RoomRosterEntry[]): RoomWithRoster {
   return { ...ROOM, members, viewerAuthorId: HUMAN.authorId };
 }
 
-const FLEET = [
+/**
+ * A fleet that has been read successfully. Named for the state rather than
+ * defaulted into one — see `AgentRosterPicker.test.tsx` for the loading and
+ * failed rosters, which render something else entirely.
+ */
+function settled(candidates: AgentPickerCandidate[]): AgentRoster {
+  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
+}
+
+const FLEET = settled([
   { agentPath: '/repo/ana', displayName: 'Ana' },
   { agentPath: '/repo/bo', displayName: 'Bo' },
-];
+]);
 
 function renderPanel(
   opts: {
     transport?: Transport;
     intent?: 'roster' | 'add';
-    agents?: { agentPath: string; displayName: string }[];
+    agents?: AgentRoster;
     onOpenChange?: (open: boolean) => void;
   } = {}
 ) {
@@ -393,7 +403,7 @@ describe('RoomMembersDialog', () => {
   // leaves the reader typing into the sidebar.
 
   it('says there is nobody left to add rather than showing an empty picker', async () => {
-    renderPanel({ agents: [{ agentPath: '/repo/ana', displayName: 'Ana' }] });
+    renderPanel({ agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana' }]) });
     await rosterList();
 
     expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();

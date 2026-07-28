@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { DirectMessagesSection } from '../ui/rooms/DirectMessagesSection';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import type { AgentRoster } from '@/layers/entities/agent';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -131,14 +131,22 @@ function openPicker(): void {
 }
 
 /**
- * The fleet, written as `{ directory: name }` and handed over in the sorted
- * shape the section takes — the sidebar sorts once and every picker under it
+ * A successfully-read fleet, written as `{ directory: name }` and handed over
+ * in the sorted shape the section takes — the sidebar sorts once and every picker under it
  * offers the same agents in the same order.
  */
-function fleet(names: Record<string, string>): AgentPickerCandidate[] {
-  return Object.entries(names)
-    .map(([agentPath, displayName]) => ({ agentPath, displayName }))
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+function settledFleet(names: Record<string, string>): AgentRoster {
+  return {
+    candidates: Object.entries(names)
+      .map(([agentPath, displayName]) => ({ agentPath, displayName }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    // Named in the helper rather than defaulted: a roster that is still loading
+    // or could not be read renders something else entirely, and those live in
+    // `AgentRosterPicker.test.tsx` where they can be varied rather than assumed.
+    isLoading: false,
+    isError: false,
+    retry: vi.fn(),
+  };
 }
 
 /** The section with everything defaulted, so a test names only what it varies. */
@@ -148,7 +156,7 @@ function section(overrides: Partial<Parameters<typeof DirectMessagesSection>[0]>
       dms={[]}
       isLoading={false}
       error={null}
-      agents={[]}
+      agents={settledFleet({})}
       activeRoomId={null}
       onSelectRoom={vi.fn()}
       onOpenAgentProfile={vi.fn()}
@@ -208,14 +216,14 @@ describe('DirectMessagesSection', () => {
   });
 
   it('tells the person to add an agent first when the roster is empty', () => {
-    renderSection({ agents: fleet({}) });
+    renderSection({ agents: settledFleet({}) });
     openPicker();
     expect(screen.getByText(/have not added any agents yet/i)).toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 
   it('starts a conversation with one agent', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
     fireEvent.click(screen.getByRole('button', { name: 'Start conversation' }));
@@ -232,7 +240,7 @@ describe('DirectMessagesSection', () => {
     // to prevent is the server's job now: it matches a DM on its member set.
     renderSection({
       dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/ana') })],
-      agents: fleet({ '/repo/ana': 'Ana' }),
+      agents: settledFleet({ '/repo/ana': 'Ana' }),
     });
     openPicker();
 
@@ -241,7 +249,7 @@ describe('DirectMessagesSection', () => {
 
   it('opens ONE conversation with everyone picked, titled after them', () => {
     renderSection({
-      agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' }),
+      agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' }),
     });
     openPicker();
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
@@ -256,7 +264,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('takes an agent out of the list once it is a chip, and offers it again when removed', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Bo']);
@@ -269,7 +277,7 @@ describe('DirectMessagesSection', () => {
     // Type, Enter to take the match, type, Enter, then Enter on an empty field
     // to go. Nothing is highlighted while the field is empty, which is what
     // leaves that last Enter free to mean "open this".
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     const input = screen.getByRole('combobox');
 
@@ -287,7 +295,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('takes back the last agent on Backspace in an empty field', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     const input = screen.getByRole('combobox');
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
@@ -300,7 +308,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('leaves the chips alone when Backspace has text to delete instead', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     const input = screen.getByRole('combobox');
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
@@ -314,7 +322,7 @@ describe('DirectMessagesSection', () => {
     // Typing "Kia" for Kai and pressing Enter to try again must not open the
     // half-assembled conversation. "Open this" is gated on the FIELD being
     // empty, never on "no agent is highlighted" — those differ exactly here.
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/kai': 'Kai' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/kai': 'Kai' }) });
     openPicker();
     const input = screen.getByRole('combobox');
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
@@ -333,7 +341,7 @@ describe('DirectMessagesSection', () => {
     // becomes Ana, Bo, Cy and index 0 now means Ana. A positional highlight
     // would add Ana here; the highlight is keyed on the agent instead.
     renderSection({
-      agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' }),
+      agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' }),
     });
     openPicker();
     const input = screen.getByRole('combobox');
@@ -356,7 +364,7 @@ describe('DirectMessagesSection', () => {
     // that OPENS the conversation, so "aimed at somebody who is gone" would be
     // indistinguishable from "never aimed at anyone" at the one gate that acts.
     const { rerender } = renderSection({
-      agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' }),
+      agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo', '/repo/cy': 'Cy' }),
     });
     openPicker();
     const input = screen.getByRole('combobox');
@@ -364,7 +372,7 @@ describe('DirectMessagesSection', () => {
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     expect(screen.getByRole('option', { name: 'Bo' })).toHaveAttribute('aria-selected', 'true');
 
-    rerender(section({ agents: fleet({ '/repo/ana': 'Ana', '/repo/cy': 'Cy' }) }));
+    rerender(section({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/cy': 'Cy' }) }));
     // Cy is still offerable, so this is a vanished AIM and not an empty list.
     expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Cy']);
 
@@ -379,7 +387,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('drops a highlight that Backspace took off the list rather than sliding it', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     const input = screen.getByRole('combobox');
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
@@ -392,7 +400,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('tells assistive technology there is no list when nothing matches', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana' }) });
     openPicker();
     const input = screen.getByRole('combobox');
     expect(input).toHaveAttribute('aria-expanded', 'true');
@@ -406,7 +414,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('moves the highlight with the arrow keys', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     const input = screen.getByRole('combobox');
 
@@ -420,7 +428,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('closes on Escape without starting anything', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana' }) });
     openPicker();
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
 
@@ -430,7 +438,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('forgets a half-assembled conversation when reopened', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
@@ -441,7 +449,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('will not open a conversation with nobody in it', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana' }) });
     openPicker();
     const start = screen.getByRole('button', { name: 'Start conversation' });
     expect(start).toBeDisabled();
@@ -454,7 +462,7 @@ describe('DirectMessagesSection', () => {
     // "Ana (alpha)" and "Ana (beta)" are one agent each. They are told apart by
     // directory everywhere that matters; the menu just has to offer both.
     renderSection({
-      agents: fleet({ '/repo/alpha/ana': 'Ana (alpha)', '/repo/beta/ana': 'Ana (beta)' }),
+      agents: settledFleet({ '/repo/alpha/ana': 'Ana (alpha)', '/repo/beta/ana': 'Ana (beta)' }),
     });
     openPicker();
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ana' } });
@@ -466,7 +474,7 @@ describe('DirectMessagesSection', () => {
   });
 
   it('says so when nothing matches what was typed', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana' }) });
     openPicker();
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'zzz' } });
 
@@ -488,14 +496,14 @@ describe('DirectMessagesSection on a phone', () => {
   });
 
   it('opens as a named sheet rather than a panel pinned to an off-screen button', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana' }) });
     openPicker();
 
     expect(screen.getByRole('dialog', { name: 'New message' })).toBeInTheDocument();
   });
 
   it('offers a way out that is not the Escape key a phone does not have', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana' }) });
     openPicker();
 
     // Presence only. The sheet leaves on a CSS transition whose end event jsdom
@@ -505,7 +513,7 @@ describe('DirectMessagesSection on a phone', () => {
   });
 
   it('is the same picker: typeahead, chips and one conversation at the end', () => {
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     const input = screen.getByRole('combobox');
 
@@ -523,7 +531,7 @@ describe('DirectMessagesSection on a phone', () => {
   it('still refuses to open anything on Enter after a typo', () => {
     // The rung that costs an action is the one worth checking on both shells:
     // "Kia" for "Kai" must not throw away a half-assembled conversation.
-    renderSection({ agents: fleet({ '/repo/ana': 'Ana', '/repo/kai': 'Kai' }) });
+    renderSection({ agents: settledFleet({ '/repo/ana': 'Ana', '/repo/kai': 'Kai' }) });
     openPicker();
     const input = screen.getByRole('combobox');
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));

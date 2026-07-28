@@ -7,12 +7,12 @@ import {
   ResponsivePopoverTitle,
   SidebarGroupAction,
 } from '@/layers/shared/ui';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { AgentChipPicker } from '@/layers/features/room-membership';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
+import { AgentRosterPicker } from '@/layers/features/room-membership';
 
 interface NewDirectMessageMenuProps {
-  /** Every agent on the roster, sorted by name. Nothing is filtered out. */
-  candidates: AgentPickerCandidate[];
+  /** Every agent on the roster, sorted by name, and whether that is known yet. Nothing is filtered out. */
+  candidates: AgentRoster;
   /**
    * Open a conversation with these agents, in the order they were picked. One
    * gives a one-to-one; two or more give a group.
@@ -24,7 +24,7 @@ interface NewDirectMessageMenuProps {
  * The "+" beside Direct messages: pick one agent for a one-to-one, or several
  * for a group conversation.
  *
- * The picking itself is {@link AgentChipPicker}, shared with the members panel
+ * The picking itself is {@link AgentRosterPicker}, shared with the members panel
  * so putting agents in a new conversation and putting them in an existing room
  * are the same gesture. This adds only the shell around it and the copy that
  * makes it about starting a conversation.
@@ -86,9 +86,9 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
             the panel is anchored to a "+" that already says what it does. */}
         <ResponsivePopoverTitle>New message</ResponsivePopoverTitle>
 
-        <AgentChipPicker
+        <AgentRosterPicker
           inputRef={searchRef}
-          candidates={candidates}
+          roster={candidates}
           onSubmit={(chosen) => {
             setOpen(false);
             onStart(chosen);

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): a channel is born with its agents in it (DOR-599, DOR-600)'
+  - 'fix(rooms): tell the three roster states apart, and stop Enter adding what the cursor rests on'
 ---
 
 ### Added

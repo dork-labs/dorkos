@@ -8,7 +8,7 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import type { AgentRoster } from '@/layers/entities/agent';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
@@ -33,7 +33,7 @@ interface ChannelsSectionProps {
   /** Open a channel. */
   onSelectRoom: (room: RoomSummary) => void;
   /** Every agent in the fleet, sorted by name — what a row's "Add agents…" offers. */
-  agents: AgentPickerCandidate[];
+  agents: AgentRoster;
   /** Open an agent's profile in the right-panel hub. */
   onOpenAgentProfile: (agentPath: string) => void;
 }

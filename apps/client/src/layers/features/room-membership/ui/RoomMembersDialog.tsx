@@ -28,8 +28,8 @@ import {
   useSetMemberResponseMode,
   RESPONSE_MODE_OPTIONS,
 } from '@/layers/entities/room';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { AgentChipPicker } from './AgentChipPicker';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
+import { AgentRosterPicker } from './AgentRosterPicker';
 
 /** Which half of the panel the reader asked for, so that half gets the focus. */
 export type MembersDialogIntent = 'roster' | 'add';
@@ -53,8 +53,8 @@ interface RoomMembersDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Which entry point opened it — "Members…" lands on the roster, "Add agents…" on the picker. */
   intent: MembersDialogIntent;
-  /** Every agent in the fleet, sorted by name. Whoever is already in the room is filtered out here. */
-  agents: AgentPickerCandidate[];
+  /** Every agent in the fleet, and whether that is known. Whoever is already in the room is filtered out here. */
+  agents: AgentRoster;
 }
 
 /**
@@ -111,12 +111,12 @@ export function RoomMembersDialog({
   // An agent already in the room is not offerable. `agentRef` is the stable
   // handle derived from the agent's directory (ADR 260726-170126) — display
   // names are labels and two agents can share one, so they are never the key.
-  const candidates = useMemo(() => {
+  const isAlreadyIn = useMemo(() => {
     const present = new Set(
       agentMembers.map((member) => member.author.agentRef).filter((ref): ref is string => !!ref)
     );
-    return agents.filter((agent) => !present.has(agentAuthorRef(agent.agentPath)));
-  }, [agents, agentMembers]);
+    return (agent: { agentPath: string }) => present.has(agentAuthorRef(agent.agentPath));
+  }, [agentMembers]);
 
   const handleAdd = (chosen: AgentPickerCandidate[]) => {
     // One call per agent: the roster endpoint adds one member at a time, and a
@@ -304,12 +304,13 @@ export function RoomMembersDialog({
             <p className="text-muted-foreground text-xs">
               They join here and can read everything already said.
             </p>
-            <AgentChipPicker
-              candidates={candidates}
+            <AgentRosterPicker
+              roster={agents}
+              exclude={isAlreadyIn}
               onSubmit={handleAdd}
               submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
               emptyRosterMessage={
-                agents.length === 0
+                agents.candidates.length === 0
                   ? 'You have not added any agents yet. Add one to put it in here.'
                   : 'Every agent you have is already in here.'
               }

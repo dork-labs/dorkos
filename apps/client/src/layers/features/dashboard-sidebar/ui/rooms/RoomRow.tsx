@@ -3,7 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { cn } from '@/layers/shared/lib';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import type { AgentRoster } from '@/layers/entities/agent';
 import { useIsMobile } from '@/layers/shared/model';
 import {
   AlertDialog,
@@ -49,7 +49,7 @@ interface RoomRowProps {
   /** Open the room. */
   onSelect: () => void;
   /** Every agent in the fleet, sorted by name — what "Add agents…" offers. */
-  agents: AgentPickerCandidate[];
+  agents: AgentRoster;
   /** Open an agent's profile in the right-panel hub. */
   onOpenAgentProfile: (agentPath: string) => void;
 }
@@ -191,7 +191,8 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
   const soleAgentPath =
     soleAgentRef === undefined
       ? null
-      : (agents.find((a) => agentAuthorRef(a.agentPath) === soleAgentRef)?.agentPath ?? null);
+      : (agents.candidates.find((a) => agentAuthorRef(a.agentPath) === soleAgentRef)?.agentPath ??
+        null);
 
   const menuModel = {
     kind: room.kind,

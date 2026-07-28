@@ -20,6 +20,31 @@ export interface AgentPickerCandidate {
 }
 
 /**
+ * The fleet a picker may offer, **and whether we actually know it**.
+ *
+ * The three states are carried separately rather than collapsed into an empty
+ * array, because "you have no agents" and "we could not find out" are different
+ * sentences and only one of them is ever true. Collapsing them tells somebody
+ * with three agents that they have none, next to a roster drawing their faces,
+ * with nothing to press — which is worse than a spinner, because a spinner is
+ * at least honest about not knowing.
+ */
+export interface AgentRoster {
+  /**
+   * Every agent that may be picked, sorted by name. Empty is only meaningful
+   * once {@link AgentRoster.isLoading} and {@link AgentRoster.isError} are both
+   * false; before that it means "not yet" and "we do not know" respectively.
+   */
+  candidates: AgentPickerCandidate[];
+  /** Still being read. Nothing can be concluded from `candidates` yet. */
+  isLoading: boolean;
+  /** Could not be read at all. Offer the reader a way to ask again. */
+  isError: boolean;
+  /** Ask again. */
+  retry: () => void;
+}
+
+/**
  * Turn a `path → display name` map into the sorted list every agent picker
  * reads.
  *

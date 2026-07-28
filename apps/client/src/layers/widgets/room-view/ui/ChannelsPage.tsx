@@ -31,7 +31,9 @@ export function ChannelsPage() {
   // Two of spec §14.3's three entry points are on this page — the header's
   // roster and the empty state — and both open the one panel the sidebar's row
   // menu opens. The fleet is read here rather than passed down, because this
-  // page is on screen when the sidebar is a closed drawer.
+  // page is on screen when the sidebar is a closed drawer; it is the same hook
+  // the sidebar calls, so both get the same agents and the same answer about
+  // whether the fleet could be read at all.
   const agents = useAgentPickerCandidates();
   const [membersIntent, setMembersIntent] = useState<MembersDialogIntent | null>(null);
 

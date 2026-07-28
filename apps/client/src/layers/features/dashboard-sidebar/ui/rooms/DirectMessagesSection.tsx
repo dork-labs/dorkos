@@ -6,7 +6,7 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
@@ -27,7 +27,7 @@ interface DirectMessagesSectionProps {
    * Every agent in the fleet, sorted by name — what the "+" picker offers and
    * what a row's "Add agents…" offers.
    */
-  agents: AgentPickerCandidate[];
+  agents: AgentRoster;
   /** Which room is on screen, so the matching row reads as current. */
   activeRoomId: string | null;
   /** Open a conversation. */
