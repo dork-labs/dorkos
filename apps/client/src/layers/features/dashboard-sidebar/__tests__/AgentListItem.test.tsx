@@ -16,7 +16,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 vi.mock('@/layers/entities/agent', () => ({
-  useAgentVisual: () => ({ color: '#aaaaaa', emoji: '🤖' }),
   AgentIdentity: ({ name, emoji }: { name: string; emoji: string }) => (
     <span data-testid="agent-identity">
       <span>{emoji}</span>
@@ -156,6 +155,7 @@ function buildProps(overrides: Partial<Parameters<typeof AgentListItem>[0]> = {}
   return {
     path: '/agents/test-agent',
     agent: null,
+    visual: { color: '#aaaaaa', emoji: '🤖' },
     isActive: false,
     isExpanded: false,
     onSelect: vi.fn(),

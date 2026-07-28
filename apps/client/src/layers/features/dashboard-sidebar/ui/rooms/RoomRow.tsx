@@ -34,6 +34,7 @@ import {
   useUnarchiveRoom,
 } from '@/layers/entities/room';
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
+import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
 import { RoomRowMenuItems } from './RoomRowMenuItems';
 import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
 import { RoomTopicDialog } from './RoomTopicDialog';
@@ -44,6 +45,13 @@ const MAX_NAME = 200;
 interface RoomRowProps {
   /** The room this row opens. */
   room: RoomSummary;
+  /**
+   * The mark to draw, from the sidebar's item view model — a `#` for a channel,
+   * the agent's own face for a one-to-one conversation, a stack of faces for a
+   * group one. Resolved there because only that layer can see both the room and
+   * the fleet (sidebar-groups §3.1).
+   */
+  visual: SidebarItemVisual;
   /** Whether this room is the one currently on screen. */
   isActive: boolean;
   /** Open the room. */
@@ -70,11 +78,12 @@ interface RoomRowProps {
  * gesture the sidebar already uses for naming a group; the topic editor and the
  * members panel are modals, because neither fits in a sidebar's width.
  */
-export function RoomRow({ room, isActive, onSelect, onOpenAgentProfile }: RoomRowProps) {
+export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }: RoomRowProps) {
   const isMobile = useIsMobile();
   const meshAgents = useMeshAgentPaths().data?.agents ?? [];
   const unread = hasUnread(room);
   const title = roomDisplayTitle(room);
+  const faces = sidebarItemFaces(visual);
 
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(room.title);
@@ -217,7 +226,7 @@ export function RoomRow({ room, isActive, onSelect, onOpenAgentProfile }: RoomRo
           <div className="group/room relative">
             {isRenaming ? (
               <div className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5">
-                <RoomAvatar room={room} participants={room.participants} />
+                <RoomAvatar room={room} participants={room.participants} visuals={faces} />
                 <input
                   ref={renameRef}
                   value={renameValue}
@@ -254,7 +263,7 @@ export function RoomRow({ room, isActive, onSelect, onOpenAgentProfile }: RoomRo
                   unread && !isActive && 'text-foreground font-medium'
                 )}
               >
-                <RoomAvatar room={room} participants={room.participants} />
+                <RoomAvatar room={room} participants={room.participants} visuals={faces} />
                 <RoomTitle room={room} className="min-w-0 flex-1" />
                 {unread && (
                   <span

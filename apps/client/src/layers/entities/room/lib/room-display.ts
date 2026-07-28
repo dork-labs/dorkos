@@ -89,10 +89,12 @@ export function directMessageTitle(names: readonly string[]): string {
  * id breaking the tie that every seeded roster has. Nothing here re-sorts, so
  * the sidebar and the open room's header name the same agent.
  *
- * **A group DM gets the first agent's mark and no hint that there is a second.**
- * That is deliberate and still owed: R6a made group conversations creatable, and
- * a group's title already names everyone in it, but a mark that reads as a group
- * is a design question rather than a tiebreak and has not been answered yet.
+ * **This is the fallback path, not the one the sidebar walks.** `RoomAvatar`
+ * prefers the resolved faces its caller hands it, which draw a group
+ * conversation as a stack rather than as its first member (sidebar-groups,
+ * DOR-580). This answers the single counterpart for a caller that has resolved
+ * nothing — which then gets a letter, because the emoji on an `AuthorRef` is a
+ * server-side render cache that is empty for any agent without a stored one.
  *
  * @param participants - The DM's roster, as `RoomSummary.participants` carries
  *   it. `null` (a channel, a thread, or a payload that predates the field) and

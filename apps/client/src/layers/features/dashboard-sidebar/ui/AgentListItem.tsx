@@ -12,7 +12,7 @@ import {
   DropdownMenuContent,
 } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
-import { useAgentVisual, AgentIdentity } from '@/layers/entities/agent';
+import { AgentIdentity, type AgentVisual } from '@/layers/entities/agent';
 import {
   useAgentHottestStatus,
   usePulseMotion,
@@ -62,6 +62,14 @@ interface AgentListItemProps {
   agent: AgentManifest | null;
   /** Disambiguated display name (computed by parent to resolve duplicates). */
   displayName?: string;
+  /**
+   * The agent's face and colour, resolved by the sidebar's item view model.
+   *
+   * Passed in rather than resolved here so one layer owns every face the sidebar
+   * draws — a direct message has to resolve the same agent's face from a room's
+   * roster, and the two must agree (sidebar-groups §3.1).
+   */
+  visual: AgentVisual;
   isActive: boolean;
   isExpanded: boolean;
   /**
@@ -107,6 +115,7 @@ export function AgentListItem({
   path,
   agent,
   displayName: displayNameProp,
+  visual,
   isActive,
   isExpanded,
   isMuted = false,
@@ -124,7 +133,6 @@ export function AgentListItem({
   sortable,
 }: AgentListItemProps) {
   const isMobile = useIsMobile();
-  const visual = useAgentVisual(agent, path);
   const displayName =
     displayNameProp ?? getAgentDisplayName(agent, path.split('/').pop() ?? 'Agent');
   // Conversations preview first, capped: automated sessions (agent/channel/task/

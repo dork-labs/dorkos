@@ -175,6 +175,8 @@ function section({ __fleet, ...overrides }: SectionOverrides = {}) {
   return (
     <DirectMessagesSection
       dms={[]}
+      hasGroupedDms={false}
+      visualOf={() => ({ kind: 'sigil' })}
       isLoading={false}
       error={null}
       activeRoomId={null}
@@ -214,9 +216,18 @@ describe('DirectMessagesSection', () => {
     expect(screen.getByText('Bo')).toBeInTheDocument();
   });
 
-  it("marks a conversation with the agent's own avatar, not a letter", () => {
-    renderSection({ dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/ana') })] });
-    expect(screen.getByText('🐙')).toBeInTheDocument();
+  it("draws the face the sidebar resolved, in preference to the roster's cached emoji", () => {
+    // The resolved visual is the new path (sidebar-groups §3.1); `AuthorRef.emoji`
+    // is the server-side render cache the old mark depended on, and the reason
+    // DOR-582 was invisible — it is populated for the few agents that have an
+    // emoji stored, so a fixture that sets it passes either way. Setting BOTH,
+    // differently, is what tells the two apart.
+    renderSection({
+      dms: [dm({ id: 'dm-1', participants: rosterWithAgent('/repo/ana') })],
+      visualOf: () => ({ kind: 'identity', visual: { color: 'hsl(120 50% 50%)', emoji: '🦋' } }),
+    });
+    expect(screen.getByText('🦋')).toBeInTheDocument();
+    expect(screen.queryByText('🐙')).not.toBeInTheDocument();
     expect(screen.queryByText('A')).not.toBeInTheDocument();
   });
 

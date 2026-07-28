@@ -6,10 +6,14 @@ import {
   effectiveMutedAgentPaths,
   evaluateSmartGroups,
   groupedAgentPaths,
-  groupMemberPaths,
+  groupedRoomIds,
+  groupMemberItems,
   individuallyMutedAgentPaths,
+  individuallyMutedRoomIds,
+  roomIdsOf,
   storedAgentPaths,
 } from '../sidebar-membership';
+import type { SidebarItem, SidebarItemIndex } from '../sidebar-item';
 
 const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
 const room = (roomId: string): SidebarItemRef => ({ kind: 'room', roomId });
@@ -30,6 +34,29 @@ function grp(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
 
 function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
   return { ...structuredClone(SIDEBAR_PREFS_DEFAULTS), ...overrides };
+}
+
+/** A stand-in item; `groupMemberItems` only ever reads the reference. */
+function item(ref: SidebarItemRef): SidebarItem {
+  return {
+    ref,
+    name: ref.kind === 'agent' ? ref.path : ref.roomId,
+    lastActiveAt: null,
+    attention: 'active',
+    muted: false,
+    visual: { kind: 'sigil' },
+  };
+}
+
+/** An index that answers for exactly the references given, and nothing else. */
+function index(...refs: SidebarItemRef[]): SidebarItemIndex {
+  const byAgentPath = new Map<string, SidebarItem>();
+  const byRoomId = new Map<string, SidebarItem>();
+  for (const ref of refs) {
+    if (ref.kind === 'agent') byAgentPath.set(ref.path, item(ref));
+    else byRoomId.set(ref.roomId, item(ref));
+  }
+  return { byAgentPath, byRoomId };
 }
 
 describe('agentPathsOf', () => {
@@ -102,24 +129,59 @@ describe('groupedAgentPaths', () => {
   });
 });
 
-describe('groupMemberPaths', () => {
-  it('gives a manual group its stored agent members and a smart group its derived ones', () => {
+describe('groupMemberItems', () => {
+  it('gives a manual group its stored members — agents and rooms interleaved, in stored order', () => {
     const p = prefs({
       groups: [
         grp({ id: 'manual1', items: [agent('/a'), room('r1'), agent('/gone')] }),
         grp({ id: 'smart1', kind: 'smart', sortMode: 'recent', rules: { statuses: ['active'] } }),
       ],
     });
-    const map = groupMemberPaths(p, new Set(['/a']), new Map([['smart1', ['/b']]]));
-    expect(map.get('manual1')).toEqual(['/a']);
-    expect(map.get('smart1')).toEqual(['/b']);
+    const map = groupMemberItems(
+      p,
+      index(agent('/a'), room('r1'), agent('/b')),
+      new Map([['smart1', ['/b']]])
+    );
+    // `/gone` is not in the index and drops out; the room keeps its place.
+    expect(map.get('manual1')?.map((i) => i.ref)).toEqual([agent('/a'), room('r1')]);
+    expect(map.get('smart1')?.map((i) => i.ref)).toEqual([agent('/b')]);
   });
 
   it('gives a smart group with no derived entry an empty list, not undefined', () => {
     const p = prefs({
       groups: [grp({ id: 'smart1', kind: 'smart', sortMode: 'recent', rules: { statuses: [] } })],
     });
-    expect(groupMemberPaths(p, new Set(), new Map()).get('smart1')).toEqual([]);
+    expect(groupMemberItems(p, index(), new Map()).get('smart1')).toEqual([]);
+  });
+});
+
+describe('roomIdsOf', () => {
+  it('keeps room ids in order and drops agents', () => {
+    expect(roomIdsOf([room('r1'), agent('/a'), room('r2')])).toEqual(['r1', 'r2']);
+  });
+});
+
+describe('individuallyMutedRoomIds', () => {
+  it('reads only the room members of the muted list', () => {
+    expect([...individuallyMutedRoomIds(prefs({ muted: [agent('/a'), room('r1')] }))]).toEqual([
+      'r1',
+    ]);
+  });
+});
+
+describe('groupedRoomIds', () => {
+  it('collects every room id across all groups', () => {
+    const p = prefs({
+      groups: [
+        grp({ id: 'g1', items: [agent('/a'), room('r1')] }),
+        grp({ id: 'g2', items: [room('r2')] }),
+      ],
+    });
+    expect([...groupedRoomIds(p)].sort()).toEqual(['r1', 'r2']);
+  });
+
+  it('is empty when no group holds a room', () => {
+    expect(groupedRoomIds(prefs({ groups: [grp({ items: [agent('/a')] })] })).size).toBe(0);
   });
 });
 

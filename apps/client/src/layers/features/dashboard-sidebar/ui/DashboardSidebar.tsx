@@ -6,7 +6,11 @@ import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { toast } from 'sonner';
-import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
+import {
+  disambiguateDisplayNames,
+  useResolvedAgents,
+  type AgentVisual,
+} from '@/layers/entities/agent';
 import {
   useConfig,
   useSidebarPrefs,
@@ -42,8 +46,9 @@ import { SidebarNavHeader } from './SidebarNavHeader';
 import { RecentSessionsSection } from './RecentSessionsSection';
 import { ChannelsSection } from './rooms/ChannelsSection';
 import { DirectMessagesSection } from './rooms/DirectMessagesSection';
+import { RoomRow } from './rooms/RoomRow';
 import { PinnedSection } from './PinnedSection';
-import { AgentGroupSection } from './AgentGroupSection';
+import { SidebarGroupSection } from './SidebarGroupSection';
 import { UngroupedSection } from './UngroupedSection';
 import { GroupCreateInput } from './GroupCreateInput';
 import { GroupsHintCard } from './GroupsHintCard';
@@ -57,12 +62,22 @@ import {
   DISABLED_SORTABLE_BINDINGS,
 } from './dnd/SidebarDndPrimitives';
 import {
-  agentPathsOf,
+  buildSidebarItems,
+  lookupSidebarItems,
+  sidebarItemFaces,
+  sidebarItemKey,
+  type SidebarItem,
+  type SidebarItemVisual,
+  type RenderSidebarItem,
+} from '../model/sidebar-item';
+import {
   effectiveMutedAgentPaths,
   groupedAgentPaths,
+  groupedRoomIds,
   evaluateSmartGroups,
-  groupMemberPaths,
+  groupMemberItems,
   individuallyMutedAgentPaths,
+  individuallyMutedRoomIds,
 } from '../model/sidebar-membership';
 import {
   meetsSmartGroupDisclosureThreshold,
@@ -143,38 +158,66 @@ export function DashboardSidebar() {
   const recentSessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
   const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
 
-  // ── Display names (duplicates disambiguated) + the per-section sort context ──
+  // ── Display names (duplicates disambiguated) ──
   const displayNamesRecord = useMemo(
     () => disambiguateDisplayNames(rawPaths, agents ?? {}),
     [rawPaths, agents]
   );
-  const sortCtx = useMemo(
-    () => ({ displayNames: displayNamesRecord, agentActivity }),
-    [displayNamesRecord, agentActivity]
-  );
 
   // ── Attention + mute (DOR-339): one attention-map subscription for the whole
-  // sidebar, and the individually-muted path set every section's filter and
+  // sidebar, and the individually-muted reference sets every section's filter and
   // rollup dot reads. ──
   const attentionMap = useAgentAttentionMap(rawPaths);
-  // Sections address agents by path, so the stored reference lists are narrowed
-  // to their agent members — see `../model/sidebar-membership` for each rule.
   const mutedPathsSet = useMemo(() => individuallyMutedAgentPaths(sidebarPrefs), [sidebarPrefs]);
+  const mutedRoomIdSet = useMemo(() => individuallyMutedRoomIds(sidebarPrefs), [sidebarPrefs]);
   const effectiveMutedForRender = useMemo(
     () => effectiveMutedAgentPaths(sidebarPrefs, mutedPathsSet),
     [sidebarPrefs, mutedPathsSet]
   );
 
-  // ── Membership maps (stale paths filtered at render, never pruned on write) ──
+  // ── The item view model (sidebar-groups §3) ──
+  // Built once for the whole sidebar, so each section resolves its membership
+  // with a map lookup and nothing below this line has to know how an agent and a
+  // room each answer "what are you called" and "when were you last active".
+  const itemIndex = useMemo(
+    () =>
+      buildSidebarItems({
+        agentPaths: rawPaths,
+        agentsByPath: agents ?? {},
+        displayNames: displayNamesRecord,
+        attention: attentionMap,
+        agentActivity,
+        rooms: roomsQuery.data ?? [],
+        mutedAgentPaths: mutedPathsSet,
+        mutedRoomIds: mutedRoomIdSet,
+      }),
+    [
+      rawPaths,
+      agents,
+      displayNamesRecord,
+      attentionMap,
+      agentActivity,
+      roomsQuery.data,
+      mutedPathsSet,
+      mutedRoomIdSet,
+    ]
+  );
+  const roomsById = useMemo(
+    () => new Map((roomsQuery.data ?? []).map((room) => [room.id, room])),
+    [roomsQuery.data]
+  );
+
+  // ── Membership maps (stale references filtered at render, never pruned on write) ──
   const knownSet = useMemo(() => new Set(rawPaths), [rawPaths]);
-  const pinnedPaths = useMemo(
-    () => agentPathsOf(sidebarPrefs.pinned, knownSet),
-    [sidebarPrefs.pinned, knownSet]
+  const pinnedItems = useMemo(
+    () => lookupSidebarItems(itemIndex, sidebarPrefs.pinned),
+    [itemIndex, sidebarPrefs.pinned]
   );
   const groupedSet = useMemo(
     () => groupedAgentPaths(sidebarPrefs, knownSet),
     [sidebarPrefs, knownSet]
   );
+  const groupedRooms = useMemo(() => groupedRoomIds(sidebarPrefs), [sidebarPrefs]);
 
   // ── Smart groups (DOR-338): rule-derived membership, re-evaluated live ──
   // Candidates are built ONCE per render from data the sidebar already holds;
@@ -197,8 +240,8 @@ export function DashboardSidebar() {
   );
 
   const knownGroupMembers = useMemo(
-    () => groupMemberPaths(sidebarPrefs, knownSet, smartGroupMemberPaths),
-    [sidebarPrefs, knownSet, smartGroupMemberPaths]
+    () => groupMemberItems(sidebarPrefs, itemIndex, smartGroupMemberPaths),
+    [sidebarPrefs, itemIndex, smartGroupMemberPaths]
   );
 
   // ── Smart-group create/edit chrome (DOR-338 spec §4-5) ──
@@ -231,13 +274,38 @@ export function DashboardSidebar() {
   // Pre-filter/pre-sort — UngroupedSection filters then sorts internally,
   // same order of operations as a group section (spec: sorting applies after
   // filtering).
-  const ungroupedRawPaths = useMemo(
-    () => rawPaths.filter((p) => !groupedSet.has(p)),
-    [rawPaths, groupedSet]
+  const ungroupedItems = useMemo(
+    () =>
+      rawPaths.flatMap((path) => {
+        if (groupedSet.has(path)) return [];
+        const item = itemIndex.byAgentPath.get(path);
+        return item ? [item] : [];
+      }),
+    [rawPaths, groupedSet, itemIndex]
+  );
+
+  // A room in a group renders there and nowhere else, matching how the Agents
+  // section has always shown only ungrouped agents (sidebar-groups §4).
+  const ungroupedChannels = useMemo(
+    () => channels.filter((room) => !groupedRooms.has(room.id)),
+    [channels, groupedRooms]
+  );
+  const ungroupedDms = useMemo(
+    () => dms.filter((room) => !groupedRooms.has(room.id)),
+    [dms, groupedRooms]
+  );
+  // The mark a room row draws, from the one place that resolves faces. The
+  // fallback is the type's floor rather than a behaviour: the index is built
+  // from the same query these lists are partitioned out of, so every room in
+  // them has an entry.
+  const roomVisualOf = useCallback(
+    (room: RoomSummary): SidebarItemVisual =>
+      itemIndex.byRoomId.get(room.id)?.visual ?? { kind: 'sigil' },
+    [itemIndex]
   );
 
   const agentCount = rawPaths.length;
-  const organized = sidebarPrefs.groups.length > 0 || pinnedPaths.length > 0;
+  const organized = sidebarPrefs.groups.length > 0 || pinnedItems.length > 0;
   const showRecent = agentCount >= 2 && (recentQuery.isLoading || recentSessions.length > 0);
   // Discovery nudge: only for a fleet big enough to benefit, with no groups yet,
   // and never again once dismissed (Resolved Q — organization is user investment).
@@ -397,17 +465,23 @@ export function DashboardSidebar() {
     [renameSession]
   );
 
-  // ── Shared agent-row renderer (keeps section components lean; keyPrefix lets a
+  // ── Shared row renderers (keep section components lean; keyPrefix lets a
   // pinned reference coexist with its home copy). `draggable: false` renders
   // the row without a `Sortable` wrapper at all — smart-group members
   // (DOR-338) are rule-owned, never a drag source. ──
   const renderAgentRow = useCallback(
-    (path: string, keyPrefix: string, options?: { draggable?: boolean }): ReactNode => {
+    (
+      path: string,
+      visual: AgentVisual,
+      keyPrefix: string,
+      options?: { draggable?: boolean }
+    ): ReactNode => {
       const isActive = selectedCwd === path && pathname === '/session';
       const itemProps = {
         path,
         agent: agents?.[path] ?? null,
         displayName: displayNamesRecord[path],
+        visual,
         isActive,
         isExpanded: expandedPath === path,
         isMuted: effectiveMutedForRender.has(path),
@@ -463,6 +537,41 @@ export function DashboardSidebar() {
     ]
   );
 
+  // The one place a stored reference becomes a row. Dispatching on `ref.kind`
+  // here is what lets every section stay kind-agnostic and keeps both row
+  // components unforked (sidebar-groups §4).
+  const renderSidebarItem = useCallback<RenderSidebarItem>(
+    (item: SidebarItem, keyPrefix, options) => {
+      if (item.ref.kind === 'agent') {
+        const [face] = sidebarItemFaces(item.visual);
+        // `agentSidebarItem` always builds an `identity` visual, so an agent
+        // item always has exactly one face — but the union cannot say so here
+        // and this deliberately does NOT hash a replacement. A second
+        // resolution site is what let the DM and the agent row disagree in the
+        // first place (DOR-582); drawing no row is loud, drawing a
+        // differently-hashed face would be the same bug wearing a fix.
+        if (face === undefined) return null;
+        return renderAgentRow(item.ref.path, face, keyPrefix, options);
+      }
+      const room = roomsById.get(item.ref.roomId);
+      // The index and this map are built from the same query, so a room item
+      // always has its room. Answering `null` rather than throwing keeps a
+      // torn render from taking the whole sidebar down with it.
+      if (room === undefined) return null;
+      return (
+        <RoomRow
+          key={`${keyPrefix}-${sidebarItemKey(item.ref)}`}
+          room={room}
+          visual={item.visual}
+          isActive={room.id === activeRoomId}
+          onSelect={() => handleSelectRoom(room)}
+          onOpenAgentProfile={handleOpenProfile}
+        />
+      );
+    },
+    [renderAgentRow, roomsById, activeRoomId, handleSelectRoom, handleOpenProfile]
+  );
+
   return (
     <>
       <SidebarNavHeader />
@@ -481,7 +590,9 @@ export function DashboardSidebar() {
           )}
 
           <ChannelsSection
-            channels={channels}
+            channels={ungroupedChannels}
+            hasGroupedChannels={ungroupedChannels.length < channels.length}
+            visualOf={roomVisualOf}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
             activeRoomId={activeRoomId}
@@ -490,7 +601,9 @@ export function DashboardSidebar() {
           />
 
           <DirectMessagesSection
-            dms={dms}
+            dms={ungroupedDms}
+            hasGroupedDms={ungroupedDms.length < dms.length}
+            visualOf={roomVisualOf}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
             activeRoomId={activeRoomId}
@@ -498,8 +611,8 @@ export function DashboardSidebar() {
             onOpenAgentProfile={handleOpenProfile}
           />
 
-          {pinnedPaths.length > 0 && (
-            <PinnedSection paths={pinnedPaths} renderRow={renderAgentRow} />
+          {pinnedItems.length > 0 && (
+            <PinnedSection items={pinnedItems} renderItem={renderSidebarItem} />
           )}
 
           <SortableList items={sidebarPrefs.groups.map((g) => `group-header::${g.id}`)}>
@@ -515,13 +628,11 @@ export function DashboardSidebar() {
                   }}
                   exit={{ opacity: 0, y: -6, transition: { duration: 0.15 } }}
                 >
-                  <AgentGroupSection
+                  <SidebarGroupSection
                     group={group}
-                    memberPaths={knownGroupMembers.get(group.id) ?? []}
-                    sortCtx={sortCtx}
-                    attention={attentionMap}
+                    items={knownGroupMembers.get(group.id) ?? []}
                     mutedPaths={mutedPathsSet}
-                    renderRow={renderAgentRow}
+                    renderItem={renderSidebarItem}
                     runtimeOptions={runtimeOptions}
                     namespaceOptions={namespaceOptions}
                   />
@@ -551,14 +662,12 @@ export function DashboardSidebar() {
           </AnimatePresence>
 
           <UngroupedSection
-            paths={ungroupedRawPaths}
+            items={ungroupedItems}
             organized={organized}
+            allAgentsGrouped={agentCount > 0 && ungroupedItems.length === 0}
             sortMode={sidebarPrefs.ungroupedSortMode}
             filter={sidebarPrefs.ungroupedDisplayFilter}
-            sortCtx={sortCtx}
-            attention={attentionMap}
-            mutedPaths={mutedPathsSet}
-            renderRow={renderAgentRow}
+            renderItem={renderSidebarItem}
             onNewGroup={() => handleRequestNewGroup()}
             smartGroupPresets={smartGroupPresets}
             onCreatePresetSmartGroup={handleCreatePresetSmartGroup}
