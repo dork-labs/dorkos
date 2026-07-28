@@ -85,6 +85,7 @@ import {
 import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
 import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
+import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import { DORKOS_AGENT_TOOLS } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
 import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
 import {
@@ -400,6 +401,117 @@ describe('hand-registered MCP tools carry a permission tier', () => {
         ),
         'a destructive tool is auto-allowed with no prompt in interactive sessions'
       ).toEqual([]);
+    });
+
+    /**
+     * The two checks above are what shipped DOR-625, and it is worth being exact
+     * about how they passed a hole this size.
+     *
+     * `control_ui` IS in `MCP_TOOL_TIERS` and it is tier `act`, so both assertions
+     * were true and green. Neither one asks the question that mattered: an `act`
+     * tool sitting on a NO-PROMPT list is a tool that mutates and never asks, and
+     * "not destructive" is a very long way from "safe to auto-allow".
+     *
+     * The obvious repair — require every auto-allowed tool to be `observe` — is
+     * the wrong one, and worth writing down so it is not proposed again. Four
+     * members are deliberately `act`: `relay_inbox` deletes the mail it acks,
+     * `relay_register_endpoint` and `mesh_register` create things, and `control_ui`
+     * drives the cockpit. That is the whole point of the list (see its TSDoc), so
+     * the rule would have to be suppressed on its first run, and a suppressed rule
+     * is not a rule.
+     *
+     * So the shape here is the one this repo already uses for the same problem
+     * (`capabilities/__tests__/gate-bypass-scan.ts`): not "no `act` tools", but
+     * **every `act` tool named, one line each, saying why it may skip the prompt**.
+     * A tool cannot join the no-prompt path as a side effect of a tier choice — a
+     * human has to write the sentence.
+     */
+    it('makes every mutating auto-allow entry say out loud why it may skip the prompt', () => {
+      /**
+       * Each `act` tool on the auto-allow list, and the argument for it. Adding a
+       * mutating tool to `DORKOS_AGENT_TOOLS` fails this until it is written up.
+       */
+      const AUTO_ALLOW_ACT_REASONS: Record<string, string> = {
+        relay_send:
+          'agent-to-agent messaging, which is the feature. Who may message whom is authorized separately in relay/access-rules.json, and the server injects the sender identity rather than trusting the model.',
+        mesh_discover:
+          'scans for agent directories and reports what it found; discovery data about this machine, written to the local registry only.',
+        relay_inbox:
+          'polled continuously; a card per poll trains people to dismiss cards. The server injects the caller identity and an ack can only ever destroy the caller OWN mail.',
+        relay_register_endpoint:
+          'creates the caller own mailbox and nothing else; the endpoint tools refuse any inbox the caller does not own.',
+        mesh_register:
+          'registers the calling agent in the local mesh; discovery data, no effect off this machine.',
+        control_ui:
+          'drives the cockpit the person is already looking at — but ONLY for the actions classified `client-only`. The one that leaves the browser is gated per call; see the next test.',
+      };
+
+      const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.replace('mcp__dorkos__', ''));
+      const mutating = bare
+        .filter((name) => MCP_TOOL_TIERS[name as keyof typeof MCP_TOOL_TIERS]?.tier === 'act')
+        .sort();
+
+      expect(
+        mutating,
+        'an auto-allowed tool MUTATES and is not justified above. Nothing reaches the ' +
+          'no-prompt path by inheriting a tier: write the sentence, or take it off the list.'
+      ).toEqual(Object.keys(AUTO_ALLOW_ACT_REASONS).sort());
+    });
+
+    /**
+     * `control_ui` is the only MULTIPLEXER on the auto-allow list: one tool name,
+     * 22 different effects chosen by an argument. Every check in this file above
+     * this line reasons about tool NAMES, which is precisely the resolution at
+     * which a multiplexer is invisible — `apply_layout` reaches
+     * `POST /api/shapes/:name/apply` and arms cron schedules, and it shared a
+     * verdict with `celebrate`.
+     *
+     * ## What this pins, and what it cannot see
+     *
+     * It pins that the classification is TOTAL: every branch of the command union
+     * carries a verdict, so a twenty-third action cannot arrive unclassified. That
+     * is also enforced by `tsc` (`UI_COMMAND_REACH` is a `Record` over
+     * `UiCommand['action']`), and asserted again here because THIS file is
+     * quarantined from `apps/server/tsconfig.json`, so a type-level guard written
+     * in it could never fail.
+     *
+     * It does NOT verify the verdicts. Deciding that `open_file` only reads and
+     * `apply_layout` does not is a judgment about client code in another package,
+     * and no assertion in the server test suite can follow `control_ui` →
+     * `ui-action-dispatcher` → `Transport` → route. What checks that half is
+     * `apps/client/src/layers/shared/lib/__tests__/ui-command-reach.test.ts`, which
+     * drives the real dispatcher and fails if a `client-only` command reaches a
+     * transport call. Two guards, because neither package can see the other's end.
+     *
+     * It also does not cover Codex. That runtime registers the same `control_ui`
+     * contract on its scoped `dorkos_ui` server and has no `canUseTool` of its own
+     * — its approvals are the Codex SDK's. This classification is available to it
+     * (that is why it lives in `@dorkos/shared`), and nothing consumes it there
+     * yet.
+     */
+    it('classifies every branch of the control_ui multiplexer', () => {
+      const options = (
+        UiCommandSchema as unknown as {
+          options: { shape: { action: { value: string } } }[];
+        }
+      ).options;
+      const actions = options.map((option) => option.shape.action.value).sort();
+
+      expect(actions.length, 'the union stopped introspecting; this check went vacuous').toBe(22);
+      expect(
+        Object.keys(UI_COMMAND_REACH).sort(),
+        'a control_ui action carries no reach verdict, so the no-prompt gate has no rule for it'
+      ).toEqual(actions);
+
+      // Pinned by NAME, not by count. Promoting an action to `client-only` is a
+      // decision about what an agent may do to somebody's machine unasked, and it
+      // should read as one in the diff.
+      const reaching = actions.filter(
+        (action) => UI_COMMAND_REACH[action as keyof typeof UI_COMMAND_REACH] !== 'client-only'
+      );
+      expect(reaching, 'the set of UI commands that leave the browser changed').toEqual([
+        'apply_layout',
+      ]);
     });
 
     it('keeps every structured-output tool at observe', () => {

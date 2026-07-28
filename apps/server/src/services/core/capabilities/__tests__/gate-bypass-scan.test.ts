@@ -144,8 +144,21 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the registry choke point — every capability inherits the gate from inside invoke (DOR-467)',
       'services/core/mcp-tool-gate.ts':
         'the hand-registered MCP tools, which are not registry capabilities and so cannot inherit it (DOR-468)',
+      'routes/shapes.ts':
+        'POST /api/shapes/:name/apply, which owns its own effect and has no capability twin — shapes is not a registry domain, and minting one purely so authorizeCapability had something to look up would add an agent-invocable path to the effect being closed (DOR-625)',
       'services/core/capabilities/tier-enforcement.ts':
         'the definition itself, plus authorizeCapability next to it',
+    },
+  },
+  {
+    what: "arms a Shape's schedules — created ENABLED, carrying the permission mode its manifest chose (bypassPermissions included) — and deletes the ones an earlier version of that Shape left behind",
+    call: 'applyShape(',
+    allowed: {
+      'routes/shapes.ts':
+        'the cockpit REST route — runs the tier gate first, and it is the ONLY entry point an agent can reach (DOR-625)',
+      'index.ts':
+        'the marketplace update hook: re-applies the ACTIVE Shape in place after an update replaced it. The name is read from config, never from a caller, and reaching it at all requires already having cleared the install gate',
+      'services/shapes/apply-shape.ts': 'the definition itself',
     },
   },
   {
@@ -156,6 +169,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/tasks.ts':
         'a person approving a scheduled task, or setting how it runs, in their own cockpit (DOR-504)',
+      'routes/shapes.ts':
+        'a person clicking a Shape in their own cockpit — applying one arms scheduled work, so an agent is asked first (DOR-625)',
       'routes/extensions-approval.ts':
         'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
@@ -226,11 +241,25 @@ async function callersOf(call: string): Promise<string[]> {
     const text = await readFile(file, 'utf-8');
     // Ignore the token where it only appears inside prose: a TSDoc or a `//`
     // comment naming the function is documentation, not a call path.
+    //
+    // Line comments are dropped FIRST, and the order is load-bearing rather than
+    // stylistic. `index.ts` line 322 is a `//` comment ending in the route path
+    // `/api/auth/*`. Stripping block comments first read that as an OPENING `/*`,
+    // ran to the next `*/` 1,530 lines later, and deleted the middle of the file —
+    // taking the `applyShape(` call with it and reporting index.ts as a
+    // non-caller. Any protected effect invoked in that range was invisible to this
+    // scan (DOR-625). Removing whole-line comments first means a `/*` that only
+    // exists inside prose never opens anything.
+    //
+    // Still fooled by a `/*` inside a STRING literal, and by a token in a trailing
+    // `// …` comment on a code line. Both are the same acceptable floor the module
+    // TSDoc describes — but the index.ts case was not hypothetical, so it is fixed
+    // rather than listed.
     const code = text
-      .replace(/\/\*[\s\S]*?\*\//g, '')
       .split('\n')
       .filter((line) => !line.trim().startsWith('//'))
-      .join('\n');
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
     // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
     // call to `trustedCaller(` — a plain substring match reports the guard itself
     // as a bypass. A leading `.` is deliberately allowed, because a receiver

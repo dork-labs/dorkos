@@ -6,17 +6,31 @@
  * including the `applied` chrome passthrough and the degradation `warnings[]` —
  * plus the 404 (not installed) and 409 (fork name taken) mappings.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import type { Logger } from '@dorkos/shared/logger';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { ApplyShapeDeps } from '../../services/shapes/apply-shape.js';
 import type { ForkShapeDeps } from '../../services/shapes/fork.js';
 import { createFsShapeManifestResolver } from '../../services/shapes/shape-services.js';
+import { ApprovalService } from '../../services/core/approvals/index.js';
+import {
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+} from '../../services/core/capabilities/index.js';
+import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { createShapesRouter } from '../shapes.js';
+
+// Local login off — the DEFAULT posture, and therefore the one the gate has to be
+// right in. `resolveDecisionAuthority` reads this to decide whether a caller with
+// no agent header counts as the person in the cockpit.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+}));
 
 function buildLogger(): Logger {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -93,6 +107,7 @@ describe('shapes router', () => {
     await installShapeOnDisk(dorkHome, 'linear-ops');
 
     const setActiveShape = vi.fn();
+    const createSchedule = vi.fn(async () => undefined);
     const applyDeps: ApplyShapeDeps = {
       manifestResolver: createFsShapeManifestResolver(dorkHome),
       extensionManager: {
@@ -104,7 +119,7 @@ describe('shapes router', () => {
       agentRegistry: { listWithPaths: () => [] }, // agent absent → offered
       scheduleService: {
         listSchedules: () => [],
-        createSchedule: async () => undefined,
+        createSchedule,
         rebindSchedule: async () => undefined,
         deleteSchedulesForShape: async () => [],
       },
@@ -126,7 +141,7 @@ describe('shapes router', () => {
     const app = express();
     app.use(express.json());
     app.use('/api/shapes', createShapesRouter({ dorkHome, applyDeps, forkDeps }));
-    return { app, dorkHome, setActiveShape };
+    return { app, dorkHome, setActiveShape, createSchedule };
   }
 
   it('GET /api/shapes lists installed Shapes with the active flag', async () => {
@@ -263,6 +278,100 @@ describe('shapes router', () => {
       expect(applyRes.status).toBe(404);
       const forkRes = await request(app).post('/api/shapes/ghost/fork').send({});
       expect(forkRes.status).toBe(404);
+    });
+  });
+
+  /**
+   * The tier gate on apply (DOR-625).
+   *
+   * `POST /api/shapes/:name/apply` had no gate of any kind — no `authorize`, no
+   * trusted-caller check, no confirmation provider — while applying a Shape
+   * creates that Shape's schedules ENABLED, carrying whatever permission mode its
+   * manifest declared, and deletes the schedules an earlier version of the same
+   * Shape left behind. That is the blast radius `destructive` names, and the route
+   * answered to nothing.
+   *
+   * The two cases below are the whole contract: a person clicking a Shape in their
+   * own cockpit sends no agent header and is unaffected; a caller that names itself
+   * an agent is asked first.
+   */
+  describe('POST /api/shapes/:name/apply answers to the tier gate', () => {
+    let approvals: ApprovalService;
+
+    beforeEach(() => {
+      approvals = new ApprovalService(createTestDb());
+      vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+      initCapabilityTierGate({ approvals });
+    });
+
+    afterEach(() => {
+      resetCapabilityTierGate();
+    });
+
+    it('asks a person first when an agent applies a Shape, and nothing is scheduled', async () => {
+      const { app, setActiveShape, createSchedule } = await buildApp();
+
+      const res = await request(app)
+        .post('/api/shapes/linear-ops/apply')
+        .set('x-dorkos-agent', 'dork_agent_token')
+        .send({});
+
+      expect(res.status).toBe(202);
+      expect(res.body).toMatchObject({
+        status: 'approval_required',
+        capabilityId: 'shapes.apply',
+      });
+      expect(res.body.approvalToken).toBeTruthy();
+      // Read off the collaborators the effect would have reached, never off the
+      // response shape: the claim is that the Shape was not applied.
+      expect(createSchedule).not.toHaveBeenCalled();
+      expect(setActiveShape).not.toHaveBeenCalled();
+    });
+
+    it('applies once a person grants the approval and the caller retries', async () => {
+      const { app, createSchedule } = await buildApp();
+
+      const asked = await request(app)
+        .post('/api/shapes/linear-ops/apply')
+        .set('x-dorkos-agent', 'dork_agent_token')
+        .send({});
+      expect(createSchedule).not.toHaveBeenCalled();
+
+      approvals.grant(asked.body.approvalId as string);
+
+      const done = await request(app)
+        .post('/api/shapes/linear-ops/apply')
+        .set('x-dorkos-agent', 'dork_agent_token')
+        .set('x-dorkos-approval', asked.body.approvalToken as string)
+        .send({});
+
+      expect(done.status).toBe(200);
+      expect(done.body.ok).toBe(true);
+      expect(createSchedule).toHaveBeenCalled();
+    });
+
+    it('never asks the person in their own cockpit', async () => {
+      // No agent header and no approval token: `resolveDecisionAuthority` calls
+      // this the operator, so the gate is skipped and the click just works.
+      const { app, setActiveShape } = await buildApp();
+      const res = await request(app).post('/api/shapes/linear-ops/apply').send({});
+      expect(res.status).toBe(200);
+      expect(setActiveShape).toHaveBeenCalledWith('linear-ops');
+    });
+
+    it('refuses rather than applies when the gate was never wired', async () => {
+      // Fail closed. With no approval service there is nobody to ask, and running
+      // the effect anyway would turn a wiring mistake into unattended cron jobs.
+      resetCapabilityTierGate();
+      const { app, createSchedule } = await buildApp();
+      const res = await request(app)
+        .post('/api/shapes/linear-ops/apply')
+        .set('x-dorkos-agent', 'dork_agent_token')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ status: 'denied', reason: 'enforcement_unavailable' });
+      expect(createSchedule).not.toHaveBeenCalled();
     });
   });
 });

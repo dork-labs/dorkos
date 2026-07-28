@@ -45,6 +45,16 @@ Five seams move a Shape from "files on disk" to "a running place" and back. Each
 | **Update**                | `dorkos update --apply <shape>`       | Uninstall-without-teardown → reinstall. Schedules survive; dropped ones are reconciled at next apply. |
 | **Uninstall teardown**    | `POST /api/marketplace/.../uninstall` | Delete the Shape's schedules always; if active, disable its extensions and clear the active pointer.  |
 
+### Apply asks a person when an agent asks for it
+
+Apply is the seam that arms things, so it is the seam with a permission gate (DOR-625). `POST /api/shapes/:name/apply` runs the tier gate before it resolves anything, as tier `destructive` — it creates the Shape's schedules **enabled**, carrying the `permissionMode` the manifest declared (`bypassPermissions` is a legal value in `SHAPE_SCHEDULE_PERMISSION_MODES`), and step 4b **deletes** schedules an earlier version of the same Shape left behind.
+
+A person clicking a Shape in the cockpit sends no `X-DorkOS-Agent` header, clears `trustedCaller`, and skips the gate — no card, unchanged behavior. A caller presenting an agent identity gets `202` with an approval payload and retries with the token in `X-DorkOS-Approval`. The action is declared as a `GatedAction` in `routes/shapes.ts` rather than a registry capability, because shapes is not a Capability Registry domain and declaring one would add an agent-invocable `dorkos call shapes.apply` path to the effect being gated; the reasoning is in that file's `APPLY_SHAPE_ACTION` TSDoc.
+
+The agent-facing route to apply is `control_ui { action: 'apply_layout' }`, which is gated one level earlier, in the interactive `canUseTool` gate — see `contributing/interactive-tools.md`. `fork` is deliberately ungated: it copies a manifest and arms nothing.
+
+`gate-bypass-scan.test.ts` lists `applyShape(` as a protected effect, so a new module reaching it turns red until it gates and says why.
+
 ### Install stages, it does not activate
 
 `ShapeInstallFlow.activate` (`flows/install-shape.ts`) atomically moves the staged dir onto `{dorkHome}/shapes/<name>/` and returns — deliberately with **no** `extensionManager.enable` step. Bundled inline extensions land compiled-but-disabled. Turning extensions on is a "place decision" that belongs to apply, so a user can install several Shapes without their extensions all coming on at once. This is the install/apply split at the file layer.
