@@ -28,6 +28,21 @@ const HUMAN = { id: 42, is_bot: false, first_name: 'Alice', username: 'alice' };
 /** A second bot sharing the group — the other half of a reply loop. */
 const OTHER_BOT = { id: 888, is_bot: true, first_name: 'OtherBot', username: 'otherbot' };
 
+/**
+ * The service account Telegram routes an anonymous admin's message through.
+ * `is_bot` is true and the id is arbitrary here on purpose: the carve-out keys
+ * on `sender_chat`, never on this account's id.
+ */
+const ANON_ADMIN = {
+  id: 1087968824,
+  is_bot: true,
+  first_name: 'Group',
+  username: 'GroupAnonymousBot',
+};
+
+/** The service account behind a linked channel posting into a discussion group. */
+const CHANNEL_BOT = { id: 136817688, is_bot: true, first_name: 'Channel', username: 'Channel_Bot' };
+
 const GROUP_ID = -100111222;
 const PRIVATE_ID = 12345;
 
@@ -43,6 +58,12 @@ interface CtxOptions {
   entities?: Array<Record<string, unknown>>;
   /** Who wrote the message this one replies to, if any. */
   replyToFrom?: { id: number; is_bot: boolean; first_name: string; username: string };
+  /**
+   * The chat this message was sent on behalf of. Telegram sets this to the
+   * group itself for an anonymous admin, and to the channel for a linked
+   * channel's post.
+   */
+  senderChatId?: number;
 }
 
 /** Build a grammy context shaped like a real inbound Telegram update. */
@@ -54,6 +75,7 @@ function createCtx(options: CtxOptions = {}): GrammyContext {
     text = 'anyone around?',
     entities,
     replyToFrom,
+    senderChatId,
   } = options;
 
   return {
@@ -67,6 +89,8 @@ function createCtx(options: CtxOptions = {}): GrammyContext {
     message: {
       message_id: 1,
       text,
+      sender_chat:
+        senderChatId === undefined ? undefined : { id: senderChatId, type: 'supergroup' },
       entities,
       reply_to_message: replyToFrom ? { message_id: 0, from: replyToFrom } : undefined,
     },
@@ -152,6 +176,47 @@ describe('Telegram inbound — bot-loop guard (DOR-619)', () => {
     // The guard is a mechanism, not a preference. The most permissive setting a
     // person can choose must not switch it off.
     await deliver(createCtx({ from: OTHER_BOT, text: 'chatty bot noise' }), 'always');
+
+    expect(publishedSubjects()).toEqual([]);
+  });
+
+  it('lets an anonymous group admin through, because they are a person', async () => {
+    // Telegram routes an anonymous admin through a service bot account, so
+    // `from.is_bot` is true and the guard would drop a human being. This message
+    // names the bot, so the respond gate would allow it — the carve-out is the
+    // only thing deciding the outcome.
+    await deliver(
+      createCtx({
+        from: ANON_ADMIN,
+        senderChatId: GROUP_ID,
+        text: '@dorkbot what is the status?',
+        entities: [{ type: 'mention', offset: 0, length: 8 }],
+      })
+    );
+
+    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
+  });
+
+  it('still gates an anonymous group admin who addresses nobody', async () => {
+    // Carved out of the bot guard, not waved past the respond gate.
+    await deliver(
+      createCtx({ from: ANON_ADMIN, senderChatId: GROUP_ID, text: 'just thinking out loud' })
+    );
+
+    expect(publishedSubjects()).toEqual([]);
+  });
+
+  it('drops a linked channel post, whose sender_chat is a different chat', async () => {
+    // Keeps the carve-out narrow: `sender_chat` is set here too, but to the
+    // channel rather than to this group, so it is not an admin of this chat.
+    await deliver(
+      createCtx({
+        from: CHANNEL_BOT,
+        senderChatId: -100999888,
+        text: '@dorkbot new post published',
+        entities: [{ type: 'mention', offset: 0, length: 8 }],
+      })
+    );
 
     expect(publishedSubjects()).toEqual([]);
   });

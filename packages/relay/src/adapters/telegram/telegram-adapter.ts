@@ -63,6 +63,15 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
       title: 'Choose connection mode',
       fields: ['mode', 'webhookUrl', 'webhookPort', 'webhookSecret'],
     },
+    // Its own step because the setup wizard only renders fields a step names
+    // (`use-adapter-wizard.ts` filters `configFields` by the current step), and
+    // a default nobody can see or change is worse than the old behavior.
+    {
+      stepId: 'configure-groups',
+      title: 'Replies in group chats',
+      description: 'Your bot always replies in a one-on-one chat. Groups are up to you.',
+      fields: ['respondMode'],
+    },
   ],
   configFields: [
     {

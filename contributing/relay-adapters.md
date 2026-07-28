@@ -372,8 +372,20 @@ group otherwise answer each other without end, and no prompt can prevent that â€
 a loop is a property of the whole conversation, while each agent only sees its
 own turn (`.claude/rules/room-conduct.md`, ADR `260726-170127`, DOR-619).
 
-An anonymous group admin posts as `GroupAnonymousBot` and is dropped with
-everything else; Telegram gives nothing to tell the two apart.
+The one carve-out is an **anonymous group admin**, who is a person. Telegram
+routes their message through a service bot account, so `from.is_bot` is `true`
+and the guard would otherwise drop a human. They are identified by `sender_chat`
+matching the chat itself, which the Bot API documents as "the supergroup itself
+for messages sent by its anonymous administrators" (and documents `from` as "a
+fake sender user" in that case). They are carved out of the guard and then gated
+like any other person by the respond mode below, not waved through.
+
+Deliberately **not** keyed on the service account's numeric id (`1087968824`):
+that value is widely repeated but appears nowhere in the Bot API reference or in
+`@grammyjs/types`. `sender_chat` is documented, is set server-side so no bot can
+forge it, and is narrower â€” a linked channel forwarding into a discussion group
+also sets `sender_chat`, but to the channel rather than to this chat, so it stays
+dropped.
 
 **Respond Modes:**
 

@@ -75,14 +75,44 @@ export interface TelegramInboundOptions {
  *
  * This covers the adapter's own messages too — the account it authenticates as
  * is itself a bot — so it is both the other-bot guard and the self-echo guard.
- * An anonymous group admin also posts as a bot (`GroupAnonymousBot`) and is
- * dropped with everything else: Telegram gives nothing to tell that apart from
- * a real bot, and staying quiet is the safe side of that ambiguity.
+ * The single exception is {@link isAnonymousGroupAdmin}, who is a person.
  *
  * @param from - The `from` field of the inbound message, if present.
  */
 function isBotSender(from: GrammyContext['from']): boolean {
   return from?.is_bot === true;
+}
+
+/**
+ * Whether a message came from an anonymous administrator of *this* group.
+ *
+ * Telegram sends an anonymous admin's message through a service bot account, so
+ * `from.is_bot` is `true` and the guard above would drop a human being. An
+ * anonymous admin is a person, so they are carved out and then gated like any
+ * other person: they still have to name the bot or reply to it.
+ *
+ * Keyed on `sender_chat`, which the Bot API documents as "the supergroup itself
+ * for messages sent by its anonymous administrators", alongside `from` being
+ * "a fake sender user" in exactly that case. Deliberately **not** keyed on the
+ * service account's numeric id (1087968824): that value is widely repeated but
+ * appears nowhere in the Bot API reference or in `@grammyjs/types`, so pinning
+ * a loop-prevention branch to it would be pinning it to folklore.
+ *
+ * Comparing against `chat.id` also keeps the carve-out narrow. A linked channel
+ * forwarding into its discussion group arrives with `sender_chat` set too, but
+ * to the channel rather than to this chat, so it stays dropped.
+ *
+ * This cannot be used to re-open the loop: `from` and `sender_chat` are both set
+ * by Telegram server-side, so another bot has no way to forge either one.
+ *
+ * @param message - The inbound Telegram message.
+ * @param chat - The chat the message arrived in.
+ */
+function isAnonymousGroupAdmin(
+  message: TelegramMessage,
+  chat: NonNullable<GrammyContext['chat']>
+): boolean {
+  return message.sender_chat?.id === chat.id;
 }
 
 // === Group respond gating ===
@@ -268,8 +298,10 @@ export async function handleInboundMessage(
     return;
   }
 
-  // Bot-loop guard — deliberately first, and deliberately not configurable.
-  if (isBotSender(from)) {
+  // Bot-loop guard — deliberately first, and deliberately not configurable. The
+  // one carve-out is an anonymous admin, who is a person wearing the group's
+  // name; they fall through to the respond gate rather than past it.
+  if (isBotSender(from) && !isAnonymousGroupAdmin(message, chat)) {
     logger.debug(
       `inbound skipped: sender ${from?.username ?? from?.id ?? 'unknown'} is a bot ` +
         `(chat ${chat.id})`
