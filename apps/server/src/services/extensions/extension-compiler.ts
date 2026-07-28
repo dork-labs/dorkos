@@ -194,18 +194,25 @@ function hasLocationlessTextMatch(
  * every future start — including after the environment recovers — for a
  * problem the extension author never had a chance to cause.
  *
- * **A known gap this function cannot close**, because it never runs for
- * it: when `child_process.spawn` itself fails — the calling process's OWN
- * file descriptors are exhausted, as opposed to the platform package
+ * **A suspected gap this function cannot close**, because it never runs
+ * for it: when `child_process.spawn` itself fails — the calling process's
+ * OWN file descriptors are exhausted, as opposed to the platform package
  * being absent — esbuild's `lib/main.js` calls `child.stdin.on('error',
- * ...)` on a `ChildProcess` whose stdio streams were never wired up
- * (`child.stdin` is `undefined` when `spawn()` fails), which throws
- * synchronously rather than producing a normal promise rejection. That
- * becomes an unhandled `error` event, which Node treats as fatal, which
+ * ...)` before `child.on('error', ...)`. On the platforms where libuv
+ * returns `UV_EMFILE`/`UV_ENFILE` from `uv_spawn`, Node returns early
+ * without wiring the stdio streams, leaving `child.stdin` as `null`, so
+ * that first line throws and the second never registers. The child's
+ * async `error` event is then unhandled, which Node treats as fatal, and
  * this codebase's own `uncaughtException` handler
- * (`apps/server/src/index.ts`) currently answers with `process.exit(1)` —
- * the whole server, not just the extension subsystem, before `build()`'s
- * promise ever settles and before this file gets a chance to run. Per-
+ * (`apps/server/src/index.ts`) answers with `process.exit(1)` — the whole
+ * server, not just the extension subsystem.
+ *
+ * This path is reasoned from the sources, NOT reproduced: on macOS with
+ * Node 24 and an exhausted descriptor table, the observed failure is a
+ * *synchronous* `spawn EBADF`, which propagates out of the `build(...)`
+ * call expression into `runEsbuild`'s own `try` and is handled here as an
+ * ordinary environment failure. Treat the fatal variant as platform-
+ * dependent and unverified rather than as established behavior. Per-
  * process fd limits mean the DorkOS server exhausting its own descriptors
  * does not also exhaust the esbuild child's (it gets a fresh table), so
  * this is specifically about the fd pressure at the moment of `spawn()`
