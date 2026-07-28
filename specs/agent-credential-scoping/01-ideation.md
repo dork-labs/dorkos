@@ -3,6 +3,7 @@
 - **Slug:** agent-credential-scoping
 - **Id:** 260725-210431
 - **Date:** 2026-07-25
+- **Re-verified:** 2026-07-27 against `origin/main` (see "What changed since 2026-07-25")
 - **Tracker:** DOR-474 (P1), project "Agents as First-Class Operators"
 
 ## Intent
@@ -13,35 +14,51 @@ The goal is one invariant, stated narrowly enough to be true: **the credential D
 
 ## The defect, exactly
 
-1. An agent calls a `destructive` capability. The tier gate refuses it and hands back `approvalId` plus `approvalToken` in a 202 (`tier-enforcement.ts:453-474`, `capabilities-invoke.ts:100-104`).
-2. The agent calls `POST /api/approvals/<id>/grant` with `Authorization: Bearer <key>` and no `X-DorkOS-Agent` header.
-3. `sessionGate` resolves a user from the key (`session-gate.ts:107-121`) and lets the request through.
-4. `agentSelfApprovalRefusal` (`routes/approvals.ts:37-44`) looks for a resolved agent identity. There is none, because the caller chose not to send the header, and `resolveAgentIdentity` never rejects a request for its absence (`middleware/agent-identity.ts:11-19`).
-5. The approval is granted. The agent retries with the token and the action runs.
+Line numbers below are `origin/main` as of 2026-07-27. The chain was re-read end to end on that date and it still composes.
 
-Neither half is a mistake on its own. The CLI sending the key is a fix that had to land: without it, Codex and OpenCode agents cannot reach the operator surface at all when login is on, and the CLI is their only actuation path (`packages/cli/src/lib/api-client.ts:169-187`, `:253-262`). The header-keyed refusal is honest about what it is: it stops an agent that identifies itself. The composition is the defect.
+1. An agent calls a `destructive` capability. The tier gate refuses it and hands back `approvalId` plus `approvalToken` in a 202 (`tier-enforcement.ts:821-833`, `routes/capabilities-invoke.ts:96-108`).
+2. The agent calls `POST /api/approvals/<id>/grant` (`routes/approvals.ts:356`) with `Authorization: Bearer <key>`, no `X-DorkOS-Agent` header, no `X-DorkOS-Approval` header, and no `standing: true` in the body.
+3. `sessionGate` resolves a user from the key and attaches `{ userId, credential: 'api-key' }` to `res.locals.user` (`session-gate.ts:128-132`, `:187`).
+4. `readCallerAuthority` reports `agentIdentityPresented: false` and `approvalTokenPresented: false`, because both read headers the caller chose to omit (`lib/caller-authority.ts:66-75`).
+5. `resolveDecisionAuthority` clears all three of its refusals: no agent header (`decision-authority.ts:152`), no approval token (`:163`), login is on and a user is present (`:180`). It returns `{ allowed: true, posture: 'signed-in-operator' }` (`:189`).
+6. The approval is granted. The agent retries with the token and the action runs. The Activity line says "A signed-in account (`<userId>`) granted an approval", which is true and is the only trace.
 
-## What is actually on the machine today (verified 2026-07-25)
+Neither half is a mistake on its own. The CLI sending the key is a fix that had to land: without it, Codex and OpenCode agents cannot reach the operator surface at all when login is on, and the CLI is their only actuation path (`packages/cli/src/lib/api-client.ts:169-186`, `:248`). The header-keyed refusal is honest about what it is: it stops an agent that identifies itself. The composition is the defect.
 
-Every line below was read in this worktree.
+## What changed since 2026-07-25
+
+Six PRs landed between this document being written and 2026-07-27, and they moved ground this document stands on. What follows replaces the corresponding claims below; the rest of the document was re-checked and still holds.
+
+| Shipped                                                                                                                                             | What it does to this document                                                                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#465 (DOR-428)** replaced `agentSelfApprovalRefusal` with `resolveDecisionAuthority`                                                              | The decide-side check moved and got better. It now refuses an agent header and an approval token in **both** postures, and requires an authenticated user under login-on. It does not look at credential kind, which is exactly the hole left             |
+| **#469 (DOR-488)** added `config-write-policy.ts`, a per-field write allowlist with a drift guard                                                   | The "second escalation path" below is **closed**. `auth.enabled` is `operator-only` and `operator.config_patch` refuses it                                                                                                                                |
+| **#476 (DOR-467)** moved the gate inside `registry.invoke`, added `lib/caller-authority.ts`, and put the write allowlist on `PATCH /api/config` too | Closes the REST twin of the same escalation. Also replaced `GATED_ADAPTER_PATHS` / `checkDestructiveGateConformance` with a registry-derived `checkRegistryGateConformance`, so the conformance pattern this document points at no longer exists as named |
+| **#486 (DOR-505)** added `requireOperatorCookieUnderLogin`, and `RequestUser.credential`                                                            | Under login-on, an API key can no longer write any `operator-only` config path. It also means **half of §3.2's proposal is already shipped**: `RequestUser` carries `credential: 'cookie' \| 'api-key'` today. Only the person-or-agent axis is missing   |
+| **DOR-501** shipped standing permissions, whose creation requires a session cookie (`routes/approvals.ts:382`)                                      | An agent-held key cannot open a standing permission. It can still grant a **one-time** approval, which is the live defect                                                                                                                                 |
+| **DOR-520** shipped the monotonic posture floor (`approvals.standingGrantsVoidBefore`)                                                              | No effect on this document, listed so the absence is deliberate                                                                                                                                                                                           |
+
+**What is still open, in one sentence:** with login on, a caller holding any valid API key can grant or deny a one-time approval, and DorkOS has no way to tell a key it minted for an agent from a key the operator carries.
+
+## What is actually on the machine today (verified 2026-07-25, re-verified 2026-07-27)
 
 **Credentials that reach the operator surface**
 
 | Credential                      | Set by                                                                 | What it proves today                                           |
 | ------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Better Auth session cookie      | browser sign-in; `httpOnly`, `sameSite: lax` (`auth/index.ts:141-151`) | a person is at a browser                                       |
+| Better Auth session cookie      | browser sign-in; `httpOnly`, `sameSite: lax` (`auth/index.ts:144-149`) | a person is at a browser                                       |
 | Better Auth API key (Bearer)    | Settings > Security > API keys (`use-api-keys.ts:41-44`)               | some holder of the owner's key                                 |
 | `X-DorkOS-Agent` identity token | injected at agent spawn (`agent-token-env.ts:42-65`)                   | which agent is asking, and its `tierCeiling`. Never authorizes |
-| `MCP_API_KEY` env               | deployment env (`middleware/mcp-auth.ts:66-70`)                        | `/mcp` and `/a2a` only. Never reaches `/api/approvals/*`       |
+| `MCP_API_KEY` env               | deployment env (`middleware/mcp-auth.ts:59-61`)                        | `/mcp` and `/a2a` only. Never reaches `/api/approvals/*`       |
 
-**`res.locals.user` is write-only.** It is assigned at `session-gate.ts:169` and read nowhere in `apps/server/src` outside its own module and doc comments. The approval decide handlers never look at it. So in the login-off posture there is not even a negative check: any caller that omits the identity header can decide.
+**`res.locals.user` is read, and it already says which credential proved the request.** The original version of this document said it was write-only. That was true on 2026-07-25 and is false now. It is assigned at `session-gate.ts:187` and read at `lib/caller-authority.ts:67` and `:206` and at `routes/room-caller.ts:63`. `RequestUser` also gained a required `credential: 'cookie' | 'api-key'` field (`session-gate.ts:40-56`), added by DOR-505 for exactly the reason this document argues from: a per-user API key satisfies the gate the way a browser session does, and some writes need to tell them apart. The person-or-agent axis is the part that is still missing.
 
-**The two postures are one boolean.** `local-trust` and `signed-in-operator` are not code terms. The real switch is `config.auth.enabled`, read per request (`session-gate.ts:142`). Docs call the off state "the local trust model" (`docs/self-hosting/threat-model.mdx:63`).
+**The two postures are one boolean, but they are code terms now.** `DecisionPosture` is a real type with the members `signed-in-operator` and `local-trust` (`decision-authority.ts:74-84`). The switch underneath is still `config.auth.enabled`, read per request (`session-gate.ts:160`). Docs call the off state "the local trust model" (`docs/self-hosting/threat-model.mdx:63`).
 
-**Nothing mints `<dork home>/api-key`.** The CLI reads it (`api-client.ts:152-181`) and explicitly does not create it (`commands/auth-instance.ts:68`). The operator writes it by hand, and the docs recommend exactly that, for exactly this reason:
+**Nothing mints `<dork home>/api-key`.** The CLI reads it (`api-client.ts:154`, `:169`) and does not create it. The operator writes it by hand, and the docs recommend exactly that, for exactly this reason:
 
 > The key file is the better choice when your agents run `dorkos` commands themselves, because they inherit it without you exporting anything.
-> (`docs/guides/cli-usage.mdx:264`)
+> (`docs/guides/cli-usage.mdx:273`)
 
 The documented happy path hands agents a person's credential.
 
@@ -49,12 +66,13 @@ The documented happy path hands agents a person's credential.
 
 ## What the installed Better Auth actually supports
 
-Read from `node_modules/@better-auth/api-key@1.6.23/dist/`, not from documentation. The plugin is a separate package from `better-auth@1.6.23` and is declared at `apps/server/package.json:28`. It is configured with zero options: `plugins: [apiKey()]` (`auth/index.ts:137`).
+Read from `node_modules/@better-auth/api-key@1.6.23/dist/`, not from documentation. The plugin is a separate package from `better-auth@1.6.23` and is declared at `apps/server/package.json:29`. It is configured with zero options: `plugins: [apiKey()]` (`auth/index.ts:138`). Still 1.6.23 on 2026-07-27, and every claim in this section was re-read in the installed source on that date.
 
 - **`permissions`** is `Record<string, string[]>` and is **server-only at both create and update**. A call carrying `ctx.request` or `ctx.headers` (which every HTTP call from the browser does) is rejected with `SERVER_ONLY_PROPERTY` if it supplies `permissions` (`index.mjs:734-736` for create, `:1481-1487` for update). It is returned, JSON-parsed, on `verifyApiKey` (`:2009-2022`).
 - **`metadata`** is gated by `enableMetadata` (default `false`, `:2266`) but is **not** server-only. Once enabled, a cookie-session client can set it at create and rewrite it through `updateApiKey`, which checks only `enableMetadata` and silently drops the field otherwise (`:1512-1515`). It also round-trips faithfully on read regardless of the flag, so a direct DB write populates it (`:2013-2022`). Metadata is therefore not an authority marker.
 - **Passing a `permissions` argument to `verifyApiKey` is a trap.** When the stored permissions are null, or `role(stored).authorize(requested)` fails, it throws, and the endpoint converts that to `{ valid: false, error: { code: 'KEY_NOT_FOUND' } }` (`:1664-1668`, caught at `:1973-2008`). Every key that exists today has `permissions: null`, so using that path to assert "this key may decide" would reject every existing key.
 - **An API key cannot mint an API key.** `enableSessionForAPIKeys` defaults to `false` (`:2285`), the plugin never reads `Authorization: Bearer` anywhere, and `createApiKey` requires a cookie session for any client request (`:733`, `:749-754`). An agent holding only a key cannot escalate by issuing itself a better one.
+- **`expiresIn` is in SECONDS, and caps at 365 days.** The plugin divides it by `3600 * 24` to get days and rejects anything above `maxExpiresIn`, which defaults to 365 (`:785-791`, defaults at `:2278-2279`). Passing a milliseconds value throws `EXPIRES_IN_IS_TOO_LARGE`. This matters because §3.4 of the specification originally passed `TOKEN_IDLE_TTL_MS`, which would have made every mint fail.
 
 ### The finding that changes the shape of this work
 
@@ -62,17 +80,25 @@ Read from `node_modules/@better-auth/api-key@1.6.23/dist/`, not from documentati
 
 `apiKey()` with no options resolves `rateLimit: { enabled: true, timeWindow: 86400000, maxRequests: 10 }` (`:2270-2274`). Those values are written as concrete columns into every created row (`:826-831`). `verifyApiKey` enforces them on every call: `if (apiKey.requestCount >= rateLimitMax) return deny` (`:1609-1613`), which throws `TOO_MANY_REQUESTS` (`:1790-1794`) and is caught and returned as `{ valid: false, error: { code: 'RATE_LIMITED' } }` (`:1973-2008`). `verifyRequestAuth` sees `valid: false` and returns `null`, so `sessionGate` answers 401. The counter only resets after a full window with no request at all.
 
-The CLI presents its key on every `/api/*` call (`api-client.ts:253-262`) and has no cookie, so every call burns one. An agent doing real operator work with login on gets roughly ten requests and then starts failing with "this DorkOS instance did not accept your API key".
+The CLI presents its key on every `/api/*` call (`api-client.ts:186`, merged into every request at `:248`) and has no cookie, so every call burns one. An agent doing real operator work with login on gets roughly ten requests and then starts failing with "this DorkOS instance did not accept your API key".
 
 The rate-limit fields are, like `permissions`, server-only at creation. So a key an agent can actually use has to be minted server-side no matter what we decide about scoping. Scoping and minting are the same piece of work.
 
 **Status of this finding:** traced in the installed plugin source, with the citations above. Not reproduced against a running server. Reproducing it is the first task of the implementation, and if it does not reproduce, the minting rationale narrows to scoping alone (the design does not otherwise depend on it).
 
-### A second escalation path, found while mapping the first
+### A second escalation path, found while mapping the first, and since closed
 
-`operator.config_patch` is tier `act`, so it needs no approval (`operator-capabilities.ts:222-228`). `applyConfigPatch` deep-merges and validates against `UserConfigSchema` with **no write allowlist** (`config-patch.ts:123-160`). `auth.enabled` is an ordinary schema field. So any caller that reaches the capability surface can set `auth.enabled: false` and drop the whole instance into `local-trust`, where `sessionGate` is a pass-through and there is no credential left to classify.
+**This is fixed. Kept because the reasoning still explains why the rest of the work is worth doing.**
 
-Without closing this, every other decision in this spec is decoration.
+What this document originally found: `operator.config_patch` is tier `act`, so it needs no approval (`operator-capabilities.ts:222`). `applyConfigPatch` deep-merged and validated against `UserConfigSchema` with no write allowlist. `auth.enabled` is an ordinary schema field. So any caller that reached the capability surface could set `auth.enabled: false`, drop the instance into `local-trust`, and make every credential check unreachable.
+
+Three PRs closed it, in this order:
+
+1. **#469 (DOR-488)** added `services/core/operator/config-write-policy.ts`: every leaf of `UserConfigSchema` is classified `agent-writable` or `operator-only`, `auth.enabled` is `operator-only`, and a drift guard in `__tests__/config-write-policy.test.ts` fails the build when a new config field has no verdict. `createConfigPatchHandler` refuses a patch touching any of them.
+2. **#476 (DOR-467)** found the REST twin: `PATCH /api/config` reached the same `applyConfigPatch` with no policy check at all. It now runs `findOperatorOnlyPaths` too (`routes/config.ts:246`).
+3. **#486 (DOR-505)** added the cookie bar. Under login-on, an `operator-only` write needs `res.locals.user.credential === 'cookie'` (`lib/caller-authority.ts:199-213`, wired at `routes/config.ts:265`). This is the one that matters here: the agent bar alone is cleared by omitting a header, so before it, a minted agent key could still have turned login off through the REST route.
+
+The residual, which those PRs state plainly and this document repeats rather than glosses: with login **off** there is no cookie for anyone, so the cookie bar allows and only the agent bar is left. A program on the machine that omits its agent header can still write every `operator-only` setting. That is scoped out here for the same reason §3.7 of the specification scopes out `local-trust` generally.
 
 ## Options considered
 
@@ -88,11 +114,15 @@ Without closing this, every other decision in this spec is decoration.
 
 ### Where the person check lives
 
-| Option                                              | Verdict                                                                                                                                                                                                        |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session cookie only. No key may ever decide         | Strictly stronger, and tempting: nothing readable from disk decides. Rejected because it forecloses a headless operator and a future `dorkos approve` verb, and buys nothing today (no CLI decide verb exists) |
-| Person-scoped keys may decide, agent-scoped may not | **Yes**, with the residual limit stated plainly rather than glossed                                                                                                                                            |
-| Compare requester to decider per approval           | **No.** `requestedBy` is a display label, never interpreted (`approval-service.ts:76-81`). And the interesting attacker is agent B approving agent A, which a per-approval comparison allows                   |
+| Option                                              | Verdict                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session cookie only. No key may ever decide         | Strictly stronger, and tempting: nothing readable from disk decides. Rejected because it forecloses a headless operator and a future `dorkos approve` verb, and buys nothing today (no CLI decide verb exists)                                                                                  |
+| Person-scoped keys may decide, agent-scoped may not | **Yes**, with the residual limit stated plainly rather than glossed                                                                                                                                                                                                                             |
+| Compare requester to decider per approval           | **No.** `requestedBy` is a display label (`approval-service.ts:126-135`); the interpretable `requestedByPath` beside it names the agent, not the credential, so it cannot identify a decider. And the interesting attacker is agent B approving agent A, which a per-approval comparison allows |
+
+**The first row got weaker after this table was written, and that should be said.** Between 2026-07-25 and 2026-07-27 the repo adopted "a cookie, or nothing" twice, for the two effects it judged strongest: opening a standing permission (`routes/approvals.ts:382`) and writing any `operator-only` setting under login-on (`routes/config.ts:265`). Both go through `requireOperatorCookieUnderLogin`. So "no key may ever decide" is no longer a novel bar, it is the house pattern, and the cost of adopting it is one function call rather than a new mechanism.
+
+The choice below still stands, for the reason given: a headless operator is a real user, and a `dorkos approve` verb is a plausible next feature that a cookie-only rule would foreclose. But the tie-break has moved, and if scoping turns out to be more work than expected, cookie-only is the cheaper correct answer and should be taken rather than argued with. See the reopened question at the end of the specification.
 
 ### Collapsing the two credentials
 
@@ -105,3 +135,5 @@ Rejected. The property it buys applies only when login is on, and login is off b
 1. Default for an unscoped key: person or agent? (Resolved in the spec: person.)
 2. Does anything need a config field, and therefore a migration? (Resolved in the spec: no.)
 3. What does the conformance probe prove, and what does it not? (Resolved in the spec, deliberately narrow.)
+4. Which agent runtimes get a minted key? (Open. `resolveAgentTokenEnv` has two production call sites on 2026-07-27, `claude-code/messaging/message-sender.ts:399` and `codex/codex-runtime.ts:484`. Nothing under `runtimes/opencode/` calls it, so an OpenCode agent has no identity token today and would get no key either. OpenCode is named in this document's own premise, so the seam has to grow a third call site or the premise has to shrink.)
+5. Scope the key, or require a cookie to decide? (Reopened by the two cookie bars that shipped after this table was written. See the note above and the specification's Open Questions.)
