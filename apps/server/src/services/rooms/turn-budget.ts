@@ -10,7 +10,7 @@
  *
  * That discriminator is caller-asserted identity, and in the DEFAULT posture it
  * is unforgeable by nobody. `resolveCaller` treats a request with no
- * `X-DorkOS-Agent` header as the local human, and `sessionGate` is a
+ * `X-DorkOS-Agent` header as the owner's own human author, and `sessionGate` is a
  * pass-through while `auth.enabled` is false, so a program on this machine
  * becomes the operator by *omitting* a header. That is the documented DOR-505
  * residual — `lib/caller-authority.ts` names the same move — and it is not

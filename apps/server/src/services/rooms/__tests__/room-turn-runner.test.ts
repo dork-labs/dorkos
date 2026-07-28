@@ -62,6 +62,7 @@ function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],
+    viewerAuthorId: 'human',
   } satisfies RoomWithRoster;
   const entry: RoomEntry = {
     roomId: room.id,
