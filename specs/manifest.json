@@ -67,6 +67,14 @@
       "project": "Agents as First-Class Operators"
     },
     {
+      "id": "260725-210431",
+      "slug": "agent-credential-scoping",
+      "title": "Agent credential scoping - a key an agent holds cannot approve what an agent asked for",
+      "created": "2026-07-25",
+      "status": "specified",
+      "project": "Agents as First-Class Operators"
+    },
+    {
       "id": "260725-112204",
       "slug": "agents-list-attention-order",
       "title": "Agents list, ordered by attention",
