@@ -433,9 +433,9 @@ describe('hand-registered MCP tools carry a permission tier', () => {
        */
       const AUTO_ALLOW_ACT_REASONS: Record<string, string> = {
         relay_send:
-          'agent-to-agent messaging, which is the feature. Who may message whom is authorized separately in relay/access-rules.json, and the server injects the sender identity rather than trusting the model.',
+          'agent-to-agent messaging, which is the feature. The server injects the sender identity rather than trusting the model, so a message cannot be forged as another agent. Who may message whom is authorized in relay/access-rules.json — but note that `AccessControl.checkAccess` DEFAULT-ALLOWS when no rule matches and the shipped default ships no rules, so out of the box that control authorizes everything. It bounds who a message claims to be from, not who may be reached.',
         mesh_discover:
-          'scans for agent directories and reports what it found; discovery data about this machine, written to the local registry only.',
+          'scans for agent directories under the roots it is given. It does NOT merely report: `discover()` emits `auto-import` events and upserts what it finds into the local registry, and `includeRegistered` only controls whether those are reported back. Bounded to registry rows describing directories already on this machine, and it arms no execution.',
         relay_inbox:
           'polled continuously; a card per poll trains people to dismiss cards. The server injects the caller identity and an ack can only ever destroy the caller OWN mail.',
         relay_register_endpoint:
@@ -479,9 +479,10 @@ describe('hand-registered MCP tools carry a permission tier', () => {
      * `apply_layout` does not is a judgment about client code in another package,
      * and no assertion in the server test suite can follow `control_ui` →
      * `ui-action-dispatcher` → `Transport` → route. What checks that half is
-     * `apps/client/src/layers/shared/lib/__tests__/ui-command-reach.test.ts`, which
-     * drives the real dispatcher and fails if a `client-only` command reaches a
-     * transport call. Two guards, because neither package can see the other's end.
+     * `apps/client/src/layers/shared/lib/__tests__/ui-action-dispatcher.test.ts`,
+     * which drives the real dispatcher and fails if a `client-only` command
+     * reaches a transport call. Two guards, because neither package can see the
+     * other's end.
      *
      * It also does not cover Codex. That runtime registers the same `control_ui`
      * contract on its scoped `dorkos_ui` server and has no `canUseTool` of its own

@@ -88,14 +88,25 @@ function requireShapeSlug(name: string, res: Response): string | null {
  * ## Why `destructive`
  *
  * "Restore my layout" is what the name suggests, and the chrome half really is
- * cosmetic. The rest is not. `applyShape` creates every schedule the Shape's
- * manifest declares, ENABLED, each carrying the `permissionMode` that manifest
- * chose — and `SHAPE_SCHEDULE_PERMISSION_MODES` includes `bypassPermissions`. It
- * then reconciles: every schedule carrying this Shape's provenance that the
- * current manifest no longer declares is DELETED. So one call both arms recurring
- * unattended work on the operator's machine and removes existing scheduled work.
- * Creating a standing grant is `act` at best; deleting a resource is the sentence
- * the `destructive` tier is defined by, and this does both.
+ * cosmetic. The rest is not.
+ *
+ * **The argument is CREATION, not deletion.** `applyShape` creates every schedule
+ * the Shape's manifest declares, ENABLED, each carrying the `permissionMode` that
+ * manifest chose — and `SHAPE_SCHEDULE_PERMISSION_MODES` includes
+ * `bypassPermissions`. One call therefore arms recurring, unattended execution on
+ * the operator's machine with every safety prompt off, at a time nobody is
+ * watching. That is the same thing `gate-bypass-scan.test.ts` already protects
+ * `createTask(` for, and on the same grounds: a schedule is a standing grant that
+ * fires later, so the moment to look at it is the moment it is created.
+ *
+ * The deletion half — step 4b removes schedules carrying this Shape's provenance
+ * that the current manifest no longer declares — is deliberately NOT the load-
+ * bearing reason, because that argument loses to a counter-precedent already in
+ * the tree: `relay_inbox` permanently deletes the mail it acks, is tier `act`, and
+ * is auto-allowed, justified precisely by being confined to the caller's own
+ * things. Step 4b is provenance-gated in exactly that way (a user's own schedules
+ * and other Shapes' are never touched), so on its own it would argue for `act`.
+ * It is what the tier costs, not why the tier is right.
  *
  * The cost of the tier is bounded, which is why it is affordable: a person
  * clicking a Shape in their own cockpit sends no agent header, clears
@@ -116,9 +127,11 @@ function requireShapeSlug(name: string, res: Response): string | null {
  * type, the same 202/403, the same `X-DorkOS-Approval` retry header.
  *
  * The id is dotted so it reads like the capability it would become if shapes ever
- * migrates. `__tests__/shapes.test.ts` asserts no registered capability claims it
- * today, so a migration has to reconcile the two rather than quietly create a
- * second action sharing one approval id space.
+ * migrates. `__tests__/shapes.test.ts` ("reserves the shapes.apply id") asserts
+ * against `composeCapabilityRegistryForDocs` — which composes every domain
+ * unconditionally — that no capability claims this id, so a migration has to
+ * reconcile the two rather than quietly create a second action sharing one
+ * approval id space.
  */
 const APPLY_SHAPE_ACTION: GatedAction = {
   id: 'shapes.apply',

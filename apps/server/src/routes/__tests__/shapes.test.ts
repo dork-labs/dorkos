@@ -23,6 +23,7 @@ import {
   resetCapabilityTierGate,
 } from '../../services/core/capabilities/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
+import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
 import { createShapesRouter } from '../shapes.js';
 
 // Local login off — the DEFAULT posture, and therefore the one the gate has to be
@@ -357,6 +358,35 @@ describe('shapes router', () => {
       const res = await request(app).post('/api/shapes/linear-ops/apply').send({});
       expect(res.status).toBe(200);
       expect(setActiveShape).toHaveBeenCalledWith('linear-ops');
+    });
+
+    /**
+     * The id reservation, which is what makes "shapes can migrate to the registry
+     * later" a safe thing to say.
+     *
+     * `APPLY_SHAPE_ACTION` is a `GatedAction`, not a registry capability, so its
+     * id lives in the same space as capability ids without anything allocating it.
+     * An approval binds to `${id}` + a hash of the input. If somebody registers a
+     * `shapes.apply` CAPABILITY tomorrow, two different actions would share one id,
+     * and a token minted for one could be spent on the other.
+     *
+     * `composeCapabilityRegistryForDocs` is the right registry to ask because it
+     * composes EVERY domain unconditionally — a domain gated behind absent deps
+     * would be missing from the boot registry and this check would pass by not
+     * looking.
+     */
+    it('reserves the shapes.apply id — no capability may claim it while the route owns it', () => {
+      const ids = composeCapabilityRegistryForDocs().capabilities.map((cap) => cap.id);
+
+      // Not empty, or the filter below proves nothing.
+      expect(ids.length).toBeGreaterThan(10);
+      expect(
+        ids.filter((id) => id === 'shapes.apply'),
+        'a capability now claims `shapes.apply`, which the Shapes route already uses as a ' +
+          'GatedAction id. Two actions sharing one id share one approval binding space. ' +
+          'Migrate the route onto the capability (delete APPLY_SHAPE_ACTION and use ' +
+          'authorizeCapability) rather than letting both exist.'
+      ).toEqual([]);
     });
 
     it('refuses rather than applies when the gate was never wired', async () => {

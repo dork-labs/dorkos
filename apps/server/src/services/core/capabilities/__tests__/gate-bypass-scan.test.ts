@@ -54,6 +54,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /** `apps/server/src`, resolved from this file rather than from the cwd. */
@@ -234,6 +235,95 @@ async function productionSources(dir: string): Promise<string[]> {
 
 const SOURCES = await productionSources(SERVER_SRC);
 
+/**
+ * A file's CODE, with every comment and string removed, using TypeScript's own
+ * parser.
+ *
+ * ## Why this is not a pair of regexes, which is what it used to be
+ *
+ * Comments can contain string delimiters and strings can contain comment
+ * delimiters, so **no fixed order of independent regexes is correct** — each
+ * order is blind to the other's mirror case, and both cases are live in this
+ * repo:
+ *
+ * - Block-comments-first is fooled by a `/*` inside a LINE comment.
+ *   `index.ts:322` ends a `//` comment with the route path `/api/auth/` + `*`,
+ *   which opened a comment that ran to the next `*` + `/` **1,530 lines later**.
+ *   Everything in between — including this file's own `applyShape(` subject —
+ *   was invisible to the scan.
+ * - Line-comments-first is fooled by a `/*` inside a STRING. `app.ts:145` is
+ *   `app.all('/api/auth/*splat', …)`, and no `*` + `/` follows for the rest of
+ *   the file: the entire router mount table vanished, `sessionGate`,
+ *   `resolveAgentIdentity` and every `app.use('/api/…')` with it. An ungated
+ *   route calling a protected effect anywhere below that line read as GREEN.
+ * - And the "obvious" third order (strings, then line comments, then blocks) has
+ *   the mirror bug one level up: an APOSTROPHE in prose opens a fake string.
+ *   `services/workbench-serve/token.ts:7` says "the API's cookie/header", which
+ *   swallows everything up to the next quote. That pipeline loses most of the
+ *   content of 216 of 454 files.
+ *
+ * So the lexing is delegated to the real thing. `ts.createSourceFile` decides
+ * what is a string, what is a comment, and — the part no regex can do at all —
+ * whether a `/` opens a regular expression or is division. The literal ranges it
+ * reports are blanked out in place (newlines preserved, so offsets and line
+ * numbers still line up), and only THEN are comments removed, which is now
+ * unambiguous because no string survives to hide a delimiter in.
+ *
+ * ## What it still cannot see
+ *
+ * The token inside a template literal's TEXT (`` `applyShape(` ``) is left
+ * alone, so it would read as a call. That is a false POSITIVE — the safe
+ * direction, and it fails loudly rather than silently. Aliasing
+ * (`const f = applyShape; f()`) and dynamic dispatch remain out of reach, as the
+ * module TSDoc says.
+ *
+ * @param text - The file's full source.
+ * @returns The same source with comments and string/regex literals blanked.
+ */
+function codeOnly(text: string): string {
+  const source = ts.createSourceFile(
+    'scan.ts',
+    text,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS
+  );
+  const chars = [...text];
+
+  /** Blank a range, keeping newlines so positions and line numbers survive. */
+  const blank = (start: number, end: number): void => {
+    for (let i = start; i < end && i < chars.length; i++) {
+      if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' ';
+    }
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isStringLiteralLike(node) ||
+      ts.isRegularExpressionLiteral(node) ||
+      node.kind === ts.SyntaxKind.TemplateHead ||
+      node.kind === ts.SyntaxKind.TemplateMiddle ||
+      node.kind === ts.SyntaxKind.TemplateTail
+    ) {
+      blank(node.getStart(source), node.end);
+      // A template's SUBSTITUTIONS are ordinary expressions and can contain real
+      // calls, so only the literal chunks above are blanked; recursion continues.
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+
+  // Comments last, and now safely: the parser already took every string out, so
+  // a `/*` that survives to here is a genuine comment start. Line comments first
+  // for the `index.ts:322` case; block comments after.
+  return chars
+    .join('')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 /** Files that call `call`, as paths relative to `apps/server/src`. */
 async function callersOf(call: string): Promise<string[]> {
   const hits: string[] = [];
@@ -241,25 +331,7 @@ async function callersOf(call: string): Promise<string[]> {
     const text = await readFile(file, 'utf-8');
     // Ignore the token where it only appears inside prose: a TSDoc or a `//`
     // comment naming the function is documentation, not a call path.
-    //
-    // Line comments are dropped FIRST, and the order is load-bearing rather than
-    // stylistic. `index.ts` line 322 is a `//` comment ending in the route path
-    // `/api/auth/*`. Stripping block comments first read that as an OPENING `/*`,
-    // ran to the next `*/` 1,530 lines later, and deleted the middle of the file —
-    // taking the `applyShape(` call with it and reporting index.ts as a
-    // non-caller. Any protected effect invoked in that range was invisible to this
-    // scan (DOR-625). Removing whole-line comments first means a `/*` that only
-    // exists inside prose never opens anything.
-    //
-    // Still fooled by a `/*` inside a STRING literal, and by a token in a trailing
-    // `// …` comment on a code line. Both are the same acceptable floor the module
-    // TSDoc describes — but the index.ts case was not hypothetical, so it is fixed
-    // rather than listed.
-    const code = text
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('//'))
-      .join('\n')
-      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const code = codeOnly(text);
     // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
     // call to `trustedCaller(` — a plain substring match reports the guard itself
     // as a bypass. A leading `.` is deliberately allowed, because a receiver
