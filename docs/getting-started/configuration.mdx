@@ -171,6 +171,18 @@ A room is a conversation more than one agent can be in. When you post, every age
       type: 'integer (0--100000)',
       default: '240',
     },
+    'rooms.replyWaitMinutes': {
+      description:
+        'How long a room waits for an agent to answer before it carries on without it. The agent is not stopped: it keeps working, and its answer is posted when it lands with a note saying which message it answers.',
+      type: 'integer (1--120)',
+      default: '10',
+    },
+    'rooms.lateReplyCeilingMinutes': {
+      description:
+        'When a room gives up on an answer altogether and says the agent could not finish. Always longer than the wait above.',
+      type: 'integer (1--1440)',
+      default: '60',
+    },
   }}
 />
 

@@ -55,45 +55,56 @@ import type {
 const ROOM_CLIENT_ID = 'dorkos-room';
 
 /**
- * How long the room waits to hear about a triggered turn before moving on.
+ * The two bounds on how long a room pays attention to one turn.
  *
- * This bounds the WAIT, not the turn. The turn itself is never cancelled: it
- * keeps running and keeps streaming to its own session, and when it finally
- * closes its answer is posted into the room with the delay said out loud (the
- * late-answer note in `room-notices.ts`). An earlier revision dropped it at this
- * deadline on the theory that a very late reply is worse than none — which gets
- * the trade backwards. Silence is the worse failure, and a person who waited
- * ten minutes for an answer deserves it more than the room deserves to be tidy.
- */
-const ROOM_REPLY_WAIT_MS = 10 * 60_000;
-
-/**
- * The hard stop on a turn the room is still holding a subscription for.
+ * **`waitMs` bounds the WAIT, not the turn.** The turn itself is never
+ * cancelled: it keeps running and keeps streaming to its own session, and when
+ * it finally closes its answer is posted into the room with the delay said out
+ * loud (the late-answer note in `room-notices.ts`). An earlier revision dropped
+ * it at this deadline on the theory that a very late reply is worse than none —
+ * which gets the trade backwards. Silence is the worse failure, and a person who
+ * waited ten minutes for an answer deserves it more than the room deserves to be
+ * tidy.
  *
- * The stall watchdog inside `triggerTurn` already ends any turn whose runtime
- * goes quiet, so reaching this means a turn that is producing events and never
- * closing. At that point the room stops listening and says the turn failed,
- * which is true, rather than holding one live subscription per trigger forever.
+ * **`ceilingMs` is the hard stop on the subscription.** The stall watchdog
+ * inside `triggerTurn` already ends any turn whose runtime goes quiet, so
+ * reaching this means a turn producing events and never closing. The room stops
+ * listening and says the turn failed, which is true, rather than holding one
+ * live subscription per trigger forever.
+ *
+ * Both come from user config (`rooms.replyWaitMinutes`,
+ * `rooms.lateReplyCeilingMinutes`) and both are read PER TURN, so a change takes
+ * effect on the next message rather than the next restart — the same contract
+ * `maxAgentDepth` and the spend caps keep.
+ *
+ * **Neither number is sourced.** `meta/agent-etiquette.md` §9: no vendor
+ * publishes a defensible figure for how long a person will wait on an agent and
+ * no study establishes one, so these are set by using the product. They are
+ * meant to be tuned, and the honest thing is to say so rather than to invent a
+ * citation later.
  */
-const ROOM_LATE_REPLY_CEILING_MS = 60 * 60_000;
-
-/** Knobs a caller can move; both default to the constants above. */
 export interface RoomTurnRunnerOptions {
   /** How long the room waits for the answer before continuing without it. */
-  waitMs?: number;
+  waitMs?: () => number;
   /** How long the late collector keeps listening before giving the turn up. */
-  ceilingMs?: number;
+  ceilingMs?: () => number;
 }
+
+/** The shipped wait, used when a caller supplies no reader. */
+const DEFAULT_REPLY_WAIT_MS = 10 * 60_000;
+
+/** The shipped ceiling, used when a caller supplies no reader. */
+const DEFAULT_LATE_REPLY_CEILING_MS = 60 * 60_000;
 
 /**
  * Build the runner that turns a room trigger into a real session turn.
  *
- * @param options - Wait deadline and late-collector ceiling; defaults ship.
+ * @param options - Readers for the two bounds; the shipped numbers by default.
  * @returns A {@link RoomTurnRunner} bound to the process runtime registry.
  */
 export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {}): RoomTurnRunner {
-  const waitMs = options.waitMs ?? ROOM_REPLY_WAIT_MS;
-  const ceilingMs = options.ceilingMs ?? ROOM_LATE_REPLY_CEILING_MS;
+  const readWaitMs = options.waitMs ?? (() => DEFAULT_REPLY_WAIT_MS);
+  const readCeilingMs = options.ceilingMs ?? (() => DEFAULT_LATE_REPLY_CEILING_MS);
   return {
     async run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       const sessionId = request.sessionId ?? randomUUID();
@@ -113,13 +124,25 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       projector.cwd = request.agentPath;
 
       // Take the cursor BEFORE triggering. Everything the turn emits has a seq
-      // above it, so the collector cannot miss the opening of a fast turn.
-      const collecting = collectReply(projector, projector.getCursor(), { waitMs, ceilingMs });
+      // above it, so the collector cannot miss the opening of a fast turn. The
+      // prompt goes with it: it is what the collector matches its own
+      // `turn_start` on, which is what keeps a second room message from reading
+      // the first turn's stream.
+      const prompt = composeRoomPrompt(request);
+      const waitMs = readWaitMs();
+      const collecting = collectReply(projector, projector.getCursor(), {
+        waitMs,
+        // A ceiling below the wait would end the turn before the room stopped
+        // waiting for it, which is neither bound doing what it says. The two are
+        // independent settings, so clamp rather than trust the pair.
+        ceilingMs: Math.max(readCeilingMs(), waitMs),
+        prompt,
+      });
 
       const result = await triggerTurn({
         sessionId,
         clientId: ROOM_CLIENT_ID,
-        content: composeRoomPrompt(request),
+        content: prompt,
         cwd: request.agentPath,
         projector,
         deps: {
@@ -239,11 +262,26 @@ interface ReplyCollector {
 /**
  * Accumulate a turn's assistant text from the session's own event stream.
  *
- * Reads `text_delta` and stops at the first `turn_end`, which is the same
- * boundary a client renders against, so a room shows exactly the answer the
- * session shows. `turn_end` also carries `terminalReason`, which is how a turn
- * that failed is told from one that simply had nothing to say — the two used to
- * be the same `null` here, and the room reported neither.
+ * **Bounded by its own turn, at both ends.** The read starts at this turn's
+ * `turn_start` and stops at the matching `turn_end`, which is the same boundary
+ * a client renders against. Anchoring only on the cursor was not enough: the
+ * session write-lock lets the same room re-acquire (`session-lock.ts`), so a
+ * follow-up message while a turn is running starts a second collector whose
+ * cursor sits INSIDE the first turn's stream — it then broke at the first
+ * turn's `turn_end` and posted its tail, mid-sentence, as the answer to the new
+ * message. One question, two posts, the second a fragment of the first.
+ *
+ * Which `turn_start` is ours: the first one after the cursor that carries our
+ * own prompt. `feedProjector` synthesizes exactly one per turn and echoes the
+ * `content` it was triggered with, so this is an identity check rather than a
+ * heuristic. A `turn_start` with no `userMessage` at all is accepted, because a
+ * turn that does not say what triggered it cannot be attributed to anyone else
+ * either, and waiting forever for a better one would report every turn as
+ * failed.
+ *
+ * `turn_end` also carries `terminalReason`, which is how a turn that failed is
+ * told from one that simply had nothing to say — the two used to be the same
+ * `null` here, and the room reported neither.
  *
  * ONE subscription serves both phases. The deadline resolves a race, it does
  * not abort the read: aborting at the deadline is what made a slow turn post
@@ -253,11 +291,12 @@ interface ReplyCollector {
  * @param sinceCursor - The seq to resume from — taken before the turn starts.
  * @param bounds.waitMs - How long the room waits before moving on.
  * @param bounds.ceilingMs - When to give up on a turn that never closes.
+ * @param bounds.prompt - The content this turn was triggered with.
  */
 function collectReply(
   projector: SessionStateProjector,
   sinceCursor: number,
-  bounds: { waitMs: number; ceilingMs: number }
+  bounds: { waitMs: number; ceilingMs: number; prompt: string }
 ): ReplyCollector {
   const abort = new AbortController();
   const startedAt = Date.now();
@@ -269,10 +308,18 @@ function collectReply(
   // neither, so a rejection would surface as an unhandled one.
   const closed: Promise<CollectedTurn> = (async () => {
     let collected = '';
+    let started = false;
     let ended = false;
     let failed = false;
     try {
       for await (const event of projector.subscribe(sinceCursor, abort.signal)) {
+        if (!started) {
+          // Everything before our own turn opens belongs to somebody else's.
+          if (event.type !== 'turn_start') continue;
+          if (event.userMessage !== undefined && event.userMessage !== bounds.prompt) continue;
+          started = true;
+          continue;
+        }
         if (event.type === 'text_delta') collected += event.text;
         if (event.type === 'turn_end') {
           ended = true;

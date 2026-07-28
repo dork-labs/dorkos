@@ -946,6 +946,8 @@ export function backfillRoomsDefaults(store: {
     maxAgentDepth: 3,
     maxAutomaticTurnsPerRoomPerHour: 60,
     maxAutomaticTurnsTotalPerHour: 240,
+    replyWaitMinutes: 10,
+    lateReplyCeilingMinutes: 60,
   };
   const rooms = store.get('rooms');
   if (rooms == null) {
@@ -1324,6 +1326,8 @@ export const CONFIG_MIGRATIONS = {
     // The `rooms` section (DOR-526): `maxAgentDepth`, how far agents may reply
     // to each other before a room stops them, plus the two spend caps that hold
     // whoever the caller claims to be — per room, and across the whole install.
+    // Extended by DOR-621 with the two turn-wait bounds (`replyWaitMinutes`,
+    // `lateReplyCeilingMinutes`), which ship in this same unreleased key.
     // Additive + idempotent; seeds the shipped defaults, so every bound is on
     // for every upgraded install.
     backfillRoomsDefaults(store);

@@ -31,11 +31,16 @@ vi.mock('../../core/runtime-registry.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: () => Promise.resolve(null) }));
 
+/** The projector the stub is handed, as this file drives it. */
+interface TestProjector {
+  ingest: (event: Record<string, unknown>) => unknown;
+}
+
 /** What the stubbed `triggerTurn` does with the projector it is handed. */
-let turnBehaviour: (opts: {
-  sessionId: string;
-  projector: { ingest: (event: Record<string, unknown>) => unknown };
-}) => { accepted: boolean; canonicalId?: string };
+let turnBehaviour: (opts: { sessionId: string; projector: TestProjector; content: string }) => {
+  accepted: boolean;
+  canonicalId?: string;
+};
 
 vi.mock('../../session/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session/index.js')>()),
@@ -46,9 +51,22 @@ const { createSessionRoomTurnRunner, composeRoomPrompt } = await import('../room
 
 let counter = 0;
 
-/** A trigger request for a room nothing else is using. */
-function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
+/** Flush the microtasks a `run` call needs to reach its subscription. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * A trigger request for a room nothing else is using.
+ *
+ * @param overrides - Fields to replace, plus `entryText` for the message body,
+ *   which is what makes two requests compose two different prompts.
+ */
+function request(
+  overrides: Partial<RoomTurnRequest> & { entryText?: string } = {}
+): RoomTurnRequest {
   counter += 1;
+  const { entryText, ...rest } = overrides;
   const room = {
     id: `room-${counter}`,
     kind: 'channel',
@@ -70,7 +88,7 @@ function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
     id: `entry-${counter}`,
     authorId: 'human',
     kind: 'post',
-    body: { text: 'is the build green?' },
+    body: { text: entryText ?? 'is the build green?' },
     mentions: [],
     sessionId: null,
     cascadeRoot: `entry-${counter}`,
@@ -86,7 +104,7 @@ function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
     sessionId: null,
     entry,
     authorName: 'Dorian',
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -169,7 +187,7 @@ describe('createSessionRoomTurnRunner', () => {
       return { accepted: true, canonicalId: sessionId };
     };
 
-    const result = await createSessionRoomTurnRunner({ waitMs: 5 }).run(request());
+    const result = await createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
     expect(result.text).toBeNull();
     expect(result.unanswered).toBeUndefined();
     expect(result.late).toBeDefined();
@@ -195,11 +213,46 @@ describe('createSessionRoomTurnRunner', () => {
       return { accepted: true, canonicalId: sessionId };
     };
 
-    const result = await createSessionRoomTurnRunner({ waitMs: 5 }).run(request());
+    const result = await createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
     expect(result.text).toBeNull();
 
     finishTurn();
     expect((await result.late)?.text).toBe('the build is green');
+  });
+
+  it('reads its own turn, never the tail of the one already running', async () => {
+    // The session write-lock lets the same room re-acquire, so a follow-up
+    // message starts a second turn while the first is still streaming. Its
+    // cursor sits INSIDE turn one, and anchoring on the cursor alone made it
+    // break at turn one's `turn_end` and post the tail it had caught —
+    // mid-sentence, and a duplicate of what turn one was already posting.
+    let stream: TestProjector | undefined;
+    const prompts: string[] = [];
+    turnBehaviour = ({ sessionId, projector, content }) => {
+      stream = projector;
+      prompts.push(content);
+      return { accepted: true, canonicalId: sessionId };
+    };
+    const runner = createSessionRoomTurnRunner();
+    const shared = 'session-two-messages';
+
+    const first = runner.run(request({ sessionId: shared }));
+    await settle();
+    stream?.ingest({ type: 'turn_start', userMessage: prompts[0] });
+    stream?.ingest({ type: 'text_delta', text: 'the build is ' });
+
+    // The follow-up lands mid-turn. Its cursor is now inside turn one.
+    const second = runner.run(request({ sessionId: shared, entryText: 'and the tests?' }));
+    await settle();
+
+    stream?.ingest({ type: 'text_delta', text: 'green and here is why' });
+    stream?.ingest({ type: 'turn_end' });
+    expect((await first).text).toBe('the build is green and here is why');
+
+    stream?.ingest({ type: 'turn_start', userMessage: prompts[1] });
+    stream?.ingest({ type: 'text_delta', text: 'the tests pass' });
+    stream?.ingest({ type: 'turn_end' });
+    expect((await second).text).toBe('the tests pass');
   });
 
   it('gives up on a turn that never closes, and says the turn failed', async () => {
@@ -208,7 +261,7 @@ describe('createSessionRoomTurnRunner', () => {
       return { accepted: true, canonicalId: sessionId };
     };
 
-    const result = await createSessionRoomTurnRunner({ waitMs: 5, ceilingMs: 30 }).run(request());
+    const result = await createSessionRoomTurnRunner({ waitMs: () => 5, ceilingMs: () => 30 }).run(request());
     expect(result.late).toBeDefined();
 
     const late = await result.late;

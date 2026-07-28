@@ -50,11 +50,13 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 - **A refusal is visible.** A dropped trigger that writes no room entry is
   indistinguishable from a broken agent, and the person who notices is not the
   person who configured it. If you add a path that can decline to run a turn, it
-  writes a durable room notice in the room's own voice. All five live in
+  writes a durable room notice in the room's own voice. All four live in
   `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
-  `turn_failed`, `no_auto_reply`); a new way to go quiet earns a new code there,
-  never a free-text line. The one silence that stays silent is an agent that ran
-  a turn and chose to say nothing — that is conduct, not a fault.
+  `turn_failed`); a new way to go quiet earns a new code there, never a
+  free-text line. Two silences are deliberate and pinned by tests: an agent that
+  ran a turn and chose to say nothing (conduct, not a fault), and the depth
+  refusal against an agent's own un-provenanced post (nothing was triggered, and
+  no damping key exists that would keep a notice from spraying).
 - **A slow turn is late, never lost.** The room's wait deadline bounds the WAIT,
   never the turn. An answer that outruns it is posted when it lands, saying how
   long it took. Never post a fragment of an unfinished answer as though it were
