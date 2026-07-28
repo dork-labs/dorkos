@@ -92,6 +92,78 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     expect(posted.slug).toBe(slug);
   });
 
+  test('a channel is born with its agents in it, and the panel says so (DOR-599, DOR-600)', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // A channel with nobody in it does nothing, so naming it and filling it are
+    // one step. jsdom cannot see any of this: the picker sits inside a
+    // responsive modal, and the roster it produces is read back off the server.
+    const ana = await roomsApi.registerAgent(`E2E Ana ${roomsApi.runId}`, '🦊', '#e07b39');
+    const kai = await roomsApi.registerAgent(`E2E Kai ${roomsApi.runId}`, '🐙', '#7c3aed');
+    await openCockpit(basePage);
+
+    const name = `E2E Born ${roomsApi.runId}`;
+    const slug = `e2e-born-${roomsApi.runId}`;
+    await roomsPage.createChannel(name, [ana.name, kai.name]);
+
+    await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
+    const roomId = new URL(page.url()).searchParams.get('id')!;
+    roomsApi.track(roomId);
+
+    // The server, first: BOTH memberships exist, on the one call that made the
+    // room. Named agents, not a count — `toHaveLength(3)` passes for a roster
+    // holding the wrong two.
+    const roster = await roomsApi.getRoom(roomId);
+    expect(roster.slug).toBe(slug);
+    const agentNames = roster.members
+      .filter((m) => m.author.kind === 'agent')
+      .map((m) => m.author.displayName)
+      .sort();
+    expect(agentNames).toEqual([ana.name, kai.name].sort());
+
+    // Then the panel's own state, which is a different claim: a roster the
+    // server holds and the panel does not draw is still a bug the person sees.
+    await roomsPage.membersButton.click();
+    const panel = page.getByRole('dialog');
+    await expect(panel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(panel.getByRole('heading', { name: `Members of #${slug}` })).toBeVisible();
+    await expect(panel.getByRole('button', { name: `Remove ${ana.name}` })).toBeVisible();
+    await expect(panel.getByRole('button', { name: `Remove ${kai.name}` })).toBeVisible();
+    // The per-room override this panel is the first UI ever to touch.
+    await expect(panel.getByRole('combobox', { name: `When ${ana.name} replies` })).toHaveText(
+      'Replies only when @mentioned'
+    );
+  });
+
+  test('an empty channel says it is empty and hands you the button (DOR-600)', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The deliberate empty path. Its empty state used to promise an affordance
+    // that existed nowhere in the product.
+    await openCockpit(basePage);
+    const name = `E2E Nobody ${roomsApi.runId}`;
+    await roomsPage.createChannel(name);
+    await expect(page).toHaveURL(/\/channels\?.*id=/, { timeout: SERVER_ROUND_TRIP_MS });
+    roomsApi.track(new URL(page.url()).searchParams.get('id')!);
+
+    await expect(page.getByText(/no agents in here, so nothing will answer/i)).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    await roomsPage.emptyStateAddAgents.click();
+
+    // Lands on the picker, because "Add agents" is what was asked for — the
+    // next keystroke is a search rather than a hunt for the field.
+    const panel = page.getByRole('dialog');
+    await expect(panel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(panel.getByRole('combobox', { name: 'Search agents' })).toBeFocused();
+  });
+
   test('switching rooms swaps the history, the masthead and the browser tab', async ({
     page,
     basePage,

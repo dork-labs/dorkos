@@ -14,7 +14,24 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
-import { RoomMembersDialog } from '../ui/rooms/RoomMembersDialog';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import { RoomMembersDialog } from '../ui/RoomMembersDialog';
+
+/**
+ * The fleet this surface reads for itself.
+ *
+ * Mocked at the hook rather than injected as a prop, because the component now
+ * fetches it — which is the point of the slice owning it. Every test names the
+ * state it is about; the hook's own three-state behaviour is asserted in
+ * `use-agent-picker-candidates.test.tsx`, and the rendering of each state in
+ * `AgentRosterPicker.test.tsx`.
+ */
+const { mockRosterRef } = vi.hoisted(() => ({
+  mockRosterRef: { current: null as unknown },
+}));
+vi.mock('../model/use-agent-picker-candidates', () => ({
+  useAgentPickerCandidates: () => mockRosterRef.current,
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -69,16 +86,25 @@ function roster(members: RoomRosterEntry[]): RoomWithRoster {
   return { ...ROOM, members, viewerAuthorId: HUMAN.authorId };
 }
 
-const FLEET = [
+/**
+ * A fleet that has been read successfully. Named for the state rather than
+ * defaulted into one — see `AgentRosterPicker.test.tsx` for the loading and
+ * failed rosters, which render something else entirely.
+ */
+function settled(candidates: AgentPickerCandidate[]) {
+  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
+}
+
+const FLEET = settled([
   { agentPath: '/repo/ana', displayName: 'Ana' },
   { agentPath: '/repo/bo', displayName: 'Bo' },
-];
+]);
 
 function renderPanel(
   opts: {
     transport?: Transport;
     intent?: 'roster' | 'add';
-    agents?: { agentPath: string; displayName: string }[];
+    agents?: ReturnType<typeof settled>;
     onOpenChange?: (open: boolean) => void;
   } = {}
 ) {
@@ -97,13 +123,14 @@ function renderPanel(
       </TransportProvider>
     </QueryClientProvider>
   );
+  // Set before render: the picker reads the roster on its first pass.
+  mockRosterRef.current = opts.agents ?? FLEET;
   const utils = render(
     <RoomMembersDialog
       room={ROOM}
       open
       onOpenChange={opts.onOpenChange ?? vi.fn()}
       intent={opts.intent ?? 'roster'}
-      agents={opts.agents ?? FLEET}
     />,
     { wrapper }
   );
@@ -392,8 +419,25 @@ describe('RoomMembersDialog', () => {
   // its own trigger, so a panel that focuses correctly in isolation still
   // leaves the reader typing into the sidebar.
 
+  it('lands on the search field even when the fleet is still being read', async () => {
+    // "Add agents…" asks for the picker, and the picker is not there yet when
+    // the panel opens on a cold read — it draws a shape while the fleet lands.
+    // `onOpenAutoFocus` fires once, at open, so without a second pass the
+    // reader is left with focus on the dialog and nowhere to type.
+    const loading = { candidates: [], isLoading: true, isError: false, retry: vi.fn() };
+    const { rerender } = renderPanel({ intent: 'add', agents: loading });
+
+    expect(screen.queryByRole('combobox', { name: 'Search agents' })).not.toBeInTheDocument();
+
+    mockRosterRef.current = FLEET;
+    rerender(<RoomMembersDialog room={ROOM} open onOpenChange={vi.fn()} intent="add" />);
+
+    const search = await screen.findByRole('combobox', { name: 'Search agents' });
+    await waitFor(() => expect(search).toHaveFocus());
+  });
+
   it('says there is nobody left to add rather than showing an empty picker', async () => {
-    renderPanel({ agents: [{ agentPath: '/repo/ana', displayName: 'Ana' }] });
+    renderPanel({ agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana' }]) });
     await rosterList();
 
     expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();

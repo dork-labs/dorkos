@@ -10,6 +10,23 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { ChannelsSection } from '../ui/rooms/ChannelsSection';
 
+/**
+ * The fleet the create dialog reads for itself. Mocked at the hook, because the
+ * dialog fetches it rather than taking it from this section — see the module
+ * doc on `features/room-membership`.
+ */
+const { mockRosterRef } = vi.hoisted(() => ({
+  mockRosterRef: { current: null as unknown },
+}));
+vi.mock('@/layers/features/room-membership/model/use-agent-picker-candidates', () => ({
+  useAgentPickerCandidates: () => mockRosterRef.current,
+}));
+
+/** A fleet that has been read successfully. The state is named, never defaulted. */
+function settled(candidates: { agentPath: string; displayName: string }[] = []) {
+  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
+}
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -31,11 +48,14 @@ vi.mock('@/layers/entities/config', () => ({
   }),
 }));
 
+// The create call now belongs to `ChannelCreateDialog`, which this section
+// mounts — so the mock stays where it was and the assertion moves through one
+// more component, which is exactly the seam worth covering here.
 const mockCreate = vi.fn();
 vi.mock('@/layers/entities/room', async () => {
   const actual =
     await vi.importActual<typeof import('@/layers/entities/room')>('@/layers/entities/room');
-  return { ...actual, useCreateChannel: () => ({ mutate: mockCreate }) };
+  return { ...actual, useCreateChannel: () => ({ mutate: mockCreate, isPending: false }) };
 });
 
 // ---------------------------------------------------------------------------
@@ -87,7 +107,6 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
       error={null}
       activeRoomId={null}
       onSelectRoom={vi.fn()}
-      agents={[]}
       onOpenAgentProfile={vi.fn()}
       {...overrides}
     />,
@@ -96,6 +115,7 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
 }
 
 beforeEach(() => {
+  mockRosterRef.current = settled();
   mockCollapsed = false;
   mockUpdate.mockClear();
   mockCreate.mockClear();
@@ -199,21 +219,36 @@ describe('ChannelsSection', () => {
     );
   });
 
-  it('creates a channel from the inline input', () => {
+  it('asks for the agents as well as the name, in one pass', () => {
+    // The whole point of DOR-599: the "+" no longer drops an inline name field
+    // that can only ever make an empty channel. It opens the dialog that asks
+    // both questions, with the fleet in it.
+    mockRosterRef.current = settled([{ agentPath: '/w/ana', displayName: 'Ana' }]);
     renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'New channel' }));
-    const input = screen.getByLabelText('New channel name');
-    fireEvent.change(input, { target: { value: 'Backend' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    expect(mockCreate).toHaveBeenCalledWith('Backend', expect.anything());
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText('Channel name')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Search agents')).toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText('Channel name'), {
+      target: { value: 'Backend' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Search agents'), { target: { value: 'Ana' } });
+    fireEvent.click(within(dialog).getByRole('option', { name: 'Ana' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create channel with 1 agent' }));
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      { title: 'Backend', agentPaths: ['/w/ana'] },
+      expect.anything()
+    );
   });
 
-  it('never creates a channel from a blank name', () => {
+  it('keeps the empty-state row visible behind the dialog', () => {
+    // The inline input REPLACED this line; a modal sits over it. A person who
+    // opened the dialog by mistake should still see where they were.
     renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'New channel' }));
-    const input = screen.getByLabelText('New channel name');
-    fireEvent.change(input, { target: { value: '   ' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(screen.getByText(/No channels yet/i)).toBeInTheDocument();
   });
 });

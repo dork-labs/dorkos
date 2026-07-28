@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { Skeleton } from '@/layers/shared/ui';
 import { useMarkRoomRead, useRoom, useRoomEntries, useRoomStream } from '@/layers/entities/room';
+import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { RoomComposer } from './RoomComposer';
@@ -23,6 +24,11 @@ export function ChannelsPage() {
   const roomQuery = useRoom(roomId);
   const entriesQuery = useRoomEntries(roomId);
   const stream = useRoomStream(roomId, entriesQuery.isSuccess);
+  // Two of spec §14.3's three entry points are on this page — the header's
+  // roster and the empty state — and both open the one panel the sidebar's row
+  // menu opens. The panel reads its own fleet, which is what lets this page
+  // open it without holding one; the sidebar may be a closed drawer here.
+  const [membersIntent, setMembersIntent] = useState<MembersDialogIntent | null>(null);
 
   const room = roomQuery.data;
   const entries = useMemo(() => entriesQuery.data ?? [], [entriesQuery.data]);
@@ -69,7 +75,14 @@ export function ChannelsPage() {
           <Skeleton className="size-7 rounded-full" />
           <Skeleton className="h-4 w-40" />
         </div>
-        <RoomTimeline entries={[]} members={[]} lastReadSeq={null} isLoading error={null} />
+        <RoomTimeline
+          entries={[]}
+          members={[]}
+          lastReadSeq={null}
+          isLoading
+          error={null}
+          onAddAgents={() => setMembersIntent('add')}
+        />
       </div>
     );
   }
@@ -88,7 +101,7 @@ export function ChannelsPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <RoomHeader room={room} />
+      <RoomHeader room={room} onOpenMembers={() => setMembersIntent('roster')} />
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <RoomTimeline
           entries={entries}
@@ -96,6 +109,7 @@ export function ChannelsPage() {
           lastReadSeq={frozenReadSeq}
           isLoading={entriesQuery.isLoading}
           error={entriesQuery.error}
+          onAddAgents={() => setMembersIntent('add')}
         />
       </div>
       {/* A room that has stopped listening looks exactly like a quiet one, so it
@@ -123,6 +137,17 @@ export function ChannelsPage() {
           height, a part-typed IME composition — carry across. The DRAFT is safe
           either way; it belongs to the room, not to this element. */}
       <RoomComposer key={room.id} room={room} />
+
+      {/* Mounted only while open: it reads the room itself, and a closed one
+          would hold a roster from before the last change under it. */}
+      {membersIntent !== null && (
+        <RoomMembersDialog
+          room={room}
+          open
+          onOpenChange={(next) => !next && setMembersIntent(null)}
+          intent={membersIntent}
+        />
+      )}
     </div>
   );
 }

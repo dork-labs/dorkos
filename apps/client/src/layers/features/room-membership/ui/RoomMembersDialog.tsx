@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UserMinus } from 'lucide-react';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import {
-  agentAuthorRef,
-  type RoomRosterEntry,
-  type RoomSummary,
-} from '@dorkos/shared/room-schemas';
+import { agentAuthorRef, type Room, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { initialOf } from '@/layers/shared/lib';
 import {
   Button,
@@ -32,29 +28,42 @@ import {
   useSetMemberResponseMode,
   RESPONSE_MODE_OPTIONS,
 } from '@/layers/entities/room';
-import { AgentChipPicker, type AgentPickerCandidate } from './AgentChipPicker';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
+import { AgentRosterPicker } from './AgentRosterPicker';
 
 /** Which half of the panel the reader asked for, so that half gets the focus. */
 export type MembersDialogIntent = 'roster' | 'add';
 
+/**
+ * The least this panel needs to know about a room.
+ *
+ * Deliberately narrower than `RoomSummary`: the three entry points spec §14.3
+ * names hold different shapes — a sidebar row has a `RoomSummary`, the open
+ * room has a `RoomWithRoster` — and neither is assignable to the other. The
+ * panel reads the room itself anyway, so an id and enough to name it is all it
+ * ever needed.
+ */
+export type MembersDialogRoom = Pick<Room, 'id' | 'kind' | 'slug' | 'title'>;
+
 interface RoomMembersDialogProps {
   /** The room whose roster is being managed. */
-  room: RoomSummary;
+  room: MembersDialogRoom;
   /** Whether the panel is on screen. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Which entry point opened it — "Members…" lands on the roster, "Add agents…" on the picker. */
   intent: MembersDialogIntent;
-  /** Every agent in the fleet, sorted by name. Whoever is already in the room is filtered out here. */
-  agents: AgentPickerCandidate[];
 }
 
 /**
  * Who is in a room, and how each agent decides when to reply there.
  *
- * This is the surface spec §14.3 asks for: one panel that the row's
- * "Members…" and "Add agents…" both reach, and that the room header and the
- * empty state will reach too. It is also the first UI ever to touch the
+ * This is the surface spec §14.3 asks for, and all three of its entry points
+ * now land here: the sidebar row's "Members…" and "Add agents…", the open
+ * room's header roster, and the empty state that promises it. One panel, so
+ * there is one place to learn and one place a change lands. It is also the
+ * first UI ever to touch the
  * per-room `responseMode` override — a field the schema has carried since R1,
  * which until now was fixed at join time and changeable only by editing the
  * database.
@@ -69,13 +78,11 @@ interface RoomMembersDialogProps {
  * a room you created would make it invisible with no route back, which is the
  * same reason there is no "Leave".
  */
-export function RoomMembersDialog({
-  room,
-  open,
-  onOpenChange,
-  intent,
-  agents,
-}: RoomMembersDialogProps) {
+export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMembersDialogProps) {
+  // Read here rather than handed down: this panel opens from three places (the
+  // sidebar row, the room header, the empty state) and only one of them has a
+  // fleet to give it.
+  const agents = useAgentPickerCandidates();
   // The list payload carries a DM's participants but never a channel's roster,
   // and never anyone's response mode — so the panel reads the room itself, and
   // only while it is open.
@@ -87,6 +94,29 @@ export function RoomMembersDialog({
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLElement | null>(null);
+  /** Whether the "add" intent has already been handed its field. Once only. */
+  const searchFocused = useRef(false);
+
+  /**
+   * Give the search field the focus the "add" entry point asked for, as soon as
+   * there IS a field.
+   *
+   * `onOpenAutoFocus` fires once, when the dialog opens, and the field it wants
+   * arrives later than that whenever the fleet has to be read first. So the
+   * intent is honoured again here — once, and only while focus is still inside
+   * the dialog, so a reader who has already tabbed somewhere else does not have
+   * it yanked back mid-keystroke.
+   */
+  useEffect(() => {
+    if (intent !== 'add' || searchFocused.current) return;
+    const field = searchRef.current;
+    if (!field) return;
+    const content = contentRef.current;
+    if (content && !content.contains(document.activeElement)) return;
+    searchFocused.current = true;
+    field.focus();
+  }, [intent, agents.isLoading, agents.isError]);
 
   // The confirmation takes the focus so it can be answered from the keyboard
   // without hunting for it, and so a screen reader reads what it is confirming.
@@ -101,12 +131,12 @@ export function RoomMembersDialog({
   // An agent already in the room is not offerable. `agentRef` is the stable
   // handle derived from the agent's directory (ADR 260726-170126) — display
   // names are labels and two agents can share one, so they are never the key.
-  const candidates = useMemo(() => {
+  const isAlreadyIn = useMemo(() => {
     const present = new Set(
       agentMembers.map((member) => member.author.agentRef).filter((ref): ref is string => !!ref)
     );
-    return agents.filter((agent) => !present.has(agentAuthorRef(agent.agentPath)));
-  }, [agents, agentMembers]);
+    return (agent: { agentPath: string }) => present.has(agentAuthorRef(agent.agentPath));
+  }, [agentMembers]);
 
   const handleAdd = (chosen: AgentPickerCandidate[]) => {
     // One call per agent: the roster endpoint adds one member at a time, and a
@@ -165,9 +195,17 @@ export function RoomMembersDialog({
         // mount is simply overwritten, and the reader is left typing into a
         // sidebar. Focus placed by the dialog is inside its focus scope, which
         // Radix defends against exactly that.
+        //
+        // With intent "add" the field may not exist YET — the panel reads its
+        // own fleet, so the picker draws a shape while that lands. Focus goes
+        // to the content in the meantime and {@link useFocusSearchWhenReady}
+        // hands it on the moment the field appears; without that, "Add
+        // agents…" on a cold read left the reader nowhere.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
-          const target = intent === 'add' ? searchRef.current : event.currentTarget;
+          const target =
+            intent === 'add' ? (searchRef.current ?? event.currentTarget) : event.currentTarget;
+          contentRef.current = event.currentTarget as HTMLElement;
           (target as HTMLElement | null)?.focus();
         }}
         onEscapeKeyDown={handleEscapeKeyDown}
@@ -294,12 +332,13 @@ export function RoomMembersDialog({
             <p className="text-muted-foreground text-xs">
               They join here and can read everything already said.
             </p>
-            <AgentChipPicker
-              candidates={candidates}
+            <AgentRosterPicker
+              roster={agents}
+              exclude={isAlreadyIn}
               onSubmit={handleAdd}
               submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
               emptyRosterMessage={
-                agents.length === 0
+                agents.candidates.length === 0
                   ? 'You have not added any agents yet. Add one to put it in here.'
                   : 'Every agent you have is already in here.'
               }

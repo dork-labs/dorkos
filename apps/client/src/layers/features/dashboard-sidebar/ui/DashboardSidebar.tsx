@@ -6,7 +6,7 @@ import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { toast } from 'sonner';
-import { useResolvedAgents } from '@/layers/entities/agent';
+import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import {
   useConfig,
   useSidebarPrefs,
@@ -56,7 +56,6 @@ import {
   agentDndData,
   DISABLED_SORTABLE_BINDINGS,
 } from './dnd/SidebarDndPrimitives';
-import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 import {
   agentPathsOf,
   effectiveMutedAgentPaths,
@@ -152,16 +151,6 @@ export function DashboardSidebar() {
   const sortCtx = useMemo(
     () => ({ displayNames: displayNamesRecord, agentActivity }),
     [displayNamesRecord, agentActivity]
-  );
-  // The fleet as the room pickers read it: one sorted list, derived once, so
-  // starting a conversation and adding agents to an existing room offer exactly
-  // the same agents in exactly the same order.
-  const agentCandidates = useMemo(
-    () =>
-      Object.entries(displayNamesRecord)
-        .map(([agentPath, displayName]) => ({ agentPath, displayName }))
-        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
-    [displayNamesRecord]
   );
 
   // ── Attention + mute (DOR-339): one attention-map subscription for the whole
@@ -497,7 +486,6 @@ export function DashboardSidebar() {
             error={roomsQuery.error}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
-            agents={agentCandidates}
             onOpenAgentProfile={handleOpenProfile}
           />
 
@@ -505,7 +493,6 @@ export function DashboardSidebar() {
             dms={dms}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
-            agents={agentCandidates}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onOpenAgentProfile={handleOpenProfile}

@@ -49,6 +49,27 @@ function oneToOne(agentPath: string): RoomSummary {
   });
 }
 
+/**
+ * The fleet the membership surfaces read for themselves.
+ *
+ * Mocked at the hook rather than injected as a prop, because these components
+ * now fetch it — which is the point of the slice owning it. Each test that
+ * cares sets `mockRoster` to the state it is about; the hook's own three-state
+ * behaviour is asserted in `use-agent-picker-candidates.test.tsx` and the
+ * rendering of each state in `AgentRosterPicker.test.tsx`.
+ */
+const { mockRosterRef } = vi.hoisted(() => ({
+  mockRosterRef: { current: null as unknown },
+}));
+vi.mock('@/layers/features/room-membership/model/use-agent-picker-candidates', () => ({
+  useAgentPickerCandidates: () => mockRosterRef.current,
+}));
+
+/** A fleet that has been read successfully. The state is named, never defaulted. */
+function settled(candidates: { agentPath: string; displayName: string }[]) {
+  return { candidates, isLoading: false, isError: false, retry: vi.fn() };
+}
+
 const FLEET = [{ agentPath: '/repo/ana', displayName: 'Ana' }];
 
 /** What `getRoom` answers with for the members panel: the operator plus Ana. */
@@ -81,15 +102,21 @@ function roomWithRoster() {
   };
 }
 
+/** Mesh answers with the paths RoomRow maps a 1:1's `agentRef` back onto. */
+const MESH_AGENTS = { agents: [{ projectPath: '/repo/ana' }, { projectPath: '/repo/bo' }] };
+
 function renderRow(
   room: RoomSummary,
   opts: {
     transport?: Transport;
     onOpenAgentProfile?: (path: string) => void;
-    agents?: { agentPath: string; displayName: string }[];
   } = {}
 ) {
+  // Mesh is always answered: the row maps a 1:1's `agentRef` back to a path
+  // through it, so a transport that never answers would make "Agent profile"
+  // silently absent in every test rather than in the ones that mean it.
   const transport = opts.transport ?? createMockTransport();
+  transport.listMeshAgentPaths = vi.fn().mockResolvedValue(MESH_AGENTS);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
@@ -105,7 +132,6 @@ function renderRow(
       room={room}
       isActive={false}
       onSelect={vi.fn()}
-      agents={opts.agents ?? FLEET}
       onOpenAgentProfile={opts.onOpenAgentProfile ?? vi.fn()}
     />,
     { wrapper }
@@ -132,7 +158,10 @@ function itemLabels(menu: HTMLElement): string[] {
     .map((item) => item.textContent ?? '');
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockRosterRef.current = settled(FLEET);
+});
 afterEach(cleanup);
 
 // ---------------------------------------------------------------------------
@@ -195,21 +224,28 @@ describe('RoomRow menus', () => {
     await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 42));
   });
 
-  it('jumps to the agent a one-to-one is with, matched on its directory handle', () => {
+  it('jumps to the agent a one-to-one is with, matched on its directory handle', async () => {
     const onOpenAgentProfile = vi.fn();
     renderRow(oneToOne('/repo/ana'), { onOpenAgentProfile });
 
+    // Awaited, because the row resolves the handle back to a directory through
+    // mesh, which is a shared warm cache entry in the app and a cold request
+    // here. The item appears when the answer does.
     const menu = openDropdown('Ana actions');
-    fireEvent.click(within(menu).getByText('Agent profile'));
+    fireEvent.click(await within(menu).findByText('Agent profile'));
 
     expect(onOpenAgentProfile).toHaveBeenCalledWith('/repo/ana');
   });
 
-  it('offers no Agent profile for an agent the fleet no longer knows', () => {
+  it('offers no Agent profile for an agent the fleet no longer knows', async () => {
     // A mesh rebuild can retire an agent under an open sidebar. Nothing should
     // offer a profile it cannot resolve to a directory.
     renderRow(oneToOne('/repo/departed'));
-    expect(itemLabels(openDropdown('Ana actions'))).not.toContain('Agent profile');
+    const menu = openDropdown('Ana actions');
+    // Waits for the SAME signal the passing case waits for, so this asserts an
+    // absence after the answer arrived rather than before it.
+    await within(menu).findByText('Members…');
+    expect(itemLabels(menu)).not.toContain('Agent profile');
   });
 });
 
@@ -254,10 +290,8 @@ describe('RoomRow surfaces opened from the menu', () => {
         return Promise.resolve(ana!);
       }),
     });
-    renderRow(channel(), {
-      transport,
-      agents: [...FLEET, { agentPath: '/repo/bo', displayName: 'Bo' }],
-    });
+    mockRosterRef.current = settled([...FLEET, { agentPath: '/repo/bo', displayName: 'Bo' }]);
+    renderRow(channel(), { transport });
     fireEvent.click(within(openDropdown()).getByText('Add agents…'));
 
     // Scoped to the add half: once Ana is in the room the roster grows a

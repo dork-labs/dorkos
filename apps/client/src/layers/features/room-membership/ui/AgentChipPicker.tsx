@@ -2,14 +2,7 @@ import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'rea
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
-
-/** One agent the operator can put in a conversation. */
-export interface AgentPickerCandidate {
-  /** The agent's directory — its stable identity (ADR 260726-170126). */
-  agentPath: string;
-  /** What to call it on screen, already disambiguated across the roster. */
-  displayName: string;
-}
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 
 interface AgentChipPickerProps {
   /**
@@ -38,6 +31,17 @@ interface AgentChipPickerProps {
   allChosenMessage: string;
   /** Disable the commit button while a write is in flight. */
   isSubmitting?: boolean;
+  /**
+   * The container has its own reason the selection cannot be committed yet.
+   *
+   * Distinct from {@link AgentChipPickerProps.isSubmitting}, which says a write
+   * is already going. This says the rest of the form is not ready: the
+   * channel-create dialog holds a name field beside this picker, and a channel
+   * with agents and no name is not a thing the server will make. It gates the
+   * keyboard commit as well as the button, so Enter cannot walk past a rule the
+   * pointer is stopped by.
+   */
+  submitDisabled?: boolean;
   /**
    * The search field, handed back so whatever holds this picker can put the
    * cursor in it.
@@ -81,18 +85,33 @@ interface AgentChipPickerProps {
  * things. All three are worth stating in full, because every bug this component
  * has had was two of them collapsing into each other:
  *
- * 1. **An agent is highlighted** → add it. So `an` `⏎` `ka` `⏎` `⏎` assembles a
- *    group and commits it without touching the mouse.
- * 2. **Nothing is highlighted, the field is empty, and nobody was pointed at**
- *    → commit. All three, not just the first: committing is the only branch
- *    that acts on its own, so it answers only to a reader who has asked for
- *    nothing else.
+ * 1. **The KEYBOARD is aimed at an agent** → add it. Either the reader arrowed
+ *    onto it, or they typed a query and it is the first match. So `an` `⏎` `ka`
+ *    `⏎` `⏎` assembles a group and commits it without touching the mouse.
+ * 2. **The keyboard is aimed at nothing and the field is empty** → commit.
+ *    Both, not just the first: committing is the only branch that acts on its
+ *    own, so it answers only to a reader who has asked for nothing else.
  * 3. **Anything else** → nothing at all. That covers a query nobody matches
  *    (typing `Kia` for Kai and pressing Enter to try again must not commit the
- *    half-assembled selection and throw the rest away) and a highlight whose
- *    agent has since left the list — a mesh rebuild can do that under an open
- *    picker, and "aimed at somebody who is gone" must not read as "aimed at
- *    nobody" at the one gate where the difference costs an action.
+ *    half-assembled selection and throw the rest away) and a keyboard highlight
+ *    whose agent has since left the list — a mesh rebuild can do that under an
+ *    open picker, and "aimed at somebody who is gone" must not read as "aimed
+ *    at nobody" at the one gate where the difference costs an action.
+ *
+ * **The pointer does not move the highlight at all.** Hovering a row tints it
+ * in CSS and changes nothing else: not the highlight, not what
+ * `aria-activedescendant` announces, not what Enter does. Clicking still adds,
+ * because a click names its own target.
+ *
+ * That is the fix for a real trap — assembling a selection by clicking leaves
+ * the cursor resting on whichever agent slid up into the vacated row, so the
+ * Enter a reader presses to FINISH used to add that agent instead of
+ * committing. The first attempt at it let the pointer set the highlight and
+ * then excluded the pointer from Enter's target, which was worse: with a query
+ * still in the field the two disagreed, and a screen reader announced one
+ * agent while Enter added another. Keeping the pointer out of the state is
+ * what makes the highlight, the announcement and the action one thing rather
+ * than three that have to be kept in step.
  *
  * - **Backspace** on an empty field takes back the last agent picked.
  * - **↓ / ↑** move the highlight; Escape belongs to whatever is holding this —
@@ -132,15 +151,21 @@ export function AgentChipPicker({
   emptyRosterMessage,
   allChosenMessage,
   isSubmitting = false,
+  submitDisabled = false,
   inputRef,
 }: AgentChipPickerProps) {
   const [query, setQuery] = useState('');
   const [chosen, setChosen] = useState<AgentPickerCandidate[]>([]);
   /**
-   * The agent the reader pointed at, by directory. `null` means "nobody has
-   * said", which is not the same as "nothing is highlighted" — see `active`.
+   * The agent the reader steered onto with the arrow keys, by directory. `null`
+   * means "nobody has said", which is not the same as "nothing is highlighted"
+   * — see `active`.
+   *
+   * **The pointer never writes here.** Hovering a row tints it in CSS and
+   * changes nothing else, so it cannot move the highlight, the announcement or
+   * what Enter does. See `active`.
    */
-  const [aimedAt, setAimedAt] = useState<string | null>(null);
+  const [aim, setAim] = useState<string | null>(null);
   const ownRef = useRef<HTMLInputElement>(null);
   const fieldRef = inputRef ?? ownRef;
   const listId = useId();
@@ -161,26 +186,41 @@ export function AgentChipPicker({
   const matches = candidates.filter(
     (c) => !picked.has(c.agentPath) && c.displayName.toLowerCase().includes(needle)
   );
-  // Derived every render rather than stored, which is what makes a stale aim
-  // harmless: an agent that has left the list simply falls through to the
-  // default instead of pointing at whoever took its place. Typing implies a
-  // target and an empty field does not, which is what leaves Enter free to
-  // commit the selection.
+  /**
+   * The one highlighted row: what the list draws, what `aria-activedescendant`
+   * announces, and what Enter adds.
+   *
+   * **Deliberately one expression rather than several that agree.** An earlier
+   * fix to the hover trap made the pointer set the highlight but excluded it
+   * from Enter's target, which desynchronised the two: with a query still in
+   * the field, hovering a different match highlighted one agent and announced
+   * it while Enter added another. That is worse than the bug it replaced — the
+   * old behaviour was wrong but at least self-consistent, and a screen reader
+   * that states one thing while the action does another is an accessibility
+   * defect rather than a rough edge. So the pointer is kept out of the state
+   * entirely (see `aim`) instead of being filtered back out downstream, and
+   * there is no second expression left to disagree with this one.
+   *
+   * Derived every render rather than stored, which is what makes a stale aim
+   * harmless: an agent that has left the list simply falls through to the
+   * default instead of pointing at whoever took its place. Typing implies a
+   * target and an empty field does not, which is what leaves Enter free to
+   * commit the selection.
+   */
   const active =
-    (aimedAt ? matches.find((c) => c.agentPath === aimedAt) : undefined) ??
-    (needle ? matches[0] : undefined) ??
-    null;
+    (aim ? (matches.find((c) => c.agentPath === aim) ?? null) : null) ??
+    (needle ? (matches[0] ?? null) : null);
   const activeIndex = active ? matches.indexOf(active) : -1;
 
   function add(candidate: AgentPickerCandidate) {
     setChosen((prev) => [...prev, candidate]);
     setQuery('');
-    setAimedAt(null);
+    setAim(null);
     fieldRef.current?.focus();
   }
 
   function commit() {
-    if (chosen.length === 0 || isSubmitting) return;
+    if (chosen.length === 0 || isSubmitting || submitDisabled) return;
     onSubmit(chosen);
   }
 
@@ -193,21 +233,21 @@ export function AgentChipPicker({
           ? 0
           : matches.length - 1
         : Math.min(Math.max(activeIndex + step, 0), matches.length - 1);
-    setAimedAt(matches[next].agentPath);
+    setAim(matches[next].agentPath);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter') {
       event.preventDefault();
       if (active) add(active);
-      // Three conditions, none of them redundant. `!needle` keeps a query
-      // nobody matches from committing under a reader who is mid-correction.
-      // `!aimedAt` keeps a highlight whose agent has since left the list — a
-      // mesh rebuild can do that under an open picker — from reading as "nobody
-      // was ever pointed at". Everywhere else a vanished aim is harmless,
-      // because it falls through to the first match or goes inert; this is the
-      // only rung that turns it into an action.
-      else if (!needle && !aimedAt) commit();
+      // Two conditions, neither redundant. `!needle` keeps a query nobody
+      // matches from committing under a reader who is mid-correction. `!aim`
+      // keeps a highlight whose agent has since left the list — a mesh rebuild
+      // can do that under an open picker — from reading as "nobody was ever
+      // aimed". Everywhere else a vanished aim is harmless, because it falls
+      // through to the first match or goes inert; this is the only rung that
+      // turns it into an action.
+      else if (!needle && !aim) commit();
       return;
     }
     if (event.key === 'Backspace' && query === '' && chosen.length > 0) {
@@ -282,10 +322,10 @@ export function AgentChipPicker({
           placeholder={chosen.length > 0 ? 'Add another' : 'Search agents'}
           onChange={(event) => {
             setQuery(event.target.value);
-            // The aim is whoever the reader last pointed at, and typing is not
-            // pointing — dropping it lets the derived default (the first match,
-            // or nothing at all) take over again.
-            setAimedAt(null);
+            // The aim is whoever the reader last steered onto, and typing is
+            // not steering — dropping it lets the derived default (the first
+            // match, or nothing at all) take over again.
+            setAim(null);
           }}
           onKeyDown={handleKeyDown}
           className="placeholder:text-muted-foreground min-w-24 flex-1 bg-transparent py-1 text-sm outline-hidden md:py-0.5"
@@ -320,13 +360,16 @@ export function AgentChipPicker({
               id={`${listId}-${index}`}
               role="option"
               aria-selected={index === activeIndex}
-              // The input keeps focus, so the highlight is what a keyboard
-              // reader follows and the pointer only ever borrows it.
+              // The input keeps focus, so the highlight belongs to the
+              // keyboard. Hover is a CSS tint and nothing else: it says "this
+              // is what you would click", not "this is what Enter will do".
               onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setAimedAt(candidate.agentPath)}
               onClick={() => add(candidate)}
               className={cn(
                 'flex min-h-11 cursor-pointer items-center truncate rounded-sm px-2 py-2 text-sm md:min-h-0 md:py-1.5',
+                // Weaker than the real highlight on purpose, so a hovered row
+                // and the announced one are still told apart when they differ.
+                'hover:bg-accent/50',
                 index === activeIndex && 'bg-accent text-accent-foreground'
               )}
             >
@@ -343,7 +386,7 @@ export function AgentChipPicker({
       <Button
         type="button"
         size="sm"
-        disabled={chosen.length === 0 || isSubmitting}
+        disabled={chosen.length === 0 || isSubmitting || submitDisabled}
         onClick={commit}
         className="mt-3 w-full shrink-0 md:mt-2"
       >

@@ -6,12 +6,12 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
-import { NewDirectMessageMenu } from './NewDirectMessageMenu';
-import type { AgentPickerCandidate } from './AgentChipPicker';
+import { NewDirectMessageMenu } from '@/layers/features/room-membership';
 
 /** Skeleton rows shown while the first room list loads. */
 const SKELETON_ROWS = 2;
@@ -23,11 +23,6 @@ interface DirectMessagesSectionProps {
   isLoading: boolean;
   /** Set when the room list could not be read. */
   error: unknown;
-  /**
-   * Every agent in the fleet, sorted by name — what the "+" picker offers and
-   * what a row's "Add agents…" offers.
-   */
-  agents: AgentPickerCandidate[];
   /** Which room is on screen, so the matching row reads as current. */
   activeRoomId: string | null;
   /** Open a conversation. */
@@ -47,7 +42,6 @@ export function DirectMessagesSection({
   dms,
   isLoading,
   error,
-  agents,
   activeRoomId,
   onSelectRoom,
   onOpenAgentProfile,
@@ -56,7 +50,7 @@ export function DirectMessagesSection({
   const { update } = useUpdateSidebarPrefs();
   const startDirectMessage = useStartDirectMessage();
 
-  // Every agent is offerable, always — `agents` arrives unfiltered. The picker
+  // Every agent is offerable, always — the picker reads the fleet unfiltered. It
   // used to exclude anyone already on a DM's roster, which was how a duplicate
   // one-to-one was prevented, and which is wrong the moment a conversation can
   // hold several agents: Ana alone and Ana + Kai are different conversations,
@@ -91,7 +85,7 @@ export function DirectMessagesSection({
         collapsed={dmsCollapsed}
         onToggle={() => update((prev) => setDmsCollapsed(prev, !prev.dmsCollapsed))}
       />
-      <NewDirectMessageMenu candidates={agents} onStart={handleStart} />
+      <NewDirectMessageMenu onStart={handleStart} />
 
       {!dmsCollapsed && (
         <SidebarMenu>
@@ -113,7 +107,6 @@ export function DirectMessagesSection({
                   room={room}
                   isActive={room.id === activeRoomId}
                   onSelect={() => onSelectRoom(room)}
-                  agents={agents}
                   onOpenAgentProfile={onOpenAgentProfile}
                 />
               ))}

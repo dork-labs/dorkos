@@ -139,7 +139,7 @@ test.describe('Rooms — how a room names itself @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.headerMark).toHaveText(agent.emoji);
-    await expect(roomsPage.memberList).toHaveAccessibleName('2 members');
+    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${agent.name}, 2 members`);
     const agentDisc = roomsPage.memberList
       .locator('[data-slot="room-member-avatar"]')
       .filter({ hasText: agent.name });

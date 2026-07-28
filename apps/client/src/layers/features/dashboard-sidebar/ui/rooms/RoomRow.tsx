@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
+import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,9 +35,8 @@ import {
 } from '@/layers/entities/room';
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
 import { RoomRowMenuItems } from './RoomRowMenuItems';
-import { RoomMembersDialog, type MembersDialogIntent } from './RoomMembersDialog';
+import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
 import { RoomTopicDialog } from './RoomTopicDialog';
-import type { AgentPickerCandidate } from './AgentChipPicker';
 
 /** Longest room name the server accepts (`UpdateRoomRequestSchema.title`). */
 const MAX_NAME = 200;
@@ -48,8 +48,6 @@ interface RoomRowProps {
   isActive: boolean;
   /** Open the room. */
   onSelect: () => void;
-  /** Every agent in the fleet, sorted by name — what "Add agents…" offers. */
-  agents: AgentPickerCandidate[];
   /** Open an agent's profile in the right-panel hub. */
   onOpenAgentProfile: (agentPath: string) => void;
 }
@@ -72,8 +70,9 @@ interface RoomRowProps {
  * gesture the sidebar already uses for naming a group; the topic editor and the
  * members panel are modals, because neither fits in a sidebar's width.
  */
-export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }: RoomRowProps) {
+export function RoomRow({ room, isActive, onSelect, onOpenAgentProfile }: RoomRowProps) {
   const isMobile = useIsMobile();
+  const meshAgents = useMeshAgentPaths().data?.agents ?? [];
   const unread = hasUnread(room);
   const title = roomDisplayTitle(room);
 
@@ -186,12 +185,17 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
   // direct messages and `null` for anything else, and the agent is matched on
   // its `agentRef` — the stable handle derived from its directory — never on a
   // display name, which two agents can share.
+  //
+  // Mesh rather than the picker's roster: this needs a PATH and nothing else,
+  // and paths are all mesh holds. Resolving manifests to get display names
+  // would be work for an answer this never reads.
   const agentParticipants = (room.participants ?? []).filter((p) => p.kind === 'agent');
   const soleAgentRef = agentParticipants.length === 1 ? agentParticipants[0]!.agentRef : undefined;
   const soleAgentPath =
     soleAgentRef === undefined
       ? null
-      : (agents.find((a) => agentAuthorRef(a.agentPath) === soleAgentRef)?.agentPath ?? null);
+      : (meshAgents.find((a) => agentAuthorRef(a.projectPath) === soleAgentRef)?.projectPath ??
+        null);
 
   const menuModel = {
     kind: room.kind,
@@ -323,7 +327,6 @@ export function RoomRow({ room, isActive, onSelect, agents, onOpenAgentProfile }
           open
           onOpenChange={(next) => !next && setMembersIntent(null)}
           intent={membersIntent}
-          agents={agents}
         />
       )}
     </SidebarMenuItem>

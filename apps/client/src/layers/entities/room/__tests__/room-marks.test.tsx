@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { AuthorRef, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { hashToHslColor } from '@/layers/shared/lib';
@@ -101,6 +101,49 @@ describe('MemberList', () => {
     const { container } = renderRoster([member(ANA)]);
 
     expect(container.querySelector('[data-slot="room-member-avatar"]')).toHaveClass('size-6');
+  });
+
+  it('is a plain list, with nothing to press, until it is given something to do', () => {
+    renderRoster([member(ANA)]);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('list')).toHaveAttribute('aria-label', '1 member');
+  });
+
+  it('becomes ONE button naming the action AND the count', () => {
+    const onClick = vi.fn();
+    render(
+      <MemberList
+        members={[member(ANA), member(YOU)]}
+        onClick={onClick}
+        label="Members of #general"
+      />,
+      { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> }
+    );
+
+    // Both halves, because each on its own is a defect: "2 members" never says
+    // what pressing it does, and "Members of #general" drops a count every
+    // sighted reader can see in the discs.
+    const button = screen.getByRole('button', { name: 'Members of #general, 2 members' });
+    // One button, not one per disc: two members must not mean two tab stops and
+    // two identical actions.
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('still draws every disc, still named, when it is a button', () => {
+    const { container } = render(
+      <MemberList members={[member(ANA), member(YOU)]} onClick={vi.fn()} label="Members" />,
+      { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> }
+    );
+    expect(container.querySelectorAll('[data-slot="room-member-avatar"]')).toHaveLength(2);
+    expect(screen.getByText('🐙')).toBeInTheDocument();
+    // The names ride along on the discs. They do NOT become the button's name —
+    // an explicit aria-label wins — but a roster read off this element rather
+    // than off the room still finds who is in it.
+    expect(screen.getByText('Ana')).toHaveClass('sr-only');
   });
 
   it('counts off the members past the fifth', () => {

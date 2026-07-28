@@ -73,7 +73,9 @@ test.describe('Rooms — starting a direct message @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     await expect(roomsPage.headerMark).toHaveText(ana.emoji);
-    await expect(roomsPage.memberList).toHaveAccessibleName('2 members');
+    // The roster is a button now (DOR-600), so its name says the action AND
+    // the count — a button named only "2 members" never says what it does.
+    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${ana.name}, 2 members`);
 
     // And it is a direct message, not a channel: the row is in the other section.
     const row = roomsPage.rowIn(roomsPage.directMessages, ana.name);
@@ -112,7 +114,7 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName('3 members');
+    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
     for (const agent of [ana, kai]) {
       const disc = roomsPage.memberList
         .locator('[data-slot="room-member-avatar"]')
@@ -168,7 +170,7 @@ test.describe('Rooms — starting a direct message @smoke', () => {
     await expect(roomsPage.roomHeading).toHaveAccessibleName(title, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.memberList).toHaveAccessibleName('3 members');
+    await expect(roomsPage.memberList).toHaveAccessibleName(`Members of ${title}, 3 members`);
     // And no one-to-one with the first agent was left behind by the stray Enter.
     await expect(roomsPage.rowIn(roomsPage.directMessages, ana.name)).toHaveCount(0);
   });

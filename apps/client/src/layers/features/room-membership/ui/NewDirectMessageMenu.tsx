@@ -7,11 +7,11 @@ import {
   ResponsivePopoverTitle,
   SidebarGroupAction,
 } from '@/layers/shared/ui';
-import { AgentChipPicker, type AgentPickerCandidate } from './AgentChipPicker';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
+import { AgentRosterPicker } from './AgentRosterPicker';
 
 interface NewDirectMessageMenuProps {
-  /** Every agent on the roster, sorted by name. Nothing is filtered out. */
-  candidates: AgentPickerCandidate[];
   /**
    * Open a conversation with these agents, in the order they were picked. One
    * gives a one-to-one; two or more give a group.
@@ -23,7 +23,7 @@ interface NewDirectMessageMenuProps {
  * The "+" beside Direct messages: pick one agent for a one-to-one, or several
  * for a group conversation.
  *
- * The picking itself is {@link AgentChipPicker}, shared with the members panel
+ * The picking itself is {@link AgentRosterPicker}, shared with the members panel
  * so putting agents in a new conversation and putting them in an existing room
  * are the same gesture. This adds only the shell around it and the copy that
  * makes it about starting a conversation.
@@ -51,7 +51,11 @@ interface NewDirectMessageMenuProps {
  * The picker is mounted by the open popover and unmounted with it, so a
  * half-assembled conversation is forgotten rather than waiting there next time.
  */
-export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMenuProps) {
+export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
+  // Read here rather than taken as a prop: the fleet is this slice's business,
+  // and asking for it directly is what keeps the sidebar from having to know
+  // about it (see the module doc on `features/room-membership`).
+  const roster = useAgentPickerCandidates();
   const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -85,9 +89,9 @@ export function NewDirectMessageMenu({ candidates, onStart }: NewDirectMessageMe
             the panel is anchored to a "+" that already says what it does. */}
         <ResponsivePopoverTitle>New message</ResponsivePopoverTitle>
 
-        <AgentChipPicker
+        <AgentRosterPicker
           inputRef={searchRef}
-          candidates={candidates}
+          roster={roster}
           onSubmit={(chosen) => {
             setOpen(false);
             onStart(chosen);

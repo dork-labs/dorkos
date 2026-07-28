@@ -1,16 +1,23 @@
 import { useMemo } from 'react';
 import type { RoomWithRoster } from '@/layers/entities/room';
-import { MemberList, RoomAvatar, RoomTitle } from '@/layers/entities/room';
+import { MemberList, RoomAvatar, RoomTitle, roomDisplayTitle } from '@/layers/entities/room';
 
 interface RoomHeaderProps {
   /** The room on screen, with its roster resolved. */
   room: RoomWithRoster;
+  /** Open the members panel. The roster is what you press to get there. */
+  onOpenMembers: () => void;
 }
 
 /**
  * A room's masthead: what it is called, what it is about, and who is in it.
+ *
+ * The roster is a button. It is the most obvious thing to click in a room and
+ * until now it did nothing at all, which spec `rooms` §14.3 calls the most
+ * disappointing part of this surface — so it opens the same members panel every
+ * other entry point opens.
  */
-export function RoomHeader({ room }: RoomHeaderProps) {
+export function RoomHeader({ room, onOpenMembers }: RoomHeaderProps) {
   // The open room carries its whole roster, so a DM's mark here comes from the
   // same place the sidebar's does — the members, not a hash of the room id.
   const participants = useMemo(() => room.members.map((member) => member.author), [room.members]);
@@ -29,7 +36,13 @@ export function RoomHeader({ room }: RoomHeaderProps) {
         </h1>
         {room.topic && <p className="text-muted-foreground truncate text-xs">{room.topic}</p>}
       </div>
-      <MemberList members={room.members} />
+      <MemberList
+        members={room.members}
+        onClick={onOpenMembers}
+        // Says what pressing it does, then what it is about. "5 members" alone
+        // would name the thing and never the action.
+        label={`Members of ${roomDisplayTitle(room)}`}
+      />
     </header>
   );
 }

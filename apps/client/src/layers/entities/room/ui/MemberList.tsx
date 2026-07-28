@@ -14,6 +14,27 @@ const MAX_VISIBLE = 5;
 export interface MemberListProps {
   /** The room's roster, authors already resolved. */
   members: RoomRosterEntry[];
+  /**
+   * Make the roster the thing you click to manage it.
+   *
+   * With this the whole row becomes one button rather than a list, which is
+   * what the accessibility tree needs it to be: a list of tooltip triggers
+   * inside a button is not something a browser will report coherently. Without
+   * it the roster stays exactly what it was — a labelled list you can read and
+   * cannot press.
+   */
+  onClick?: () => void;
+  /**
+   * What pressing it does. Joined to the member count to make the button's
+   * accessible name, so it reads "Members of #backend, 3 members" — the action,
+   * then what the discs say visually. A button named only "3 members" says what
+   * it is and never what it will do; one named only for the action drops a
+   * count every sighted reader can see.
+   *
+   * Ignored without {@link MemberListProps.onClick}, where the count alone is
+   * the whole name because there is no action to describe.
+   */
+  label?: string;
   className?: string;
 }
 
@@ -22,52 +43,88 @@ export interface MemberListProps {
  *
  * An agent wears the emoji and colour it wears everywhere else in the cockpit;
  * anyone with neither — a person, the room's own voice — gets a letter on a
- * colour hashed from their id. Each disc names its member on hover and to a
- * screen reader, so the roster is readable without opening anything.
+ * colour hashed from their id.
+ *
+ * **Two shapes, chosen by whether it is pressable.** Read-only it is a labelled
+ * list, each disc a tooltip trigger. Given an `onClick` it is a single button —
+ * one tab stop and one action, rather than one per member — named by
+ * {@link MemberListProps.label}. The pressable shape is what the room header
+ * uses: it is the most obvious thing to click in a room and used to do nothing
+ * at all (spec `rooms` §14.3).
+ *
+ * **Every disc names its member either way.** In the button that name does not
+ * become the button's, because an explicit `aria-label` wins over content — but
+ * it stays there for anything reading the roster off the element rather than
+ * off the room.
  */
-export function MemberList({ members, className }: MemberListProps) {
+export function MemberList({ members, onClick, label, className }: MemberListProps) {
   if (members.length === 0) return null;
 
   const visible = members.slice(0, MAX_VISIBLE);
   const overflow = members.length - visible.length;
+  const countLabel = `${members.length} ${members.length === 1 ? 'member' : 'members'}`;
+
+  /** One member's disc, carrying its member's name for a screen reader. */
+  const disc = (author: RoomRosterEntry['author']) => (
+    <IdentityAvatar
+      // Named explicitly: the tooltip trigger this stands in for would
+      // otherwise stamp its own slot onto the disc.
+      data-slot="room-member-avatar"
+      size="xs"
+      color={author.color ?? authorColor(author.id)}
+      emoji={author.emoji}
+      fallback={initialOf(author.displayName)}
+      // A roster disc is a step larger than the sidebar's, and rings itself in
+      // the page background so the overlap still reads as separate people.
+      className="border-background size-6 border"
+    >
+      <span className="sr-only">{author.displayName}</span>
+    </IdentityAvatar>
+  );
+
+  const overflowDisc = overflow > 0 && (
+    <span className="border-background bg-muted text-muted-foreground inline-flex size-6 items-center justify-center rounded-full border text-[10px] font-medium">
+      +{overflow}
+    </span>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        data-slot="room-member-list"
+        aria-label={label ? `${label}, ${countLabel}` : countLabel}
+        onClick={onClick}
+        className={cn(
+          'focus-visible:ring-ring hover:bg-accent flex shrink-0 items-center -space-x-1.5 rounded-full p-0.5 outline-hidden transition-colors focus-visible:ring-2',
+          className
+        )}
+      >
+        {visible.map(({ author }) => (
+          <span key={author.id} className="contents">
+            {disc(author)}
+          </span>
+        ))}
+        {overflowDisc}
+      </button>
+    );
+  }
 
   return (
     <ul
       data-slot="room-member-list"
-      aria-label={`${members.length} ${members.length === 1 ? 'member' : 'members'}`}
+      aria-label={countLabel}
       className={cn('flex items-center -space-x-1.5', className)}
     >
       {visible.map(({ author }) => (
         <li key={author.id}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <IdentityAvatar
-                // Named explicitly: the tooltip trigger this stands in for
-                // would otherwise stamp its own slot onto the disc.
-                data-slot="room-member-avatar"
-                size="xs"
-                color={author.color ?? authorColor(author.id)}
-                emoji={author.emoji}
-                fallback={initialOf(author.displayName)}
-                // A roster disc is a step larger than the sidebar's, and rings
-                // itself in the page background so the overlap still reads as
-                // separate people.
-                className="border-background size-6 border"
-              >
-                <span className="sr-only">{author.displayName}</span>
-              </IdentityAvatar>
-            </TooltipTrigger>
+            <TooltipTrigger asChild>{disc(author)}</TooltipTrigger>
             <TooltipContent>{author.displayName}</TooltipContent>
           </Tooltip>
         </li>
       ))}
-      {overflow > 0 && (
-        <li>
-          <span className="border-background bg-muted text-muted-foreground inline-flex size-6 items-center justify-center rounded-full border text-[10px] font-medium">
-            +{overflow}
-          </span>
-        </li>
-      )}
+      {overflow > 0 && <li>{overflowDisc}</li>}
     </ul>
   );
 }

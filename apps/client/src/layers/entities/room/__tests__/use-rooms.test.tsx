@@ -182,13 +182,36 @@ describe('useCreateChannel', () => {
     const created = { ...room(), members: [] };
     const transport = createMockTransport({ createRoom: vi.fn().mockResolvedValue(created) });
     const { result } = renderHook(() => useCreateChannel(), { wrapper: wrapperFor(transport) });
-    await result.current.mutateAsync('General');
+    await result.current.mutateAsync({ title: 'General', agentPaths: [] });
     expect(transport.createRoom).toHaveBeenCalledWith({
       kind: 'channel',
       title: 'General',
       members: [],
       agentPaths: [],
     });
+  });
+
+  it('puts the chosen agents in the channel on the SAME call that makes it', async () => {
+    // Not create-then-add-N. The server resolves every path before it writes,
+    // so the channel and its roster land together — which is what stops a
+    // failed second call leaving a named, empty channel holding the #slug that
+    // the obvious retry would then collide with.
+    const created = { ...room(), members: [] };
+    const transport = createMockTransport({
+      createRoom: vi.fn().mockResolvedValue(created),
+      addRoomMember: vi.fn().mockResolvedValue({}),
+    });
+    const { result } = renderHook(() => useCreateChannel(), { wrapper: wrapperFor(transport) });
+    await result.current.mutateAsync({ title: 'General', agentPaths: ['/w/ana', '/w/kai'] });
+
+    expect(transport.createRoom).toHaveBeenCalledTimes(1);
+    expect(transport.createRoom).toHaveBeenCalledWith({
+      kind: 'channel',
+      title: 'General',
+      members: [],
+      agentPaths: ['/w/ana', '/w/kai'],
+    });
+    expect(transport.addRoomMember).not.toHaveBeenCalled();
   });
 });
 
