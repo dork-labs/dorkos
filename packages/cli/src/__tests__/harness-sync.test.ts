@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -113,8 +113,8 @@ describe('runHarnessSync', () => {
   let tmpDir: string;
   let originalCwd: string;
   let homeDir: string;
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     originalCwd = process.cwd();
@@ -249,8 +249,8 @@ describe('runHarnessSync', () => {
 });
 
 describe('runHarnessDispatcher', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: MockInstance<typeof console.log>;
+  let errorSpy: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

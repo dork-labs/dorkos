@@ -5,6 +5,7 @@ import type {
   ElicitationResult,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
+import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
@@ -62,6 +63,16 @@ const READ_ONLY_TOOLS = new Set([
  * instead: `core/__tests__/mcp-tool-gate.test.ts` asserts every name here is a real
  * tool and that none is `destructive`. That catches a rename going stale and a
  * dangerous addition, without letting the tier table grant anything.
+ *
+ * ## Membership is necessary, not sufficient (DOR-625)
+ *
+ * A name here means "do not ask ABOUT THE TOOL". It does not mean every call to
+ * that tool is auto-allowed, and for one member it must not: `control_ui` is a
+ * multiplexer carrying 22 different effects behind one name, and one of them
+ * (`apply_layout`) reaches a mutating DorkOS route. {@link isAutoAllowedCall}
+ * makes the final decision per CALL, so a tool on this list can still be
+ * per-argument gated. Read the two together — this set alone no longer answers
+ * the question.
  */
 export const DORKOS_AGENT_TOOLS = new Set([
   'mcp__dorkos__relay_send',
@@ -75,10 +86,42 @@ export const DORKOS_AGENT_TOOLS = new Set([
   'mcp__dorkos__mesh_status',
   'mcp__dorkos__mesh_query_topology',
   'mcp__dorkos__get_agent',
-  // UI control tools — pure client-side UI mutations, no system access
+  // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
+  // — most of its actions only move pixels, but not all of them, so its calls go
+  // through `isAutoAllowedCall` below rather than riding this membership alone.
   'mcp__dorkos__control_ui',
   'mcp__dorkos__get_ui_state',
 ]);
+
+/** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
+const CONTROL_UI_TOOL = 'mcp__dorkos__control_ui';
+
+/**
+ * Whether one CALL to a safe-listed tool may skip the approval card, given its
+ * arguments (DOR-625).
+ *
+ * Every safe-listed tool answers `true` except `control_ui`, whose verdict is
+ * per-action: {@link UI_COMMAND_REACH} classifies each of the 22 UI commands, and
+ * only the `client-only` ones skip. The classification is a total `Record` over
+ * the command union, so a new UI command cannot be added without `tsc` demanding
+ * a verdict for it.
+ *
+ * **Fails closed twice.** An input the command union rejects has no known action,
+ * so there is nothing to look up and the call asks — "no rule" is never consent.
+ * And a call that is not auto-allowed is not denied here either: it falls through
+ * to {@link resolveModeDecision}, which raises a card in every mode but
+ * `bypassPermissions`.
+ *
+ * @param toolName - The tool the model called.
+ * @param input - The raw arguments it called with.
+ * @returns `true` to skip the card, `false` to hand the call to the mode table.
+ */
+function isAutoAllowedCall(toolName: string, input: Record<string, unknown>): boolean {
+  if (toolName !== CONTROL_UI_TOOL) return true;
+  const parsed = UiCommandSchema.safeParse(input);
+  if (!parsed.success) return false;
+  return UI_COMMAND_REACH[parsed.data.action] === 'client-only';
+}
 
 // ---------------------------------------------------------------------------
 // Permission-mode decision table
@@ -444,10 +487,10 @@ export interface ToolApprovalContext {
 /**
  * Create the `canUseTool` callback for an SDK query.
  *
- * Routes `AskUserQuestion` to the question handler, auto-allows the two
- * safe-listed tool sets ({@link READ_ONLY_TOOLS}, {@link DORKOS_AGENT_TOOLS}),
- * and hands every remaining tool to {@link resolveModeDecision}, which either
- * allows it or raises an approval card.
+ * Routes `AskUserQuestion` to the question handler, auto-allows calls to the two
+ * safe-listed tool sets ({@link READ_ONLY_TOOLS}, {@link DORKOS_AGENT_TOOLS})
+ * that {@link isAutoAllowedCall} also clears, and hands every remaining call to
+ * {@link resolveModeDecision}, which either allows it or raises an approval card.
  *
  * Nothing reaches a person's machine on a fall-through: a tool that matches no
  * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks.
@@ -476,7 +519,14 @@ export function createCanUseTool(
       return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
     }
 
-    if (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) {
+    // Safe-list membership is necessary but not sufficient: `isAutoAllowedCall`
+    // has the last word, so a multiplexer tool can still be gated per argument
+    // (DOR-625). A refused call is not denied — it falls through to the mode
+    // table below, which raises a card.
+    if (
+      (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) &&
+      isAutoAllowedCall(toolName, input)
+    ) {
       logFn('[canUseTool] auto-allow safe tool', { toolName, toolUseID: context.toolUseID });
       return { behavior: 'allow', updatedInput: input };
     }

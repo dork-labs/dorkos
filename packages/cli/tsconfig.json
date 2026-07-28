@@ -1,8 +1,34 @@
 {
   "extends": "@dorkos/typescript-config/node.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
+    // This package is bundled by esbuild (`scripts/build.ts`) and never emitted
+    // by tsc, so this config exists purely to CHECK. Everything below turns off
+    // a piece of an emit that does not happen.
+    //
+    // `outDir`/`rootDir` used to sit here and were removed. `rootDir` was not
+    // merely unused: it BLOCKS the check outright, because the CLI's
+    // `../server/**` imports resolve outside `src/` (see
+    // ./server/services/core/config-manager.d.ts) and tsc rejects every such
+    // file as TS6059. That is true regardless of the declaration settings —
+    // restoring `rootDir: "src"` under `--noEmit` with `declaration: false`
+    // still yields 434 × TS6059, so declarations are not the trigger.
+    //
+    // `declaration` (and its map) are off because a package that emits no
+    // declarations should not be configured to produce them; the base config
+    // turns them on for the packages that do. Leaving them on is not free:
+    // tsc still runs declaration-emit analysis under `--noEmit` and reports
+    // 25 × TS2742 ("cannot be named without a reference to
+    // .pnpm/@types+express-serve-static-core@…") against `apps/server` source
+    // this program pulls in. Those are portability complaints about pnpm's
+    // hoisted paths in declaration output that will never be written — not
+    // type bugs, and not something `@dorkos/server`'s own green typecheck is
+    // hiding, since it computes those paths from its own root.
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
   },
-  "include": ["src"]
+  // `scripts` is in here because `scripts/build.ts` IS the published artifact:
+  // esbuild strips types without checking them, so nothing else looks at it.
+  "include": ["src", "server", "scripts"]
 }

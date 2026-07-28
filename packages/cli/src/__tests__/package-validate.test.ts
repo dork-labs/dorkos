@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -13,7 +13,7 @@ function fixture(name: string): string {
 }
 
 describe('runPackageValidate', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: MockInstance<typeof console.log>;
   let originalCwd: string;
 
   beforeEach(() => {
