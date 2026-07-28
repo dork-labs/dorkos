@@ -96,7 +96,7 @@ Restraint inside a thread now comes from `engaged`, not from a different seed. S
 
 ### 3.2 The engaged window is thread-scoped
 
-The predicate in §8 is evaluated within a **thread scope**: entries sharing the same `threadRootEntryId`, or the channel's top-level entries when it is null. Being addressed in a thread engages the agent for that thread, not for the channel at large, and being addressed at the channel's top level does not engage it inside every open thread.
+The predicate in §9.2 is evaluated within a **thread scope**: entries sharing the same `threadRootEntryId`, or the channel's top-level entries when it is null. Being addressed in a thread engages the agent for that thread, not for the channel at large, and being addressed at the channel's top level does not engage it inside every open thread.
 
 That is exactly the shape Slack's `thread-aware` mode already implements (`packages/relay/src/adapters/slack/inbound.ts:248-267`: `always` in a thread the bot participates in, mention-only in the main channel), and it is what makes "a thread is part of the channel" tolerable rather than noisy.
 
@@ -118,13 +118,15 @@ Nothing below assumes a thread has its own membership row, its own `lastReadSeq`
 
 ## 4. Invariants that bind every phase
 
-Five rules. A change that breaks one is a defect, not a proposal. Four of them are already in `.claude/rules/room-conduct.md`; the fifth is the one this spec adds.
+Five rules. A change that breaks one is a defect, not a proposal. All five are already in `.claude/rules/room-conduct.md` (`I5` at `:55-57`); this spec is where their consequences are worked out phase by phase.
 
 **I1. No arbitration.** No referee, no speaker election, no room-scoped turn lock. "Addressing three agents and getting three answers is the intended outcome, not a pathology" (`specs/rooms/02-specification.md:241`, `addressing.ts:6-9`). Declined independently twice, five months apart. Restraint is distributed into each agent, not centralized.
 
 **I2. Bounds are mechanisms, never prompts.** The cascade guard (depth plus ancestry), the two-ceiling turn budget, the `post_to_room` chokepoint, the halt verb, and the capability floor in `01-ideation.md` §4.5 are **mechanisms**. Everything in `meta/agent-etiquette.md` is **conduct**. A change that moves an item from the first list to the second is a downgrade and must be argued as one. This is `01-ideation.md` §6.2 and it is the single most important invariant here. Block's Buzz learned it from a real 21-reply agent storm and wrote down why: _"'Don't get into a loop' is not a rule an agent can follow. A loop is a global property of a conversation; each agent sees only its own turn."_ Their prompt-only fix was verified once and observed to fail on a different model.
 
 **I3. A refusal is visible.** A dropped trigger that writes no room entry is indistinguishable from a broken agent, and in a shared room the person who notices is not the person who configured it. Any path that can decline to run a turn writes a durable room notice in the room's own voice. Phase RP1 is the whole of closing the gaps in this rule.
+
+I3's literal wording is about a turn that never ran, so on its own it does not settle what happens when a turn **does** run and produces nothing, which is the state RP6 introduces. **The obligation attaches to being addressed, not to running a turn**, and §10.2.2 is where that is spelled out. An agent that was asked a question and says nothing is the situation §2.5 exists to prevent, whatever the mechanism that produced the silence.
 
 **I4. Context injection is structured** (ADR-0273). Room framing belongs in an `additionalContext` entry with its `CONTEXT_TAG`, never concatenated into `content`. `content` stays exactly what the person wrote.
 
@@ -136,31 +138,47 @@ And the frame around all five: **a room is not a session.** N agents in a room a
 
 ## 5. RP1: never drop a trigger silently
 
-The smallest change and the one that removes the worst current behavior. Four gaps, one notice mechanism, one new field.
+The smallest change and the one that removes the worst current behavior. Three gaps, one notice mechanism, one new field, and one silence that stays.
 
-### 5.1 The four gaps
+### 5.1 The three gaps
 
-| #   | Situation                                                  | Today                                                                                                                                                                                              | Citation                                                                    |
-| --- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| 1   | The agent's session is locked by another writer            | `collecting.cancel()`, one `logger.info`, `return { text: null }`. **No room entry.**                                                                                                              | `room-turn-runner.ts:119-130`; caller drops it at `room-trigger.ts:384-385` |
-| 2   | The turn errors                                            | `onError` writes a `logger.warn`. **No room entry.**                                                                                                                                               | `room-turn-runner.ts:100-106`                                               |
-| 3   | The turn outruns the 10-minute wait                        | The subscription aborts and returns whatever text accumulated. **A partial answer is posted mid-sentence**, or nothing at all if no deltas had arrived. The turn keeps running and keeps spending. | `room-turn-runner.ts:54,179-194`; `session-state-projector.ts:721,755-759`  |
-| 4   | A `depth` refusal on an entry that is its own cascade root | Silent by design: `if (decision.reason === 'ancestry' \|\| fromRealChain)`                                                                                                                         | `room-trigger.ts:270-271`                                                   |
+| #   | Situation                                       | Today                                                                                                                                                                                              | Citation                                                                    |
+| --- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 1   | The agent's session is locked by another writer | `collecting.cancel()`, one `logger.info`, `return { text: null }`. **No room entry.**                                                                                                              | `room-turn-runner.ts:119-130`; caller drops it at `room-trigger.ts:384-385` |
+| 2   | The turn errors                                 | `onError` writes a `logger.warn`. **No room entry.**                                                                                                                                               | `room-turn-runner.ts:100-106`                                               |
+| 3   | The turn outruns the 10-minute wait             | The subscription aborts and returns whatever text accumulated. **A partial answer is posted mid-sentence**, or nothing at all if no deltas had arrived. The turn keeps running and keeps spending. | `room-turn-runner.ts:54,179-194`; `session-state-projector.ts:721,755-759`  |
 
 Gap 3 is a correction to both `01-ideation.md` §4.10 and the code's own doc comment, which read _"A turn that outruns this posts nothing."_ It posts nothing only when no `text_delta` arrived. Otherwise it posts a truncated reply with no indication that it is truncated, which is worse than either honest outcome.
 
-Gap 4 is defensible on its own terms (an un-provenanced agent post is stamped as its own cascade root, so a depth refusal against it usually means `maxAgentDepth` is 0) but it is a hole in `I3` and it should say so out loud rather than being silent.
+### 5.1.1 The one silence that is deliberate, and stays
+
+`room-trigger.ts:261-271` suppresses the refusal notice for a `depth` refusal against an entry that is **its own cascade root**. That looks like a fourth gap in `I3` and it is not. An earlier draft of this spec proposed closing it with a `replies_off` notice; **that proposal is withdrawn**, and the reasoning is recorded here so the next reader does not re-derive the same wrong conclusion.
+
+`deriveCascade` (`cascade-guard.ts:128-141`) stamps an un-provenanced post two different ways: a **human** post gets `cascadeDepth: 0`, and an **agent** post with no turn behind it gets `cascadeDepth: opts.maxAgentDepth`, at the ceiling. So a depth refusal against an own-root entry does **not** mean `maxAgentDepth` is 0. For an agent-authored post it fires at **every** value of `maxAgentDepth`, which breaks the proposal three ways:
+
+- **The remedy would be a lie.** "You can raise the limit in Settings" does nothing, because raising the ceiling raises the stamp with it.
+- **The damping key can never repeat.** §5.2's `(room, cascadeRoot, author)` key needs a cascade root that recurs, and each such post _is_ its own root. So the notice would not be damped at all: it would spray one line per post per room-mate. `room-trigger.ts:261-266` records the measured shape (five ordinary posts by one agent produced five lines, one per room-mate, and the dedupe never engaged) as the reason it was suppressed in the first place.
+- **The obvious test certifies the wrong thing.** A test at `maxAgentDepth: 0` passes, because 0 is the single value at which the behavior looks sane. The spraying case is exactly the one it does not cover.
+
+So the rule, stated positively rather than as an exception: **a refusal is announced when an exchange actually ran.** An ancestry refusal always did, by definition, and is always announced. A depth refusal against a real chain (`entry.cascadeRoot !== entry.id`) did, and is announced. A depth refusal against a post that was nobody's reply did not, and announcing it would describe a back-and-forth that never happened.
+
+If someone finds a damping key that genuinely repeats for this case, it is future work with its own test, not RP1.
 
 ### 5.2 New notice codes
 
-`RoomNoticeCodeSchema` (`packages/shared/src/room-schemas.ts:61-63`) currently holds `cascade_stopped` and `budget_reached`. It gains four:
+`RoomNoticeCodeSchema` (`packages/shared/src/room-schemas.ts:61-63`) currently holds `cascade_stopped` and `budget_reached`. It gains three:
 
-| Code                | Written when | Copy (room's voice, `writing-for-humans`)                                                           |
-| ------------------- | ------------ | --------------------------------------------------------------------------------------------------- |
-| `agent_busy`        | Gap 1        | `{Agent} was in the middle of something else and did not pick this up. Ask again when it is free.`  |
-| `turn_failed`       | Gap 2        | `{Agent} hit an error trying to answer and did not reply. The details are in its session.`          |
-| `agent_silent_here` | §2.5         | `{Agent} is set not to reply in this room. You can change that in the room's members panel.`        |
-| `replies_off`       | Gap 4        | `Automatic replies are turned off, so {Agent} did not answer. You can raise the limit in Settings.` |
+| Code                | Written when   | Copy (room's voice, `writing-for-humans`)                                                          |
+| ------------------- | -------------- | -------------------------------------------------------------------------------------------------- |
+| `agent_busy`        | Gap 1          | `{Agent} was in the middle of something else and did not pick this up. Ask again when it is free.` |
+| `turn_failed`       | Gap 2          | `{Agent} hit an error trying to answer and did not reply. The details are in its session.`         |
+| `agent_silent_here` | §2.5 and §10.2 | `{Agent} is set not to reply in this room. You can change that in the room's members panel.`       |
+
+A fourth code, **`agent_declined`**, lands with RP6 rather than RP1, because nothing can decline until `post_to_room` exists. It is listed here so the vocabulary is in one place:
+
+| Code             | Written when                                              | Phase | Copy                                                                                 |
+| ---------------- | --------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------ |
+| `agent_declined` | An **addressed** turn ran and chose not to post (§10.2.2) | RP6   | `{Agent} read this and had nothing to add. Ask again if you need an answer from it.` |
 
 Every one is a `kind: 'notice'` entry authored by the **system** author, carrying `subjectAuthorId`, written through `RoomService.postNotice` (`room-service.ts:663`) exactly as the two existing codes are.
 
@@ -189,7 +207,7 @@ The check is a set intersection over data already in hand. It runs no model, cos
 - A throwing runtime writes exactly one `turn_failed` notice, and the room log holds no partial post.
 - A turn that resolves after `ROOM_TURN_TIMEOUT_MS` posts once, with `answersEntryId` set, and posts nothing at the timeout. The existing `FakeAgentRuntime` scenarios in `@dorkos/test-utils` can hold a turn open past a faked clock.
 - Mentioning a `silent` agent three times in one cascade writes one notice, and the agent's runtime `sendMessage` is never called.
-- A `depth` refusal at `maxAgentDepth: 0` writes `replies_off`.
+- **A depth refusal against an own-root agent post writes nothing, at `maxAgentDepth` of 0, 1 and 3.** Testing only `0` certifies the one value at which announcing it would have looked reasonable (§5.1.1); the table is the test. Assert the room log holds no notice and that an ancestry refusal in the same room still writes one, so the suppression is proved narrow rather than total.
 - `answersEntryId` is set on every agent-authored post, asserted in the existing cascade test rather than a new one.
 
 ---
@@ -418,7 +436,15 @@ export const ResponseModeSchema = z.enum([
 ]);
 ```
 
-That enum is declared once and reaches its second scope by import (`room-schemas.ts` imports rather than re-declares, and the TSDoc at `mesh-schemas.ts:60-72` says so). A second copy is a review-blocking finding. `addressing.ts:50-64` gains the branch; `docs/concepts/rooms.mdx:130-138`'s table gains the row.
+That enum is declared once and reaches its second scope by import (`room-schemas.ts` imports rather than re-declares, and the TSDoc at `mesh-schemas.ts:60-72` says so). A second copy is a review-blocking finding.
+
+**`addressing.ts` stays pure, and the predicate is not evaluated there.** Its module doc is explicit: _"Pure: no database, no clock, no runtime. It answers one question about one entry and a roster, which is what makes the matrix below testable in full"_ (`addressing.ts:1-16`), and §9.2's predicate needs both a clock and the room log. So:
+
+- `AddressingMember` gains a boolean field, `isEngaged`. `respondsTo` (`addressing.ts:50-64`) gains the `engaged` branch and reads that boolean. The matrix stays a pure function of its inputs and stays testable in full.
+- The predicate itself lives in a new `apps/server/src/services/rooms/engagement.ts`, a single exported function over the room store and a clock, unit-testable with a fake clock and no runtime.
+- `RoomTriggerDispatcher` (`room-trigger.ts`) is the production caller and threads it in: it already builds the roster view before calling `selectTriggerTargets`, and this is one more field on it. It evaluates the predicate **once per entry**, not once per member, since the query is per member but the thread scope and `latestSeq` are shared.
+
+Four other places carry the enum's values and must be updated with it: `docs/concepts/rooms.mdx:130-138`'s trigger table, `docs/api/openapi.json` (regenerated), `RoomNoticeCodeSchema`'s neighbours in `room-schemas.ts`, and the hand-written enum comment at `packages/db/src/schema/rooms.ts:140`, which spells the four values out in prose and will otherwise silently describe a schema that has five.
 
 The four rules and the mode that answers each:
 
@@ -475,7 +501,7 @@ Both numbers are ours and unsourced (§2.2). The TSDoc must not imply otherwise,
 
 So a **one-time Drizzle data migration** rewrites `responseMode = 'mention-only'` to `'engaged'` for memberships in rooms of `kind = 'channel'`.
 
-That migration cannot distinguish a seeded default from a deliberately chosen `mention-only`, because the column stores no provenance. It is safe **now** and will not be safe later: the members panel that first let a person choose `responseMode` shipped on 2026-07-27 (R6b, DOR-572), days before this, so the population of deliberately-chosen values is empty or near-empty. **This window closes, and the migration must land in the same release as the default change or not at all.**
+That migration cannot distinguish a seeded default from a deliberately chosen `mention-only`, because the column stores no provenance. It is safe **now** and will not be safe later: the members panel that first let a person choose `responseMode` shipped on 2026-07-27 (R6b, DOR-572), **one day** before this, so the population of deliberately-chosen values is empty or near-empty. **This window closes, and the migration must land in the same release as the default change or not at all.**
 
 Because the migration widens behavior a person did not ask for, each affected room gets **one durable notice** explaining it, in the room's voice:
 
@@ -533,6 +559,8 @@ Today `collectReply` accumulates every `text_delta` of the turn and posts the lo
 
 Per §2.6, DMs keep today's behavior. In a channel or a thread, speech becomes an explicit `post_to_room` tool call and the default outcome of a turn is silence. A sentinel token like `NO_REPLY` is a thing a model can rationalize its way past; an unmade tool call is not. It also buys three things: declining is legible in a trace, posting is one natural chokepoint for rate limiting and attribution, and an agent can post twice deliberately, which makes `E17` batching expressible rather than accidental.
 
+**"Legible in a trace" is not the same as visible, and §10.2.2 is why that distinction has to be built in rather than assumed.**
+
 **The tool.** A new capability domain `apps/server/src/services/rooms/room-capabilities.ts`, registered in `composeDorkOsCapabilityRegistry` (`apps/server/src/services/core/self-description/dorkos-registry.ts:50-56`) gated on its deps, and in `composeCapabilityRegistryForDocs` (`:80`) unconditionally so it projects into the OpenAPI document. The registry gates itself: the tier check lives inside `registry.invoke` (DOR-467), so every surface reaching the capability inherits it and there is no second enforcement path to write.
 
 | Capability   | Tool           | Tier  | Notes                                                                              |
@@ -573,7 +601,26 @@ So RP6 ships:
 
 **This is the one item the six decisions did not cover**, and §18 records the question it leaves for a human.
 
-**Testing.** A channel turn that makes no tool call posts nothing and writes no notice, and the trace shows the decline. Two calls in one turn produce two entries. A DM turn posts without a tool call. A fabricated runtime that can neither carry the tool nor post automatically is refused at `addMember` with the typed error. The registry composes with the new domain and throws on a duplicate tool name, which is the existing boot check doing its job.
+#### 10.2.2 Silence is free when nobody asked, and never free when somebody did
+
+`post_to_room` makes the default outcome of a turn silence, and that collides head-on with `E1`: _"When addressed, answer or explicitly decline. Never leave a direct question hanging. Being asked creates an obligation, and silence after a direct question is not neutral, it reads as a failure. If the agent cannot or will not answer, that is a reply too."_ Without the split below, a person `@`-mentions an agent, a turn runs, and the room shows nothing, which is verbatim the situation §2.5 exists to prevent. An explanation in a session trace is an explanation where the person who noticed will never look.
+
+**The obligation attaches to being addressed, not to running a turn.** So the outcome splits along the trigger state §8's table already defines:
+
+| The turn was triggered because                                      | The turn ends with no `post_to_room` call                                                                                                                               | Why                                                                                                                                      |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Addressed** (mentioned, or a DM)                                  | **The room gets a one-line notice.** Same mechanism, same code (`agent_silent_here`'s sibling `agent_declined`) and the same one-per-agent-per-cascade damping as §5.2. | Being asked creates an obligation, and silence discharges it visibly or not at all.                                                      |
+| **Ambient** (`always`, `engaged`, or live-ambient, with no mention) | **Silence, and it costs nothing.** No notice, no entry.                                                                                                                 | Nobody asked, so there is no obligation to discharge. This is the common case and it is the whole reason `post_to_room` is worth having. |
+
+Two things follow.
+
+**The notice is the floor, not the goal.** `E21` says decline like a colleague: a brief reason, and an alternative where one exists. An agent that was addressed and has nothing useful to say should call `post_to_room` with one sentence in its own voice, and the room notice is what happens when it does not. Prompt and evals push toward the first; the notice guarantees the second. This is `I2` observed exactly: the good outcome is conduct, the floor is a mechanism, and neither is asked to do the other's job.
+
+**`room_context.addressing.addressedNow` (§6.3) is what the agent reads to know which case it is in**, and the server does not need to trust it: the dispatcher already knows, because it computed the trigger reason when it claimed the target.
+
+This preserves the point of RP6 (declining an unaddressed contribution stays free and silent) while closing the one hole where a person is actually waiting.
+
+**Testing.** An **ambient** channel turn that makes no tool call posts nothing and writes no notice. An **addressed** channel turn that makes no tool call writes exactly one `agent_declined` notice, and three mentions in one cascade still write one. An addressed turn that _does_ call the tool writes no notice, so the notice cannot fire on the happy path. Two calls in one turn produce two entries. A DM turn posts without a tool call. A fabricated runtime that can neither carry the tool nor post automatically is refused at `addMember` with the typed error. The registry composes with the new domain and throws on a duplicate tool name, which is the existing boot check doing its job.
 
 ### 10.3 RP7: room history tools
 
@@ -661,18 +708,18 @@ Edge case 2 lands here too: **presence follows the install** (ADR `260727-184933
 
 Ten phases, in `01-ideation.md` §7's order, which is by ratio of harm removed to work. Each is independently shippable and each is one PR, in its own worktree, reviewed by a separate agent against `REVIEW.md`.
 
-| Phase    | Deliverable                                                                                                                                    | Depends on            |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| **RP1**  | Visible refusals: `agent_busy`, `turn_failed`, `agent_silent_here`, `replies_off`; late posts instead of truncated ones; `answersEntryId` (§5) | none                  |
-| **RP2**  | `room_context` as an ADR-0273 `ContextKind`, with the untrusted fence; `composeRoomPrompt` deleted (§6, §7)                                    | none                  |
-| **RP3**  | Ambient pending context off the existing cursor; `joinedSeq`; the live-ambient opt-in (§8)                                                     | RP2                   |
-| **RP4**  | The `engaged` mode, the derived window, config, seeding and migration (§9)                                                                     | RP2                   |
-| **RP5**  | The mention picker, sectioned and typed (§10.1)                                                                                                | none                  |
-| **RP6**  | `post_to_room`, the rooms capability domain, membership-guarantees-the-tool (§10.2)                                                            | RP2                   |
-| **RP7**  | `read_room_history` and `search_room_history` (§10.3)                                                                                          | RP6                   |
-| **RP8**  | Collect, debounce, steer, and the halt verb (§10.4)                                                                                            | RP2, RP3              |
-| **RP9**  | Status signals wired; work one click away; long posts collapse (§11.1)                                                                         | none                  |
-| **RP10** | Cross-community DM policy, default off, with the disclosure (§11.2)                                                                            | the community program |
+| Phase    | Deliverable                                                                                                                     | Depends on            |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| **RP1**  | Visible refusals: `agent_busy`, `turn_failed`, `agent_silent_here`; late posts instead of truncated ones; `answersEntryId` (§5) | none                  |
+| **RP2**  | `room_context` as an ADR-0273 `ContextKind`, with the untrusted fence; `composeRoomPrompt` deleted (§6, §7)                     | none                  |
+| **RP3**  | Ambient pending context off the existing cursor; `joinedSeq`; the live-ambient opt-in (§8)                                      | RP2                   |
+| **RP4**  | The `engaged` mode, the derived window, config, seeding and migration (§9)                                                      | RP2                   |
+| **RP5**  | The mention picker, sectioned and typed (§10.1)                                                                                 | none                  |
+| **RP6**  | `post_to_room`, the rooms capability domain, membership-guarantees-the-tool, `agent_declined` (§10.2)                           | RP2                   |
+| **RP7**  | `read_room_history` and `search_room_history` (§10.3)                                                                           | RP6                   |
+| **RP8**  | Collect, debounce, steer, and the halt verb (§10.4)                                                                             | RP2, RP3              |
+| **RP9**  | Status signals wired; work one click away; long posts collapse (§11.1)                                                          | none                  |
+| **RP10** | Cross-community DM policy, default off, with the disclosure (§11.2)                                                             | the community program |
 
 RP1, RP2, RP5 and RP9 are independent and run in parallel. RP3 and RP4 both need RP2 and are independent of each other. **The thread ADR lands before RP4**, because RP4's window is thread-scoped and RP7's queries assume the entry relation.
 
@@ -783,6 +830,7 @@ The alternative is to hold RP6 until the tool is reachable everywhere, which mea
 - `specs/rooms/02-specification.md`: the local room model these mechanisms run on.
 - `specs/community-adapter/02-specification.md`: the port, and the entry-level thread relation this spec's §3 aligns with.
 - ADRs `260726-170125`, `260726-170127`, `260726-193526`, `260727-184933`, ADR-0273, ADR-0310, and the thread ADR landing in parallel.
+- `research/20260727_thread-models.md`: the report behind §3's thread decision.
 - `research/20260727_room-spec-corpus-synthesis.md`: the 72-constraint inventory.
 - `research/20260727_rooms-implementation-audit.md`: what ships today, with citations.
 - `research/20260727_messaging-etiquette.md`, `research/20260727_agents-in-group-chat-industry-survey.md`, `research/20260727_buzz-conversational-behavior.md`, `research/20260727_hermes-openclaw-group-chat.md`, `research/20260727_relay-adapter-group-chat-audit.md`.
