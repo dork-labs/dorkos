@@ -1,6 +1,7 @@
 ---
 covers:
-  - "feat(evals): make the eval harness prove the approval gate, not perform it (DOR-449)"
+  - 'feat(evals): make the eval harness prove the approval gate, not perform it (DOR-449)'
+  - 'feat(evals): make the eval harness actually test the gate (DOR-428) (#459)'
 ---
 
 ### Fixed
