@@ -40,7 +40,7 @@
       "cron": "*/15 * * * *",
       "agentRef": "linear-tender",
       "permissionMode": "acceptEdits",
-      "startDisabled": false
+      "startEnabled": true
     }
   ],
   "connections": [
