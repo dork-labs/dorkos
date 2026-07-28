@@ -235,7 +235,9 @@ const PKG: AggregatedPackage = {
 const EMPTY_PREVIEW: PermissionPreview = {
   fileChanges: [{ path: 'plugins/pr-linter/plugin.json', action: 'create' }],
   extensions: [],
-  tasks: [],
+  hooks: [],
+  unreadableHooks: [],
+  schedules: [],
   secrets: [],
   externalHosts: [],
   requires: [],
