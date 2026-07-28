@@ -28,6 +28,13 @@ const PROJECT = '/tmp/my-project';
 /** A minimal projection plan stub — `applyPlan`/`project` are stubbed, so its shape is opaque to the service. */
 const FAKE_PLAN = { actions: [], drops: [] } as never;
 
+/**
+ * What the service hands the engine: the dork home, plus the per-package gate on
+ * hook contribution (DOR-522). The gate itself is exercised in
+ * `hook-projection-gate.test.ts`.
+ */
+const PROJECT_OPTS = { dorkHome: DORK_HOME, allowPluginHooks: expect.any(Function) };
+
 describe('runAutoProjection', () => {
   let scaffoldSpy: ReturnType<typeof vi.spyOn>;
   let projectSpy: ReturnType<typeof vi.spyOn>;
@@ -49,6 +56,11 @@ describe('runAutoProjection', () => {
     applyPlanSpy = vi
       .spyOn(_internal, 'applyPlan')
       .mockReturnValue({ applied: [], conflicts: [], swept: [] });
+    // No package ships hooks in these cases, so nothing is ever asked about and
+    // the plan is built with every package's hooks allowed. The hook gate has its
+    // own suite (`hook-projection-gate.test.ts`), which drives the real engine.
+    vi.spyOn(_internal, 'scanInstalledPlugins').mockReturnValue([]);
+    vi.spyOn(_internal, 'projectedHooks').mockReturnValue([]);
   });
 
   describe('global installs (no projectPath)', () => {
@@ -102,7 +114,7 @@ describe('runAutoProjection', () => {
       );
 
       expect(scaffoldSpy).toHaveBeenCalledWith(PROJECT);
-      expect(projectSpy).toHaveBeenCalledWith(PROJECT, { dorkHome: DORK_HOME });
+      expect(projectSpy).toHaveBeenCalledWith(PROJECT, PROJECT_OPTS);
       expect(applyPlanSpy).toHaveBeenCalledWith(PROJECT, FAKE_PLAN, { sweepOrphans: true });
     });
 
@@ -115,7 +127,7 @@ describe('runAutoProjection', () => {
       );
 
       expect(scaffoldSpy).not.toHaveBeenCalled();
-      expect(projectSpy).toHaveBeenCalledWith(PROJECT, { dorkHome: DORK_HOME });
+      expect(projectSpy).toHaveBeenCalledWith(PROJECT, PROJECT_OPTS);
       expect(applyPlanSpy).toHaveBeenCalledWith(PROJECT, FAKE_PLAN, { sweepOrphans: true });
     });
 
@@ -131,7 +143,7 @@ describe('runAutoProjection', () => {
         { dorkHome: DORK_HOME }
       );
 
-      expect(projectSpy).toHaveBeenCalledWith(PROJECT, { dorkHome: DORK_HOME });
+      expect(projectSpy).toHaveBeenCalledWith(PROJECT, PROJECT_OPTS);
       expect(applyPlanSpy).toHaveBeenCalledWith(PROJECT, FAKE_PLAN, { sweepOrphans: true });
       // The sweep is what prunes the now-orphaned uninstall projection.
       expect(applyPlanSpy.mock.calls[0][2]).toEqual({ sweepOrphans: true });
