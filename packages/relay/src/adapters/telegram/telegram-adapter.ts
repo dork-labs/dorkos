@@ -12,6 +12,7 @@ import type { Context, Filter } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import type { Server } from 'node:http';
 import type { Signal, AdapterManifest, RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
 import type {
   RelayPublisher,
@@ -146,6 +147,40 @@ For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).`,
         'When enabled, recipients in DMs see text appearing in real-time (ChatGPT-style). ' +
         'Group chats always use buffer-and-flush regardless of this setting. ' +
         'Requires Telegram Bot API 9.5+.',
+    },
+    {
+      key: 'respondMode',
+      label: 'Replies in Groups',
+      type: 'select',
+      displayAs: 'radio-cards',
+      // Required with an explicit default so the form always shows the choice.
+      // Group behavior is the thing people are surprised by, so it should not be
+      // something they only discover after the bot talks over everyone (DOR-619).
+      required: true,
+      default: 'thread-aware',
+      description: 'When should the bot reply in a group chat?',
+      options: [
+        {
+          label: 'When spoken to',
+          value: 'thread-aware',
+          description:
+            'Reply when someone mentions the bot by name, and keep replying to anyone who replies to it.',
+        },
+        {
+          label: 'Only when mentioned',
+          value: 'mention-only',
+          description: 'Reply only when someone types the bot name.',
+        },
+        {
+          label: 'Every message',
+          value: 'always',
+          description: 'Reply to everything anyone says in the group.',
+        },
+      ],
+      helpMarkdown:
+        'This only affects group chats. In a one-on-one chat the bot always replies.\n\n' +
+        'The bot never replies to another bot, whatever you pick here. That is what ' +
+        'stops two bots in one group talking to each other forever.',
     },
     {
       key: 'approverAllowlist',
@@ -323,7 +358,12 @@ export class TelegramAdapter extends BaseRelayAdapter {
         relay,
         this.makeInboundCallbacksWithTyping(),
         this.logger,
-        this.codec
+        this.codec,
+        // Fall back to the schema's own default rather than restating one here:
+        // a config that reached this point without a `respondMode` went through
+        // neither the schema nor the setup form, and nothing about it says the
+        // operator wanted the bot answering every message in every group.
+        { respondMode: this.config.respondMode ?? DEFAULT_RESPOND_MODE }
       )
     );
     // Callback query handler for tool approval inline keyboard buttons

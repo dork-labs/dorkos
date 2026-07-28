@@ -6,6 +6,7 @@ import {
   AdapterManifestSchema,
   SlackAdapterConfigSchema,
   TelegramAdapterConfigSchema,
+  DEFAULT_RESPOND_MODE,
 } from '../relay-adapter-schemas.js';
 
 describe('AdapterSecretSchema — credential references (DOR-280)', () => {
@@ -45,6 +46,63 @@ describe('TelegramAdapterConfigSchema — token as credential reference', () => 
   it('rejects an empty token', () => {
     const result = TelegramAdapterConfigSchema.safeParse({ token: '' });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('TelegramAdapterConfigSchema — group respond mode (DOR-619)', () => {
+  it('defaults respondMode to thread-aware, so a new bot does not answer every group message', () => {
+    const result = TelegramAdapterConfigSchema.safeParse({ token: '123:ABC' });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.respondMode).toBe('thread-aware');
+    }
+  });
+
+  it('carries an existing Telegram integration to the same default', () => {
+    // Telegram never had this field, so every stored config predates it. There
+    // is deliberately no carry-forward to 'always': answering every message in
+    // every group is the bug being fixed, not a setting anyone chose.
+    const result = TelegramAdapterConfigSchema.safeParse({
+      token: '123:ABC',
+      mode: 'polling',
+      streaming: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.respondMode).toBe('thread-aware');
+    }
+  });
+
+  it('accepts every respond mode', () => {
+    for (const mode of ['always', 'mention-only', 'thread-aware'] as const) {
+      const result = TelegramAdapterConfigSchema.safeParse({ token: '123:ABC', respondMode: mode });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.respondMode).toBe(mode);
+      }
+    }
+  });
+
+  it('rejects an unknown respond mode', () => {
+    const result = TelegramAdapterConfigSchema.safeParse({
+      token: '123:ABC',
+      respondMode: 'never',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('DEFAULT_RESPOND_MODE — one place the default is stated (DOR-623)', () => {
+  it('is what both adapter schemas resolve an absent respondMode to', () => {
+    const slack = SlackAdapterConfigSchema.safeParse({
+      botToken: 'xoxb-1',
+      appToken: 'xapp-1',
+      signingSecret: 'secret',
+    });
+    const telegram = TelegramAdapterConfigSchema.safeParse({ token: '123:ABC' });
+
+    expect(slack.success && slack.data.respondMode).toBe(DEFAULT_RESPOND_MODE);
+    expect(telegram.success && telegram.data.respondMode).toBe(DEFAULT_RESPOND_MODE);
   });
 });
 

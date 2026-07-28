@@ -187,6 +187,9 @@ function createMockRelay(): RelayPublisher {
   return relay;
 }
 
+/** The bot's own Telegram identity, as grammy exposes it on `ctx.me`. */
+const BOT_IDENTITY = { id: 777, is_bot: true, first_name: 'DorkBot', username: 'dorkbot' };
+
 function createInboundCtx(overrides: {
   chatId?: number;
   chatType?: 'private' | 'group' | 'supergroup' | 'channel';
@@ -197,6 +200,8 @@ function createInboundCtx(overrides: {
   fromId?: number;
   messageId?: number;
   title?: string;
+  /** Entities Telegram attached to the text (mentions, commands). */
+  entities?: Array<Record<string, unknown>>;
 }) {
   const {
     chatId = 12345,
@@ -208,12 +213,14 @@ function createInboundCtx(overrides: {
     fromId = 99,
     messageId = 1,
     title,
+    entities,
   } = overrides;
 
   return {
     chat: { id: chatId, type: chatType, ...(title ? { title } : {}) },
-    from: { id: fromId, first_name: firstName, last_name: lastName, username },
-    message: { text, message_id: messageId, caption: undefined },
+    from: { id: fromId, is_bot: false, first_name: firstName, last_name: lastName, username },
+    me: BOT_IDENTITY,
+    message: { text, message_id: messageId, caption: undefined, entities },
   };
 }
 
@@ -399,18 +406,22 @@ describe('TelegramAdapter', () => {
   it('publishes inbound group message to relay.human.telegram.tg1.group.{chatId}', async () => {
     await adapter.start(mockRelay);
 
+    // Addressed to the bot, because a group message that names nobody is
+    // filtered before it reaches the relay (DOR-619). Gating has its own tests
+    // in `inbound.test.ts`; this one is about subject and payload shape.
     const ctx = createInboundCtx({
       chatId: -100111222,
       chatType: 'group',
-      text: 'Group message',
+      text: '@dorkbot Group message',
       title: 'Project Team',
+      entities: [{ type: 'mention', offset: 0, length: 8 }],
     });
     await capturedMessageHandler!(ctx);
 
     expect(mockRelay.publish).toHaveBeenCalledWith(
       'relay.human.telegram.tg1.group.-100111222',
       expect.objectContaining({
-        content: 'Group message',
+        content: '@dorkbot Group message',
         channelType: 'group',
       }),
       { from: 'relay.human.telegram.tg1.bot', replyTo: 'relay.human.telegram.tg1.group.-100111222' }
