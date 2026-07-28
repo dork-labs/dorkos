@@ -27,6 +27,9 @@ name: changelog-fragment-check
 # skill), or label the PR `skip-changelog` for a deliberately non-user-facing
 # change — a pure refactor, a CI/build-infra fix (e.g. a `fix(ci):` scope), or a
 # duplicate already covered by another fragment.
+#
+# A second job, `no-fragment-under-skip-label`, closes the opposite hole: a PR
+# that claims `skip-changelog` and adds a fragment anyway. See its own comment.
 
 on:
   pull_request:
@@ -97,3 +100,69 @@ jobs:
           python3 .claude/scripts/changelog_backfill.py \
             --since "${{ steps.base.outputs.sha }}" \
             --pr "${{ github.event.pull_request.number }}" --check --changed-only
+
+  # The mirror image of the job above, for the one case that job cannot see
+  # (DOR-618). Two different things decide whether a change is user-facing, and
+  # nothing reconciled them:
+  #
+  #   * the post-commit populator reads the COMMIT SUBJECT, so a `feat(` or
+  #     `fix(` prefix mints a fragment;
+  #   * the `skip-changelog` label governs the PULL REQUEST.
+  #
+  # So an internal-only PR carrying the label can still accumulate a stray
+  # user-facing entry, because one commit happened to be typed `fix(` rather than
+  # `chore(`. The coverage job above is satisfied either way: the label makes it
+  # skip its coverage step entirely. That happened on PR #532 — a harness change
+  # with `skip-changelog`, a fixup commit typed `fix(`, and a fragment nobody
+  # asked for. The author caught it; nothing else would have, and it would have
+  # ridden into the next release's compiled CHANGELOG.md as a user-facing bullet
+  # about an internal hook.
+  #
+  # Teaching the populator the label was the other candidate and is not reliable:
+  # a post-commit hook has no PR number on a branch's first commit, the label is
+  # usually applied after the commits exist, and a hook that phones GitHub on
+  # every commit fails offline. So the reconciliation happens here, at the one
+  # moment both facts are known.
+  no-fragment-under-skip-label:
+    # Only meaningful when the label is on. With it off, the coverage job above
+    # is already asking the harder question.
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Determine the PR's merge-base
+        id: base
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+          base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      # ADDED fragments only (`--diff-filter=A`), deliberately. A `skip-changelog`
+      # PR may be REQUIRED to edit an existing fragment: the validity step above
+      # has no label bypass, so repairing somebody's malformed `covers:` block is
+      # exactly the kind of internal fix that carries this label. Failing on a
+      # modification would make that repair impossible. A brand-new fragment is
+      # the unambiguous case, and the one the populator mints.
+      - name: Fail if a skip-changelog PR adds a changelog fragment
+        run: |
+          base="${{ steps.base.outputs.sha }}"
+          added="$(git diff --name-only --diff-filter=A "$base..HEAD" -- ':/changelog/unreleased/')"
+          if [ -n "$added" ]; then
+            echo "::error::This pull request is labeled 'skip-changelog', which says it has no user-facing change, but it adds a changelog fragment. Both cannot be true."
+            echo "Fragments added by this pull request:"
+            echo "$added" | sed 's/^/  /'
+            echo ""
+            echo "The post-commit populator mints a fragment from any commit subject starting"
+            echo "'feat(', 'fix(', 'refactor(' or 'perf(' — it never sees the label. Pick one:"
+            echo ""
+            echo "  * The change IS user-facing: drop the 'skip-changelog' label and keep the"
+            echo "    fragment, rewritten for a person (see changelog/README.md)."
+            echo "  * The change is NOT user-facing: delete the fragment and retype the commit"
+            echo "    subject as 'chore(' or 'ci(' so the populator stops minting it."
+            exit 1
+          fi
+          echo "No changelog fragment added, which is what 'skip-changelog' asserts."
