@@ -13,6 +13,7 @@ import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { LucideIcon } from 'lucide-react';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import { permissionModeLabel } from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
 import {
   ResponsiveDropdownMenu,
@@ -59,18 +60,6 @@ const MODE_TAGS: Record<string, string> = {
 
 /** Copy shown in the tooltip when 'auto' is hidden because the model can't run it. */
 const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode requires Opus 4.6+ or Sonnet 4.6';
-
-// Built-in fallback labels for Claude's native modes — used only when we have
-// no descriptor for the currently-selected mode id (e.g. the trigger needs to
-// render a label while the dropdown's mode list comes from capabilities).
-const FALLBACK_LABELS: Record<string, string> = {
-  default: 'Default',
-  acceptEdits: 'Accept Edits',
-  plan: 'Plan Mode',
-  dontAsk: "Don't Ask",
-  bypassPermissions: 'Bypass All',
-  auto: 'Auto',
-};
 
 interface PermissionModeItemProps {
   mode: PermissionMode;
@@ -133,7 +122,10 @@ export function PermissionModeItem({
   const autoFiltered = !modelSupportsAutoMode && allDescriptors.some((d) => d.id === 'auto');
   const descriptors = autoFiltered ? allDescriptors.filter((d) => d.id !== 'auto') : allDescriptors;
   const currentDescriptor = descriptors.find((d) => d.id === mode);
-  const fullLabel = currentDescriptor?.label ?? FALLBACK_LABELS[mode] ?? mode;
+  // No descriptor yet (capabilities still loading, or a mode the runtime does
+  // not enumerate) falls back to the shared names, so the picker and the session
+  // row never call the same mode two different things.
+  const fullLabel = currentDescriptor?.label ?? permissionModeLabel(mode);
   const currentLabel = compact ? compactStatusValue(fullLabel) : fullLabel;
   const CurrentIcon = MODE_ICONS[mode] ?? DEFAULT_ICON;
   const currentIsDangerous = MODE_WARN[mode] ?? false;

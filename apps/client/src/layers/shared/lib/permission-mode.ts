@@ -37,3 +37,31 @@ const BYPASS_PERMISSION_MODES = new Set<string>(['bypassPermissions', 'always-al
 export function isBypassPermissionMode(mode: string | null | undefined): boolean {
   return mode != null && BYPASS_PERMISSION_MODES.has(mode);
 }
+
+/**
+ * What each of Claude's built-in permission modes is called, in the person's
+ * words. Runtimes ship their own labels in their capability profiles, so this is
+ * the answer for surfaces that have no profile to hand — a collapsed session
+ * row, say — and the fallback for the mode picker when a profile is still
+ * loading.
+ */
+const PERMISSION_MODE_LABELS: Record<string, string> = {
+  default: 'Default',
+  acceptEdits: 'Accept Edits',
+  plan: 'Plan Mode',
+  dontAsk: "Don't Ask",
+  bypassPermissions: 'Bypass All',
+  auto: 'Auto',
+};
+
+/**
+ * The name of a permission mode. An id nobody has a label for is returned
+ * as-is: a runtime's own spelling of its mode is still the true answer to "what
+ * is this session doing?", where a friendly-looking stand-in would not be
+ * (DOR-496).
+ *
+ * @param mode - The session's effective permission mode.
+ */
+export function permissionModeLabel(mode: string): string {
+  return PERMISSION_MODE_LABELS[mode] ?? mode;
+}

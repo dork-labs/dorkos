@@ -10,7 +10,7 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTabVisibility, useTransport } from '@/layers/shared/model';
-import { QUERY_TIMING } from '@/layers/shared/lib';
+import { QUERY_TIMING, isSessionRequestReady } from '@/layers/shared/lib';
 import { useSessionChatStore } from '@/layers/entities/session';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream/stream-history-helpers';
 import type { ChatMessage } from './chat-types';
@@ -62,10 +62,12 @@ export function useSessionHistory({
 
   const historyQuery = useQuery({
     queryKey: ['messages', sessionId, selectedCwd],
-    queryFn: () => transport.getMessages(sessionId!, selectedCwd ?? undefined),
+    queryFn: () => transport.getMessages(sessionId!, selectedCwd!),
     staleTime: QUERY_TIMING.MESSAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
-    enabled: sessionId !== null,
+    // Waits for the working directory too — a fetch keyed on a directory the
+    // store has not resolved yet is one the server always refuses (DOR-495).
+    enabled: isSessionRequestReady(sessionId, selectedCwd),
     refetchInterval: () => {
       if (isStreaming) return false;
       if (!enableMessagePolling) return false;

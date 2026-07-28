@@ -11,6 +11,7 @@ import {
   useAgentSessions,
   useSessionListWarnings,
   useRenameSession,
+  sessionKeys,
 } from '@/layers/entities/session';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { SessionsView } from './SessionsView';
@@ -56,7 +57,7 @@ export function EmbedSidebar() {
     async (sessionId: string) => {
       try {
         const forked = await transport.forkSession(sessionId, undefined, selectedCwd ?? undefined);
-        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
         handleSessionClick(forked.id);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to fork session');
