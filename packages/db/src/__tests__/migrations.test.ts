@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, afterEach } from 'vitest';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,15 @@ import { createDb, runMigrations } from '../index';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
+
+/** Temp migration folders to remove after each test. */
+const tempMigrationDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempMigrationDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 /**
  * Build a throwaway migrations folder holding only migrations up to and
@@ -23,6 +32,7 @@ const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
  */
 function migrationsFolderThrough(idx: number): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'dorkos-drizzle-'));
+  tempMigrationDirs.push(dir);
   mkdirSync(path.join(dir, 'meta'));
 
   const journal = JSON.parse(

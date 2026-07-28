@@ -140,7 +140,9 @@ describe('scanSkillDirectory', () => {
   });
 
   // Root ignores file permissions, so a chmod-based unreadable setup only
-  // works for non-root runs.
+  // works for non-root runs. NOTE: this and the next test SKIP entirely in any
+  // root container (CI Docker included) — a green run there is not evidence
+  // that the unreadable-file and unlistable-directory paths are covered.
   it.skipIf(process.getuid?.() === 0)(
     'reports an unreadable SKILL.md as present-but-broken, never as missing',
     async () => {

@@ -1,4 +1,4 @@
-import { eq, desc, and, count, inArray, notInArray, like, lt, isNull, sql } from 'drizzle-orm';
+import { eq, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -16,7 +16,6 @@ import type {
 } from '@dorkos/shared/types';
 import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
-import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { logger } from '../../lib/logger.js';
 
 /** Options for listing runs. */
@@ -580,10 +579,16 @@ export class TaskStore {
           // A `paused` row whose file is back is un-paused here, because
           // nothing else ever will: the scheduler requires `enabled` AND
           // `status === 'active'`, and restoring only `enabled` leaves a task
-          // that looks live and never fires. `paused` is written exclusively by
-          // this service (file gone, agent unregistered) — a person pausing a
-          // task sets `enabled: false`, which the line above re-reads from the
-          // file — so this can never override someone's own choice.
+          // that looks live and never fires.
+          //
+          // Safe because `paused` is a server-owned signal, not a person's
+          // choice. It is written only by this service — file gone
+          // (`markRemovedByFilePath`), agent unregistered
+          // (`disableTasksByAgentId`) — and `SettableTaskStatusSchema` keeps
+          // the update API from setting it, precisely because a DB-only status
+          // cannot survive this line. A person pausing a task sends
+          // `enabled: false`, which lands in the file's frontmatter and is
+          // re-read above, so their choice holds.
           // `pending_approval` is untouched: that gate is a person's to clear.
           ...(existing.status === 'paused' ? { status: 'active' as const } : {}),
           tags: '[]',
@@ -643,18 +648,21 @@ export class TaskStore {
   }
 
   /**
-   * Find a task by its directory slug.
+   * Find the task defined by an exact SKILL.md path.
    *
-   * Matches tasks whose `filePath` ends with `/{slug}/SKILL.md`.
+   * Keyed on the full path, never a directory slug: a slug is unique only
+   * within one tasks directory, and DorkOS watches the global one plus every
+   * registered agent's, so a slug lookup silently returns an arbitrary one of
+   * several matches.
    *
-   * @param slug - Kebab-case directory name
+   * @param filePath - Absolute path to the task's SKILL.md
    * @returns The matching Task or null
    */
-  getBySlug(slug: string): Task | null {
+  getByFilePath(filePath: string): Task | null {
     const row = this.db
       .select()
       .from(pulseSchedules)
-      .where(like(pulseSchedules.filePath, `%/${slug}/${SKILL_FILENAME}`))
+      .where(eq(pulseSchedules.filePath, filePath))
       .get();
     return row ? mapTaskRow(row) : null;
   }

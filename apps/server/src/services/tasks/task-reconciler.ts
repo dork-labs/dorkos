@@ -77,14 +77,19 @@ export class TaskReconciler {
    *
    * A pass does two things: sync every task file it can read into the DB, then
    * retire rows whose file is gone. The second half destroys data, so it acts
-   * only on POSITIVE evidence of deletion — a directory this pass listed
-   * successfully, in which the file was not found. Anything short of that (a
-   * directory that could not be listed, a file that could not be read, a file
-   * whose frontmatter does not parse) leaves the row exactly as it is.
+   * only on POSITIVE evidence of deletion: this pass enumerated the directory
+   * the file lives in, and the file was not in it. Every other outcome leaves
+   * the row exactly as it is —
+   *
+   * - a directory that could not be listed (EACCES, EMFILE),
+   * - a directory nobody registered, so it was never listed at all,
+   * - a file that could not be read,
+   * - a file whose frontmatter does not parse.
    *
    * The distinction matters because a wrong answer here is unrecoverable: an
    * `ON DELETE CASCADE` takes the task's entire run history with it, and the
-   * rebuilt row gets a new id. "Could not look" is not "not there".
+   * rebuilt row gets a new id. "Could not look" is not "not there", and
+   * "nobody was looking" is not either.
    *
    * Every step that can fail is contained to the one directory, file, or row it
    * concerns. Because the pass runs on a timer forever, letting one failure
@@ -95,9 +100,9 @@ export class TaskReconciler {
     let upserted = 0;
     let orphaned = 0;
     const seenFilePaths = new Set<string>();
-    // Directories this pass could not list. Nothing inside one may be retired:
-    // we have no evidence either way about any file it holds.
-    const unlistedDirs: string[] = [];
+    // Directories this pass actually enumerated. ONLY these may testify that a
+    // file is gone — see the retirement loop below.
+    const scannedDirs = new Set<string>();
 
     for (const dir of this.directories) {
       let results;
@@ -114,9 +119,9 @@ export class TaskReconciler {
         // or EMFILE under file-descriptor pressure. Treating that as "empty"
         // would pause every task inside it.
         logger.error(`[TaskReconciler] Failed to scan ${dir.tasksDir}`, err);
-        unlistedDirs.push(dir.tasksDir);
         continue;
       }
+      scannedDirs.add(dir.tasksDir);
 
       for (const result of results) {
         if (!result.ok) {
@@ -149,11 +154,19 @@ export class TaskReconciler {
     }
 
     // Retire rows whose file is gone: pause first, delete after a 24h grace.
+    //
+    // A row is only a candidate if this pass ENUMERATED the directory the file
+    // lives in and did not find it there. Absence from `seenFilePaths` alone is
+    // not evidence — a directory nobody registered was never looked at, and a
+    // row is not garbage just because no one is watching its folder. Two such
+    // directories arise in normal operation, because `addDirectory` runs once
+    // at boot: a project whose agent registered after startup, and one whose
+    // agent was unregistered (its directory is dropped, its rows are not).
     const allTasks = this.store.getTasks();
     const now = Date.now();
     for (const task of allTasks) {
       if (!task.filePath || seenFilePaths.has(task.filePath)) continue;
-      if (unlistedDirs.includes(path.dirname(path.dirname(task.filePath)))) continue;
+      if (!scannedDirs.has(path.dirname(path.dirname(task.filePath)))) continue;
       try {
         const updatedAt = new Date(task.updatedAt).getTime();
         if (now - updatedAt > ORPHAN_GRACE_MS) {
