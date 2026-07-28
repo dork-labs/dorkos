@@ -137,6 +137,12 @@ export const AuthorRefSchema = z
       .describe(
         'Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name.'
       ),
+    mentionHandle: z
+      .string()
+      .optional()
+      .describe(
+        "What to type after an `@` to address this author, when anything does. A mention picker inserts it verbatim, so the string written is the string the server resolves — and it is resolved against the whole roster, so it reaches THIS author and not another member who happens to answer to the same name. Carried on every resolved roster (`RoomWithRoster`: create, read, update, and the room stream's hydration snapshot), and absent from the bulk room list, which addresses nobody. Absent also means this author cannot be addressed by `@` at all — every name it answers to either contains a space, which the mention pattern cannot span, or belongs to an earlier member. Never assume a display name works: those routinely contain spaces."
+      ),
   })
   .openapi('AuthorRef');
 
