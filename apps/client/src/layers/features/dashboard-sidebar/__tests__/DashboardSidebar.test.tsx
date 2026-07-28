@@ -157,7 +157,10 @@ const mockAttentionMap = vi.fn((paths: string[]) =>
   Object.fromEntries(paths.map((p) => [p, 'active']))
 );
 
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // The query-key factory is the real one: a stub here would let the sidebar
+  // read a cache key nothing in the app writes and never say so (DOR-497).
+  sessionKeys: (await importOriginal<typeof import('@/layers/entities/session')>()).sessionKeys,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),

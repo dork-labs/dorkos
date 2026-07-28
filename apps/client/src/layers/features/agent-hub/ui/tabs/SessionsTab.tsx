@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { groupSessionsByTime } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { useAgentSessions, useRenameSession } from '@/layers/entities/session';
+import { useAgentSessions, useRenameSession, sessionKeys } from '@/layers/entities/session';
 import { useAgentToolStatus } from '@/layers/entities/agent';
 import { SessionsView, TasksView } from '@/layers/features/session-list';
 import { useAgentHubContext } from '../../model/agent-hub-context';
@@ -34,7 +34,7 @@ export function SessionsTab() {
     async (sessionId: string) => {
       try {
         const forked = await transport.forkSession(sessionId, undefined, projectPath ?? undefined);
-        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
         setActiveSession(forked.id);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to fork session');

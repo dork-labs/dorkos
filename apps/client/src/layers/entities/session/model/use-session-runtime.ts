@@ -2,7 +2,7 @@ import { useSessions } from './use-sessions';
 
 /**
  * Resolve the runtime type that owns a session, from the session's row in
- * the `['sessions', cwd]` list cache (server-authoritative and live-updated
+ * the session-list cache (server-authoritative and live-updated
  * by the global session stream).
  *
  * Returns `undefined` when the session has no row yet — a loader-minted id

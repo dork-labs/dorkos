@@ -5,7 +5,7 @@
  *
  * 1. **Has the session started?** Same signal the submit hook gates its
  *    first-turn runtime hint on (`isNewSession` in use-session-submit): the
- *    session's presence in the `['sessions', cwd]` list cache — flipped
+ *    session's presence in the session-list cache — flipped
  *    instantly by the optimistic insert on first send and kept server-true
  *    thereafter by `session_upserted` broadcasts. Id presence can NOT stand in
  *    for this: the route loader mints `?session=<uuid>` before any message

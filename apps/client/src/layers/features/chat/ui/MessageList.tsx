@@ -103,7 +103,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // LIMITATION: this resolves the agent at the app-wide selected directory, not
   // the session's own `cwd`, so a session rendered while another directory is
   // selected would name that directory's agent. There is no cheap fix: the only
-  // client-side source of a session's `cwd` is the `['sessions', cwd]` list
+  // client-side source of a session's `cwd` is the session-list
   // cache, which is itself keyed by the selected directory (exact-cwd membership,
   // DOR-203) — a session outside it simply is not there, so reading `session.cwd`
   // would return the selected directory again or nothing at all. Closing this
