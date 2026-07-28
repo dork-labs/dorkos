@@ -31,14 +31,16 @@ export default defineConfig({
     //   prompt, but the guard is still the only thing that notices the table moved,
     //   and a stale dist still turns it into decoration. With the alias the same edit
     //   fails immediately.
-    // - `@dorkos/operating-skills` backs the tier-consistency guard
-    //   (`services/core/__tests__/operating-skills-tier-consistency.test.ts`),
-    //   which reads the SKILL PROSE agents are seeded with and checks it against
-    //   everything that declares a `destructive` tier. Its whole subject is the text
-    //   of that package, so a dist copy is the wrong text by construction:
-    //   reintroducing "carries no gate of its own" in `src/` would pass against a
-    //   dist built before the edit. That is the DOR-509 bug itself, checked by a test
-    //   that cannot see it.
+    // - `@dorkos/operating-skills` backs the two pack-prose guards, which read the
+    //   SKILL TEXT agents are seeded with and check it against server reality:
+    //   `services/core/__tests__/operating-skills-tier-consistency.test.ts` against
+    //   everything that declares a `destructive` tier, and
+    //   `services/runtimes/shared/__tests__/dorkos-context-block-vs-pack.test.ts`
+    //   against the `<dorkos_context>` block the docs-lookup skill parses (DOR-661).
+    //   Their whole subject is the text of that package, so a dist copy is the wrong
+    //   text by construction: reintroducing "carries no gate of its own" in `src/`
+    //   would pass against a dist built before the edit. That is the DOR-509 bug
+    //   itself, checked by a test that cannot see it.
     // - `schemas` backs two enumerations of `PermissionModeSchema.options` — the
     //   permission-mode firewall proves a behaviour for EVERY mode, and
     //   `interactive-handlers` pins the decided set against it — plus

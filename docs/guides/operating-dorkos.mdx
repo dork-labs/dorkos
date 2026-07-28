@@ -1,13 +1,13 @@
 ---
 title: Your Agents Can Operate DorkOS
-description: Ask an agent to create agents, schedule tasks, install packages, change settings, and read your activity, in plain language
+description: Ask an agent to create agents, schedule tasks, install packages, change settings, read your activity, and explain how DorkOS works, in plain language
 ---
 
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Your Agents Can Operate DorkOS
 
-Your agents don't just write code. They can run DorkOS for you. Ask in plain language, and an agent can set up new agents, put work on a schedule, add tools from the marketplace, change your settings, and tell you what's been happening.
+Your agents don't just write code. They can run DorkOS for you. Ask in plain language, and an agent can set up new agents or put work on a schedule. It can add tools from the marketplace, change your settings, and tell you what's been happening. It can also explain how any of it works.
 
 This is a slice of the app, not all of it. Agents reach the parts listed below. They cannot open a session for you, set up a workspace, connect a runtime, or run git. Those stay yours to do by hand.
 
@@ -41,11 +41,15 @@ One thing to know about who gets to answer those cards. With **Require login** o
   <Card title="Check for updates">
     "Am I on the latest DorkOS?" The agent checks your version against the newest release.
   </Card>
+  <Card title="Ask how DorkOS works">
+    "How does Relay work?" The agent searches these docs, reads the page that answers, and tells you
+    what it says instead of guessing.
+  </Card>
 </Cards>
 
 ## New agents already know how
 
-Every new agent you create comes with a set of built-in skills that teach it how to drive DorkOS: how to create agents, schedule tasks, use the marketplace, change settings, and read activity. DorkBot, your built-in assistant, gets them too. So you can just ask; you don't have to explain how DorkOS works first.
+Every new agent you create comes with a set of built-in skills that teach it how to drive DorkOS: how to create agents, schedule tasks, use the marketplace, change settings, and read activity. Another one teaches it to look things up in these docs, so a question about DorkOS gets the documented answer rather than a guess. DorkBot, your built-in assistant, gets them too. So you can just ask; you don't have to explain how DorkOS works first.
 
 ## A few things to know
 
