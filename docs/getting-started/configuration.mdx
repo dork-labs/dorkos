@@ -307,7 +307,7 @@ DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode
 
 Harness Sync projects your `.agents/` definitions and installed marketplace plugins out to every agent harness. By default, installing or uninstalling a marketplace plugin re-runs this projection automatically.
 
-Some packages ship hooks: commands your coding agent runs on its own, before or after it does things. Those never get installed quietly. DorkOS shows you the exact commands and waits for you to say yes, and it remembers your answer per package and per project. If a later version of the package wants to run something different, it asks again.
+Some packages ship hooks: commands your coding agent runs on its own, before or after it does things. Installing a package never puts those in place on its own. DorkOS shows you each command and when it would run, and waits for you to say yes. It remembers your answer per package and per project, and asks again if a later version of the package wants to run something different, or wants to run the same thing at a different moment. Running `dorkos harness sync` yourself is the one exception: that command is you asking for everything on disk to be projected, so it installs hooks without a prompt, including ones you turned down earlier.
 
 <TypeTable
   type={{

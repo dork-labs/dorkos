@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildPlan } from '../projector.js';
-import { mergeHookConfigs, projectedHookCommands } from '../installed-projector.js';
+import { mergeHookConfigs, projectedHooks } from '../installed-projector.js';
 import { getActionContent } from '../content-map.js';
 import { parseHarnessManifest } from '../../manifest/schema.js';
 import type { InstalledPlugin } from '../../sources/installed.js';
@@ -321,27 +321,96 @@ describe('mergeHookConfigs', () => {
   });
 });
 
-describe('projectedHookCommands', () => {
-  it('lists the literal commands a package would install, with the plugin root resolved', () => {
+describe('projectedHooks', () => {
+  it('reports each command with the event and matcher that fire it, plugin root resolved', () => {
     const plugin: InstalledPlugin = {
       ...projectPlugin,
       hooks: {
         Stop: [
           { hooks: [{ type: 'command', command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/x.mjs"' }] },
         ],
-        PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo two' }] }],
+        PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo two' }] }],
       },
     };
-    expect(projectedHookCommands([plugin], '/repo')).toEqual([
+    expect(projectedHooks([plugin], '/repo')).toEqual([
       {
         packageName: 'acme',
-        commands: ['node "/repo/.dork/plugins/acme/hooks/x.mjs"', 'echo two'],
+        hooks: [
+          { event: 'PreToolUse', matcher: 'Bash', command: 'echo two' },
+          { event: 'Stop', command: 'node "/repo/.dork/plugins/acme/hooks/x.mjs"' },
+        ],
       },
     ]);
   });
 
+  it('distinguishes the same command on two different events', () => {
+    // The whole reason the event travels with the command: `echo one` on `Stop`
+    // runs when a turn finishes, and on `PreToolUse` before every tool call.
+    const onStop = projectedHooks(
+      [
+        {
+          ...projectPlugin,
+          hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo one' }] }] },
+        },
+      ],
+      '/repo'
+    );
+    const onPreToolUse = projectedHooks(
+      [
+        {
+          ...projectPlugin,
+          hooks: {
+            PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'echo one' }] }],
+          },
+        },
+      ],
+      '/repo'
+    );
+    expect(onStop).not.toEqual(onPreToolUse);
+  });
+
+  it('is order-insensitive, so a reordered hooks.json produces an identical list', () => {
+    const a = projectedHooks(
+      [
+        {
+          ...projectPlugin,
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  { type: 'command', command: 'echo a' },
+                  { type: 'command', command: 'echo b' },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      '/repo'
+    );
+    const b = projectedHooks(
+      [
+        {
+          ...projectPlugin,
+          hooks: {
+            Stop: [
+              {
+                hooks: [
+                  { type: 'command', command: 'echo b' },
+                  { type: 'command', command: 'echo a' },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      '/repo'
+    );
+    expect(a).toEqual(b);
+  });
+
   it('omits a package with no hooks', () => {
-    expect(projectedHookCommands([{ ...projectPlugin, hooks: undefined }], '/repo')).toEqual([]);
+    expect(projectedHooks([{ ...projectPlugin, hooks: undefined }], '/repo')).toEqual([]);
   });
 
   it('omits what buildPlan would never project: global scope and non-portable types', () => {
@@ -355,7 +424,7 @@ describe('projectedHookCommands', () => {
       layers: ['hooks'],
     };
     const shape: InstalledPlugin = { ...projectPlugin, name: 'a-shape', type: 'shape' };
-    expect(projectedHookCommands([global, shape], '/repo')).toEqual([]);
+    expect(projectedHooks([global, shape], '/repo')).toEqual([]);
   });
 });
 

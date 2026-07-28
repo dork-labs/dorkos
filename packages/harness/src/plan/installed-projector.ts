@@ -264,21 +264,40 @@ export function rewritePluginRootInHooks(
   return out;
 }
 
-/** One installed package's hooks, reduced to the literal commands they would run. */
+/** One hook a package would install: when it fires, what narrows it, what it runs. */
+export interface ProjectedHook {
+  /** The Claude-format event that triggers it (`Stop`, `PreToolUse`, …). */
+  event: string;
+  /** What the event is narrowed to, when the matcher group declares one. */
+  matcher?: string;
+  /**
+   * The command exactly as it would be written into a harness's hook config —
+   * `${CLAUDE_PLUGIN_ROOT}` already resolved, so this is the text a shell would
+   * actually execute.
+   */
+  command: string;
+}
+
+/** One installed package's hooks, reduced to what a person has to decide about. */
 export interface ProjectedPluginHooks {
   /** The package that declared them. */
   packageName: string;
-  /**
-   * Every command string, in plan order, exactly as it would be written into a
-   * harness's hook config — `${CLAUDE_PLUGIN_ROOT}` already resolved, so this is
-   * the text a shell would actually execute.
-   */
-  commands: string[];
+  /** Its hooks, in a stable order (see {@link projectedHooks}). */
+  hooks: ProjectedHook[];
+}
+
+/** Order hooks by event, then matcher, then command — stable across file rewrites. */
+function compareProjectedHooks(a: ProjectedHook, b: ProjectedHook): number {
+  return (
+    a.event.localeCompare(b.event) ||
+    (a.matcher ?? '').localeCompare(b.matcher ?? '') ||
+    a.command.localeCompare(b.command)
+  );
 }
 
 /**
- * Enumerate the shell commands each installed package's hooks would install into
- * the project's harnesses.
+ * Enumerate the hooks each installed package would install into the project's
+ * harnesses.
  *
  * This is the "what am I about to be asked to allow" question, answered without
  * building or applying a plan: a package's hooks reach BOTH
@@ -287,19 +306,29 @@ export interface ProjectedPluginHooks {
  * whether to let a package's hooks project needs one list per package, not one per
  * target file.
  *
+ * WHEN a command fires is part of it, never only the command text. `echo x` on
+ * `Stop` runs once when a session ends; the same string on `PreToolUse` with
+ * `matcher: "*"` runs before every tool call. A caller that compared commands
+ * alone would let the second silently inherit consent given for the first, so the
+ * event and matcher travel with the command.
+ *
  * Only project-scoped, projectable-type packages are listed, matching what
  * {@link buildPlan} would actually project — a global install records no hooks at
  * all (see `sources/installed.ts`), and a non-portable package type never
  * contributes.
  *
- * Pure: no filesystem access, no ordering surprises. `repoRoot` is used only to
- * resolve each package's install dir into the commands' absolute paths.
+ * The result is SORTED, so a package that only reorders its `hooks.json` produces
+ * an identical list. A caller keying a stored decision off this therefore does not
+ * re-ask over a cosmetic edit.
+ *
+ * Pure: no filesystem access. `repoRoot` is used only to resolve each package's
+ * install dir into the commands' absolute paths.
  *
  * @param plugins - the scanned installed plugins.
  * @param repoRoot - absolute repo root, used to resolve `${CLAUDE_PLUGIN_ROOT}`.
  * @returns one entry per hook-declaring package (packages with no hooks are omitted).
  */
-export function projectedHookCommands(
+export function projectedHooks(
   plugins: readonly InstalledPlugin[],
   repoRoot: string
 ): ProjectedPluginHooks[] {
@@ -309,10 +338,21 @@ export function projectedHookCommands(
     if (!plugin.relDir) continue;
     const rewritten = rewritePluginRootInHooks(plugin.hooks, join(repoRoot, plugin.relDir));
     if (!rewritten) continue;
-    const commands = Object.values(rewritten).flatMap((groups) =>
-      groups.flatMap((group) => group.hooks.map((hook) => hook.command))
-    );
-    if (commands.length > 0) out.push({ packageName: plugin.name, commands });
+    const hooks: ProjectedHook[] = [];
+    for (const [event, groups] of Object.entries(rewritten)) {
+      for (const group of groups) {
+        for (const hook of group.hooks) {
+          hooks.push({
+            event,
+            ...(group.matcher !== undefined ? { matcher: group.matcher } : {}),
+            command: hook.command,
+          });
+        }
+      }
+    }
+    if (hooks.length > 0) {
+      out.push({ packageName: plugin.name, hooks: hooks.sort(compareProjectedHooks) });
+    }
   }
   return out;
 }

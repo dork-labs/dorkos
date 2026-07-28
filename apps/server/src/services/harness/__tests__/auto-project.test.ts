@@ -60,7 +60,7 @@ describe('runAutoProjection', () => {
     // the plan is built with every package's hooks allowed. The hook gate has its
     // own suite (`hook-projection-gate.test.ts`), which drives the real engine.
     vi.spyOn(_internal, 'scanInstalledPlugins').mockReturnValue([]);
-    vi.spyOn(_internal, 'projectedHookCommands').mockReturnValue([]);
+    vi.spyOn(_internal, 'projectedHooks').mockReturnValue([]);
   });
 
   describe('global installs (no projectPath)', () => {
