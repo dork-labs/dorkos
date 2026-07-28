@@ -97,6 +97,15 @@ jobs:
       - name: Git-guard hook fixtures
         run: bash scripts/test-git-guard.sh
 
+      # assert-tests-executed.sh decides whether the `test` workflow's green
+      # means anything — it is what stops a 280ms turbo cache replay being
+      # reported as a passing suite. Same argument as the two suites above: the
+      # gate is one matcher away from certifying nothing, so its verdicts are
+      # pinned. Hermetic (synthetic workspaces in a temp dir), so it never reads
+      # this repo's real packages.
+      - name: Test-execution assertion fixtures
+        run: bash scripts/test-assert-tests-executed.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work

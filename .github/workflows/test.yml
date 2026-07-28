@@ -1,0 +1,108 @@
+name: test
+
+# Runs the unit test suite of every package that declares one, on every PR and
+# on push to main.
+#
+# Before this workflow existed, NO CI job ran the tests. The only enforcement
+# was the lefthook `pre-push` gate — and that gate ran all 18 package suites in
+# one go, which on a machine already busy with other agents takes minutes and
+# fails with rotating timeouts on a tree nobody touched. So it got bypassed:
+# `--no-verify` was used six times on 2026-07-27 alone, by three different
+# actors, correctly each time. A bypassable local gate plus no CI job means a
+# change can reach `main` with no test having run anywhere. That is DOR-544.
+#
+# The companion half of the fix is in lefthook.yml: `pre-push` narrowed to
+# `--affected` so it stays fast and survivable, with the full-monorepo sweep
+# moved here where it can take its time.
+#
+# FULL MONOREPO, not affected-only — the same reasoning typecheck.yml spells
+# out. A per-PR affected diff cannot see an interaction between two PRs that
+# each branched from a base predating the other; only a full run against the
+# tip catches it. `--continue` so one red package still reports every other
+# package's result instead of hiding behind the first failure.
+#
+# NO separate build step: `test` declares `dependsOn: ["^build"]` in turbo.json,
+# so `turbo test` builds every dependency package first. Turbo computes that
+# from the task graph.
+#
+# `-- --run` is REQUIRED, not decoration. Five packages' `test` scripts are a
+# bare `vitest` (@dorkos/db, harness, marketplace, operating-skills, skills),
+# which without `--run` starts vitest in WATCH mode and never exits. It is also
+# the exact passthrough the pre-push gate uses, so the two share a turbo cache
+# key. And note AGENTS.md: a bare `pnpm vitest run` over the whole monorepo
+# falsely fails two tests, so full runs go through turbo, never through vitest
+# directly.
+#
+# VITEST_RETRY is deliberately NOT set here. Under lefthook it is 2, to absorb
+# timing flake on a loaded developer machine; a CI runner is not contended the
+# same way, and a retry budget in CI would quietly convert a real intermittent
+# failure into a green check. Flake that shows up here should be fixed, not
+# retried. (This does mean the same commit can pass one gate and fail the other
+# — the retry setting is the reason, and it is intentional.)
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# On a PR, coalesce by ref: a new push supersedes the run for the commit it
+# replaced, which is what you want while iterating.
+#
+# On a push to main, group by COMMIT instead. GitHub keeps only one PENDING run
+# per concurrency group and cancels any earlier pending one, so a shared
+# main-wide group silently drops the middle run whenever two PRs merge in quick
+# succession — and this job is slow enough (minutes, not seconds) that a queue
+# is the normal case, not a rare one. Losing that run means a commit reaches
+# main with the tests never executed against it, which is the exact hole this
+# workflow was added to close. A per-commit group never contends, so every main
+# commit keeps its own run.
+concurrency:
+  group: test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # A cold full run is ~5 minutes on a warm developer machine under load;
+    # generous headroom for a colder runner, and low enough that a hung watch
+    # -mode suite fails rather than burning an hour.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # --summarize writes a machine-readable record of the run to
+      # .turbo/runs/<id>.json. The next step is the only reason it is here.
+      - name: Run every package's test suite
+        run: pnpm exec turbo test --summarize --continue -- --run
+
+      # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
+      # "Tasks: 18 successful", exits 0, and takes ~280ms without starting a
+      # single test process. A job that reports green off that is worse than no
+      # job, because it manufactures a signal. So the run has to PROVE it
+      # executed: this reads the summary above and fails if any package's test
+      # task was a cache replay, or if fewer packages ran than declare a `test`
+      # script. See scripts/assert-tests-executed.sh for why this rather than
+      # --force, and scripts/test-assert-tests-executed.sh for its fixtures.
+      #
+      # It runs only when the previous step succeeded (default `if: success()`),
+      # which is exactly right — a red suite is already a red job, and the
+      # question "did anything actually run" only matters when the answer looks
+      # like yes.
+      - name: Prove the suite actually executed
+        run: bash scripts/assert-tests-executed.sh

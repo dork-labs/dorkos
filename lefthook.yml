@@ -32,13 +32,39 @@ pre-push:
       # deletion and at least one line was actually seen — empty/missing
       # stdin falls through to running tests (safe default).
       #
+      # AFFECTED-ONLY, on purpose (DOR-617). This gate used to run all 18
+      # package suites on every push. On a machine already running other
+      # agents that takes minutes and fails with rotating timeouts on a tree
+      # the push never touched — so it got bypassed, six times on 2026-07-27
+      # by three different actors, correctly each time. A gate that cannot
+      # pass while the machine is busy is not a gate, it is a toll.
+      #
+      # `--affected` is the same mode `pnpm verify` uses (see the root
+      # package.json): turbo diffs against the base branch and runs the
+      # changed packages AND their dependents, so touching packages/relay
+      # still pulls in server, client, mesh and the rest that import it.
+      # A push that touches only docs, specs or a workflow runs nothing at
+      # all, in about a second.
+      #
+      # TWO THINGS THIS GATE NO LONGER CATCHES, both covered by the
+      # full-monorepo `test` workflow (.github/workflows/test.yml) — the split
+      # is the point: local gate fast and survivable, CI gate complete.
+      #   * A break that only exists once two independently-affected PRs
+      #     combine; neither PR's own diff can see it.
+      #   * A push made while HEAD *is* main. `--affected` diffs against the
+      #     base branch, so on main it resolves to zero packages and runs
+      #     nothing. `test` runs on push to main, so the commit is still
+      #     checked — just after it lands rather than before.
+      #
       # CACHE-KEY CONSTRAINT — do not re-fork the turbo invocation below.
       # Turbo hashes the passthrough args (everything after `--`) into the
-      # task cache key, but NOT runner flags like --concurrency. The
-      # passthrough here must stay exactly `-- --run` so this gate shares its
-      # cache with the dev loop's `pnpm test -- --run`: a green dev run makes
-      # the push instant (all cache hits). Adding any passthrough flag (e.g.
-      # --retry) forks the key and forces a full re-run on every push.
+      # task cache key, but NOT runner flags like --concurrency or
+      # --affected. The passthrough here must stay exactly `-- --run` so this
+      # gate shares its cache with the dev loop's `pnpm test -- --run` and
+      # with CI: a green dev run makes the push instant (all cache hits).
+      # Adding any passthrough flag (e.g. --retry) forks the key and forces a
+      # full re-run on every push. (Verified: `@dorkos/relay#test` hashes to
+      # the same value with and without --affected.)
       #
       #   --concurrency=1  (DOR-121, not hashed) Turbo otherwise fans out ~10
       #     package suites in parallel and each `vitest run` spawns its own
@@ -47,7 +73,10 @@ pre-push:
       #
       #   VITEST_RETRY=2 absorbs timing flake in integration tests at the gate
       #     only (wired into vitest configs). It rides globalPassThroughEnv, so
-      #     it is NOT hashed and does not fork the cache key.
+      #     it is NOT hashed and does not fork the cache key. CI deliberately
+      #     does NOT set it, so the same commit can pass here and fail there;
+      #     when that happens the test is flaky and the CI verdict is the
+      #     honest one.
       use_stdin: true
       run: |
         saw_ref=0
@@ -60,5 +89,5 @@ pre-push:
           echo "Delete-only push — skipping the test gate (nothing to test)."
           exit 0
         fi
-        VITEST_RETRY=2 pnpm exec dotenv -- turbo test --concurrency=1 -- --run
+        VITEST_RETRY=2 pnpm exec dotenv -- turbo test --affected --concurrency=1 -- --run
       fail_text: 'Tests failed — fix them before pushing.'
