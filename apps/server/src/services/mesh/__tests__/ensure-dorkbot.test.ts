@@ -230,4 +230,37 @@ describe('ensureDorkBot', () => {
     expect(after).toBe(edited);
     expect(after).toContain('MY EDITS.');
   });
+
+  // ── Skill projection to DorkBot's harness (DOR-659) ─────────────────────
+
+  it('links the seeded skills where DorkBot runtime reads them', async () => {
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
+    const seeded = await fs.readdir(path.join(dorkbotDir, '.agents', 'skills'));
+    expect(seeded.length).toBeGreaterThan(0);
+
+    for (const name of seeded) {
+      const link = path.join(dorkbotDir, '.claude', 'skills', name);
+      expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+      expect(await fs.realpath(link)).toBe(
+        await fs.realpath(path.join(dorkbotDir, '.agents', 'skills', name))
+      );
+    }
+  });
+
+  it('re-links a skill whose link was deleted, so DorkBot self-heals on boot', async () => {
+    await ensureDorkBot(meshCore, tmpDir);
+
+    const dorkbotDir = path.join(tmpDir, 'agents', 'dorkbot');
+    const link = path.join(dorkbotDir, '.claude', 'skills', 'operating-dorkos');
+    await fs.rm(link);
+
+    await ensureDorkBot(meshCore, tmpDir);
+
+    expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+    expect(await fs.realpath(link)).toBe(
+      await fs.realpath(path.join(dorkbotDir, '.agents', 'skills', 'operating-dorkos'))
+    );
+  });
 });
