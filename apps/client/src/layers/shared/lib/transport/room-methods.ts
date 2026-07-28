@@ -3,10 +3,10 @@
  * (spec `rooms`). Talks to the Express `/api/rooms/*` routes.
  *
  * Only what the cockpit performs today is here: reading a room, posting to it,
- * joining one, and moving the read cursor. Room settings (rename, topic,
- * archive), roster edits and thread creation reach the client in later phases
- * of the spec; the server already serves them, so they are a factory addition
- * and not a protocol change when they land.
+ * settling its title / topic / archived flag, editing its roster, and moving
+ * the read cursor. Thread creation reaches the client in a later phase of the
+ * spec; the server already serves it, so it is a factory addition and not a
+ * protocol change when it lands.
  *
  * @module shared/lib/transport/room-methods
  */
@@ -24,9 +24,11 @@ import {
   type RoomRosterEntry,
   type RoomSummary,
   type RoomWithRoster,
+  type UpdateMembershipRequest,
+  type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '../constants';
-import { fetchJSON, buildQueryString } from './http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
 
 /** Create the room methods bound to a base URL. */
@@ -49,6 +51,13 @@ export function createRoomMethods(baseUrl: string) {
 
     getRoom(id: string): Promise<RoomWithRoster> {
       return fetchJSON<RoomWithRoster>(baseUrl, `/rooms/${id}`);
+    },
+
+    updateRoom(id: string, req: UpdateRoomRequest): Promise<RoomWithRoster> {
+      return fetchJSON<RoomWithRoster>(baseUrl, `/rooms/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(req),
+      });
     },
 
     listRoomEntries(id: string, query?: ListRoomEntriesQuery): Promise<RoomEntry[]> {
@@ -74,6 +83,25 @@ export function createRoomMethods(baseUrl: string) {
       return fetchJSON<RoomRosterEntry>(baseUrl, `/rooms/${id}/members`, {
         method: 'POST',
         body: JSON.stringify(req),
+      });
+    },
+
+    updateRoomMember(
+      id: string,
+      authorId: string,
+      req: UpdateMembershipRequest
+    ): Promise<RoomRosterEntry> {
+      return fetchJSON<RoomRosterEntry>(
+        baseUrl,
+        `/rooms/${id}/members/${encodeURIComponent(authorId)}`,
+        { method: 'PATCH', body: JSON.stringify(req) }
+      );
+    },
+
+    /** The route answers 204, so there is no body to read back. */
+    removeRoomMember(id: string, authorId: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/rooms/${id}/members/${encodeURIComponent(authorId)}`, {
+        method: 'DELETE',
       });
     },
 

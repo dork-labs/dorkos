@@ -298,9 +298,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listRooms: vi.fn().mockResolvedValue([]),
     createRoom: vi.fn(),
     getRoom: vi.fn(),
+    updateRoom: vi.fn(),
     listRoomEntries: vi.fn().mockResolvedValue([]),
     postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
     addRoomMember: vi.fn(),
+    updateRoomMember: vi.fn(),
+    removeRoomMember: vi.fn().mockResolvedValue(undefined),
     setRoomReadCursor: vi.fn().mockResolvedValue({}),
     subscribeRoom: vi.fn(emptyAsyncIterable),
     // Models

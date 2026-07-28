@@ -1,5 +1,6 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import { DEMO_SCENARIOS } from './demo-scenarios.js';
+import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 
 export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 
@@ -7,10 +8,13 @@ export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
  * Built-in scenarios available without explicit configuration. The `demo-*`
  * entries (rich streaming, tool approval, canvas) come from
  * {@link DEMO_SCENARIOS} and exist for the marketing product-capture pipeline;
- * they are inert unless selected via `POST /api/test/scenario`.
+ * the `q3-*` entries come from {@link Q3_SCENARIOS} and exist for the DOR-500
+ * resource-contention measurement. Both families are inert unless selected via
+ * `POST /api/test/scenario`.
  */
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...DEMO_SCENARIOS,
+  ...Q3_SCENARIOS,
   'simple-text': async function* (content) {
     // session_status data cast needed because data union requires sessionId
     yield {

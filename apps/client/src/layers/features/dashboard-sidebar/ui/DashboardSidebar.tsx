@@ -152,6 +152,16 @@ export function DashboardSidebar() {
     () => ({ displayNames: displayNamesRecord, agentActivity }),
     [displayNamesRecord, agentActivity]
   );
+  // The fleet as the room pickers read it: one sorted list, derived once, so
+  // starting a conversation and adding agents to an existing room offer exactly
+  // the same agents in exactly the same order.
+  const agentCandidates = useMemo(
+    () =>
+      Object.entries(displayNamesRecord)
+        .map(([agentPath, displayName]) => ({ agentPath, displayName }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    [displayNamesRecord]
+  );
 
   // ── Attention + mute (DOR-339): one attention-map subscription for the whole
   // sidebar, and the individually-muted path set every section's filter and
@@ -486,15 +496,18 @@ export function DashboardSidebar() {
             error={roomsQuery.error}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
+            agents={agentCandidates}
+            onOpenAgentProfile={handleOpenProfile}
           />
 
           <DirectMessagesSection
             dms={dms}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
-            displayNames={displayNamesRecord}
+            agents={agentCandidates}
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
+            onOpenAgentProfile={handleOpenProfile}
           />
 
           {pinnedPaths.length > 0 && (

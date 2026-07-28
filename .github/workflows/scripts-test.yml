@@ -19,19 +19,53 @@ name: scripts-test
 # refuses to run when the file differs from the default branch), so this job is
 # where such a change gets checked at all.
 #
-# No Node or pnpm setup: the suite needs only bash, jq and iconv, all present on
-# ubuntu-latest. Skipping the toolchain keeps this job a few seconds.
+# The git-guard suite runs in `fixtures` for the same reason in a sharper form:
+# .claude/hooks/git-guard.mjs is a safety control, and the only thing separating
+# "refuses git stash" from "refuses nothing" is a matcher that no other test
+# touches. It also pins the ALLOW half, because a guard that blocks
+# `git checkout main` or `git stash list` gets switched off, and then it protects
+# nothing at all. That suite is why `fixtures` sets up Node: it costs a couple of
+# seconds, unlike the `pnpm install` this job still deliberately avoids, and it
+# beats inheriting whatever Node the runner image happens to ship. It pins the
+# same Node 22 as `harness`, which is the version the repo runs.
+#
+# TWO JOBS, on purpose. `fixtures` needs only bash, jq, iconv and Node, so
+# skipping the pnpm toolchain keeps it a few seconds, which is worth preserving
+# for the reviewer scripts it guards. `harness` covers the TypeScript under
+# scripts/ (the Q3 contention harness, DOR-500), which does need pnpm. Splitting
+# them keeps the fast signal fast instead of putting a minute of install in front
+# of it.
+#
+# Neither job calls `pnpm test:scripts` even though that script runs all three
+# suites: locally it is one command (and `pnpm verify` calls it), but in CI
+# running it from either job would re-run the other job's suite for nothing.
 
+### The `harness` job depends on two files OUTSIDE scripts/: the root package.json
+### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts
+### (registers the scripts project for path-based bare-vitest runs from the repo
+### root; the harness job itself no longer reads it, so that entry is conservative).
+### Without them
+### in the filter, a PR touching only those could break this job without triggering
+### it, and the breakage would surface later on an unrelated scripts/ PR.
+###
+### `.claude/hooks/**` is in the filter for the `fixtures` job, which tests the
+### git-guard hook that lives there rather than under scripts/.
 on:
   pull_request:
     paths:
       - 'scripts/**'
+      - 'package.json'
+      - 'vitest.config.ts'
+      - '.claude/hooks/**'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
   push:
     branches: [main]
     paths:
       - 'scripts/**'
+      - 'package.json'
+      - 'vitest.config.ts'
+      - '.claude/hooks/**'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
 
@@ -53,5 +87,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Reviewer shell-script fixtures
         run: bash scripts/test-review-classifier.sh
+
+      - name: Git-guard hook fixtures
+        run: bash scripts/test-git-guard.sh
+
+  # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
+  # affected-only turbo run resolves a scripts-only change to 0 affected packages
+  # and covers none of it. Without this job the Q3 harness — its overlap and work
+  # proofs, its canary accounting, and the destructive-path guard in provision.ts —
+  # would have no automated gate at all.
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No build step: scripts/ imports nothing from the workspace packages, by
+      # design — the harness must be runnable without a built tree.
+      - name: Typecheck
+        run: pnpm typecheck:scripts
+
+      - name: Lint
+        run: pnpm exec eslint scripts/
+
+      - name: Unit tests
+        run: pnpm exec vitest run --config scripts/vitest.config.ts

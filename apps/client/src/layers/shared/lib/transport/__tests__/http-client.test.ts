@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchJSON, buildQueryString } from '../http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from '../http-client';
 import { getAuthRequired, setAuthRequired } from '../../auth-signal';
 
 describe('fetchJSON', () => {
@@ -93,6 +93,58 @@ describe('fetchJSON', () => {
     expect(passedSignal).toBeDefined();
     // The composed signal should not be the caller's original signal
     expect(passedSignal).not.toBe(controller.signal);
+  });
+});
+
+describe('fetchNoContent', () => {
+  const BASE_URL = 'http://localhost:4242';
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setAuthRequired(false);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setAuthRequired(false);
+  });
+
+  it('resolves on a 204 without touching the body', async () => {
+    // `fetchJSON` calls `res.json()`, which on an empty body rejects with
+    // "Unexpected end of JSON input" — a parse error reported for a request
+    // that in fact succeeded. This path must never read the body at all.
+    const res = new Response(null, { status: 204 });
+    const jsonSpy = vi.spyOn(res, 'json');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(res);
+
+    await expect(
+      fetchNoContent(BASE_URL, '/api/rooms/r1/members/a1', { method: 'DELETE' })
+    ).resolves.toBeUndefined();
+    expect(jsonSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects with the server’s own sentence, exactly as fetchJSON does', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Only you can change who is in a room' }), {
+        status: 403,
+      })
+    );
+
+    await expect(
+      fetchNoContent(BASE_URL, '/api/rooms/r1/members/a1', { method: 'DELETE' })
+    ).rejects.toThrow('Only you can change who is in a room');
+  });
+
+  it('flips the auth-required signal on a 401, sharing fetchJSON’s error path', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }), {
+        status: 401,
+      })
+    );
+
+    await expect(fetchNoContent(BASE_URL, '/api/rooms/r1/members/a1')).rejects.toThrow(
+      'Unauthorized'
+    );
+    expect(getAuthRequired()).toBe(true);
   });
 });
 

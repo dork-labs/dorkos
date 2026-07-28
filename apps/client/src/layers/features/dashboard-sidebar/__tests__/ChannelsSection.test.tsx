@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { TransportProvider } from '@/layers/shared/model';
 import { ChannelsSection } from '../ui/rooms/ChannelsSection';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +61,24 @@ function channel(overrides: Partial<RoomSummary> = {}): RoomSummary {
   };
 }
 
+/**
+ * The providers a room row needs: rows read and write through the Transport
+ * port, and their tooltips need a provider. Every read on the mock answers
+ * empty, so nothing here reaches a network.
+ */
+function roomsWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={createMockTransport()}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
 function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]> = {}) {
   return render(
     <ChannelsSection
@@ -65,9 +87,11 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
       error={null}
       activeRoomId={null}
       onSelectRoom={vi.fn()}
+      agents={[]}
+      onOpenAgentProfile={vi.fn()}
       {...overrides}
     />,
-    { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> }
+    { wrapper: roomsWrapper() }
   );
 }
 

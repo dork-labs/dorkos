@@ -18,6 +18,7 @@ import { useCreateChannel } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
 import { ChannelCreateInput } from './ChannelCreateInput';
+import type { AgentPickerCandidate } from './AgentChipPicker';
 
 /** Skeleton rows shown while the first room list loads. */
 const SKELETON_ROWS = 2;
@@ -33,6 +34,10 @@ interface ChannelsSectionProps {
   activeRoomId: string | null;
   /** Open a channel. */
   onSelectRoom: (room: RoomSummary) => void;
+  /** Every agent in the fleet, sorted by name — what a row's "Add agents…" offers. */
+  agents: AgentPickerCandidate[];
+  /** Open an agent's profile in the right-panel hub. */
+  onOpenAgentProfile: (agentPath: string) => void;
 }
 
 /**
@@ -49,6 +54,8 @@ export function ChannelsSection({
   error,
   activeRoomId,
   onSelectRoom,
+  agents,
+  onOpenAgentProfile,
 }: ChannelsSectionProps) {
   const { channelsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
@@ -99,6 +106,8 @@ export function ChannelsSection({
                   room={room}
                   isActive={room.id === activeRoomId}
                   onSelect={() => onSelectRoom(room)}
+                  agents={agents}
+                  onOpenAgentProfile={onOpenAgentProfile}
                 />
               ))}
 

@@ -471,9 +471,9 @@ describe('DashboardSidebar', () => {
       localStorage.setItem(LEGACY_KEY, JSON.stringify(['/projects/beta', '/projects/alpha']));
       renderWithProviders(<DashboardSidebar />);
       expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
-      const updater = mockUpdateSidebar.mock.calls[0]![0] as (p: {
+      const updater = mockUpdateSidebar.mock.calls[0]![0] as (p: { pinned: SidebarItemRef[] }) => {
         pinned: SidebarItemRef[];
-      }) => { pinned: SidebarItemRef[] };
+      };
       // The legacy key held bare paths; they are seeded as agent references.
       expect(updater({ pinned: [] }).pinned).toEqual([
         agent('/projects/beta'),
