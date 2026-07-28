@@ -158,6 +158,11 @@ jobs:
         if: ${{ steps.scope.outputs.changed == 'true' }}
         run: |
           base_tip="${{ steps.base.outputs.base_tip }}"
+          # `github.base_ref` is bare (`main`); `merge_group.base_ref` is a full
+          # ref (`refs/heads/main`). Strip the prefix so the messages below name
+          # the same branch the same way on both trigger paths.
+          base_name="${{ github.base_ref || github.event.merge_group.base_ref }}"
+          base_name="${base_name#refs/heads/}"
           version_pattern='s/^export const OPERATING_SKILLS_VERSION = ([0-9]+);$/\1/p'
 
           base_version="$(git show "$base_tip:$PACK_FILE" | sed -nE "$version_pattern")"
@@ -168,11 +173,11 @@ jobs:
             exit 1
           fi
 
-          echo "${{ github.base_ref || github.event.merge_group.base_ref }} tip ($base_tip): OPERATING_SKILLS_VERSION = $base_version"
+          echo "$base_name tip ($base_tip): OPERATING_SKILLS_VERSION = $base_version"
           echo "this branch:                            OPERATING_SKILLS_VERSION = $head_version"
 
           if [ "$head_version" -le "$base_version" ]; then
-            echo "::error::This pull request changes the Operating DorkOS skill pack, but its OPERATING_SKILLS_VERSION ($head_version) is not higher than the one ${{ github.base_ref || github.event.merge_group.base_ref }} already ships ($base_version). seed.ts rewrites an already-seeded skill only when the stored stamp is STRICTLY LOWER than this constant, so an equal version delivers the correction to nobody, silently. Re-bump to $((base_version + 1)) or higher, and add the matching History entry. If you hit this because another pack change merged while yours was open, resolve it by RE-BUMPING, never by keeping either side's number: two parallel pack PRs picking the same next number is exactly how this fails."
+            echo "::error::This pull request changes the Operating DorkOS skill pack, but its OPERATING_SKILLS_VERSION ($head_version) is not higher than the one $base_name already ships ($base_version). seed.ts rewrites an already-seeded skill only when the stored stamp is STRICTLY LOWER than this constant, so an equal version delivers the correction to nobody, silently. Re-bump to $((base_version + 1)) or higher, and add the matching History entry. If you hit this because another pack change merged while yours was open, resolve it by RE-BUMPING, never by keeping either side's number: two parallel pack PRs picking the same next number is exactly how this fails."
             exit 1
           fi
 
