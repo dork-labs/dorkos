@@ -20,6 +20,7 @@
  *
  * @module shared/marketplace-schemas
  */
+import type { PermissionMode } from './schemas.js';
 
 // ---------------------------------------------------------------------------
 // Package type
@@ -163,6 +164,133 @@ export interface MarketplaceManifestSummary {
 // ---------------------------------------------------------------------------
 
 /**
+ * How much a scheduled job may do on its own once it fires.
+ *
+ * Aliased to this package's own {@link PermissionMode} rather than redeclared:
+ * `PermissionModeSchema` lives one file over in `schemas.ts`, and
+ * `@dorkos/marketplace` already pins its `SHAPE_SCHEDULE_PERMISSION_MODES`
+ * against it with a drift test. A fourth hand-written copy of the same six
+ * strings could only ever go stale. The import is type-only, so it erases at
+ * compile time and this file stays browser-safe.
+ */
+export type SchedulePermissionMode = PermissionMode;
+
+/**
+ * Plain-language summary of what a scheduled job may do on its own, keyed by
+ * permission mode.
+ *
+ * Read by every install preview surface (the cockpit dialog and `dorkos
+ * install`) so nobody has to decode a raw id like `bypassPermissions` while
+ * deciding whether to trust a stranger's package. Each entry completes the
+ * sentence "This job ...". Use {@link describeSchedulePermissionMode} rather
+ * than indexing this map directly, so a mode the server learns before the
+ * client does still renders something true.
+ */
+export const SCHEDULE_PERMISSION_MODE_SUMMARY: Record<SchedulePermissionMode, string> = {
+  default: 'asks you before it uses any tool',
+  plan: 'can only read and plan, and cannot change anything',
+  acceptEdits: 'can change files on its own, but asks before running commands',
+  dontAsk: 'runs its tools without asking you',
+  bypassPermissions: 'can run any command without asking you',
+  auto: 'decides on its own which tools to run, without asking you',
+};
+
+/**
+ * Describe what a scheduled job may do on its own, in plain words.
+ *
+ * @param mode - The permission mode the job runs under, as sent by the server.
+ * @returns A phrase completing "This job ...". An unrecognised mode falls back
+ *   to naming it and admitting we do not know, which is honest; claiming the
+ *   job is safe would not be.
+ */
+export function describeSchedulePermissionMode(mode: string): string {
+  return (
+    SCHEDULE_PERMISSION_MODE_SUMMARY[mode as SchedulePermissionMode] ??
+    `runs in "${mode}" mode, which this version of DorkOS does not recognise`
+  );
+}
+
+/**
+ * Plain-language phrasing for the harness hook events, keyed by Claude's event
+ * name.
+ *
+ * Each entry completes the sentence "Runs ...". `PreToolUse` tells a
+ * non-developer nothing; "before the agent uses a tool" tells them when the
+ * command fires. Use {@link describeHookEvent}, never this map directly — the
+ * event is an open string and a package may declare one that is not listed
+ * here.
+ */
+export const HOOK_EVENT_SUMMARY: Record<string, string> = {
+  SessionStart: 'when a session starts',
+  SessionEnd: 'when a session ends',
+  UserPromptSubmit: 'when you send a message',
+  PreToolUse: 'before the agent uses a tool',
+  PostToolUse: 'after the agent uses a tool',
+  PermissionRequest: 'when the agent asks for permission',
+  Notification: 'when the agent sends a notification',
+  SubagentStart: 'when a subagent starts',
+  SubagentStop: 'when a subagent finishes',
+  Stop: 'when the agent finishes',
+  PreCompact: 'before the conversation is shortened',
+  PostCompact: 'after the conversation is shortened',
+};
+
+/**
+ * Describe when a hook fires, in plain words.
+ *
+ * @param event - The harness event name the package declared.
+ * @param matcher - Optional tool/event matcher the hook narrows to.
+ * @returns A phrase completing "Runs ...". An event with no known phrasing
+ *   falls back to naming it verbatim, which is still true.
+ */
+export function describeHookEvent(event: string, matcher?: string): string {
+  const when = HOOK_EVENT_SUMMARY[event] ?? `on ${event}`;
+  return matcher ? `${when} (${matcher})` : when;
+}
+
+/**
+ * A shell hook a package registers with the harness.
+ *
+ * Mirrors `PreviewHook` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewHook {
+  /** Harness event the hook fires on (e.g. `PreToolUse`, `Stop`). */
+  event: string;
+  /** Optional tool/event matcher the hook narrows to. */
+  matcher?: string;
+  /** The literal shell command the hook runs, verbatim. */
+  command: string;
+}
+
+/**
+ * A hook declaration the package ships that could not be read.
+ *
+ * Mirrors `UnreadablePreviewHook` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface UnreadablePreviewHook {
+  /** Package-relative path of the unreadable declaration (e.g. `hooks/hooks.json`). */
+  path: string;
+  /** Set when a single event entry is malformed; absent when the whole file is. */
+  event?: string;
+}
+
+/**
+ * A scheduled job the package will create, and how much it may do unattended.
+ *
+ * Mirrors `PreviewSchedule` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewSchedule {
+  /** Job name as declared by the package. */
+  name: string;
+  /** Cron expression, or `null` when the job only runs when asked. */
+  cron: string | null;
+  /** How much the job may do without a human in the loop. */
+  permissionMode: SchedulePermissionMode;
+  /** Whether the job is created switched on. */
+  startsEnabled: boolean;
+}
+
+/**
  * A preview of every effect a package install will have — surfaced to the user
  * before any disk mutation occurs.
  *
@@ -173,8 +301,12 @@ export interface PermissionPreview {
   fileChanges: { path: string; action: 'create' | 'modify' | 'delete' }[];
   /** Extensions that will be registered. */
   extensions: { id: string; slots: string[] }[];
-  /** Scheduled tasks that will be created. */
-  tasks: { name: string; cron: string | null }[];
+  /** Shell hooks the package registers with the harness, commands verbatim. */
+  hooks: PreviewHook[];
+  /** Hook declarations the package ships that could not be read. */
+  unreadableHooks: UnreadablePreviewHook[];
+  /** Scheduled jobs that will be created, and what each may do unattended. */
+  schedules: PreviewSchedule[];
   /** Secrets the package will request from the user. */
   secrets: { key: string; required: boolean; description?: string }[];
   /** External hosts the package will contact. */

@@ -117,7 +117,11 @@ describe('handleInboundMessage', () => {
   });
 
   it('publishes group message with group segment', async () => {
-    const event = createEvent({ channel: 'C12345' });
+    // @mentions the bot, because a channel message that names nobody is
+    // filtered by the default respond mode. This used to publish unmentioned:
+    // the call sites here fell back to 'always' while the schema said
+    // 'thread-aware' (DOR-623). This test is about the subject, not the gate.
+    const event = createEvent({ channel: 'C12345', text: '<@UBOTID> hello' });
     await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     expect(relay.publish).toHaveBeenCalledWith(
@@ -217,7 +221,8 @@ describe('handleInboundMessage', () => {
   });
 
   it('resolves and includes channelName for group messages', async () => {
-    const event = createEvent({ channel: 'C12345' });
+    // @mentions the bot for the same reason as the group-subject test above.
+    const event = createEvent({ channel: 'C12345', text: '<@UBOTID> hello' });
     await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
 
     const published = (relay.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
@@ -802,6 +807,16 @@ describe('handleInboundMessage', () => {
       const event = createEvent({ channel: 'C12345', text: 'hello' });
       await callWithOptions(event, { respondMode: 'always' });
       expect(relay.publish).toHaveBeenCalledTimes(1);
+    });
+
+    it('with no respondMode supplied, falls back to the schema default and not to always', async () => {
+      // DOR-623: the default is stated once, in `DEFAULT_RESPOND_MODE`. These
+      // call sites used to restate it as 'always', so whether an unaddressed
+      // channel message was answered depended on whether the config had
+      // travelled through the schema.
+      const event = createEvent({ channel: 'C12345', text: 'general chatter' });
+      await callWithOptions(event, {});
+      expect(relay.publish).not.toHaveBeenCalled();
     });
 
     it("'mention-only' processes @mentions", async () => {
