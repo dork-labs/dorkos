@@ -270,6 +270,60 @@ export class RuntimeRegistry {
   }
 
   /**
+   * Move a session's `session_metadata` row from one id to another, so the row
+   * stays under exactly one key when a runtime rebinds the session to a new
+   * canonical id (claude-code, on the first turn of a new session).
+   *
+   * The whole row moves, not just the settings columns: the row describes ONE
+   * session, and that session's id changed — `runtime`, `agentPath` and
+   * `createdAt` belong with it. Ownership stays immutable (ADR-0255): when a row
+   * already exists under `toId` its `runtime` is left untouched and only the
+   * settings are merged in, source-wins per field, with a NULL source column
+   * leaving the destination's value alone. The source row is deleted in the same
+   * transaction, so no id ever holds a second copy.
+   *
+   * @param fromId - The id the row is stored under today
+   * @param toId - The canonical id the session is now known by
+   */
+  async rekeySessionSettings(fromId: string, toId: string): Promise<void> {
+    if (fromId === toId) return;
+    const db = this.requireDb('rekeySessionSettings');
+    const source = db
+      .select()
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, fromId))
+      .get();
+    if (!source) return;
+    const destination = db
+      .select()
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, toId))
+      .get();
+    db.transaction((tx) => {
+      tx.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, fromId)).run();
+      if (!destination) {
+        tx.insert(sessionMetadata)
+          .values({ ...source, sessionId: toId })
+          .run();
+        return;
+      }
+      tx.update(sessionMetadata)
+        .set({
+          permissionMode: source.permissionMode ?? destination.permissionMode,
+          model: source.model ?? destination.model,
+          effort: source.effort ?? destination.effort,
+          fastMode: source.fastMode ?? destination.fastMode,
+          agentPath: destination.agentPath ?? source.agentPath,
+        })
+        .where(eq(sessionMetadata.sessionId, toId))
+        .run();
+    });
+    logger.debug(
+      `[RuntimeRegistry] Re-keyed session_metadata '${fromId}' -> '${toId}'${destination ? ' (merged into existing row)' : ''}`
+    );
+  }
+
+  /**
    * Batch-read persisted settings for many sessions in a single query. Used by
    * the session-list route overlay to avoid N+1 reads. Sessions without a row
    * are simply absent from the returned map.

@@ -326,6 +326,41 @@ describe('TabbedDialog', () => {
     expect(screen.queryByTestId('panel-alpha')).not.toBeInTheDocument();
   });
 
+  // A deep link can name a tab that no longer exists — a stale bookmark, a
+  // renamed tab, `?settings=bogus`. Selecting it leaves the sidebar with
+  // nothing active and the content area empty, which reads as a broken dialog.
+  it('falls back to defaultTab when initialTab names a tab that does not exist', () => {
+    renderDialog({ initialTab: 'nope' as TabId, defaultTab: 'beta' });
+
+    expect(screen.getByTestId('panel-beta')).toBeInTheDocument();
+    // The real symptom of the bug: a dialog with no panel showing at all.
+    expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/beta/i);
+  });
+
+  it('treats an extension-contributed tab as a valid initialTab', () => {
+    const ExtensionTab = () => <div data-testid="panel-ext">Extension content</div>;
+    mockUseSlotContributions.mockReturnValue([
+      {
+        id: 'ext1',
+        label: 'Extension Tab',
+        icon: Settings,
+        component: ExtensionTab,
+        priority: 100,
+      },
+    ]);
+
+    // Guards the fallback against over-reaching: extension tabs are not in
+    // `tabs`, so a naive check against built-ins only would send them home.
+    renderDialog({
+      extensionSlot: 'settings.tabs',
+      initialTab: 'ext1' as TabId,
+      defaultTab: 'alpha',
+    });
+
+    expect(screen.getByTestId('panel-ext')).toBeInTheDocument();
+    expect(screen.queryByTestId('panel-alpha')).not.toBeInTheDocument();
+  });
+
   it('renders sidebarExtras after the tab list', () => {
     renderDialog({ sidebarExtras: <button>Extra Action</button> });
     const sidebar = screen.getByRole('tablist');

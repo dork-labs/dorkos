@@ -242,6 +242,8 @@ describe('applyProtectedState', () => {
       maxAgentDepth: 1,
       maxAutomaticTurnsPerRoomPerHour: 60,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 

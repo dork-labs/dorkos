@@ -27,6 +27,38 @@
  * Every recorded decision is written to the Activity feed with the posture it was
  * made under, so a "yes" that nobody clicked in the cockpit still leaves a trace.
  *
+ * ## Under login, deciding needs a session cookie (DOR-474)
+ *
+ * `resolveDecisionAuthority` alone was not enough, and the residual it named is
+ * the one this route now closes. `sessionGate` accepts a per-user API key as the
+ * same identity a browser session proves, and the key is in an agent's hands
+ * LEGITIMATELY — `packages/cli/src/lib/api-client.ts` reads it from
+ * `DORKOS_API_KEY` or `<dork home>/api-key`, and without it a Codex or OpenCode
+ * agent cannot reach the operator surface at all when login is on. So an agent
+ * that asked for a destructive capability, got the 202 with the approval id, and
+ * then called this route with its key while omitting both headers cleared every
+ * refusal and approved its own work. The two header checks could not help: both
+ * read headers the caller chose to send. The credential check could not help
+ * either: it asked whether a credential was present, never what kind.
+ *
+ * So `POST /:id/grant` and `POST /:id/deny` run
+ * {@link requireOperatorCookieUnderLogin} as a second bar, and every API key is
+ * refused at both. **Deny is guarded for the same reason as grant, not as a
+ * symmetry**: an agent that can deny can suppress a person's decision and bury
+ * the card that would have told them.
+ *
+ * Reading (`GET /pending`, `GET /grants`) and REVOKING (`DELETE /grants/:id`) are
+ * deliberately left on the `resolveDecisionAuthority` bar alone. Neither one lets
+ * anything happen that a person did not already allow: revoking only narrows what
+ * an agent may do, and the reasoning for each already sits at its handler.
+ *
+ * **Login off is unchanged, and that is deliberate rather than overlooked.**
+ * `requireOperatorCookieUnderLogin` allows in that posture because there is no
+ * cookie for anyone to present, and login off is the default. A credential-free
+ * caller with shell access is indistinguishable from the cockpit there, so this
+ * bar contributes nothing and does not pretend to. Turning on Require login is
+ * what closes it, exactly as `decision-authority.ts` says.
+ *
  * Transport auth is the global `sessionGate` mounted in `app.ts` — every `/api/*`
  * path inherits it, so these routes need no gate of their own; the authority check
  * below is a second, independent one.
@@ -86,7 +118,12 @@ import {
   type LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { readCallerAuthority, requireOperatorCookie } from '../lib/caller-authority.js';
+import {
+  readCallerAuthority,
+  requireOperatorCookie,
+  requireOperatorCookieUnderLogin,
+  type OperatorCookieRefusal,
+} from '../lib/caller-authority.js';
 import { titleForMcpTool } from '../services/core/mcp-tool-tiers.js';
 import { logger } from '../lib/logger.js';
 
@@ -138,6 +175,47 @@ function decisionAuthority(
     ...readCallerAuthority(req, res),
     ...(isLoginEnabled ? { loginEnabled: isLoginEnabled } : {}),
   });
+}
+
+/**
+ * What a caller is told when it tried to answer an approval without a session
+ * cookie while login is on.
+ *
+ * Written for whoever ends up reading it, which is often an agent relaying it to
+ * a person: it says WHERE the answer has to happen, not which header was missing.
+ * A refusal that names a header reads as a hint about how to get around it.
+ */
+const DECIDE_NEEDS_COCKPIT =
+  'Approving or refusing a risky action has to happen inside DorkOS, by a person who is signed in. ' +
+  'A program holding an API key cannot answer for you. Open DorkOS and answer it there.';
+
+/**
+ * With login on, require that a person in the cockpit is answering (DOR-474).
+ *
+ * The same predicate `PATCH /api/config` and the extension-approval route use, so
+ * "who counts as a person" cannot mean one thing here and another there. Only the
+ * sentence differs, because the shared one is worded for changing a SETTING and
+ * this is not one — the same split `routes/config.ts` already makes when it keeps
+ * `refusal.code` and supplies its own `error`.
+ *
+ * Runs AFTER `resolveDecisionAuthority`, so a caller that names itself an agent
+ * still hears `AGENT_CANNOT_DECIDE`. That answer is more specific and more useful
+ * than "sign in", and an honest agent should be told the thing it did wrong.
+ *
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param isLoginEnabled - Optional login-state lookup for tests.
+ * @returns `undefined` when the caller may decide, or the refusal to answer with.
+ */
+function requirePersonToDecide(
+  res: Response,
+  isLoginEnabled?: LoginEnabledLookup
+): OperatorCookieRefusal | undefined {
+  const refusal = requireOperatorCookieUnderLogin(
+    res,
+    'whether a risky action goes ahead',
+    isLoginEnabled
+  );
+  return refusal ? { ...refusal, error: DECIDE_NEEDS_COCKPIT } : undefined;
 }
 
 /** Map a decision failure onto the HTTP status and code the cockpit branches on. */
@@ -359,6 +437,13 @@ export function createApprovalsRouter(
       return res.status(authority.status).json({ error: authority.error, code: authority.code });
     }
 
+    // The second bar, before anything is read off the body: under login, an API
+    // key is not a person (DOR-474). See the module TSDoc.
+    const notAPerson = requirePersonToDecide(res, options.isLoginEnabled);
+    if (notAPerson) {
+      return res.status(notAPerson.status).json({ error: notAPerson.error, code: notAPerson.code });
+    }
+
     // Express 5 leaves `req.body` undefined on an empty POST, and `standing` is
     // optional, so an absent body is a plain one-time yes.
     const parsed = GrantApprovalBodySchema.safeParse(req.body ?? {});
@@ -466,6 +551,13 @@ export function createApprovalsRouter(
     const authority = decisionAuthority(req, res, options.isLoginEnabled);
     if (!authority.allowed) {
       return res.status(authority.status).json({ error: authority.error, code: authority.code });
+    }
+
+    // Guarded exactly like grant. Denying is not the safe direction to leave open:
+    // an agent that can deny can bury the card a person would have answered.
+    const notAPerson = requirePersonToDecide(res, options.isLoginEnabled);
+    if (notAPerson) {
+      return res.status(notAPerson.status).json({ error: notAPerson.error, code: notAPerson.code });
     }
 
     // Express 5 leaves `req.body` undefined on an empty POST, and a reason is

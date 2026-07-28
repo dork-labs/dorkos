@@ -1,6 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import { useSessionId } from './use-session-id';
+// Same-slice import via the sibling module (not the entities/session barrel) to
+// avoid a self-referential barrel import within this slice.
+import { sessionKeys } from '../api/query-keys';
 import type { Session, SessionListWarning, SessionOrigin } from '@dorkos/shared/types';
 
 /**
@@ -12,7 +15,7 @@ export function insertOptimisticSession(
   selectedCwd: string | null,
   session: Session
 ) {
-  queryClient.setQueryData<Session[]>(['sessions', selectedCwd], (old) => [
+  queryClient.setQueryData<Session[]>(sessionKeys.list(selectedCwd), (old) => [
     session,
     ...(old ?? []),
   ]);
@@ -31,7 +34,7 @@ export function useSessions() {
   const { selectedCwd } = useAppStore();
 
   // Cold-load query: seeds the list on mount. Live updates thereafter arrive via
-  // the global `/api/events` stream, bridged into this `['sessions', cwd]` cache
+  // the global `/api/events` stream, bridged into this session-list cache
   // by `useGlobalSessionStream` (mounted once in AppShell) — so there is
   // intentionally NO timer poll here (the 5s/60s poll was removed; ADR-0265).
   //
@@ -43,7 +46,7 @@ export function useSessions() {
   // {@link useSessionListWarnings}; they refresh on each cold load or refetch
   // of this query.
   const sessionsQuery = useQuery({
-    queryKey: ['sessions', selectedCwd],
+    queryKey: sessionKeys.list(selectedCwd),
     queryFn: async () => {
       const { sessions, warnings } = await transport.listSessions(selectedCwd ?? undefined);
       queryClient.setQueryData<SessionListWarning[]>(
@@ -91,7 +94,7 @@ export interface SessionOriginData {
 
 /**
  * Resolve a session's origin (and its origin label) from the session's row
- * in the `['sessions', cwd]` list cache, the same server-authoritative,
+ * in the {@link sessionKeys.list} cache, the same server-authoritative,
  * live-updated cache `useSessionRuntime` reads. Deliberately not a
  * dedicated fetch: the session header chip reuses whatever the sidebar
  * already has cached rather than issuing a second request for data the app

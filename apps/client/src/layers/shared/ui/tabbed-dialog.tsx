@@ -93,13 +93,23 @@ export function TabbedDialog<T extends string>({
   minHeight = 'min-h-[280px]',
   testId,
 }: TabbedDialogProps<T>) {
-  const [activeTab, setActiveTab] = useDialogTabState<T>({
-    open,
-    initialTab: initialTab ?? null,
-    defaultTab,
-  });
   const extensionTabs = useSlotContributions(extensionSlot ?? 'settings.tabs');
   const allTabs = extensionSlot ? [...tabs, ...extensionTabs.map(toTabbedDialogTab<T>)] : tabs;
+
+  // A deep link can name a tab that does not exist — a stale bookmark, a
+  // renamed tab, a typo in `?settings=`, or a tour pointing at a tab that was
+  // removed (tour deep links are unconstrained `string`). Selecting it would
+  // render a sidebar with nothing active and an empty panel: a dialog that
+  // looks broken and gives no clue why. Falling back to `defaultTab` is the
+  // honest failure — the user lands somewhere real. Resolved against `allTabs`
+  // so extension-contributed tabs count as valid.
+  const targetTab = initialTab && allTabs.some((t) => t.id === initialTab) ? initialTab : null;
+
+  const [activeTab, setActiveTab] = useDialogTabState<T>({
+    open,
+    initialTab: targetTab,
+    defaultTab,
+  });
 
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>

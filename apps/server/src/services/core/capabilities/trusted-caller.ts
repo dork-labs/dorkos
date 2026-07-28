@@ -65,6 +65,31 @@
  * therefore removes no guarantee. Conversely, a caller this check REFUSES cannot
  * grant its own approval either, so gating it is not theatre.
  *
+ * ### Under login, that same proof now means a session cookie (DOR-474)
+ *
+ * The invariant above is what makes this escape safe, so it has to keep holding
+ * in BOTH directions, and DOR-474 broke one of them. `POST /api/approvals/:id/grant`
+ * now refuses a caller holding a per-user API key while login is on, because
+ * `sessionGate` accepts that key as the same identity a browser session proves and
+ * agents legitimately hold one. If this module kept minting markers for that same
+ * caller, acting without an approval would become STRICTLY MORE powerful than
+ * deciding one — the two-step path that justifies the escape would be closed to a
+ * caller that could still take the shortcut. So {@link trustedCaller} applies the
+ * same cookie requirement, in the same posture, and the invariant survives.
+ *
+ * Login OFF is unchanged. There is no cookie for anyone in that posture, so
+ * demanding one would refuse the person too; the residual is the one the module
+ * below states.
+ *
+ * **The one caller that does NOT want this is no longer a caller.** Adding or
+ * removing a package source (DOR-502) is operator-only with no approval card
+ * behind it, and `dorkos marketplace add` is a documented terminal verb whose only
+ * credential is an API key — so a cookie bar there is a lockout, not a hardening
+ * (`services/marketplace/source-write-policy.ts`). That route asked this module
+ * for a boolean it then threw away, so it now reads `resolveDecisionAuthority`
+ * directly instead of minting a gate-bypass marker it never used. Nothing about
+ * that route's posture changed.
+ *
  * Read `approvals/decision-authority.ts` for what each posture does and does not
  * promise; the honest summary of the default `local-trust` posture is that with
  * login off there is no cryptographic difference between the person in the
@@ -133,7 +158,17 @@ export type TrustedCaller = TrustedCallerMarker;
  */
 export function trustedCaller(request: DecisionAuthorityRequest): TrustedCaller | undefined {
   const authority = resolveDecisionAuthority(request);
-  return authority.allowed ? new TrustedCallerMarker(authority.decidedBy) : undefined;
+  if (!authority.allowed) return undefined;
+
+  // Under login, only a session cookie proves a person (DOR-474). The posture is
+  // read rather than the login flag, because `signed-in-operator` IS "login is on
+  // and an identity resolved" — asking the config a second time here would be a
+  // second source of truth for the same fact, and the two could disagree.
+  if (authority.posture === 'signed-in-operator' && request.user?.credential !== 'cookie') {
+    return undefined;
+  }
+
+  return new TrustedCallerMarker(authority.decidedBy);
 }
 
 /**

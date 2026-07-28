@@ -23,6 +23,9 @@
  */
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
+// Same-slice import via the sibling module (not the entities/session barrel) to
+// avoid a self-referential barrel import within this slice.
+import { sessionKeys } from '../api/query-keys';
 
 /**
  * The most recent cached session for `cwd`, or a fresh id when that directory
@@ -35,6 +38,6 @@ import type { Session } from '@dorkos/shared/types';
  * @returns A session id that is always safe to put in a `/session` URL.
  */
 export function resolveSessionForCwd(queryClient: QueryClient, cwd: string | null): string {
-  const cached = queryClient.getQueryData<Session[]>(['sessions', cwd ?? null]);
+  const cached = queryClient.getQueryData<Session[]>(sessionKeys.list(cwd ?? null));
   return cached?.[0]?.id ?? crypto.randomUUID();
 }
