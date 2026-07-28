@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  SessionListEventSchema,
   StaleResumeCursorError,
   type SessionEvent,
   type SessionSnapshot,
@@ -7,7 +8,7 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 
-import { createSessionStreamMethods } from '../session-stream-methods';
+import { createSessionStreamMethods, SESSION_LIST_EVENT_TYPES } from '../session-stream-methods';
 
 const STATUS: SessionStatus = {
   contextUsage: null,
@@ -50,6 +51,44 @@ function sseResponse(frames: string): Response {
 /** One SSE frame: `event: <type>` + JSON data + blank-line dispatch. */
 function frame(type: string, data: unknown): string {
   return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+/**
+ * The `type` discriminants `SessionListEventSchema` declares, read off the schema.
+ *
+ * Zod v4 discriminated unions expose their members via `.options`, each a ZodObject
+ * whose `type` shape is a ZodLiteral carrying the discriminant in `.value`. Read
+ * rather than hardcoded so a fourth member cannot ship past the pins below.
+ */
+function listDiscriminants(): string[] {
+  return SessionListEventSchema.options.map(
+    (option) => (option.shape.type as { value: string }).value
+  );
+}
+
+/**
+ * A schema-valid payload per discriminant, keyed by name.
+ *
+ * Kept as a lookup rather than an array so the pins can assert the sample set is
+ * exactly the discriminant set — a new member with no sample fails by NAME
+ * instead of quietly narrowing what gets exercised.
+ */
+function listEventSamples(): Record<string, SessionListEvent> {
+  return {
+    session_upserted: {
+      type: 'session_upserted',
+      session: {
+        id: '00000000-0000-4000-8000-00000000dead',
+        title: 'Drift pin',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+      },
+    },
+    session_removed: { type: 'session_removed', sessionId: 'sess-x' },
+    session_status: { type: 'session_status', sessionId: 'sess-x', status: STATUS },
+  };
 }
 
 describe('createSessionStreamMethods', () => {
@@ -189,7 +228,7 @@ describe('createSessionStreamMethods', () => {
   });
 
   describe('subscribeSessionList', () => {
-    it('forwards only the 3 session-list event types from the unified stream', async () => {
+    it('does not leak other event families from the unified stream', async () => {
       // Real failure mode: /events is the unified fan-out — sync updates and
       // relay frames must not leak into the session-list contract.
       fetchMock.mockResolvedValue(
@@ -205,6 +244,83 @@ describe('createSessionStreamMethods', () => {
       expect(events).toEqual([LIST_EVENT]);
       const [url] = fetchMock.mock.calls[0]!;
       expect(url).toBe('/api/events');
+    });
+
+    it('forwards EVERY SessionListEventSchema discriminant (schema-drift pin)', async () => {
+      // Real failure mode: `SESSION_LIST_EVENT_TYPES` in session-stream-methods.ts
+      // is a SECOND, independent copy of the session-list allowlist — a `Set`,
+      // consulted at `subscribeSessionList`'s `frame.type` check. A discriminant
+      // missing from it is `continue`d before validation: dropped in silence,
+      // exactly like the StreamManager copy this mirrors. This path is not wired
+      // into the live HTTP flow today (only DirectTransport reaches it), but it is
+      // an exported implementation of the Transport contract and one rewiring away
+      // from being as live as the other.
+      //
+      // The previous version of this test hardcoded "the 3 session-list event
+      // types" and passed exactly one frame, so it would have gone on passing the
+      // day a 4th discriminant shipped unlisted. Driving the schema instead is the
+      // whole point.
+      const samples = listEventSamples();
+      const discriminants = listDiscriminants();
+
+      // Forward, part one: a sample exists for every discriminant, so a new one
+      // fails HERE with a name rather than silently narrowing the sweep below.
+      expect(Object.keys(samples).sort()).toEqual([...discriminants].sort());
+
+      fetchMock.mockResolvedValue(
+        sseResponse(discriminants.map((type) => frame(type, samples[type])).join(''))
+      );
+      const methods = createSessionStreamMethods('/api');
+
+      const events: SessionListEvent[] = [];
+      for await (const event of methods.subscribeSessionList()) events.push(event);
+
+      // Forward, part two: every discriminant survived the allowlist check.
+      expect(
+        events.map((event) => event.type).sort(),
+        'a discriminant the schema declares never reached the consumer — ' +
+          'SESSION_LIST_EVENT_TYPES in session-stream-methods.ts dropped it silently'
+      ).toEqual([...discriminants].sort());
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('the allowlist names nothing SessionListEventSchema does not declare', async () => {
+      // Reverse direction. A forward-only scan is half a guard: a name that
+      // outlived its discriminant keeps forwarding frames the server can no longer
+      // send, which reads as coverage and is not.
+      //
+
+      // Read against the SET, not against probe frames. A first draft pushed a
+      // handful of plausible stale names (`session_renamed`, `session_upsert`) and
+      // asked which got through — and stayed green when a real orphan was seeded,
+      // because the orphan was not one of the names guessed at. There is no finite
+      // probe list for "any string somebody might leave behind", which is why the
+      // allowlist is exported: the only honest reverse check compares the set.
+      const discriminants = listDiscriminants();
+      expect(
+        [...SESSION_LIST_EVENT_TYPES].sort(),
+        'SESSION_LIST_EVENT_TYPES names something SessionListEventSchema does not declare. ' +
+          'The Set is the gate; a name that outlived its discriminant admits frames the ' +
+          'server can no longer send, and the parse below it then warns on every one.'
+      ).toEqual([...discriminants].sort());
+
+      // And the exported set is the one the code path actually consults — an
+      // exported copy nothing reads would pin nothing. A frame named by the set is
+      // forwarded; a frame not named by it is dropped in silence.
+      const samples = listEventSamples();
+      fetchMock.mockResolvedValue(
+        sseResponse(
+          `${frame('session_removed', samples['session_removed'])}` +
+            `${frame('not_in_the_set', { type: 'session_removed', sessionId: 'sess-y' })}`
+        )
+      );
+      const methods = createSessionStreamMethods('/api');
+
+      const events: SessionListEvent[] = [];
+      for await (const event of methods.subscribeSessionList()) events.push(event);
+
+      expect(events).toEqual([samples['session_removed']]);
+      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 });

@@ -63,11 +63,21 @@ export function agentsMdExists(repoRoot: string): boolean {
  * `opts.dorkHome` is also provided, global-scope installs (`${dorkHome}/plugins`)
  * are scanned too.
  *
+ * `opts.allowPluginHooks` gates which installed packages may contribute hooks —
+ * shell commands the harnesses run on the person's behalf. Omitted, every
+ * package's hooks project, which is what a person running `dorkos harness sync`
+ * asks for; DorkOS's own install-triggered projection passes a gate instead
+ * (`services/harness/hook-approval.ts`, DOR-522).
+ *
  * @param repoRoot - absolute path to the repository root.
- * @param opts - optional resolved dork home, enabling global-scope projection.
+ * @param opts - optional resolved dork home, enabling global-scope projection, and
+ *   an optional per-package gate on hook contribution.
  * @returns the full projection plan (actions + honest drop list).
  */
-export function project(repoRoot: string, opts?: { dorkHome?: string }): ProjectionPlan {
+export function project(
+  repoRoot: string,
+  opts?: { dorkHome?: string; allowPluginHooks?: (packageName: string) => boolean }
+): ProjectionPlan {
   const installedPlugins = scanInstalledPlugins({
     dorkHome: opts?.dorkHome,
     projectRoot: repoRoot,
@@ -78,5 +88,6 @@ export function project(repoRoot: string, opts?: { dorkHome?: string }): Project
     claudeHooks: loadClaudeHooks(repoRoot),
     agentsMdExists: agentsMdExists(repoRoot),
     installedPlugins,
+    ...(opts?.allowPluginHooks ? { allowPluginHooks: opts.allowPluginHooks } : {}),
   });
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { TaskFrontmatterSchema } from '../task-schema.js';
+import { PermissionModeSchema } from '@dorkos/shared/schemas';
+import { TaskFrontmatterSchema, TASK_PERMISSION_MODES } from '../task-schema.js';
 
 describe('TaskFrontmatterSchema', () => {
   const base = { name: 'daily-check', description: 'Runs daily health check' };
@@ -79,10 +80,10 @@ describe('TaskFrontmatterSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  it('accepts both permissions enum values', () => {
-    for (const permissions of ['acceptEdits', 'bypassPermissions'] as const) {
+  it('accepts every permissions enum value', () => {
+    for (const permissions of TASK_PERMISSION_MODES) {
       const result = TaskFrontmatterSchema.safeParse({ ...base, permissions });
-      expect(result.success).toBe(true);
+      expect(result.success, `${permissions} should parse`).toBe(true);
     }
   });
 
@@ -107,5 +108,22 @@ describe('TaskFrontmatterSchema', () => {
       metadata: { owner: 'kai' },
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('PermissionMode drift — task frontmatter mirror vs @dorkos/shared source', () => {
+  // `TASK_PERMISSION_MODES` is an inlined mirror of @dorkos/shared's
+  // `PermissionModeSchema` (the zod v3/v4 boundary forbids composing the schema
+  // itself). Derive both sides here rather than restating today's members: a
+  // hardcoded list would still be green the day someone adds a seventh mode to
+  // shared, which is exactly the drift that let a Shape declare a mode a task
+  // file could not hold.
+  it('the two value sets are equal', () => {
+    expect([...TASK_PERMISSION_MODES].sort()).toEqual([...PermissionModeSchema.options].sort());
+  });
+
+  it('the frontmatter enum accepts exactly those modes and nothing else', () => {
+    const field = TaskFrontmatterSchema.shape.permissions.removeDefault();
+    expect([...field.options].sort()).toEqual([...PermissionModeSchema.options].sort());
   });
 });

@@ -117,6 +117,7 @@ import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
+import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   TokenConfirmationProvider,
@@ -970,7 +971,11 @@ async function start() {
     ...(approvalTtlMs !== undefined ? { ttlMs: approvalTtlMs } : {}),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
-      return capability ? { title: capability.title, tier: capability.tier } : undefined;
+      if (capability) return { title: capability.title, tier: capability.tier };
+      // One id that is not a capability anyone can invoke: the card raised when an
+      // installed package wants to write shell commands into a coding agent's hook
+      // files (DOR-522). Without this the card would show the raw id.
+      return describeHookProjectionCapability(capabilityId);
     },
   });
   try {
@@ -1627,7 +1632,7 @@ async function start() {
           // assets to the project's other harnesses. Fire-and-forget; the
           // service is internally best-effort and never throws, but we still
           // catch here to honor the no-floating-promise convention.
-          runAutoProjection(ctx, { dorkHome }).catch((err) => {
+          runAutoProjection(ctx, { dorkHome, approvals: approvalService }).catch((err) => {
             logger.warn('[Marketplace] Harness auto-projection failed', { err });
           });
         },
