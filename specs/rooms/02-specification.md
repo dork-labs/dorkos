@@ -514,7 +514,7 @@ The palette (`features/command-palette/`) has fuzzy search, frecency, preview pa
 
 **Contextual actions come from R6b's node list, not a second list.** When a room is open, the palette offers that room's actions — the _same_ pure `buildRoomRowMenuNodes(model)` that feeds the right-click menu and the `…` dropdown. Three surfaces, one model. Palettes drifting out of step with their equivalent right-click menus is the standard failure here, and `AgentRowMenuItems.tsx` already proves the pattern in this codebase.
 
-**Explicitly out of scope: message search.** Slack keeps navigation (`Cmd+K`) and message search (`Cmd+F`) as separate surfaces, and Teams' merged command bar is the cautionary example. We have no message index, and building one to satisfy a palette would be the tail wagging the dog.
+**Explicitly out of scope: message search.** Slack keeps navigation (`Cmd+K`) and message search (`Cmd+F`) as separate surfaces, and Teams' merged command bar is the cautionary example. We have no message index, and building one to satisfy a palette would be the tail wagging the dog. **[Amended 2026-07-28 (DOR-672) — see Amendment 1 at the end of this document: one of this paragraph's two arguments expires, the conclusion does not.]**
 
 ### 13.3 Unread, reachable without the mouse
 
@@ -709,3 +709,15 @@ follow, provided the bare form in a multi-agent room asks rather than guesses �
 because it silently does work in a tree the person did not choose.
 
 Blocked behind R6b (DOR-572), which builds the pure list §15.3 requires.
+
+---
+
+## Amendment 1 — the message index arrives, and §13.2 keeps its conclusion (2026-07-28, DOR-672)
+
+**Amends §13.2's final paragraph — `specs/rooms/02-specification.md:517`, "Explicitly out of scope: message search."** One of that paragraph's two arguments expires; the conclusion does not. The sentence carries two independent supports and they are worth separating, because only one of them is about to stop being true.
+
+The first is a **UX-separation argument**: Slack keeps `Cmd+K` and `Cmd+F` apart, Teams merged them and is the cautionary example. Nothing about an index touches that. It is the load-bearing half and it stands unchanged — **rooms in the palette is navigation, and message search is a different surface**, so R9 is unaffected.
+
+The second is a **cost argument** — "we have no message index" — and `specs/message-search/02-specification.md` (DOR-672) retires it, because it builds one. Note the tense carefully: **the index does not exist yet.** Until DOR-672 ships, the sentence above is true exactly as written, and R9 must not be planned as though an index were available. After it ships, the honest form is: an index exists, this palette still does not search messages, and the reason is now the first argument alone rather than both.
+
+The thing worth carrying forward is that the cost argument was doing more work than it should have been. It made "no message search in the palette" look contingent on an implementation fact, when the decision was really about what a command palette is for. `specs/room-participation/02-specification.md:646` made the same call for a tool and cites this line by number; it has been amended in the same change, and for a different reason — its tool now calls the index rather than scanning, because there is no case for two search paths over the same rows.

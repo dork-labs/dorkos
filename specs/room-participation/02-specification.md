@@ -32,7 +32,7 @@ The whole design is one idea, from `01-ideation.md` §3:
 
 The first question is answered today by `addressing.ts`, `cascade-guard.ts` and `turn-budget.ts`, with no model in the loop, and it stays that way. The second question is answered by the model, bounded by conduct. Ten phases follow, in `01-ideation.md` §7's order, which is by ratio of harm removed to work.
 
-**Out of scope:** the `CommunityAdapter` port (`specs/community-adapter`), the community server, invites, channel workspaces, reactions, message search, and any change to the room data model beyond the fields named here.
+**Out of scope:** the `CommunityAdapter` port (`specs/community-adapter`), the community server, invites, channel workspaces, reactions, message search, and any change to the room data model beyond the fields named here. **Amended 2026-07-28 (DOR-672):** message search stays out of scope _as a thing this spec builds_ — it is `specs/message-search/02-specification.md`'s — but §10.3's `search_room_history` is now a caller of that index rather than a substring scan of its own, and RP7 takes a dependency on it (§12).
 
 ---
 
@@ -630,10 +630,10 @@ Compaction is runtime-owned and differs per runtime (ADR-0310); there is no unif
 
 Two capabilities in the same `rooms` domain, both `observe`:
 
-| Tool                  | Signature                                           | Behavior                                                     |
-| --------------------- | --------------------------------------------------- | ------------------------------------------------------------ |
-| `read_room_history`   | `(roomId, before?: seq, limit, threadRootEntryId?)` | A page of entries, newest first, `limit` capped server-side. |
-| `search_room_history` | `(roomId, query, limit, threadRootEntryId?)`        | Substring match over `body.text`, newest first.              |
+| Tool                  | Signature                                           | Behavior                                                                                                                                                                                                                                  |
+| --------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read_room_history`   | `(roomId, before?: seq, limit, threadRootEntryId?)` | A page of entries, newest first, `limit` capped server-side.                                                                                                                                                                              |
+| `search_room_history` | `(roomId, query, limit, threadRootEntryId?)`        | ~~Substring match over `body.text`, newest first.~~ **Amended 2026-07-28 (DOR-672):** stemmed full-text match over the message index once DOR-672 ships, ranked by relevance, membership-scoped. See the amendment below the scope rules. |
 
 **Scope, enforced server-side and re-checked on every call:**
 
@@ -643,7 +643,7 @@ Two capabilities in the same `rooms` domain, both `observe`:
 
 Per §3.3, both are **one predicate over one table** now that a thread is an entry relation: `WHERE room_id = ? AND seq > joinedSeq`, plus `AND thread_root_entry_id = ?` when narrowing to a thread. Under the child-room model this would have been a `UNION` across every thread room hanging off the channel.
 
-Search is deliberately a substring scan, not an index. There is no message index in this product and building one to satisfy a tool would be the tail wagging the dog; `specs/rooms/02-specification.md:517` made the same call for the command palette. If it becomes slow, that is evidence for an index, and evidence is what should buy one.
+Search is deliberately a substring scan, not an index. There is no message index in this product and building one to satisfy a tool would be the tail wagging the dog; `specs/rooms/02-specification.md:517` made the same call for the command palette. If it becomes slow, that is evidence for an index, and evidence is what should buy one. **[Amended 2026-07-28 (DOR-672) — see Amendment 1 at the end of this document: the evidence arrived, and `search_room_history` becomes a caller of the index.]**
 
 The runtime constraint from §10.2.1 applies identically: these reach claude-code in-session and every runtime through the external `/mcp` server.
 
@@ -718,12 +718,12 @@ Ten phases, in `01-ideation.md` §7's order, which is by ratio of harm removed t
 | **RP4**  | The `engaged` mode, the derived window, config, seeding and migration (§9)                                                      | RP2                   |
 | **RP5**  | The mention picker, sectioned and typed (§10.1)                                                                                 | none                  |
 | **RP6**  | `post_to_room`, the rooms capability domain, membership-guarantees-the-tool, `agent_declined` (§10.2)                           | RP2                   |
-| **RP7**  | `read_room_history` and `search_room_history` (§10.3)                                                                           | RP6                   |
+| **RP7**  | `read_room_history` and `search_room_history` (§10.3)                                                                           | RP6, RP3, DOR-672     |
 | **RP8**  | Collect, debounce, steer, and the halt verb (§10.4)                                                                             | RP2, RP3              |
 | **RP9**  | Status signals wired; work one click away; long posts collapse (§11.1)                                                          | none                  |
 | **RP10** | Cross-community DM policy, default off, with the disclosure (§11.2)                                                             | the community program |
 
-RP1, RP2, RP5 and RP9 are independent and run in parallel. RP3 and RP4 both need RP2 and are independent of each other. **The thread ADR lands before RP4**, because RP4's window is thread-scoped and RP7's queries assume the entry relation.
+RP1, RP2, RP5 and RP9 are independent and run in parallel. RP3 and RP4 both need RP2 and are independent of each other. **The thread ADR lands before RP4**, because RP4's window is thread-scoped and RP7's queries assume the entry relation. **[Amended 2026-07-28 (DOR-672): RP7 gained two dependencies — see Amendment 1.]**
 
 DOR-621 is RP1's first half and DOR-622 is RP2. The rest need tickets.
 
@@ -752,7 +752,7 @@ Per-membership settings stay **one control**, per `01-ideation.md` §4.4: _"When
 - **Any form of arbitration.** No referee, no speaker election, no room-scoped turn lock, no ordering of agents who were all addressed. `I1`.
 - **A consecutive-agent-turns counter.** Buzz's postmortem proposes but never built a counter on consecutive agent-authored turns with no human message, N around 6 to 10. Our depth ceiling probably already catches that shape, since a many-distinct-agents storm walks depth even when it never repeats an author. **Add it if dogfooding produces a storm that depth alone did not bound, and not before.** Two bounds already exist and ADR `260726-170127` is candid that a reader meeting either alone will wonder why the other exists; a third has to earn itself.
 - **Trust-tiering context by sender.** §7.2. Belongs with the community program.
-- **A message index.** §10.3.
+- ~~**A message index.** §10.3.~~ **Amended 2026-07-28 (DOR-672).** Still not built _here_ — but it is being built, by `specs/message-search/02-specification.md`, for the operator's search box rather than for this tool. RP7 becomes a caller of it (§10.3). What remains genuinely not built in this spec is an index **of its own**, and that is now a stronger statement than it was: there is exactly one index over these rows, and RP7 does not get a second.
 - **Halt inferred from message text.** §10.4, and it is never coming.
 - **An agent leaving a room unilaterally.** An agent may **request** to leave by posting, and may not leave on its own: a silently absent agent is indistinguishable from a broken one. Whether an agent can refuse to be conscripted is `specs/community-adapter`'s Open Question 3 and stays there; locally the question does not arise, because D8 already means only a member can add their own agents.
 - **Broadcast mentions from an agent.** `E18`: a ping is a claim on someone's attention. An agent may mention one specific person who must act; `@here` and its equivalents are refused at the post path, not merely discouraged in a prompt.
@@ -836,3 +836,25 @@ The alternative is to hold RP6 until the tool is reachable everywhere, which mea
 - `research/20260727_room-spec-corpus-synthesis.md`: the 72-constraint inventory.
 - `research/20260727_rooms-implementation-audit.md`: what ships today, with citations.
 - `research/20260727_messaging-etiquette.md`, `research/20260727_agents-in-group-chat-industry-survey.md`, `research/20260727_buzz-conversational-behavior.md`, `research/20260727_hermes-openclaw-group-chat.md`, `research/20260727_relay-adapter-group-chat-audit.md`.
+
+---
+
+## Amendment 1 — RP7 becomes a caller of the message index (2026-07-28, DOR-672)
+
+Amends §10.3 (the `search_room_history` row and the paragraph at `:646`), §12 (the RP7 phasing row and its dependency prose), §1 (Out of scope) and §14. The original text is intact in all four places; this section is what it now means. It is appended rather than inserted so that every `file:line` citation into this document keeps resolving — `:646` in particular is cited by line from `specs/rooms/02-specification.md`.
+
+**Amended 2026-07-28 (DOR-672) — the evidence arrived, and it was not slowness. `search_room_history` becomes a thin caller of the index instead of a substring scan.** The paragraph at `:646` is a spec being honoured, not overridden: it wrote its own invitation, said what would buy an index, and refused to buy one for itself. What it did not anticipate is that the evidence would come from a **different buyer**. `specs/message-search/02-specification.md` (DOR-672) specifies a message index for the operator's own search box across rooms and the runtimes it can honestly reach, paid for by that user story rather than by this tool. **It is specified, not shipped** — its ADR is `status: proposed` — so nothing below is available yet. So once DOR-672 ships, the index will exist whether or not RP7 wants one — and the question stops being "does this tool justify an index" and becomes "given an index over exactly these rows, may this tool keep its own scan?"
+
+It may not, and the reason is AGENTS.md rather than performance: **two search paths over the same rows is the tolerated legacy pattern the codebase refuses.** They would answer the same question differently — one matching infixes, the other matching stems — and the difference would be invisible until someone compared them.
+
+**So the substring scan is never written, and the conversion is never a follow-up.** Be precise about what that does and does not mean, because §12's phasing table now shows RP7 depending on DOR-672 and "the same ticket" would contradict it: what is forbidden is **shipping the scan and replacing it later**, not "these two must be one PR." RP7 lands after the index and lands directly as a caller. Ordered the other way — RP7 first — the rule would bind the other way too, and DOR-672 would inherit the replacement as work it did not scope. Either way there is exactly one search path over these rows, and nobody writes a second one intending to delete it.
+
+**RP7's three scope rules survive unchanged and are reused verbatim** — the index gains no authority the tool did not already have. Members only; entries at or after `joinedSeq`; a room id is not a capability, so "not a member" and "no such room" still report identically. The index enforces none of that itself: visibility is resolved to a set of room ids by the shipped `requireVisibleRoom` path and applied as a **join**, and the index is queried inside that scope. A room id is still not a capability, and now neither is a query string.
+
+**Two consequences, both real, neither hidden.**
+
+- **The tool's matching semantics change.** Substring matching finds `ogs` inside `dogs`; a `porter unicode61` FTS5 index does not — it matches word stems, so `dogs` finds `dog`, `dogs` and `DOGGED` (measured: 1 hit under `unicode61`, 3 under `porter unicode61`) and finds nothing for a fragment that is not a word. That is better for the question an agent actually asks and worse for one specific trick, and §10.3's `search_room_history` row is amended to say so rather than leaving a caller to discover it.
+
+- **`joinedSeq` does not exist yet, and this is where that bites.** `room_members` has `joined_at` (text) and `last_read_seq` today (`packages/db/src/schema/rooms.ts:134-149`); no `joined_seq` column appears in any migration under `packages/db/drizzle/`. §8.3 specs it and **RP3 lands it**. Until then the shipped read path's only predicates are `room_id` and an optional `before` cursor (`apps/server/src/services/rooms/room-store.ts:465-476`) — nothing resembling a join point — so a member does retroactively read the full backlog — and an index-backed `search_room_history` would inherit exactly that gap rather than introduce it. **RP7 therefore depends on RP3 as well as RP6**, which §12's table now records; shipping RP7's search against the index before `joinedSeq` exists would hand an agent a fast, ranked, cross-backlog reader of everything said in its rooms before it joined.
+
+**Amended 2026-07-28 (DOR-672) — RP7 gained two dependencies and §12's table row records them.** It now needs **RP3**, which is what lands `joinedSeq`, because an index-backed search without that column reads a member's whole pre-join backlog at speed (§10.3). And it needs **DOR-672**, the message index itself, because `search_room_history` is now a caller of that index rather than its own scan — which also means RP7 must not ship before DOR-672 does, where previously it could have shipped any time after RP6.
