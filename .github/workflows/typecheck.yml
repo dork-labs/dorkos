@@ -1,7 +1,7 @@
 name: typecheck
 
 # Type-checks every package that declares a `typecheck` script, on every PR
-# and on push to main. See the KNOWN GAP note below for what this does not
+# and on push to main. See the KNOWN GAPS note below for what this does not
 # cover.
 #
 # Before this workflow existed, NOTHING in CI ran `pnpm typecheck`. Enforcement
@@ -39,10 +39,24 @@ name: typecheck
 # on every downstream import) or need a hand-maintained second build step that
 # duplicates what turbo already does correctly.
 #
-# KNOWN GAP: this only covers packages that declare a `typecheck` script.
-# `dorkos` (packages/cli, the published npm package) does not — it builds
-# with esbuild, which strips types without checking them, and it is
-# currently red under `tsc --noEmit`. Tracked as DOR-530.
+# KNOWN GAPS: this only covers packages that declare a `typecheck` script.
+# Every workspace package now declares one — `dorkos` (packages/cli, the
+# published npm package) was the last holdout and joined in DOR-530, along
+# with `@dorkos/icons` and `@dorkos/test-utils`. The two that still do not,
+# `@dorkos/eslint-config` and `@dorkos/typescript-config`, contain no
+# TypeScript source at all (plain `.js` and `.json`), so there is nothing for
+# tsc to check. What that leaves uncovered:
+#
+#   - Root-level `scripts/*.ts`. They belong to no workspace package, and
+#     turbo only runs package tasks (there is no `//#typecheck` root task), so
+#     no tsconfig includes them and nothing here checks them.
+#   - The test files quarantined in `apps/server/tsconfig.json`'s `exclude`.
+#     That list is deliberate, shrink-only, and enforced by
+#     `apps/server/src/__tests__/tsconfig-quarantine.test.ts`; see the comment
+#     there for the rules.
+#
+# Anything added to this list is a real hole — say which files it leaves
+# unchecked and why, rather than naming a package.
 on:
   push:
     branches: [main]

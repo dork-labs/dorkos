@@ -25,11 +25,22 @@ import { buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
 
 /**
- * The 3 {@link SessionListEvent} discriminants. The unified `/events` stream
- * also carries other event families (sync updates, relay messages, heartbeats);
- * only these are part of the session-list contract.
+ * The {@link SessionListEvent} discriminants. The unified `/events` stream also
+ * carries other event families (sync updates, relay messages, heartbeats); only
+ * these are part of the session-list contract.
+ *
+ * A SECOND, independent copy of the allowlist in `stream-manager.ts` — that one
+ * gates the shipped HTTP cockpit, this one gates the Transport-contract path. A
+ * name missing from either is a frame dropped in silence, so both are pinned
+ * against `SessionListEventSchema` by tests (DOR-548). Exported for the reverse
+ * half of that pin: proving no name here has outlived its discriminant needs the
+ * set itself, not a guess at which stale names to probe for.
  */
-const SESSION_LIST_EVENT_TYPES = new Set(['session_upserted', 'session_removed', 'session_status']);
+export const SESSION_LIST_EVENT_TYPES = new Set([
+  'session_upserted',
+  'session_removed',
+  'session_status',
+]);
 
 /**
  * Open an SSE response for `path`, aborting via a local controller chained to
@@ -153,7 +164,8 @@ export function createSessionStreamMethods(baseUrl: string) {
      * Subscribe to the global session-list stream via SSE (`GET /events`).
      *
      * The unified `/events` fan-out carries other event families too — only the
-     * 3 session-list discriminants are forwarded; everything else is ignored.
+     * {@link SESSION_LIST_EVENT_TYPES} discriminants are forwarded; everything
+     * else is ignored.
      */
     async *subscribeSessionList(): AsyncIterable<SessionListEvent> {
       const { response, controller } = await openSSE(baseUrl, `/events`);

@@ -81,7 +81,9 @@ Applying a Shape changes what DorkOS is set up for right now. Here is what it do
 
 When the Shape runs that agent on a timer, the card also shows when, in plain words, like "Every weekday at 9:00 AM."
 
-**It sets up the Shape's schedules.** These are the recurring tasks the setup runs for you. If a schedule is meant for an agent you have not created yet, DorkOS sets it up turned off, then turns it on by itself the moment you create that agent. You do not have to come back and re-apply the Shape. DorkOS remembers which Shape created each schedule, so it can clean them up later.
+**It sets up the Shape's schedules.** These are the recurring tasks the setup runs for you. Most arrive turned off, and you switch them on when you are ready: a Shape only starts a timer on arrival if its author asked for that, and even then only once the agent it runs as exists. If a schedule is meant for an agent you have not created yet, DorkOS sets it up turned off and picks it back up the moment you create that agent, so you do not have to come back and re-apply the Shape. DorkOS remembers which Shape created each schedule, so it can clean them up later.
+
+A Shape also cannot hand the timers it sets up for you a free pass. If one asks to run with every approval prompt turned off, DorkOS sets it up asking instead and leaves you a note saying so. You can still raise it yourself on the task, once you have read what it does.
 
 **It flags anything that still needs setup.** If the Shape needs a secret or a connection you have not filled in, you get a note telling you what to set up. Notes never block the rest of the Shape from applying.
 
