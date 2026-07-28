@@ -3227,6 +3227,79 @@ export const UiCommandSchema = z
 export type UiCommand = z.infer<typeof UiCommandSchema>;
 
 /**
+ * What one {@link UiCommand} action costs a person if an agent issues it with
+ * nobody asked.
+ *
+ * - `client-only` — it moves pixels in the cockpit the person is already looking
+ *   at. Nothing is written, nothing is scheduled, and closing the tab undoes it.
+ * - `reaches-the-machine` — it leaves the browser: it calls a mutating DorkOS
+ *   API, writes to disk, or arms work that runs later.
+ */
+export type UiCommandReach = 'client-only' | 'reaches-the-machine';
+
+/**
+ * Every UI command's reach, and therefore whether an agent may issue it without
+ * an approval card (DOR-625).
+ *
+ * ## Why this exists as a table and not a list of exceptions
+ *
+ * `control_ui` is one MCP tool carrying 22 different effects, and the interactive
+ * gate (`services/runtimes/claude-code/messaging/interactive-handlers.ts`)
+ * auto-allows tools by NAME. So a single tool-level "safe" verdict had to cover
+ * all 22 at once, and it did: the tool was auto-allowed under the comment "pure
+ * client-side UI mutations, no system access". `apply_layout` is not that. The
+ * cockpit answers it by POSTing `/api/shapes/:name/apply`, which creates the
+ * Shape's schedules ENABLED, carrying the permission mode the Shape's manifest
+ * chose — `bypassPermissions` included. An agent could arm a recurring unattended
+ * run with every safety prompt off, in plain `default` mode, without a prompt.
+ *
+ * The table lives HERE, in the same file as the union, because the failure mode
+ * is a twenty-third action added without anyone thinking about the gate. Being a
+ * `Record` over `UiCommand['action']` makes that a `tsc` error in the file you are
+ * already editing: you cannot add a variant above without classifying it below.
+ * That is the same closed-end trick `resolveModeDecision` uses with its `never`
+ * arm, and it is why this is a total map rather than a set of the dangerous ones.
+ *
+ * **When you add an action, `reaches-the-machine` is the default answer.** Choose
+ * `client-only` only when the client's handler for it touches nothing but local UI
+ * state; if it calls anything on the Transport, it is not client-only.
+ */
+export const UI_COMMAND_REACH: Record<UiCommand['action'], UiCommandReach> = {
+  // Panels, sidebar, canvas, PIP, palette, theme, scroll, toast, confetti: all of
+  // this is Zustand state and DOM in the tab the person is looking at.
+  open_panel: 'client-only',
+  close_panel: 'client-only',
+  toggle_panel: 'client-only',
+  open_sidebar: 'client-only',
+  close_sidebar: 'client-only',
+  switch_sidebar_tab: 'client-only',
+  open_canvas: 'client-only',
+  update_canvas: 'client-only',
+  close_canvas: 'client-only',
+  open_pip: 'client-only',
+  close_pip: 'client-only',
+  show_toast: 'client-only',
+  set_theme: 'client-only',
+  scroll_to_message: 'client-only',
+  open_command_palette: 'client-only',
+  celebrate: 'client-only',
+  // Reads, and only of things the agent can already reach. `open_file` and
+  // `open_diff` render a file the agent could have `Read`; `browser_navigate`
+  // opens a page it could have fetched; `open_terminal` reveals a shell for the
+  // PERSON in the session's own worktree, which the agent cannot type into.
+  // Putting a card in front of these would train people to dismiss cards.
+  open_file: 'client-only',
+  open_diff: 'client-only',
+  open_terminal: 'client-only',
+  browser_navigate: 'client-only',
+  // Navigation: it re-points the cockpit at another working directory and
+  // refetches. Nothing is written and the person sees it happen.
+  switch_agent: 'client-only',
+  // The one that leaves the browser. See the TSDoc above.
+  apply_layout: 'reaches-the-machine',
+};
+
+/**
  * Payload of an agent-issued UI command (the `control_ui` MCP tool).
  *
  * Typeless like the other event payloads (e.g. {@link MemoryRecallEventSchema}):

@@ -72,6 +72,58 @@ const telegramManifest: AdapterManifest = {
   ],
 };
 
+/**
+ * Telegram's real setup-step shape: a token step, then a step carrying both the
+ * connection mode and the group respond mode.
+ *
+ * Mirrors `TELEGRAM_MANIFEST` in `@dorkos/relay`, which the client cannot import
+ * (it pulls in grammy and the Slack SDKs). The invariant that every config field
+ * is named by some step is pinned against the real manifest in
+ * `packages/relay/src/adapters/telegram/__tests__/telegram-adapter.test.ts`;
+ * this fixture pins the other half — that a field a step names actually renders.
+ */
+const telegramSteppedManifest: AdapterManifest = {
+  type: 'telegram',
+  displayName: 'Telegram',
+  description: 'Telegram bot adapter',
+  category: 'messaging',
+  builtin: true,
+  multiInstance: true,
+  setupSteps: [
+    { stepId: 'get-token', title: 'Get your Bot Token', fields: ['token'] },
+    {
+      stepId: 'configure-mode',
+      title: 'Choose how your bot connects and replies',
+      fields: ['mode', 'respondMode'],
+    },
+  ],
+  configFields: [
+    { key: 'token', label: 'Bot Token', type: 'password', required: true },
+    {
+      key: 'mode',
+      label: 'Receiving Mode',
+      type: 'select',
+      required: true,
+      default: 'polling',
+      options: [{ label: 'Long Polling', value: 'polling' }],
+    },
+    {
+      key: 'respondMode',
+      label: 'Replies in Groups',
+      type: 'select',
+      displayAs: 'radio-cards',
+      required: true,
+      default: 'thread-aware',
+      description: 'When should the bot reply in a group chat?',
+      options: [
+        { label: 'When spoken to', value: 'thread-aware' },
+        { label: 'Only when mentioned', value: 'mention-only' },
+        { label: 'Every message', value: 'always' },
+      ],
+    },
+  ],
+};
+
 const existingInstance: CatalogInstance & { config?: Record<string, unknown> } = {
   id: 'slack-1',
   enabled: true,
@@ -199,6 +251,31 @@ describe('AdapterSetupWizard', () => {
     expect(screen.getByText('API Token is required')).toBeInTheDocument();
     // Should still be on configure step
     expect(screen.getByLabelText(/channel/i)).toBeInTheDocument();
+  });
+
+  it('renders the group respond-mode control on the step that names it', async () => {
+    // The wizard shows only the current step's fields, so a setting is only
+    // real if a step names it. This drives the actual UI rather than reasoning
+    // about the manifest: fill the token, advance, and look for the control the
+    // changelog tells people to go and change (DOR-619).
+    const { Wrapper } = createWrapper();
+    render(
+      <AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={telegramSteppedManifest} />,
+      { wrapper: Wrapper }
+    );
+
+    // Step 1 — the group setting is not here.
+    expect(screen.queryByText('Replies in Groups')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/bot token/i), { target: { value: '123:ABC' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    // Step 2 — the control and all three choices are on screen.
+    await waitFor(() => {
+      expect(screen.getByText('Replies in Groups')).toBeInTheDocument();
+    });
+    expect(screen.getByText('When spoken to')).toBeInTheDocument();
+    expect(screen.getByText('Only when mentioned')).toBeInTheDocument();
+    expect(screen.getByText('Every message')).toBeInTheDocument();
   });
 
   it('shows spinner during pending test, green check on success', async () => {

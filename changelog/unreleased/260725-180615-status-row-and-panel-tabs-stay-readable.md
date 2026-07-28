@@ -6,6 +6,7 @@ covers:
   - 'fix(status): the quietest item gives up its width first (DOR-461)'
   - 'fix(changelog): match a covers declaration whichever way it is quoted'
   - 'fix(status): draw every number whole or not at all (DOR-461)'
+  - 'fix(status): a status row that fits its own box, and a tab strip that never hides your tab (DOR-461, DOR-462, DOR-471) (#466)'
 ---
 
 ### Fixed

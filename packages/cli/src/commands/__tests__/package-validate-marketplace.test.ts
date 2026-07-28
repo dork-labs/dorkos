@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -61,7 +61,7 @@ function writeClaudePluginFixture(
  * Collapse all `process.stdout.write` / `process.stderr.write` invocations
  * captured by a Vitest spy into a single string.
  */
-function collectWrites(spy: ReturnType<typeof vi.spyOn>): string {
+function collectWrites(spy: MockInstance<typeof process.stdout.write>): string {
   return (spy.mock.calls as unknown[][]).map((call) => String(call[0])).join('');
 }
 
@@ -89,8 +89,8 @@ describe('parseValidateMarketplaceArgs', () => {
 
 describe('runValidateMarketplace', () => {
   let tmpRoot: string;
-  let stdoutSpy: ReturnType<typeof vi.spyOn>;
-  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let stdoutSpy: MockInstance<typeof process.stdout.write>;
+  let stderrSpy: MockInstance<typeof process.stderr.write>;
 
   beforeEach(() => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), `dorkos-vm-${randomUUID()}-`));
