@@ -1,0 +1,80 @@
+name: test
+
+# Runs the full vitest suite (~14,000 unit tests) on every PR and on push to
+# main. See the KNOWN GAP note below for what this does not cover.
+#
+# Before this workflow existed, NOTHING in CI ran `pnpm test`. Enforcement was
+# a developer choosing to run it locally before opening a PR — bypassable the
+# same way typecheck.yml describes (`--no-verify` is a documented, routinely
+# used escape here). Compounding it: `pnpm test` is `dotenv -- turbo test`,
+# and turbo caches the task, so an unchanged tree replays a prior run's
+# summary line in ~200ms — a reader cannot tell that apart from a real run.
+# DOR-544.
+#
+# FULL MONOREPO, not affected-only, for the same reason typecheck.yml gives:
+# affected-only is a per-PR diff and can't see an interaction between two
+# PRs that each looked clean alone but combine to break `main`. Only a full
+# run against `main`'s actual tip (a PR's merge commit, or a push to main)
+# catches that.
+#
+# `-- --run` is required: several packages declare `"test": "vitest"` (bare,
+# watch mode) rather than `"test": "vitest run"` — turbo forwards `--run` to
+# every task, forcing all of them non-interactive. This is the same flag
+# AGENTS.md prescribes for `pnpm test -- --run` locally.
+#
+# Cache stays ON. `turbo.json`'s `test` task declares no `outputs`, so a
+# cache hit only replays the previous run's terminal summary — it does not
+# skip work incorrectly, and a cold CI runner is a cache miss regardless.
+# Disabling the cache would only slow down the common case (a push that
+# touches packages the test task's inputs didn't change) for no safety gain.
+#
+# NO separate build step: `test` declares `dependsOn: ["^build"]` in
+# turbo.json, so `turbo test` already builds every dependency package (e.g.
+# `@dorkos/shared`) before testing anything that imports its dist.
+#
+# KNOWN GAP: this only covers packages that declare a `test` script and run
+# under vitest. Playwright browser tests (`apps/e2e`) and the Docker smoke/
+# integration suites are not part of this job — they run under
+# `cli-smoke-test.yml` / `pnpm smoke:docker` / `pnpm smoke:integration`.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs on the same ref for PRs only. For push events, group
+# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
+# time, so several quick merges to main sharing a `test-refs/heads/main`
+# group would cancel each other's queued runs and only the final push would
+# actually get checked. Per-SHA groups give every push-to-main its own slot.
+concurrency:
+  group: test-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Measured cold (no turbo cache) full-suite wall-clock on CI: see PR
+    # description for the actual run this timeout was calibrated against.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run the full vitest suite
+        run: pnpm exec turbo run test -- --run
