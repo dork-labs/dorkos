@@ -118,7 +118,7 @@ Nothing below assumes a thread has its own membership row, its own `lastReadSeq`
 
 ## 4. Invariants that bind every phase
 
-Five rules. A change that breaks one is a defect, not a proposal. All five are already in `.claude/rules/room-conduct.md` (`I5` at `:55-57`); this spec is where their consequences are worked out phase by phase.
+Five rules. A change that breaks one is a defect, not a proposal. All five are already in `.claude/rules/room-conduct.md` (`I5` at `:60-62`); this spec is where their consequences are worked out phase by phase.
 
 **I1. No arbitration.** No referee, no speaker election, no room-scoped turn lock. "Addressing three agents and getting three answers is the intended outcome, not a pathology" (`specs/rooms/02-specification.md:241`, `addressing.ts:6-9`). Declined independently twice, five months apart. Restraint is distributed into each agent, not centralized.
 
@@ -607,10 +607,12 @@ So RP6 ships:
 
 **The obligation attaches to being addressed, not to running a turn.** So the outcome splits along the trigger state §8's table already defines:
 
-| The turn was triggered because                                      | The turn ends with no `post_to_room` call                                                                                                                               | Why                                                                                                                                      |
+| The turn was triggered because                                      | The turn ends without posting anything                                                                                                                                  | Why                                                                                                                                      |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | **Addressed** (mentioned, or a DM)                                  | **The room gets a one-line notice.** Same mechanism, same code (`agent_silent_here`'s sibling `agent_declined`) and the same one-per-agent-per-cascade damping as §5.2. | Being asked creates an obligation, and silence discharges it visibly or not at all.                                                      |
 | **Ambient** (`always`, `engaged`, or live-ambient, with no mention) | **Silence, and it costs nothing.** No notice, no entry.                                                                                                                 | Nobody asked, so there is no obligation to discharge. This is the common case and it is the whole reason `post_to_room` is worth having. |
+
+**What "without posting anything" means depends on the room kind**, because §2.6 keeps `post_to_room` out of DMs. In a channel or a thread it means the turn made no `post_to_room` call. In a DM, where the reply is the message, it means the turn produced no text at all. A DM turn that answers normally has posted, so it writes no notice: read as "no tool call", the condition would be true of every DM turn and the notice would fire after every successful reply, which is the opposite of what this section is for.
 
 Two things follow.
 
