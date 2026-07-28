@@ -73,10 +73,12 @@ const STRUCTURAL_EXCLUDES = ['node_modules', 'dist', 'src/core-extensions/**'];
  * How many test files are quarantined right now.
  *
  * DOR-508 opened the quarantine at 109 and immediately removed one inert entry.
+ * DOR-635 freed `permission-preview.test.ts` (its single error was a
+ * `as ShapePackageManifest` cast papering over an incomplete `layout` fixture).
  * **Only ever lower this.** Lowering it means a file was fixed and freed; raising
  * it means a test file was given up on, which needs a reason in review.
  */
-const QUARANTINE_BASELINE = 108;
+const QUARANTINE_BASELINE = 107;
 
 /**
  * The `exclude` array from the server tsconfig.
