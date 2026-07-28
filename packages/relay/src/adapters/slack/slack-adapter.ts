@@ -9,6 +9,7 @@
  */
 import { App, LogLevel } from '@slack/bolt';
 import type { RelayEnvelope, SlackAdapterConfig } from '@dorkos/shared/relay-schemas';
+import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import { BaseRelayAdapter } from '../../base-adapter.js';
 import type {
   RelayPublisher,
@@ -95,7 +96,7 @@ export class SlackAdapter extends BaseRelayAdapter {
 
     return {
       eventId,
-      respondMode: respondModeOverride ?? this.config.respondMode ?? 'thread-aware',
+      respondMode: respondModeOverride ?? this.config.respondMode ?? DEFAULT_RESPOND_MODE,
       // Fall back to the restrictive policy, not the permissive one: a config
       // that reached here without a `dmPolicy` went through neither the schema
       // default nor the legacy carry-forward, so nothing about it says the

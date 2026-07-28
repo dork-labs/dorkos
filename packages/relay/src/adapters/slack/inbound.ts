@@ -9,7 +9,8 @@
  * @module relay/adapters/slack-inbound
  */
 import type { WebClient } from '@slack/web-api';
-import type { StandardPayload } from '@dorkos/shared/relay-schemas';
+import type { StandardPayload, RespondMode } from '@dorkos/shared/relay-schemas';
+import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import type { RelayPublisher, AdapterInboundCallbacks, RelayLogger } from '../../types.js';
 import { noopLogger } from '../../types.js';
 import type { PendingReactions } from './stream.js';
@@ -99,8 +100,13 @@ function forgetSeen(seenEvents: Map<string, DedupEntry>, keys: readonly string[]
 
 // === Types ===
 
-/** How the bot decides whether to respond in channels. */
-export type RespondMode = 'always' | 'mention-only' | 'thread-aware';
+/**
+ * How the bot decides whether to respond in channels.
+ *
+ * Re-exported from `@dorkos/shared` so Slack and Telegram cannot drift apart on
+ * what the three modes mean.
+ */
+export type { RespondMode };
 
 /** Per-channel override settings. */
 export interface ChannelOverride {
@@ -502,17 +508,21 @@ export async function handleInboundMessage(
   const channelId = event.channel;
   const isDm = channelId.startsWith('D');
 
+  // Resolved once, and used by both the enabled check and the respond gate
+  // below. This used to be resolved separately at each use, each time falling
+  // back to `'always'` when `options.respondMode` was absent — so an integration
+  // whose config had not travelled through the schema answered every message in
+  // every channel, the opposite of the schema's own default (DOR-623).
+  const effectiveConfig = getEffectiveChannelConfig(
+    channelId,
+    options?.respondMode ?? DEFAULT_RESPOND_MODE,
+    options?.channelOverrides ?? {}
+  );
+
   // Channel override — check if channel is disabled
-  if (options?.channelOverrides) {
-    const config = getEffectiveChannelConfig(
-      channelId,
-      options.respondMode ?? 'always',
-      options.channelOverrides
-    );
-    if (!config.enabled) {
-      logger.debug(`inbound skipped: channel ${channelId} disabled by override`);
-      return;
-    }
+  if (!effectiveConfig.enabled) {
+    logger.debug(`inbound skipped: channel ${channelId} disabled by override`);
+    return;
   }
 
   // DM policy — allowlist check
@@ -532,16 +542,9 @@ export async function handleInboundMessage(
 
   // Respond mode gating (non-DM channels only)
   if (!isDm) {
-    const effectiveMode = options?.channelOverrides
-      ? getEffectiveChannelConfig(
-          channelId,
-          options?.respondMode ?? 'always',
-          options.channelOverrides
-        ).respondMode
-      : (options?.respondMode ?? 'always');
-
-    if (!shouldProcessMessage(effectiveMode, event, botUserId, options?.threadTracker)) {
-      logger.debug(`inbound skipped: respond mode '${effectiveMode}' filtered ${channelId}`);
+    const { respondMode } = effectiveConfig;
+    if (!shouldProcessMessage(respondMode, event, botUserId, options?.threadTracker)) {
+      logger.debug(`inbound skipped: respond mode '${respondMode}' filtered ${channelId}`);
       return;
     }
   }
