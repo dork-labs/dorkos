@@ -78,8 +78,8 @@ whose context window compacted can read the room's own record. One predicate ove
 `02-specification.md` §4 establishes that "at the port, a thread is a relation between entries, and
 `listRooms` never returns one," and it is candid about the price: the local adapter must filter
 `kind === 'thread'` out of `listRooms`, which it calls "the largest single consequence of the
-design" (`:459`, `:475`). That spec landed on `main` in PR #533 with an open question (`:728`)
-asking whether excluding threads breaks the cockpit's thread surfaces. Moving the storage removes
+design." That spec landed on `main` in PR #533 with an open question asking whether
+excluding threads breaks the cockpit's thread surfaces. Moving the storage removes
 the divergence rather than translating it, and answers the open question by deleting it.
 
 **The prior art points the same way.** `research/20260727_thread-models.md` surveys six shipping
