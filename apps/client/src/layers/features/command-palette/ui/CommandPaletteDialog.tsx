@@ -391,6 +391,14 @@ export function CommandPaletteDialog() {
             )}
             <CommandInput
               ref={inputRef}
+              // Browser tests find this input by test id, never by its placeholder.
+              // The placeholder is user-facing copy and the app has several other
+              // cmdk roots (the Tasks pickers, the relay popover), so neither the
+              // copy nor `[cmdk-root] input` is a stable handle. Changing the
+              // placeholder once already broke two chat tests silently — a
+              // `getByPlaceholder` that matches nothing waits and times out rather
+              // than saying what it could not find.
+              data-testid="command-palette-input"
               placeholder={
                 page === 'agent-actions'
                   ? `${subMenuAgent?.name ?? 'Agent'} actions...`

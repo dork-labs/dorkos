@@ -14,7 +14,9 @@ function paletteIn(page: Page): { root: Locator; input: Locator; options: Locato
   const root = page.locator('[cmdk-root]');
   return {
     root,
-    input: root.getByPlaceholder('Search rooms, agents, commands...'),
+    // By test id, not the placeholder: that string is user-facing copy and this
+    // spec is not the place to pin its wording.
+    input: page.getByTestId('command-palette-input'),
     options: root.getByRole('option'),
   };
 }
