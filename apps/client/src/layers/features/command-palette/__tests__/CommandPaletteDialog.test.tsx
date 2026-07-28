@@ -207,8 +207,23 @@ const mockAgents: AgentPathEntry[] = [
   { id: 'agent-3', name: 'Worker', projectPath: '/projects/current' },
 ];
 
+/**
+ * No rooms. This file is about agents, features and commands; rooms in the
+ * palette have their own file (`rooms-in-palette.test.tsx`), which runs the
+ * real assembly against a mock Transport rather than a stub like this one.
+ */
+const noRooms = {
+  channels: [],
+  dms: [],
+  unread: [],
+  byId: new Map(),
+  isLoading: false,
+  isError: false,
+};
+
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => ({
+    rooms: noRooms,
     recentAgents: [mockAgents[2], mockAgents[0]],
     allAgents: mockAgents,
     features: [
@@ -298,7 +313,7 @@ describe('CommandPaletteDialog', () => {
 
   it('renders the command input when open', () => {
     render(<CommandPaletteDialog />);
-    expect(screen.getByPlaceholderText('Search agents, features, commands...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search rooms, agents, commands...')).toBeInTheDocument();
   });
 
   it('renders Recent Agents group heading', () => {
@@ -344,7 +359,7 @@ describe('CommandPaletteDialog', () => {
   it('renders "No results found." text when search yields no matches', () => {
     render(<CommandPaletteDialog />);
     // cmdk's CommandEmpty is hidden when items are present; enter a nonsense query to trigger it
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     // The empty element exists in the DOM even when hidden (cmdk hides it via CSS/aria)
     // We just verify the empty state element is rendered in the component tree
     expect(input).toBeInTheDocument(); // confirms dialog is open and rendered
@@ -356,7 +371,7 @@ describe('CommandPaletteDialog', () => {
     mockGlobalPaletteOpen = false;
     render(<CommandPaletteDialog />);
     expect(
-      screen.queryByPlaceholderText('Search agents, features, commands...')
+      screen.queryByPlaceholderText('Search rooms, agents, commands...')
     ).not.toBeInTheDocument();
   });
 
@@ -570,7 +585,7 @@ describe('CommandPaletteDialog', () => {
 
   it('shows All Agents group and hides Features/Quick Actions/Recent Agents in @ mode', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@' } });
     expect(screen.getByText('All Agents')).toBeInTheDocument();
     expect(screen.queryByText('Features')).not.toBeInTheDocument();
@@ -580,7 +595,7 @@ describe('CommandPaletteDialog', () => {
 
   it('does not show Commands group in @ mode', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@hello' } });
     expect(screen.queryByText('Commands')).not.toBeInTheDocument();
   });
@@ -589,14 +604,14 @@ describe('CommandPaletteDialog', () => {
 
   it('shows All Agents group when a non-@ search query is entered', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: 'auth' } });
     expect(screen.getByText('All Agents')).toBeInTheDocument();
   });
 
   it('shows Commands group when a non-@ search query is entered', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: 'hello' } });
     expect(screen.getByText('Commands')).toBeInTheDocument();
     expect(screen.getByText('/hello')).toBeInTheDocument();

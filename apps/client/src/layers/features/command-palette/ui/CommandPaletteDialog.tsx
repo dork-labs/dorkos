@@ -20,6 +20,7 @@ import { usePaletteActions } from '../model/use-palette-actions';
 import { AgentPreviewPanel } from './AgentPreviewPanel';
 import { AgentSubMenu } from './AgentSubMenu';
 import { PaletteFooter } from './PaletteFooter';
+import { PalettePrefixLegend } from './PalettePrefixLegend';
 import { PaletteRootPage } from './PaletteRootPage';
 import { usePreviewData } from '../model/use-preview-data';
 import { dialogVariants } from './palette-constants';
@@ -34,7 +35,9 @@ import type { FuseResultMatch } from 'fuse.js';
  * Uses ResponsiveDialog (Dialog on desktop, Drawer on mobile).
  * Content powered by usePaletteItems() which assembles all groups.
  *
- * The `@` prefix activates agent-only mode, hiding all non-agent groups.
+ * Three prefixes narrow it: `#` to channels and threads, `@` to agents and the
+ * direct messages they are in, `>` to slash commands. Each hides every group it
+ * does not name.
  */
 export function CommandPaletteDialog() {
   const { globalPaletteOpen, setGlobalPaletteOpen } = useGlobalPalette();
@@ -67,6 +70,7 @@ export function CommandPaletteDialog() {
     handleAgentSelect,
     handleFeatureAction,
     handleQuickAction,
+    handleRoomSelect,
     recordUsage,
     setDir,
     selectedCwd,
@@ -142,6 +146,7 @@ export function CommandPaletteDialog() {
     features,
     commands,
     quickActions,
+    rooms,
     searchableItems,
     suggestions,
   } = usePaletteItems(selectedCwd);
@@ -181,8 +186,24 @@ export function CommandPaletteDialog() {
     return new Set(results.filter((r) => r.item.type === 'quick-action').map((r) => r.item.id));
   }, [results, search, prefix]);
 
+  // Which rooms the current query matches. Rooms are two item types, not one:
+  // `#` addresses a channel by its name, `@` a DM by who is in it (spec `rooms`
+  // §13.2), so the visible sets are derived separately and each group filters
+  // its own already-ordered list — which keeps unread first rather than
+  // adopting Fuse's relevance order.
+  const visibleRoomIds = useMemo(() => {
+    if (!search) return null;
+    return new Set(results.filter((r) => r.item.type === 'room').map((r) => r.item.id));
+  }, [results, search]);
+
+  const visibleDmIds = useMemo(() => {
+    if (!search) return null;
+    return new Set(results.filter((r) => r.item.type === 'dm').map((r) => r.item.id));
+  }, [results, search]);
+
   const isAtMode = prefix === '@';
   const isCommandMode = prefix === '>';
+  const isRoomMode = prefix === '#';
 
   // Derive the currently selected agent from the cmdk selected value.
   // Agents are identified by name (cmdk uses the value prop of CommandItem).
@@ -279,6 +300,17 @@ export function CommandPaletteDialog() {
     return quickActions.filter((qa) => visibleQuickActionIds.has(qa.id));
   }, [quickActions, visibleQuickActionIds]);
 
+  // Which channels and DMs to show during search
+  const searchChannels = useMemo(() => {
+    if (!visibleRoomIds) return rooms.channels;
+    return rooms.channels.filter((room) => visibleRoomIds.has(room.id));
+  }, [rooms.channels, visibleRoomIds]);
+
+  const searchDms = useMemo(() => {
+    if (!visibleDmIds) return rooms.dms;
+    return rooms.dms.filter((room) => visibleDmIds.has(room.id));
+  }, [rooms.dms, visibleDmIds]);
+
   return (
     <ResponsiveDialog open={globalPaletteOpen} onOpenChange={handleOpenChange}>
       <ResponsiveDialogContent
@@ -362,14 +394,19 @@ export function CommandPaletteDialog() {
               placeholder={
                 page === 'agent-actions'
                   ? `${subMenuAgent?.name ?? 'Agent'} actions...`
-                  : 'Search agents, features, commands...'
+                  : 'Search rooms, agents, commands...'
               }
               value={search}
               onValueChange={setSearch}
             />
             <CommandList>
               <ScrollArea className="h-full">
-                <CommandEmpty>No results found.</CommandEmpty>
+                {/* Nothing matched — say so, then say what else could have been
+                    typed. A dead end is the one place a legend is worth the room. */}
+                <CommandEmpty>
+                  <p>No results found.</p>
+                  <PalettePrefixLegend className="justify-center pb-0" />
+                </CommandEmpty>
 
                 {/*
                  * Directional page transition:
@@ -392,6 +429,7 @@ export function CommandPaletteDialog() {
                         isZeroQuery={isZeroQuery}
                         isAtMode={isAtMode}
                         isCommandMode={isCommandMode}
+                        isRoomMode={isRoomMode}
                         search={search}
                         selectedCwd={selectedCwd}
                         selectedValue={selectedValue}
@@ -402,11 +440,15 @@ export function CommandPaletteDialog() {
                         searchFeatures={searchFeatures}
                         searchCommands={searchCommands}
                         searchQuickActions={searchQuickActions}
+                        rooms={rooms}
+                        searchChannels={searchChannels}
+                        searchDms={searchDms}
                         agentMatchMap={agentMatchMap}
                         onFeatureAction={handleFeatureAction}
                         onAgentSelect={handleAgentSelect}
                         onQuickAction={handleQuickAction}
                         onGoToAgentActions={goToAgentActions}
+                        onRoomSelect={handleRoomSelect}
                         onClose={closePalette}
                       />
                     )}

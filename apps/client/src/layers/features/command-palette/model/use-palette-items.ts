@@ -5,7 +5,10 @@ import { useSessions, selectAgentSessions, sessionDisplayTitle } from '@/layers/
 import { useActiveTaskRunCount } from '@/layers/entities/tasks';
 import { useAppStore, useNow, useSlotContributions } from '@/layers/shared/model';
 import { shortenHomePath } from '@/layers/shared/lib';
+import { roomDisplayTitle } from '@/layers/entities/room';
 import { useAgentFrecency } from './use-agent-frecency';
+import { usePaletteRooms, type PaletteRooms } from './use-palette-rooms';
+import { paletteRoomKeywords } from './palette-rooms';
 import type { SearchableItem } from './use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -45,6 +48,8 @@ export interface PaletteItems {
   features: FeatureItem[];
   commands: CommandItemData[];
   quickActions: QuickActionItem[];
+  /** Channels, direct messages and what is unread among them (spec `rooms` §13.2). */
+  rooms: PaletteRooms;
   /** Flat list of all palette items for Fuse.js search */
   searchableItems: SearchableItem[];
   /** Contextual suggestions for the zero-query state (max 3) */
@@ -67,6 +72,7 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 export function usePaletteItems(activeCwd: string | null): PaletteItems {
   const { data: agentPathsData, isLoading: agentsLoading } = useMeshAgentPaths();
   const { data: commandsData } = useCommands();
+  const rooms = usePaletteRooms();
   const { getSortedAgentIds } = useAgentFrecency();
   const { sessions } = useSessions();
   const { data: activeRunCount } = useActiveTaskRunCount();
@@ -149,8 +155,30 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
       items.push({ id: qa.id, name: qa.label, type: 'quick-action', data: qa });
     }
 
+    // Rooms enter the flat list as two types, because the two prefixes address
+    // them differently — `#` a channel by its name, `@` a DM by who is in it.
+    for (const room of rooms.channels) {
+      items.push({
+        id: room.id,
+        name: roomDisplayTitle(room),
+        type: 'room',
+        keywords: paletteRoomKeywords(room),
+        data: room,
+      });
+    }
+
+    for (const room of rooms.dms) {
+      items.push({
+        id: room.id,
+        name: room.title,
+        type: 'dm',
+        keywords: paletteRoomKeywords(room),
+        data: room,
+      });
+    }
+
     return items;
-  }, [allAgents, commands, features, quickActions]);
+  }, [allAgents, commands, features, quickActions, rooms.channels, rooms.dms]);
 
   const suggestions = useMemo(() => {
     const items: SuggestionItem[] = [];
@@ -208,6 +236,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     features,
     commands,
     quickActions,
+    rooms,
     searchableItems,
     suggestions,
     isLoading: agentsLoading,

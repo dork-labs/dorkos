@@ -1,0 +1,60 @@
+/**
+ * The rooms the command palette offers (spec `rooms` §13.2).
+ *
+ * `#` addresses a channel or a thread — a room is named — and `@` addresses a
+ * direct message alongside the agents, because a DM is addressed by who is in
+ * it. That split is the whole reason this hook hands back two lists rather than
+ * one.
+ *
+ * Read-only, like the sidebar's own use. `useRoomListStream` is called once,
+ * from something always mounted (`use-room-list-stream.ts` says so itself);
+ * today that is `use-room-document-title.ts:61`. A second call here would only
+ * duplicate invalidations on the same shared `/api/events` subscription.
+ *
+ * @module features/command-palette/model/use-palette-rooms
+ */
+import { useMemo } from 'react';
+import { useRooms, hasUnread, type RoomSummary } from '@/layers/entities/room';
+import { sortRoomsForPalette } from './palette-rooms';
+
+/** The room list, split the way the palette's two prefixes address it. */
+export interface PaletteRooms {
+  /** What `#` addresses: channels and the threads hanging off them. */
+  channels: RoomSummary[];
+  /** What `@` addresses beside the agents: direct messages. */
+  dms: RoomSummary[];
+  /**
+   * Every room with something waiting, most recent first — what the palette
+   * shows before anything is typed.
+   */
+  unread: RoomSummary[];
+  /** Every room the palette holds, keyed by id, for resolving a thread's parent. */
+  byId: Map<string, RoomSummary>;
+  /** Whether the room list is still on its way. */
+  isLoading: boolean;
+  /** Whether the room list failed to load. */
+  isError: boolean;
+}
+
+/**
+ * Read every room the cockpit can see and put it in palette order.
+ *
+ * Both lists come back unread-first, so `#` with nothing typed after it leads
+ * with the channel that needs reading rather than the alphabetically luckiest
+ * one.
+ */
+export function usePaletteRooms(): PaletteRooms {
+  const { data, isLoading, isError } = useRooms();
+
+  return useMemo(() => {
+    const rooms = data ?? [];
+    return {
+      channels: sortRoomsForPalette(rooms.filter((r) => r.kind !== 'dm')),
+      dms: sortRoomsForPalette(rooms.filter((r) => r.kind === 'dm')),
+      unread: sortRoomsForPalette(rooms.filter(hasUnread)),
+      byId: new Map(rooms.map((room) => [room.id, room])),
+      isLoading,
+      isError,
+    };
+  }, [data, isLoading, isError]);
+}
