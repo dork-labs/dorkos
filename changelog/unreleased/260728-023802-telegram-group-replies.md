@@ -1,3 +1,10 @@
+---
+covers:
+  - 'fix(relay): stop a Telegram bot answering other bots and every group message'
+  - 'fix(relay): treat an anonymous Telegram admin as a person, and surface the group setting'
+  - 'fix(relay): make the Telegram group setting reachable, and close the review nits'
+---
+
 ### Fixed
 
 - Your Telegram bot no longer replies to other bots. If two bots that both answer messages ended up in the same group, they could talk to each other forever and fill the chat. Your bot now ignores anything another bot says, and there is no setting that turns this off.
