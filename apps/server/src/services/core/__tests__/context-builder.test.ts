@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 vi.mock('../git-status.js', () => ({
@@ -124,6 +124,13 @@ describe('buildSystemPromptAppend', () => {
     });
   });
 
+  afterEach(() => {
+    // `composeWithDocsBase` below stubs the environment and re-imports; undo
+    // both so nothing leaks into the describes that follow.
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
   it('returns string containing <env> block', async () => {
     const result = await buildSystemPromptAppend('/test/dir');
     expect(result).toContain('<env>');
@@ -240,6 +247,43 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<mesh_tools>');
     expect(result).not.toContain('<relay_tools>');
     expect(result).not.toContain('<adapter_tools>');
+  });
+
+  /**
+   * Compose the whole append with `DORKOS_DOCS_BASE_URL` set to `value`
+   * (`undefined` unsets it). `env.ts` snapshots `process.env` at module load, so
+   * the builder has to be re-imported for a stub to reach it; the manifest mock
+   * is re-fetched from the reset registry for the same reason, since
+   * `<dorkos_context>` only rides along when the cwd hosts an agent.
+   *
+   * @param value - The docs base URL to run under, or `undefined` for none.
+   */
+  async function composeWithDocsBase(value: string | undefined): Promise<string> {
+    vi.stubEnv('DORKOS_DOCS_BASE_URL', value as unknown as string);
+    vi.resetModules();
+    const { readManifest: freshReadManifest } = await import('@dorkos/shared/manifest');
+    vi.mocked(freshReadManifest).mockResolvedValue(makeManifest());
+    const { buildSystemPromptAppend: freshBuild } =
+      await import('../../runtimes/claude-code/messaging/context-builder.js');
+    return freshBuild('/test/dir');
+  }
+
+  it('composes the production doc pointers when nothing overrides them', async () => {
+    const result = await composeWithDocsBase(undefined);
+    expect(result).toContain('<dorkos_context>');
+    expect(result).toContain('Documentation: https://dorkos.ai/llms.txt');
+    expect(result).toContain('Full docs: https://dorkos.ai/docs');
+  });
+
+  it('composes an overridden docs base, and no later block drops or rewrites it', async () => {
+    const result = await composeWithDocsBase('http://localhost:6244');
+    expect(result).toContain('Documentation: http://localhost:6244/llms.txt');
+    expect(result).toContain('Full docs: http://localhost:6244/docs');
+    expect(result).not.toContain('dorkos.ai');
+    // It survives BESIDE the Claude-specific tool docs and the <env> block, in
+    // the same append, rather than replacing either of them.
+    expect(result).toContain('<relay_tools>');
+    expect(result).toContain('<env>');
   });
 
   it('excludes all tool blocks when all config toggles are off', async () => {
