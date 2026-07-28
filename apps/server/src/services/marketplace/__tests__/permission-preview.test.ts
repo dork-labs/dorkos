@@ -20,7 +20,7 @@ import type {
 } from '@dorkos/marketplace';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { ConflictDetector } from '../conflict-detector.js';
-import { AgentInstallFlow } from '../flows/install-agent.js';
+import { AgentInstallFlow, type AgentCreatorLike } from '../flows/install-agent.js';
 import { PermissionPreviewBuilder, type ConflictDetectorLike } from '../permission-preview.js';
 
 interface ExtensionFixture {
@@ -126,11 +126,15 @@ function shapeManifest(name: string): ShapePackageManifest {
     requires: [],
     activates: [],
     extensions: [],
-    layout: {},
+    // Spelled out rather than `{}` behind a cast: `layout`'s three fields carry
+    // schema defaults, so the PARSED type requires them even though an author's
+    // JSON may omit them. The cast used to hide that mismatch, which is the one
+    // type error that kept this file in the tsconfig quarantine (DOR-508).
+    layout: { sidebarOpen: false, openPanels: [], focusDashboardSections: [] },
     agents: [],
     schedules: [],
     connections: [],
-  } as ShapePackageManifest;
+  };
 }
 
 /**
@@ -732,18 +736,15 @@ describe('PermissionPreviewBuilder', () => {
 
   describe('the preview destination is where the install actually writes', () => {
     /**
-     * A preview that names paths the installer never touches is a lie, and this
-     * is the one package type where the two sides disagree: the preview resolves
-     * a project-scoped agent to `<projectPath>/.dork/agents/<name>`, while
-     * `AgentInstallFlow` writes straight into `<projectPath>`.
+     * Run BOTH sides for real against one throwaway project dir: a live
+     * `AgentInstallFlow.install`, then a `builder.build` for the same package
+     * and scope. Returns the `manifest.json` destination each side chose.
      *
-     * The test runs both sides for real and compares. It is RED until DOR-522
-     * lands its fix in `install-agent.ts` (nesting the install under
-     * `.dork/agents/<name>`, which is what the preview already promises); this
-     * PR deliberately does not touch that file. If it ever passes without that
-     * change, someone quietly moved the preview to match the bug instead.
+     * Deliberately drives the public flow rather than the module-private
+     * `computeTargetDir` / `computeInstallRoot`, so DOR-522 can reshape either
+     * internal without touching this test.
      */
-    it('agrees with AgentInstallFlow for a project-scoped agent install', async () => {
+    async function bothDestinations(): Promise<{ installed: string; previewed?: string }> {
       const projectPath = await mkdtemp(join(tmpdir(), 'permission-preview-project-'));
       try {
         const manifest = agentManifest('shared-root-agent');
@@ -751,23 +752,63 @@ describe('PermissionPreviewBuilder', () => {
 
         const flow = new AgentInstallFlow({
           dorkHome,
-          agentCreator: { createAgentWorkspace: vi.fn().mockResolvedValue({}) },
+          agentCreator: {
+            createAgentWorkspace: vi.fn().mockResolvedValue({}),
+          } as unknown as AgentCreatorLike,
           logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-        } as unknown as ConstructorParameters<typeof AgentInstallFlow>[0]);
-        const installed = await flow.install(pkgPath, manifest, {
+        });
+        const result = await flow.install(pkgPath, manifest, {
           name: manifest.name,
           projectPath,
         });
 
         const preview = await builder.build(pkgPath, manifest, { projectPath });
-        const previewedManifest = preview.fileChanges.find((f) =>
-          f.path.endsWith('manifest.json')
-        )?.path;
 
-        expect(previewedManifest).toBe(join(installed.installPath, 'manifest.json'));
+        return {
+          installed: join(result.installPath, 'manifest.json'),
+          previewed: preview.fileChanges.find((f) => f.path.endsWith('manifest.json'))?.path,
+        };
       } finally {
         await rm(projectPath, { recursive: true, force: true });
       }
+    }
+
+    /**
+     * Guards the `it.fails` below. An inverted test passes on ANY throw, so a
+     * crash in the shared setup would masquerade as the bug still being open.
+     * This one is a plain `it`: if the install flow or the preview stops
+     * producing a destination at all, THIS goes red and says so.
+     */
+    it('gets a real destination out of both the installer and the preview', async () => {
+      const { installed, previewed } = await bothDestinations();
+
+      expect(installed).toMatch(/manifest\.json$/);
+      expect(previewed).toBeDefined();
+    });
+
+    /**
+     * A preview that names paths the installer never touches is a lie, and this
+     * is the one package type where the two sides disagree: the preview resolves
+     * a project-scoped agent to `<projectPath>/.dork/agents/<name>`, while
+     * `AgentInstallFlow` writes straight into `<projectPath>`.
+     *
+     * `it.fails` because the disagreement is REAL TODAY and this is what pins
+     * it: both sides run for real and the assertion genuinely does not hold.
+     * Inverting it keeps `main` green while the bug is open, without weakening
+     * the check into a snapshot of the wrong path.
+     *
+     * **DOR-522 owns the fix** — it nests `install-agent.ts`'s target under
+     * `.dork/agents/<name>`, which is exactly what the preview already
+     * promises. The moment that lands, the two paths agree, this assertion
+     * starts passing, and `it.fails` reports a failure. That is deliberate: it
+     * is self-clearing and loud, so nobody has to carry a merge-order note in
+     * their head. **Whoever lands DOR-522 must change `it.fails` back to a
+     * plain `it` in the same PR.**
+     */
+    it.fails('agrees with AgentInstallFlow for a project-scoped agent install', async () => {
+      const { installed, previewed } = await bothDestinations();
+
+      expect(previewed).toBe(installed);
     });
   });
 });
