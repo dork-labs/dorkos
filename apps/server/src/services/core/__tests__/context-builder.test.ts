@@ -49,6 +49,7 @@ import {
   _buildMeshToolsBlock,
   _buildAdapterToolsBlock,
   _buildTasksToolsBlock,
+  _buildMarketplaceToolsBlock,
   _buildPeerAgentsBlock,
   _buildRelayConnectionsBlock,
 } from '../../runtimes/claude-code/messaging/context-builder.js';
@@ -199,6 +200,27 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<mesh_tools>');
     expect(result).toContain('<adapter_tools>');
     expect(result).toContain('<tasks_tools>');
+    expect(result).toContain('<marketplace_tools>');
+  });
+
+  it('includes the marketplace tools block even when every other toggle is off (DOR-529)', async () => {
+    // Marketplace has no enabledToolGroups entry and no feature flag — it is
+    // unconditional, like <ui_tools>, so it must survive every other group
+    // being switched off.
+    vi.mocked(isRelayEnabled).mockReturnValue(false);
+    vi.mocked(isTasksEnabled).mockReturnValue(false);
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: false,
+      meshTools: false,
+      adapterTools: false,
+      tasksTools: false,
+    });
+    const result = await buildSystemPromptAppend('/test/dir');
+    expect(result).not.toContain('<relay_tools>');
+    expect(result).not.toContain('<mesh_tools>');
+    expect(result).not.toContain('<adapter_tools>');
+    expect(result).not.toContain('<tasks_tools>');
+    expect(result).toContain('<marketplace_tools>');
   });
 
   it('excludes relay and adapter blocks when relay is disabled', async () => {
@@ -714,6 +736,25 @@ describe('buildTasksToolsBlock', () => {
     vi.mocked(isTasksEnabled).mockReturnValue(true); // global says on
     const result = _buildTasksToolsBlock({ tasks: false, relay: true, mesh: true, adapter: true });
     expect(result).toBe('');
+  });
+});
+
+describe('buildMarketplaceToolsBlock', () => {
+  it('always returns the marketplace context (no toggle to gate on)', () => {
+    const result = _buildMarketplaceToolsBlock();
+    expect(result).toContain('<marketplace_tools>');
+    expect(result).toContain('marketplace_search');
+    expect(result).toContain('marketplace_install');
+    expect(result).toContain('marketplace_uninstall');
+    expect(result).toContain('marketplace_create_package');
+    expect(result).toContain('confirmationToken');
+    expect(result).toContain('</marketplace_tools>');
+  });
+
+  it('documents the two-call confirmation protocol', () => {
+    const result = _buildMarketplaceToolsBlock();
+    expect(result).toContain('requires_confirmation');
+    expect(result).toContain('STOP');
   });
 });
 

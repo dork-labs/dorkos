@@ -177,6 +177,32 @@ Schedules can target a specific agent (by agentId) or a directory (by cwd).
 Agent-linked schedules automatically resolve the agent's project path at run time.
 </tasks_tools>`;
 
+const MARKETPLACE_TOOLS_CONTEXT = `<marketplace_tools>
+DorkOS Marketplace lets you find, inspect, and install packages (agents, plugins,
+skill packs, adapters), and scaffold new ones into the user's personal marketplace.
+
+Read-only lookups:
+  marketplace_search(query?, type?, category?, tags?, marketplace?) -- search every enabled source
+  marketplace_get(name, marketplace?) -- full manifest + README for one package
+  marketplace_list_marketplaces() -- configured sources (name, source, enabled, package count)
+  marketplace_list_installed(type?) -- what is installed, one entry per scope (global | agent-local | override)
+  marketplace_recommend(context) -- keyword/tag-matched suggestions for a free-text need
+
+Mutations -- marketplace_install, marketplace_uninstall, marketplace_create_package -- all
+require explicit user confirmation through the SAME two-call protocol:
+  1. Call the tool without confirmationToken. A requires_confirmation response means the user
+     has not approved yet -- show them the preview and STOP. Do not assume approval and do not
+     retry in a loop; nothing resumes this for you.
+  2. Once the user has approved (in the DorkOS UI, or by telling you to proceed), re-call the
+     SAME tool with confirmationToken set to the value that response returned. The token is
+     single-use and bound to the exact package/marketplace/scope you first asked about --
+     changing any of those on the retry invalidates it.
+
+  marketplace_install(name, marketplace?, projectPath?, confirmationToken?)
+  marketplace_uninstall(name, purge?, projectPath?, confirmationToken?)
+  marketplace_create_package(name, packageType, marketplace?, confirmationToken?)
+</marketplace_tools>`;
+
 const UI_TOOLS_CONTEXT = `<ui_tools>
 DorkOS UI control lets you manipulate the client interface.
 
@@ -212,6 +238,30 @@ UI commands only take visible effect when an interactive client is attached (hea
  */
 function buildUiToolsBlock(): string {
   return UI_TOOLS_CONTEXT;
+}
+
+/**
+ * Build the static `<marketplace_tools>` context block.
+ *
+ * Always included, the same as {@link buildUiToolsBlock}: the marketplace group
+ * has no entry in `EnabledToolGroupsSchema` and no feature flag in
+ * `tool-filter.ts`'s `ToolFilterDeps` to gate on, so there is nothing to check —
+ * unlike relay/mesh/adapter/tasks, it was never wired into the toggle system at
+ * all. DOR-529 added this block for parity: it was the only tool group with zero
+ * system-prompt context, `relay`/`mesh`/`adapter`/`tasks` all had one. This closes
+ * that gap on its own merits; it does not fix a defect — every credentialed run
+ * measured against the marketplace install eval resolved the tool's schema on the
+ * first attempt with no context block at all.
+ *
+ * Per the module TSDoc on {@link ResolvedToolConfig} (ADR 260726-171347 supersedes
+ * ADR-0070): a tool-group toggle gates what this file tells the agent, never what
+ * the agent can call. This block documents `marketplace_install` /
+ * `marketplace_uninstall` / `marketplace_create_package`'s confirmation-token
+ * protocol accurately for that reason — omitting a tool from context has never
+ * made it unreachable, so the text must not imply otherwise.
+ */
+function buildMarketplaceToolsBlock(): string {
+  return MARKETPLACE_TOOLS_CONTEXT;
 }
 
 /**
@@ -399,6 +449,7 @@ export async function buildSystemPromptAppend(
   const meshBlock = buildMeshToolsBlock(toolConfig);
   const adapterBlock = buildAdapterToolsBlock(toolConfig);
   const tasksBlock = buildTasksToolsBlock(toolConfig);
+  const marketplaceBlock = buildMarketplaceToolsBlock();
   const uiBlock = buildUiToolsBlock();
   const genUiBlock = GEN_UI_CONTEXT;
 
@@ -412,6 +463,7 @@ export async function buildSystemPromptAppend(
     meshBlock,
     adapterBlock,
     tasksBlock,
+    marketplaceBlock,
     uiBlock,
     genUiBlock,
     // 2. Semi-static identity + env — changes only on agent config or server restart
@@ -545,6 +597,7 @@ export {
   buildMeshToolsBlock as _buildMeshToolsBlock,
   buildAdapterToolsBlock as _buildAdapterToolsBlock,
   buildTasksToolsBlock as _buildTasksToolsBlock,
+  buildMarketplaceToolsBlock as _buildMarketplaceToolsBlock,
   buildPeerAgentsBlock as _buildPeerAgentsBlock,
   buildRelayConnectionsBlock as _buildRelayConnectionsBlock,
   buildUiToolsBlock as _buildUiToolsBlock,
@@ -552,5 +605,6 @@ export {
   MESH_TOOLS_CONTEXT as _MESH_TOOLS_CONTEXT,
   ADAPTER_TOOLS_CONTEXT as _ADAPTER_TOOLS_CONTEXT,
   TASKS_TOOLS_CONTEXT as _TASKS_TOOLS_CONTEXT,
+  MARKETPLACE_TOOLS_CONTEXT as _MARKETPLACE_TOOLS_CONTEXT,
   UI_TOOLS_CONTEXT as _UI_TOOLS_CONTEXT,
 };
