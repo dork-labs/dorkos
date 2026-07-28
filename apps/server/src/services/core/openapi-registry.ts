@@ -216,7 +216,29 @@ const LocalPermissionPreviewSchema = z.object({
     })
   ),
   extensions: z.array(z.object({ id: z.string(), slots: z.array(z.string()) })),
-  tasks: z.array(z.object({ name: z.string(), cron: z.string().nullable() })),
+  hooks: z.array(
+    z.object({
+      event: z.string(),
+      matcher: z.string().optional(),
+      command: z.string(),
+    })
+  ),
+  unreadableHooks: z.array(z.object({ path: z.string(), event: z.string().optional() })),
+  schedules: z.array(
+    z.object({
+      name: z.string(),
+      cron: z.string().nullable(),
+      permissionMode: z.enum([
+        'default',
+        'plan',
+        'acceptEdits',
+        'dontAsk',
+        'bypassPermissions',
+        'auto',
+      ]),
+      startsEnabled: z.boolean(),
+    })
+  ),
   secrets: z.array(
     z.object({
       key: z.string(),

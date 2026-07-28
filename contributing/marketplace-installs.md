@@ -217,8 +217,17 @@ export interface PermissionPreview {
   fileChanges: { path: string; action: 'create' | 'modify' | 'delete' }[];
   /** Extensions that will be registered. */
   extensions: { id: string; slots: string[] }[];
-  /** Tasks that will be created. */
-  tasks: { name: string; cron: string | null }[];
+  /** Shell hooks the package registers with the harness, commands verbatim. */
+  hooks: { event: string; matcher?: string; command: string }[];
+  /** Hook declarations the package ships that could not be read. */
+  unreadableHooks: { path: string; event?: string }[];
+  /** Scheduled jobs that will be created, and what each may do unattended. */
+  schedules: {
+    name: string;
+    cron: string | null;
+    permissionMode: SchedulePermissionMode;
+    startsEnabled: boolean;
+  }[];
   /** Secrets the package will request. */
   secrets: { key: string; required: boolean; description?: string }[];
   /** External hosts the package will contact. */
@@ -234,7 +243,22 @@ The builder (`services/marketplace/permission-preview.ts`) walks the staged pack
 
 - `.claude-plugin/plugin.json` for declared skills / hooks / MCP servers.
 - `.dork/extensions/*/extension.json` for slot registrations and declared secrets.
-- `.dork/tasks/*/SKILL.md` for task definitions (name + cron).
+- `hooks/hooks.json` for the shell commands the package **declares**. Parsing mirrors `readPluginHooks` in `packages/harness/src/sources/installed.ts`, the reader that feeds Harness Sync, including its tolerance for both the `{ hooks: {…} }` wrapper and a bare `{ Event: […] }` object. Every declaration the preview fails to parse lands in `unreadableHooks`, because "declares hooks we could not read" is a worse signal than "declares no hooks" and the two must never render alike.
+
+  **Declared is not the same as projected, and the UI copy says so.** A package's hooks only reach a harness settings file when three things hold:
+  1. the install is **project-scoped** — `installed.ts` records global installs as identity-only and never reads their hooks;
+  2. the package is a **`plugin` or `skill-pack`** — `projector.ts` filters to `PROJECTABLE_PLUGIN_TYPES`, and an `agent` or `shape` lands outside `plugins/` so it is never scanned at all;
+  3. a person has **approved that exact command set** for that project — `services/harness/hook-approval.ts` (DOR-522) gates projection on the hook CONTENT rather than on the install, keyed by `<packageName>@<digest>`.
+
+  The cockpit's default install scope is global, so "will run" would over-claim in the common case; both preview surfaces therefore say the package **"declares"** these commands. The preview still reports them for every type and scope, because the file does land on disk, a later project-scoped install would surface them for approval, and under-reporting a shell command is the dangerous direction. The two surfaces answer different questions: the preview is what a person reads _before installing_, and the DOR-522 card is what they answer _before those commands can run_. Note that `packages/marketplace/src/package-validator.ts` has no `hooks` check, so nothing rejects a decorative `hooks/hooks.json` on a Shape or agent.
+
+- `.dork/tasks/*/SKILL.md` for scheduled jobs (name, cron, `permissions`, `enabled`).
+- `manifest.schedules` for a Shape's scheduled jobs. Both disclosed fields report what the install will ACTUALLY do, not what the manifest asked for, because two apply-time rules override it (DOR-607) and echoing the raw declaration would be wrong in the alarming direction:
+  - `permissionMode` runs through `clampSchedulePermissionMode` — the same function `apply-shape.ts` uses, imported rather than copied, so the preview cannot drift into warning about a `bypassPermissions` job the installer would never create.
+  - `startsEnabled` reads `startEnabled`. The retired `startDisabled` is deliberately not consulted: it survives in the schema only so apply-time can tell an author it is stale, and inverting an absent key would report every schedule in a modern manifest as starting switched on.
+
+  `apply-shape.ts` may still force a schedule off when its bound agent is missing at apply time, which the preview cannot know in advance, so a `true` remains the more permissive of the two outcomes.
+
 - `.dork/adapters/*/manifest.json` for adapter requirements.
 - The `requires` field on the top-level manifest for dependency resolution against the installed set.
 
