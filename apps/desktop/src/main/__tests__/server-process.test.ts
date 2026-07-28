@@ -85,16 +85,42 @@ async function utilityChildAt(index: number): Promise<MockServerProcess> {
   return spawnedChildAt(utilityProcessChildren, index, 'utility process');
 }
 
+/**
+ * How long to wait for a spawn before calling it a genuine failure. Generous on
+ * purpose: this bounds a real-I/O wait on a shared CI runner, and the wait ends
+ * the moment the child appears, so the cost of being generous is nothing.
+ */
+const SPAWN_WAIT_MS = 10_000;
+
 async function spawnedChildAt(
   children: MockServerProcess[],
   index: number,
   label: string
 ): Promise<MockServerProcess> {
-  for (let turn = 0; turn < 1000 && !children[index]; turn++) {
+  // Bounded by WALL CLOCK, not by turn count (DOR-653). The old bound was 1000
+  // `setImmediate` turns, which is a count and not a duration: on an idle
+  // machine those elapse in under a millisecond, so the loop gave up almost
+  // immediately and only ever passed because the spawn usually won the race.
+  // Under CI contention the free-port probe's real socket I/O needs longer than
+  // 1000 turns, and this reported "was never spawned" for a child that was
+  // merely late — three times on 2026-07-28 alone, on branches that touched no
+  // desktop code.
+  //
+  // `process.hrtime` rather than `Date.now`: vitest's fake timers patch `Date`
+  // and `setTimeout`, and several tests in this file fake `setTimeout`, which
+  // would freeze a `Date`-based deadline and reinstate the original bug in a
+  // subtler form. `setImmediate` polling is kept for that same reason.
+  const deadline = process.hrtime.bigint() + BigInt(SPAWN_WAIT_MS) * 1_000_000n;
+  while (!children[index] && process.hrtime.bigint() < deadline) {
     await new Promise((resolve) => setImmediate(resolve));
   }
   const child = children[index];
-  if (!child) throw new Error(`${label} child #${index} was never spawned`);
+  if (!child) {
+    throw new Error(
+      `${label} child #${index} was never spawned within ${SPAWN_WAIT_MS}ms ` +
+        `(${children.length} child(ren) spawned)`
+    );
+  }
   return child;
 }
 
@@ -135,10 +161,15 @@ function pendingDialog(): ShowMessageBox {
  * free-port probe each restart makes) can complete between turns.
  */
 async function until(label: string, predicate: () => boolean): Promise<void> {
-  for (let turn = 0; turn < 2000 && !predicate(); turn++) {
+  // Same wall-clock bound as spawnedChildAt, and for the same reason (DOR-653):
+  // a turn count is not a duration, so on a loaded runner this gave up on work
+  // that was merely slow. Every restart here re-runs the free-port probe, so
+  // this waits on real socket I/O too.
+  const deadline = process.hrtime.bigint() + BigInt(SPAWN_WAIT_MS) * 1_000_000n;
+  while (!predicate() && process.hrtime.bigint() < deadline) {
     await new Promise((resolve) => setImmediate(resolve));
   }
-  if (!predicate()) throw new Error(`timed out waiting for ${label}`);
+  if (!predicate()) throw new Error(`timed out waiting for ${label} after ${SPAWN_WAIT_MS}ms`);
 }
 
 type ElectronMock = Awaited<ReturnType<typeof getElectronMock>>;
