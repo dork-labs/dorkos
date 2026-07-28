@@ -2,12 +2,12 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { maybeShowNewsletterTip } from '../newsletter-tip.js';
 
 let home: string;
-let logSpy: ReturnType<typeof vi.spyOn>;
+let logSpy: MockInstance<typeof console.log>;
 const origHome = process.env.DORK_HOME;
 const origSuppress = process.env.DORKOS_NO_NEWSLETTER_TIP;
 

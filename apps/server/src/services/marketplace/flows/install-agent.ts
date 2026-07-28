@@ -61,8 +61,8 @@ export class AgentInstallFlow {
    *
    * @param packagePath - Absolute path to the staged package source directory.
    * @param manifest - Validated agent manifest read from the package.
-   * @param opts - Install request options. `opts.projectPath`, when set, is
-   *   used directly as the target directory; otherwise the agent lands under
+   * @param opts - Install request options. With `opts.projectPath` set the agent
+   *   lands under `<projectPath>/.dork/agents/<name>`; otherwise under
    *   `<dorkHome>/agents/<name>`.
    * @returns The full {@link InstallResult} reporting where the package landed.
    */
@@ -132,8 +132,19 @@ export class AgentInstallFlow {
 
 /**
  * Compute the on-disk target directory for an agent package. Project-local
- * installs use `opts.projectPath` directly (it is the full target dir, not
- * a parent); global installs land under `<dorkHome>/agents/<name>`.
+ * installs land under `<projectPath>/.dork/agents/<name>`; global installs under
+ * `<dorkHome>/agents/<name>`.
+ *
+ * The project-local nesting mirrors `computeInstallRoot` in the plugin flow, and
+ * it is a containment boundary, not a tidiness preference (DOR-522). This used to
+ * return `projectPath` itself, which made the whole repository the install
+ * target: a package's files unpacked straight into the project root, so anything
+ * it shipped landed wherever its own layout said — including
+ * `.dork/extensions/<id>/server.ts`, a path DorkOS discovers and, once approved,
+ * runs inside its own process. It also pointed the transaction's backup-and-
+ * restore at the entire project directory. Nesting closes both by construction.
+ * `permission-preview.ts` has always shown this path, so the disclosure and the
+ * behavior now agree.
  *
  * @internal
  */
@@ -142,7 +153,9 @@ function computeTargetDir(
   manifest: AgentPackageManifest,
   projectPath: string | undefined
 ): string {
-  if (projectPath) return projectPath;
+  if (projectPath) {
+    return path.join(projectPath, '.dork', installRootDirForType(manifest.type), manifest.name);
+  }
   return path.join(dorkHome, installRootDirForType(manifest.type), manifest.name);
 }
 

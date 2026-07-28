@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 import { parseInstallArgs, runInstall } from '../commands/install.js';
 
@@ -96,8 +96,8 @@ describe('parseInstallArgs', () => {
 });
 
 describe('runInstall', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let errSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: MockInstance<typeof console.log>;
+  let errSpy: MockInstance<typeof console.error>;
   let originalIsTTY: boolean | undefined;
 
   beforeEach(() => {

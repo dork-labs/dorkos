@@ -54,6 +54,7 @@
     "build": "tsx scripts/build.ts",
     "test": "vitest run",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
@@ -90,6 +91,8 @@
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/qrcode-terminal": "^0.12.2",
     "better-auth": "^1.6",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

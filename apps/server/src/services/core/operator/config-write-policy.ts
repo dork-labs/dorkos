@@ -278,6 +278,10 @@ export const CONFIG_WRITE_POLICY = {
   'workspace.retentionCap': 'agent-writable',
 
   'harness.autoSync': 'agent-writable',
+  // The record of a person allowing an installed package to write shell commands
+  // into the files a coding agent runs on their behalf (DOR-522). An agent that
+  // could append to this list could approve its own package's hooks.
+  'harness.approvedHooks': 'operator-only',
 
   'workbench.defaultViewers': 'agent-writable',
   'workbench.terminalGraceTtlMinutes': 'agent-writable',
