@@ -59,16 +59,21 @@ function fakeClient(
   return {
     resolveCloudBaseUrl: () => 'https://dorkos.ai',
     buildInstanceDescriptor: () => DESCRIPTOR,
-    requestDeviceCode: vi.fn(async () => CODES),
-    pollForToken: vi.fn(
+    // Each mock is typed with the interface member it stands in for. Left to
+    // inference, a zero-argument stub declares a zero-argument signature — still
+    // assignable to the real one, so nothing complains, but `mock.calls` then
+    // has no elements to read and the return type widens (`status: string`
+    // rather than the `'approved' | 'denied' | 'expired'` the code branches on).
+    requestDeviceCode: vi.fn<CloudFlowClient['requestDeviceCode']>(async () => CODES),
+    pollForToken: vi.fn<CloudFlowClient['pollForToken']>(
       async () => overrides.poll ?? { status: 'approved', accessToken: 'dork_inst_live' }
     ),
-    sendHeartbeat: vi.fn(async () => ({
+    sendHeartbeat: vi.fn<CloudFlowClient['sendHeartbeat']>(async () => ({
       ok: true,
       instanceId: 'inst-1',
       lastSeenAt: '2026-07-03T00:00:00Z',
     })),
-    revokeInstanceKey: vi.fn(async () => true),
+    revokeInstanceKey: vi.fn<CloudFlowClient['revokeInstanceKey']>(async () => true),
     ...overrides,
   };
 }
@@ -102,7 +107,7 @@ describe('runCloudLogin', () => {
       ...(telemetryInstanceId ? { telemetryInstanceId } : {}),
     }));
     const client = fakeClient({ buildInstanceDescriptor });
-    const requestDeviceCode = vi.fn(async () => CODES);
+    const requestDeviceCode = vi.fn<CloudFlowClient['requestDeviceCode']>(async () => CODES);
     client.requestDeviceCode = requestDeviceCode;
 
     await runCloudLogin({

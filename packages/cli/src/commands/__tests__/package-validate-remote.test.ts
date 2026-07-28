@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 import {
   parseValidateRemoteArgs,
@@ -35,7 +35,7 @@ function mockResponse(body: unknown, ok = true, status = 200): Response {
   } as unknown as Response;
 }
 
-function collectWrites(spy: ReturnType<typeof vi.spyOn>): string {
+function collectWrites(spy: MockInstance<typeof process.stdout.write>): string {
   return (spy.mock.calls as unknown[][]).map((call) => String(call[0])).join('');
 }
 
@@ -91,9 +91,9 @@ describe('resolveDorkosSidecarUrl', () => {
 });
 
 describe('runValidateRemote', () => {
-  let stdoutSpy: ReturnType<typeof vi.spyOn>;
-  let stderrSpy: ReturnType<typeof vi.spyOn>;
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let stdoutSpy: MockInstance<typeof process.stdout.write>;
+  let stderrSpy: MockInstance<typeof process.stderr.write>;
+  let fetchSpy: MockInstance<typeof globalThis.fetch>;
 
   beforeEach(() => {
     stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);

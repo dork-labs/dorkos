@@ -422,41 +422,56 @@ if (
   process.exit(await runVersionDispatcher(__CLI_VERSION__, DORK_HOME, subArgs));
 }
 
-let values: ReturnType<typeof parseArgs>['values'];
-let positionals: ReturnType<typeof parseArgs>['positionals'];
-
-try {
-  ({ values, positionals } = parseArgs({
-    options: {
-      port: { type: 'string', short: 'p' },
-      tunnel: { type: 'boolean', short: 't', default: false },
-      dir: { type: 'string', short: 'd' },
-      boundary: { type: 'string', short: 'b' },
-      tasks: { type: 'boolean' },
-      open: { type: 'boolean' },
-      'debug-trace': { type: 'boolean', default: false },
-      'log-level': { type: 'string', short: 'l' },
-      help: { type: 'boolean', short: 'h' },
-      version: { type: 'boolean', short: 'v' },
-      'post-install-check': { type: 'boolean', default: false },
-      yes: { type: 'boolean', short: 'y', default: false },
-    },
-    allowPositionals: true,
-    allowNegative: true,
-  }));
-} catch (err) {
-  if (
-    err instanceof TypeError &&
-    (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
-  ) {
-    const match = err.message.match(/Unknown option '([^']+)'/);
-    const option = match?.[1] ?? 'unknown';
-    console.error(`Unknown option: ${option}`);
-    console.error(`Run 'dorkos --help' for usage information.`);
-    process.exit(1);
+/**
+ * Parse the top-level `dorkos` flags, reporting an unrecognised one as a
+ * one-line message instead of a Node stack trace.
+ *
+ * The option table is passed inline so `parseArgs` can infer the exact result
+ * shape from it: `values.port` is `string | undefined`, `values.tunnel` is
+ * `boolean`, and so on. Returning that inferred value is what makes the
+ * inference reachable. Destructuring into pre-declared `let`s (as this used to)
+ * widened every flag back to `string | boolean | (string | boolean)[]` — the
+ * shape `parseArgs` falls back to when it cannot see the options — so each read
+ * downstream silently became a union nobody had narrowed.
+ *
+ * @returns The parsed flags and positional arguments.
+ */
+function parseCliArgs() {
+  try {
+    return parseArgs({
+      options: {
+        port: { type: 'string', short: 'p' },
+        tunnel: { type: 'boolean', short: 't', default: false },
+        dir: { type: 'string', short: 'd' },
+        boundary: { type: 'string', short: 'b' },
+        tasks: { type: 'boolean' },
+        open: { type: 'boolean' },
+        'debug-trace': { type: 'boolean', default: false },
+        'log-level': { type: 'string', short: 'l' },
+        help: { type: 'boolean', short: 'h' },
+        version: { type: 'boolean', short: 'v' },
+        'post-install-check': { type: 'boolean', default: false },
+        yes: { type: 'boolean', short: 'y', default: false },
+      },
+      allowPositionals: true,
+      allowNegative: true,
+    });
+  } catch (err) {
+    if (
+      err instanceof TypeError &&
+      (err as NodeJS.ErrnoException).code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION'
+    ) {
+      const match = err.message.match(/Unknown option '([^']+)'/);
+      const option = match?.[1] ?? 'unknown';
+      console.error(`Unknown option: ${option}`);
+      console.error(`Run 'dorkos --help' for usage information.`);
+      process.exit(1);
+    }
+    throw err;
   }
-  throw err;
 }
+
+const { values, positionals } = parseCliArgs();
 
 if (values.help) {
   console.log(`
@@ -594,7 +609,8 @@ if (subcommand === 'init') {
   const { initConfigManager } = await import('../server/services/core/config-manager.js');
   const cfgMgr = initConfigManager(DORK_HOME);
   const { runInitWizard } = await import('./init-wizard.js');
-  await runInitWizard({ yes: values.yes!, dorkHome: DORK_HOME, store: cfgMgr });
+  // No `!` needed: `yes` declares `default: false`, so it is always a boolean.
+  await runInitWizard({ yes: values.yes, dorkHome: DORK_HOME, store: cfgMgr });
   process.exit(0);
 }
 
