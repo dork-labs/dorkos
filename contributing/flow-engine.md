@@ -157,6 +157,22 @@ dependency statement ships in the plugin README. Wiring the autonomous tick to
 fire inside dorkos (the server task system discovering plugin-shipped tasks) is a
 deferred follow-up, out of v1 scope.
 
+**The merge tail is inside that boundary, and it is easy to miss.**
+[ADR-0276](../decisions/0276-auto-merge-on-approval-recovery-ladder.md)'s
+auto-merge recovery ladder (`gates.ts`, `recovery.ts`) runs only in the
+autonomous loop. With `enabled: false`, nothing merges anything: `flow-drain`
+carries an issue to its review gate and stops there by design, and the
+`gh pr merge --auto` step in the `creating-pull-requests` skill is prose, not
+code. Reading ADR-0276 as "finished pull requests merge themselves here" is
+therefore wrong outside autonomous mode, and the gap is invisible because
+everything upstream of the merge looks complete.
+
+That misreading is what left six green, reviewed, armed pull requests unmerged
+for up to nine hours on 2026-07-28. What closes it in the non-autonomous path is
+`merge-tail.yml` in this repo, which arms auto-merge on finished pull requests
+independently of the plugin (ADR 260728-112203). The two do not conflict: the
+plugin's ladder still owns the merge tail whenever the autonomous loop is on.
+
 ## Testing
 
 The engine oracles are unit-tested in `plugins/flow/engine-tests/` (Vitest,
