@@ -1,17 +1,33 @@
 ---
 id: 260726-170125
 title: A room is a membership-scoped durable stream, not a session
-status: accepted
+status: superseded
 created: 2026-07-26
 spec: rooms
-superseded-by: null
+superseded-by: 260728-022013
 ---
 
 # 260726-170125. A room is a membership-scoped durable stream, not a session
 
 ## Status
 
-Accepted.
+**Superseded in part** by
+[260728-022013](260728-022013-a-thread-is-a-relation-between-entries.md), which moves the thread
+relation from the room to the entry. Originally accepted 2026-07-26.
+
+**Exactly one clause below is reversed:** "A **thread is a child room** — the same entity with a
+parent, one level deep." A thread is now a set of entries in the same room pointing at a common root
+entry, with no room row, no roster and no place in a room list. The related Positive bullet
+("Threads cost one nullable `parentId`") and the related Negative bullet ("A thread of a thread has
+no representation") go with it.
+
+**Everything else here still stands and is still the governing decision:** a room is a
+membership-scoped durable stream; a room is not a session and N agents in a room are N sessions on
+one stream, each keeping its own runtime binding; membership is where per-room state lives, carrying
+the `(member, room)` read cursor and the `responseMode` override; the log is turn-atomic,
+DorkOS-owned and never trimmed; rooms carry addressing and atomicity but never a concurrency
+primitive; a room may reference a workspace; signing is reserved. Read the thread clause as history;
+read the rest as current.
 
 ## Context
 

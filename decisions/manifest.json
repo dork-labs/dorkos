@@ -2902,9 +2902,10 @@
       "id": "260726-170125",
       "slug": "a-room-is-a-membership-scoped-durable-stream",
       "title": "A room is a membership-scoped durable stream, not a session",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-26",
-      "specSlug": "rooms"
+      "specSlug": "rooms",
+      "supersededBy": "260728-022013"
     },
     {
       "id": "260726-170126",
@@ -2991,6 +2992,14 @@
       "created": "2026-07-27",
       "extractedFrom": null,
       "specSlug": null
+    },
+    {
+      "id": "260728-022013",
+      "slug": "a-thread-is-a-relation-between-entries",
+      "title": "A thread is a relation between entries, not a child room",
+      "status": "accepted",
+      "created": "2026-07-28",
+      "specSlug": "rooms"
     }
   ]
 }
