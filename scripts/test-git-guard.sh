@@ -106,6 +106,20 @@ block-stash git -C /some/dir stash
 block-stash pnpm build && git stash -u && pnpm test
 block-stash sh -c "git stash pop"
 block-stash echo $(git stash pop)
+# Subshells, brace groups and loop bodies. The loop form is the one agents
+# actually write, and it is a plausible spelling of all three incidents.
+block-stash (git stash pop)
+block-stash { git stash pop; }
+block-stash if true; then git stash pop; fi
+block-checkout for f in a b; do git checkout -- $f; done
+block-checkout while read f; do git checkout -- $f; done < list.txt
+block-stash ! git stash pop
+# A read-only command keeps working inside those same wrappers.
+allow (git stash list)
+allow { git stash list; }
+# --- stash: a flag VALUE must never be read as the subcommand. ---
+block-stash git stash -m list
+block-stash git stash --message list
 # --- stash: read-only forms stay usable. This is how you prove nothing was lost. ---
 allow git stash list
 allow git stash list --stat
@@ -122,6 +136,21 @@ block-checkout git checkout .
 block-checkout git checkout ./src
 block-checkout git checkout ../sibling/file.ts
 block-checkout cd apps/server && git checkout -- src/index.ts
+# HEAD has four more spellings, and every one of them is the same pure discard.
+# The reflog forms matter because `@{0}` is not literally "HEAD" or "@".
+block-checkout git checkout @ -- src/app.ts
+block-checkout git checkout HEAD@{0} -- src/app.ts
+block-checkout git checkout @{0} -- src/app.ts
+block-checkout git checkout @ .
+block-checkout git checkout HEAD~0 -- src/app.ts
+block-checkout git checkout HEAD^0 -- src/app.ts
+block-checkout git checkout @~0 -- src/app.ts
+# Tree-ish + pathspec with no `--`. Two or more positionals and no branch-creating
+# flag cannot be a branch switch, so this is decidable without asking git.
+block-checkout git checkout HEAD src/app.ts
+block-checkout git checkout @ src/app.ts
+block-checkout git checkout HEAD src/a.ts src/b.ts
+block-checkout git checkout HEAD .
 # --- checkout: branch switching must never be touched. ---
 allow git checkout main
 allow git checkout -b chore/guard-destructive-git-commands
@@ -133,6 +162,14 @@ allow git checkout 661ab3156
 # A named source other than HEAD is a deliberate retrieval, not a blind discard.
 allow git checkout HEAD~1 -- src/app.ts
 allow git checkout origin/main -- package.json
+allow git checkout @~1 -- src/app.ts
+allow git checkout HEAD~1 src/app.ts
+allow git checkout main src/app.ts
+# `@{-1}` is the previously checked-out branch, not a spelling of HEAD.
+allow git checkout @{-1} -- src/app.ts
+# Branch-creating flags take two positionals and are never a pathspec.
+allow git checkout --track origin/feature
+allow git checkout --orphan fresh-start
 # Conflict resolution names its side, so it is not a blind discard either.
 allow git checkout --ours -- src/app.ts
 # --- restore: the same discard under a newer name. ---
@@ -143,6 +180,11 @@ block-restore git restore -S -W src/app.ts
 block-restore git restore --worktree src/app.ts
 block-restore git restore --source=HEAD src/app.ts
 block-restore git restore -s HEAD src/app.ts
+block-restore git restore --source=@ src/app.ts
+block-restore git restore -s @ src/app.ts
+block-restore git restore --source=HEAD@{0} src/app.ts
+block-restore git restore --source=@{0} src/app.ts
+block-restore git restore --source=HEAD~0 src/app.ts
 # --- restore: unstaging and deliberate retrieval stay usable. ---
 allow git restore --staged src/app.ts
 allow git restore --source=HEAD~1 src/app.ts

@@ -60,6 +60,13 @@
  * checkout: `Bash(git checkout:*)` would block `git checkout main`.
  *
  * COVERAGE THIS DOES NOT HAVE (stated plainly, on purpose)
+ *
+ * Treat this list as the contract. It is known to be incomplete in the two
+ * ways named at the end, and it is worth more than a list that claims to be
+ * total: an earlier version of this block omitted the loop and subshell forms
+ * below and read as exhaustive, which is the exact defect this repo has been
+ * removing. If you find another hole, add it here even if you do not fix it.
+ *
  * It stops the reflex, not a determined bypass. It reads the command string
  * the model submits, so it does not see:
  *   - a destructive git command inside a script on disk (`./do-it.sh`), a
@@ -67,14 +74,24 @@
  *   - `xargs git ...`, `find -exec git ...`, or `git` reached under another
  *     name;
  *   - `$(...)` nested more than one level deep, or inside `$( )` containing
- *     its own parentheses;
- *   - `git checkout <ambiguous-path>` with no `--` and no leading `./`, which
- *     is indistinguishable from `git checkout <branch>` without asking git
- *     what refs exist. Blocking it would also block `git checkout main`, and a
- *     guard that blocks `git checkout main` gets switched off.
- * It does unwrap one level of `sh -c` / `bash -c` and `$(...)`, splits
- * compound commands on shell operators, and ignores anything inside quotes,
- * so `git commit -m "ran git stash"` is not a false positive.
+ *     its own parentheses, or `sh -c` nested past two levels;
+ *   - `git checkout <ambiguous-path>` when it is the ONLY positional and has
+ *     no leading `./`, which is indistinguishable from `git checkout <branch>`
+ *     without asking git what refs exist. Blocking it would also block
+ *     `git checkout main`, and a guard that blocks `git checkout main` gets
+ *     switched off. (Two or more positionals IS decidable, and is blocked.)
+ *   - a source that resolves to your current commit without being spelled
+ *     `HEAD` — the current branch name (`git checkout main -- f` while on
+ *     main), or an explicit sha of HEAD. Measured: destroys the edit, allowed
+ *     by this guard. Closing it needs git to resolve the ref, which a
+ *     PreToolUse string matcher cannot do. This is the price of the retrieval
+ *     exemption, and it is a smaller hole than removing that exemption.
+ *
+ * It DOES handle, all measured against real git: one level of `sh -c` /
+ * `bash -c` and `$(...)`; subshells `( ... )`, brace groups `{ ...; }`, and
+ * `for` / `while` / `if` bodies; compound splitting on `&& || ; | |& &` and
+ * newlines; whitespace collapsing; and quoting, so
+ * `git commit -m "ran git stash"` is not a false positive.
  *
  * It also never sees commands run by OTHER hooks: PreToolUse fires on tool
  * calls in the agentic loop only. That is why `create-checkpoint.sh` can keep
@@ -99,7 +116,26 @@ const ONE_CHAR_OPERATORS = [';', '|', '&', '\n'];
 const SHELL_WRAPPERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
 
 /** Words that can precede the real command without changing it. */
-const COMMAND_PREFIXES = new Set(['sudo', 'command', 'env', 'nohup', 'nice', 'time', 'builtin']);
+const COMMAND_PREFIXES = new Set([
+  'sudo',
+  'command',
+  'env',
+  'nohup',
+  'nice',
+  'time',
+  'builtin',
+  // Shell grouping and control keywords. Without these, the command inside a
+  // loop body or a subshell reads as a command named `do` or `(git`, and the
+  // whole segment is skipped. `for f in ...; do git checkout -- $f; done` is a
+  // spelling agents reach for unprompted.
+  'then',
+  'do',
+  'else',
+  'elif',
+  '!',
+  '(',
+  '{',
+]);
 
 /** git global options that consume the following token when not written with `=`. */
 const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
@@ -116,6 +152,40 @@ const GIT_GLOBAL_OPTIONS_WITH_VALUE = new Set([
 /** `git stash` subcommands that only read. Everything else moves work around. */
 const READ_ONLY_STASH_SUBCOMMANDS = new Set(['list', 'show']);
 
+/** `git checkout` flags that make the positional arguments branch names, never paths. */
+const BRANCH_CREATING_FLAGS = new Set(['-b', '-B', '-t', '--track', '--orphan', '--detach']);
+
+/**
+ * Sources that mean "throw away what is in my working tree" rather than
+ * "fetch me that specific old version".
+ *
+ * `HEAD` is not the only spelling. `@` is an alias for it, `@{0}` / `HEAD@{0}`
+ * reach the same commit through the reflog, and `~0` / `^0` suffixes are
+ * no-ops. Every one of them was measured destroying an uncommitted edit on git
+ * 2.53.0, so every one of them is a discard.
+ *
+ * `@{-1}` is excluded on purpose: that is the previously checked-out BRANCH, a
+ * different tree, so it is a retrieval like any other named ref.
+ *
+ * This list is NOT exhaustive and cannot be. Any ref that happens to resolve to
+ * your current commit is a discard wearing a retrieval spelling — the current
+ * branch name, or an explicit sha of HEAD. Deciding those needs git itself, not
+ * a string match. See the coverage note in the file header.
+ */
+const HEAD_ALIAS = /^(?:HEAD|@)(?:[~^]0)*$/;
+const HEAD_REFLOG = /^(?:HEAD)?@\{(?!-)/;
+
+/**
+ * Decide whether a checkout/restore source discards the working tree.
+ *
+ * @param {string | null | undefined} source - The tree-ish named on the command line, if any.
+ * @returns {boolean} True when the source means "discard my edits".
+ */
+function isDiscardSource(source) {
+  if (!source) return true;
+  return HEAD_ALIAS.test(source) || HEAD_REFLOG.test(source);
+}
+
 const STASH_MESSAGE = `Blocked: git stash
 
 The stash is shared. Every worktree and the main checkout read and write one
@@ -130,7 +200,7 @@ then put them back with cp when you are done.
 Still allowed: git stash list and git stash show. They only read, and they are
 how you check that nothing was lost.`;
 
-const CHECKOUT_MESSAGE = `Blocked: git checkout -- <path>
+const CHECKOUT_MESSAGE = `Blocked: git checkout used to discard a path
 
 This throws away your own uncommitted edits, and there is no undo. Three
 agents ran it on 2026-07-22 and each one silently reverted work it had just
@@ -139,10 +209,15 @@ written.
 Check first: run git diff <path> and read what you are about to lose. To park
 changes, copy the file to your session scratchpad and bring it back with cp.
 
-Still allowed: git checkout <branch>, git checkout -b <new-branch>, and
-git checkout <commit> -- <path> when you name a commit other than HEAD.`;
+Still allowed: git checkout <branch> and git checkout -b <new-branch>, which
+do not touch your edits.
 
-const RESTORE_MESSAGE = `Blocked: git restore <path>
+Also allowed, but read this before reaching for it: git checkout <commit> --
+<path> when you name a commit other than HEAD. That is for pulling back one
+specific old version on purpose. It overwrites your uncommitted edits just as
+badly, so it is not a way around this message.`;
+
+const RESTORE_MESSAGE = `Blocked: git restore used to discard a path
 
 This is git checkout -- <path> under a newer name: it throws away your own
 uncommitted edits with no undo. Three agents lost work to that on 2026-07-22.
@@ -151,8 +226,12 @@ Check first: run git diff <path> and read what you are about to lose. To park
 changes, copy the file to your session scratchpad and bring it back with cp.
 
 Still allowed: git restore --staged <path>, which only unstages and leaves
-your file alone, and git restore --source=<commit> <path> when you name a
-commit other than HEAD.`;
+your file alone.
+
+Also allowed, but read this before reaching for it: git restore
+--source=<commit> <path> when you name a commit other than HEAD. That is for
+pulling back one specific old version on purpose. It overwrites your
+uncommitted edits just as badly, so it is not a way around this message.`;
 
 /**
  * Split a command line into the individual commands it runs, ignoring
@@ -294,7 +373,20 @@ function stripCommandPrefixes(tokens) {
     }
     break;
   }
-  return tokens.slice(index);
+
+  // Strip the grouping punctuation that can sit flush against the command:
+  // `(git stash pop)` tokenizes as `(git` ... `pop)`, and without this the
+  // first token is not `git` and the segment is skipped entirely. The trailing
+  // half matters just as much in the other direction — leaving `)` attached to
+  // `list` in `(git stash list)` would turn a read-only command into a block.
+  const rest = tokens.slice(index);
+  if (rest.length > 0) {
+    rest[0] = rest[0].replace(/^[({]+/, '');
+    const last = rest.length - 1;
+    rest[last] = rest[last].replace(/[)};]+$/, '');
+    if (rest[0] === '') rest.shift();
+  }
+  return rest;
 }
 
 /**
@@ -324,7 +416,10 @@ function readGitSubcommand(tokens) {
  * @returns {string | null} A refusal message, or null to allow.
  */
 function checkStash(args) {
-  const subcommand = args.find((arg) => !arg.startsWith('-'));
+  // args[0], not "the first non-flag argument": `git stash -m list` is a real
+  // stash whose MESSAGE happens to be "list", and scanning past the flag reads
+  // that value as the subcommand and waves it through.
+  const subcommand = args[0];
   if (subcommand && READ_ONLY_STASH_SUBCOMMANDS.has(subcommand)) return null;
   return STASH_MESSAGE;
 }
@@ -343,14 +438,26 @@ function checkCheckout(args) {
     // Nothing after `--` means no pathspec, so nothing is overwritten.
     if (separator === args.length - 1) return null;
     const source = args.slice(0, separator).find((arg) => !arg.startsWith('-'));
-    if (source && source !== 'HEAD') return null;
-    return CHECKOUT_MESSAGE;
+    return isDiscardSource(source) ? CHECKOUT_MESSAGE : null;
   }
 
-  // No `--`: only the spellings that cannot be a branch name are treated as a
-  // pathspec, so `git checkout main` stays out of the way.
+  // A branch-creating flag makes every positional a branch name.
+  if (args.some((arg) => BRANCH_CREATING_FLAGS.has(arg))) return null;
+
   const positional = args.filter((arg) => !arg.startsWith('-'));
-  if (positional.some((arg) => arg === '.' || arg.startsWith('./') || arg.startsWith('../'))) {
+
+  // Two or more positionals with no `--` and no branch-creating flag is always
+  // tree-ish + pathspec — decidable without asking git what refs exist. The
+  // source rule then applies exactly as it does to the `--` spelling.
+  if (positional.length >= 2) {
+    return isDiscardSource(positional[0]) ? CHECKOUT_MESSAGE : null;
+  }
+
+  // A single positional is ambiguous (branch or path?), so only the spellings
+  // that cannot be a branch name are treated as a pathspec. This is what keeps
+  // `git checkout main` working.
+  const [only] = positional;
+  if (only === '.' || only?.startsWith('./') || only?.startsWith('../')) {
     return CHECKOUT_MESSAGE;
   }
   return null;
@@ -376,9 +483,7 @@ function checkRestore(args) {
     if (arg.startsWith('--source=')) source = arg.slice('--source='.length);
     else if (arg === '--source' || arg === '-s') source = args[i + 1] ?? null;
   }
-  if (source && source !== 'HEAD') return null;
-
-  return RESTORE_MESSAGE;
+  return isDiscardSource(source) ? RESTORE_MESSAGE : null;
 }
 
 /**
