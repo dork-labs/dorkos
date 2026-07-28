@@ -11,7 +11,7 @@ feature_slug: room-participation
 
 Read-only audit of the Slack and Telegram relay adapters (`packages/relay/src/adapters/slack/`, `packages/relay/src/adapters/telegram/`) plus shared relay infrastructure (`packages/relay/src/`) and the session-binding layer (`apps/server/src/services/relay/binding-router.ts`). All claims are cited to `file:line` in actual source, verified by reading the files directly — nothing inferred from `specs/` or `research/` docs (those were used only as leads to check, and discrepancies against them are noted explicitly).
 
-Repo root: `/Users/doriancollier/Keep/dork-os/dorkos`
+Every path below is repo-relative to the DorkOS monorepo root.
 
 ---
 

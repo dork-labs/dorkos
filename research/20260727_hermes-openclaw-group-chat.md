@@ -939,4 +939,4 @@ Target grammar includes room-ish prefixes: `channel:<id>`, `user:<id>`, `room:<i
 
 **Internal**
 
-- `/Users/doriancollier/Keep/dork-os/dorkos/research/20260322_openclaw_slack_integration_analysis.md` (baseline; mechanics partially superseded)
+- `research/20260322_openclaw_slack_integration_analysis.md` (baseline; mechanics partially superseded)
