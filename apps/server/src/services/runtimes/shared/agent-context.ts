@@ -49,6 +49,15 @@ import { SERVER_VERSION } from '../../../lib/version.js';
  * one line and then saying `dorkos capabilities` lists "every capability" on the
  * next completes exactly the false inference this program exists to stop: none of
  * the three is reachable by `dorkos call`. Keep the two facts adjacent.
+ *
+ * The two doc pointers are built from `env.DORKOS_DOCS_BASE_URL` (production by
+ * default) rather than hardcoded, so an instance running its own `apps/site`
+ * points agents at the docs it is actually shipping instead of whatever shipped
+ * last. That value is parsed once at boot, which keeps this block as stable per
+ * process as the `<env>` block below — no per-turn variation, and nothing here
+ * checks whether the URL answers. `llms.txt` is the INDEX (~29 KB) on purpose:
+ * `llms-full.txt` is the whole corpus (~875 KB) and would swallow the context
+ * window.
  */
 function buildDorkosContextBlock(): string {
   return `<dorkos_context>
@@ -61,8 +70,8 @@ Tasks, Relay, and Mesh are NOT in that catalog and \`dorkos call\` cannot reach 
 they are MCP tools (\`tasks_*\`, \`relay_*\`, \`mesh_*\`) when your session has them, and
 otherwise only \`dorkos task list|create|trigger|runs\` and \`dorkos agent list|show\`
 exist. Relay and Mesh have no CLI path at all.
-Documentation: https://dorkos.ai/llms.txt
-Full docs: https://dorkos.ai/docs
+Documentation: ${env.DORKOS_DOCS_BASE_URL}/llms.txt
+Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
 </dorkos_context>`;
 }
 

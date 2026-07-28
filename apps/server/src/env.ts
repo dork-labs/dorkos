@@ -6,6 +6,69 @@ const boolFlag = z
   .default('false')
   .transform((v) => v === 'true');
 
+/**
+ * Normalize `value` into the docs origin DorkOS is willing to hand an agent, or
+ * `null` when it is not one: the pointer is built by appending `/llms.txt` and
+ * `/docs`, so the base has to be an `http:`/`https:` URL carrying no query, no
+ * fragment, and no embedded credentials.
+ *
+ * It RETURNS the normalized string rather than a boolean, and that is the whole
+ * design. A predicate plus a separate `.transform()` over the caller's raw input
+ * validates one string and emits a different one, because the URL parser
+ * silently drops ASCII tab, LF and CR while parsing. `"https://x.dev\n"` then
+ * passes the check and still reaches the prompt with its newline, splitting the
+ * pointer across two lines:
+ *
+ *     Documentation: https://x.dev
+ *     /llms.txt
+ *
+ * Emitting `parsed.href` closes that off by construction: whitespace cannot
+ * survive URL serialization, so the value that was checked is the value that
+ * ships.
+ *
+ * The three rejections that a URL parse alone will not give us:
+ *
+ * - Scheme. `new URL('localhost:6244')` succeeds, reading `localhost:` as the
+ *   SCHEME. That is the likeliest typo here, and it yields the pointer
+ *   `localhost:6244/llms.txt`. `file:///etc`, `javascript:` and `mailto:` parse
+ *   just as happily. Same class of guard as `isSafeGitUrl` in
+ *   `packages/marketplace/src/marketplace-json-schema.ts`.
+ * - Query and fragment, tested against the RAW string on purpose. A bare marker
+ *   normalizes to `''` on the parsed URL (`parsed.search` for `https://x.dev?`
+ *   is `''`) while the serializer still re-emits it — `new URL('https://x.dev?').href`
+ *   is `'https://x.dev/?'` — so reading the parsed value would wave through
+ *   `https://x.dev?/llms.txt`. The `#` case is worse than a broken path: the
+ *   fragment swallows the appended segment, so the pointer quietly fetches the
+ *   site root instead of failing.
+ * - Embedded credentials, REFUSED rather than stripped. Userinfo is the only
+ *   thing `href` preserves that `origin + pathname` would drop, and here that is
+ *   a liability: this string is interpolated into `<dorkos_context>`, which goes
+ *   to the model provider on every turn, and an agent can read its own context
+ *   and re-emit it into a message, a file write, or a Relay send. A docs base
+ *   has no legitimate use for HTTP Basic — public docs need none, and an internal
+ *   mirror belongs behind the network layer. Stripping them silently would be
+ *   worse than refusing: whoever set the value would believe auth was configured
+ *   when it was not.
+ */
+function parseDocsBaseUrl(value: string): string | null {
+  if (/[?#]/.test(value)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (parsed.username || parsed.password) return null;
+  // Trailing slashes go here so `https://x.dev/` cannot produce `//llms.txt`;
+  // `href` always carries at least the root `/`.
+  return parsed.href.replace(/\/+$/, '');
+}
+
+/** Failure message for {@link parseDocsBaseUrl}. */
+const DOCS_BASE_URL_MESSAGE =
+  'must be an http:// or https:// URL with no query string, fragment, or embedded username/password';
+
 const serverEnvSchema = z.object({
   // System
   HOME: z.string().optional(),
@@ -149,6 +212,30 @@ const serverEnvSchema = z.object({
   // http://localhost:$SITE_PORT). Trailing slashes are normalized by the
   // cloud-link client.
   DORKOS_CLOUD_URL: z.string().default('https://dorkos.ai'),
+  // Origin the agent-facing docs pointers are built from: the `<dorkos_context>`
+  // block hands an agent `{base}/llms.txt` and `{base}/docs`
+  // (services/runtimes/shared/agent-context.ts). Not every session gets that
+  // block — it ships only where the working directory hosts an agent manifest
+  // and that agent has `conventions.dorkosKnowledge` left on — but where it does
+  // ship, it rides every turn of every runtime. Defaults to production, so a
+  // normal install keeps pointing its agents at the published docs. Override it
+  // when you run `apps/site` yourself (e.g. http://localhost:6244) so a dev
+  // instance stops telling its agents to read whatever shipped last. Read once
+  // at boot, never per turn: the block has to stay byte-identical for prompt
+  // caching, and nothing here probes whether the URL answers. Validation and
+  // normalization are one step (see parseDocsBaseUrl) so the string that was
+  // checked is exactly the string the prompt gets.
+  DORKOS_DOCS_BASE_URL: z
+    .string()
+    .default('https://dorkos.ai')
+    .transform((value, ctx) => {
+      const normalized = parseDocsBaseUrl(value);
+      if (normalized === null) {
+        ctx.addIssue({ code: 'custom', message: DOCS_BASE_URL_MESSAGE });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
   // Connector gateway — self-hosted Nango backend (connector-gateway spec P7,
   // DOR-371). The base URL DorkOS points its self-host connector at, e.g.
   // http://localhost:3003. Absent = the Nango connector is not configured, and

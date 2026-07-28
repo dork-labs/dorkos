@@ -25,6 +25,15 @@ export function dorkbotClaudeMdTemplate(): string {
     '## About DorkOS',
     '',
     'DorkOS is the operating system for autonomous AI agents.',
+    // Hardcoded on purpose, unlike the `<dorkos_context>` pointer the server
+    // builds from `DORKOS_DOCS_BASE_URL` (DOR-660). This package ships wherever
+    // it is depended on — the CLI takes it directly, the Obsidian plugin gets it
+    // transitively through `@dorkos/client` and `@dorkos/server` — so it cannot
+    // import the server's `env.ts`; and this string is written into DorkBot's
+    // `.dork/AGENTS.md` ONCE at creation, so an override read here would be
+    // baked into the file forever rather than resolved per boot. Consequence to
+    // know about: on an instance that sets DORKOS_DOCS_BASE_URL, DorkBot carries
+    // two docs pointers that disagree — this one, and the server's per-turn one.
     'For full documentation: https://dorkos.ai/llms.txt',
     '',
     '## Your Role',
