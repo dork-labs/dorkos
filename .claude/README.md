@@ -10,13 +10,15 @@ This directory contains the **Claude Code Harness** — the customization framew
 | ------------- | ----- | ---------------------------------------------------------------------------- |
 | Commands      | 42    | `.claude/commands/`                                                          |
 | Agents        | 7     | `.claude/agents/`                                                            |
-| Skills        | 31    | `.claude/skills/` (13 Claude-only dirs + 18 symlinks into `.agents/skills/`) |
-| Shared Skills | 18    | `.agents/skills/` (canonical, projected to other harnesses)                  |
+| Skills        | 30    | `.claude/skills/` (13 Claude-only dirs + 17 symlinks into `.agents/skills/`) |
+| Shared Skills | 17    | `.agents/skills/` (canonical, projected to other harnesses)                  |
 | Rules         | 12    | `.claude/rules/`                                                             |
 | Claude Hooks  | 10    | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
 | ADRs          | 249   | `decisions/` (+87 archived)                                                  |
 | Guides        | 28    | `contributing/` (+ INDEX.md)                                                 |
+
+Both Skills rows are derived, not independent: the table in [Skills (Model-Invoked)](#skills-model-invoked) lists every skill by name and is the source of truth. **Skills** = that table's row count, which you can check by counting without leaving the section. **Shared Skills** = the subset that lives in `.agents/skills/`, which the table does not mark, so that one still needs `git ls-tree HEAD .agents/skills/` to confirm. They drifted by 2 before 2026-07-28 because nothing tied them to the list at all. Marking the shared rows in the table would make the second number self-checking too, and is worth doing the next time this table is edited for another reason.
 
 The `/flow` workflow engine (commands + stage skills) is **not** in this repo — it lives in the external marketplace plugin (`dork-labs/marketplace`, `plugins/flow/`; ADR-0297) and its commands exist only when loaded via `--plugin-dir`.
 
@@ -89,6 +91,7 @@ Skills load their description into every session (the retrieval index) and their
 | `visual-companion`               | Browser-based visual mockups/diagrams                                     |
 | `working-in-worktrees`           | Worktree isolation decision + mechanics                                   |
 | `writing-adrs`                   | ADR quality, significance rubric, lifecycle                               |
+| `writing-blog-posts`             | Non-release blog posts (release posts belong to `/system:release` 6.7)    |
 | `writing-changelogs`             | Human-friendly changelog entries                                          |
 | `writing-developer-guides`       | Guide structure for AI consumption (contributing/)                        |
 | `writing-for-humans`             | Plain-language standard for all user-facing prose (9th-grade readability) |
