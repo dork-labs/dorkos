@@ -1,12 +1,16 @@
 /**
  * Integration coverage that exercises the REAL filesystem and REAL esbuild
- * binary — no mock — for two variants of the same underlying defect: an
- * environment-level failure to READ a file must degrade an extension for
- * this attempt, not throw uncaught and not get cached as a permanent
- * compile error.
+ * binary — no mock — for three variants of the same underlying defect: an
+ * environment-level failure to READ a file OR DIRECTORY must degrade an
+ * extension for this attempt, not throw uncaught and not get cached as a
+ * permanent compile error.
  *
- * The compiler reads a file in two different ways, and each needed its own
- * fix:
+ * These tests probe esbuild's actual read-failure surface directly (real
+ * `chmod`, real `build()`) rather than only encoding the classifier's own
+ * model of it — a suite that only ever constructs the shapes the
+ * classifier already expects cannot catch the classifier being wrong about
+ * what esbuild actually does, which is exactly how the directory case
+ * below survived an earlier round of this fix.
  *
  * 1. `compile()`/`compileServer()` read the entry point themselves via
  *    plain `fs.readFile`, to compute the content hash a cache entry would
@@ -24,9 +28,17 @@
  *    same *shape* a genuine compile error has, distinguished only by
  *    esbuild's own "Cannot read file ...: permission denied" prose (see
  *    `ESBUILD_IO_FAILURE_PATTERNS` in `extension-compiler.ts`).
+ * 3. esbuild also reads the entry point's CONTAINING DIRECTORY on every
+ *    build, before reading any file — confirmed here with a ZERO-import
+ *    entry point, so there is nothing else the failure could be attributed
+ *    to. Under real file-descriptor exhaustion this directory read is hit
+ *    first, making "Cannot read directory ...: too many open files" a more
+ *    likely manifestation of a real incident than the file-level cases
+ *    above, not a rarer one.
  *
- * `chmod 000` does not block root from reading (root can override a file's
- * permission bits on POSIX), so this suite is skipped when running as root.
+ * `chmod 000`/`chmod 0111` do not block root from reading (root can
+ * override a file's permission bits on POSIX), so this suite is skipped
+ * when running as root.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
@@ -138,6 +150,59 @@ describe.skipIf(isRoot)('ExtensionCompiler — real filesystem, unreadable files
     // Restore readability (simulating the environment recovering) and
     // confirm the next attempt succeeds instead of replaying a cached error.
     await fs.chmod(depPath, 0o644);
+    const second = await compiler.compileServer(record);
+    expect('code' in second).toBe(true);
+  });
+
+  it('does not cache esbuild failing to read the entry point directory as a permanent compile error', async () => {
+    // A zero-import entry point isolates the failure to the directory read
+    // itself — there is nothing else (an import, a second file) it could
+    // be attributed to.
+    const extDir = path.join(tmpDir, 'proj');
+    await fs.mkdir(extDir, { recursive: true });
+    const serverPath = path.join(extDir, 'server.ts');
+    await fs.writeFile(serverPath, 'export default function register() {}');
+
+    // Execute-only: the directory can still be TRAVERSED into by a known
+    // filename (Node's own fs.readFile of server.ts needs no more than
+    // that, so it stays unaffected — this test is only about esbuild's
+    // OWN directory read), but it cannot be LISTED, which is what
+    // esbuild's directory-info cache needs and what a real EMFILE would
+    // also block.
+    await fs.chmod(extDir, 0o111);
+
+    const record = makeServerRecord('unreadable-dir-ext', extDir, serverPath);
+    let result: Awaited<ReturnType<typeof compiler.compileServer>>;
+    try {
+      result = await compiler.compileServer(record);
+    } finally {
+      // Restore write+execute before anything (including afterEach's own
+      // cleanup) needs to modify this directory's contents.
+      await fs.chmod(extDir, 0o755);
+    }
+
+    expect('error' in result).toBe(true);
+    if (!('error' in result)) throw new Error('expected error result');
+
+    // esbuild's real rejection for this case: a populated, two-entry
+    // errors[] — "Cannot read directory ...: permission denied" alongside
+    // a "Could not resolve" for the entry point itself. Confirms the
+    // fixture actually reaches esbuild's directory-read failure.
+    expect(
+      result.error.errors.some((e) => /Cannot read directory .*: permission denied/.test(e.text))
+    ).toBe(true);
+
+    const cachedErrorPath = path.join(
+      tmpDir,
+      'cache',
+      'extensions',
+      'server',
+      `unreadable-dir-ext.${result.sourceHash}.error.json`
+    );
+    await expect(fs.access(cachedErrorPath)).rejects.toThrow();
+
+    // Directory readable again — confirm the next attempt succeeds instead
+    // of replaying a cached error.
     const second = await compiler.compileServer(record);
     expect('code' in second).toBe(true);
   });

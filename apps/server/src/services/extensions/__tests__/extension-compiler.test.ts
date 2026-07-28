@@ -15,6 +15,9 @@ vi.mock('../../../lib/logger.js', () => ({
   },
 }));
 
+/** True when this process can bypass a `chmod` file permission (root on POSIX). */
+const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
 /** Create a minimal ExtensionRecord pointing at the given directory. */
 function makeRecord(id: string, extDir: string): ExtensionRecord {
   return {
@@ -264,6 +267,29 @@ describe('ExtensionCompiler', () => {
     const cleaned = await missingCompiler.cleanStaleCache();
     expect(cleaned).toBe(0);
   });
+
+  it.skipIf(isRoot)(
+    'does not throw when a cache subdirectory cannot be read (EACCES, not missing)',
+    async () => {
+      // Regression coverage: a bare `fs.readdir` outside any try/catch used
+      // to run first thing in `cleanStaleCache()` — called before discovery
+      // even starts in `ExtensionManager.initialize()` — so a transient
+      // EMFILE/EACCES there (as opposed to the directory simply not
+      // existing yet, the case the old code's `fs.access` pre-check
+      // handled) took the entire extension system down for that boot.
+      const cacheDir = path.join(tmpDir, 'cache', 'extensions');
+      await fs.mkdir(cacheDir, { recursive: true });
+      // Write-and-execute only: the directory exists (unlike the "does not
+      // exist" case above) but cannot be LISTED.
+      await fs.chmod(cacheDir, 0o333);
+
+      try {
+        await expect(compiler.cleanStaleCache()).resolves.toBe(0);
+      } finally {
+        await fs.chmod(cacheDir, 0o755);
+      }
+    }
+  );
 
   // === 10. External packages ===
 

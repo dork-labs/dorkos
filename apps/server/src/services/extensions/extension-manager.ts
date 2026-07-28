@@ -484,12 +484,35 @@ export class ExtensionManager {
     );
   }
 
-  /** Compile all enabled extensions, updating their records with results. */
+  /**
+   * Compile all enabled extensions, updating their records with results.
+   *
+   * Same isolation as {@link initialize}'s server-side loop, and for the
+   * same reason: an unexpected throw from `compiler.compile()` for one
+   * extension must not abort compilation for every extension after it in
+   * this pass. `compiler.compile()` itself now degrades most known
+   * failures (an unreadable entry file, a cache directory it can't
+   * create) to an `{ error }` result rather than throwing — this `try` is
+   * the remaining backstop for anything that doesn't.
+   */
   private async compileEnabled(): Promise<void> {
     const enabled = Array.from(this.extensions.values()).filter((r) => r.status === 'enabled');
     for (const record of enabled) {
-      const result = await this.compiler.compile(record);
-      applyCompileResult(record, result);
+      try {
+        const result = await this.compiler.compile(record);
+        applyCompileResult(record, result);
+      } catch (err) {
+        logger.error(
+          `[Extensions] Compile threw an unexpected error for ${record.id} — skipping it and continuing with the rest`,
+          err
+        );
+        record.status = 'compile_error';
+        record.error = {
+          code: 'compilation_failed',
+          message: err instanceof Error ? err.message : String(err),
+        };
+        record.bundleReady = false;
+      }
     }
   }
 }

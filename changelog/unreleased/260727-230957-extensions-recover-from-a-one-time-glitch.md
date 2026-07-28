@@ -3,6 +3,8 @@ covers:
   - "fix(extensions): don't permanently cache a one-time environment failure as a compile error"
   - 'fix(extensions): catch esbuild I/O failures that carry a populated errors array'
   - 'fix(extensions): stop a transient read failure from crashing extension startup'
+  - "fix(extensions): recognize esbuild's directory-read failures, not just file reads"
+  - 'fix(extensions): guard the remaining cache read/write paths against a full disk or exhausted file descriptors'
   - 'fix(mesh): downgrade the expected homedir-fallback skip log from warn to debug'
 ---
 
