@@ -230,12 +230,46 @@ GitHub instead:
 gh pr merge --auto --squash <number>
 ```
 
-The PR then merges itself once its required checks pass. Arm it once and stop
-watching. (The repo must have auto-merge turned on; DorkOS does.)
+The PR then merges itself once its required checks pass **and its branch is up to
+date with the base**. (The repo must have auto-merge turned on; DorkOS does.)
 
 **Arm it after a review pass, not before.** Nothing here requires an approving
 review, so an armed auto-merge lands the PR on its required checks alone. The order
 is the whole safeguard: review, then arm.
+
+**Arming is not the same as walking away.** Read the next section before you treat
+an armed PR as finished.
+
+### An armed PR that is BEHIND stalls forever, silently
+
+This is the third silent stall in this file, and the one that actually backs up the
+repo. **GitHub's auto-merge never updates a pull request branch.** It waits for
+every merge requirement to be satisfied; under "require branches to be up to date"
+(`required_status_checks.strict`), "branch is not behind the base" is one of those
+requirements, and auto-merge will not satisfy it for you. So a PR that is green,
+armed, and `BEHIND` waits for a condition nothing in the system will ever produce.
+
+It looks exactly like a PR that is about to merge. It never does.
+
+On 2026-07-28 this had six PRs stuck at once, the oldest green and armed for nine
+hours and seventeen commits behind, while sixty commits landed on `main` around
+them. At this repo's merge rate every armed PR reaches this state within the hour.
+
+Check for it by state, not by the checkmarks:
+
+```bash
+gh pr view <number> --json mergeStateStatus --jq .mergeStateStatus   # BEHIND == stalled
+gh pr update-branch <number>                                        # the only way out
+```
+
+**Update one branch at a time, oldest first.** Every merge to `main` puts every
+other open PR back to `BEHIND`, so updating all of them at once starts a CI stampede
+that re-loses the race for all of them. Serializing turns a lottery into a queue.
+
+**Who arms it.** In the autonomous loop this is the flow plugin's job (ADR-0276's
+auto-merge recovery ladder). That loop is `enabled: false` in v1, so **outside it
+nobody arms auto-merge unless you do**. Opening a PR and stopping at the review gate
+leaves it parked indefinitely; landing it is a separate, explicit step.
 
 **Only people with write access can arm it.** In GitHub's words: "People with write
 permissions to a repository can enable auto-merge for a pull request." An outside
@@ -254,9 +288,13 @@ pending rather than skipping it: "If a workflow is skipped due to path filtering
 branch filtering or a commit message, then checks associated with that workflow
 will remain in a 'Pending' state. A pull request that requires those checks to be
 successful will be blocked from merging." An auto-merge armed on such a PR waits
-forever too. (DorkOS's `main` today requires `typecheck` and `fragment-present`,
-both from workflows with no `paths:` filter, with "require branches to be up to
-date" on.)
+forever too. (DorkOS's `main` today requires `typecheck`, `fragment-present`,
+`no-fragment-under-skip-label`, and `version-outranks-base`, none from a workflow
+with a `paths:` filter. Run the command above rather than trusting this list.)
+
+Note the shape of the three traps together: a **conflicting** PR runs nothing, a
+PR missing a **path-filtered** required check hangs pending, and a **BEHIND** PR is
+green and armed and still cannot merge. All three look like a PR that is fine.
 
 ## One-time repo setup
 
