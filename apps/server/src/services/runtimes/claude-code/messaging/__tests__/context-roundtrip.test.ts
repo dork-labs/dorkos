@@ -90,6 +90,43 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       sent: '2026-06-16T00:00:00.000Z',
     },
   },
+  room_context: {
+    kind: 'room_context',
+    scope: 'per-turn',
+    data: {
+      room: { id: 'room-1', kind: 'channel', name: '#build', topic: 'shipping v1' },
+      thread: null,
+      members: [
+        { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false },
+        {
+          handle: 'ana',
+          displayName: 'Ana',
+          isPerson: false,
+          isSelf: true,
+          responseMode: 'mention-only',
+        },
+      ],
+      working: [],
+      pending: [
+        {
+          authorHandle: 'dorian',
+          authorIsPerson: true,
+          kind: 'post',
+          at: '2026-07-28T14:01:00.000Z',
+          text: 'can someone check the deploy',
+          mentionsMe: false,
+        },
+      ],
+      pendingTruncated: false,
+      ownRecent: [],
+      addressing: { responseMode: 'mention-only', engagedUntil: null, addressedNow: true },
+      budget: {
+        automaticRepliesLeftInThisRoomThisHour: 41,
+        automaticRepliesLeftInTotalThisHour: 187,
+        repliesLeftInThisChain: 2,
+      },
+    },
+  },
 };
 
 const ALL_KINDS = Object.keys(CONTEXT_TAG) as ContextKind[];

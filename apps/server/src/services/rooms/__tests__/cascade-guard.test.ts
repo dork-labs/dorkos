@@ -194,6 +194,7 @@ describe('cascade guard, wired', () => {
           agentPath: request.agentPath,
           sessionId: request.sessionId,
           prompt: request.entry.body.text,
+          roomContext: request.roomContext,
         });
         if (selfPosts < SELF_POST_CAP) {
           selfPosts += 1;
@@ -310,6 +311,7 @@ describe('cascade guard, wired', () => {
           agentPath: req.agentPath,
           sessionId: req.sessionId,
           prompt: req.entry.body.text,
+          roomContext: req.roomContext,
         });
         if (req.authorId === anaId && selfPosts < 1) {
           selfPosts += 1;

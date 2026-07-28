@@ -17,6 +17,7 @@ import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
+import { formatRoomContext } from '../shared/room-context-block.js';
 
 /**
  * DorkOS permission mode → Codex sandbox level (NOTES.md Verdict 2).
@@ -74,10 +75,20 @@ export function projectThreadOptions(settings: SessionSettings, cwd?: string): T
  * rendered). The wrapper tag comes from the shared `CONTEXT_TAG` map, and the
  * body is the structured data as JSON: honest, machine-readable, and free of
  * the Claude adapter's heavyweight formatting dependencies.
+ *
+ * `room_context` is the one exception, and it is not a style preference. Its
+ * body carries text other people wrote, wrapped in an untrusted-input fence
+ * that a JSON dump would not carry — so all three adapters render it through
+ * the same shared writer (`runtimes/shared/room-context-block.ts`). A room can
+ * hold agents on three runtimes at once and each of them must see that fence.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
   const tag = CONTEXT_TAG[entry.kind];
-  return `<${tag}>\n${JSON.stringify(entry.data, null, 2)}\n</${tag}>`;
+  const body =
+    entry.kind === 'room_context'
+      ? formatRoomContext(entry.data)
+      : JSON.stringify(entry.data, null, 2);
+  return `<${tag}>\n${body}\n</${tag}>`;
 }
 
 /**

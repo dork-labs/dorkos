@@ -20,6 +20,7 @@ import type {
   ClientContext,
   ContextKind,
   GitStatusData,
+  RoomContextData,
 } from '@dorkos/shared/additional-context';
 import { getGitStatus } from '../core/git-status.js';
 
@@ -29,6 +30,12 @@ export interface AssembleContextOpts {
   cwd: string;
   /** Client-sourced signals (ui_state, queued); absent for non-interactive turns. */
   clientContext?: ClientContext;
+  /**
+   * Where this turn is happening, when a room triggered it. SERVER-derived and
+   * deliberately not part of {@link ClientContext}: that bag is parsed off the
+   * wire, and a roster a caller could supply is a roster a caller could forge.
+   */
+  roomContext?: RoomContextData;
   /**
    * Kinds the target runtime injects itself (from `getCapabilities().nativeContext`)
    * — omitted from the bag to avoid double-injection.
@@ -77,14 +84,17 @@ async function deriveGitStatus(cwd: string): Promise<GitStatusData> {
  *   runtime that cannot suppress its preset env block.
  * - `relay_context`: NOT emitted here — relay delivery builds its own block in
  *   `@dorkos/relay`. The kind exists so the assembler can carry it later.
+ * - `room_context`: added when the caller supplies one, which only a
+ *   room-triggered turn does. It is the fourth kind that actually flows through
+ *   this bag, and the first genuine extension of it since ADR-0273 landed.
  *
- * @param opts - Effective cwd, optional client signals, and the runtime's
- *   native-context omission list.
+ * @param opts - Effective cwd, optional client signals, optional room context,
+ *   and the runtime's native-context omission list.
  */
 export async function assembleAdditionalContext(
   opts: AssembleContextOpts
 ): Promise<AdditionalContext> {
-  const { cwd, clientContext, nativeContext } = opts;
+  const { cwd, clientContext, roomContext, nativeContext } = opts;
   const bag: AdditionalContext = [];
   const omits = (kind: ContextKind): boolean => nativeContext.includes(kind);
 
@@ -103,6 +113,10 @@ export async function assembleAdditionalContext(
       scope: 'per-turn',
       data: { composedDuringPrevTurn: true },
     });
+  }
+
+  if (roomContext && !omits('room_context')) {
+    bag.push({ kind: 'room_context', scope: 'per-turn', data: roomContext });
   }
 
   return bag;

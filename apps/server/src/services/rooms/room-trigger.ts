@@ -49,11 +49,13 @@
  * @module server/services/rooms/room-trigger
  */
 import { randomUUID } from 'node:crypto';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import type { AuthorRegistry } from './author-registry.js';
 import { evaluateCascade } from './cascade-guard.js';
+import { buildRoomContext } from './room-context.js';
 import {
   buildBudgetNotice,
   buildBusyNotice,
@@ -73,14 +75,17 @@ export interface RoomTurnRequest {
   authorId: string;
   /** The agent's directory — its identity and its working directory. */
   agentPath: string;
-  /** The agent's rendered name, for the prompt's framing. */
-  displayName: string;
   /** The session bound to this `(room, agent)`, or `null` on its first answer. */
   sessionId: string | null;
   /** The entry that triggered this turn. */
   entry: RoomEntry;
-  /** Who wrote that entry, rendered. */
-  authorName: string;
+  /**
+   * Where the turn is happening: the room, the roster, what the agent missed and
+   * what is left to spend. Rides the runtime-neutral `additionalContext` bag
+   * rather than the message (ADR-0273), so `entry.body.text` reaches the model
+   * as exactly the words a person typed.
+   */
+  roomContext: RoomContextData;
 }
 
 /**
@@ -436,6 +441,7 @@ export class RoomTriggerDispatcher {
         cascadeRoot: entry.cascadeRoot,
         authorId: target.authorId,
         depth: target.depth,
+        claimedAt: new Date().toISOString(),
       });
     }
     return affordable;
@@ -482,15 +488,25 @@ export class RoomTriggerDispatcher {
   private async runOne(room: Room, entry: RoomEntry, target: TriggerTarget): Promise<void> {
     const key = claimKey(room.id, entry.cascadeRoot, target.authorId);
     try {
-      const author = this.deps.authors.getById(entry.authorId);
       const result = await this.deps.runner.run({
         room,
         authorId: target.authorId,
         agentPath: target.agentPath,
-        displayName: target.displayName,
         sessionId: target.sessionId,
         entry,
-        authorName: author?.displayName ?? 'Someone',
+        // Derived HERE rather than in the runner, and after every target of this
+        // entry has been claimed: `working` is read off the live claim map, so a
+        // second agent addressed by the same message is already in it. Assembling
+        // it runs no model and takes no turn — silence has to stay free
+        // (`meta/agent-etiquette.md` E7).
+        roomContext: buildRoomContext(this.deps, {
+          room,
+          agentAuthorId: target.authorId,
+          entry,
+          working: this.workingIn(room.id),
+          budget: this.deps.budget.remaining(room.id),
+          repliesLeftInThisChain: Math.max(0, this.deps.maxAgentDepth() - target.depth),
+        }),
       });
 
       // Armed BEFORE this dispatch settles, so `idle()` cannot report a room
@@ -702,6 +718,25 @@ export class RoomTriggerDispatcher {
     }
   }
 
+  /**
+   * Who is mid-turn in one room right now, whatever cascade they are answering.
+   *
+   * Presence, and only presence. An agent that can see a colleague is already on
+   * something can choose not to duplicate it — but nothing here waits, orders or
+   * defers, and adding any of that would be the arbitration this domain has
+   * declined twice (ADR 260726-170125).
+   *
+   * @param roomId - The room being described.
+   */
+  private workingIn(roomId: string): Array<{ authorId: string; since: string }> {
+    const working: Array<{ authorId: string; since: string }> = [];
+    for (const claim of this.claimed.values()) {
+      if (claim.roomId === roomId)
+        working.push({ authorId: claim.authorId, since: claim.claimedAt });
+    }
+    return working;
+  }
+
   /** Author ids with a turn in flight in one cascade. */
   private claimsIn(roomId: string, cascadeRoot: string): string[] {
     const authors: string[] = [];
@@ -720,6 +755,8 @@ interface ActiveClaim {
   cascadeRoot: string;
   authorId: string;
   depth: number;
+  /** When the claim was taken — what `room_context.working` reports as `since`. */
+  claimedAt: string;
 }
 
 /** One agent that survived the guard, with the depth its reply will carry. */

@@ -20,6 +20,11 @@
  *   stream a client would. Subscribing from the cursor taken BEFORE the trigger
  *   is what makes that gap-free.
  *
+ * - **`content` is the message, and nothing else.** Where the turn is happening
+ *   rides the `additionalContext` bag as a `room_context` entry (ADR-0273), so
+ *   the visible user turn holds exactly the words a person typed and every
+ *   runtime gets the same structured framing.
+ *
  * - **Every way a turn can produce no answer is reported, not logged.** A busy
  *   session, a failed turn and a turn that outruns the room's patience all used
  *   to return the same `null` the agent returns when it simply has nothing to
@@ -128,7 +133,13 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // prompt goes with it: it is what the collector matches its own
       // `turn_start` on, which is what keeps a second room message from reading
       // the first turn's stream.
-      const prompt = composeRoomPrompt(request);
+      //
+      // The prompt IS the message, byte for byte. Everything else the agent
+      // needs to know — the room, the roster, who is a person, what it missed —
+      // rides `additionalContext` (ADR-0273). This used to be prose wrapped
+      // around the message, which put words nobody typed inside the visible user
+      // turn and told the agent almost nothing.
+      const prompt = request.entry.body.text;
       const waitMs = readWaitMs();
       const collecting = collectReply(projector, projector.getCursor(), {
         waitMs,
@@ -154,6 +165,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         clientId: ROOM_CLIENT_ID,
         content: prompt,
         cwd: request.agentPath,
+        roomContext: request.roomContext,
         projector,
         deps: {
           acquireLock: (sid, cid, lifecycle, token) =>
@@ -219,27 +231,6 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       };
     },
   };
-}
-
-/**
- * The message an agent actually receives.
- *
- * Written as prose a person would recognise, because it is prose an agent
- * reads: it says which room this is, who spoke, and — the part that changes
- * behavior — that the answer is posted back for everyone in the room, not
- * returned privately to whoever asked.
- *
- * @param request - The room, the agent, and the entry that triggered it.
- */
-export function composeRoomPrompt(request: RoomTurnRequest): string {
-  const where = request.room.slug ? `#${request.room.slug}` : request.room.title;
-  return [
-    `New message in ${where} from ${request.authorName}:`,
-    '',
-    request.entry.body.text,
-    '',
-    `Reply as you would in a chat room. Your answer is posted into ${where}, where everyone in the room reads it.`,
-  ].join('\n');
 }
 
 /** One turn's output, once it has closed one way or another. */

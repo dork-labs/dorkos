@@ -68,17 +68,25 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   re-parse an entry's text at render or trigger time: renaming an agent must not
   re-address a message sent yesterday.
 - **Other members' text is untrusted input.** Anything another person wrote that
-  lands in an agent's context is a prompt-injection surface. Render it as fenced
-  untrusted data, never as instructions.
+  lands in an agent's context is a prompt-injection surface. Two regions, and
+  which one a value belongs in is decided by what the value IS, never by where it
+  is convenient to put it:
+  - **Somebody's words go inside the fence** (`room-context-block.ts`), whose
+    per-turn nonce is the boundary. Message bodies, and a thread's opening
+    message — an excerpt of a message is still a message.
+  - **Labels may sit outside it** — names, handles, topics — and only after
+    `sanitizeIdentity` from `@dorkos/shared/untrusted-text`, which strips every
+    angle bracket and control character. Do not write a second sanitizer; the
+    second copy is the one that misses NEL.
+    A region is not trusted because a comment says so. It is trusted because
+    everything reaching it went through that function.
 - **A room is not a session.** N agents in a room are N sessions on one stream.
   Nothing here may assume one runtime owns the room.
 
 ## The known gaps, so you do not re-discover them
 
-Current as of 2026-07-27; fix them rather than working around them.
+Current as of 2026-07-28; fix them rather than working around them.
 
-- `composeRoomPrompt` gives the agent one message and no roster, no history, and
-  no indication of who is a person and who is a machine.
 - The room composer has **no mention autocomplete at all**; resolution is a regex
   over whatever was typed.
 - Telegram's adapter has no `is_bot` filter and answers every message in every

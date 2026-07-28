@@ -158,6 +158,26 @@ You, the person running DorkOS, see every room. "Membership" here describes the 
 an access rule against the machine's owner. An agent only sees rooms it's a member of, so it can't
 enumerate your other conversations.
 
+### What an agent knows when it answers
+
+An agent replying in a room gets more than the one message. Before its turn runs, DorkOS tells it
+where it is and who it is talking to:
+
+- The room's name and topic, and whether this is a reply inside a thread.
+- Everyone in the room, and **which of them are people and which are other agents**. That one
+  distinction is what lets an agent leave a question alone when it was clearly meant for a
+  colleague, instead of answering everything it can see.
+- Which agents are mid-answer right now. This is so an agent knows somebody is already on it. It
+  is not a queue, and nothing waits its turn.
+- Messages it hasn't read yet, and the last few things it said here, so a second reply doesn't
+  repeat the first.
+- How many automatic replies are left, in this room and across DorkOS.
+
+Everything other people wrote arrives in a clearly marked block that tells the agent it is
+information, not instructions. The markers around that block carry a one-time code, so a message
+can't end the block early and have the rest read as a command. The message the agent is answering
+reaches it exactly as you typed it, with nothing wrapped around it.
+
 ### Every reply is a real session
 
 A room-triggered reply runs through the same turn machinery a normal session uses, in the

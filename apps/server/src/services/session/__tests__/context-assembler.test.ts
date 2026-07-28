@@ -6,6 +6,8 @@ vi.mock('../../core/git-status.js', () => ({
 
 import { assembleAdditionalContext } from '../context-assembler.js';
 import { getGitStatus } from '../../core/git-status.js';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
+import { ClientContextSchema } from '@dorkos/shared/additional-context';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 import type { UiState } from '@dorkos/shared/types';
 
@@ -32,6 +34,22 @@ const SAMPLE_UI_STATE: UiState = {
   panels: { settings: false, tasks: true, relay: false, picker: false },
   sidebar: { open: true, activeTab: 'sessions' },
   agent: { id: 'agent-1', cwd: '/proj' },
+};
+
+const SAMPLE_ROOM_CONTEXT: RoomContextData = {
+  room: { id: 'room-1', kind: 'channel', name: '#build' },
+  thread: null,
+  members: [{ handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true }],
+  working: [],
+  pending: [],
+  pendingTruncated: false,
+  ownRecent: [],
+  addressing: { responseMode: 'always', engagedUntil: null, addressedNow: false },
+  budget: {
+    automaticRepliesLeftInThisRoomThisHour: 41,
+    automaticRepliesLeftInTotalThisHour: 187,
+    repliesLeftInThisChain: 2,
+  },
 };
 
 describe('assembleAdditionalContext', () => {
@@ -103,6 +121,40 @@ describe('assembleAdditionalContext', () => {
     const bag = await assembleAdditionalContext({ cwd: '/proj', nativeContext: [] });
     const git = bag.find((e) => e.kind === 'git_status');
     expect(git!.kind === 'git_status' && git!.data).toEqual({ isRepo: false });
+  });
+
+  it('emits room_context only when a room triggered the turn', async () => {
+    const withoutRoom = await assembleAdditionalContext({ cwd: '/proj', nativeContext: [] });
+    expect(withoutRoom.find((e) => e.kind === 'room_context')).toBeUndefined();
+
+    const bag = await assembleAdditionalContext({
+      cwd: '/proj',
+      roomContext: SAMPLE_ROOM_CONTEXT,
+      nativeContext: [],
+    });
+    const room = bag.find((e) => e.kind === 'room_context');
+    expect(room?.kind === 'room_context' && room.data.room.name).toBe('#build');
+    expect(room?.scope).toBe('per-turn');
+  });
+
+  it('omits room_context for a runtime that injects it natively', async () => {
+    const bag = await assembleAdditionalContext({
+      cwd: '/proj',
+      roomContext: SAMPLE_ROOM_CONTEXT,
+      nativeContext: ['room_context'],
+    });
+    expect(bag.find((e) => e.kind === 'room_context')).toBeUndefined();
+  });
+
+  it('cannot be handed a room context by a client', () => {
+    // Room context is server-derived on purpose: a roster a caller could supply
+    // is a roster a caller could forge. `ClientContext` is what comes off the
+    // wire, and it has no door for one.
+    const parsed = ClientContextSchema.parse({
+      queued: true,
+      roomContext: SAMPLE_ROOM_CONTEXT,
+    });
+    expect(parsed).toEqual({ queued: true });
   });
 
   it('never emits an env entry (env flows via systemPrompt.append, G2)', async () => {

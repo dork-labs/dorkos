@@ -222,6 +222,107 @@ describe('RoomStore.findDmByMemberSet', () => {
   });
 });
 
+describe('RoomStore.listUnreadEntries', () => {
+  /** A room holding `total` entries by `author`, plus the seeded room row. */
+  function roomWith(total: number, authorId = 'human'): RoomStore {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    for (let i = 1; i <= total; i += 1) {
+      store.appendEntry(entry({ id: `e-${i}`, authorId, body: { text: `m${i}` } }));
+    }
+    return store;
+  }
+
+  it('returns the NEWEST entries above the cursor, oldest first', () => {
+    const store = roomWith(10);
+    const rows = store.listUnreadEntries(ROOM_ID, {
+      afterSeq: 0,
+      excludeAuthorId: 'ana',
+      excludeEntryId: 'none',
+      limit: 3,
+    });
+    expect(rows.map((e) => e.body.text)).toEqual(['m8', 'm9', 'm10']);
+  });
+
+  it('returns a bounded page from an unbounded log', () => {
+    // The quadratic shape this replaced: `listEntriesAfter` plus a `slice` in
+    // JS, over a cursor that is 0 for every agent until RP3 advances it — so
+    // every turn read the whole log to keep the tail of it. Both reads are put
+    // side by side because the contrast is the measurement: one is bounded by
+    // its argument, the other by the room's history.
+    const store = roomWith(500);
+    const page = store.listUnreadEntries(ROOM_ID, {
+      afterSeq: 0,
+      excludeAuthorId: 'ana',
+      excludeEntryId: 'none',
+      limit: 31,
+    });
+    expect(page).toHaveLength(31);
+    expect(page[page.length - 1].body.text).toBe('m500');
+    expect(store.listEntriesAfter(ROOM_ID, 0)).toHaveLength(500);
+  });
+
+  it('excludes the reading author own entries and the triggering entry', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'from-human', authorId: 'human' }));
+    store.appendEntry(entry({ id: 'from-ana', authorId: 'ana' }));
+    store.appendEntry(entry({ id: 'the-trigger', authorId: 'human' }));
+
+    const rows = store.listUnreadEntries(ROOM_ID, {
+      afterSeq: 0,
+      excludeAuthorId: 'ana',
+      excludeEntryId: 'the-trigger',
+      limit: 30,
+    });
+    expect(rows.map((e) => e.id)).toEqual(['from-human']);
+  });
+
+  it('honours the cursor', () => {
+    const store = roomWith(5);
+    const rows = store.listUnreadEntries(ROOM_ID, {
+      afterSeq: 3,
+      excludeAuthorId: 'ana',
+      excludeEntryId: 'none',
+      limit: 30,
+    });
+    expect(rows.map((e) => e.body.text)).toEqual(['m4', 'm5']);
+  });
+});
+
+describe('RoomStore.listEntriesByAuthor', () => {
+  it('returns only that author newest entries, oldest first within the page', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    // Interleaved, so a query that ignored the author would come back in a
+    // different order AND with the wrong rows.
+    for (let i = 1; i <= 6; i += 1) {
+      store.appendEntry(entry({ id: `ana-${i}`, authorId: 'ana', body: { text: `ana ${i}` } }));
+      store.appendEntry(entry({ id: `bo-${i}`, authorId: 'bo', body: { text: `bo ${i}` } }));
+    }
+
+    const recent = store.listEntriesByAuthor(ROOM_ID, 'ana', 3);
+    expect(recent.map((e) => e.body.text)).toEqual(['ana 4', 'ana 5', 'ana 6']);
+  });
+
+  it('is scoped to one room', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    seedRoom(store, 'room-2');
+    store.appendEntry(entry({ id: 'here', authorId: 'ana' }));
+    store.appendEntry(entry({ id: 'there', authorId: 'ana', roomId: 'room-2' }));
+
+    expect(store.listEntriesByAuthor(ROOM_ID, 'ana', 10).map((e) => e.id)).toEqual(['here']);
+  });
+
+  it('is empty for an author that has said nothing', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'a', authorId: 'ana' }));
+    expect(store.listEntriesByAuthor(ROOM_ID, 'bo', 10)).toEqual([]);
+  });
+});
+
 describe('RoomStore never trims the log', () => {
   // Deliberately heavy: proving the absence of a trim means writing past the cap
   // through the real append path, which is 5000+ IMMEDIATE transactions. The

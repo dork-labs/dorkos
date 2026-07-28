@@ -10,6 +10,7 @@
  * @module server/services/rooms/__tests__/room-test-harness
  */
 import { createTestDb } from '@dorkos/test-utils/db';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Db } from '@dorkos/db';
 import { AuthorRegistry } from '../author-registry.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
@@ -26,6 +27,8 @@ export interface RecordedTurn {
   agentPath: string;
   sessionId: string | null;
   prompt: string;
+  /** What the agent was told about the room — derived by the real dispatcher. */
+  roomContext: RoomContextData;
 }
 
 /** A runner that answers from a script instead of a model. */
@@ -70,6 +73,7 @@ export function outcomeRunner(
         agentPath: request.agentPath,
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
+        roomContext: request.roomContext,
       });
       const result = outcome(request);
       if ('throws' in result) return Promise.reject(result.throws);

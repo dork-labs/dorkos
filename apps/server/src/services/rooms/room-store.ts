@@ -20,6 +20,7 @@ import {
   inArray,
   lt,
   gt,
+  ne,
   sql,
   count,
   desc,
@@ -466,6 +467,71 @@ export class RoomStore {
       .where(and(...conditions))
       .orderBy(desc(roomEntries.seq))
       .limit(opts.limit)
+      .all();
+    return rows.reverse().map(toEntry);
+  }
+
+  /**
+   * The newest entries above a cursor that one member has not read, oldest-first
+   * within the page — the unread window a room turn shows an agent.
+   *
+   * **Every clause is in SQL on purpose, the cap included.** The obvious shape
+   * is `listEntriesAfter` plus a `slice` in JS, and it is quadratic: every agent
+   * read cursor is `0` until something advances it, so each turn reads the whole
+   * log to keep the last thirty rows of it. Measured over a 500-message room
+   * that is 125,250 rows read to deliver 30. Assembling this context must never
+   * cost a model turn (`meta/agent-etiquette.md` E7), and it must not quietly
+   * get more expensive with every message either.
+   *
+   * Ask for one more row than you need: a full page means older entries were
+   * dropped, and that is what tells the caller to say so.
+   *
+   * @param roomId - The room.
+   * @param opts.afterSeq - Return entries with `seq` strictly above this.
+   * @param opts.excludeAuthorId - Drop this author's own entries; they are
+   *   reported separately, outside the untrusted fence.
+   * @param opts.excludeEntryId - Drop the triggering entry; it IS the message.
+   * @param opts.limit - How many of the newest to return.
+   */
+  listUnreadEntries(
+    roomId: string,
+    opts: { afterSeq: number; excludeAuthorId: string; excludeEntryId: string; limit: number }
+  ): RoomEntry[] {
+    const rows = this.db
+      .select()
+      .from(roomEntries)
+      .where(
+        and(
+          eq(roomEntries.roomId, roomId),
+          gt(roomEntries.seq, opts.afterSeq),
+          ne(roomEntries.authorId, opts.excludeAuthorId),
+          ne(roomEntries.id, opts.excludeEntryId)
+        )
+      )
+      .orderBy(desc(roomEntries.seq))
+      .limit(opts.limit)
+      .all();
+    return rows.reverse().map(toEntry);
+  }
+
+  /**
+   * One author's most recent entries in a room, oldest-first within the page.
+   *
+   * Filtered in SQL rather than by reading a page and discarding most of it: an
+   * agent that has not spoken for a hundred messages still has recent posts, and
+   * a caller scanning back for them would either miss them or read the whole log.
+   *
+   * @param roomId - The room.
+   * @param authorId - Whose entries to read.
+   * @param limit - How many of the newest to return.
+   */
+  listEntriesByAuthor(roomId: string, authorId: string, limit: number): RoomEntry[] {
+    const rows = this.db
+      .select()
+      .from(roomEntries)
+      .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.authorId, authorId)))
+      .orderBy(desc(roomEntries.seq))
+      .limit(limit)
       .all();
     return rows.reverse().map(toEntry);
   }

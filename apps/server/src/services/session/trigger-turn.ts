@@ -45,7 +45,7 @@
  */
 import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { ClientContext } from '@dorkos/shared/additional-context';
+import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import type { SessionStateProjector } from './session-state-projector.js';
@@ -133,6 +133,11 @@ export interface TriggerTurnOpts {
   cwd?: string;
   /** Neutral client-sourced context signals (ui_state, queued) for this turn. */
   context?: ClientContext;
+  /**
+   * Where this turn is happening, when a room triggered it. Passed straight to
+   * the assembler; it is server-derived and never reaches this from a client.
+   */
+  roomContext?: RoomContextData;
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
   deps: TriggerTurnDeps;
@@ -163,7 +168,7 @@ export interface TriggerTurnResult {
  *   otherwise `{ accepted: true, canonicalId }`.
  */
 export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnResult> {
-  const { sessionId, clientId, content, cwd, context, projector, deps } = opts;
+  const { sessionId, clientId, content, cwd, context, roomContext, projector, deps } = opts;
 
   // Acquire against a detached lifecycle so the lock is bound to the turn, not
   // to the soon-to-be-closed POST response. The per-turn token (I1) makes this
@@ -228,6 +233,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const additionalContext = await assembleAdditionalContext({
     cwd: cwd ?? '',
     clientContext: context,
+    ...(roomContext ? { roomContext } : {}),
     nativeContext: deps.getCapabilities().nativeContext,
   });
   const tapped = tapEachEvent(
