@@ -95,7 +95,7 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `rooms.maxAgentDepth`                   | integer (0--10)                                                          | `3`                | How many replies in a row agents may send each other in a room before it stops them. Your own messages reset the count; `0` turns automatic replies off                                                                                                                |
 | `rooms.maxAutomaticTurnsPerRoomPerHour` | integer (0--10000)                                                       | `60`               | The most automatic replies any ONE room may run per hour, counted whoever the caller claims to be                                                                                                                                                                      |
 | `rooms.maxAutomaticTurnsTotalPerHour`   | integer (0--100000)                                                      | `240`              | The most automatic replies this DorkOS may run per hour across every room. The ceiling on what automatic replies can cost                                                                                                                                              |
-| `rooms.replyWaitMinutes`                | integer (1--120)                                                         | `10`               | How long a room waits for an agent's answer before carrying on. The agent is not stopped; a late answer is posted when it lands, saying which message it answers                                                                                                        |
+| `rooms.replyWaitMinutes`                | integer (1--120)                                                         | `10`               | How long a room waits for an agent's answer before carrying on. The agent is not stopped; a late answer is posted when it lands, saying which message it answers                                                                                                       |
 | `rooms.lateReplyCeilingMinutes`         | integer (1--1440)                                                        | `60`               | When a room gives up on a turn that never finishes and reports it as failed                                                                                                                                                                                            |
 | `uploads.maxFileSize`                   | integer                                                                  | `10485760` (10 MB) | Maximum file size in bytes per uploaded file                                                                                                                                                                                                                           |
 | `uploads.maxFiles`                      | integer (1--50)                                                          | `10`               | Maximum number of files per upload request                                                                                                                                                                                                                             |
@@ -109,10 +109,22 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 
 The `agents` section configures agent storage defaults:
 
-| Key                       | Type   | Default          | Description                                      |
-| ------------------------- | ------ | ---------------- | ------------------------------------------------ |
-| `agents.defaultDirectory` | string | `~/.dork/agents` | Default directory for agent storage              |
-| `agents.defaultAgent`     | string | `dorkbot`        | Default agent ID used when no agent is specified |
+| Key                       | Type   | Default          | Description                                                                             |
+| ------------------------- | ------ | ---------------- | --------------------------------------------------------------------------------------- |
+| `agents.defaultDirectory` | string | `~/.dork/agents` | Default directory for agent storage. Resolve it with `resolveAgentsDirectory()` (below) |
+| `agents.defaultAgent`     | string | `dorkbot`        | Default agent ID used when no agent is specified                                        |
+
+The default is a **portable spelling of `{dorkHome}/agents`, not a literal path**.
+`~/.dork` is the DorkOS data directory only in a normal production install — a dev
+tree, a Docker deployment and a test all point `DORK_HOME` somewhere else, and the
+agents DorkOS creates belong under that directory. So server code never passes this
+value to `expandTilde()`; it goes through `resolveAgentsDirectory()`
+(`apps/server/src/lib/agents-home.ts`), which maps the shipped default onto the data
+directory in use and expands `~` against the person's real home only for a directory
+they configured themselves. `GET /api/config` reports it already resolved, because the
+cockpit shows a person where a new agent will live. Expanding the default against the
+home directory is what wrote new agents into an operator's live `~/.dork/agents` from
+a dev tree (DOR-662).
 
 The `extensions` section controls the extension system:
 

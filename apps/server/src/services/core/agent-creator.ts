@@ -26,7 +26,8 @@ import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { scaffoldInstructions } from '@dorkos/harness';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
-import { validateBoundaryOrDorkHome, expandTilde, BoundaryError } from '../../lib/boundary.js';
+import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
+import { resolveAgentsDirectory } from '../../lib/agents-home.js';
 import { configManager } from './config-manager.js';
 import { notifyAgentCreated } from './agent-created-hook.js';
 import { ScaffoldLedger } from '../../lib/scaffold-ledger.js';
@@ -117,7 +118,7 @@ async function maybeSetDefaultAgent(agentName: string): Promise<void> {
     const agentsConfig = configManager.get('agents');
     const currentDefault = agentsConfig.defaultAgent;
     const defaultAgentDir = path.resolve(
-      expandTilde(agentsConfig.defaultDirectory),
+      resolveAgentsDirectory(agentsConfig.defaultDirectory),
       currentDefault
     );
     // If the current default agent directory doesn't exist, adopt the new agent
@@ -243,7 +244,7 @@ export async function createAgentWorkspace(
   const agentsConfig = configManager.get('agents');
   const resolvedPath = opts.directory
     ? path.resolve(opts.directory)
-    : path.resolve(expandTilde(agentsConfig.defaultDirectory), opts.name);
+    : path.resolve(resolveAgentsDirectory(agentsConfig.defaultDirectory), opts.name);
 
   // Boundary validation — agent-registry seam: marketplace-installed and system
   // agents live under `{dorkHome}/agents/*` by design, so dork-home is in-bounds.

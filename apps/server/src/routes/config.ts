@@ -7,6 +7,7 @@ import {
   SIDEBAR_PREFS_DEFAULTS,
   SHAPE_USER_PREFS_DEFAULTS,
   STATUS_BAR_PREFS_DEFAULTS,
+  USER_CONFIG_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
 import {
@@ -37,6 +38,7 @@ import { logger, logError } from '../lib/logger.js';
 import { hasAnyApiKey } from '../services/core/auth/index.js';
 import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp-local-token.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
+import { resolveAgentsDirectory } from '../lib/agents-home.js';
 
 const router = Router();
 
@@ -138,10 +140,15 @@ router.get('/', async (_req, res) => {
       adapterTools: true,
       tasksTools: true,
     },
-    agents: configManager.get('agents') ?? {
-      defaultDirectory: '~/.dork/agents',
-      defaultAgent: 'dorkbot',
-    },
+    // `defaultDirectory` goes out RESOLVED: the cockpit shows a person where a
+    // new agent will live and probes that path for a `.dork` conflict, so it has
+    // to be the directory the server will actually use. The stored value is the
+    // portable `~/.dork/agents` spelling, which is not the data directory once
+    // `DORK_HOME` is redirected (DOR-662).
+    agents: (() => {
+      const agents = configManager.get('agents') ?? USER_CONFIG_DEFAULTS.agents;
+      return { ...agents, defaultDirectory: resolveAgentsDirectory(agents.defaultDirectory) };
+    })(),
     mcp: (() => {
       const mcpConfig = configManager.get('mcp');
       // Trim-for-presence: a whitespace-only MCP_API_KEY counts as unset,
@@ -365,10 +372,10 @@ router.put('/agents/defaultAgent', (req, res) => {
       return res.status(400).json({ error: 'Body must include a non-empty "value" string' });
     }
 
-    const agents = configManager.get('agents') ?? {
-      defaultDirectory: '~/.dork/agents',
-      defaultAgent: 'dorkbot',
-    };
+    // Falls back to the schema's own defaults rather than a second copy of them,
+    // and writes the STORED spelling of `defaultDirectory` straight back — this
+    // route changes the default agent, not where agents live.
+    const agents = configManager.get('agents') ?? USER_CONFIG_DEFAULTS.agents;
     configManager.set('agents', { ...agents, defaultAgent: value.trim() });
     logger.debug(`[Config] Default agent set to "${value.trim()}"`);
 

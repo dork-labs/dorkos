@@ -32,8 +32,11 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe('resolveDefaultAgentDir', () => {
-  it('falls back to DorkBot under ~/.dork/agents when config is absent', () => {
-    expect(resolveDefaultAgentDir(undefined)).toBe('~/.dork/agents/dorkbot');
+  it('names no directory at all until the config arrives', () => {
+    // The server reports the directory it actually resolves agent paths
+    // against; the client cannot compute it, and guessing `~/.dork/agents`
+    // named a folder the server does not use once `DORK_HOME` moved (DOR-662).
+    expect(resolveDefaultAgentDir(undefined)).toBe('');
   });
 
   it('uses the configured default agent and directory', () => {

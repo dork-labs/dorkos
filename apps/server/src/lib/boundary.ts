@@ -27,6 +27,39 @@ import { resolveDorkHome } from './dork-home.js';
  *   Docker deployment). Never reach for it from a raw file surface — that would
  *   widen file access into the credential store.
  *
+ * ## The `os.homedir()` calls here, and the argument for them
+ *
+ * `os.homedir()` is banned in server code (Hard Rule 3) because DorkOS's own
+ * data directory is `resolveDorkHome()`, which is NOT the home directory
+ * whenever `DORK_HOME` is redirected. **This module is not a granted carve-out.**
+ * AGENTS.md names `lib/dork-home.ts` as the sole one, `.claude/rules/dork-home.md`
+ * says the same, and `eslint.config.js` ignores only that file — and none of
+ * that was amended by the change that wrote this comment (DOR-662), which found
+ * these calls rather than added them. They survive lint today only because the
+ * rule is a `no-restricted-imports` ban on the NAMED import (`importNames:
+ * ['homedir']`), and this file uses `import os from 'os'`.
+ *
+ * So this is the argument, offered for review, not a permission slip. Two calls
+ * mean *the person's home*, and reaching them for dork-home would be its own bug:
+ *
+ * - {@link initBoundary}'s default root — with no boundary configured, DorkOS
+ *   may reach anywhere under the home directory of whoever ran it. Confining
+ *   that to dork-home would refuse every real project path.
+ * - {@link expandTilde} — a `~` in a path a PERSON supplied means their home.
+ *   Resolving it anywhere else would silently redirect a directory they chose
+ *   for themselves.
+ *
+ * The argument stops there, and this is the part that had actually gone wrong:
+ * it does not extend to DorkOS's own defaults. A default that merely SPELLS a
+ * DorkOS directory with a `~` (`agents.defaultDirectory`) must be resolved
+ * against dork-home, through `lib/agents-home.ts`. Putting that one through
+ * {@link expandTilde} wrote newly created agents into an operator's real
+ * `~/.dork/agents` from a dev tree.
+ *
+ * If you are here to decide whether the rule should record this exception, or to
+ * close the lint gap that let these calls through, that is DOR-668 — do not read
+ * this comment as either having been decided.
+ *
  * @module lib/boundary
  */
 
@@ -70,10 +103,18 @@ export function getBoundary(): string {
 }
 
 /**
- * Expand a leading `~` or `~/` in a user-supplied path to the home directory.
+ * Expand a leading `~` or `~/` in a **person-supplied** path to their home
+ * directory.
  *
- * Node.js filesystem APIs don't expand tilde — this normalizes user-supplied
- * paths (e.g., from config values like `~/.dork/agents`) before resolution.
+ * Node.js filesystem APIs don't expand tilde, so this normalizes paths a person
+ * typed — a directory override, a configured scan root — before resolution.
+ *
+ * **Not for DorkOS's own defaults.** The home directory is not DorkOS's data
+ * directory: `DORK_HOME` moves the latter and leaves the former alone. A
+ * default that spells a DorkOS path with a `~` must go through
+ * `resolveAgentsDirectory()` in `lib/agents-home.ts`, which resolves it against
+ * the data directory actually in use. See that module and the `os.homedir()`
+ * note in this one's header (DOR-662).
  *
  * @param userPath - Path that may start with `~`
  * @returns Path with tilde expanded to `os.homedir()`

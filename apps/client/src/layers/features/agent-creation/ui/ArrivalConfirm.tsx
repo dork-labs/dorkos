@@ -1,5 +1,10 @@
 import { CalendarClock, FolderOpen, Puzzle, Wrench } from 'lucide-react';
-import { Button, ResponsiveDialogTitle, ResponsiveDialogDescription } from '@/layers/shared/ui';
+import {
+  Button,
+  ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+  Skeleton,
+} from '@/layers/shared/ui';
 import { isSingleEmoji } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { CreationSeed } from '@/layers/shared/model';
@@ -8,7 +13,11 @@ import type { CreationSeed } from '@/layers/shared/model';
 export interface ArrivalConfirmProps {
   /** The agent taking shape, with everything the offer already knows about it. */
   seed: CreationSeed;
-  /** Where the agent will live once created (`defaultDirectory/slug`). */
+  /**
+   * Where the agent will live once created (`defaultDirectory/slug`), using the
+   * absolute directory the server reports. Empty until the config arrives — the
+   * "Lives in" row shows a skeleton rather than a blank for that moment.
+   */
   resolvedDirectory: string;
   /**
    * True when the derived name is ready to create with. On this step it can
@@ -90,7 +99,14 @@ export function ArrivalConfirm({
           <FolderOpen className="text-muted-foreground mt-0.5 size-4 shrink-0" />
           <dt className="text-muted-foreground shrink-0">Lives in</dt>
           <dd className="min-w-0">
-            <code className="text-xs break-all">{resolvedDirectory}</code>
+            {/* Only the server knows the real directory, so for one moment on a
+                cold load there is no honest answer. A skeleton says "still
+                coming"; an empty line under this label reads as broken. */}
+            {resolvedDirectory ? (
+              <code className="text-xs break-all">{resolvedDirectory}</code>
+            ) : (
+              <Skeleton className="h-3.5 w-48 max-w-full rounded" />
+            )}
           </dd>
         </div>
         {schedule && (
