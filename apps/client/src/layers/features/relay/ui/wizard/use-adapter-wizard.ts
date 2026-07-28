@@ -12,8 +12,14 @@ import type {
   CatalogInstance,
   SessionStrategy,
 } from '@dorkos/shared/relay-schemas';
+import { setupStepFields, unclaimedConfigFields } from '@dorkos/shared/relay-schemas';
 import { useAppForm } from '@/layers/shared/lib/form';
-import { unflattenConfig, initializeValues, generateDefaultId } from './adapter-config-utils';
+import {
+  unflattenConfig,
+  initializeValues,
+  generateDefaultId,
+  ADVANCED_SECTION,
+} from './adapter-config-utils';
 
 export type WizardStep = 'configure' | 'test' | 'confirm' | 'bind';
 
@@ -81,12 +87,20 @@ export function useAdapterWizard({
     },
   });
 
+  /**
+   * Fields shown on the current setup step.
+   *
+   * `setupStepFields` puts every field no step named on the last step, so a
+   * setting an adapter declares can never be dropped from the UI. Those strays
+   * would otherwise land under the step's own fields with no heading, so the
+   * ones that name no section of their own get filed under "Advanced".
+   */
   const visibleFields = useMemo(() => {
-    if (!hasSetupSteps || !manifest.setupSteps) return manifest.configFields;
-    const currentStep = manifest.setupSteps[setupStepIndex];
-    if (!currentStep) return manifest.configFields;
-    return manifest.configFields.filter((f) => currentStep.fields.includes(f.key));
-  }, [manifest.configFields, manifest.setupSteps, hasSetupSteps, setupStepIndex]);
+    const unclaimed = new Set(unclaimedConfigFields(manifest).map((f) => f.key));
+    return setupStepFields(manifest, setupStepIndex).map((field) =>
+      unclaimed.has(field.key) && !field.section ? { ...field, section: ADVANCED_SECTION } : field
+    );
+  }, [manifest, setupStepIndex]);
 
   /**
    * Validates visible fields by checking values directly and touching each

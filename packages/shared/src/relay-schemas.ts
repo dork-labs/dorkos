@@ -9,4 +9,5 @@
 export * from './relay-envelope-schemas.js';
 export * from './relay-access-schemas.js';
 export * from './relay-adapter-schemas.js';
+export * from './relay-adapter-fields.js';
 export * from './relay-trace-schemas.js';

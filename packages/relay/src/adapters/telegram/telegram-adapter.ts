@@ -58,11 +58,11 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
       description: 'Create a bot with @BotFather on Telegram.',
       fields: ['token'],
     },
-    // `respondMode` belongs to a step because the setup wizard renders only the
-    // fields the current step names (`use-adapter-wizard.ts` filters
-    // `configFields` by `setupSteps[i].fields`). A field named by no step never
-    // reaches the screen in either the add or the Configure flow, and a default
-    // nobody can see or change is worse than the behavior it replaced.
+    // `respondMode` belongs to a step because group behavior is the thing people
+    // are surprised by, so it leads the guided flow rather than sitting under
+    // "Advanced". Naming it is no longer what makes it reachable: since DOR-640
+    // the wizard shows every declared field, putting the ones no step names on
+    // the last step (`setupStepFields` in `@dorkos/shared`).
     {
       stepId: 'configure-mode',
       title: 'Choose how your bot connects and replies',
@@ -192,6 +192,7 @@ For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).`,
       key: 'approverAllowlist',
       label: 'Approvers',
       type: 'textarea',
+      valueShape: 'id-list',
       required: false,
       description:
         'Telegram user IDs who may approve a tool call from Telegram (one per line). ' +

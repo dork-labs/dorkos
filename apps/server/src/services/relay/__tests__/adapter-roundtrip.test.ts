@@ -8,6 +8,8 @@ import {
   parseAdapterConfigForPersist,
 } from '../adapter-config.js';
 import { AdapterError } from '../adapter-error.js';
+import { SLACK_MANIFEST, TELEGRAM_MANIFEST } from '@dorkos/relay';
+import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 
 /**
  * The write → disk → read seam for `adapters.json`, crossed with a real file.
@@ -30,18 +32,29 @@ async function loadFixture(adapters: unknown[]): Promise<Record<string, unknown>
 
 const SECRETS = { botToken: 'xoxb-1', appToken: 'xapp-1', signingSecret: 'sec' };
 
+/** The manifests a persisting caller resolves, keyed as `AdapterManager` keys them. */
+const MANIFEST_BY_TYPE: Record<string, AdapterManifest | undefined> = {
+  slack: SLACK_MANIFEST,
+  telegram: TELEGRAM_MANIFEST,
+};
+
 /**
  * The full write path: validate as `addAdapter`/`updateConfig` now do, persist,
  * then load it back the way the server does at boot.
  */
 async function persistAndLoad(config: Record<string, unknown>, type = 'slack') {
-  const parsed = parseAdapterConfigForPersist({
-    id: 'slack',
-    type,
-    enabled: true,
-    builtin: false,
-    config,
-  });
+  const parsed = parseAdapterConfigForPersist(
+    {
+      id: 'slack',
+      type,
+      enabled: true,
+      builtin: false,
+      config,
+    },
+    // `addAdapter`/`updateConfig` both resolve the manifest before persisting;
+    // it is what tells this side which textarea fields store a list or an object.
+    MANIFEST_BY_TYPE[type]
+  );
   const persistedKey = 'dmPolicy' in (parsed.config as Record<string, unknown>);
 
   const dir = await mkdtemp(join(tmpdir(), 'dorkos-persist-'));
@@ -243,5 +256,96 @@ describe('adapters.json write -> disk -> load (DOR-604)', () => {
     ]);
     expect(listed.dmPolicy).toBe('allowlist');
     expect(listed.dmAllowlist).toEqual(['U1']);
+  });
+});
+
+/**
+ * The shaped textarea fields, driven through the real persist path with the real
+ * manifest.
+ *
+ * `dmAllowlist`/`approverAllowlist` persist as arrays and `channelOverrides` as
+ * an object, but all three are edited as text. Which key is which shape is
+ * declared once, on the manifest (`valueShape`), and read by both the form and
+ * this side — so these tests use `SLACK_MANIFEST` itself rather than restating
+ * the mapping. Each starts from a config that ALREADY HAS VALUES: that is the
+ * population the wizard used to mangle, and the empty case is the one that
+ * always worked.
+ */
+describe('a textarea field whose stored shape is not text', () => {
+  /** The form hands back text; the stored value is what must come out. */
+  function persistFromForm(config: Record<string, unknown>) {
+    return parseAdapterConfigForPersist(
+      { id: 'slack', type: 'slack', enabled: true, builtin: false, config },
+      SLACK_MANIFEST
+    ).config as Record<string, unknown>;
+  }
+
+  it('turns one id per line back into the array that was stored', () => {
+    const stored = persistFromForm({
+      ...SECRETS,
+      approverAllowlist: 'U01ABC123\nU02DEF456',
+      dmAllowlist: 'U01ABC123\nU02DEF456',
+    });
+
+    expect(stored.approverAllowlist).toEqual(['U01ABC123', 'U02DEF456']);
+    expect(stored.dmAllowlist).toEqual(['U01ABC123', 'U02DEF456']);
+  });
+
+  it('never splits a comma-joined line into one bogus id', () => {
+    // What the wizard used to send after any edit of a stored list.
+    const stored = persistFromForm({ ...SECRETS, approverAllowlist: 'U01ABC123,U02DEF456' });
+
+    expect(stored.approverAllowlist).not.toEqual(['U01ABC123', 'U02DEF456']);
+    // It is preserved verbatim as one entry rather than silently split — the
+    // point is that the form no longer produces this shape.
+    expect(stored.approverAllowlist).toEqual(['U01ABC123,U02DEF456']);
+  });
+
+  it('leaves an already-stored array alone when the form never touched it', () => {
+    const stored = persistFromForm({ ...SECRETS, approverAllowlist: ['U01ABC123', 'U02DEF456'] });
+
+    expect(stored.approverAllowlist).toEqual(['U01ABC123', 'U02DEF456']);
+  });
+
+  it('turns JSON text back into the object that was stored', () => {
+    const overrides = { C01ABC: { respondMode: 'always' }, C02DEF: { enabled: false } };
+    const stored = persistFromForm({
+      ...SECRETS,
+      channelOverrides: JSON.stringify(overrides, null, 2),
+    });
+
+    expect(stored.channelOverrides).toEqual(overrides);
+  });
+
+  it('refuses unparseable channel overrides instead of erasing them', () => {
+    // One stray keystroke used to resolve to `{}` and report success, wiping
+    // every per-channel rule.
+    expect(() =>
+      persistFromForm({ ...SECRETS, channelOverrides: '[object Object] ' })
+    ).toThrowError(AdapterError);
+    expect(() => persistFromForm({ ...SECRETS, channelOverrides: '{"C01": ' })).toThrowError(
+      /expected JSON/
+    );
+  });
+
+  it('still reads an empty box as an empty value', () => {
+    const stored = persistFromForm({ ...SECRETS, approverAllowlist: '', channelOverrides: '' });
+
+    expect(stored.approverAllowlist).toEqual([]);
+    expect(stored.channelOverrides).toEqual({});
+  });
+
+  it('mangles nothing when no manifest is supplied — it refuses instead', () => {
+    // A caller that forgets the manifest must not silently persist form text as
+    // the stored value; the schema refuses it.
+    expect(() =>
+      parseAdapterConfigForPersist({
+        id: 'slack',
+        type: 'slack',
+        enabled: true,
+        builtin: false,
+        config: { ...SECRETS, approverAllowlist: 'U01ABC123\nU02DEF456' },
+      })
+    ).toThrowError(AdapterError);
   });
 });

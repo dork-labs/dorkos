@@ -252,6 +252,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
       key: 'dmAllowlist',
       label: 'DM Allowlist',
       type: 'textarea',
+      valueShape: 'id-list',
       required: false,
       description: 'Slack user IDs allowed to DM the bot (one per line).',
       placeholder: 'U01ABC123\nU02DEF456',
@@ -262,6 +263,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
       key: 'approverAllowlist',
       label: 'Approvers',
       type: 'textarea',
+      valueShape: 'id-list',
       required: false,
       description:
         'Slack user IDs who may approve a tool call from Slack (one per line). ' +
@@ -279,6 +281,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
       key: 'channelOverrides',
       label: 'Channel Overrides',
       type: 'textarea',
+      valueShape: 'json-object',
       required: false,
       description: 'Per-channel settings as JSON.',
       placeholder: '{"C01ABC": {"respondMode": "always"}, "C02DEF": {"enabled": false}}',
