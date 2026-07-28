@@ -12,7 +12,8 @@
     "./adapter-logos": "./src/adapter-logos.tsx"
   },
   "scripts": {
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "lucide-react": "1.21.0"

@@ -1,8 +1,18 @@
 {
   "extends": "@dorkos/typescript-config/node.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
+    // This package is bundled by esbuild (`scripts/build.ts`) and never emitted
+    // by tsc, so this config exists purely to CHECK. The `outDir`/`rootDir` that
+    // used to sit here described an emit that does not happen — and `rootDir`
+    // actively broke the check, because the CLI's `../server/**` imports resolve
+    // outside `src/` (see ./server/services/core/config-manager.d.ts) and tsc
+    // rejects that as TS6059 whenever declarations are on, `--noEmit` included.
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
   },
-  "include": ["src"]
+  // `scripts` is in here because `scripts/build.ts` IS the published artifact:
+  // esbuild strips types without checking them, so nothing else looks at it.
+  "include": ["src", "server", "scripts"]
 }
