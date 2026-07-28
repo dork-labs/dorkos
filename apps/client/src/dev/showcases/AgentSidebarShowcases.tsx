@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarMenu } from '@/layers/shared/ui';
 import { SessionRow, type SessionBorderKind } from '@/layers/entities/session';
+import { resolveAgentVisual } from '@/layers/entities/agent';
 import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -272,6 +273,7 @@ function AgentListItemShowcase() {
                 key={path}
                 path={path}
                 agent={agent as never}
+                visual={resolveAgentVisual({ id: path })}
                 displayName={displayName}
                 isActive={isActive}
                 isExpanded={expandedPath === path}
@@ -296,6 +298,7 @@ function AgentListItemShowcase() {
           <AgentListItem
             path={MOCK_AGENTS[0].path}
             agent={MOCK_AGENTS[0].agent as never}
+            visual={resolveAgentVisual({ id: MOCK_AGENTS[0].path })}
             displayName={MOCK_AGENTS[0].displayName}
             isActive
             isExpanded
@@ -318,6 +321,7 @@ function AgentListItemShowcase() {
           <AgentListItem
             path={MOCK_AGENTS[1].path}
             agent={MOCK_AGENTS[1].agent as never}
+            visual={resolveAgentVisual({ id: MOCK_AGENTS[1].path })}
             displayName={MOCK_AGENTS[1].displayName}
             isActive
             isExpanded
@@ -342,6 +346,7 @@ function AgentListItemShowcase() {
               key={path}
               path={path}
               agent={agent as never}
+              visual={resolveAgentVisual({ id: path })}
               displayName={displayName}
               isActive={false}
               isExpanded={false}

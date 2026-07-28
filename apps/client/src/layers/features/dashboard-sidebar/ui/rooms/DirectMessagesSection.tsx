@@ -9,6 +9,7 @@ import {
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
+import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
 import { NewDirectMessageMenu } from '@/layers/features/room-membership';
@@ -17,8 +18,16 @@ import { NewDirectMessageMenu } from '@/layers/features/room-membership';
 const SKELETON_ROWS = 2;
 
 interface DirectMessagesSectionProps {
-  /** Direct messages, newest activity first. */
+  /**
+   * Direct messages that are in no group, newest activity first. Grouped ones
+   * render in their group instead — a conversation lives in exactly one place
+   * (sidebar-groups §4).
+   */
   dms: RoomSummary[];
+  /** Whether any conversation is in a group, which changes what an empty list means. */
+  hasGroupedDms: boolean;
+  /** The faces to draw for a conversation, from the item view model. */
+  visualOf: (room: RoomSummary) => SidebarItemVisual;
   /** True while the room list is loading with nothing cached. */
   isLoading: boolean;
   /** Set when the room list could not be read. */
@@ -32,14 +41,18 @@ interface DirectMessagesSectionProps {
 }
 
 /**
- * The sidebar's "Direct messages" section: one row per conversation — with one
- * agent or with several — and an unread count when you are behind.
+ * The sidebar's "Direct messages" section: one row per ungrouped conversation —
+ * with one agent or with several — and an unread count when you are behind.
  *
  * Collapsible and persisted via `ui.sidebar.dmsCollapsed`. Like Channels, it is
- * always present — the empty state is what tells a person the feature exists.
+ * always present: the empty state is what tells a person the feature exists, and
+ * it distinguishes "you have none" from "yours are all filed into groups", which
+ * are the same empty list and completely different facts.
  */
 export function DirectMessagesSection({
   dms,
+  hasGroupedDms,
+  visualOf,
   isLoading,
   error,
   activeRoomId,
@@ -105,6 +118,7 @@ export function DirectMessagesSection({
                 <RoomRow
                   key={room.id}
                   room={room}
+                  visual={visualOf(room)}
                   isActive={room.id === activeRoomId}
                   onSelect={() => onSelectRoom(room)}
                   onOpenAgentProfile={onOpenAgentProfile}
@@ -114,7 +128,9 @@ export function DirectMessagesSection({
               {dms.length === 0 && (
                 <SidebarMenuItem>
                   <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
-                    No messages yet — start one to talk to an agent on its own, or to a few at once.
+                    {hasGroupedDms
+                      ? 'Your conversations are all in groups above.'
+                      : 'No messages yet — start one to talk to an agent on its own, or to a few at once.'}
                   </p>
                 </SidebarMenuItem>
               )}

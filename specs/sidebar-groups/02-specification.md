@@ -118,18 +118,29 @@ interface SidebarItem {
   ref: SidebarItemRef;
   name: string; // agent display name | roomDisplayTitle(room)
   lastActiveAt: number | null;
-  needsAttention: boolean;
+  attention: AttentionState;
   muted: boolean;
 }
 ```
 
 Mappings:
 
-|                  | Agent           | Room               |
-| ---------------- | --------------- | ------------------ |
-| `name`           | display name    | `roomDisplayTitle` |
-| `lastActiveAt`   | last activity   | `lastActivityAt`   |
-| `needsAttention` | attention state | `unreadCount > 0`  |
+|                | Agent                         | Room                                         |
+| -------------- | ----------------------------- | -------------------------------------------- |
+| `name`         | display name                  | `roomDisplayTitle`                           |
+| `lastActiveAt` | last activity                 | `lastActivityAt`                             |
+| `attention`    | live attention state          | `needs-attention` when unread, else `active` |
+| `muted`        | own mute (`ui.sidebar.muted`) | own mute (`ui.sidebar.muted`)                |
+
+**An earlier draft of this section typed the third field `needsAttention: boolean`.** That was wrong in a way that would have hidden working agents, so it is corrected here rather than quietly:
+
+`displayFilter` has **three** branches, not two (§4). `all` hides only `inactive`; `active` keeps `active` and above; `attention` keeps only the top state. A boolean has no room for the middle one, so anything not asking for attention collapses into `inactive` — and every quiet-but-running agent disappears behind the "N inactive agents" reveal row. The boolean the mapping table was reaching for is `attention === 'needs-attention'`; nothing else needs it.
+
+`AttentionState` is `entities/session`'s existing union (`needs-attention | active | idle | fresh | inactive`), which is what `useAgentAttentionMap` already answers with, so the agent side is a pass-through rather than a new derivation.
+
+**A room is never `inactive`.** It is a place, not a process: `needs-attention` when something in it is unread, `active` otherwise. That is not a default chosen for tidiness — it is the invariant that keeps the reveal row's "N inactive agents" wording true, because it makes that bucket agent-only by construction.
+
+`muted` is the item's **own** mute, independent of any group it sits in. Group mute is a property of the group and stays a per-section input to the filter: the same agent can sit in a muted group and an unmuted one, so "muted" cannot be a single property of the item unless it means own-mute.
 
 `unreadCount` is `null` for a non-member, which is "not applicable" and not zero — collapsing the two would mark every room the operator has looked at. The existing `hasUnread` helper already encodes this; use it rather than re-deriving.
 
@@ -143,21 +154,28 @@ The shape above has no visual field, which would leave **DOR-582 unfixed** — a
 type SidebarItemVisual =
   | { kind: 'identity'; visual: AgentVisual } // agent row, 1:1 DM
   | { kind: 'stack'; visuals: AgentVisual[] } // group DM
-  | { kind: 'sigil' }; // channel — '#', never a face
+  | { kind: 'sigil' }; // the room's own mark, never a face
 ```
+
+**Read `sigil` as "the room's own mark", not literally as `#`.** An earlier draft's comment said `channel — '#'`, which leaves the union with no arm for two cases that do arise: a DM carrying no roster (`participants` is `null` on any payload that predates the field), and a DM whose only agent is no longer in the mesh. Neither has a face to draw and neither is a channel.
+
+Widening the word rather than adding a fourth arm is what makes that work: `sigil` means "draw the room's mark instead of a participant's", and `RoomAvatar` already answers that correctly for every kind — `#` for a channel, the branch glyph for a thread, and a letter disc tinted from the room's own id for a DM it cannot resolve. Verified in review: `RoomAvatar` switches on `room.kind` before it looks at the faces, so an unresolvable DM falls to the letter disc and never to a `#`. A letter there is honest; a guessed face would not be, and a `#` on a conversation would be a category error in the other direction.
 
 The reason this belongs here and nowhere else is the root cause of DOR-582 itself. **Agent emoji and colour are a client-side hash** (`resolveAgentVisual`, `shared/lib`): only 4 of 24 agents have `icon`/`color` stored, so anything read from the server is `null` for the other 20. The rooms work shipped an avatar unification on the premise that `AuthorRef` carries the emoji; the wiring was correct end to end and the feature was inert.
 
 So the visual must be **resolved client-side from the id**, and the view model is the only layer that can do it for both kinds — exactly the same reason the view model exists at all. Resolving it in two places is how the second avatar system got built the first time.
 
-| Row      | Face                                               |
-| -------- | -------------------------------------------------- |
-| Agent    | `resolveAgentVisual(agent)`                        |
-| 1:1 DM   | `resolveAgentVisual` of the single agent particip. |
-| Group DM | the participants' visuals, as a stack              |
-| Channel  | the `#` sigil                                      |
+| Row                    | Face                                                  |
+| ---------------------- | ----------------------------------------------------- |
+| Agent                  | `resolveAgentVisual(agent)`                           |
+| 1:1 DM                 | `resolveAgentVisual` of the single agent particip.    |
+| Group DM               | the participants' visuals, as a stack                 |
+| Channel / thread       | `sigil` — the room's own mark                         |
+| DM with nobody to draw | `sigil` too, which for a DM is the room's letter disc |
 
 A channel gets a sigil rather than a face because a channel is anchored to a **topic**, not a participant (`specs/rooms/02-specification.md` §14.4). Giving it a face would be the same category error as giving it a `cwd`.
+
+**Match a participant to the fleet on `agentRef`, and resolve the face from the manifest.** Not from `AuthorRef.id`: that is a row in the `authors` table, minted per install and unrelated to the manifest ULID the agent's own row hashes from, so hashing it draws a stable but confidently **wrong** face — worse than the letter it replaces. The handle to compare is `agentAuthorRef(agentPath)`, never a display name, which two agents can share.
 
 **Verify this in a browser, not in jsdom.** DOR-582 was confirmed by a screenshot after an author, an adversarial reviewer and the orchestrator had all confirmed the opposite from the schema. Count the faces on screen; do not infer that a field is populated from the code that would populate it.
 
@@ -167,7 +185,7 @@ A channel gets a sigil rather than a face because a channel is anchored to a **t
 
 - Group bodies dispatch on `ref.kind` to the existing `AgentListItem` or `RoomRow`. Neither is forked.
 - Sort modes over the union: `manual` reads the ordered `items` array; `name` compares `SidebarItem.name`; `recent` compares `lastActiveAt`, with `null` sorting last.
-- `displayFilter` (`all` / `active-recently` / `needs-attention`) reads the view model, so it works for rooms with no new code.
+- `displayFilter` (`all` / `active` / `attention`) reads the view model, so it works for rooms with no new code. An earlier draft wrote these as `all` / `active-recently` / `needs-attention`, which name no values that exist: `SidebarDisplayFilterSchema` (`packages/shared/src/config-schema.ts`) has been `['all', 'active', 'attention']` since before S1, and this phase does not touch it.
 - **Channels and Direct messages show only _ungrouped_ rooms**, matching how Agents already shows only ungrouped agents. An item lives in exactly one section.
 - Pinned stays multi-presence.
 

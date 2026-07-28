@@ -10,6 +10,7 @@ import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { RoomRow } from '../ui/rooms/RoomRow';
+import type { SidebarItemVisual } from '../model/sidebar-item';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -110,6 +111,8 @@ function renderRow(
   opts: {
     transport?: Transport;
     onOpenAgentProfile?: (path: string) => void;
+    /** The mark the sidebar's view model resolved for this room. */
+    visual?: SidebarItemVisual;
   } = {}
 ) {
   // Mesh is always answered: the row maps a 1:1's `agentRef` back to a path
@@ -130,6 +133,7 @@ function renderRow(
   const utils = render(
     <RoomRow
       room={room}
+      visual={opts.visual ?? { kind: 'sigil' }}
       isActive={false}
       onSelect={vi.fn()}
       onOpenAgentProfile={opts.onOpenAgentProfile ?? vi.fn()}

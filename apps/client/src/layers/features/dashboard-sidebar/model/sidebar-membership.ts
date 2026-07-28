@@ -1,21 +1,22 @@
 /**
- * Narrowing the sidebar's stored membership down to the agent paths the
- * sections actually render (sidebar-groups, DOR-579).
+ * Turning the sidebar's stored membership into what each section renders
+ * (sidebar-groups, DOR-579 and DOR-580).
  *
- * `ui.sidebar` stores `SidebarItemRef`s so a group can hold a room as well as an
- * agent. Every section below still addresses agents by `projectPath`, so exactly
- * one layer has to do the narrowing — these functions are it, kept pure and out
- * of `DashboardSidebar` so the rules are unit-testable on their own and the
- * component stays an orchestrator.
+ * `ui.sidebar` stores `SidebarItemRef`s, so a group can hold a room as well as
+ * an agent. These functions are the one layer that decides which stored
+ * reference belongs to which section, kept pure and out of `DashboardSidebar` so
+ * the rules are unit-testable on their own and the component stays an
+ * orchestrator.
  *
- * Rooms drop out here rather than being rendered, which is what makes S1 a
- * schema change with no visible effect. S2 (DOR-580) replaces these with the
- * item view model that carries both kinds.
+ * A few helpers stay agent-only on purpose: mute rendering and the collapsed
+ * group's activity dot both read live *agent* session state, which a room has
+ * none of.
  *
  * @module features/dashboard-sidebar/model/sidebar-membership
  */
 import type { SidebarGroup, SidebarItemRef, SidebarPrefs } from '@dorkos/shared/config-schema';
 import { evaluateSmartGroup, type SmartGroupCandidate } from '@dorkos/shared/smart-groups';
+import { lookupSidebarItems, type SidebarItem, type SidebarItemIndex } from './sidebar-item';
 
 /**
  * The agent `projectPath`s in a reference list, in order.
@@ -42,6 +43,28 @@ export function agentPathsOf(
  */
 export function individuallyMutedAgentPaths(prefs: SidebarPrefs): Set<string> {
   return new Set(agentPathsOf(prefs.muted));
+}
+
+/**
+ * The room ids in a reference list, in order.
+ *
+ * @param refs - A stored membership list.
+ */
+export function roomIdsOf(refs: readonly SidebarItemRef[]): string[] {
+  return refs.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : []));
+}
+
+/**
+ * Room ids muted individually (`ui.sidebar.muted`).
+ *
+ * There is no group-mute widening for rooms the way there is for agents: a
+ * muted group dims its rows through the section's own filter, and a room row
+ * carries no live activity emphasis to suppress on top of that.
+ *
+ * @param prefs - Current sidebar prefs.
+ */
+export function individuallyMutedRoomIds(prefs: SidebarPrefs): Set<string> {
+  return new Set(roomIdsOf(prefs.muted));
 }
 
 /**
@@ -90,27 +113,48 @@ export function groupedAgentPaths(prefs: SidebarPrefs, known: ReadonlySet<string
 }
 
 /**
- * Each group's renderable member paths, keyed by group id.
+ * Room ids that live in some group, and so are NOT shown in the "Channels" or
+ * "Direct messages" sections.
  *
- * A manual group contributes its stored agent members; a smart group (DOR-338)
- * contributes its rule-derived members instead, since its stored list is the
- * convert-to-manual materialization target rather than live membership.
+ * The agent-side twin of this ({@link groupedAgentPaths}) filters by the known
+ * roster; this one does not need to, because a stored id nothing answers to
+ * excludes nothing from a list it is not in anyway.
  *
  * @param prefs - Current sidebar prefs.
- * @param known - The current roster; stale stored membership is filtered out.
- * @param smartMembers - Rule-derived members per smart group id.
  */
-export function groupMemberPaths(
-  prefs: SidebarPrefs,
-  known: ReadonlySet<string>,
-  smartMembers: ReadonlyMap<string, string[]>
-): Map<string, string[]> {
-  const map = new Map<string, string[]>();
+export function groupedRoomIds(prefs: SidebarPrefs): Set<string> {
+  const set = new Set<string>();
   for (const group of prefs.groups) {
-    map.set(
-      group.id,
-      group.kind === 'smart' ? (smartMembers.get(group.id) ?? []) : agentPathsOf(group.items, known)
-    );
+    for (const roomId of roomIdsOf(group.items)) set.add(roomId);
+  }
+  return set;
+}
+
+/**
+ * Each group's renderable members as view-model items, keyed by group id.
+ *
+ * A manual group contributes its stored members — agents and rooms interleaved,
+ * in the stored order. A smart group (DOR-338) contributes its rule-derived
+ * members instead, since its stored list is the convert-to-manual
+ * materialization target rather than live membership; every smart-group rule is
+ * an agent attribute, so a smart group can only ever hold agents.
+ *
+ * @param prefs - Current sidebar prefs.
+ * @param index - The current item index; stale stored membership drops out.
+ * @param smartMembers - Rule-derived member paths per smart group id.
+ */
+export function groupMemberItems(
+  prefs: SidebarPrefs,
+  index: SidebarItemIndex,
+  smartMembers: ReadonlyMap<string, string[]>
+): Map<string, SidebarItem[]> {
+  const map = new Map<string, SidebarItem[]>();
+  for (const group of prefs.groups) {
+    const refs: SidebarItemRef[] =
+      group.kind === 'smart'
+        ? (smartMembers.get(group.id) ?? []).map((path) => ({ kind: 'agent', path }))
+        : group.items;
+    map.set(group.id, lookupSidebarItems(index, refs));
   }
   return map;
 }
