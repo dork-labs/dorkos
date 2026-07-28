@@ -132,9 +132,19 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       const waitMs = readWaitMs();
       const collecting = collectReply(projector, projector.getCursor(), {
         waitMs,
-        // A ceiling below the wait would end the turn before the room stopped
-        // waiting for it, which is neither bound doing what it says. The two are
-        // independent settings, so clamp rather than trust the pair.
+        // A ceiling below the wait would stop the room listening before it
+        // stopped waiting, so a perfectly healthy turn would be reported as
+        // failed and its answer dropped — this PR's own defect, walked back in
+        // through the settings screen. The two fields are independent and both
+        // ranges are schema-valid, so clamp rather than trust the pair.
+        //
+        // Clamped SILENTLY, on purpose. The only place this code can speak is
+        // the room, and a settings complaint posted into somebody's
+        // conversation is noise aimed at the wrong person — the reader of a
+        // room is usually not whoever set the number. Nothing is lost by
+        // staying quiet either: the clamp is a floor, not an override, so a
+        // ceiling above the wait still governs exactly as written. If this ever
+        // needs to be surfaced, Settings is where it belongs, not here.
         ceilingMs: Math.max(readCeilingMs(), waitMs),
         prompt,
       });

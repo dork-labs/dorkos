@@ -255,13 +255,48 @@ describe('createSessionRoomTurnRunner', () => {
     expect((await second).text).toBe('the tests pass');
   });
 
+  it('keeps listening for at least as long as it waits, whatever the pair says', async () => {
+    // `rooms.replyWaitMinutes: 120` with `rooms.lateReplyCeilingMinutes: 1` is
+    // schema-valid — two independent fields, both in range. Unclamped, the room
+    // stops LISTENING an hour and fifty-nine minutes before it stops WAITING,
+    // so a healthy turn is reported as failed and its answer is thrown away:
+    // this PR's own defect, reintroduced through the settings screen.
+    //
+    // The pair here is that shape with the clock scaled down: a wait no timer
+    // in this test can reach, and a ceiling that has already expired many times
+    // over by the time the turn answers.
+    let finishTurn = (): void => undefined;
+    turnBehaviour = ({ sessionId, projector, content }) => {
+      projector.ingest({ type: 'turn_start', userMessage: content });
+      finishTurn = () => {
+        projector.ingest({ type: 'text_delta', text: 'green' });
+        projector.ingest({ type: 'turn_end' });
+      };
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const runner = createSessionRoomTurnRunner({ waitMs: () => 60_000, ceilingMs: () => 1 });
+    const answered = runner.run(request());
+    // Twenty times the unclamped ceiling: if it were in force, it has fired.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    finishTurn();
+
+    const result = await answered;
+    // The subject is the answer, not the absence of a crash.
+    expect(result.text).toBe('green');
+    expect(result.unanswered).toBeUndefined();
+    expect(result.late).toBeUndefined();
+  });
+
   it('gives up on a turn that never closes, and says the turn failed', async () => {
     turnBehaviour = ({ sessionId, projector }) => {
       projector.ingest({ type: 'turn_start' });
       return { accepted: true, canonicalId: sessionId };
     };
 
-    const result = await createSessionRoomTurnRunner({ waitMs: () => 5, ceilingMs: () => 30 }).run(request());
+    const result = await createSessionRoomTurnRunner({ waitMs: () => 5, ceilingMs: () => 30 }).run(
+      request()
+    );
     expect(result.late).toBeDefined();
 
     const late = await result.late;
