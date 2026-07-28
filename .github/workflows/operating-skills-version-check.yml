@@ -26,11 +26,28 @@ name: operating-skills-version-check
 # "Both sides" means HEAD and the base branch's TIP, not HEAD and the merge base.
 # See the comment on the first step: against the merge base this guard would be
 # green on the exact case it exists to catch.
+#
+# LOAD-BEARING SETTING, OUTSIDE THIS FILE. `on: pull_request` does not re-fire
+# when somebody pushes to the base branch, so a run that was green at base=5 /
+# head=6 stays green after another pull request takes 6 — the exact DOR-509 hole,
+# reopened by timing rather than by arithmetic. What closes it is
+# `required_status_checks.strict = true` on `main` (branch protection's "require
+# branches to be up to date before merging"): it forces the branch to be updated,
+# which fires `synchronize`, which re-runs this against the new tip. `strict` is
+# on today. If it is ever turned off, this guard silently regains that hole, and
+# a `pull_request_target`-style re-trigger or a scheduled re-run would have to
+# take its place.
+#
+# There is deliberately NO `paths:` filter. GitHub leaves a filtered workflow
+# Pending forever on a pull request that does not match, so a filtered check can
+# never be a REQUIRED check (`.agents/skills/creating-pull-requests/SKILL.md`),
+# and a guard that can fail but cannot block is not a gate — it is a suggestion
+# that auto-merge will drive straight past. The "Decide whether the seeded pack
+# content changed" step below does the precise scoping instead and short-circuits
+# both later steps, so the cost on an unrelated pull request is one checkout.
 
 on:
   pull_request:
-    paths:
-      - 'packages/operating-skills/**'
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.
@@ -77,11 +94,13 @@ jobs:
           echo "base tip:      $(git rev-parse "$base_tip") (${{ github.base_ref }})"
 
       # A PR that does not change what gets seeded must not be required to bump.
-      # The path filter above is coarser than that on purpose (it is free, and it
-      # is what triggers the job at all); this step asks the precise question.
-      # Editing seed.ts, the tests, or the package README changes no agent's
-      # skill text and owes no new version. Scoped to the fork point, because this
-      # asks what the branch did, not what the base branch did meanwhile.
+      # This is the ONLY scoping in the workflow — there is no `paths:` filter, for
+      # the reason in the header — so it carries the whole job: it runs on every
+      # pull request and short-circuits the two steps below on all but the few that
+      # touch seeded content. Editing seed.ts, the tests, or the package README
+      # changes no agent's skill text and owes no new version. Scoped to the fork
+      # point, because this asks what the branch did, not what the base branch did
+      # meanwhile.
       - name: Decide whether the seeded pack content changed
         id: scope
         run: |
