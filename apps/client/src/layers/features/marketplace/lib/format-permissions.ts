@@ -7,7 +7,10 @@
  *
  * @module features/marketplace/lib/format-permissions
  */
-import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
+import {
+  describeSchedulePermissionMode,
+  type PermissionPreview,
+} from '@dorkos/shared/marketplace-schemas';
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -31,15 +34,24 @@ export interface FormattedPermission {
   description?: string;
   /** Severity level used to style the row. Defaults to `'info'` when absent. */
   severity?: PermissionSeverity;
+  /**
+   * Render the label as literal code. Set for rows whose label is a verbatim
+   * shell command, so it is never mistaken for prose the UI wrote.
+   */
+  mono?: boolean;
 }
 
 /**
- * All permission rows grouped by category, mirroring the five sections of the
+ * All permission rows grouped by category, mirroring the sections of the
  * install confirmation UI.
  */
 export interface FormattedPermissionGroups {
   /** Files the package will create, modify, or delete. */
   effects: FormattedPermission[];
+  /** Shell commands the package registers as harness hooks. */
+  commands: FormattedPermission[];
+  /** Scheduled jobs the package will create, and what each may do unattended. */
+  schedules: FormattedPermission[];
   /** Secrets the package will request from the user. */
   secrets: FormattedPermission[];
   /** External hosts the package will contact. */
@@ -55,8 +67,8 @@ export interface FormattedPermissionGroups {
 // ---------------------------------------------------------------------------
 
 /**
- * Format the `fileChanges`, `extensions`, and `tasks` fields of a
- * `PermissionPreview` into the `effects` group.
+ * Format the `fileChanges` and `extensions` fields of a `PermissionPreview`
+ * into the `effects` group.
  *
  * @param preview - Full permission preview from the server.
  */
@@ -78,14 +90,73 @@ function formatEffects(preview: PermissionPreview): FormattedPermission[] {
     });
   }
 
-  for (const task of preview.tasks) {
+  return rows;
+}
+
+/**
+ * Format the `hooks` and `unreadableHooks` fields into the `commands` group.
+ *
+ * The label is the shell command exactly as the package wrote it — this is the
+ * one fact a person needs to judge whether to trust the package, so it is never
+ * paraphrased or truncated here.
+ *
+ * A hook declaration we could not parse is listed too, at warning severity.
+ * Dropping it would render "declares commands we cannot read" identically to
+ * "declares no commands", and those are very different things to be told right
+ * before you click Install.
+ *
+ * @param preview - Full permission preview from the server.
+ */
+function formatCommands(preview: PermissionPreview): FormattedPermission[] {
+  const rows: FormattedPermission[] = preview.hooks.map((hook) => ({
+    icon: 'terminal',
+    label: hook.command,
+    description: hook.matcher ? `Runs on ${hook.event} (${hook.matcher})` : `Runs on ${hook.event}`,
+    mono: true,
+  }));
+
+  for (const unreadable of preview.unreadableHooks) {
     rows.push({
-      icon: 'clock',
-      label: `Schedule task: ${task.name}${task.cron ? ` (${task.cron})` : ''}`,
+      icon: 'alert-triangle',
+      label: 'This package sets up a command to run, but we could not read it',
+      description: unreadable.event
+        ? `${unreadable.path} declares "${unreadable.event}" in a form DorkOS cannot read`
+        : `${unreadable.path} is not readable`,
+      severity: 'warning' satisfies PermissionSeverity,
     });
   }
 
   return rows;
+}
+
+/**
+ * Format the `schedules` field into the `schedules` group.
+ *
+ * Names the permission mode in plain words rather than echoing the raw id: a
+ * person deciding whether to trust a package learns nothing from
+ * "bypassPermissions" and everything from "can run any command without asking
+ * you". A job that runs unattended without asking is flagged at warning
+ * severity.
+ *
+ * @param preview - Full permission preview from the server.
+ */
+function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
+  return preview.schedules.map((schedule) => {
+    const when = schedule.cron ? `Runs on ${schedule.cron}` : 'Runs only when you ask';
+    const state = schedule.startsEnabled ? 'starts switched on' : 'starts switched off';
+    const unattended =
+      schedule.permissionMode === 'bypassPermissions' ||
+      schedule.permissionMode === 'dontAsk' ||
+      schedule.permissionMode === 'auto';
+    return {
+      icon: 'clock',
+      label: schedule.name,
+      description: `${when}, ${state}. This job ${describeSchedulePermissionMode(schedule.permissionMode)}.`,
+      severity: (unattended && schedule.startsEnabled
+        ? 'warning'
+        : 'info') satisfies PermissionSeverity,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -96,9 +167,9 @@ function formatEffects(preview: PermissionPreview): FormattedPermission[] {
  * Normalise a `PermissionPreview` into icon/label/severity groups ready for
  * UI rendering.
  *
- * The returned object mirrors the five sections of the install confirmation
- * dialog. Each entry carries an `icon` string, a `label`, an optional
- * `description`, and an optional `severity`.
+ * The returned object mirrors the sections of the install confirmation dialog.
+ * Each entry carries an `icon` string, a `label`, an optional `description`,
+ * and an optional `severity`.
  *
  * @param preview - Raw `PermissionPreview` from the server.
  * @returns Grouped and formatted permission rows.
@@ -106,6 +177,10 @@ function formatEffects(preview: PermissionPreview): FormattedPermission[] {
 export function formatPermissionPreview(preview: PermissionPreview): FormattedPermissionGroups {
   return {
     effects: formatEffects(preview),
+
+    commands: formatCommands(preview),
+
+    schedules: formatSchedules(preview),
 
     secrets: preview.secrets.map((s) => ({
       icon: 'key',

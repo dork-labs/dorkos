@@ -142,7 +142,9 @@ function buildEmptyPermissionPreview(): PermissionPreview {
   return {
     fileChanges: [],
     extensions: [],
-    tasks: [],
+    hooks: [],
+    unreadableHooks: [],
+    schedules: [],
     secrets: [],
     externalHosts: [],
     requires: [],

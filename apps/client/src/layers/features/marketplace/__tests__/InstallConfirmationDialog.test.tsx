@@ -96,7 +96,9 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
   return {
     fileChanges: [{ path: 'agents/code-reviewer.json', action: 'create' }],
     extensions: [],
-    tasks: [],
+    hooks: [],
+    unreadableHooks: [],
+    schedules: [],
     secrets: [],
     externalHosts: [],
     requires: [],

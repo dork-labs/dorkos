@@ -8,6 +8,7 @@
  *
  * @module lib/preview-render
  */
+import { describeSchedulePermissionMode } from '@dorkos/shared/marketplace-schemas';
 
 /** A single planned filesystem mutation surfaced by the preview. */
 export interface PreviewFileChange {
@@ -23,6 +24,27 @@ export interface PreviewConflict {
   conflictingPackage?: string;
 }
 
+/** A shell hook the package registers with the harness. */
+export interface PreviewHook {
+  event: string;
+  matcher?: string;
+  command: string;
+}
+
+/** A hook declaration the package ships that could not be read. */
+export interface UnreadablePreviewHook {
+  path: string;
+  event?: string;
+}
+
+/** A scheduled job the install will create, and what it may do unattended. */
+export interface PreviewSchedule {
+  name: string;
+  cron: string | null;
+  permissionMode: string;
+  startsEnabled: boolean;
+}
+
 /**
  * The structural shape of a `PermissionPreview` as serialised over the
  * marketplace HTTP API. Matches `services/marketplace/types.ts` exactly.
@@ -30,7 +52,9 @@ export interface PreviewConflict {
 export interface PreviewPayload {
   fileChanges: PreviewFileChange[];
   extensions: { id: string; slots: string[] }[];
-  tasks: { name: string; cron: string | null }[];
+  hooks: PreviewHook[];
+  unreadableHooks: UnreadablePreviewHook[];
+  schedules: PreviewSchedule[];
   secrets: { key: string; required: boolean; description?: string }[];
   externalHosts: string[];
   requires: { type: string; name: string; version?: string; satisfied: boolean }[];
@@ -81,11 +105,37 @@ export function renderPreview(
     lines.push('');
   }
 
-  if (preview.tasks.length > 0) {
-    lines.push('Tasks:');
-    for (const task of preview.tasks) {
-      const cron = task.cron ? ` (${task.cron})` : '';
-      lines.push(`  ${task.name}${cron}`);
+  if (preview.hooks.length > 0) {
+    lines.push('Commands this package will run:');
+    for (const hook of preview.hooks) {
+      const trigger = hook.matcher ? `${hook.event} (${hook.matcher})` : hook.event;
+      lines.push(`  on ${trigger}`);
+      lines.push(`    ${hook.command}`);
+    }
+    lines.push('');
+  }
+
+  if (preview.unreadableHooks.length > 0) {
+    lines.push(`${YELLOW}Commands we could not read:${RESET}`);
+    for (const hook of preview.unreadableHooks) {
+      const where = hook.event ? `${hook.path} (${hook.event})` : hook.path;
+      lines.push(`  ${YELLOW}⚠ ${where}${RESET}`);
+    }
+    lines.push(
+      `  ${DIM}This package declares commands to run, but they are written in a way DorkOS cannot read.${RESET}`
+    );
+    lines.push('');
+  }
+
+  if (preview.schedules.length > 0) {
+    lines.push('Scheduled jobs:');
+    for (const schedule of preview.schedules) {
+      const when = schedule.cron ? `runs on ${schedule.cron}` : 'runs only when you ask';
+      const state = schedule.startsEnabled ? 'starts on' : 'starts off';
+      lines.push(`  ${schedule.name} — ${when}, ${state}`);
+      lines.push(
+        `    ${DIM}This job ${describeSchedulePermissionMode(schedule.permissionMode)}.${RESET}`
+      );
     }
     lines.push('');
   }

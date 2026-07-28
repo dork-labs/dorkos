@@ -22,7 +22,9 @@ const PREVIEW_BODY = {
   preview: {
     fileChanges: [{ path: 'foo.ts', action: 'create' as const }],
     extensions: [],
-    tasks: [],
+    hooks: [],
+    unreadableHooks: [],
+    schedules: [],
     secrets: [],
     externalHosts: [],
     requires: [],
