@@ -291,6 +291,20 @@ describe('startEnabled — a package does not arm its own cron (DOR-607)', () =>
     expect(scheduleOf(manifest).startEnabled).toBe(false);
   });
 
+  it('preserves the retired key so apply-time can warn about it', () => {
+    // The retired key is declared purely so it survives parsing: zod would
+    // otherwise strip it, and `apply-shape.ts` could not tell a Shape written
+    // against the old schema from one that simply wants its timer off. Its
+    // value is never read for behaviour, only its presence, for the warning.
+    const manifest = validShapeManifest() as { schedules: Record<string, unknown>[] };
+    manifest.schedules[0]!.startDisabled = true;
+    expect(scheduleOf(manifest).startDisabled).toBe(true);
+  });
+
+  it('leaves the retired key absent when the manifest does not use it', () => {
+    expect(scheduleOf(validShapeManifest()).startDisabled).toBeUndefined();
+  });
+
   it('honours an explicit opt-in', () => {
     expect(scheduleOf(validShapeManifest()).startEnabled).toBe(true);
   });

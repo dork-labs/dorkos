@@ -713,6 +713,39 @@ describe('applyShape', () => {
     );
   });
 
+  it('tells the author when a manifest still carries the retired startDisabled key', async () => {
+    // Zod strips unknown keys, so a Shape written against the old schema would
+    // otherwise get a timer that quietly never fires and no signal why. Silently
+    // ignored is the opposite of the loudness the rename was chosen for.
+    const shared = makeDeps({
+      manifest: shapeWithSchedule({ permissionMode: 'acceptEdits', startDisabled: false }),
+      registeredAgents: [LINEAR_TENDER_AGENT],
+    });
+
+    const result = await applyShape('s', shared.deps);
+
+    expect(result.ok).toBe(true);
+    expect(result.warnings).toContainEqual(
+      expect.stringContaining("Schedule 'inbox-tick' uses 'startDisabled'")
+    );
+    // And the old key still cannot arm anything: `startDisabled: false` used to
+    // mean "start it running".
+    expect(shared.createSchedule.mock.calls[0][0]).toMatchObject({ enabled: false });
+  });
+
+  it('says nothing about startDisabled when the manifest does not use it', async () => {
+    // The warning must be keyed on the retired key's PRESENCE, not fired on
+    // every apply — a note every Shape collects is a note nobody reads.
+    const shared = makeDeps({
+      manifest: shapeWithSchedule({ permissionMode: 'acceptEdits', startEnabled: true }),
+      registeredAgents: [LINEAR_TENDER_AGENT],
+    });
+
+    const result = await applyShape('s', shared.deps);
+
+    expect(result.warnings.filter((w) => w.includes('startDisabled'))).toEqual([]);
+  });
+
   it.each(['default', 'plan', 'acceptEdits', 'auto', 'dontAsk'] as const)(
     'passes %s through untouched and says nothing about it',
     async (mode) => {

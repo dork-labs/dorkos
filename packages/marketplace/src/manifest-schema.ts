@@ -302,6 +302,21 @@ const ShapeScheduleSchema = z.object({
    * time is created disabled regardless.
    */
   startEnabled: z.boolean().default(false),
+  /**
+   * RETIRED (DOR-607), and declared here for exactly one reason: so apply-time
+   * can SEE that a manifest still carries it and tell the author.
+   *
+   * This is not a back-compat shim. Nothing reads its value, and it can never
+   * change what a schedule does — `startEnabled` alone decides that, and a
+   * manifest carrying only the old key gets the safe answer (off). Without this
+   * declaration zod would strip the key, and the author of a Shape written
+   * against the old schema would get a timer that quietly never fires with no
+   * signal why. Silently ignored is the opposite of the loudness the rename was
+   * chosen for.
+   *
+   * Remove once no Shape in the wild still declares it.
+   */
+  startDisabled: z.boolean().optional(),
 });
 
 /**

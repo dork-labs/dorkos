@@ -463,6 +463,19 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     const target = match ? match.id : GLOBAL_TARGET;
     const enabled = match !== null && schedule.startEnabled;
 
+    // A manifest written against the pre-DOR-607 schema still parses: zod would
+    // simply drop the retired key, leaving the author with a timer that never
+    // fires and nothing to explain it. Say so instead. Deliberately BEFORE the
+    // already-exists `continue` below, because the manifest is wrong whether or
+    // not this apply creates anything, and it stays wrong until someone edits
+    // the file — so re-applying repeats the warning rather than hiding it.
+    if (schedule.startDisabled !== undefined) {
+      warnings.push(
+        `Schedule '${schedule.name}' uses 'startDisabled', which DorkOS no longer reads. ` +
+          `It stays off until the Shape sets 'startEnabled' to true.`
+      );
+    }
+
     // Schedules are stored under `slugify(name)` — `createSchedule` and the
     // tasks router both do this — so `listSchedules` returns slugs and the
     // re-bind service finds a schedule by its stored slug. Match on the slug,
