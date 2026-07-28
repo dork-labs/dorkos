@@ -214,6 +214,38 @@ export function backfillHarnessDefaults(store: {
 }
 
 /**
+ * Migration body: backfill `harness.approvedHooks: []` for configs persisted
+ * before an installed package needed a person's approval to write shell commands
+ * into a coding agent's hook files (DOR-522).
+ *
+ * Seeds the list EMPTY, exactly as {@link backfillExtensionsApprovedToRun} does
+ * and for the same reason: an upgrade must never hand out an approval nobody
+ * gave. Anyone already running a hook-shipping plugin is asked once, on the next
+ * install into that project, and the commands land the moment they say yes.
+ *
+ * Additive and idempotent — only writes when `approvedHooks` is not already an
+ * array, and never touches `autoSync`. Configs with no `harness` key are skipped
+ * (the schema default supplies the object on read, and
+ * {@link backfillHarnessDefaults} seeds the section itself).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillHarnessApprovedHooks(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const harness = store.get('harness');
+  if (
+    harness &&
+    typeof harness === 'object' &&
+    !Array.isArray((harness as { approvedHooks?: unknown }).approvedHooks)
+  ) {
+    store.set('harness', { ...(harness as Record<string, unknown>), approvedHooks: [] });
+  }
+}
+
+/**
  * Migration body: backfill the `runtimes` section (multi-runtime support,
  * additional-agent-runtimes spec) for configs persisted before it existed.
  * Additive + idempotent: only writes when the key is absent; the schema
@@ -1287,11 +1319,11 @@ export const CONFIG_MIGRATIONS = {
     // config (shorter first-run flow). Additive-safe + idempotent.
     scrubRetiredOnboardingSteps(store);
   },
-  // Composite: DOR-452, DOR-501, DOR-516, DOR-525, DOR-526 and DOR-579 all
-  // target "the next unreleased version" (0.56.0 is already tagged) and an
+  // Composite: DOR-452, DOR-501, DOR-516, DOR-522, DOR-525, DOR-526 and DOR-579
+  // all target "the next unreleased version" (0.56.0 is already tagged) and an
   // object literal cannot repeat a key, so their bodies compose here in
   // insertion order — the same convention as the 0.45.0/0.46.0/0.48.0/0.55.0
-  // composites above. All six are independent and idempotent.
+  // composites above. All seven are independent and idempotent.
   // /system:release reconciles the key at tag time if the real release differs.
   //
   // Composing rather than opening a 0.58.0 key is not a style choice here.
@@ -1319,6 +1351,10 @@ export const CONFIG_MIGRATIONS = {
     // idempotent; seeds the list EMPTY, so an upgrade never hands out an approval
     // nobody gave.
     backfillExtensionsApprovedToRun(store);
+    // `harness.approvedHooks` (a package writing shell commands into a coding
+    // agent's hook files, DOR-522). Additive + idempotent; seeds the list EMPTY,
+    // so an upgrade never hands out an approval nobody gave.
+    backfillHarnessApprovedHooks(store);
     // `ui.sidebar.channelsCollapsed` / `ui.sidebar.dmsCollapsed` (the Channels
     // and Direct messages sections, DOR-525). Additive + idempotent; both seed
     // expanded so an upgrade shows the new sections rather than hiding them.

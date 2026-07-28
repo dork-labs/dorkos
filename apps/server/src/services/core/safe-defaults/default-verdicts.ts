@@ -188,6 +188,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'extensions.enabled': [],
   'extensions.disabled': [],
   'extensions.approvedToRun': [],
+  // No installed package writes a shell command into a coding agent's hook files
+  // until a person approves those exact commands (DOR-522).
+  'harness.approvedHooks': [],
   // No static shared secret; the per-instance local token gates /mcp instead.
   'mcp.apiKey': null,
   'mcp.rateLimit.enabled': true,
