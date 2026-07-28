@@ -174,6 +174,16 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
     ];
     return {
+      // No rooms — rooms in the palette have their own file
+      // (`rooms-in-palette.test.tsx`), which runs the real assembly.
+      rooms: {
+        channels: [],
+        dms: [],
+        unread: [],
+        byId: new Map(),
+        isLoading: false,
+        isError: false,
+      },
       recentAgents: mockPaletteRecentAgents,
       allAgents: mockPaletteAllAgents,
       features,
@@ -345,7 +355,7 @@ describe('Command Palette Integration', () => {
 
   it('entering @ shows All Agents and hides other groups', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@' } });
 
     // All Agents visible
@@ -360,7 +370,7 @@ describe('Command Palette Integration', () => {
 
   it('@ followed by agent name still shows All Agents group', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@auth' } });
 
     expect(screen.getByText('All Agents')).toBeInTheDocument();
@@ -369,7 +379,7 @@ describe('Command Palette Integration', () => {
 
   it('selecting an agent from search mode opens sub-menu; Open Here records frecency and sets dir', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
 
     // Type a search query that matches an agent via cmdk's fuzzy filter
     fireEvent.change(input, { target: { value: 'API Gateway' } });
@@ -466,7 +476,7 @@ describe('Command Palette Integration', () => {
 
   it('typing a search query reveals Commands and All Agents groups', () => {
     render(<CommandPaletteDialog />);
-    const input = screen.getByPlaceholderText('Search agents, features, commands...');
+    const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: 'deploy' } });
 
     expect(screen.getByText('Commands')).toBeInTheDocument();
@@ -520,7 +530,7 @@ describe('Command Palette Integration', () => {
     render(<CommandPaletteDialog />);
 
     expect(
-      screen.queryByPlaceholderText('Search agents, features, commands...')
+      screen.queryByPlaceholderText('Search rooms, agents, commands...')
     ).not.toBeInTheDocument();
     expect(screen.queryByText('Recent Agents')).not.toBeInTheDocument();
     expect(screen.queryByText('Features')).not.toBeInTheDocument();

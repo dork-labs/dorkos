@@ -14,6 +14,8 @@ export { AgentPreviewPanel } from './ui/AgentPreviewPanel';
 export { AgentSubMenu } from './ui/AgentSubMenu';
 export { HighlightedText } from './ui/HighlightedText';
 export { PaletteFooter } from './ui/PaletteFooter';
+export { PalettePrefixLegend } from './ui/PalettePrefixLegend';
+export { RoomCommandItem } from './ui/RoomCommandItem';
 
 // --- Model hooks ---
 export { useGlobalPalette } from './model/use-global-palette';
@@ -27,6 +29,16 @@ export type {
   QuickActionItem,
   CommandItemData,
 } from './model/use-palette-items';
+export { usePaletteRooms } from './model/use-palette-rooms';
+export type { PaletteRooms } from './model/use-palette-rooms';
+export {
+  compareRoomsForPalette,
+  sortRoomsForPalette,
+  paletteRoomTarget,
+  paletteRoomKeywords,
+  threadParentLabel,
+} from './model/palette-rooms';
+export type { PaletteRoomTarget } from './model/palette-rooms';
 export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
 export { usePaletteActions } from './model/use-palette-actions';

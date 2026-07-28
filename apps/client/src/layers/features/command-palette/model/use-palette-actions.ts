@@ -12,13 +12,16 @@ import {
 } from '@/layers/shared/model';
 import { openLink } from '@/layers/shared/lib';
 import { useDirectoryState } from '@/layers/entities/session';
+import type { RoomSummary } from '@/layers/entities/room';
 import { useAgentFrecency } from './use-agent-frecency';
+import { paletteRoomTarget } from './palette-rooms';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface PaletteActions {
   handleAgentSelect: (agent: AgentPathEntry) => void;
   handleFeatureAction: (action: string) => void;
   handleQuickAction: (action: string) => void;
+  handleRoomSelect: (room: RoomSummary) => void;
   recordUsage: (agentId: string) => void;
   setDir: (dir: string) => void;
   selectedCwd: string | null;
@@ -75,6 +78,23 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       closePalette();
     },
     [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
+  );
+
+  /**
+   * Open a room. A room's identity travels as a `/channels` search param, so a
+   * thread arrives with its parent still in the URL and leaving it returns to
+   * the room it hangs off (`paletteRoomTarget`).
+   *
+   * No frecency is recorded: frecency is keyed on agent ids and the palette
+   * already leads with unread, which is a fact about what is waiting rather
+   * than a guess from history.
+   */
+  const handleRoomSelect = useCallback(
+    (room: RoomSummary) => {
+      closePalette();
+      navigate({ to: '/channels', search: paletteRoomTarget(room) });
+    },
+    [closePalette, navigate]
   );
 
   const handleFeatureAction = useCallback(
@@ -191,6 +211,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     handleAgentSelect,
     handleFeatureAction,
     handleQuickAction,
+    handleRoomSelect,
     recordUsage,
     setDir,
     selectedCwd,

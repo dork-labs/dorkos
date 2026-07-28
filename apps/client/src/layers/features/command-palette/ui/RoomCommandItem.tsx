@@ -1,0 +1,75 @@
+/**
+ * One room as a command-palette row (spec `rooms` §13.2).
+ *
+ * @module features/command-palette/ui/RoomCommandItem
+ */
+import { CommandItem } from '@/layers/shared/ui';
+import { RoomAvatar, RoomTitle, hasUnread, type RoomSummary } from '@/layers/entities/room';
+import { paletteRoomKeywords } from '../model/palette-rooms';
+
+export interface RoomCommandItemProps {
+  /** The room this row opens. */
+  room: RoomSummary;
+  /**
+   * The room this one hangs off, written the way people say it — set only for a
+   * thread whose parent the palette can see.
+   */
+  parentLabel?: string | null;
+  /** Open the room. */
+  onSelect: () => void;
+}
+
+/**
+ * A room in the palette: its mark, its name, and an unread count when the
+ * reader is behind.
+ *
+ * **A channel and a direct message are named differently on purpose.** A
+ * channel is a place, so its row reads as the name you would type — `#general`
+ * — and `RoomTitle` keeps the spoken `#` out of the visible text so the row
+ * does not read `# #general` beside the mark that already draws it. A DM is not
+ * a place but an act, so its row reads **"Message Ana"**: typing `@ana` offers
+ * both that and the agent herself, and the two are different things to do
+ * (spec `rooms` §13.2).
+ *
+ * A thread reads as `#parent › its own title`, so a title with no home never
+ * appears on its own.
+ *
+ * The badge reads `unreadCount` strictly. `null` means "you are not in this
+ * room", which is not `0` ("you are in it and caught up") — so a room the
+ * operator has only ever looked at carries no badge rather than a zero.
+ *
+ * The row is named by its parts: the mark is decorative, the name contributes
+ * `#general`, the badge contributes `3 unread`. Nothing names the room twice.
+ */
+export function RoomCommandItem({ room, parentLabel, onSelect }: RoomCommandItemProps) {
+  const unread = hasUnread(room);
+
+  return (
+    <CommandItem
+      // The id, not the title: two rooms may share a title, and cmdk uses this
+      // value as the row's identity for selection.
+      value={room.id}
+      keywords={paletteRoomKeywords(room)}
+      onSelect={onSelect}
+      className="flex items-center gap-2 py-2"
+    >
+      <RoomAvatar room={room} participants={room.participants} className="shrink-0" />
+      {parentLabel && (
+        <span className="text-muted-foreground shrink-0 text-xs">{parentLabel} &rsaquo;</span>
+      )}
+      {room.kind === 'dm' ? (
+        <span className="min-w-0 flex-1 truncate text-sm">Message {room.title}</span>
+      ) : (
+        <RoomTitle room={room} className="min-w-0 flex-1 text-sm" />
+      )}
+      {unread && (
+        <span
+          className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
+          aria-label={`${room.unreadCount} unread`}
+        >
+          {room.unreadCount}
+        </span>
+      )}
+    </CommandItem>
+  );
+}

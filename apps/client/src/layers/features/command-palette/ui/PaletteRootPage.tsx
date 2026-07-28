@@ -1,8 +1,13 @@
 import { motion, LayoutGroup } from 'motion/react';
 import { CommandGroup, CommandItem, CommandSeparator } from '@/layers/shared/ui';
 import { getAgentDisplayName } from '@/layers/shared/lib';
+import type { RoomSummary } from '@/layers/entities/room';
 import { AgentCommandItem } from './AgentCommandItem';
+import { RoomCommandItem } from './RoomCommandItem';
+import { PalettePrefixLegend } from './PalettePrefixLegend';
 import { ICON_MAP, EASE_OUT, listVariants, itemVariants } from './palette-constants';
+import { threadParentLabel } from '../model/palette-rooms';
+import type { PaletteRooms } from '../model/use-palette-rooms';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { FuseResultMatch } from 'fuse.js';
 import type {
@@ -17,6 +22,8 @@ interface PaletteRootPageProps {
   isZeroQuery: boolean;
   isAtMode: boolean;
   isCommandMode: boolean;
+  /** Whether the `#` prefix is active, scoping the palette to channels. */
+  isRoomMode: boolean;
   search: string;
   selectedCwd: string | null;
   selectedValue: string;
@@ -27,11 +34,18 @@ interface PaletteRootPageProps {
   searchFeatures: FeatureItem[];
   searchCommands: CommandItemData[];
   searchQuickActions: QuickActionItem[];
+  /** The whole room list, for its load state and for resolving a thread's parent. */
+  rooms: PaletteRooms;
+  /** Channels and threads matching the current query. */
+  searchChannels: RoomSummary[];
+  /** Direct messages matching the current query. */
+  searchDms: RoomSummary[];
   agentMatchMap: Map<string, readonly FuseResultMatch[] | undefined>;
   onFeatureAction: (action: string) => void;
   onAgentSelect: (agent: AgentPathEntry) => void;
   onQuickAction: (action: string) => void;
   onGoToAgentActions: (agent: AgentPathEntry) => void;
+  onRoomSelect: (room: RoomSummary) => void;
   onClose: () => void;
 }
 
@@ -41,6 +55,7 @@ export function PaletteRootPage({
   isZeroQuery,
   isAtMode,
   isCommandMode,
+  isRoomMode,
   search,
   selectedCwd,
   selectedValue,
@@ -51,15 +66,53 @@ export function PaletteRootPage({
   searchFeatures,
   searchCommands,
   searchQuickActions,
+  rooms,
+  searchChannels,
+  searchDms,
   agentMatchMap,
   onFeatureAction,
   onAgentSelect,
   onQuickAction,
   onGoToAgentActions,
+  onRoomSelect,
   onClose,
 }: PaletteRootPageProps) {
+  // What to say instead of a channel list when there is none to show. Only `#`
+  // mode asks: everywhere else rooms are one group among several, and a palette
+  // that announced "couldn't load channels" while showing agents and commands
+  // would be reporting a failure nobody asked about.
+  const channelStatus = isRoomMode
+    ? rooms.isError
+      ? 'Could not load your channels.'
+      : rooms.isLoading
+        ? 'Loading channels…'
+        : rooms.channels.length === 0
+          ? 'No channels yet.'
+          : null
+    : null;
+
   return (
     <motion.div key={staggerKey} variants={listVariants} initial="hidden" animate="visible">
+      {/*
+       * Unread rooms, before anything is typed — the first thing in the list, so
+       * Cmd+K then Enter goes to whatever needs reading (spec `rooms` §13.2).
+       * It sits above Suggestions deliberately: a suggestion is a guess about
+       * what you might want, and an unread room is a fact about what is waiting.
+       */}
+      {isZeroQuery && rooms.unread.length > 0 && (
+        <CommandGroup heading="Unread">
+          {rooms.unread.map((room, index) => (
+            <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
+              <RoomCommandItem
+                room={room}
+                parentLabel={threadParentLabel(room, rooms.byId)}
+                onSelect={() => onRoomSelect(room)}
+              />
+            </motion.div>
+          ))}
+        </CommandGroup>
+      )}
+
       {/* Contextual suggestions — shown at top of zero-query state */}
       {isZeroQuery && suggestions.length > 0 && (
         <CommandGroup heading="Suggestions">
@@ -140,6 +193,52 @@ export function PaletteRootPage({
         </CommandGroup>
       )}
 
+      {/* Channels and threads — what `#` addresses, and what a plain query finds beside everything else */}
+      {!isZeroQuery && searchChannels.length > 0 && (
+        <>
+          <CommandSeparator />
+          <CommandGroup heading="Channels">
+            {searchChannels.map((room, index) => (
+              <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
+                <RoomCommandItem
+                  room={room}
+                  parentLabel={threadParentLabel(room, rooms.byId)}
+                  onSelect={() => onRoomSelect(room)}
+                />
+              </motion.div>
+            ))}
+          </CommandGroup>
+        </>
+      )}
+
+      {/*
+       * Why the channel list has a status row and no other group does: `#` is a
+       * scope, so when it holds nothing there is nothing else on screen to
+       * explain the emptiness. A disabled CommandItem rather than plain markup,
+       * so cmdk counts a row and does not also print "No results found."
+       */}
+      {channelStatus && (
+        <CommandGroup heading="Channels">
+          <CommandItem disabled value="rooms-status" className="text-muted-foreground text-sm">
+            {channelStatus}
+          </CommandItem>
+        </CommandGroup>
+      )}
+
+      {/* Direct messages — under `@` beside the agents, because a DM is addressed by who is in it */}
+      {!isZeroQuery && searchDms.length > 0 && (
+        <>
+          <CommandSeparator />
+          <CommandGroup heading="Direct Messages">
+            {searchDms.map((room, index) => (
+              <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
+                <RoomCommandItem room={room} onSelect={() => onRoomSelect(room)} />
+              </motion.div>
+            ))}
+          </CommandGroup>
+        </>
+      )}
+
       {/* Features — hidden in @ and > mode; shown in zero-query and non-prefix search */}
       {!isAtMode && !isCommandMode && searchFeatures.length > 0 && (
         <>
@@ -217,6 +316,18 @@ export function PaletteRootPage({
               );
             })}
           </CommandGroup>
+        </>
+      )}
+
+      {/*
+       * The prefix legend closes the zero-query list. This is where a person is
+       * looking for a way in rather than at a result, and a shortcut nobody is
+       * told about is folklore (spec `rooms` §14.5).
+       */}
+      {isZeroQuery && (
+        <>
+          <CommandSeparator />
+          <PalettePrefixLegend />
         </>
       )}
     </motion.div>

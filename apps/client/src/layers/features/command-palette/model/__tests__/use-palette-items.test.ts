@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { usePaletteItems } from '../use-palette-items';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+import type { RoomSummary } from '@dorkos/shared/room-schemas';
 
 // --- Mock entity hooks ---
 
@@ -13,6 +14,7 @@ const mockUseCommands = vi.fn();
 const mockUseAgentFrecency = vi.fn();
 const mockUseSessions = vi.fn();
 const mockUseActiveRunCount = vi.fn();
+const mockUseRooms = vi.fn();
 const mockUseAppStore = vi.fn();
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -32,6 +34,13 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 
 vi.mock('@/layers/entities/tasks', () => ({
   useActiveTaskRunCount: () => mockUseActiveRunCount(),
+}));
+
+// Only the room list's data hook is stubbed. The display and ordering helpers
+// stay real, so a room's palette name here is the name the product renders.
+vi.mock('@/layers/entities/room', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/room')>()),
+  useRooms: () => mockUseRooms(),
 }));
 
 vi.mock('@/layers/shared/model', () => ({
@@ -152,6 +161,51 @@ const agentD = makeAgent({ id: 'agent-d', name: 'Agent D', projectPath: '/projec
 const agentE = makeAgent({ id: 'agent-e', name: 'Agent E', projectPath: '/projects/e' });
 const agentF = makeAgent({ id: 'agent-f', name: 'Agent F', projectPath: '/projects/f' });
 
+const makeRoom = (overrides: Partial<RoomSummary> = {}): RoomSummary => ({
+  id: 'room-default',
+  kind: 'channel',
+  parentId: null,
+  slug: 'default',
+  title: 'Default',
+  topic: null,
+  workspaceId: null,
+  rootEntryId: null,
+  archived: false,
+  createdAt: '2026-07-26T10:00:00.000Z',
+  lastActivityAt: '2026-07-26T10:00:00.000Z',
+  unreadCount: null,
+  participants: null,
+  ...overrides,
+});
+
+const channel = makeRoom({ id: 'room-general', slug: 'general', title: 'General chatter' });
+
+const dmWithAna = makeRoom({
+  id: 'room-ana',
+  kind: 'dm',
+  slug: null,
+  title: 'Ana',
+  participants: [{ id: 'author-ana', kind: 'agent', displayName: 'Ana', agentRef: 'ana' }],
+});
+
+/** Spoke most recently, and the reader is caught up on it. */
+const quietButRecent = makeRoom({
+  id: 'room-recent',
+  slug: 'recent',
+  title: 'Recent',
+  lastActivityAt: '2026-07-26T12:00:00.000Z',
+  unreadCount: 0,
+});
+
+/** Spoke earlier, and has two entries the reader has not seen. */
+const unreadButOlder = makeRoom({
+  id: 'room-unread',
+  slug: 'unread',
+  title: 'Unread',
+  lastActivityAt: '2026-07-26T09:00:00.000Z',
+  unreadCount: 2,
+});
+
 function makeFrecency(sortedIds: string[]) {
   return {
     entries: [],
@@ -171,6 +225,7 @@ describe('usePaletteItems', () => {
     mockUseSessions.mockReturnValue({ sessions: [] });
     mockUseActiveRunCount.mockReturnValue({ data: undefined });
     mockUseAppStore.mockReturnValue({ previousCwd: null });
+    mockUseRooms.mockReturnValue({ data: [], isLoading: false, isError: false });
   });
 
   // --- Static content groups ---
@@ -514,5 +569,47 @@ describe('usePaletteItems', () => {
     mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a', 'agent-b']));
     const { result } = renderHook(() => usePaletteItems('/projects/a'));
     expect(result.current.suggestions.length).toBeLessThanOrEqual(3);
+  });
+
+  // --- Rooms (spec `rooms` §13.2) ---
+
+  it('puts a channel in the flat search list under type "room", named the way people type it', () => {
+    mockUseRooms.mockReturnValue({ data: [channel], isLoading: false, isError: false });
+    const { result } = renderHook(() => usePaletteItems(null));
+
+    const item = result.current.searchableItems.find((i) => i.id === 'room-general');
+    expect(item).toEqual({
+      id: 'room-general',
+      name: '#general',
+      type: 'room',
+      // The bare slug rides along so `#gen` — which arrives with the prefix
+      // already stripped — matches `general` rather than fuzzing past the `#`.
+      keywords: ['General chatter', 'general'],
+      data: channel,
+    });
+  });
+
+  it('puts a direct message under type "dm", not "room", so `@` finds it and `#` does not', () => {
+    mockUseRooms.mockReturnValue({ data: [dmWithAna], isLoading: false, isError: false });
+    const { result } = renderHook(() => usePaletteItems(null));
+
+    const item = result.current.searchableItems.find((i) => i.id === 'room-ana');
+    expect(item?.type).toBe('dm');
+    expect(item?.name).toBe('Ana');
+    // Everyone in the conversation is searchable, so `@ana` finds a group DM
+    // Ana is in and not only the one named after her.
+    expect(item?.keywords).toContain('Ana');
+  });
+
+  it('hands the room lists back unread first', () => {
+    mockUseRooms.mockReturnValue({
+      data: [quietButRecent, unreadButOlder],
+      isLoading: false,
+      isError: false,
+    });
+    const { result } = renderHook(() => usePaletteItems(null));
+
+    expect(result.current.rooms.channels.map((r) => r.id)).toEqual(['room-unread', 'room-recent']);
+    expect(result.current.rooms.unread.map((r) => r.id)).toEqual(['room-unread']);
   });
 });
