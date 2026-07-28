@@ -210,6 +210,11 @@ export const CONFIG_WRITE_POLICY = {
   // agent-writable would hand back the thing it was built to hold.
   'rooms.maxAutomaticTurnsPerRoomPerHour': 'operator-only',
   'rooms.maxAutomaticTurnsTotalPerHour': 'operator-only',
+  // How long a room waits, and when it gives up. Neither removes a bound: a
+  // longer wait costs patience, not turns, and the spend caps above are what
+  // hold the bill whatever these say.
+  'rooms.replyWaitMinutes': 'agent-writable',
+  'rooms.lateReplyCeilingMinutes': 'agent-writable',
 
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',

@@ -97,6 +97,21 @@ const turnBudgetLimits: TurnBudgetLimits = {
   },
 };
 
+/**
+ * A room-turn bound in milliseconds, read live from config and degrading to the
+ * shipped default the same way {@link readMaxAgentDepth} does — a config
+ * manager that is not up yet must never stop a room answering.
+ *
+ * @param field - Which `rooms.*` minutes field to read.
+ */
+function readRoomMinutesMs(field: 'replyWaitMinutes' | 'lateReplyCeilingMinutes'): number {
+  try {
+    return configManager.get('rooms')[field] * 60_000;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms[field] * 60_000;
+  }
+}
+
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
   try {
@@ -128,7 +143,12 @@ export function createRoomSubsystem(opts: {
     authors,
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),
-    turns: opts.turns ?? createSessionRoomTurnRunner(),
+    turns:
+      opts.turns ??
+      createSessionRoomTurnRunner({
+        waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
+        ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+      }),
     budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits }),
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.

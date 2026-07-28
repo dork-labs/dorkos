@@ -176,6 +176,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.maxAgentDepth': 3,
   'rooms.maxAutomaticTurnsPerRoomPerHour': 60,
   'rooms.maxAutomaticTurnsTotalPerHour': 240,
+  // How long a room waits, and when it gives up. Neither is a spend bound, so
+  // the safe value is simply the shipped one.
+  'rooms.replyWaitMinutes': 10,
+  'rooms.lateReplyCeilingMinutes': 60,
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
