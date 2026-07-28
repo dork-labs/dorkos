@@ -60,8 +60,11 @@
  *   (`shapes/apply-shape.ts` → `shapes/shape-schedule-service.ts`). There the
  *   field comes from installed package CONTENT, not from the caller, so refusing
  *   it per-caller would be the wrong control — the right one is on what a Shape
- *   may declare. Not in scope for DOR-504; recorded so the next reader inherits
- *   it rather than rediscovering it.
+ *   may declare. CLOSED by DOR-607, in that shape: `apply-shape.ts` clamps a
+ *   manifest-declared `bypassPermissions` back to `acceptEdits` and warns the
+ *   operator, and a manifest can no longer declare that its schedule starts
+ *   enabled by default either. The first bullet above — the SKILL.md file on
+ *   disk — is still open.
  *
  * ## Why not the cookie bar, given a cron task IS a standing grant
  *
