@@ -101,9 +101,11 @@ const config: KnipConfig = {
         'gray-matter',
         'uuid',
       ],
-      // The CLI resolves the server by relative path at bundle time; these
-      // specifiers are unresolvable until esbuild stitches the two together.
-      ignoreUnresolved: [/^\.\.\/server\//],
+      // No `ignoreUnresolved: [/^\.\.\/server\//]` any more. The CLI still
+      // reaches the server by a dist-layout relative path, but those specifiers
+      // now resolve on disk against the declaration mirror in
+      // `packages/cli/server/` (added so tsc can check them), so knip finds
+      // them the same way tsc does.
     },
   },
 };

@@ -134,6 +134,12 @@ function dorkosSourcePlugin(): Plugin {
  * compiled dist layout (`dist/bin/` next to `dist/server/`), so during bundling
  * they must point at `apps/server/src/services/*`. CLI bundle only.
  *
+ * tsc needs the same rewrite and cannot reuse this plugin, so
+ * `packages/cli/server/**.d.ts` mirrors it in declarations. Change the mapping
+ * here and that mirror has to move with it — `src/__tests__/server-shims.test.ts`
+ * fails if the two disagree, because a mirror that drifts means the typecheck
+ * quietly stops describing the bundle this function produces.
+ *
  * @returns The configured esbuild plugin.
  */
 function serverServicesRedirectPlugin(): Plugin {
