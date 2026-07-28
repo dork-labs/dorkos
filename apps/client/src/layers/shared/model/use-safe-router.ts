@@ -16,7 +16,7 @@
  *
  * @module shared/model/use-safe-router
  */
-import { useSearch, useRouterState } from '@tanstack/react-router';
+import { useSearch, useRouterState, useNavigate } from '@tanstack/react-router';
 import { getPlatform } from '@/layers/shared/lib';
 
 /** Frozen empty search for the embed — one identity so callers can memoize on it. */
@@ -42,6 +42,23 @@ export function useSafeSearch(): Record<string, unknown> {
   if (getPlatform().isEmbedded) return EMPTY_SEARCH;
   // eslint-disable-next-line react-hooks/rules-of-hooks -- conditional hook is safe: `isEmbedded` is fixed at bootstrap, so the hook order is stable for the app's lifetime (the dual-mode shape as useSessionId/useDirectoryState).
   return useSearch({ strict: false });
+}
+
+/**
+ * The route navigator, or `null` in the router-less embed.
+ *
+ * `useNavigate` resolves its router lazily — the hook mounts happily without a
+ * provider and only *calling* the returned function throws
+ * `Cannot read properties of null (reading 'navigate')`. That turns every
+ * URL-driven affordance into a control that looks healthy until it is pressed,
+ * which is worse than one that is visibly unavailable. Returning `null` here
+ * moves the failure to compile time: callers cannot use the navigator without
+ * first saying what the embed should do instead.
+ */
+export function useSafeNavigate(): ReturnType<typeof useNavigate> | null {
+  if (getPlatform().isEmbedded) return null;
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- conditional hook is safe: `isEmbedded` is fixed at bootstrap, so the hook order is stable for the app's lifetime (the dual-mode shape as useSessionId/useDirectoryState).
+  return useNavigate();
 }
 
 /**
