@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 4242 } }));
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -6,6 +6,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 }));
 
 import {
+  getStaticLocalOrigins,
   isLocalRequest,
   isLoopbackHost,
   isLoopbackHostHeader,
@@ -154,5 +155,88 @@ describe('isLocalRequest', () => {
       expect(isLocalRequest({ ...local, allowInsecureBind: false })).toBe(true);
       expect(isLocalRequest({ ...local, allowInsecureBind: true })).toBe(true);
     });
+  });
+});
+
+/**
+ * The trusted-origin set, pinned where it is DEFINED (DOR-554).
+ *
+ * `getStaticLocalOrigins()` composes the four origins the server treats as its own
+ * and had no direct test anywhere. PR #513 hardened the extension-approve route
+ * until every NARROWING mutation of that route dies — but widening this list was
+ * caught by nothing: adding `http://[::1]:${port}` and `https://attacker.example`
+ * to the returned array left the route suite at 27 passed.
+ *
+ * It belongs here rather than in a route test because the function has at least
+ * four consumers (the extension approve route, the CORS delegate, the host guard,
+ * and Better Auth), so pinning it at the definition closes the row for all of them
+ * at once. Pinning it downstream is how the DNS-rebinding bug in DOR-516 happened:
+ * the route computed its expected origin from something the CALLER controlled
+ * instead of from its own configuration.
+ *
+ * Both inputs are stubbed explicitly. `env.DORKOS_PORT` comes from the module mock
+ * at the top of this file, and `VITE_PORT` is read straight off `process.env`
+ * (trusted-origins.ts:163, with its own eslint carve-out) rather than through the
+ * validated `env` module. That split is why #513's first fix was defeatable: a test
+ * mocking `env` still had one ambient port input, so the assertion moved with
+ * whatever the developer happened to have exported.
+ */
+describe('getStaticLocalOrigins', () => {
+  const originalVitePort = process.env.VITE_PORT;
+
+  /** Set or clear `VITE_PORT` so neither input is ambient. */
+  function setVitePort(value: string | undefined): void {
+    if (value === undefined) delete process.env.VITE_PORT;
+    else process.env.VITE_PORT = value;
+  }
+
+  afterEach(() => {
+    setVitePort(originalVitePort);
+  });
+
+  it('returns exactly the four loopback dev origins, and nothing else', () => {
+    // `toEqual` on purpose, not `toContain`: a fifth origin is the mutation nobody
+    // was watching for, and only an exact comparison fails on it.
+    setVitePort('4241');
+    expect(getStaticLocalOrigins()).toEqual([
+      'http://localhost:4242',
+      'http://localhost:4241',
+      'http://127.0.0.1:4242',
+      'http://127.0.0.1:4241',
+    ]);
+  });
+
+  it('falls back to the default Vite port when VITE_PORT is unset', () => {
+    setVitePort(undefined);
+    expect(getStaticLocalOrigins()).toEqual([
+      'http://localhost:4242',
+      'http://localhost:4241',
+      'http://127.0.0.1:4242',
+      'http://127.0.0.1:4241',
+    ]);
+  });
+
+  it('follows a custom VITE_PORT on both hosts', () => {
+    setVitePort('6241');
+    expect(getStaticLocalOrigins()).toEqual([
+      'http://localhost:4242',
+      'http://localhost:6241',
+      'http://127.0.0.1:4242',
+      'http://127.0.0.1:6241',
+    ]);
+  });
+
+  it('trusts no host but localhost and 127.0.0.1, and no scheme but http', () => {
+    // Stated separately from the exact list above so a widening failure says WHY.
+    // `::1` is deliberately absent: it is loopback, but nothing binds it here, and
+    // an origin the server never serves is an origin an attacker can try to forge.
+    setVitePort('4241');
+    for (const origin of getStaticLocalOrigins()) {
+      const { protocol, hostname } = new URL(origin);
+      expect(protocol, `${origin} is not plain http`).toBe('http:');
+      expect(['localhost', '127.0.0.1'], `${origin} names a host beyond loopback`).toContain(
+        hostname
+      );
+    }
   });
 });
