@@ -14,7 +14,12 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { PostToRoomResponse, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type {
+  PostToRoomResponse,
+  RoomEntry,
+  RoomEvent,
+  RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -66,6 +71,7 @@ function roomWith(id: string, slug: string): RoomWithRoster {
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],
+    viewerAuthorId: 'author-you',
   };
 }
 
@@ -294,5 +300,75 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     const returned = await openRoom('room-2');
 
     expect(returned.value).toBe('half a thought');
+  });
+});
+
+describe('ChannelsPage — whose unread rule is this', () => {
+  /** One member of a room, human by default. */
+  function member(
+    id: string,
+    displayName: string,
+    lastReadSeq: number
+  ): RoomWithRoster['members'][number] {
+    return {
+      roomId: 'room-1',
+      authorId: id,
+      responseMode: 'always',
+      joinedAt: '2026-07-26T09:00:00.000Z',
+      lastReadSeq,
+      author: { id, kind: 'human', displayName },
+    };
+  }
+
+  /** One post in the room, so the timeline has something to draw a rule between. */
+  function post(seq: number): RoomEntry {
+    return {
+      roomId: 'room-1',
+      seq,
+      id: `entry-${seq}`,
+      authorId: 'dorian',
+      kind: 'post',
+      body: { text: `line ${seq}` },
+      mentions: [],
+      sessionId: null,
+      cascadeRoot: `entry-${seq}`,
+      cascadeDepth: 0,
+      signature: null,
+      createdAt: '2026-07-26T10:00:00.000Z',
+    };
+  }
+
+  /**
+   * With two people in a room, `find(kind === 'human')` returned whichever
+   * sorted first — so Priya's "New messages" rule was drawn from Dorian's
+   * cursor. Dorian is listed first and has read everything; Priya, the viewer,
+   * has read nothing, so she must see the rule.
+   */
+  it("draws the rule from the viewer's cursor, not the first human's", async () => {
+    openRoomId = 'room-1';
+    const transport = createMockTransport({
+      getRoom: vi.fn(() =>
+        Promise.resolve({
+          ...roomWith('room-1', 'backend'),
+          members: [member('dorian', 'Dorian', 2), member('priya', 'Priya', 0)],
+          viewerAuthorId: 'priya',
+        })
+      ),
+      listRoomEntries: vi.fn(() => Promise.resolve([post(1), post(2)])),
+      subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+        staysOpen(signal)
+      ),
+    });
+    render(
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            <ChannelsPage />
+          </TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByTestId('unread-divider')).toBeInTheDocument();
   });
 });
