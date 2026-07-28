@@ -67,10 +67,13 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# Cancel superseded runs on the same ref for PRs only — every push to main
-# keeps its own completed run.
+# Cancel superseded runs on the same ref for PRs only. For push events, group
+# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
+# time, so several quick merges to main sharing a `typecheck-refs/heads/main`
+# group would cancel each other's queued runs and only the final push would
+# actually get checked. Per-SHA groups give every push-to-main its own slot.
 concurrency:
-  group: typecheck-${{ github.ref }}
+  group: typecheck-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
