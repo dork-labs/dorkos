@@ -180,8 +180,11 @@ jobs:
               # do its job AT ALL and every run is a no-op, which is exactly how
               # it sat broken from the moment the merge queue went live: correct
               # verdicts, zero actions, nothing red. Make that one shout.
-              if [[ "$one_line" == *"Resource not accessible by integration"* \
-                 || "$one_line" == *"not accessible"* \
+              # `not accessible` rather than the full
+              # "Resource not accessible by integration": the long form is a
+              # substring of the short one's match, so listing both adds no
+              # coverage and only invites the two to drift apart.
+              if [[ "$one_line" == *"not accessible"* \
                  || "$one_line" == *"HTTP 403"* ]]; then
                 echo "::error::merge-tail cannot arm pull requests: $one_line"
                 echo "::error::This is a token-permission failure, not a race. The workflow is inert until it is fixed."
@@ -196,20 +199,18 @@ jobs:
           echo
           echo "armed=$armed skipped=$skipped failed=$failed perm_denied=$perm_denied"
 
-          # A workflow that evaluates everything correctly and then arms nothing
-          # because it is not allowed to looks identical to a quiet day. Fail
-          # loudly instead of reporting a green no-op.
-          if [[ "$perm_denied" -gt 0 ]]; then
-            echo "::error::merge-tail is inert: $perm_denied arm attempt(s) refused for lack of permission."
-            exit 1
-          fi
+          # The summary is written BEFORE the failure exit, not after. The
+          # permission-denied bullet below only ever prints when perm_denied > 0,
+          # which is the exact condition that exits — so writing it after the
+          # exit made it unreachable, and the one case the message exists for was
+          # the one case it could never render.
+          #
           # `if`, NOT `[[ ... ]] && echo`. GitHub runs this block with `bash -e`
           # (`shell: /usr/bin/bash -e {0}`), and a trailing `&&` chain whose test
           # is false returns 1 — as the last command in the group that failed the
           # whole step. Every non-dry-run tick reported failure for that reason
-          # alone, while doing its job correctly, which is a workflow crying wolf
-          # about itself. `set -e` is not in this script's own `set` line; it
-          # arrives from the shell GitHub picks.
+          # alone, while doing its job correctly. `set -e` is not in this
+          # script's own `set` line; it arrives from the shell GitHub picks.
           {
             echo "### merge-tail"
             echo
@@ -223,3 +224,11 @@ jobs:
               echo "- **permission denied on $perm_denied arm(s) — this workflow is inert**"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+          # A workflow that evaluates everything correctly and then arms nothing
+          # because it is not allowed to looks identical to a quiet day. Fail
+          # loudly instead of reporting a green no-op.
+          if [[ "$perm_denied" -gt 0 ]]; then
+            echo "::error::merge-tail is inert: $perm_denied arm attempt(s) refused for lack of permission."
+            exit 1
+          fi
