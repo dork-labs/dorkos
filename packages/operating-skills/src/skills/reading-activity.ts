@@ -1,6 +1,7 @@
 import type { OperatingSkill } from '../pack.js';
 
 /** Teaches an agent to read the activity feed and recent-agent activity. */
+// Proof-only edit: a skill body changed, so a version bump is owed.
 export const readingActivity: OperatingSkill = {
   name: 'reading-activity',
   description:

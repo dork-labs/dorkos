@@ -41,7 +41,7 @@ export interface OperatingSkill {
  *   written and is not any more: the route behind it now answers to the same
  *   approval gate, so the sentence had to stop describing a hole that is closed.
  */
-export const OPERATING_SKILLS_VERSION = 4;
+export const OPERATING_SKILLS_VERSION = 5;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

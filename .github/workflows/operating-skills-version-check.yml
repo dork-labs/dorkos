@@ -1,0 +1,140 @@
+name: operating-skills-version-check
+
+# `OPERATING_SKILLS_VERSION` is what makes a correction to the Operating DorkOS
+# skill pack REACH agents that already exist. `seed.ts` rewrites an unmodified
+# seeded copy only when the copy's stored stamp is STRICTLY LOWER than the
+# constant, so a version that merely EQUALS what `main` already ships delivers
+# nothing, silently.
+#
+# That is not hypothetical. DOR-502 and DOR-509 were written in parallel and
+# both bumped 4 to 5. DOR-502 merged first, and DOR-509's branch then sat at 5
+# against a `main` already at 5. Every already-seeded agent would have kept
+# reading exactly the text the PR existed to fix, and the PR's changelog entry
+# claiming "existing agents pick up the corrected version automatically" would
+# have been false. It cost a full review cycle to catch.
+#
+# Why this is CI and not a vitest test. The pack's own suite asserts
+# `OPERATING_SKILLS_VERSION >= <floor>`, and a floor trails `main` by
+# construction — the floor was 5, the value was 5, it passed. Raising the floor
+# per correction keeps that test useful but cannot close the class, because the
+# next two parallel pack PRs hit it again. "Higher than the merge base" is a
+# fact about two commits, not about the working tree: a unit test would need the
+# base ref, which `actions/checkout@v4` does not fetch by default, and a test
+# that SKIPS when the ref is missing is an inert guard wearing a green check.
+# Hence: `fetch-depth: 0`, read both sides, compare.
+#
+# "Both sides" means HEAD and the base branch's TIP, not HEAD and the merge base.
+# See the comment on the first step: against the merge base this guard would be
+# green on the exact case it exists to catch.
+
+on:
+  pull_request:
+    paths:
+      - 'packages/operating-skills/**'
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for Node 20 runtime.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  version-outranks-base:
+    runs-on: ubuntu-latest
+    env:
+      # The file carrying the constant, and the directory holding the seeded
+      # skill text. Every step below reads these two.
+      PACK_FILE: packages/operating-skills/src/pack.ts
+      SKILLS_DIR: packages/operating-skills/src/skills
+    steps:
+      # The PR head, with full history so the base ref resolves. Without
+      # fetch-depth: 0 there is no base side to compare against, which is the
+      # whole reason this runs here rather than in the unit suite.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # Two different base commits, and the difference is the whole bug.
+      #
+      #   fork_point — where this branch left the base branch. The right frame for
+      #     "what did THIS pull request change".
+      #   base_tip   — what the base branch ships RIGHT NOW. The only frame for
+      #     "will this version actually upgrade an already-seeded agent".
+      #
+      # Comparing the version against the fork point is precisely the failure this
+      # guard exists to catch, and it would be inert: DOR-509 forked from a `main`
+      # at 4 and bumped to 5, so fork point 4 < head 5 reads green — while `main`
+      # had moved to 5 underneath it and the seeder would upgrade nobody.
+      - name: Resolve the fork point and the base branch tip
+        id: base
+        run: |
+          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+          base_tip="origin/${{ github.base_ref }}"
+          fork_point="$(git merge-base "$base_tip" HEAD)"
+          echo "fork_point=$fork_point" >> "$GITHUB_OUTPUT"
+          echo "base_tip=$(git rev-parse "$base_tip")" >> "$GITHUB_OUTPUT"
+          echo "fork point:    $fork_point"
+          echo "base tip:      $(git rev-parse "$base_tip") (${{ github.base_ref }})"
+
+      # A PR that does not change what gets seeded must not be required to bump.
+      # The path filter above is coarser than that on purpose (it is free, and it
+      # is what triggers the job at all); this step asks the precise question.
+      # Editing seed.ts, the tests, or the package README changes no agent's
+      # skill text and owes no new version. Scoped to the fork point, because this
+      # asks what the branch did, not what the base branch did meanwhile.
+      - name: Decide whether the seeded pack content changed
+        id: scope
+        run: |
+          fork_point="${{ steps.base.outputs.fork_point }}"
+          if git diff --quiet "$fork_point..HEAD" -- "$PACK_FILE" "$SKILLS_DIR"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Neither $PACK_FILE nor $SKILLS_DIR changed; no version bump is owed."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Seeded pack content changed:"
+            git diff --name-only "$fork_point..HEAD" -- "$PACK_FILE" "$SKILLS_DIR" | sed 's/^/  /'
+          fi
+
+      # Both sides are read from git rather than the working tree, so the base
+      # value is the one the base branch actually ships and not whatever a stale
+      # checkout holds. An unreadable value is a hard failure: if the constant is
+      # ever renamed or reformatted this guard must go red and get fixed, never
+      # quietly pass because a pattern found nothing.
+      - name: Compare the pack version against the base branch tip
+        if: ${{ steps.scope.outputs.changed == 'true' }}
+        run: |
+          base_tip="${{ steps.base.outputs.base_tip }}"
+          version_pattern='s/^export const OPERATING_SKILLS_VERSION = ([0-9]+);$/\1/p'
+
+          base_version="$(git show "$base_tip:$PACK_FILE" | sed -nE "$version_pattern")"
+          head_version="$(git show "HEAD:$PACK_FILE" | sed -nE "$version_pattern")"
+
+          if [ -z "$base_version" ] || [ -z "$head_version" ]; then
+            echo "::error::Could not read OPERATING_SKILLS_VERSION from $PACK_FILE (base='$base_version', head='$head_version'). This guard matches the line 'export const OPERATING_SKILLS_VERSION = <n>;' exactly. If the constant moved or was reformatted, update .github/workflows/operating-skills-version-check.yml in the same change."
+            exit 1
+          fi
+
+          echo "${{ github.base_ref }} tip ($base_tip): OPERATING_SKILLS_VERSION = $base_version"
+          echo "this branch:                            OPERATING_SKILLS_VERSION = $head_version"
+
+          if [ "$head_version" -le "$base_version" ]; then
+            echo "::error::This pull request changes the Operating DorkOS skill pack, but its OPERATING_SKILLS_VERSION ($head_version) is not higher than the one ${{ github.base_ref }} already ships ($base_version). seed.ts rewrites an already-seeded skill only when the stored stamp is STRICTLY LOWER than this constant, so an equal version delivers the correction to nobody, silently. Re-bump to $((base_version + 1)) or higher, and add the matching History entry. If you hit this because another pack change merged while yours was open, resolve it by RE-BUMPING, never by keeping either side's number: two parallel pack PRs picking the same next number is exactly how this fails."
+            exit 1
+          fi
+
+          echo "OK: $head_version > $base_version, so already-seeded agents will be upgraded."
+
+      # The same conflict that duplicates a number also tends to REPLACE the
+      # other side's history entry rather than join it, leaving the shipped pack
+      # with no written record of one correction. That block is the only place
+      # saying what a version changed and why, so a number without an entry is a
+      # bump nobody can audit.
+      - name: Require a history entry for the new version
+        if: ${{ steps.scope.outputs.changed == 'true' }}
+        run: |
+          head_version="$(sed -nE 's/^export const OPERATING_SKILLS_VERSION = ([0-9]+);$/\1/p' "$PACK_FILE")"
+          if ! grep -qE "^ \* - ${head_version}: " "$PACK_FILE"; then
+            echo "::error::OPERATING_SKILLS_VERSION is $head_version but the History block in $PACK_FILE has no ' * - ${head_version}: ' entry saying what changed and why. Add one. If you just resolved a conflict on that block, check that you JOINED both sides' entries rather than replacing one with the other."
+            exit 1
+          fi
+          echo "OK: the History block documents version $head_version."
