@@ -141,19 +141,37 @@ jobs:
           base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
-      # ADDED fragments only (`--diff-filter=A`), deliberately. A `skip-changelog`
-      # PR may be REQUIRED to edit an existing fragment: the validity step above
-      # has no label bypass, so repairing somebody's malformed `covers:` block is
-      # exactly the kind of internal fix that carries this label. Failing on a
-      # modification would make that repair impossible. A brand-new fragment is
-      # the unambiguous case, and the one the populator mints.
+      # `--diff-filter=AR`: a fragment that ARRIVED at a path it was not at before,
+      # whether git calls that an add or a rename.
+      #
+      # `A` alone is not that. Rename an existing fragment and append a bullet in
+      # the same commit, and git's rename detection (on by default) scores the pair
+      # as one `R` — `R086` in the throwaway repo this was verified in, `R068` in
+      # the reviewer's. `A` selects neither, so the step printed "No changelog
+      # fragment added" over a genuinely new user-facing bullet.
+      #
+      # Do not "simplify" this back to `A` after seeing a rename report as `D` + `A`
+      # in a quick test: rename detection has a similarity threshold, and a
+      # two-line throwaway file falls under it while a real fragment does not. `AR`
+      # is the letter set that is correct whether or not detection binds.
+      #
+      # A pure rename scores `R100` and is caught too. That is the right side to
+      # err on: from this step a rename and a rewrite are the same event, and the
+      # remedy is one label or one separate pull request away.
+      #
+      # `M` is deliberately still tolerated. A `skip-changelog` PR may be REQUIRED
+      # to edit an existing fragment in place: the validity step above has no label
+      # bypass, so repairing somebody's malformed `covers:` block is exactly the
+      # kind of internal fix that carries this label, and failing on a modification
+      # would make that repair impossible. The populator can only ever mint a new
+      # file, never append to one, so the case this job exists for is fully covered.
       - name: Fail if a skip-changelog PR adds a changelog fragment
         run: |
           base="${{ steps.base.outputs.sha }}"
-          added="$(git diff --name-only --diff-filter=A "$base..HEAD" -- ':/changelog/unreleased/')"
+          added="$(git diff --name-only --diff-filter=AR "$base..HEAD" -- ':/changelog/unreleased/')"
           if [ -n "$added" ]; then
-            echo "::error::This pull request is labeled 'skip-changelog', which says it has no user-facing change, but it adds a changelog fragment. Both cannot be true."
-            echo "Fragments added by this pull request:"
+            echo "::error::This pull request is labeled 'skip-changelog', which says it has no user-facing change, but it puts a changelog fragment at a path that had none. Both cannot be true."
+            echo "Fragments added or renamed into place by this pull request:"
             echo "$added" | sed 's/^/  /'
             echo ""
             echo "The post-commit populator mints a fragment from any commit subject starting"
@@ -163,6 +181,9 @@ jobs:
             echo "    fragment, rewritten for a person (see changelog/README.md)."
             echo "  * The change is NOT user-facing: delete the fragment and retype the commit"
             echo "    subject as 'chore(' or 'ci(' so the populator stops minting it."
+            echo "  * You only RENAMED a fragment somebody else wrote: that is caught here too,"
+            echo "    on purpose, because a rename and a rewrite look the same from this step."
+            echo "    Split the rename into its own unlabeled pull request, or drop the label."
             exit 1
           fi
           echo "No changelog fragment added, which is what 'skip-changelog' asserts."
