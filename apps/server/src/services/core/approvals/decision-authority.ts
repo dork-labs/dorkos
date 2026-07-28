@@ -22,14 +22,29 @@
  * enforcement: a caller with no credential cannot decide, whatever headers it
  * sends or omits.
  *
- * State the converse too, because it is the part that is easy to leave unsaid: a
- * PROGRAM holding a valid credential CAN decide. A per-user API key satisfies
- * `sessionGate` exactly as a person's cookie does (DOR-474), so an agent handed
- * one, that also sheds its `X-DorkOS-Agent` header, reaches this path. The header
- * check above refuses it before the posture is ever consulted, which is why an
- * honest agent still cannot — but "authenticated" means the credential was valid,
- * never that a human was present. The Activity record this produces says
- * "a signed-in account", not "a person", for that reason.
+ * State the converse too, because it is the part that is easy to leave unsaid:
+ * this resolver still says yes to a PROGRAM holding a valid credential. A per-user
+ * API key satisfies `sessionGate` exactly as a person's cookie does, so an agent
+ * handed one, that also sheds its `X-DorkOS-Agent` header, clears every check
+ * below. "Authenticated" means the credential was valid, never that a human was
+ * present, and nothing in this file can tell the two apart.
+ *
+ * That used to be the whole answer, and it was a hole: the agent answered its own
+ * destructive request (DOR-474). **The decide routes now run a second bar this
+ * resolver does not — `requireOperatorCookieUnderLogin`, in `authorityToAnswer` in
+ * `routes/approvals.ts` — so under login-on an approval can only be granted or
+ * denied by a caller presenting a session cookie.** That bar lives at the routes
+ * rather than here on purpose: `trustedCaller` also calls this function, and the
+ * six surfaces behind it include `dorkos` CLI verbs whose only credential IS an API
+ * key. Putting the cookie demand in here would refuse the operator at their own
+ * terminal, which `services/marketplace/source-write-policy.ts` argues at length
+ * and pins with a test.
+ *
+ * So read this resolver as what it is: the shared floor, not the ceiling. It answers
+ * "is there any reason this caller obviously must not decide?", and a surface that
+ * needs positive proof of a person adds the cookie bar on top. The Activity record
+ * still says "a signed-in account" rather than "a person", because a cookie is a
+ * browser session and not a keystroke.
  *
  * ## `local-trust` — the default posture, stated honestly
  *

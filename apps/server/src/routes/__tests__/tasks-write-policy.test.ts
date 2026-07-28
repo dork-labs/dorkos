@@ -280,5 +280,44 @@ describe('operator-only task fields on the REST routes', () => {
       expect(res.status).toBe(403);
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
+
+    describe('the DOR-474 cookie bar does NOT reach here, and that is the decision', () => {
+      // DOR-474 put a session-cookie bar on `POST /api/approvals/:id/grant|deny`,
+      // because a per-user API key let an agent answer its own request. That bar was
+      // deliberately NOT put inside `resolveDecisionAuthority`, which `trustedCaller`
+      // delegates to — doing so would have landed on these two routes plus both
+      // marketplace ones, and `dorkos task create|update` authenticates with exactly
+      // such a key (`packages/cli/src/lib/api-client.ts`, which has no cookie by
+      // design). These cases pin the sites the fix intended to leave alone, so a
+      // later "harden this the same way" change turns red instead of quietly
+      // breaking the operator's own terminal.
+
+      it('still lets an API key set an operator-only field on PATCH', async () => {
+        signedInUser = { userId: 'user_cli', credential: 'api-key' };
+        const res = await request(app)
+          .patch(`/api/tasks/${existing.id}`)
+          .send({ permissionMode: 'bypassPermissions' });
+
+        expect(res.status).toBe(200);
+        expect(store.getTask(existing.id)!.permissionMode).toBe('bypassPermissions');
+      });
+
+      it('still lets an API key create a LIVE task, unparked, on POST', async () => {
+        // The `parksOnCreate` half of the same predicate. A regression here would
+        // not refuse anything, it would silently park every task the CLI creates —
+        // the kind of change that passes a status assertion and breaks the feature.
+        signedInUser = { userId: 'user_cli', credential: 'api-key' };
+        const res = await request(app).post('/api/tasks').send({
+          name: 'from-the-terminal',
+          description: 'made by dorkos task create',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+        });
+
+        expect(res.status).toBe(201);
+        expect(res.body.status).toBe('active');
+      });
+    });
   });
 });

@@ -65,6 +65,34 @@
  * therefore removes no guarantee. Conversely, a caller this check REFUSES cannot
  * grant its own approval either, so gating it is not theatre.
  *
+ * ## Since DOR-474 that sentence runs one way only, and the gap is deliberate
+ *
+ * The decide routes now add a bar this module does not: under login-on they also
+ * demand a session cookie (`authorityToAnswer` in `routes/approvals.ts`), because
+ * `sessionGate` accepts a per-user API key as the same principal and an agent that
+ * can read the key file was answering its own request. So a caller holding only an
+ * API key clears THIS check and no longer clears that one. The escape is now
+ * strictly wider than the decide bar in that posture, and the two-step
+ * justification above does not cover it: such a caller cannot in fact grant itself
+ * the approval it skips.
+ *
+ * What carries it instead is the operator surface. The routes behind this marker
+ * are reached by `dorkos install|uninstall`, `dorkos marketplace add|remove` and
+ * `dorkos task create|update`, and the CLI has no cookie by design — it
+ * authenticates with a personal API key (`packages/cli/src/lib/api-client.ts`).
+ * Demanding one here would refuse the person at their own terminal on every
+ * login-on instance, which is a lockout rather than a hardening;
+ * `services/marketplace/source-write-policy.ts` argues that case in full and
+ * `marketplace.test.ts` pins it. The cookie bar is free on a cockpit-only surface
+ * and expensive on a CLI-reachable one, and that is the whole of the difference.
+ *
+ * **The residual, stated plainly:** under login-on, an agent holding a per-user API
+ * key still acts without an approval at every route below. Telling that key apart
+ * from the operator's own is per-key scoping, the `agent-trust` spec's phase 2, and
+ * nothing here can stand in for it. Two of the six surfaces do not depend on this
+ * marker alone and already refuse such a caller with their own cookie bar
+ * (`routes/config.ts`, `routes/extensions-approval.ts`).
+ *
  * Read `approvals/decision-authority.ts` for what each posture does and does not
  * promise; the honest summary of the default `local-trust` posture is that with
  * login off there is no cryptographic difference between the person in the

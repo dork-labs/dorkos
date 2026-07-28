@@ -2,10 +2,11 @@
  * Read, from one Express request, exactly the facts that decide whether a caller
  * is a person acting for themselves (spec `agent-trust` §3.3, DOR-467).
  *
- * There is one predicate for that question — `resolveDecisionAuthority` — and
- * three surfaces that need it: the endpoint that DECIDES an approval
- * (`routes/approvals.ts`), and the two mutation routes that must act without one
- * when the caller is a person (`routes/marketplace.ts`, `routes/config.ts`).
+ * There is one predicate for that question — `resolveDecisionAuthority` — and two
+ * kinds of surface that need it: the endpoints that DECIDE an approval
+ * (`routes/approvals.ts`), and the mutation routes that must act without one when
+ * the caller is a person (`routes/config.ts`, `routes/marketplace.ts`,
+ * `routes/tasks.ts`, `routes/extensions-approval.ts`, via `trustedCaller`).
  *
  * They share this reader rather than each pulling headers off a request, because
  * the failure that matters here is not a wrong answer but a DIVERGENT one: if the
@@ -30,7 +31,10 @@
  *   the cockpit rather than something holding a per-user API key? **With login
  *   off it allows, because there is no cookie for anyone to present.** That allow
  *   is the residual DOR-505 could not close, and putting it in its own function
- *   is what makes the posture it covers readable instead of buried.
+ *   is what makes the posture it covers readable instead of buried. Four surfaces
+ *   run it now: `PATCH /api/config` on its operator-only paths, extension
+ *   approval, opening a standing permission, and — since DOR-474 — answering any
+ *   approval at all.
  *
  * {@link requireOperatorCookie} composes both, for the one surface that needs
  * both: creating a standing permission.

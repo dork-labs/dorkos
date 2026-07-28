@@ -142,18 +142,60 @@ describe('the self-grant chain, against the real routers', () => {
    * what proves the gate itself records the path rather than a test asserting it
    * into existence.
    *
-   * @returns The approval id the refusal handed back.
+   * @param capabilityId - Which destructive door to knock on.
+   * @returns BOTH halves the 202 hands back — the id a decider answers by, and the
+   *   token the requester retries with. The token half is what makes the DOR-474
+   *   loop reproducible end to end rather than asserted at the HTTP status.
    */
-  async function askAsAgent(capabilityId: string = UNINSTALL.id): Promise<string> {
+  async function askAsAgentForTicket(
+    capabilityId: string = UNINSTALL.id
+  ): Promise<{ approvalId: string; approvalToken: string }> {
     try {
       await registry.invoke(capabilityId, INPUT, { identity: IDENTITY });
     } catch (err) {
       if (err instanceof CapabilityGateRefusal && err.decision.outcome === 'approval_required') {
-        return err.decision.payload.approvalId;
+        const { approvalId, approvalToken } = err.decision.payload;
+        return { approvalId, approvalToken };
       }
       throw err;
     }
     throw new Error('the destructive capability was not gated');
+  }
+
+  /**
+   * Step 2 of the chain, when only the approval id is needed.
+   *
+   * @param capabilityId - Which destructive door to knock on.
+   * @returns The approval id the refusal handed back.
+   */
+  async function askAsAgent(capabilityId: string = UNINSTALL.id): Promise<string> {
+    return (await askAsAgentForTicket(capabilityId)).approvalId;
+  }
+
+  /**
+   * Retry the gated call with the token the 202 handed back — the last step of the
+   * loop, and the only one that proves whether the "yes" actually landed.
+   *
+   * Asserting the grant's HTTP status alone would not: a route could answer 403 and
+   * still have written the decision. This spends the token against the real gate.
+   *
+   * @param ticket - What {@link askAsAgentForTicket} returned.
+   * @returns True when the destructive action ran.
+   */
+  async function retryWithToken(ticket: {
+    approvalId: string;
+    approvalToken: string;
+  }): Promise<boolean> {
+    try {
+      await registry.invoke(UNINSTALL.id, INPUT, {
+        identity: IDENTITY,
+        approvalToken: ticket.approvalToken,
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof CapabilityGateRefusal) return false;
+      throw err;
+    }
   }
 
   /**
@@ -298,10 +340,17 @@ describe('the self-grant chain, against the real routers', () => {
     });
 
     it('a plain one-time grant still works, so the gate is not simply broken', async () => {
-      const approvalId = await askAsAgent();
-      const res = await request(app).post(`/api/approvals/${approvalId}/grant`).send({});
+      // Also the login-off half of the DOR-474 bar. With login off nobody has a
+      // cookie — not the person in the cockpit either — so a cookie bar that applied
+      // here would make approvals unanswerable in the DEFAULT posture, which is a
+      // worse bug than the one it was closing. This is the test that would catch it.
+      const ticket = await askAsAgentForTicket();
+      const res = await request(app).post(`/api/approvals/${ticket.approvalId}/grant`).send({});
       expect(res.status).toBe(200);
       expect(res.body.outcome).toBe('granted');
+      expect(await retryWithToken(ticket), 'the yes must actually land under local-trust').toBe(
+        true
+      );
     });
   });
 
@@ -354,6 +403,67 @@ describe('the self-grant chain, against the real routers', () => {
       expect(configManager.getDot('approvals.standingGrants')).toBe(true);
       expect(grants.findLive(AGENT_PATH, UNINSTALL.id)).toBeDefined();
       expect(await stillAsks(), 'the whole point: the next call runs with no card').toBe(false);
+    });
+
+    it('refuses a per-user API key on a PLAIN one-time yes, the whole DOR-474 loop', async () => {
+      // The loop, run end to end rather than described. Every step is something an
+      // agent on this machine can do unaided: the key file under the dork home is
+      // readable, and a server-spawned agent inherits the server's environment.
+      //
+      //   1. ask for the destructive capability WITH an identity — the 202 hands
+      //      back both the approval id and the retry token;
+      //   2. `POST /:id/grant` with ONLY the key: no agent header, no approval
+      //      header, no `standing` flag, so every earlier bar is silent;
+      //   3. retry with the token.
+      //
+      // No `standing: true` here, which is what separates this from the case above:
+      // the standing branch had a cookie bar and this path had none, so the loop
+      // needed nothing that DOR-501 closed.
+      setLoginEnabled(true);
+      const ticket = await askAsAgentForTicket();
+
+      const grant = await request(app)
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .set('Authorization', `Bearer ${apiKey}`)
+        .send();
+
+      expect(grant.status).toBe(403);
+      expect(grant.body.code).toBe('operator_cookie_required');
+      // The assertion that matters: the destructive action must not run. A refused
+      // grant that still recorded the decision would pass the status check above.
+      expect(await retryWithToken(ticket), 'the agent must not have approved itself').toBe(false);
+    });
+
+    it('refuses a per-user API key on a denial too — no, deciding is deciding', async () => {
+      // Denying narrows nothing an agent may do, so this is not about safety. It is
+      // about the endpoint meaning one thing: a decision under login-on comes from
+      // the cockpit, whichever way it goes.
+      setLoginEnabled(true);
+      const approvalId = await askAsAgent();
+
+      const denied = await request(app)
+        .post(`/api/approvals/${approvalId}/deny`)
+        .set('Authorization', `Bearer ${apiKey}`)
+        .send();
+
+      expect(denied.status).toBe(403);
+      expect(denied.body.code).toBe('operator_cookie_required');
+    });
+
+    it('lets the signed-in person answer a plain approval, cookie and all', async () => {
+      // The positive half of the bar above. A guard that refused the cockpit too
+      // would be an outage, and the whole feature would look like it worked.
+      setLoginEnabled(true);
+      const ticket = await askAsAgentForTicket();
+
+      const grant = await request(app)
+        .post(`/api/approvals/${ticket.approvalId}/grant`)
+        .set('Cookie', cookies)
+        .send();
+
+      expect(grant.status).toBe(200);
+      expect(grant.body.outcome).toBe('granted');
+      expect(await retryWithToken(ticket), 'the person said yes, so the action runs').toBe(true);
     });
 
     it('ends every live permission when login is turned off', async () => {

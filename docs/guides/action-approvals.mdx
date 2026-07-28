@@ -155,12 +155,15 @@ Saying yes is your half of this. An agent that asks for something is never allow
   the way.
 
 Turn on **Require login** (Settings, under Security) and that changes: answering a request then
-needs a real account, and a program with no account cannot answer at all. If you run agents you
-don't fully trust, or you reach DorkOS from another device, turn it on.
+has to come from someone signed in to DorkOS in a browser. An API key is not enough, so a program
+that found one of your keys still cannot answer. If you run agents you don't fully trust, or you
+reach DorkOS from another device, turn it on.
 
-Worth knowing either way: a real account is what gets checked, not a real person. If you hand a
-program one of your API keys, it can answer requests the way you would. Your activity feed says
-"a signed-in account" rather than "a person" for exactly that reason. So give out API keys the way
+Worth knowing either way: what gets checked is a browser sign-in, not a person. Your activity feed
+says "a signed-in account" rather than "a person" for that reason. And an API key still lets a
+program do plenty of other things you can do, like installing and removing packages, changing
+where packages come from, and creating tasks. Those are the commands you run from your own
+terminal, and DorkOS cannot tell your key apart from a copy of it. So give out API keys the way
 you would give out your password.
 
 </Callout>

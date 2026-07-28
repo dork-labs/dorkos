@@ -24,6 +24,14 @@
  * identity and let every other caller through, which made a bare `curl` with no
  * headers a complete self-approval bypass.
  *
+ * Answering one — `grant` or `deny` — additionally requires a session cookie once
+ * local login is on, because `sessionGate` accepts a per-user API key as the same
+ * principal a browser session proves, and an agent that can read the key file
+ * could otherwise answer its own request (DOR-474). See {@link authorityToAnswer}
+ * for the full argument, including why the bar sits on these two routes and not
+ * inside `resolveDecisionAuthority`. With login off it adds nothing, deliberately:
+ * nobody has a cookie in that posture, the person included.
+ *
  * Every recorded decision is written to the Activity feed with the posture it was
  * made under, so a "yes" that nobody clicked in the cockpit still leaves a trace.
  *
@@ -86,7 +94,11 @@ import {
   type LoginEnabledLookup,
 } from '../services/core/approvals/index.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
-import { readCallerAuthority, requireOperatorCookie } from '../lib/caller-authority.js';
+import {
+  readCallerAuthority,
+  requireOperatorCookie,
+  requireOperatorCookieUnderLogin,
+} from '../lib/caller-authority.js';
 import { titleForMcpTool } from '../services/core/mcp-tool-tiers.js';
 import { logger } from '../lib/logger.js';
 
@@ -138,6 +150,79 @@ function decisionAuthority(
     ...readCallerAuthority(req, res),
     ...(isLoginEnabled ? { loginEnabled: isLoginEnabled } : {}),
   });
+}
+
+/**
+ * Decide whether this request may ANSWER an approval — grant it or deny it.
+ *
+ * {@link decisionAuthority} plus the cookie bar, and the cookie bar is the half
+ * that closes DOR-474. `sessionGate` accepts a per-user API key as the same
+ * principal a browser session proves, so under login-on an agent holding one —
+ * the key file under the dork home is readable, and a server-spawned agent
+ * inherits the server's environment — could omit `X-DorkOS-Agent` and
+ * `X-DorkOS-Approval`, clear every bar in `resolveDecisionAuthority`, and answer
+ * its own destructive request. Reproduced end to end against the real routers in
+ * `__tests__/standing-grants-chain.test.ts`, not reasoned: the grant answered 200
+ * and the retry ran the action.
+ *
+ * A session cookie is the one signal a header-stripping caller cannot fake, and
+ * under login-on a real operator has one. It costs nothing here because the cockpit
+ * is the ONLY surface that answers a card: there is no CLI verb for it (`dorkos call
+ * --approval` merely forwards a token from a call that already got a 202) and no MCP
+ * tool. With login OFF this adds nothing and must not — nobody has a cookie then,
+ * not the person either, so a bar that applied would make approvals unanswerable in
+ * the default posture. `requireOperatorCookieUnderLogin` is exactly that shape.
+ *
+ * ## Both verbs, and why the order is what it is
+ *
+ * Denying narrows nothing an agent may do, so this is not a safety argument, it is
+ * a legibility one: if granting demanded a cookie and denying did not, then
+ * `resolveDecisionAuthority` would no longer answer "who may decide" and the next
+ * decide-shaped endpoint would have two predicates to choose between. One bar over
+ * the pair, and it costs nothing because no non-cookie surface denies either.
+ *
+ * The cookie bar runs SECOND, which is the opposite of `routes/config.ts` and for
+ * that route's own reason rather than against it. There the competing refusals are
+ * the cookie bar and the agent bar, and the cookie bar is put first because
+ * "sign in first" is more use than a generic refusal. Here the "sign in first"
+ * answer IS the authority check — it is the one that returns 401 `AUTH_REQUIRED` —
+ * so running the cookie bar first would REPLACE the useful answer with the generic
+ * one. Ordering changes nothing about what is allowed: a caller failing both is
+ * refused either way. It changes only which sentence it reads, and an agent that
+ * names itself should hear `AGENT_CANNOT_DECIDE` (no cookie will ever help it)
+ * rather than an invitation to go find a cookie.
+ *
+ * ## This does NOT reach the six trusted-caller routes, deliberately
+ *
+ * `trustedCaller` calls `resolveDecisionAuthority`, so a bar placed INSIDE that
+ * resolver would also land on `PATCH /api/config`, both marketplace source writes,
+ * the marketplace tier gate, both task writes, and extension approval. Two of those
+ * already run this same cookie bar themselves; the rest are reached by `dorkos`
+ * CLI verbs that authenticate with an API key and have no cookie by design, so the
+ * broad placement would lock the operator out of their own terminal. See
+ * `services/marketplace/source-write-policy.ts`, which argues that case at length
+ * and pins it with a test. Narrowing what an API key may do per key is the spec's
+ * phase 2, not this.
+ *
+ * @param req - The incoming request.
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ * @param isLoginEnabled - Optional login-state lookup for tests.
+ * @returns Permission with its posture, or a structured refusal.
+ */
+function authorityToAnswer(
+  req: Request,
+  res: Response,
+  isLoginEnabled?: LoginEnabledLookup
+): DecisionAuthorityResult {
+  const authority = decisionAuthority(req, res, isLoginEnabled);
+  if (!authority.allowed) return authority;
+
+  const refusal = requireOperatorCookieUnderLogin(
+    res,
+    'whether an agent is allowed to do this',
+    isLoginEnabled
+  );
+  return refusal ? { allowed: false, ...refusal } : authority;
 }
 
 /** Map a decision failure onto the HTTP status and code the cockpit branches on. */
@@ -226,11 +311,13 @@ export function createApprovalsRouter(
   /**
    * Record a decision in the Activity feed, naming the posture it rests on.
    *
-   * The `signed-in-operator` line says ACCOUNT, not person, and that word is
-   * load-bearing: `sessionGate` accepts a per-user API key as well as a session
-   * cookie (DOR-474), so an authenticated credential is not proof that a human
-   * clicked. This record must not assert more than the gate verified — an audit
-   * line that overstates is worse than no audit line, because it is believed.
+   * The `signed-in-operator` line says ACCOUNT, not person, and that word is still
+   * load-bearing after DOR-474. The cookie bar on {@link authorityToAnswer} does
+   * narrow this a great deal — a decision recorded under this posture now came from
+   * a browser session, not merely from something holding a valid per-user API key —
+   * but a browser session is not a keystroke. This record must not assert more than
+   * the gate verified: an audit line that overstates is worse than no audit line,
+   * because it is believed.
    *
    * `emit` is fire-and-forget and never throws, so this cannot turn a recorded
    * decision into a failed request.
@@ -354,7 +441,7 @@ export function createApprovalsRouter(
 
   // POST /:id/grant -- allow the requested action
   router.post('/:id/grant', (req, res) => {
-    const authority = decisionAuthority(req, res, options.isLoginEnabled);
+    const authority = authorityToAnswer(req, res, options.isLoginEnabled);
     if (!authority.allowed) {
       return res.status(authority.status).json({ error: authority.error, code: authority.code });
     }
@@ -379,6 +466,12 @@ export function createApprovalsRouter(
       // The stricter bar, checked first. See `requireOperatorCookie`: clearing
       // `resolveDecisionAuthority` above is not enough, because under `local-trust`
       // omitting two headers clears it.
+      //
+      // Its cookie half now overlaps `authorityToAnswer`, which runs the same check
+      // over every decision (DOR-474). Kept rather than trimmed to
+      // `requireStandingGrantsLogin`: this branch stays true on its own, so a later
+      // reordering above cannot silently uncover the one effect that must be refused
+      // in BOTH postures. The login half is not redundant at all and never was.
       const refusal = requireOperatorCookie(res, options.isLoginEnabled);
       if (refusal) {
         return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
@@ -463,7 +556,7 @@ export function createApprovalsRouter(
 
   // POST /:id/deny -- refuse the requested action
   router.post('/:id/deny', (req, res) => {
-    const authority = decisionAuthority(req, res, options.isLoginEnabled);
+    const authority = authorityToAnswer(req, res, options.isLoginEnabled);
     if (!authority.allowed) {
       return res.status(authority.status).json({ error: authority.error, code: authority.code });
     }

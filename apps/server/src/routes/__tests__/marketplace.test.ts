@@ -1045,6 +1045,42 @@ describe('Marketplace Routes', () => {
       expect(uninstallFlow.uninstall).toHaveBeenCalled();
     });
 
+    it('still lets the operator uninstall from their terminal with Require login ON', async () => {
+      // The site DOR-474 deliberately did NOT touch. That fix put a session-cookie
+      // bar on the two approval-decide routes rather than inside
+      // `resolveDecisionAuthority`, which `trustedCaller` delegates to. Inside would
+      // have reached here — and `dorkos uninstall` presents a per-user API key,
+      // never a cookie (`packages/cli/src/lib/api-client.ts`), so the person at
+      // their own terminal would start getting a 202 for a button they just pressed.
+      // Sibling of the source-route case below; both pin the same argument.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+      agentHeader = undefined;
+      signedInUser = { userId: 'user_cli', credential: 'api-key' };
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'demo-plugin',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      const res = await request(app)
+        .post('/api/marketplace/packages/demo-plugin/uninstall')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(uninstallFlow.uninstall).toHaveBeenCalled();
+
+      // And the agent bar still holds in this posture, so the allow above is about
+      // WHICH credential the operator may present, not a hole login-on opens.
+      agentHeader = 'agent-token';
+      const refused = await request(app)
+        .post('/api/marketplace/packages/demo-plugin/uninstall')
+        .send({});
+      expect(refused.status).toBe(202);
+      expect(refused.body.status).toBe('approval_required');
+    });
+
     it('an agent may still INSTALL without an approval — install is tier act', async () => {
       // Failure mode 7: gating the mutation routes must not start putting an
       // approval card in front of an ordinary install.
