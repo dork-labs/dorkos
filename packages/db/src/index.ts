@@ -60,6 +60,7 @@ export { hasPercentileSupport } from './sql-features.js';
 // drizzle-orm instance as @dorkos/db (avoids duplicate-package type conflicts).
 export {
   eq,
+  ne,
   and,
   gt,
   lt,

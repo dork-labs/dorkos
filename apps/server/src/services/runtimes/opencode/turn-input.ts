@@ -15,6 +15,7 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
+import { formatRoomContext } from '../shared/room-context-block.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */
 export interface OpenCodeTextPartInput {
@@ -45,11 +46,18 @@ export function parseModelSelection(
 /**
  * Render one neutral context entry into a tagged block — the OpenCode half of
  * ADR-0273 (the server owns WHAT context exists; the adapter owns HOW it is
- * rendered). Same honest JSON rendering as the Codex adapter.
+ * rendered). Same honest JSON rendering as the Codex adapter, and the same one
+ * exception: `room_context` goes through the shared writer
+ * (`runtimes/shared/room-context-block.ts`), because its body carries text other
+ * people wrote inside an untrusted-input fence that a JSON dump would not carry.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
   const tag = CONTEXT_TAG[entry.kind];
-  return `<${tag}>\n${JSON.stringify(entry.data, null, 2)}\n</${tag}>`;
+  const body =
+    entry.kind === 'room_context'
+      ? formatRoomContext(entry.data)
+      : JSON.stringify(entry.data, null, 2);
+  return `<${tag}>\n${body}\n</${tag}>`;
 }
 
 /**

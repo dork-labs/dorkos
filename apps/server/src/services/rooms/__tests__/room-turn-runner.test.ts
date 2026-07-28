@@ -7,6 +7,7 @@
  * stream a client renders from, gap-free from a cursor taken before the turn.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomTurnRequest } from '../room-trigger.js';
 
@@ -36,18 +37,32 @@ interface TestProjector {
   ingest: (event: Record<string, unknown>) => unknown;
 }
 
+/** Everything the runner hands `triggerTurn`, as this file inspects it. */
+interface TriggerCall {
+  sessionId: string;
+  projector: TestProjector;
+  content: string;
+  roomContext?: RoomContextData;
+}
+
 /** What the stubbed `triggerTurn` does with the projector it is handed. */
-let turnBehaviour: (opts: { sessionId: string; projector: TestProjector; content: string }) => {
+let turnBehaviour: (opts: TriggerCall) => {
   accepted: boolean;
   canonicalId?: string;
 };
 
+/** Every `triggerTurn` this file's runner made, in order. */
+const triggered: TriggerCall[] = [];
+
 vi.mock('../../session/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session/index.js')>()),
-  triggerTurn: (opts: never) => Promise.resolve(turnBehaviour(opts)),
+  triggerTurn: (opts: never) => {
+    triggered.push(opts);
+    return Promise.resolve(turnBehaviour(opts));
+  },
 }));
 
-const { createSessionRoomTurnRunner, composeRoomPrompt } = await import('../room-turn-runner.js');
+const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
 
 let counter = 0;
 
@@ -100,10 +115,26 @@ function request(
     room,
     authorId: 'author-ana',
     agentPath: '/repo/ana',
-    displayName: 'Ana',
     sessionId: null,
     entry,
-    authorName: 'Dorian',
+    roomContext: {
+      room: { id: room.id, kind: 'channel', name: '#backend' },
+      thread: null,
+      members: [
+        { handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true },
+        { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false },
+      ],
+      working: [],
+      pending: [],
+      pendingTruncated: false,
+      ownRecent: [],
+      addressing: { responseMode: 'always', engagedUntil: null, addressedNow: false },
+      budget: {
+        automaticRepliesLeftInThisRoomThisHour: 9,
+        automaticRepliesLeftInTotalThisHour: 99,
+        repliesLeftInThisChain: 3,
+      },
+    },
     ...rest,
   };
 }
@@ -337,23 +368,30 @@ describe('createSessionRoomTurnRunner', () => {
   });
 });
 
-describe('composeRoomPrompt', () => {
-  it('names the room, the speaker, and where the answer goes', () => {
-    const prompt = composeRoomPrompt(request());
-    expect(prompt).toContain('#backend');
-    expect(prompt).toContain('Dorian');
-    expect(prompt).toContain('is the build green?');
-    // The behavior-changing part: this is not a private answer.
-    expect(prompt).toContain('everyone in the room reads it');
+describe('what a room turn actually sends (ADR-0273)', () => {
+  beforeEach(() => {
+    triggered.length = 0;
+    turnBehaviour = saysAndCloses('green');
   });
 
-  it('falls back to the title for a room with no slug', () => {
-    const dm = request();
-    const prompt = composeRoomPrompt({
-      ...dm,
-      room: { ...dm.room, kind: 'dm', slug: null, title: 'Ana' },
-    });
-    expect(prompt).toContain('Ana');
-    expect(prompt).not.toContain('#');
+  it('sends the message byte for byte, with nothing wrapped around it', async () => {
+    // The regression guard for the prose prompt this replaced. `content` becomes
+    // the visible user turn in the session transcript, so anything prepended
+    // here is words nobody typed showing up as though a person had typed them.
+    const body = 'is the build green?';
+    await createSessionRoomTurnRunner().run(request({ entryText: body }));
+    expect(triggered).toHaveLength(1);
+    expect(triggered[0].content).toBe(body);
+  });
+
+  it('puts the room framing in the context bag instead', async () => {
+    await createSessionRoomTurnRunner().run(request());
+    expect(triggered[0].roomContext?.room.name).toBe('#backend');
+    // The field the whole phase exists for: an agent can tell a person from a
+    // machine. Assert the subject, not that a roster is merely present.
+    expect(triggered[0].roomContext?.members.find((m) => m.handle === 'dorian')?.isPerson).toBe(
+      true
+    );
+    expect(triggered[0].roomContext?.members.find((m) => m.handle === 'ana')?.isPerson).toBe(false);
   });
 });

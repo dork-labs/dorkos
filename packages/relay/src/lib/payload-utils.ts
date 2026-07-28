@@ -13,6 +13,7 @@
  */
 import { slackifyMarkdown } from 'slackify-markdown';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 
 /**
  * Extract text content from an unknown Relay envelope payload.
@@ -51,36 +52,8 @@ export function truncateText(text: string, maxLen: number): string {
 
 // === Sender identity extraction ===
 
-/** Maximum length of a sanitized sender name or chat title, in characters. */
-const MAX_IDENTITY_LENGTH = 80;
-
 /** Sentinel value channel adapters fall back to when no display name is available. */
 const UNKNOWN_SENDER = 'unknown';
-
-/**
- * Sanitize a raw identity string (sender name or chat title) for safe
- * inclusion in a structured prompt header.
- *
- * Strips the C0 and C1 control ranges plus DEL — including CR/LF and NEL
- * (U+0085), any of which could otherwise forge additional header lines —
- * collapses whitespace runs to a single space (which also neutralizes the
- * U+2028/U+2029 line separators via `\s`), strips `<`/`>` so a name
- * containing `</relay_context>` cannot close the structured block early,
- * trims, and caps the result at {@link MAX_IDENTITY_LENGTH} characters.
- *
- * @param value - The raw string to sanitize
- * @returns The sanitized string, or `undefined` if it is empty after sanitization
- */
-function sanitizeIdentity(value: string): string | undefined {
-  const collapsed = value
-    // eslint-disable-next-line no-control-regex -- stripping control chars is the point
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
-    .replace(/[<>]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (collapsed.length === 0) return undefined;
-  return collapsed.slice(0, MAX_IDENTITY_LENGTH);
-}
 
 /**
  * Extract the human sender's display name and chat/channel title from an

@@ -139,3 +139,43 @@ describe('RoomTurnBudget — the global cap', () => {
     expect(budget.tryReserve('room-fresh').scope).toBe('global');
   });
 });
+
+describe('RoomTurnBudget.remaining', () => {
+  it('reports what is left, per room and in total', () => {
+    const { budget } = budgetOf(3, 60_000, 10);
+    budget.tryReserve('room-1');
+    budget.tryReserve('room-2');
+    expect(budget.remaining('room-1')).toEqual({ room: 2, global: 8 });
+    expect(budget.remaining('room-2')).toEqual({ room: 2, global: 8 });
+    expect(budget.remaining('room-3')).toEqual({ room: 3, global: 8 });
+  });
+
+  it('claims nothing, so reading it can never make a turn unaffordable', () => {
+    // The trap this exists to avoid: an agent asking what is left and spending
+    // it by asking. Five reads, then the cap is still available in full.
+    const { budget } = budgetOf(1);
+    for (let i = 0; i < 5; i += 1) budget.remaining('room-1');
+    expect(budget.tryReserve('room-1').allowed).toBe(true);
+  });
+
+  it('rolls with the window', () => {
+    const { budget, advance } = budgetOf(2, 60_000);
+    budget.tryReserve('room-1');
+    budget.tryReserve('room-1');
+    expect(budget.remaining('room-1').room).toBe(0);
+    advance(60_001);
+    expect(budget.remaining('room-1').room).toBe(2);
+  });
+
+  it('never goes below zero when a cap is lowered under a spent window', () => {
+    let cap = 5;
+    const budget = new RoomTurnBudget({
+      limits: { perRoom: () => cap, global: () => 100_000 },
+      windowMs: 60_000,
+      now: () => 1_000_000,
+    });
+    for (let i = 0; i < 5; i += 1) budget.tryReserve('room-1');
+    cap = 2;
+    expect(budget.remaining('room-1').room).toBe(0);
+  });
+});

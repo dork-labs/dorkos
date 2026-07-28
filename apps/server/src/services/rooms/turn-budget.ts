@@ -161,6 +161,31 @@ export class RoomTurnBudget {
     return { allowed: true };
   }
 
+  /**
+   * How many automatic turns are still available, without claiming one.
+   *
+   * {@link BudgetDecision} deliberately carries no headroom, because a refusal
+   * always has zero of it. This answers the other question — an agent mid-turn
+   * asking what is left, which is what `room_context.budget` reports so it can
+   * spend deliberately (the room-participation spec §6.3, on the precedent
+   * `relay_context.callBudgetRemaining` set).
+   *
+   * A pure read: it prunes its view of both windows to the current hour but
+   * writes nothing back and reserves nothing, so calling it can never make a
+   * turn unaffordable.
+   *
+   * @param roomId - The room being asked about.
+   */
+  remaining(roomId: string): { room: number; global: number } {
+    const floor = this.now() - this.windowMs;
+    const global = this.globalRuns.filter((t) => t > floor).length;
+    const room = (this.perRoom.get(roomId) ?? []).filter((t) => t > floor).length;
+    return {
+      room: Math.max(0, this.limits.perRoom() - room),
+      global: Math.max(0, this.limits.global() - global),
+    };
+  }
+
   /** Write a room's pruned window back, re-inserting it as most recently used. */
   private store(roomId: string, window: number[]): void {
     this.perRoom.delete(roomId);

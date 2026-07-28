@@ -184,6 +184,10 @@
     "./room-schemas": {
       "types": "./src/room-schemas.ts",
       "default": "./dist/room-schemas.js"
+    },
+    "./untrusted-text": {
+      "types": "./src/untrusted-text.ts",
+      "default": "./dist/untrusted-text.js"
     }
   },
   "scripts": {

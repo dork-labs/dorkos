@@ -64,6 +64,32 @@ export default defineConfig({
     //   array fails 1 of 55 with the alias and passes green without it. The generated
     //   case IS the catch, and the alias is what generates it. Load-bearing, not
     //   decorative.
+    // - `untrusted-text` backs the room-context fence tests, and it is the entry
+    //   that makes the pattern behind this list explicit rather than incidental:
+    //   it is not a drift guard, it is a SANITIZER, and a stale copy of one is
+    //   the same false pass by a different route. Measured: mutating
+    //   `defuseSystemTags` in `src/` reddened 0 of 2310 server tests without this
+    //   alias and 14 with it. So the rule this list actually follows is "a module
+    //   whose SOURCE TEXT is the subject of the test", which covers drift guards,
+    //   skill prose and security functions alike. Deriving the list from the
+    //   `exports` map was considered and does not work: aliasing all 43 subpaths
+    //   was measured at ~51s to ~110s on the suite, so the list has to stay
+    //   scoped, and no rule in the map distinguishes a subpath whose text is the
+    //   subject from one that is merely imported. What CAN be automated is the
+    //   cheap half — `vitest-config.test.ts` asserts every entry here resolves to
+    //   a real file, so a rename cannot silently turn an alias into a no-op that
+    //   falls back to `dist/`. Choosing which module earns an entry stays a
+    //   judgement, and this is the fourth time that judgement has been made late.
+    //
+    // ONE SYMPTOM TO RECOGNISE, because nothing watches for it. A broken alias
+    // does not only weaken assertions — it changes what COLLECTS. Measured while
+    // verifying the entry above: with the path broken, the run gathered 2,033
+    // tests against 2,301 with it, because a module that fails to resolve takes
+    // its whole file out of the run and `it.each` over a stale table generates
+    // fewer cases. So a suite that suddenly reports several hundred FEWER tests
+    // and stays green is an alias symptom, not a cleanup. The existence check
+    // above catches the rename that caused it here; it cannot catch every route
+    // to the same state, so recognising the shape is still worth something.
     // - `constants` backs `model-catalog-labels`, which asserts every runtime's
     //   model display name fits inside `STATUS_VALUE_MAX_CHARS`. Shrink the budget
     //   in `src/` and a stale dist measures against the old, roomier one.
@@ -142,6 +168,12 @@ export default defineConfig({
         find: '@dorkos/shared/additional-context',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/additional-context.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/untrusted-text',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/untrusted-text.ts', import.meta.url)
         ),
       },
       {

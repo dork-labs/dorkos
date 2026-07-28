@@ -11,6 +11,7 @@ import { configManager } from '../../../core/config-manager.js';
 import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
+import { formatRoomContext } from '../../shared/room-context-block.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -502,6 +503,11 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       return wrapTag(tag, formatEnv(entry.data));
     case 'relay_context':
       return wrapTag(tag, formatRelayContext(entry.data));
+    case 'room_context':
+      // Shared with the Codex and OpenCode adapters on purpose: the body carries
+      // an untrusted-input fence, and a security surface written three times is
+      // one that holds in one place and leaks in the other two.
+      return wrapTag(tag, formatRoomContext(entry.data));
   }
 }
 

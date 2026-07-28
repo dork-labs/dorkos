@@ -7,7 +7,31 @@ import {
 } from '../additional-context.js';
 import { SendMessageRequestSchema } from '../schemas.js';
 
-const ALL_KINDS: ContextKind[] = ['git_status', 'ui_state', 'queue_note', 'env', 'relay_context'];
+const ALL_KINDS: ContextKind[] = [
+  'git_status',
+  'ui_state',
+  'queue_note',
+  'env',
+  'relay_context',
+  'room_context',
+];
+
+/** A minimal but complete room context — every field the union requires. */
+const SAMPLE_ROOM_CONTEXT = {
+  room: { id: 'room-1', kind: 'channel', name: '#build' },
+  thread: null,
+  members: [{ handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true }],
+  working: [],
+  pending: [],
+  pendingTruncated: false,
+  ownRecent: [],
+  addressing: { responseMode: 'always', engagedUntil: null, addressedNow: false },
+  budget: {
+    automaticRepliesLeftInThisRoomThisHour: 41,
+    automaticRepliesLeftInTotalThisHour: 187,
+    repliesLeftInThisChain: 2,
+  },
+};
 
 const SAMPLE_UI_STATE = {
   canvas: { open: false, contentType: null },
@@ -69,6 +93,29 @@ describe('AdditionalContextEntrySchema', () => {
       data: { composedDuringPrevTurn: true },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('validates a room_context entry', () => {
+    const result = AdditionalContextEntrySchema.safeParse({
+      kind: 'room_context',
+      scope: 'per-turn',
+      data: SAMPLE_ROOM_CONTEXT,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a room_context whose roster does not say person or machine', () => {
+    // `isPerson` is the field the whole kind exists for. A roster missing it is
+    // a roster an agent cannot act on, so it must not parse.
+    const result = AdditionalContextEntrySchema.safeParse({
+      kind: 'room_context',
+      scope: 'per-turn',
+      data: {
+        ...SAMPLE_ROOM_CONTEXT,
+        members: [{ handle: 'ana', displayName: 'Ana', isSelf: true }],
+      },
+    });
+    expect(result.success).toBe(false);
   });
 
   it('rejects an unknown kind', () => {
