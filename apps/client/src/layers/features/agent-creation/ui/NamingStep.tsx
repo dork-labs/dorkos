@@ -195,7 +195,10 @@ export function NamingStep({
                 </Label>
                 <PathInput
                   id="agent-directory"
-                  placeholder={form.slug ? form.resolvedDirectory : `${form.defaultDirectory}/...`}
+                  placeholder={
+                    form.resolvedDirectory ||
+                    (form.defaultDirectory ? `${form.defaultDirectory}/...` : '')
+                  }
                   value={form.directoryOverride}
                   onChange={form.setDirectoryOverride}
                   onBrowse={() => form.setDirectoryPickerOpen(true)}

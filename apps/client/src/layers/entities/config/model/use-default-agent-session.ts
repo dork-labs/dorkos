@@ -9,8 +9,6 @@ import { useConfig } from './use-config';
 
 /** Fallback agent slug when config has no configured default (a fresh install). */
 const DEFAULT_AGENT = 'dorkbot';
-/** Fallback agents directory matching the server-side default. */
-const DEFAULT_AGENTS_DIR = '~/.dork/agents';
 /**
  * Runtime assumed for the default agent. `AgentPathEntry` carries no runtime, so
  * this is a fixed assumption rather than a resolved value. It only ever feeds a
@@ -31,17 +29,20 @@ const MESH_AGENT_PATHS_KEY = ['mesh', 'agent-paths'] as const;
 /**
  * Compose the default agent's working directory from config strings alone.
  *
- * This is only a last-resort FALLBACK: `config.agents.defaultDirectory` is stored
- * literally (an unexpanded `~/.dork/agents`), so a session opened at this path
- * cannot be streamed — the events stream 403s on the unresolved tilde. Prefer the
- * REGISTERED absolute path from {@link useDefaultAgentSession}; this is used only
- * when the agent is not yet in the registry.
+ * A last-resort FALLBACK for an agent that is not in the mesh registry yet —
+ * prefer the REGISTERED absolute path from {@link useDefaultAgentSession}.
+ *
+ * Returns `''` until the config arrives, rather than guessing a path. The
+ * directory the server reports is the absolute one it resolves agent creation
+ * against, and there is no way to compute that from the client; a guess would
+ * name a folder that may not exist and cannot be streamed.
  *
  * @param config - The server config, or `undefined` while it loads.
  */
 export function resolveDefaultAgentDir(config: ServerConfig | undefined): string {
+  const dir = config?.agents?.defaultDirectory;
+  if (!dir) return '';
   const agent = config?.agents?.defaultAgent || DEFAULT_AGENT;
-  const dir = config?.agents?.defaultDirectory || DEFAULT_AGENTS_DIR;
   return `${dir}/${agent}`;
 }
 
@@ -78,9 +79,10 @@ export interface DefaultAgentSession {
   defaultAgentIdentity: DefaultAgentIdentity;
   /**
    * Whether {@link defaultAgentDir} is the agent's REGISTRY-resolved absolute
-   * path (not the config-string fallback). Only a registry-resolved path can be
-   * streamed — starting a session with a message must wait for this to be `true`,
-   * or the events stream 403s on the unresolved tilde.
+   * path (not the config-string fallback). Only the registry proves the agent
+   * exists where the path says it does — starting a session with a message must
+   * wait for this to be `true`, or the message goes to a directory that may hold
+   * no agent at all.
    */
   isDefaultAgentResolved: boolean;
 }

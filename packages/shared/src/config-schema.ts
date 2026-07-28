@@ -496,6 +496,25 @@ export type StatusBarPrefs = z.infer<typeof StatusBarPrefsSchema>;
  */
 export const STATUS_BAR_PREFS_DEFAULTS: StatusBarPrefs = StatusBarPrefsSchema.parse({});
 
+/**
+ * The shipped default for `agents.defaultDirectory`.
+ *
+ * **A portable spelling of `{dorkHome}/agents`, not a literal filesystem path.**
+ * It is stored rather than an absolute path so a config survives a home
+ * directory that moves or is copied between machines — and because the DorkOS
+ * data directory is only `~/.dork` in a normal production install. Whenever
+ * `DORK_HOME` is redirected (a dev tree, a Docker deployment, a test), the
+ * agents DorkOS creates belong under THAT directory.
+ *
+ * So the server never tilde-expands this value directly. `resolveAgentsDirectory()`
+ * (`apps/server/src/lib/agents-home.ts`) maps this exact string onto the data
+ * directory actually in use, and expands `~` against the person's real home only
+ * for a directory they chose themselves. Expanding the default against the real
+ * home is what let agent creation from a dev tree write into an operator's live
+ * `~/.dork/agents` (DOR-662).
+ */
+export const DEFAULT_AGENTS_DIRECTORY = '~/.dork/agents';
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -718,10 +737,11 @@ export const UserConfigSchema = z.object({
     })),
   agents: z
     .object({
-      defaultDirectory: z.string().default('~/.dork/agents'),
+      /** See {@link DEFAULT_AGENTS_DIRECTORY} — the default is not a literal path. */
+      defaultDirectory: z.string().default(DEFAULT_AGENTS_DIRECTORY),
       defaultAgent: z.string().default('dorkbot'),
     })
-    .default(() => ({ defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' })),
+    .default(() => ({ defaultDirectory: DEFAULT_AGENTS_DIRECTORY, defaultAgent: 'dorkbot' })),
   extensions: z
     .object({
       // `enabled` and `disabled` record DEVIATIONS from each extension's default

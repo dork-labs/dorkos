@@ -60,8 +60,8 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   const navigate = useNavigate();
   const { config, completeStep, skipStep, completeOnboarding } = useOnboarding();
   const updateAgent = useUpdateAgent();
-  // The default agent's REGISTERED absolute path — the one the client can stream
-  // (the literal `~/.dork/agents/dorkbot` compose 403s on the events stream).
+  // The default agent's REGISTERED absolute path — the registry is the only
+  // thing that proves DorkBot is where the path says it is.
   const { defaultAgentDir } = useDefaultAgentSession();
 
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
@@ -69,12 +69,24 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   // One-way latch so a double Enter during the exit never double-dissolves.
   const dissolvedRef = useRef(false);
 
-  const traitsSavePath = `${config?.agents?.defaultDirectory || '~/.dork/agents'}/dorkbot`;
+  // Composed from the directory the SERVER reports, with no fallback: this path
+  // is a write target (`PATCH /api/agents/current?path=…`), and guessing
+  // `~/.dork/agents` wrote DorkBot's traits into the operator's real home from a
+  // dev tree, where the data directory is somewhere else entirely (DOR-662).
+  const agentsDirectory = config?.agents?.defaultDirectory;
+  const traitsSavePath = agentsDirectory ? `${agentsDirectory}/dorkbot` : null;
 
   const ports: OnboardingConversationPorts = {
     reducedMotion,
     saveTraits: (next) =>
-      updateAgent.mutateAsync({ path: traitsSavePath, updates: { traits: next } }).then(() => {}),
+      traitsSavePath
+        ? updateAgent
+            .mutateAsync({ path: traitsSavePath, updates: { traits: next } })
+            .then(() => {})
+        : // Rejecting lands on the conversation's existing save-error beat, which
+          // offers a retry — the right outcome for "we do not know where DorkBot
+          // lives yet", and strictly better than writing somewhere we guessed.
+          Promise.reject(new Error('DorkBot’s location is still loading — try again in a moment.')),
     completeStep,
     skipStep,
     completeOnboarding,
