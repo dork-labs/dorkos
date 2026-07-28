@@ -283,13 +283,22 @@ describe('StreamManager', () => {
 
     // Reverse: no name in the allowlist that the schema no longer declares.
     //
-    // Compared by HANDLER IDENTITY rather than by subtracting GENERIC_EVENTS,
-    // because the same map also carries the generic names (stream-manager.ts
-    // registers both). Every session-list name shares one `onListEvent` reference
-    // while each generic name gets its own closure, so the reference partition IS
-    // the session-list allowlist — a flat count would flag generic entries as
-    // stale, and a set subtraction would MISS a stale name that happens to also
-    // appear in GENERIC_EVENTS.
+    // Compared by HANDLER IDENTITY rather than by counting keys, because the same
+    // map also carries the generic names (stream-manager.ts registers both). Every
+    // session-list name shares one `onListEvent` reference while each generic name
+    // gets its own closure, so the reference partition is the session-list
+    // allowlist — a flat count would flag GENERIC_EVENTS entries as stale.
+    //
+    // Known limit, measured rather than assumed. A stale name that ALSO appears in
+    // GENERIC_EVENTS is invisible here: `buildListEventHandlers` registers the
+    // generic names second and overwrites, so the colliding key's handler is the
+    // generic closure and this filter drops it. Seeding `'connected'` into
+    // SESSION_LIST_EVENT_TYPES leaves this test green. It is behaviourally benign
+    // (the frame still reaches a handler) and the realistic stale name — a rename
+    // like `session_renamed` — does go red. Stated because an earlier version of
+    // this comment claimed the identity partition CAUGHT that case, which it does
+    // not, and a guard whose comment oversells it is the defect this file exists to
+    // remove.
     const listHandler = handlers[discriminants[0]!];
     const listNames = registered.filter((name) => handlers[name] === listHandler);
     expect(

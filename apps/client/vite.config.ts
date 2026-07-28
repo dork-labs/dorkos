@@ -32,9 +32,15 @@ export default defineConfig({
     //   union is worse than none.
     // - `config-schema` backs `status/__tests__/status-bar-registry.test.ts`, which
     //   pins the pinnable registry items against the `ui.statusBar.pins` enum.
-    // - `constants` backs the three `STATUS_VALUE_MAX_CHARS` budget assertions
-    //   (`status-labels`, `status-budget`, `ConnectionItem`). Shrink the budget in
-    //   `src/` and a stale dist measures against the old, roomier one.
+    // - `constants` backs the two `STATUS_VALUE_MAX_CHARS` budget assertions that
+    //   compare something INDEPENDENT against the constant — `status-labels` (a
+    //   truncated label's length) and `ConnectionItem` (a rendered label's length).
+    //   Shrink the budget in `src/` and a stale dist measures against the old,
+    //   roomier one. `status-budget` imports the same constant but is NOT in this
+    //   set: it derives `STATUS_VALUE_MAX_CHARS * 8 + 20` and compares that against
+    //   `FULL_SLOT_COST_PX`, which derives from the constant too, so both sides move
+    //   together and it stays green at `STATUS_VALUE_MAX_CHARS = 3`. It rides the
+    //   alias because it shares the module, not because the alias buys it anything.
     // - `trait-renderer` backs `agent/__tests__/trait-sliders.test.tsx`, which is
     //   an exhaustive loop over `TRAIT_ORDER`: a new trait read from a stale dist
     //   produces zero extra assertions and a green run.

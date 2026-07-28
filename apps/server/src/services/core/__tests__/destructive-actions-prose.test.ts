@@ -74,6 +74,22 @@
  *   copy rules that forbid the phrases and the changelog entry recording the removal.
  *   A repo-wide literal ban would redden the rule stating the ban. See
  *   {@link RETIRED_PHRASES}.
+ * - **Three ways to defeat the retired-phrase scan, all found by seeding them.**
+ *   Recorded rather than papered over, because the ones a reader can see are the
+ *   ones a reader can close:
+ *   1. **Hyphenation.** `secure-by-default` is the same claim and the most natural
+ *      headline spelling of it, and it is not in {@link RETIRED_PHRASES}. Adding it
+ *      is safe (no current file contains it); adding a `[- ]` character class
+ *      instead would be the first step toward matching a concept, which this file
+ *      argues against, so it stays a literal if somebody adds it.
+ *   2. **Line wrapping.** `secure by\ndefault` slips a substring check. Mitigated by
+ *      convention rather than by code: `.prettierrc` sets no `proseWrap`, so
+ *      Prettier preserves what the author typed and never introduces the break
+ *      itself. A hand-wrapped one would pass.
+ *   3. **`.js` / `.jsx`.** {@link filesUnder} matches `/\.(mdx?|tsx?)$/`. Mitigated
+ *      the same way: `apps/site/src` and `apps/client/src` contain zero `.js`/`.jsx`
+ *      files today, and both are TypeScript projects. Widen the pattern the day that
+ *      stops being true.
  * - **The exposure-guard pairing check skips `decisions/`.** A cross-reference to
  *   another ADR's mechanism is a citation, not an explanation. See
  *   {@link exposureGuardPages}.
