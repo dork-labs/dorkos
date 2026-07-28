@@ -1,5 +1,5 @@
 ---
-paths: changelog/unreleased/**, docs/**/*.mdx, README.md, packages/cli/README.md, apps/site/src/layers/features/marketing/lib/features.ts
+paths: blog/**, changelog/unreleased/**, docs/**/*.mdx, README.md, packages/cli/README.md, apps/site/src/layers/features/marketing/lib/features.ts
 ---
 
 # User-Facing Writing
