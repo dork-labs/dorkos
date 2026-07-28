@@ -40,6 +40,7 @@
 #     "isDraft": false,
 #     "mergeStateStatus": "BEHIND",
 #     "autoMergeRequest": null,
+#     "mergeQueueEntry": null,
 #     "reviewDecision": "APPROVED",
 #     "labels": [{"name": "hold"}],
 #     "unresolvedThreads": 0,
@@ -47,6 +48,13 @@
 #   }
 #
 # `bucket` follows `gh pr checks --json bucket`: pass | fail | pending | skipping | cancel.
+#
+# `autoMergeRequest` and `mergeQueueEntry` are BOTH needed, and neither implies
+# the other: a pull request sitting in the merge queue reports
+# `autoMergeRequest: null`, so the first field alone cannot tell you the merge is
+# already handled. `mergeQueueEntry` is GraphQL-only — `gh pr view --json` does
+# not expose it, so a caller building this payload from `gh pr view` alone will
+# silently omit it and get a more permissive gate than it thinks.
 
 set -uo pipefail
 
