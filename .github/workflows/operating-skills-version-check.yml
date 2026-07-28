@@ -30,13 +30,26 @@ name: operating-skills-version-check
 # LOAD-BEARING SETTING, OUTSIDE THIS FILE. `on: pull_request` does not re-fire
 # when somebody pushes to the base branch, so a run that was green at base=5 /
 # head=6 stays green after another pull request takes 6 — the exact DOR-509 hole,
-# reopened by timing rather than by arithmetic. What closes it is
-# `required_status_checks.strict = true` on `main` (branch protection's "require
-# branches to be up to date before merging"): it forces the branch to be updated,
-# which fires `synchronize`, which re-runs this against the new tip. `strict` is
-# on today. If it is ever turned off, this guard silently regains that hole, and
-# a `pull_request_target`-style re-trigger or a scheduled re-run would have to
-# take its place.
+# reopened by timing rather than by arithmetic. Something outside this file has
+# to guarantee this job is re-evaluated against the base branch's REAL tip before
+# the merge lands.
+#
+# That guarantor used to be `required_status_checks.strict = true` on `main`
+# ("require branches to be up to date before merging"): it forced a branch
+# update, which fired `synchronize`, which re-ran this against the new tip.
+#
+# It is now `on: merge_group`. The merge queue re-runs this job against
+# `merge_group.base_sha` — the exact commit the merge will sit on — immediately
+# before merging, which is a stronger guarantee than `strict` ever gave: `strict`
+# only ensured the branch was up to date at the moment the author last updated
+# it, and the base could still move between that re-run and the merge. The queue
+# closes that residual window because nothing can land between the queue's check
+# and the queue's merge, by construction.
+#
+# So: this guard now depends on `merge_group` staying in the `on:` list and on
+# `version-outranks-base` staying in the branch's required checks. If the merge
+# queue is ever removed, `strict` has to come back, or this guard silently
+# regains the hole.
 #
 # There is deliberately NO `paths:` filter. GitHub leaves a filtered workflow
 # Pending forever on a pull request that does not match, so a filtered check can
@@ -48,6 +61,7 @@ name: operating-skills-version-check
 
 on:
   pull_request:
+  merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.
@@ -66,9 +80,13 @@ jobs:
       # The PR head, with full history so the base ref resolves. Without
       # fetch-depth: 0 there is no base side to compare against, which is the
       # whole reason this runs here rather than in the unit suite.
+      # On `pull_request` this is the PR head. On `merge_group` there is no
+      # pull_request object at all, and `github.sha` is already the queue branch
+      # tip (main + everything ahead in the queue + this PR), which is exactly
+      # the tree whose version needs to outrank the base.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       # Two different base commits, and the difference is the whole bug.
@@ -82,16 +100,33 @@ jobs:
       # guard exists to catch, and it would be inert: DOR-509 forked from a `main`
       # at 4 and bumped to 5, so fork point 4 < head 5 reads green — while `main`
       # had moved to 5 underneath it and the seeder would upgrade nobody.
+      # In the merge queue both commits come straight from the event: the queue
+      # branch is BUILT on `base_sha`, so the fork point and the base tip are the
+      # same commit, and there is no drift between them to reason about. That is
+      # the whole point of the queue, and it is what finally makes this guard
+      # exact rather than best-effort — the DOR-509 failure mode it was written
+      # for (fork from a base at 4, bump to 5, base moves to 5 underneath) cannot
+      # occur when the base is pinned to the commit the merge will actually sit
+      # on. The parallel-PR collision this job's own error message warns about is
+      # likewise resolved here: two PRs both bumping to the same number can both
+      # be green on their own PR runs, and the second one goes red in the queue.
       - name: Resolve the fork point and the base branch tip
         id: base
         run: |
-          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
-          base_tip="origin/${{ github.base_ref }}"
-          fork_point="$(git merge-base "$base_tip" HEAD)"
+          if [[ "${{ github.event_name }}" == "merge_group" ]]; then
+            base_tip="${{ github.event.merge_group.base_sha }}"
+            git fetch --no-tags origin "$base_tip" || git fetch --no-tags --depth=200 origin
+            fork_point="$base_tip"
+            echo "merge group: base pinned to the commit this will merge onto"
+          else
+            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            base_tip="$(git rev-parse "origin/${{ github.base_ref }}")"
+            fork_point="$(git merge-base "$base_tip" HEAD)"
+          fi
           echo "fork_point=$fork_point" >> "$GITHUB_OUTPUT"
-          echo "base_tip=$(git rev-parse "$base_tip")" >> "$GITHUB_OUTPUT"
+          echo "base_tip=$base_tip" >> "$GITHUB_OUTPUT"
           echo "fork point:    $fork_point"
-          echo "base tip:      $(git rev-parse "$base_tip") (${{ github.base_ref }})"
+          echo "base tip:      $base_tip"
 
       # A PR that does not change what gets seeded must not be required to bump.
       # This is the ONLY scoping in the workflow — there is no `paths:` filter, for
@@ -123,6 +158,11 @@ jobs:
         if: ${{ steps.scope.outputs.changed == 'true' }}
         run: |
           base_tip="${{ steps.base.outputs.base_tip }}"
+          # `github.base_ref` is bare (`main`); `merge_group.base_ref` is a full
+          # ref (`refs/heads/main`). Strip the prefix so the messages below name
+          # the same branch the same way on both trigger paths.
+          base_name="${{ github.base_ref || github.event.merge_group.base_ref }}"
+          base_name="${base_name#refs/heads/}"
           version_pattern='s/^export const OPERATING_SKILLS_VERSION = ([0-9]+);$/\1/p'
 
           base_version="$(git show "$base_tip:$PACK_FILE" | sed -nE "$version_pattern")"
@@ -133,11 +173,11 @@ jobs:
             exit 1
           fi
 
-          echo "${{ github.base_ref }} tip ($base_tip): OPERATING_SKILLS_VERSION = $base_version"
+          echo "$base_name tip ($base_tip): OPERATING_SKILLS_VERSION = $base_version"
           echo "this branch:                            OPERATING_SKILLS_VERSION = $head_version"
 
           if [ "$head_version" -le "$base_version" ]; then
-            echo "::error::This pull request changes the Operating DorkOS skill pack, but its OPERATING_SKILLS_VERSION ($head_version) is not higher than the one ${{ github.base_ref }} already ships ($base_version). seed.ts rewrites an already-seeded skill only when the stored stamp is STRICTLY LOWER than this constant, so an equal version delivers the correction to nobody, silently. Re-bump to $((base_version + 1)) or higher, and add the matching History entry. If you hit this because another pack change merged while yours was open, resolve it by RE-BUMPING, never by keeping either side's number: two parallel pack PRs picking the same next number is exactly how this fails."
+            echo "::error::This pull request changes the Operating DorkOS skill pack, but its OPERATING_SKILLS_VERSION ($head_version) is not higher than the one $base_name already ships ($base_version). seed.ts rewrites an already-seeded skill only when the stored stamp is STRICTLY LOWER than this constant, so an equal version delivers the correction to nobody, silently. Re-bump to $((base_version + 1)) or higher, and add the matching History entry. If you hit this because another pack change merged while yours was open, resolve it by RE-BUMPING, never by keeping either side's number: two parallel pack PRs picking the same next number is exactly how this fails."
             exit 1
           fi
 

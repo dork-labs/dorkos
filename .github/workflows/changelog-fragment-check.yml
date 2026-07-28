@@ -31,9 +31,30 @@ name: changelog-fragment-check
 # A second job, `no-fragment-under-skip-label`, closes the opposite hole: a PR
 # that claims `skip-changelog` and adds a fragment anyway. See its own comment.
 
+# `merge_group` is here because both jobs below are REQUIRED checks, and a
+# required check that never reports on a merge group blocks the queue forever.
+#
+# What each job can honestly do there differs, and the split is deliberate:
+#
+#   * VALIDITY (is a fragment's `covers:` block well-formed) needs only two
+#     commits, and the merge group supplies both. It genuinely re-runs, against
+#     the real commit the merge will sit on.
+#   * COVERAGE (does this PR owe a fragment, and is it exempt) needs the PR's
+#     LABELS and NUMBER. Neither exists in the `merge_group` payload, and the
+#     only place they appear — the `gh-readonly-queue/...` ref format — is
+#     explicitly not part of GitHub's API contract, so parsing it would be a
+#     brittle gate on a policy question. Coverage therefore stays decided at pull
+#     request time, which is the one moment both facts are known.
+#
+# That is sound rather than a hole because a pull request cannot ENTER the queue
+# until its required checks have passed on the pull request itself. The coverage
+# question is answered before queueing, and the answer cannot change afterwards:
+# the label is fixed and the diff is fixed. What the queue adds is validity
+# against the real base, which is the only half that a moving base can break.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
+  merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.
@@ -48,15 +69,24 @@ jobs:
       # the merge-base against the base branch resolves.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          # On merge_group there is no pull_request object; github.sha is already
+          # the queue branch tip.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Determine the PR's merge-base
+      - name: Determine the base to diff against
         id: base
         run: |
-          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
-          base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          if [[ "${{ github.event_name }}" == "merge_group" ]]; then
+            # The queue branch is built ON base_sha, so it IS the merge base.
+            base="${{ github.event.merge_group.base_sha }}"
+            git fetch --no-tags origin "$base" || git fetch --no-tags --depth=200 origin
+          else
+            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "base: $base"
 
       # The gate guards itself: the analyzer's own tests run before it decides
       # anything. Pure-stdlib Python 3, seconds to run, and it fires even on a
@@ -94,12 +124,34 @@ jobs:
       # green. `--changed-only` here too, so a stray malformed fragment downgrades
       # to a NOTE on stdout instead of failing this PR.
       # The analyzer is pure-stdlib Python 3 — no install/build step needed.
+      #
+      # `github.event_name == 'pull_request'` is load-bearing, not decoration. On
+      # a merge group `contains(github.event.pull_request.labels.*.name, ...)` is
+      # false because the object is absent, not because the label is absent — so
+      # without this guard a `skip-changelog` PR would have its coverage check
+      # run for the first time inside the queue, against a label it legitimately
+      # carries, and fail there. That is the worst possible place to discover it:
+      # the queue would eject the PR with no obvious cause.
       - name: Require a changelog fragment for every user-facing commit
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        if: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         run: |
           python3 .claude/scripts/changelog_backfill.py \
             --since "${{ steps.base.outputs.sha }}" \
             --pr "${{ github.event.pull_request.number }}" --check --changed-only
+
+      # Said out loud rather than left as an absent step, so that reading this
+      # job's merge-group run does not look like coverage silently vanished.
+      - name: Note where coverage was decided
+        if: ${{ github.event_name == 'merge_group' }}
+        run: |
+          echo "Fragment VALIDITY was re-checked above against the commit this"
+          echo "merge will sit on (${{ steps.base.outputs.sha }})."
+          echo
+          echo "Fragment COVERAGE is not re-checked here, by design: it depends on"
+          echo "the pull request's labels and number, which the merge_group payload"
+          echo "does not carry. It was enforced on the pull request itself, which"
+          echo "the PR had to pass before it could enter this queue, and neither"
+          echo "the label nor the diff can change between there and here."
 
   # The mirror image of the job above, for the one case that job cannot see
   # (DOR-618). Two different things decide whether a change is user-facing, and
@@ -126,20 +178,37 @@ jobs:
   no-fragment-under-skip-label:
     # Only meaningful when the label is on. With it off, the coverage job above
     # is already asking the harder question.
+    #
+    # On a merge group this is false because there is no pull_request object to
+    # read labels from, so the job skips and the required check reports skipped,
+    # which satisfies branch protection without asserting anything. That is the
+    # intended behaviour and matches where the question belongs: this job
+    # reconciles a LABEL against a DIFF, and the label only exists on the pull
+    # request. It has already run there, and a PR cannot reach this queue without
+    # passing it.
     if: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          # On merge_group there is no pull_request object; github.sha is already
+          # the queue branch tip.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
-      - name: Determine the PR's merge-base
+      - name: Determine the base to diff against
         id: base
         run: |
-          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
-          base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          if [[ "${{ github.event_name }}" == "merge_group" ]]; then
+            # The queue branch is built ON base_sha, so it IS the merge base.
+            base="${{ github.event.merge_group.base_sha }}"
+            git fetch --no-tags origin "$base" || git fetch --no-tags --depth=200 origin
+          else
+            git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+            base="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "base: $base"
 
       # `--diff-filter=AR`: a fragment that ARRIVED at a path it was not at before,
       # whether git calls that an add or a rename.
