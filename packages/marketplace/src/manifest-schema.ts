@@ -8,14 +8,16 @@
  * agent templates) are validated in a single pass.
  *
  * This module is browser-safe — it imports only `zod`, `@dorkos/skills/schema`,
- * and the local `package-types` module, with no Node.js dependencies. It can
- * therefore be consumed by `apps/client` and `apps/site`.
+ * `@dorkos/skills/task-schema` (itself zod-only), and the local `package-types`
+ * module, with no Node.js dependencies. It can therefore be consumed by
+ * `apps/client` and `apps/site`.
  *
  * @module @dorkos/marketplace/manifest-schema
  */
 
 import { z } from 'zod';
 import { SkillNameSchema } from '@dorkos/skills/schema';
+import { TASK_PERMISSION_MODES } from '@dorkos/skills/task-schema';
 import { PackageTypeSchema } from './package-types.js';
 import { MarketplaceCategorySchema } from './categories.js';
 
@@ -256,23 +258,20 @@ const ShapeAgentSchema = z.object({
 /**
  * The permission modes a Shape schedule may run under.
  *
- * DRIFT NOTE: an inlined mirror of `PermissionModeSchema`
- * (`packages/shared/src/schemas.ts:27`) by value — `packages/marketplace`
- * (Zod 3, browser-safe) cannot import the Zod-4 `@dorkos/shared` schema, so the
- * six values are inlined here. Any change to `PermissionModeSchema` must be
- * reconciled here. Exported so a drift test asserts the two value sets stay
- * equal (task 1.1); the marketplace test imports `@dorkos/shared`'s
- * `PermissionModeSchema.options` and compares — a version-safe string-array
- * read, never a cross-version schema composition.
+ * This is `TASK_PERMISSION_MODES` from `@dorkos/skills/task-schema`, not a
+ * second copy of it. A Shape schedule becomes a task file whose `permissions:`
+ * frontmatter carries this value, so the two sets have to be the same set: when
+ * the manifest allowed a mode the frontmatter did not, apply-time wrote a task
+ * file its own parser rejected, and disk and DB disagreed from then on
+ * (DOR-607). Both packages are on zod v3, so this is a plain re-export; the
+ * zod-version mirror of `@dorkos/shared`'s `PermissionModeSchema` now lives in
+ * one place, with the drift test beside it in `@dorkos/skills`.
+ *
+ * Declaring a mode here is not the same as getting it. `bypassPermissions` is
+ * clamped at apply time (`apply-shape.ts`) — a package cannot decide that its
+ * own unattended cron runs with every approval prompt turned off.
  */
-export const SHAPE_SCHEDULE_PERMISSION_MODES = [
-  'default',
-  'plan',
-  'acceptEdits',
-  'dontAsk',
-  'bypassPermissions',
-  'auto',
-] as const;
+export const SHAPE_SCHEDULE_PERMISSION_MODES = TASK_PERMISSION_MODES;
 
 /**
  * A scheduled task the Shape stands up. Shape of `CreateTaskRequestSchema`
@@ -288,10 +287,21 @@ const ShapeScheduleSchema = z.object({
   timezone: z.string().nullable().default(null),
   /** Which Shape agent (`ShapeAgentSchema.ref`) this schedule runs as. */
   agentRef: z.string().regex(/^[a-z][a-z0-9-]*$/),
-  /** Permission mode the schedule runs under. See {@link SHAPE_SCHEDULE_PERMISSION_MODES}. */
+  /**
+   * Permission mode the schedule ASKS to run under. See
+   * {@link SHAPE_SCHEDULE_PERMISSION_MODES} — `bypassPermissions` is clamped at
+   * apply time and the operator is told, so declaring it is a request, not a
+   * grant.
+   */
   permissionMode: z.enum(SHAPE_SCHEDULE_PERMISSION_MODES).default('acceptEdits'),
-  /** Created disabled when true (or when its agent is missing at apply time). */
-  startDisabled: z.boolean().default(false),
+  /**
+   * Whether the schedule starts firing the moment the Shape is applied.
+   * Defaults to `false`: a package does not get to arm its own cron job, so a
+   * manifest that wants one running on arrival has to say so in the file.
+   * `true` is still only a request — a schedule whose agent is missing at apply
+   * time is created disabled regardless.
+   */
+  startEnabled: z.boolean().default(false),
 });
 
 /**

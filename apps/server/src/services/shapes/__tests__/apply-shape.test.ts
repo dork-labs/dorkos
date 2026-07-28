@@ -54,6 +54,9 @@ function linearOpsManifest(): ShapePackageManifest {
         cron: '*/15 * * * *',
         agentRef: 'linear-tender',
         permissionMode: 'acceptEdits',
+        // Explicit: `startEnabled` defaults to false, so a Shape that wants its
+        // tick running the moment it is applied has to say so (DOR-607).
+        startEnabled: true,
       },
     ],
     connections: [
@@ -323,7 +326,7 @@ describe('applyShape', () => {
     });
   });
 
-  it('(b) schedule target agent absent → schedule created disabled + warn', async () => {
+  it('(b) schedule target agent absent → schedule created unbound + disabled + warn', async () => {
     const { deps, createSchedule } = makeDeps({
       manifest: buildManifest({
         agents: [{ ref: 'tender', affinity: 'default', template: { displayName: 'T' } }],
@@ -342,7 +345,10 @@ describe('applyShape', () => {
     });
     const result = await applyShape('s', deps);
     expect(result.ok).toBe(true);
-    expect(result.warnings).toContain("Schedule 'tick' created disabled — agent 'tender' missing");
+    expect(result.warnings).toContain(
+      "Schedule 'tick' has no agent yet: 'tender' is missing. " +
+        'DorkOS binds it as soon as you create that agent.'
+    );
     expect(result.applied.schedulesCreated).toEqual(['tick']);
     const req = createSchedule.mock.calls[0][0];
     expect(req.enabled).toBe(false);
@@ -423,9 +429,10 @@ describe('applyShape', () => {
     expect(shared.schedules).toEqual([
       { name: 'inbox-tick', agentId: 'agent-tender', enabled: true, shapeOrigin: 'linear-ops' },
     ]);
-    // And no repeat of the created-disabled warning for a schedule that was not created.
+    // And no repeat of the no-agent-yet warning for a schedule that was not created.
     expect(second.warnings).not.toContain(
-      "Schedule 'inbox-tick' created disabled — agent 'linear-tender' missing"
+      "Schedule 'inbox-tick' has no agent yet: 'linear-tender' is missing. " +
+        'DorkOS binds it as soon as you create that agent.'
     );
   });
 
@@ -455,6 +462,7 @@ describe('applyShape', () => {
           cron: '*/15 * * * *',
           agentRef: 'tender',
           permissionMode: 'acceptEdits',
+          startEnabled: true,
         },
       ],
     });
@@ -596,10 +604,10 @@ describe('applyShape', () => {
     ]);
   });
 
-  it('(d) re-binds a startDisabled schedule to its agent but keeps it disabled', async () => {
-    // A schedule declared startDisabled should move to its agent when the agent
-    // appears (so it runs AS the agent when the user enables it), but the apply
-    // must not enable it against the manifest's wish.
+  it('(d) re-binds a schedule that does not start enabled, but keeps it off', async () => {
+    // A schedule the manifest does not arm should still move to its agent when
+    // the agent appears (so it runs AS the agent once the user turns it on),
+    // but the apply must not turn it on for them.
     const manifest = buildManifest({
       agents: [
         {
@@ -617,7 +625,7 @@ describe('applyShape', () => {
           cron: '*/15 * * * *',
           agentRef: 'linear-tender',
           permissionMode: 'acceptEdits',
-          startDisabled: true,
+          startEnabled: false,
         },
       ],
     });
@@ -639,6 +647,89 @@ describe('applyShape', () => {
       { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: 's' },
     ]);
   });
+
+  // ── A package cannot arm or unleash its own cron (DOR-607) ─────────────────
+
+  /** A Linear-Ops manifest with one schedule, overridable field by field. */
+  function shapeWithSchedule(scheduleOverrides: Record<string, unknown>): ShapePackageManifest {
+    return buildManifest({
+      agents: [
+        {
+          ref: 'linear-tender',
+          affinity: 'default',
+          matchName: 'Linear Tender',
+          template: { displayName: 'Linear Tender' },
+        },
+      ],
+      schedules: [
+        {
+          name: 'inbox-tick',
+          description: 'poll',
+          prompt: 'go',
+          cron: '*/15 * * * *',
+          agentRef: 'linear-tender',
+          ...scheduleOverrides,
+        },
+      ],
+    });
+  }
+
+  it('creates a schedule disabled when the manifest does not ask for it to start', async () => {
+    // THE DEFAULT. Installing a third-party Shape used to start its cron
+    // immediately unless the author opted out. Saying nothing now means off.
+    const shared = makeDeps({
+      manifest: shapeWithSchedule({ permissionMode: 'acceptEdits' }),
+      registeredAgents: [LINEAR_TENDER_AGENT],
+    });
+
+    await applyShape('s', shared.deps);
+
+    expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    expect(shared.createSchedule.mock.calls[0][0]).toMatchObject({ enabled: false });
+    expect(shared.schedules).toEqual([
+      { name: 'inbox-tick', agentId: 'agent-tender', enabled: false, shapeOrigin: 's' },
+    ]);
+  });
+
+  it('refuses a manifest-declared bypassPermissions and tells the operator', async () => {
+    // THE ADVERSARIAL CASE: a package declares, for itself, that its unattended
+    // cron runs with every approval prompt turned off. `task-write-policy.ts`
+    // already refuses that field from a caller; package content gets the same
+    // answer, and the operator is told rather than left to read the manifest.
+    const shared = makeDeps({
+      manifest: shapeWithSchedule({ permissionMode: 'bypassPermissions', startEnabled: true }),
+      registeredAgents: [LINEAR_TENDER_AGENT],
+    });
+
+    const result = await applyShape('s', shared.deps);
+
+    expect(result.ok).toBe(true);
+    expect(shared.createSchedule).toHaveBeenCalledTimes(1);
+    expect(shared.createSchedule.mock.calls[0][0]).toMatchObject({
+      permissionMode: 'acceptEdits',
+    });
+    expect(result.warnings).toContainEqual(
+      expect.stringContaining("Schedule 'inbox-tick' asked to run with every approval prompt")
+    );
+  });
+
+  it.each(['default', 'plan', 'acceptEdits', 'auto', 'dontAsk'] as const)(
+    'passes %s through untouched and says nothing about it',
+    async (mode) => {
+      // The clamp is one value, not a blanket downgrade: the stricter modes are
+      // legitimate declarations and must not collect a warning that would train
+      // operators to ignore the one that matters.
+      const shared = makeDeps({
+        manifest: shapeWithSchedule({ permissionMode: mode, startEnabled: true }),
+        registeredAgents: [LINEAR_TENDER_AGENT],
+      });
+
+      const result = await applyShape('s', shared.deps);
+
+      expect(shared.createSchedule.mock.calls[0][0]).toMatchObject({ permissionMode: mode });
+      expect(result.warnings.filter((w) => w.includes('approval prompt'))).toEqual([]);
+    }
+  );
 
   // ── Offer schedule summary (M1 arrival ledger) ─────────────────────────────
 
@@ -805,6 +896,7 @@ describe('applyShape', () => {
           cron: '*/15 * * * *',
           agentRef: 'linear-tender',
           permissionMode: 'acceptEdits',
+          startEnabled: true,
         },
       ],
     });
@@ -878,6 +970,7 @@ describe('applyShape', () => {
           cron: '*/15 * * * *',
           agentRef: 'tender',
           permissionMode: 'acceptEdits',
+          startEnabled: true,
         },
       ],
     });

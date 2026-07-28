@@ -53,7 +53,7 @@ function validShapeManifest(): Record<string, unknown> {
         cron: '*/15 * * * *',
         agentRef: 'linear-tender',
         permissionMode: 'acceptEdits',
-        startDisabled: false,
+        startEnabled: true,
       },
     ],
     connections: [
@@ -240,15 +240,59 @@ describe('DependencyDeclarationSchema — shape: prefix', () => {
 });
 
 describe('PermissionMode drift — marketplace mirror vs @dorkos/shared source', () => {
-  // The shape schedule permissionMode enum is an inlined mirror of
-  // @dorkos/shared's PermissionModeSchema (the Zod-version boundary forbids a
-  // direct import in source). This test reads PermissionModeSchema.options — a
-  // plain string array, safe to read across Zod majors — and asserts value-set
-  // parity so the two never silently diverge.
+  // What a Shape schedule may declare is re-exported from @dorkos/skills, which
+  // holds the single zod-v3 mirror of @dorkos/shared's PermissionModeSchema (the
+  // zod-version boundary forbids importing the schema itself). This test reads
+  // PermissionModeSchema.options — a plain string array, safe to read across zod
+  // majors — and asserts value-set parity so the chain never silently diverges.
   it('the two value sets are equal', () => {
     expect([...SHAPE_SCHEDULE_PERMISSION_MODES].sort()).toEqual(
       [...PermissionModeSchema.options].sort()
     );
+  });
+
+  // The manifest enum must be built FROM that set, not merely equal to a copy of
+  // it: an author could re-add a hand-written list and the parity check above
+  // would still be green.
+  it('the manifest field accepts exactly that set', () => {
+    for (const mode of PermissionModeSchema.options) {
+      const manifest = validShapeManifest() as { schedules: Record<string, unknown>[] };
+      manifest.schedules[0]!.permissionMode = mode;
+      const result = MarketplacePackageManifestSchema.safeParse(manifest);
+      expect(result.success, `${mode} should be declarable`).toBe(true);
+    }
+  });
+});
+
+describe('startEnabled — a package does not arm its own cron (DOR-607)', () => {
+  // A Shape schedule fires unattended. Deciding that it starts firing the moment
+  // the package is installed is the operator's call, so the field defaults OFF
+  // and a manifest has to opt in. This is a rename of the old `startDisabled`
+  // rather than a flipped default precisely so that no already-published
+  // manifest quietly changes meaning: the old key is not read at all.
+  function scheduleOf(manifest: Record<string, unknown>): Record<string, unknown> {
+    const parsed = MarketplacePackageManifestSchema.parse(manifest);
+    if (parsed.type !== 'shape') throw new Error('expected shape variant');
+    return parsed.schedules[0]! as unknown as Record<string, unknown>;
+  }
+
+  it('defaults to false when the manifest says nothing', () => {
+    const manifest = validShapeManifest() as { schedules: Record<string, unknown>[] };
+    delete manifest.schedules[0]!.startEnabled;
+    expect(scheduleOf(manifest).startEnabled).toBe(false);
+  });
+
+  it('does not read the retired startDisabled key', () => {
+    // A manifest written against the old key gets the safe default, not its
+    // former meaning. `startDisabled: false` used to mean "start it running".
+    const manifest = validShapeManifest() as { schedules: Record<string, unknown>[] };
+    delete manifest.schedules[0]!.startEnabled;
+    manifest.schedules[0]!.startDisabled = false;
+    expect(scheduleOf(manifest).startEnabled).toBe(false);
+  });
+
+  it('honours an explicit opt-in', () => {
+    expect(scheduleOf(validShapeManifest()).startEnabled).toBe(true);
   });
 });
 

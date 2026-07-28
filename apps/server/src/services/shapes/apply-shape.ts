@@ -22,11 +22,46 @@
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import type { ShapeUserPrefs } from '@dorkos/shared/config-schema';
 import { describeCronSchedule } from '@dorkos/shared/cron';
-import type { CreateTaskRequest } from '@dorkos/shared/schemas';
+import type { CreateTaskRequest, PermissionMode } from '@dorkos/shared/schemas';
 import { slugify } from '@dorkos/skills/slug';
 
 /** A single agents[] entry as declared on a Shape manifest. */
 type ShapeAgentEntry = ShapePackageManifest['agents'][number];
+
+/**
+ * The mode a clamped schedule falls back to — the same value the manifest
+ * schema defaults `permissionMode` to, so a clamp lands a Shape exactly where
+ * declaring nothing would have.
+ */
+const CLAMPED_PERMISSION_MODE = 'acceptEdits' as const;
+
+/**
+ * Decide the permission mode a Shape-declared schedule actually gets (DOR-607).
+ *
+ * `task-write-policy.ts` classifies `permissionMode` as operator-only: an agent
+ * that names itself cannot hand a future unattended run a mode it does not have
+ * itself. Package CONTENT reaching the same field is the identical risk, and
+ * until now it got the opposite verdict — installing a third-party Shape could
+ * stand up a cron job running with every approval prompt turned off, without a
+ * person ever seeing the word.
+ *
+ * So `bypassPermissions` is refused here rather than rejected in the manifest
+ * schema: a package may legitimately DECLARE what it would like, and telling the
+ * operator "this asked for more than it got" is more legible than a validation
+ * error at install time that names no consequence. Raising it back is a person's
+ * call, in the cockpit, on a task they can see.
+ *
+ * @param declared - The mode the manifest asked for.
+ * @returns The mode to create the schedule with, and whether it was clamped.
+ */
+function clampSchedulePermissionMode(declared: PermissionMode): {
+  mode: PermissionMode;
+  clamped: boolean;
+} {
+  return declared === 'bypassPermissions'
+    ? { mode: CLAMPED_PERMISSION_MODE, clamped: true }
+    : { mode: declared, clamped: false };
+}
 
 /** The resolved workspace chrome a Shape restores (spec §2 `ShapeLayoutSchema`). */
 export type ShapeLayout = ShapePackageManifest['layout'];
@@ -238,7 +273,7 @@ export interface ScheduleOrigin {
 export interface ScheduleRebind {
   /** The agent id to re-target the schedule to. */
   agentId: string;
-  /** Whether the schedule is enabled once bound (mirrors `!startDisabled`). */
+  /** Whether the schedule is enabled once bound (mirrors `startEnabled`). */
   enabled: boolean;
 }
 
@@ -426,7 +461,7 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     const resolved = agentByRef.get(schedule.agentRef);
     const match = resolved?.match ?? null;
     const target = match ? match.id : GLOBAL_TARGET;
-    const enabled = match !== null && !schedule.startDisabled;
+    const enabled = match !== null && schedule.startEnabled;
 
     // Schedules are stored under `slugify(name)` — `createSchedule` and the
     // tasks router both do this — so `listSchedules` returns slugs and the
@@ -443,13 +478,18 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       // globally-disabled by an earlier apply of THIS Shape, when its agent was
       // missing). If the agent is now present, the schedule is still unbound
       // (global), and its provenance marker names this Shape, re-target it to
-      // the agent and enable it (unless the manifest starts it disabled). An
-      // already-bound schedule is left untouched — a user who disabled their
+      // the agent and enable it (only when the manifest asks to start enabled).
+      // An already-bound schedule is left untouched — a user who disabled their
       // own bound schedule keeps that choice — and a global schedule WITHOUT
       // this Shape's provenance (a user's own, or another Shape's) is never
       // touched: a name collision must not hijack it.
+      //
+      // Nothing here re-reads `permissionMode`: the existing schedule already
+      // carries the clamped mode from the apply that created it, and a person
+      // may since have raised it deliberately in the cockpit. A re-apply must
+      // not undo that, in either direction.
       if (match && existing.agentId === null && existing.shapeOrigin === name) {
-        const rebindEnabled = !schedule.startDisabled;
+        const rebindEnabled = schedule.startEnabled;
         await deps.scheduleService.rebindSchedule(storedName, {
           agentId: match.id,
           enabled: rebindEnabled,
@@ -466,8 +506,23 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
     }
 
     if (!match) {
+      // Says what is true whatever the manifest asked for. "Created disabled
+      // because the agent is missing" stopped being the whole story once
+      // `startEnabled` began defaulting to false (DOR-607): a schedule that
+      // never asked to start is off for its own reason, and blaming the missing
+      // agent for it would send the operator looking for the wrong fix. What IS
+      // always true here is that the schedule has no agent yet.
       warnings.push(
-        `Schedule '${schedule.name}' created disabled — agent '${schedule.agentRef}' missing`
+        `Schedule '${schedule.name}' has no agent yet: '${schedule.agentRef}' is missing. ` +
+          `DorkOS binds it as soon as you create that agent.`
+      );
+    }
+
+    const { mode: permissionMode, clamped } = clampSchedulePermissionMode(schedule.permissionMode);
+    if (clamped) {
+      warnings.push(
+        `Schedule '${schedule.name}' asked to run with every approval prompt turned off. ` +
+          `DorkOS created it with the normal prompts instead; you can change that on the task.`
       );
     }
 
@@ -479,7 +534,7 @@ export async function applyShape(name: string, deps: ApplyShapeDeps): Promise<Ap
       timezone: schedule.timezone,
       target,
       enabled,
-      permissionMode: schedule.permissionMode,
+      permissionMode,
     };
     await deps.scheduleService.createSchedule(request, { shape: name });
     existingByName.set(storedName, {
