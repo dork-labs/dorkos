@@ -1,6 +1,6 @@
 ---
 name: creating-pull-requests
-description: How to open pull requests in the DorkOS repo, including the automated-review controls (skip-review, review:light/deep, re-review). Use when opening a PR, deciding how much review a PR should get, or requesting a re-review after addressing feedback.
+description: When to open a pull request in the DorkOS repo (review the pushed branch first, open the PR after it converges) and how the automated review behaves, including its controls (skip-review, review:light/deep, re-review). Use when finishing a branch, opening a PR, deciding how much review a PR should get, or requesting a re-review after addressing feedback.
 ---
 
 # Creating Pull Requests
@@ -11,9 +11,43 @@ review loop cheap.
 
 ## When to use
 
+- You have finished a branch and are deciding when to open the PR.
 - You are about to open a PR (from an agent or by hand).
 - A PR already has review feedback and you want another pass once it is addressed.
 - You want to dial a PR's review up, down, or off.
+
+## The order: review the branch, then open the PR
+
+The independent adversarial review runs **against a pushed branch, before a PR
+exists**. Opening the PR is the last step, not the first:
+
+1. Build in an isolated worktree and run the local gates.
+2. Push the branch. **Open nothing.**
+3. A reviewer fetches and checks out that branch. It does not need a PR.
+4. Findings, fixes, convergence.
+5. Squash to one clean commit carrying one changelog fragment.
+6. **Then** open the PR, already reviewed, so the repo's automated review spends
+   its single pass on final content.
+
+Every reason below is a cost measured on 2026-07-27/28, not a preference:
+
+- **Merge churn.** A PR held open across review rounds watches `main` move under
+  it. One night of that took roughly a dozen `gh pr update-branch` calls and still
+  left a `DIRTY` PR needing a semantic conflict resolved by hand.
+- **The changelog gate.** A fragment claims the commits that existed when it was
+  written. Review-fix commits arrive afterwards uncovered, and `fragment-present`
+  fails. **Three PRs failed this way in one night.** One commit and one fragment
+  removes the failure mode instead of working around it.
+- **An open PR is an invitation to act.** Another session armed auto-merge on a PR
+  carrying two open blocking findings. Both were browser-only and untested, so
+  every check was green with the defects live. A branch invites nothing.
+- **The automated review fires on open**, so opening early spends it on a draft.
+
+The one real cost: **CI does not run until the PR opens.** Cover it two ways. Run
+the local gates yourself, which is cheap (`pnpm verify`, plus the changelog gate
+below). And when a runner-only check is the honest gate (smoke tests, the packaged
+runtime, Docker, anything path-filtered to its own workflow), open a **draft** so
+CI runs without inviting a merge, then mark ready once review converges.
 
 ## Before you open: branch from a worktree
 
@@ -42,20 +76,64 @@ move the losing fragment's `covers:` items across. **Do NOT edit `CHANGELOG.md`'
 `[Unreleased]` section** — it no longer holds entries; only `/system:release` writes
 `CHANGELOG.md`.
 
+### Run the changelog gate locally
+
+The gate is not "is there a fragment". It is "**is every user-facing commit claimed
+by some fragment's `covers:` list**". Reproduce it before you push:
+
+```bash
+python3 .claude/scripts/changelog_backfill.py --since "$(git merge-base origin/main HEAD)" --validate --changed-only
+python3 .claude/scripts/changelog_backfill.py --since "$(git merge-base origin/main HEAD)" --pr <n> --check --changed-only
+```
+
+The first checks that the fragments you touched are well formed; the second checks
+coverage. Each prints a one-line verdict and exits non-zero on failure, and the
+failure names the uncovered commits and shows the fragment that would cover them.
+Drop `--pr <n>` before the PR exists: it only matters when a fragment claims a
+whole PR by number (`- "#412"`).
+
+The failure mode to watch: a fragment written with the first commit does not cover
+commits added later, so **a PR that was green turns red the moment it takes review
+feedback**. The fix is a `covers:` frontmatter block naming each commit's subject
+line verbatim:
+
+<!-- The double quotes are load-bearing: verbatim what the post-commit hook writes.
+     Prettier rewrites quotes inside an embedded fence, hence the ignore. -->
+<!-- prettier-ignore -->
+```markdown
+---
+covers:
+  - "fix(relay): stop a Telegram bot answering other bots and every group message"
+  - "fix(relay): treat an anonymous Telegram admin as a person"
+---
+```
+
+`covers:` exists precisely so the prose can be written for a human without breaking
+the check. Squashing to one commit before opening the PR makes the whole problem
+disappear, which is the deeper reason for the order above.
+
 ## Opening the PR
 
-Iterate as a **draft**, then mark ready when the branch is done:
+Open it once the branch has converged, with the squashed commit and its fragment
+already pushed:
+
+```bash
+gh pr create --title "<type>(<scope>): <summary>" --body "<body>"
+```
+
+PR body: lead with what changed and why, link the spec or issue, and call out
+anything reviewers should look at first.
+
+Open a **draft** instead when you still need CI to tell you something, then mark it
+ready once review converges:
 
 ```bash
 gh pr create --draft --title "<type>(<scope>): <summary>" --body "<body>"
-# ... push commits, iterate freely (no review runs while draft) ...
 gh pr ready <number>        # marking ready fires exactly one full review
 ```
 
-Why draft-first: the auto-review is **on-demand**, not on every push (see below).
-A draft gets no review, so you can push freely; marking ready triggers one review
-of the final state. PR body: lead with what changed and why, link the spec or
-issue, and call out anything reviewers should look at first.
+A draft gets no automatic review, so you can push to it freely; marking ready
+triggers one review of the final state.
 
 ## How the automated review behaves
 
