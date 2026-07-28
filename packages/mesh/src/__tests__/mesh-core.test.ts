@@ -1466,6 +1466,39 @@ describe('reconciler disk discovery (ADR-0043)', () => {
     mesh.close();
   });
 
+  it('logs the homedir-fallback skip at debug level, not warn', async () => {
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'legacy-proj');
+    await fs.mkdir(projectDir, { recursive: true });
+
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+
+    // Same legacy-homedir-scoped-entry setup as the test above, but this one
+    // asserts on log level: the guard fires on every reconcile pass such an
+    // entry survives (every 5 minutes in production), and it is working
+    // exactly as designed — not an anomaly — so it must not be loud enough
+    // to look like one.
+    const mesh = new MeshCore({ db, logger });
+    const registry = new AgentRegistry(db);
+    registry.upsert({
+      ...makeManifest({ id: '01LEGACYHOMEWARN', name: 'legacy' }),
+      projectPath: projectDir,
+      namespace: 'default',
+      scanRoot: os.homedir(),
+    });
+
+    vi.spyOn(mesh, 'discover').mockImplementation(async function* (): AsyncGenerator<ScanEvent> {});
+    await mesh.reconcileOnStartup();
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[Mesh] Skipping homedir-fallback scan root in reconciler disk discovery',
+      expect.objectContaining({ root: os.homedir() })
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+
+    mesh.close();
+  });
+
   it('still walks the agents home dir when a homedir-fallback root is skipped', async () => {
     const base = await makeTempDir();
     const agentsHome = path.join(base, 'agents');

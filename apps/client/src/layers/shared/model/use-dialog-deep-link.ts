@@ -8,9 +8,9 @@
  * @module shared/model/use-dialog-deep-link
  */
 import { useCallback } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useAppStore } from './app-store';
 import type { SettingsTab } from './app-store/app-store-panels';
-import { useSafeSearch } from './use-safe-router';
+import { useSafeSearch, useSafeNavigate } from './use-safe-router';
 
 // Route-agnostic search updater type used internally. We cast to this when
 // calling navigate without a `to:` — these hooks are intentionally generic
@@ -36,6 +36,20 @@ function resolveSettingsTab(raw: string | undefined): SettingsTab | null {
   return LEGACY_SETTINGS_TAB_MAP[raw] ?? (raw as SettingsTab);
 }
 
+/**
+ * What these hooks do when there is no router to navigate — the Obsidian embed
+ * renders `App` directly, with no `RouterProvider` (see `use-safe-router.ts`).
+ *
+ * There is no URL to write, so open/close fall back to the app store's plain
+ * open flag. `DialogHost` already opens a dialog on `storeOpen || urlIsOpen`, so
+ * the two signals are interchangeable for open/close; only the *tab* is lost,
+ * and the dialog lands on its default. That is exactly what these CTAs did
+ * before they moved to the URL — a mislabelled destination, not a dead button.
+ *
+ * The tab-scoped actions (`setTab`, `setSection`) have no store equivalent and
+ * no meaning without a URL, so they no-op rather than pretend.
+ */
+
 /** Generic shape returned by every dialog deep-link hook. */
 export interface DialogDeepLink<T extends string> {
   /** True if the dialog should be open per the URL. */
@@ -57,14 +71,18 @@ export interface DialogDeepLink<T extends string> {
 /** Settings dialog deep-link state and actions. */
 export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const search = useSafeSearch() as { settings?: string; settingsSection?: string };
-  const navigate = useNavigate();
+  const navigate = useSafeNavigate();
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
+  const storeOpen = useAppStore((s) => s.settingsOpen);
 
-  const isOpen = !!search.settings;
-  const activeTab = resolveSettingsTab(search.settings);
-  const section = search.settingsSection ?? null;
+  // Without a router the URL says nothing, so the store flag is the open signal.
+  const isOpen = navigate ? !!search.settings : storeOpen;
+  const activeTab = navigate ? resolveSettingsTab(search.settings) : null;
+  const section = navigate ? (search.settingsSection ?? null) : null;
 
   const open = useCallback(
     (tab?: SettingsTab, sectionId?: string) => {
+      if (!navigate) return setSettingsOpen(true);
       const updater: AnySearchUpdater = (prev) => ({
         ...prev,
         settings: tab ?? 'open',
@@ -72,20 +90,22 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
       });
       navigate({ search: updater as never });
     },
-    [navigate]
+    [navigate, setSettingsOpen]
   );
 
   const close = useCallback(() => {
+    if (!navigate) return setSettingsOpen(false);
     const updater: AnySearchUpdater = (prev) => ({
       ...prev,
       settings: undefined,
       settingsSection: undefined,
     });
     navigate({ search: updater as never });
-  }, [navigate]);
+  }, [navigate, setSettingsOpen]);
 
   const setTab = useCallback(
     (tab: SettingsTab) => {
+      if (!navigate) return;
       const updater: AnySearchUpdater = (prev) => ({
         ...prev,
         settings: tab,
@@ -98,6 +118,7 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
 
   const setSection = useCallback(
     (sectionId: string | null) => {
+      if (!navigate) return;
       const updater: AnySearchUpdater = (prev) => ({
         ...prev,
         settingsSection: sectionId ?? undefined,
@@ -123,18 +144,25 @@ export function useRelayDeepLink(): DialogDeepLink<never> {
 /** Internal helper for parameterless (no-tab) dialogs. */
 function useSimpleDialogDeepLink(paramName: 'tasks' | 'relay'): DialogDeepLink<never> {
   const search = useSafeSearch() as Record<string, string | undefined>;
-  const navigate = useNavigate();
-  const isOpen = !!search[paramName];
+  const navigate = useSafeNavigate();
+  const setStoreOpen = useAppStore((s) =>
+    paramName === 'tasks' ? s.setTasksOpen : s.setRelayOpen
+  );
+  const storeOpen = useAppStore((s) => (paramName === 'tasks' ? s.tasksOpen : s.relayOpen));
+
+  const isOpen = navigate ? !!search[paramName] : storeOpen;
 
   const open = useCallback(() => {
+    if (!navigate) return setStoreOpen(true);
     const updater: AnySearchUpdater = (prev) => ({ ...prev, [paramName]: 'open' });
     navigate({ search: updater as never });
-  }, [navigate, paramName]);
+  }, [navigate, paramName, setStoreOpen]);
 
   const close = useCallback(() => {
+    if (!navigate) return setStoreOpen(false);
     const updater: AnySearchUpdater = (prev) => ({ ...prev, [paramName]: undefined });
     navigate({ search: updater as never });
-  }, [navigate, paramName]);
+  }, [navigate, paramName, setStoreOpen]);
 
   return {
     isOpen,

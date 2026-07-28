@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createContext, useContext, type ReactNode } from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
@@ -13,7 +13,8 @@ import {
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
+import { mergeDialogSearch, useAppStore } from '@/layers/shared/model';
+import { setPlatformAdapter } from '@/layers/shared/lib';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, CatalogEntry, ObservedChat } from '@dorkos/shared/relay-schemas';
 
@@ -291,6 +292,18 @@ function readSettingsTab(): string | undefined {
   return (router.state.location.search as { settings?: string }).settings;
 }
 
+/**
+ * Render the tab the way the Obsidian embed does: no `RouterProvider` at all.
+ *
+ * This is a real surface, not a hypothetical. `app/init-extensions.ts` registers
+ * the Agent Hub right-panel tab from both the web entry and the embed, and
+ * `agent-hub/ui/tabs/ConfigTab.tsx` renders this component inside it.
+ */
+function renderTabWithoutRouter(agent: AgentManifest = baseAgent) {
+  const { container } = render(<IntegrationsTab agent={agent} />);
+  return within(container);
+}
+
 function renderTab(agent: AgentManifest = baseAgent) {
   const { container } = render(
     <SlotContext.Provider value={<IntegrationsTab agent={agent} />}>
@@ -343,6 +356,38 @@ describe('IntegrationsTab', () => {
       const view = renderTab();
       fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
       await waitFor(() => expect(readSettingsTab()).toBe('integrations'));
+    });
+
+    // The Obsidian embed mounts no router, so these CTAs cannot write a URL.
+    // They must still open Settings — on its default tab, which is what they did
+    // before the deep link existed. Throwing would make them worse than the
+    // mislabelled buttons they replaced.
+    describe('in the router-less embed', () => {
+      beforeEach(() => {
+        setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+        useAppStore.setState({ settingsOpen: false });
+      });
+      afterEach(() => {
+        setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
+      });
+
+      it('State A: the CTA opens Settings instead of throwing', () => {
+        mockUseRelayEnabled.mockReturnValue(false);
+        const view = renderTabWithoutRouter();
+
+        fireEvent.click(view.getByRole('button', { name: 'Open Relay settings' }));
+
+        expect(useAppStore.getState().settingsOpen).toBe(true);
+      });
+
+      it('State B: the CTA opens Settings instead of throwing', () => {
+        mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
+        const view = renderTabWithoutRouter();
+
+        fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
+
+        expect(useAppStore.getState().settingsOpen).toBe(true);
+      });
     });
 
     it('State C: shows no-bindings message with IntegrationPicker CTA when relay is on and adapters exist', () => {
