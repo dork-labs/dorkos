@@ -133,6 +133,87 @@ describe('createSessionRoomTurnRunner', () => {
     turnBehaviour = () => ({ accepted: false });
     const result = await createSessionRoomTurnRunner().run(request());
     expect(result.text).toBeNull();
+    // Named, not merely empty: a `null` on its own is what an agent with
+    // nothing to say returns, and the room stayed silent about both (DOR-621).
+    expect(result.unanswered).toBe('busy');
+  });
+
+  it('reports a turn that ended in an error, rather than an empty answer', async () => {
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest({ type: 'turn_end', terminalReason: 'error' });
+      return { accepted: true, canonicalId: sessionId };
+    };
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBeNull();
+    expect(result.unanswered).toBe('failed');
+  });
+
+  it('does not mistake a quiet turn for a failed one', async () => {
+    turnBehaviour = saysAndCloses('   ');
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBeNull();
+    expect(result.unanswered).toBeUndefined();
+  });
+
+  it('hands back an answer that outran the wait instead of dropping it', async () => {
+    // The turn is still open when the runner returns, so `run` cannot resolve
+    // before the deadline and the assertion below cannot race it.
+    let finishTurn = (): void => undefined;
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      finishTurn = () => {
+        projector.ingest({ type: 'text_delta', text: 'green' });
+        projector.ingest({ type: 'turn_end' });
+      };
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner({ waitMs: 5 }).run(request());
+    expect(result.text).toBeNull();
+    expect(result.unanswered).toBeUndefined();
+    expect(result.late).toBeDefined();
+
+    finishTurn();
+    const late = await result.late;
+    expect(late?.text).toBe('green');
+    expect(late?.unanswered).toBeUndefined();
+    expect(late?.waitedMs).toBeGreaterThanOrEqual(5);
+  });
+
+  it('never posts the half of an answer it had when the wait ran out', async () => {
+    // The old timeout aborted the read, so whatever had streamed by then was
+    // returned as if it were the whole answer.
+    let finishTurn = (): void => undefined;
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest({ type: 'text_delta', text: 'the build is ' });
+      finishTurn = () => {
+        projector.ingest({ type: 'text_delta', text: 'green' });
+        projector.ingest({ type: 'turn_end' });
+      };
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner({ waitMs: 5 }).run(request());
+    expect(result.text).toBeNull();
+
+    finishTurn();
+    expect((await result.late)?.text).toBe('the build is green');
+  });
+
+  it('gives up on a turn that never closes, and says the turn failed', async () => {
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner({ waitMs: 5, ceilingMs: 30 }).run(request());
+    expect(result.late).toBeDefined();
+
+    const late = await result.late;
+    expect(late?.text).toBeNull();
+    expect(late?.unanswered).toBe('failed');
   });
 
   it('writes no runtime binding for a turn that never started', async () => {

@@ -50,7 +50,15 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 - **A refusal is visible.** A dropped trigger that writes no room entry is
   indistinguishable from a broken agent, and the person who notices is not the
   person who configured it. If you add a path that can decline to run a turn, it
-  writes a durable room notice in the room's own voice.
+  writes a durable room notice in the room's own voice. All five live in
+  `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
+  `turn_failed`, `no_auto_reply`); a new way to go quiet earns a new code there,
+  never a free-text line. The one silence that stays silent is an agent that ran
+  a turn and chose to say nothing — that is conduct, not a fault.
+- **A slow turn is late, never lost.** The room's wait deadline bounds the WAIT,
+  never the turn. An answer that outruns it is posted when it lands, saying how
+  long it took. Never post a fragment of an unfinished answer as though it were
+  the whole thing (DOR-621).
 - **Context injection is structured** (ADR-0273). Room framing belongs in an
   `additionalContext` entry with its `CONTEXT_TAG`, never concatenated into
   `content`. `content` stays exactly what the human wrote.
@@ -67,8 +75,6 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 Current as of 2026-07-27; fix them rather than working around them.
 
-- A busy session drops the trigger with a log line and **no room entry**
-  (`room-turn-runner.ts`), which violates the visible-refusal invariant above.
 - `composeRoomPrompt` gives the agent one message and no roster, no history, and
   no indication of who is a person and who is a machine.
 - The room composer has **no mention autocomplete at all**; resolution is a regex
