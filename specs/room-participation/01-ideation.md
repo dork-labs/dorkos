@@ -10,7 +10,7 @@ status: ideation
 - **Slug:** room-participation
 - **Date:** 2026-07-27
 - **Author:** Claude (directed by Dorian)
-- **Tracker:** unassigned at time of writing
+- **Tracker:** [DOR-620](https://linear.app/dorkian/issue/DOR-620) (advance this spec to SPECIFY; it carries §8's open questions). Follow-ups filed from this spec: [DOR-619](https://linear.app/dorkian/issue/DOR-619) Telegram bot-loop guard (a live bug, independent of this design), [DOR-621](https://linear.app/dorkian/issue/DOR-621) busy-session drop writes no room entry (§7 step 1), [DOR-622](https://linear.app/dorkian/issue/DOR-622) `room_context` ContextKind (§7 step 2), [DOR-623](https://linear.app/dorkian/issue/DOR-623) Slack `respondMode` default discrepancy.
 - **Anchors:** codebase = working tree at `a06b6d83b`. Buzz = `github.com/block/buzz` @ `d500c2d5cf5d9aabe0ca4ebebfcafdbe5f5b7fd3`.
 - **North Star:** [`meta/agent-etiquette.md`](../../meta/agent-etiquette.md). Rule ids below (E1–E26) refer to it.
 
