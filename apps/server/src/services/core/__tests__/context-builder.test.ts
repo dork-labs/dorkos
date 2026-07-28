@@ -756,6 +756,37 @@ describe('buildMarketplaceToolsBlock', () => {
     expect(result).toContain('requires_confirmation');
     expect(result).toContain('STOP');
   });
+
+  it('documents each tool signature exactly as its Zod schema defines it', () => {
+    // A wrong signature in the system prompt is worse than no block at all — this
+    // pins every tool's documented params against the real InputSchema constants
+    // (tool-search.ts, tool-recommend.ts, tool-create-package.ts, ...), so a future
+    // schema change that drifts from this text fails loudly instead of shipping a
+    // parameter that does not exist into every agent's instructions.
+    const result = _buildMarketplaceToolsBlock();
+    expect(result).toContain(
+      'marketplace_search(query?, type?, category?, tags?, marketplace?, limit?)'
+    );
+    expect(result).toContain('marketplace_get(name, marketplace?)');
+    expect(result).toContain('marketplace_list_marketplaces()');
+    expect(result).toContain('marketplace_list_installed(type?)');
+    expect(result).toContain('marketplace_recommend(context, type?, limit?)');
+    expect(result).toContain(
+      'marketplace_install(name, marketplace?, projectPath?, confirmationToken?)'
+    );
+    expect(result).toContain(
+      'marketplace_uninstall(name, purge?, projectPath?, confirmationToken?)'
+    );
+    // CreatePackageInputSchema (tool-create-package.ts) is { name, type,
+    // description, author?, categories?, confirmationToken? } — no `marketplace`
+    // field, and the required field is named `type`, not `packageType` (that name
+    // belongs to ConfirmationRequest.packageType in confirmation-provider.ts, a
+    // different type entirely).
+    expect(result).toContain(
+      'marketplace_create_package(name, type, description, author?, categories?, confirmationToken?)'
+    );
+    expect(result).not.toContain('packageType');
+  });
 });
 
 describe('buildPeerAgentsBlock', () => {

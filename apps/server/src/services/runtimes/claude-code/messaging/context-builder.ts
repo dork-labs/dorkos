@@ -182,11 +182,11 @@ DorkOS Marketplace lets you find, inspect, and install packages (agents, plugins
 skill packs, adapters), and scaffold new ones into the user's personal marketplace.
 
 Read-only lookups:
-  marketplace_search(query?, type?, category?, tags?, marketplace?) -- search every enabled source
+  marketplace_search(query?, type?, category?, tags?, marketplace?, limit?) -- search every enabled source (limit defaults to 20)
   marketplace_get(name, marketplace?) -- full manifest + README for one package
   marketplace_list_marketplaces() -- configured sources (name, source, enabled, package count)
   marketplace_list_installed(type?) -- what is installed, one entry per scope (global | agent-local | override)
-  marketplace_recommend(context) -- keyword/tag-matched suggestions for a free-text need
+  marketplace_recommend(context, type?, limit?) -- keyword/tag-matched suggestions for a free-text need (limit defaults to 5)
 
 Mutations -- marketplace_install, marketplace_uninstall, marketplace_create_package -- all
 require explicit user confirmation through the SAME two-call protocol:
@@ -200,7 +200,7 @@ require explicit user confirmation through the SAME two-call protocol:
 
   marketplace_install(name, marketplace?, projectPath?, confirmationToken?)
   marketplace_uninstall(name, purge?, projectPath?, confirmationToken?)
-  marketplace_create_package(name, packageType, marketplace?, confirmationToken?)
+  marketplace_create_package(name, type, description, author?, categories?, confirmationToken?)
 </marketplace_tools>`;
 
 const UI_TOOLS_CONTEXT = `<ui_tools>
@@ -249,9 +249,14 @@ function buildUiToolsBlock(): string {
  * unlike relay/mesh/adapter/tasks, it was never wired into the toggle system at
  * all. DOR-529 added this block for parity: it was the only tool group with zero
  * system-prompt context, `relay`/`mesh`/`adapter`/`tasks` all had one. This closes
- * that gap on its own merits; it does not fix a defect — every credentialed run
- * measured against the marketplace install eval resolved the tool's schema on the
- * first attempt with no context block at all.
+ * that gap on its own merits; it is not a fix for the eval-awareness defect the
+ * same ticket found — every credentialed run measured against the marketplace
+ * install eval resolved the tool's schema on the first `ToolSearch` call with no
+ * context block at all, so nothing here changes tool DISCOVERY. It is defensible
+ * only about discovery, though: the block's own text ("show them the preview and
+ * STOP... do not retry in a loop") is a behavioral instruction aimed at the exact
+ * behavior the eval measures, so it can plausibly shift how often a model retries
+ * on turn 1 — that is a claim about outcomes this change does not get to make.
  *
  * Per the module TSDoc on {@link ResolvedToolConfig} (ADR 260726-171347 supersedes
  * ADR-0070): a tool-group toggle gates what this file tells the agent, never what

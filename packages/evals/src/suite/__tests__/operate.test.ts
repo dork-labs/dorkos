@@ -146,13 +146,20 @@ describe('operate-DorkOS case metadata', () => {
   });
 
   it('the marketplace case drives two turns: the ask, then a go-ahead once approved (DOR-529)', () => {
-    // A single-turn drive cannot pass by the honest path: nothing server-side
-    // resumes a stalled turn when a person approves out of band, so an agent
-    // that correctly stops to ask on turn 1 can never complete the install
-    // without a follow-up telling it to proceed. Turn 1 must stay the
-    // original, unqualified ask — an agent that assumes approval there is
-    // guessing, not being told — and turn 2 is the only place the case says
-    // go ahead.
+    // The `toHaveLength(2)` assertion is the real guard here: a single-turn
+    // drive cannot pass by the honest path, because nothing server-side
+    // resumes a stalled turn when a person approves out of band, so this
+    // catches a regression back to one turn.
+    //
+    // The two `.toMatch`/`.not.toMatch` calls below are a narrower content pin
+    // on the CURRENT wording, not a behavioral guarantee — they read the
+    // literal case fixtures, not anything a model could do. They do NOT prove
+    // an agent cannot pass by guessing on turn 1: the harness's capability
+    // poll is conversation-wide and grants in well under a second (measured
+    // 74-327ms across the four credentialed runs), so an eval-aware model can
+    // retry successfully inside turn 1 alone, before turn 2 is ever reached —
+    // that gap is real and open, tracked as a DOR-529 follow-up, and no wording
+    // check over these two fixed strings can see a model's own reasoning.
     expect(Array.isArray(marketplaceInstallCase.prompt)).toBe(true);
     const turns = marketplaceInstallCase.prompt as string[];
     expect(turns).toHaveLength(2);
