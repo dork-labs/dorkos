@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(marketplace): show what a package will run before you install it (DOR-635)'
+  - 'fix(marketplace): say "declares", pin both install roots, and humanize the rest of the sentence (DOR-635)'
 ---
 
 ### Added
