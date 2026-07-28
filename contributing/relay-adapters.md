@@ -382,10 +382,18 @@ like any other person by the respond mode below, not waved through.
 
 Deliberately **not** keyed on the service account's numeric id (`1087968824`):
 that value is widely repeated but appears nowhere in the Bot API reference or in
-`@grammyjs/types`. `sender_chat` is documented, is set server-side so no bot can
-forge it, and is narrower — a linked channel forwarding into a discussion group
-also sets `sender_chat`, but to the channel rather than to this chat, so it stays
-dropped.
+`@grammyjs/types`, so it is folklore, and a loop-prevention branch should not
+rest on it. `sender_chat` is documented, is set server-side so no bot can forge
+it, and is narrower.
+
+**What stays dropped, and knowingly:** a message posted on behalf of a _channel_
+arrives from Telegram's `Channel_Bot` service account with `sender_chat` set to
+that channel rather than to this chat, so it does not match the carve-out. This
+covers both a linked channel's posts auto-forwarded into its discussion group and
+a person posting to the group under a channel identity. The first is automation
+and should be ignored. The second is a person, and ignoring them is a real cost —
+accepted because the alternative is keying on undocumented account ids, and
+because they can always speak as themselves. Revisit if it bites someone.
 
 **Respond Modes:**
 

@@ -58,21 +58,6 @@ describe('TelegramAdapterConfigSchema — group respond mode (DOR-619)', () => {
     }
   });
 
-  it('carries an existing Telegram integration to the same default', () => {
-    // Telegram never had this field, so every stored config predates it. There
-    // is deliberately no carry-forward to 'always': answering every message in
-    // every group is the bug being fixed, not a setting anyone chose.
-    const result = TelegramAdapterConfigSchema.safeParse({
-      token: '123:ABC',
-      mode: 'polling',
-      streaming: true,
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.respondMode).toBe('thread-aware');
-    }
-  });
-
   it('accepts every respond mode', () => {
     for (const mode of ['always', 'mention-only', 'thread-aware'] as const) {
       const result = TelegramAdapterConfigSchema.safeParse({ token: '123:ABC', respondMode: mode });

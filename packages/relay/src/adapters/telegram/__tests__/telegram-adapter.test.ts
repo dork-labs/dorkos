@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TelegramAdapter } from '../index.js';
+import { TelegramAdapter, TELEGRAM_MANIFEST } from '../index.js';
 import type { RelayPublisher, Unsubscribe } from '../../../types.js';
 import type { z } from 'zod';
 import { TelegramAdapterConfigSchema } from '@dorkos/shared/relay-schemas';
@@ -249,6 +249,51 @@ function createEnvelope(subject: string, payload: unknown) {
 // idempotency, delivery, status) are covered by the dedicated tests below.
 
 // --- Tests ---
+
+describe('TELEGRAM_MANIFEST — every field is reachable in the setup wizard', () => {
+  // The wizard renders only the fields the current setup step names
+  // (`use-adapter-wizard.ts` filters `configFields` by `setupSteps[i].fields`,
+  // and `ConfigureStep.tsx` has no fallback section for the rest). A field in
+  // no step is therefore invisible in both the add and the Configure flow —
+  // which is what happened to `respondMode` on its first pass, shipping a
+  // default nobody could see or change.
+
+  /** Every field key named by any setup step. */
+  function keysNamedBySteps(): Set<string> {
+    return new Set((TELEGRAM_MANIFEST.setupSteps ?? []).flatMap((step) => step.fields));
+  }
+
+  it('puts respondMode on a step, so the group setting can actually be changed', () => {
+    // The changelog sends people here to restore the old behavior, so this
+    // fails by name rather than only as part of the sweep below.
+    expect([...keysNamedBySteps()]).toContain('respondMode');
+  });
+
+  it('orphans exactly the fields already known to be unreachable, and no more', () => {
+    // `streaming` and `approverAllowlist` are invisible in the wizard today and
+    // were before this test existed. That is a pre-existing, systemic defect —
+    // Slack orphans five of its own fields the same way, including `dmPolicy`
+    // (DOR-604) and `approverAllowlist` (DOR-609) — and it is filed separately
+    // rather than fixed here.
+    //
+    // Pinning the list keeps the gap visible instead of silently tolerated: it
+    // fails if a new field joins them, and it fails when someone fixes these,
+    // at which point shorten the list (and delete this test once it is empty).
+    const named = keysNamedBySteps();
+    const orphaned = TELEGRAM_MANIFEST.configFields
+      .map((field) => field.key)
+      .filter((key) => !named.has(key));
+
+    expect(orphaned).toEqual(['streaming', 'approverAllowlist']);
+  });
+
+  it('names no field that does not exist', () => {
+    const fieldKeys = new Set(TELEGRAM_MANIFEST.configFields.map((field) => field.key));
+    const dangling = [...keysNamedBySteps()].filter((key) => !fieldKeys.has(key));
+
+    expect(dangling).toEqual([]);
+  });
+});
 
 describe('TelegramAdapter', () => {
   let adapter: TelegramAdapter;

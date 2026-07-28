@@ -98,12 +98,41 @@ function isBotSender(from: GrammyContext['from']): boolean {
  * appears nowhere in the Bot API reference or in `@grammyjs/types`, so pinning
  * a loop-prevention branch to it would be pinning it to folklore.
  *
- * Comparing against `chat.id` also keeps the carve-out narrow. A linked channel
- * forwarding into its discussion group arrives with `sender_chat` set too, but
- * to the channel rather than to this chat, so it stays dropped.
+ * Comparing against `chat.id` also keeps the carve-out narrow. A message posted
+ * on behalf of a *channel* comes from Telegram's `Channel_Bot` service account
+ * with `sender_chat` set to that channel, not to this chat, so it stays dropped.
+ * That covers a linked channel's auto-forwarded posts (automation, correctly
+ * ignored) and a person posting under a channel identity (a knowing cost — see
+ * `contributing/relay-adapters.md`; they can still speak as themselves).
  *
- * This cannot be used to re-open the loop: `from` and `sender_chat` are both set
- * by Telegram server-side, so another bot has no way to forge either one.
+ * Neither field can be forged: `from` and `sender_chat` are both set by Telegram
+ * server-side, so no bot can spoof its way into this branch.
+ *
+ * ## Known residual, deliberately not closed by guessing
+ *
+ * Telegram sets `sender_chat` for *any* anonymous administrator. If a **bot**
+ * can be an anonymous admin, its messages would carry the same signal, be
+ * exempted below, and put the DOR-619 loop shape back. `promoteChatMember`
+ * documents `is_anonymous` without excluding bots, but nothing states whether
+ * Telegram honours it for a bot's outgoing messages, and that question needs an
+ * answer from Telegram rather than a code change — so it is filed, not fixed.
+ *
+ * The residual is real but bounded, and bounded by a mechanism rather than a
+ * hope:
+ *
+ * - This exempts from the **bot guard only**. An anonymous admin still has to
+ *   pass the respond gate, so a loop needs both bots to actively name each other
+ *   or reply to each other, not merely to be present.
+ * - Telegram, unlike Discord, does **not** auto-mention the author of a
+ *   replied-to message. That auto-mention is exactly why Hermes declares
+ *   bot-to-bot conversation unsupported: there, two mention-gated bots satisfy
+ *   each other's gate indefinitely and for free. We do not inherit that, so the
+ *   mutual-addressing condition has to be met deliberately rather than by
+ *   accident.
+ *
+ * Do not "fix" this by widening the guard or by keying on account ids; if it
+ * turns out bots can be anonymous admins, the answer is to drop the carve-out
+ * for senders that are bots by some *verified* signal.
  *
  * @param message - The inbound Telegram message.
  * @param chat - The chat the message arrived in.

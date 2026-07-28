@@ -63,8 +63,10 @@ export type PluginSource = z.infer<typeof PluginSourceSchema>;
  * When a chat integration answers a message in a group conversation.
  *
  * DMs are outside this decision on every platform: a direct message is
- * addressed to the bot by construction, so it is gated by who may write
- * (`dmPolicy`), never by this. These values only decide group behavior.
+ * addressed to the bot by construction, so this never gates one. What does gate
+ * a DM is per-platform and not implied here — Slack has `dmPolicy`, Telegram
+ * has no such field and answers every direct message. These values only decide
+ * group behavior.
  *
  * - `'always'` — answer every message in the group. An agent wins every race
  *   for the next turn, so this is the setting that produces the bot nobody can
@@ -116,6 +118,15 @@ export const TelegramAdapterConfigSchema = z
      * (DOR-619). `'thread-aware'` here means: the message names the bot
      * (`@botname`, a `/command@botname`, or a direct user mention), or it
      * replies to a message the bot itself sent.
+     *
+     * Unlike `dmPolicy`, this deliberately has **no carry-forward and no
+     * startup warning** (`services/relay/safe-defaults.ts`). Both of those
+     * exist to preserve, and then confess, a permissive value an operator had
+     * implicitly chosen. Neither applies here: Telegram never exposed this
+     * setting, so nobody chose the old behavior, and every stored integration
+     * moves to the *safer* value rather than keeping a risky one. There is no
+     * preserved exposure to warn about — and the property that actually keeps
+     * the room safe, the bot-loop guard, is a mechanism no setting can reach.
      */
     respondMode: RespondModeSchema.default(DEFAULT_RESPOND_MODE),
     /**

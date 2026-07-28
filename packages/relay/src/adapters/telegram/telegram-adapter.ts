@@ -58,19 +58,16 @@ export const TELEGRAM_MANIFEST: AdapterManifest = {
       description: 'Create a bot with @BotFather on Telegram.',
       fields: ['token'],
     },
+    // `respondMode` belongs to a step because the setup wizard renders only the
+    // fields the current step names (`use-adapter-wizard.ts` filters
+    // `configFields` by `setupSteps[i].fields`). A field named by no step never
+    // reaches the screen in either the add or the Configure flow, and a default
+    // nobody can see or change is worse than the behavior it replaced.
     {
       stepId: 'configure-mode',
-      title: 'Choose connection mode',
-      fields: ['mode', 'webhookUrl', 'webhookPort', 'webhookSecret'],
-    },
-    // Its own step because the setup wizard only renders fields a step names
-    // (`use-adapter-wizard.ts` filters `configFields` by the current step), and
-    // a default nobody can see or change is worse than the old behavior.
-    {
-      stepId: 'configure-groups',
-      title: 'Replies in group chats',
-      description: 'Your bot always replies in a one-on-one chat. Groups are up to you.',
-      fields: ['respondMode'],
+      title: 'Choose how your bot connects and replies',
+      description: 'How updates reach your bot, and when it joins in on group chats.',
+      fields: ['mode', 'webhookUrl', 'webhookPort', 'webhookSecret', 'respondMode'],
     },
   ],
   configFields: [
