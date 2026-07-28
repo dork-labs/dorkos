@@ -140,7 +140,9 @@ An agent can tell DorkOS who it is, and most do. One that doesn't is still stopp
 
 This also holds for `dorkos call`, which is how an agent reaches any DorkOS action from a shell. Running an agent outside DorkOS does not get past the question.
 
-There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. An agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries. But a program that deliberately drops that identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it.
+There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. An agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries. But a program that deliberately drops that identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart.
+
+Turning **Require login** on narrows this without fully closing it. A program with no account is then stopped. A program holding one of your API keys is not, because that same key is how you remove a package from your own terminal, and DorkOS cannot tell your key apart from a copy of it. The same is true for adding package sources and creating tasks. Answering an approval is the one thing an API key cannot do.
 
 ## The agent that asked cannot answer
 
