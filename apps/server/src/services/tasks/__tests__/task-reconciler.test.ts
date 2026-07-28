@@ -190,6 +190,54 @@ describe('TaskReconciler', () => {
       expect(store.countRuns(created.id)).toBe(1);
     });
 
+    it('keeps a task in a slot the scan skips by name', async () => {
+      // The watcher accepts any `<tasksDir>/*/SKILL.md`, including one inside
+      // the reserved templates container, and creates a row for it. The scan
+      // skips that slot by name, which used to look exactly like a deletion.
+      await fs.mkdir(path.join(tasksDir, TASK_TEMPLATES_DIRNAME), { recursive: true });
+      const filePath = path.join(tasksDir, TASK_TEMPLATES_DIRNAME, 'SKILL.md');
+      await fs.writeFile(filePath, skillFile(TASK_TEMPLATES_DIRNAME), 'utf-8');
+      const task = store.createTask({
+        name: TASK_TEMPLATES_DIRNAME,
+        description: 'row the watcher created for a reserved slot',
+        prompt: 'do it',
+        filePath,
+      });
+      expireGracePeriod();
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+
+      expect(store.getTask(task.id)).not.toBeNull();
+      await expect(fs.access(filePath)).resolves.toBeUndefined();
+    });
+
+    it('keeps a task whose directory is a symlink to somewhere else', async () => {
+      // `readdir(withFileTypes)` does not follow links, so `entry.isDirectory()`
+      // is false and the scan skips the slot — while the file is right there
+      // and perfectly readable.
+      const realDir = path.join(dorkHome, 'shared', 'nightly-sweep');
+      await fs.mkdir(realDir, { recursive: true });
+      await fs.writeFile(path.join(realDir, 'SKILL.md'), skillFile('nightly-sweep'), 'utf-8');
+      const linkPath = path.join(tasksDir, 'nightly-sweep');
+      await fs.symlink(realDir, linkPath);
+
+      const filePath = path.join(linkPath, 'SKILL.md');
+      const task = store.createTask({
+        name: 'nightly-sweep',
+        description: 'lives behind a symlink',
+        prompt: 'do it',
+        filePath,
+      });
+      store.createRun(task.id, 'scheduled');
+      expireGracePeriod();
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+
+      expect(store.getTask(task.id)).not.toBeNull();
+      expect(store.countRuns(task.id)).toBe(1);
+      await expect(fs.access(filePath)).resolves.toBeUndefined();
+    });
+
     it('recovers a task that was paused while its file was missing', async () => {
       const filePath = await writeTask('flaky-file', 'flaky-file');
       await reconciler.reconcile();
