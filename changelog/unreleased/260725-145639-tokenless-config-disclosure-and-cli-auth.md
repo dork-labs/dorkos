@@ -1,6 +1,6 @@
 ---
 covers:
-  - "fix(security): allowlist the tokenless config snapshot, give the CLI a credential (DOR-428)"
+  - 'fix(security): allowlist the tokenless config snapshot, give the CLI a credential (DOR-428)'
 ---
 
 ### Security
