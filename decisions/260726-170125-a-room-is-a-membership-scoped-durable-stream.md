@@ -1,33 +1,34 @@
 ---
 id: 260726-170125
 title: A room is a membership-scoped durable stream, not a session
-status: superseded
+status: accepted
 created: 2026-07-26
 spec: rooms
-superseded-by: 260728-022013
+superseded-by: null
 ---
 
 # 260726-170125. A room is a membership-scoped durable stream, not a session
 
 ## Status
 
-**Superseded in part** by
-[260728-022013](260728-022013-a-thread-is-a-relation-between-entries.md), which moves the thread
-relation from the room to the entry. Originally accepted 2026-07-26.
+Accepted. **One clause is retired by**
+[260728-022013](260728-022013-a-thread-is-a-relation-between-entries.md) (A thread is a relation
+between entries, not a child room).
 
-**Exactly one clause below is reversed:** "A **thread is a child room** — the same entity with a
+**Exactly one clause below is retired:** "A **thread is a child room** — the same entity with a
 parent, one level deep." A thread is now a set of entries in the same room pointing at a common root
 entry, with no room row, no roster and no place in a room list. The related Positive bullet
 ("Threads cost one nullable `parentId`") and the related Negative bullet ("A thread of a thread has
-no representation") go with it.
+no representation") go with it. Read those three passages as history.
 
-**Everything else here still stands and is still the governing decision:** a room is a
-membership-scoped durable stream; a room is not a session and N agents in a room are N sessions on
-one stream, each keeping its own runtime binding; membership is where per-room state lives, carrying
-the `(member, room)` read cursor and the `responseMode` override; the log is turn-atomic,
-DorkOS-owned and never trimmed; rooms carry addressing and atomicity but never a concurrency
-primitive; a room may reference a workspace; signing is reserved. Read the thread clause as history;
-read the rest as current.
+**Everything else here stands and is still the governing decision:** a room is a membership-scoped
+durable stream; a room is not a session and N agents in a room are N sessions on one stream, each
+keeping its own runtime binding; membership is where per-room state lives, carrying the
+`(member, room)` read cursor and the `responseMode` override; the log is turn-atomic, DorkOS-owned
+and never trimmed; rooms carry addressing and atomicity but never a concurrency primitive; a room
+may reference a workspace; signing is reserved. **That is why this ADR stays `accepted` rather than
+`superseded`:** the status tells a reader whether to rely on the document, and almost all of this
+one is still load-bearing for the rooms programme. 260728-022013 records the reasoning in full.
 
 ## Context
 

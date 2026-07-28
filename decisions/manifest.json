@@ -2902,10 +2902,9 @@
       "id": "260726-170125",
       "slug": "a-room-is-a-membership-scoped-durable-stream",
       "title": "A room is a membership-scoped durable stream, not a session",
-      "status": "superseded",
+      "status": "accepted",
       "created": "2026-07-26",
-      "specSlug": "rooms",
-      "supersededBy": "260728-022013"
+      "specSlug": "rooms"
     },
     {
       "id": "260726-170126",
