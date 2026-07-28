@@ -61,8 +61,20 @@ concurrency:
   group: merge-tail
   cancel-in-progress: false
 
+# `contents: write` is required, not defensive. With a merge queue configured,
+# `gh pr merge --auto` resolves to `enqueuePullRequest` rather than
+# `enablePullRequestAutoMerge`, and enqueueing initiates a merge, so a token
+# holding only `pull-requests: write` fails with:
+#
+#   ! The merge strategy for main is set by the merge queue
+#   GraphQL: Resource not accessible by integration (enablePullRequestAutoMerge)
+#
+# That is what this workflow did on every run between the queue going live and
+# this change: it evaluated every pull request correctly and then could not act
+# on any of them. The repo default for the workflow token is `read`, so both
+# scopes have to be named here.
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   checks: read
 
@@ -85,7 +97,7 @@ jobs:
           # and passed to --argjson is a parse failure that reads as an
           # unreadable payload, which is indistinguishable from a real refusal.
           work=$(mktemp -d)
-          armed=0; skipped=0; failed=0
+          armed=0; skipped=0; failed=0; perm_denied=0
 
           gh pr list --repo "$REPO" --state open --limit 100 \
             --json number --jq '.[].number' > "$work/prs.txt" || {
@@ -152,19 +164,45 @@ jobs:
               armed=$(( armed + 1 )); continue
             fi
 
+            # `--squash` is ignored when a merge queue is configured (the queue
+            # owns the strategy) and gh says so on stderr. Kept anyway so this
+            # still does the right thing if the queue is ever removed; the
+            # warning is only read when the call fails.
             if out=$(gh pr merge --auto --squash "$pr" --repo "$REPO" 2>&1); then
               echo "PR #$pr -> ARMED"
               armed=$(( armed + 1 ))
             else
-              # Losing a race (the PR merged or closed between the read and the
-              # write) is normal and not a failure of this workflow.
-              echo "PR #$pr -> ARM FAILED: $(tr '\n' ' ' <<<"$out" | cut -c1-160)"
+              one_line=$(tr '\n' ' ' <<<"$out" | cut -c1-200)
+              # Two very different failures wore the same label before, and the
+              # difference is the whole diagnostic value. Losing a race (the PR
+              # merged or closed between the read and the write) is expected and
+              # self-correcting. A permissions refusal means this workflow cannot
+              # do its job AT ALL and every run is a no-op, which is exactly how
+              # it sat broken from the moment the merge queue went live: correct
+              # verdicts, zero actions, nothing red. Make that one shout.
+              if [[ "$one_line" == *"Resource not accessible by integration"* \
+                 || "$one_line" == *"not accessible"* \
+                 || "$one_line" == *"HTTP 403"* ]]; then
+                echo "::error::merge-tail cannot arm pull requests: $one_line"
+                echo "::error::This is a token-permission failure, not a race. The workflow is inert until it is fixed."
+                perm_denied=$(( perm_denied + 1 ))
+              else
+                echo "PR #$pr -> ARM FAILED: $one_line"
+              fi
               failed=$(( failed + 1 ))
             fi
           done < "$work/prs.txt"
 
           echo
-          echo "armed=$armed skipped=$skipped failed=$failed"
+          echo "armed=$armed skipped=$skipped failed=$failed perm_denied=$perm_denied"
+
+          # A workflow that evaluates everything correctly and then arms nothing
+          # because it is not allowed to looks identical to a quiet day. Fail
+          # loudly instead of reporting a green no-op.
+          if [[ "$perm_denied" -gt 0 ]]; then
+            echo "::error::merge-tail is inert: $perm_denied arm attempt(s) refused for lack of permission."
+            exit 1
+          fi
           {
             echo "### merge-tail"
             echo
@@ -172,4 +210,5 @@ jobs:
             echo "- skipped: $skipped"
             echo "- arm failed: $failed"
             [[ "$DRY_RUN" == "true" ]] && echo "- (dry run: nothing was actually armed)"
+            [[ "$perm_denied" -gt 0 ]] && echo "- **permission denied on $perm_denied arm(s) — this workflow is inert**"
           } >> "$GITHUB_STEP_SUMMARY"
