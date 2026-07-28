@@ -10,7 +10,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useAgentCreationStore, useAppStore } from '@/layers/shared/model';
+import { useAgentCreationStore, useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 
 interface ProgressCardProps {
@@ -34,7 +34,7 @@ interface GettingStartedItem {
 export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
   const navigate = useNavigate();
-  const openSettingsToTab = useAppStore((s) => s.openSettingsToTab);
+  const { open: openSettings } = useSettingsDeepLink();
   const requestTour = useAppStore((s) => s.requestTour);
   const { startSession } = useDefaultAgentSession();
 
@@ -62,7 +62,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
     {
       icon: Server,
       label: 'Add more agents',
-      onClick: () => openSettingsToTab('runtimes'),
+      onClick: () => openSettings('runtimes'),
     },
   ];
 
