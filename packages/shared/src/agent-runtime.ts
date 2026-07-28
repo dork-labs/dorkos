@@ -91,6 +91,20 @@ export interface SessionSettingsPort {
   getSessionSettings(sessionId: string): Promise<SessionSettings | null>;
   /** Persist (UPSERT) the provided settings fields for a session. */
   saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void>;
+  /**
+   * Move a session's stored settings to a new id, so they stay under exactly
+   * one key. A runtime calls this the moment it rebinds a session to a new
+   * canonical id (claude-code does, on the first turn of a new session): every
+   * write up to that instant went to `fromId`, and every read from now on will
+   * ask by `toId`. Leaving the row behind would make the enforced permission
+   * mode revert to the runtime default after eviction or a restart.
+   *
+   * Idempotent: a no-op when the ids match or `fromId` has no row.
+   *
+   * @param fromId - The id the settings are stored under today
+   * @param toId - The canonical id the session is now known by
+   */
+  rekeySessionSettings(fromId: string, toId: string): Promise<void>;
 }
 
 /** Result of a single dependency check performed by a runtime adapter. */

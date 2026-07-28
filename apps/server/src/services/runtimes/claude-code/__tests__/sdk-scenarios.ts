@@ -151,17 +151,23 @@ export function wrapSdkQuery(
  * Produces a minimal streaming text response.
  *
  * @param text - The assistant response text to stream
+ * @param sessionId - SDK session id every message in the turn carries. Pass a
+ *   value different from the id the turn was triggered with to reproduce the
+ *   canonical-id rebind a brand-new session goes through on its first turn.
  */
-export async function* sdkSimpleText(text: string): AsyncGenerator<SDKMessage> {
-  yield makeInit();
+export async function* sdkSimpleText(
+  text: string,
+  sessionId = SESSION_ID
+): AsyncGenerator<SDKMessage> {
+  yield makeInit(sessionId);
   yield {
     type: 'stream_event',
     event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
     parent_tool_use_id: null,
-    session_id: SESSION_ID,
+    session_id: sessionId,
     uuid: BASE_UUID,
   } as SDKMessage;
-  yield makeResult();
+  yield makeResult(sessionId);
 }
 
 /**
