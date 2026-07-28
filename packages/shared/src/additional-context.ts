@@ -177,9 +177,17 @@ export interface RoomContextEntry {
  * forge.
  */
 export interface RoomContextData {
-  /** The room itself. A thread reports the channel it hangs off. */
+  /**
+   * The room itself — a channel or a direct message, never a thread. A thread is
+   * a position inside a room rather than a room of its own
+   * (ADR 260728-022013), so a thread turn reports the channel it happened in.
+   */
   room: { id: string; kind: 'channel' | 'dm'; name: string; topic?: string };
-  /** Non-null when this turn was triggered inside a thread. */
+  /**
+   * Non-null when this turn was triggered inside a thread: which entry the
+   * thread hangs off, its opening words, and how many replies it already has.
+   * Read off the triggering entry's own pointer.
+   */
   thread: { rootEntryId: string; rootExcerpt: string; replyCount: number } | null;
   /** The roster, self included. */
   members: RoomContextMember[];

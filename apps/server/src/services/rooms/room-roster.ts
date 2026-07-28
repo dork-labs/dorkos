@@ -68,30 +68,6 @@ export class RoomRoster {
   }
 
   /**
-   * The roster a new thread inherits from its parent, as rows ready to insert.
-   *
-   * Returns rather than writes, so the caller can put the thread row and its
-   * roster in one transaction.
-   *
-   * Each membership inherits the PARENT's `responseMode` rather than re-seeding
-   * from the room kind: an agent you asked to stay quiet in `#backend` should
-   * not start answering everything because somebody opened a thread there.
-   *
-   * @param parentRoomId - The room to copy from.
-   * @param joinedAt - Timestamp to stamp every inherited membership with.
-   */
-  inheritedFrom(
-    parentRoomId: string,
-    joinedAt: string
-  ): Array<{ authorId: string; responseMode: ResponseMode; joinedAt: string }> {
-    return this.store.listMembers(parentRoomId).map((member) => ({
-      authorId: member.authorId,
-      responseMode: member.responseMode,
-      joinedAt,
-    }));
-  }
-
-  /**
    * Change one membership's per-room response mode.
    *
    * @param roomId - The room.

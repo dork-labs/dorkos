@@ -100,7 +100,6 @@ function registerAna(db: Db): void {
     .run();
 }
 
-
 describe('/api/rooms — what a headerless caller gets', () => {
   let db: Db;
   let runner: ReturnType<typeof scriptedRunner>;
@@ -220,14 +219,6 @@ describe('/api/rooms — what a headerless caller gets', () => {
       .patch(`/api/rooms/${created.body.id}/members/${agentMember.authorId}`)
       .send({ responseMode: 'always' });
     expect(patched.status).toBe(200);
-
-    const entry = await request(app)
-      .post(`/api/rooms/${created.body.id}/entries`)
-      .send({ text: 'seed' });
-    const thread = await request(app)
-      .post(`/api/rooms/${created.body.id}/threads`)
-      .send({ rootEntryId: entry.body.entryId });
-    expect(thread.status).toBe(201);
   });
 
   it('does not let a headerless caller outspend the room budget', async () => {
@@ -311,23 +302,48 @@ describe('/api/rooms — what a headerless caller gets', () => {
     expect(runner.turns).toHaveLength(5);
   });
 
-  it('bounds the wallet even though threads are free', async () => {
-    // Threads are the cheaper lever: a thread inherits the parent's whole
-    // roster, and `POST /:id/threads` is reachable headerless. Parent + 5
-    // threads bought 12 turns before the global cap existed.
-    wire(2, 3);
+  it('spends the channel budget on its threads, because a thread is not a room', async () => {
+    // Threads used to be the cheapest lever there was: each one was a room, so
+    // each came with a fresh per-room window. `turn-budget.ts` measured it —
+    // "five threads off one parent bought 12" — and the global cap was the only
+    // thing that stopped it.
+    //
+    // Under ADR 260728-022013 a thread reply is an entry in the channel, so the
+    // PER-ROOM cap alone now bounds the channel and everything threaded inside
+    // it. The global cap is deliberately generous here so it cannot be what
+    // holds: on the old shape this same script reports 12, not 2.
+    wire(2, 100_000);
     const parent = await loudRoom();
-    const seed = await request(app).post(`/api/rooms/${parent}/entries`).send({ text: 'seed' });
-    await getRoomService().triggersIdle();
 
+    // FIVE distinct roots, so this really is five threads rather than one thread
+    // with five replies — which is the shape the 12 was measured against, and
+    // the shape `turn-budget.ts` cites this test for.
+    const roots: string[] = [];
     for (let i = 0; i < 5; i++) {
-      const thread = await request(app)
-        .post(`/api/rooms/${parent}/threads`)
-        .send({ rootEntryId: seed.body.entryId, title: `Thread ${i}` });
-      expect(thread.status).toBe(201);
-      await post(thread.body.id, 'go');
+      const seed = await request(app)
+        .post(`/api/rooms/${parent}/entries`)
+        .send({ text: `seed ${i}` });
+      expect(seed.status).toBe(202);
+      roots.push(seed.body.entryId as string);
+      await getRoomService().triggersIdle();
     }
-    expect(runner.turns).toHaveLength(3);
+    // Two agents, cap of two: the first seed spends the room's whole window and
+    // the other four get nothing. Everything below is measured from there.
+    expect(runner.turns).toHaveLength(2);
+
+    for (const rootEntryId of roots) {
+      const reply = await request(app)
+        .post(`/api/rooms/${parent}/threads`)
+        .send({ rootEntryId, text: 'go' });
+      expect(reply.status).toBe(202);
+      await getRoomService().triggersIdle();
+    }
+
+    // Still two. Five threads bought nothing, and no second room was minted to
+    // buy it in.
+    expect(runner.turns).toHaveLength(2);
+    const rooms = await request(app).get('/api/rooms');
+    expect(rooms.body.rooms.map((r: { id: string }) => r.id)).toEqual([parent]);
   });
 
   it('speaks again the next time a room runs dry, rather than once ever', async () => {

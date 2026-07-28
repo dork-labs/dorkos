@@ -222,6 +222,8 @@ describe('subscribeRoom silence watchdog', () => {
         sessionId: null,
         cascadeRoot: 'entry-4',
         cascadeDepth: 0,
+        parentEntryId: null,
+        threadRootEntryId: null,
         signature: null,
         createdAt: '2026-07-26T10:00:00.000Z',
       },

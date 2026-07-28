@@ -19,9 +19,9 @@ import { Router, type Response } from 'express';
 import {
   AddRoomMemberRequestSchema,
   CreateRoomRequestSchema,
-  CreateThreadRequestSchema,
   ListRoomEntriesQuerySchema,
   ListRoomsQuerySchema,
+  PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   SetReadCursorRequestSchema,
   UpdateMembershipRequestSchema,
@@ -206,21 +206,31 @@ router.put('/:id/read-cursor', (req, res) => {
   }
 });
 
-/** POST /:id/threads — open a thread off an entry. */
+/**
+ * POST /:id/threads — reply inside a thread off an entry in this room.
+ *
+ * Entry-level, not room-level: a thread is a relation between entries
+ * (ADR 260728-022013), so there is nothing to create before replying and this
+ * one route writes the first reply and every later one. Trigger-only and 202 for
+ * the same reason `POST /:id/entries` is — the reply rides the room's own SSE
+ * stream to every reader, this caller included.
+ *
+ * It stays a separate route rather than an optional field on `/:id/entries` so
+ * that writing into a thread is a deliberate act with a required target, never
+ * an omitted parameter.
+ */
 router.post('/:id/threads', (req, res) => {
-  const body = parseBody(CreateThreadRequestSchema, req.body, res);
+  const body = parseBody(PostThreadReplyRequestSchema, req.body, res);
   if (!body) return;
   try {
-    res
-      .status(201)
-      .json(
-        getRoomService().createThread(
-          req.params.id,
-          body.rootEntryId,
-          resolveCaller(res).id,
-          body.title
-        )
-      );
+    const caller = resolveCaller(res);
+    const entry = getRoomService().post(req.params.id, {
+      authorId: caller.id,
+      text: body.text,
+      sessionId: body.sessionId,
+      replyTo: body.rootEntryId,
+    });
+    res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/threads');
   }

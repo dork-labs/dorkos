@@ -294,6 +294,18 @@ export const RoomEntrySchema = z
     sessionId: z.string().nullable(),
     cascadeRoot: z.string().min(1),
     cascadeDepth: z.number().int().min(0),
+    parentEntryId: z
+      .string()
+      .nullable()
+      .describe(
+        'The entry in this same room that this one answers, or null for a top-level entry. A thread is a relation between entries, never a room of its own (ADR 260728-022013).'
+      ),
+    threadRootEntryId: z
+      .string()
+      .nullable()
+      .describe(
+        "The entry at the head of this entry's thread, or null when it is top-level — including for a root that has replies, so a thread's reply count never counts its own root. The default timeline is every entry whose parentEntryId is null."
+      ),
     signature: z.string().nullable().describe('Reserved for phase 4. Always null in v1.'),
     createdAt: z.string(),
   })
@@ -305,7 +317,11 @@ export type RoomEntry = z.infer<typeof RoomEntrySchema>;
 
 export const CreateRoomRequestSchema = z
   .object({
-    kind: z.enum(['channel', 'dm']).describe('Threads are created via POST /:id/threads.'),
+    kind: z
+      .enum(['channel', 'dm'])
+      .describe(
+        'A thread is not a room: it is a relation between entries, written by replying with POST /:id/threads (ADR 260728-022013).'
+      ),
     title: z.string().min(1).max(200).optional(),
     slug: z.string().regex(ROOM_SLUG_REGEX).optional(),
     topic: z.string().max(500).optional(),
@@ -390,14 +406,32 @@ export const SetReadCursorRequestSchema = z
 
 export type SetReadCursorRequest = z.infer<typeof SetReadCursorRequestSchema>;
 
-export const CreateThreadRequestSchema = z
+/**
+ * Post a reply inside a thread.
+ *
+ * There is nothing to create first: a thread comes into existence when the first
+ * reply points at a root entry, and this same request posts the second reply and
+ * the twentieth (ADR 260728-022013). It carries `text` rather than a `title`
+ * because what it writes is a message, not a room.
+ */
+export const PostThreadReplyRequestSchema = z
   .object({
-    rootEntryId: z.string().min(1).describe('The parent entry this thread hangs off.'),
-    title: z.string().min(1).max(200).optional(),
+    rootEntryId: z
+      .string()
+      .min(1)
+      .describe(
+        'The entry this reply hangs off, in this same room. Refused with NESTED_THREAD when it is itself a reply — one level deep is a service policy, not a shape the schema decided.'
+      ),
+    text: z.string().min(1).max(100_000),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('The session that produced this reply, when one did.'),
   })
-  .openapi('CreateThreadRequest');
+  .openapi('PostThreadReplyRequest');
 
-export type CreateThreadRequest = z.infer<typeof CreateThreadRequestSchema>;
+export type PostThreadReplyRequest = z.infer<typeof PostThreadReplyRequestSchema>;
 
 export const ListRoomsQuerySchema = z
   .object({

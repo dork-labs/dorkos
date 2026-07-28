@@ -79,9 +79,9 @@ import {
 import {
   AddRoomMemberRequestSchema,
   CreateRoomRequestSchema,
-  CreateThreadRequestSchema,
   ListRoomEntriesQuerySchema,
   ListRoomsQuerySchema,
+  PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   PostToRoomResponseSchema,
   RoomEntryListResponseSchema,
@@ -3011,23 +3011,30 @@ registry.registerPath({
   method: 'post',
   path: '/api/rooms/{id}/threads',
   tags: ['Rooms'],
-  summary: 'Open a thread off an entry',
+  summary: 'Reply inside a thread',
   description:
-    'One level only: a thread whose parent is itself a thread is refused with 400. The thread inherits the parent roster and each member keeps their parent response mode.',
+    'A thread is a relation between entries in this room, not a room of its own, so there is nothing to create first: this posts the first reply and every later one. The reply keeps the room roster, the room read cursor and the room budget, and answers to the same rules any post does — the caller must be a member, and an archived room refuses. One level only: a reply whose root is itself a reply is refused with 400 (`NESTED_THREAD`). Trigger-only, like `POST /api/rooms/{id}/entries`: 202 with the entry identity, while the entry itself rides the room event stream to every reader.',
   request: {
     params: RoomIdParams,
-    body: { content: { 'application/json': { schema: CreateThreadRequestSchema } } },
+    body: { content: { 'application/json': { schema: PostThreadReplyRequestSchema } } },
   },
   responses: {
-    201: {
-      description: 'The new thread room with its roster',
-      content: { 'application/json': { schema: RoomWithRosterSchema } },
+    202: {
+      description: 'Accepted; the entry reaches readers over the room event stream',
+      content: { 'application/json': { schema: PostToRoomResponseSchema } },
     },
     400: {
-      description: 'Validation error, or the parent is already a thread',
+      description: 'Validation error, or the root entry is itself a reply',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    404: roomNotFound,
+    404: {
+      description: 'No such room, not a member of it, or no such entry in it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
