@@ -65,7 +65,7 @@ So the credential is the same object for two authorities: "may this request reac
 - Per-capability permissions on a key. The tier gate already decides what may run; scope decides only who may decide.
 - Retiring the `X-DorkOS-Agent` header check. It stays as the honest-caller check, alongside the new one.
 - Replacing the agent identity token with the API key, or the reverse (§3.5).
-- A `dorkos approve` CLI verb. None exists today; §3.3 leaves room for one.
+- A `dorkos approve` CLI verb. None exists today, and the two phases treat it differently, so stating it flatly either way is wrong: **under phase 0 alone it could not work**, because it would hold a key and no key decides; **phase 2 is what makes it possible again**, via a person-scoped key. §3.3 leaves room for one, and phase 2 is its prerequisite.
 - Any change to `MCP_API_KEY` or the local MCP token (`middleware/mcp-auth.ts:59-61`, `:86-87`). Neither is accepted by `sessionGate`, so neither can reach `/api/approvals/*`.
 - The posture lock. It shipped while this branch sat; §3.9 records it rather than proposing it.
 
@@ -176,9 +176,24 @@ The three checks in order, with what each is worth:
 2. The caller presents an approval token (`:163`). Unchanged. Holding the retry secret is what makes a caller the requester.
 3. **New.** `request.user?.scope === 'agent'`. The load-bearing check, because the server issued that credential and the caller cannot choose not to present it and still get through `sessionGate`.
 
-All three answer `403 AGENT_CANNOT_DECIDE` and return before the route touches `ApprovalService`, so a refused decision never consumes, expires, or otherwise disturbs the approval. It stays pending for the person it was always waiting on.
+All three return before the route touches `ApprovalService`, so a refused decision never consumes, expires, or otherwise disturbs the approval. It stays pending for the person it was always waiting on.
 
-The error message stays the one already there ("Approvals are decided by a person in DorkOS, not by an agent"), because from the caller's side all three reasons mean the same thing and the distinction is a log detail, not the agent's business.
+**They must not all answer the same code, and this is a correctness requirement rather than a wording preference.** An earlier draft of this section had all three answer `403 AGENT_CANNOT_DECIDE`, on the reasoning that from the caller's side the three reasons mean the same thing. That is true for the caller and false for the test suite, which is the problem:
+
+- **A shared code makes the probe unable to fail.** If the credential refusal and the header refusal are indistinguishable in the response, then deleting the credential check changes nothing observable for a caller that also sends an identity header: the header check answers first, with the same status and the same code, and the conformance row stays green. A security probe whose row cannot go red when the thing under test is removed is `.claude/rules/testing.md`'s "assertions that cannot fail", and REVIEW.md's "assertion satisfied by the wrong subject". §3.8's table is exactly that probe, so the codes have to differ for it to prove anything.
+- **A shared message is also wrong for the person reading it.** Under the phase 0 cookie bar, a refused caller may be the operator's own script holding the operator's own key. Telling that person "not by an agent" names the wrong cause and gives them nothing to act on.
+
+So the credential refusal takes its own code and its own sentence, saying that approvals are answered in the DorkOS cockpit and inviting the person to open it, at the `writing-for-humans` bar. The exact code is the implementing PR's to choose and to pin in §3.8's table.
+
+**One code per check is already the shipped pattern, not a new rule.** The two existing refusals do not share a code either: the identity-header check answers `AGENT_CANNOT_DECIDE` (`decision-authority.ts:156`) and the approval-token check answers `REQUESTER_CANNOT_DECIDE` (`:167`). An earlier draft of this section said "all three answer `403 AGENT_CANNOT_DECIDE`", which was wrong about the code that ships as well as wrong about what the third check needs. The credential refusal is the third distinct code, not an exception to a convention.
+
+**Ordering is a requirement, and it is what makes the codes worth having.**
+
+> **The identity-header check answers first, then the approval-token check, then the credential check, and each answers a distinct code.**
+
+This is falsifiability, not message quality, and it is the same argument §3.8 makes about the probe table. Codes only tell you which check refused if the checks run in a known order. If the credential check ran first, every API-key caller would get the credential code whether or not it sent an identity header, the two refusals would become indistinguishable again, and deleting the header check would be unobservable to the probe. Distinct codes plus a fixed order are jointly what make each check independently deletable and detectable. Either one alone proves nothing.
+
+**This pins existing behavior rather than requiring a change,** which is what makes it cheap. `resolveDecisionAuthority` already runs the header check first (`decision-authority.ts:152-159`), then the approval-token check (`:163-170`), then the posture branch. The requirement exists so that a future reordering reads as the regression it would be, and so the phase 0 table in §3.8 is grounded in something the spec actually guarantees. The PR implementing the cookie bar places its refusal so the header check still answers first; keep the two aligned rather than letting them drift.
 
 Standing permissions need no change. Creating one already requires a session cookie (`requireOperatorCookie`, reached at `routes/approvals.ts:382`), which no key of any scope can present, so an agent-held key could never open one. This spec closes the one-time decide path that bar does not cover.
 
@@ -190,9 +205,11 @@ Today nothing mints `<dork home>/api-key`. DorkOS starts doing so, at the seam t
 
 `resolveAgentTokenEnv(agentPath, displayName)` (`agent-token-env.ts:42-65`) currently returns `{ DORKOS_AGENT_TOKEN }`. It gains a sibling that, **only when `configManager.get('auth')?.enabled === true`**, also returns `DORKOS_API_KEY`. With login off nothing is minted, because nothing is needed.
 
-**The seam does not reach every runtime, and that has to be fixed first.** On 2026-07-27 `resolveAgentTokenEnv` has two production call sites: `runtimes/claude-code/messaging/message-sender.ts:399` and `runtimes/codex/codex-runtime.ts:484`. Nothing under `runtimes/opencode/` calls it, so an OpenCode agent gets no identity token today and would get no key either. OpenCode is named in this spec's own premise as one of the runtimes that needs the CLI credential path, so leaving it out would mean the one runtime the spec argues from is the one still falling back to the operator's person-scoped key.
+**The seam does not reach every runtime.** On 2026-07-27 `resolveAgentTokenEnv` has two production call sites: `runtimes/claude-code/messaging/message-sender.ts:399` and `runtimes/codex/codex-runtime.ts:484`. Nothing under `runtimes/opencode/` calls it, so an OpenCode agent gets no identity token today and would get no key either. OpenCode is named in this spec's own premise as one of the runtimes that needs the CLI credential path, so leaving it out would mean the one runtime the spec argues from is the one still falling back to the operator's person-scoped key.
 
-Adding the OpenCode call site is a task of its own, ahead of the minting work, because it is a change to attribution and not only to credentials: an OpenCode agent that starts carrying `DORKOS_AGENT_TOKEN` starts being refused by the agent-identity checks it currently slips past, which is correct and is a behavior change reviewers should see on its own. If it turns out that OpenCode's spawn has no env seam to hang this on, the spec's premise narrows to claude-code and codex and says so, rather than the gap going unmentioned.
+**On sequencing, corrected.** An earlier draft said this "has to be fixed first" and was "a task of its own, ahead of the minting work". That ordering was written when minting was phase 1 and the decide refusal depended on it. It no longer holds: phase 0 closes DOR-474 with a cookie bar and needs none of this. The gap is real and it is independent, so it wants its own ticket rather than a slot in a sequence, and it does not block phase 0 or phase 2's decide work.
+
+The reasoning for handling it separately is unchanged and is about attribution, not credentials: an OpenCode agent that starts carrying `DORKOS_AGENT_TOKEN` starts being refused by the agent-identity checks it currently slips past, which is correct and is a behavior change reviewers should see on its own. If it turns out that OpenCode's spawn has no env seam to hang this on, the spec's premise narrows to claude-code and codex and says so, rather than the gap going unmentioned.
 
 The key is created by a headless server-side call: `auth.api.createApiKey({ body: { ... } })` with **no `headers` argument**. That is what makes the server-only fields writable (`index.mjs:734-736` rejects them for any call carrying `ctx.request` or `ctx.headers`), and it is the only way to set any of the four fields that matter:
 
@@ -215,7 +232,7 @@ So a 7-day `expiresIn` would hard-expire the key of an agent that is working con
 
 Name the unit at the call site, and pin the value with a test that drives a real `createApiKey`, not a mock. Neither of these two errors is visible to a mock.
 
-**On the rate limit.** `apiKey()` with no options resolves `rateLimit: { enabled: true, timeWindow: 86400000, maxRequests: 10 }` (`index.mjs:2270-2274`), writes those as concrete columns on every created key (`index.mjs:826-831`), and enforces them on every `verifyApiKey` (`index.mjs:1609-1613`, `:1790-1794`), which `verifyRequestAuth` sees as `valid: false` and turns into a 401. The CLI presents its key on every call and holds no cookie, so every call burns one. This is a shipped defect independent of scoping: an agent using the CLI with login on gets about ten requests and then starts failing. Traced in the installed plugin source, **not reproduced against a running server** - reproducing it is task 1 (§Implementation Phases), and if it does not reproduce, `rateLimitEnabled: false` is still correct for an agent key and nothing else in this spec changes.
+**On the rate limit.** `apiKey()` with no options resolves `rateLimit: { enabled: true, timeWindow: 86400000, maxRequests: 10 }` (`index.mjs:2270-2274`), writes those as concrete columns on every created key (`index.mjs:826-831`), and enforces them on every `verifyApiKey` (`index.mjs:1609-1613`, `:1790-1794`), which `verifyRequestAuth` sees as `valid: false` and turns into a 401. The CLI presents its key on every call and holds no cookie, so every call burns one. This is a shipped defect independent of scoping: an agent using the CLI with login on gets about ten requests and then starts failing. Traced in the installed plugin source, **not reproduced against a running server** - reproducing it is the first step of Follow-up 1, which is its own ticket rather than a task in these phases, and if it does not reproduce, `rateLimitEnabled: false` is still correct for an agent key and nothing else in this spec changes.
 
 The plugin returns the key material exactly once. It goes straight into the spawned child's environment and is never written to disk and never logged. It joins `DORKOS_AGENT_TOKEN` in the redaction fixtures (the invariant ADR 260725-152018 carries forward from 260723-013236).
 
@@ -262,7 +279,8 @@ Only §3.9 (the posture lock) applies in both postures, and it applies there bec
 **Even with login on, this does not stop a determined agent that shares an OS user with the operator.** Such an agent can read `~/.dork/api-key` off disk and `DORKOS_API_KEY` out of the environment of any process it can inspect. Scoping does not make that impossible. What it does:
 
 - The default path stops handing agents a deciding credential, so the common case is correct rather than correct-if-configured-carefully.
-- Self-approval stops being the intended flow and becomes an act of deliberate credential theft, which leaves an audit trail: the approval card names an agent as the requester (§3.10) and the decision arrives on a credential the operator can see was theirs.
+- Self-approval stops being the intended flow and becomes an act of deliberate credential theft. **After phase 0 that is all this bullet may claim.** The audit trail an earlier draft promised here, an approval card naming an agent as the requester, comes from §3.10 and §3.10 is phase 2 work. Until it lands, a stolen credential produces the same "A signed-in account granted an approval" line it produces today, and nothing on the card says an agent asked.
+- **Phase 0 is stronger than phase 2 on exactly one axis, and it is worth saying so.** While the cookie bar stands alone, a key read off disk cannot decide either, because no key can. Phase 2 re-admits the operator's own key and with it the theft path. That is a deliberate trade for a headless operator and a `dorkos approve` verb, not an oversight, and whoever ships phase 2 should know they are reopening this specific door.
 - The invariant becomes stated and testable, so a later change that re-opens the path fails a named check instead of passing silently.
 
 Making it actually impossible requires OS-level isolation, which is what the Docker eval tier does (ADR 260725-133222) and what a sandboxed-agent story would have to do. That is not this spec, and no part of this spec should be described as delivering it.
@@ -307,25 +325,43 @@ export interface CredentialScopeProbeResult {
 export type CredentialScopeProbe = () => Promise<CredentialScopeProbeResult>;
 ```
 
-Expected outcome per credential, asserted by `checkCredentialScopeConformance(probes)`:
+**The table has two states, because this spec now ships in two phases, and an earlier draft gave only one.** Phase 0 puts a cookie bar on the decide route, so during phase 0 a person's key is refused along with everything else. Phase 2 adds the scope and lets a person's key back in. A single table cannot describe both, and the version that described only the phase 2 end state was wrong for the code that ships first: anyone implementing the probe from it would have asserted `person-api-key` succeeds against a build where it correctly fails.
+
+**Phase 0** (the cookie bar, closing DOR-474), asserted by `checkCredentialScopeConformance(probes)`:
 
 | Credential                              | `decided` | `status` | `code`                | `stillPending` |
 | --------------------------------------- | --------- | -------- | --------------------- | -------------- |
 | `session-cookie`                        | `true`    | 200      | -                     | `false`        |
-| `person-api-key`                        | `true`    | 200      | -                     | `false`        |
+| `person-api-key`                        | `false`   | 403      | the credential code   | `true`         |
 | `agent-api-key`                         | `false`   | 403      | `AGENT_CANNOT_DECIDE` | `true`         |
-| `agent-api-key-without-identity-header` | `false`   | 403      | `AGENT_CANNOT_DECIDE` | `true`         |
+| `agent-api-key-without-identity-header` | `false`   | 403      | the credential code   | `true`         |
 | `no-credential`                         | `false`   | 401      | `AUTH_REQUIRED`       | `true`         |
+
+**Phase 2** (the scope re-admits a person's key). Exactly one row moves, and the phase 2 PR moves it deliberately:
+
+| Credential       | `decided`        | `status`  | `code`          | `stillPending`   |
+| ---------------- | ---------------- | --------- | --------------- | ---------------- |
+| `person-api-key` | `false` → `true` | 403 → 200 | the code → none | `true` → `false` |
+
+Every other row is identical in both phases. A phase 2 change that moves any other row is a regression, and the table is the thing that says so.
 
 Every probe drives the real Express stack with `auth.enabled: true` and `sessionGate` then `resolveAgentIdentity` mounted in the shipped order, and creates its approval through the real invoke route rather than by writing a row, so the probe exercises the path that ships. That is the same construction `checkDecisionAuthorityConformance`'s probe already uses; copy it rather than inventing a second harness.
 
-`agent-api-key-without-identity-header` is the reported defect, verbatim. It is listed separately from `agent-api-key` because they fail for different reasons: the first can only be caught by the credential check, and if someone deletes that check while leaving the header check, exactly one row in this table goes red.
+**"The credential code" is not a placeholder, and the two 403 codes must differ.** `agent-api-key` is refused by the header check; `agent-api-key-without-identity-header` and `person-api-key` can only be refused by the credential check (§3.3). If all three answered the same code, then deleting the credential check would leave `agent-api-key` answering identically through the header check, and **the probe would stay green while the thing it exists to prove was gone**. That is an assertion that cannot fail sitting inside a security probe. Pin the distinct code the implementing PR chooses, so removing the credential check turns the rows that depend on it red and leaves the header row alone.
 
-**Test the test.** Two seeded regressions, each asserted to fail the checker: flip `classifyApiKeyScope` to always return `person`, and exactly the two agent rows must fail; delete the scope branch of `resolveDecisionAuthority`, and the same two rows must fail. Plus a table-driven unit test of `classifyApiKeyScope` over `null`, the agent shape, and an unrecognized non-null value.
+**These rows depend on the check order §3.3 requires, and that dependency is the reason it is a requirement.** The table assigns `agent-api-key` the header code and the other two the credential code, which is only true because the identity-header check answers before the credential check (`decision-authority.ts:152-159`, ahead of the posture branch). Put the credential check first and every API-key row collapses to one code, at which point the header check becomes undeletable-without-detection in exactly the way this section exists to prevent. So the ordering is not a free implementation choice that the table quietly assumes: it is stated in §3.3, it matches what ships, and a build that reorders it fails this table rather than silently weakening it.
+
+`agent-api-key-without-identity-header` is the reported defect, verbatim.
+
+**Test the test.** Seeded regressions, each asserted to fail the checker, and each asserted to fail the **specific** rows named:
+
+- Delete the credential check. `agent-api-key-without-identity-header` and (in phase 0) `person-api-key` must go red; `agent-api-key` must stay green, which is what proves the header check is not covering for the missing one.
+- Make the cookie guard return "allowed" unconditionally. Every API-key row must go red.
+- In phase 2, flip `classifyApiKeyScope` to always return `person`, and exactly the two agent rows must fail. Plus a table-driven unit test of `classifyApiKeyScope` over `null`, the agent shape, and an unrecognized non-null value.
 
 A seeded regression is not optional here. `.claude/rules/testing.md` now carries "Assertions that cannot fail", eleven shapes catalogued after eleven green checks certified false things in one day. A conformance table whose rows all pass on day one is that shape until someone proves a row can go red.
 
-**What this proves.** On an instance with login on, the approval decide routes refuse a request whose only credential is a key DorkOS minted for an agent, whether or not that request also presents an identity header, and a refusal leaves the approval pending and decidable.
+**What this proves.** After phase 0: on an instance with login on, the approval decide routes refuse a request whose credential is an API key of any kind, whether or not it also presents an identity header, and a refusal leaves the approval pending and decidable. After phase 2: the same, except that a person-scoped key decides, so the proof narrows to "a key DorkOS minted for an agent cannot decide". Cite whichever one has actually shipped, not the one further down the page.
 
 **What this does not prove.** Stated here so nobody cites it for more:
 
@@ -373,9 +409,11 @@ The one visible change: if an operator had been driving approvals from a script 
 
 **A real mint, not a mocked one.** At least one test drives `auth.api.createApiKey` against a real Better Auth instance with the exact body §3.4 specifies, and asserts the key comes back. A mocked mint cannot catch a unit error in `expiresIn`, and "failure is not fatal" means such an error is invisible everywhere else.
 
-**Conformance.** `checkCredentialScopeConformance` wired into the existing `capabilityConformance` describe block, with both seeded regressions asserted to fail it.
+**Conformance.** `checkCredentialScopeConformance` wired into the existing `capabilityConformance` describe block, with the seeded regressions asserted to fail the **specific** rows §3.8 names. "Fails the checker" is not enough on its own: a regression that reddens every row proves the harness runs, not that the credential check is the thing being tested.
 
-**Rate limit.** A regression test that an agent-minted key survives more than ten consecutive verifications, and (as task 1) a reproduction that a cockpit-created key does not.
+**Phase 0's own cases, which are not the same as phase 2's.** While the cookie bar stands alone, `person-api-key` is refused. A test written against phase 2's expectations goes red on the code that ships first, and a test that asserts phase 2's outcome and passes during phase 0 is asserting the wrong subject. Both tables are in §3.8; use the one matching the build.
+
+**Rate limit.** A regression test that an agent-minted key survives more than ten consecutive verifications. The reproduction that a cockpit-created key does not is the first step of its own ticket, not a task here.
 
 No posture-lock tests: it shipped, with its own (§3.9).
 
@@ -411,27 +449,43 @@ No entry in `contributing/configuration.md`, because no config field is added (s
 
 Three phases now, because the cookie bar was pulled ahead of the rest (Open Questions).
 
-**Phase 0 - close DOR-474 with a cookie bar.** Being implemented separately, tracked on DOR-474 itself. Deciding an approval requires `credential === 'cookie'` under login-on. Nothing in this spec is a prerequisite, and DOR-474 is closed when it lands. Whoever builds it chooses deliberately whether the bar sits inside `resolveDecisionAuthority` (which extends it to the act-without-approval paths, §3.3) or at the decide routes alone, and records which.
+**Phase 0 - close DOR-474 with a cookie bar.** Being implemented separately, tracked on DOR-474 itself. Deciding an approval requires `credential === 'cookie'` under login-on. Nothing in this spec is a prerequisite, and DOR-474 is closed when it lands.
+
+Two things about it are the implementer's choice and one is not.
+
+- **Choice: where the bar sits.** Inside `resolveDecisionAuthority`, which extends it to the act-without-approval paths (§3.3), or at the decide routes alone. Choose deliberately and record which.
+- **Choice: the credential refusal's code and message**, subject to being distinct (§3.3) and pinned in §3.8's table.
+- **Not a choice: the order.** The identity-header check answers before the credential check, and each answers a distinct code (§3.3). Either placement above can honour this and the shipped code already does (`decision-authority.ts:152-159`), so this constrains nothing anyone wants to do. A placement that cannot preserve distinct codes in a fixed order is not an acceptable option, because it makes §3.8's probe unable to detect the deletion of either check.
 
 Phases 1 and 2 then deliver what the cookie bar does not: an agent that never needs the operator's key, a key that survives past ten calls a day, and a credential DorkOS can name on an approval card. **Neither phase may be described as closing the self-approval hole; phase 0 does that.** The demo-claim gate applies to security properties too.
 
 **Phase 1 - make an agent's credential its own.**
 
-1. Reproduce the ten-per-day rate limit against a running server with login on. Record the result either way; the rest of the phase does not depend on the outcome.
-2. Give OpenCode the identity seam it does not have (§3.4). A change to attribution, so it ships on its own and is reviewed on its own.
-3. `classifyApiKeyScope` and the shared Zod shape (§3.2).
-4. Server-side minting at the spawn seam, with `permissions`, `rateLimitEnabled: false`, `userId`, `expiresIn` in seconds (§3.4), plus revocation, sweep, and the real-mint test.
-5. Redaction fixture extension.
+1. `classifyApiKeyScope` and the shared Zod shape (§3.2).
+2. Server-side minting at the spawn seam, with `permissions`, `rateLimitEnabled: false`, `userId`, `expiresIn` in seconds (§3.4), plus revocation, sweep, and the real-mint test.
+3. Redaction fixture extension.
 
 **Phase 2 - make the distinction mean something.**
 
-6. `scope` on `RequestUser` (§3.2). `credential` already shipped in DOR-505.
-7. The scope refusal, alongside phase 0's cookie bar rather than instead of it (§3.3). This is what lets a person-scoped key decide again, so it **widens** what phase 0 allows, and the four observable `trustedCaller` sites move with it.
-8. `CredentialScopeProbe`, `DECIDING_CREDENTIALS`, `checkCredentialScopeConformance`, and both seeded regressions (§3.8).
-9. Security-panel scope labels (§3.6) and the approval-card wording (§3.10).
-10. Docs and changelog.
+4. `scope` on `RequestUser` (§3.2). `credential` already shipped in DOR-505.
+5. The scope refusal, alongside phase 0's cookie bar rather than instead of it (§3.3). This is what lets a person-scoped key decide again, so it **widens** what phase 0 allows, and the four observable `trustedCaller` sites move with it.
+6. `CredentialScopeProbe`, `DECIDING_CREDENTIALS`, `checkCredentialScopeConformance`, and the seeded regressions (§3.8), including moving the `person-api-key` row from the phase 0 table to the phase 2 one.
+7. Security-panel scope labels (§3.6) and the approval-card wording (§3.10).
+8. Docs and changelog.
+
+**Two items left this list and became follow-ups, and the renumbering above is why.** They were phase 1 tasks 1 and 2 when the decide refusal depended on minting. Phase 0 removed that dependency, so neither of them blocks anything here and neither should sit in a queue behind work it does not need. Both are below.
 
 The posture lock is no longer a task. It shipped in #469, #476 and #486 (§3.9).
+
+## Follow-ups
+
+Two tickets, each independent of the phases above. Neither blocks phase 0, phase 1 or phase 2, and neither is a prerequisite for any of them.
+
+**1. The ten-per-day rate limit on cockpit-created API keys.** `apiKey()` is configured with zero options (`services/core/auth/index.ts:138`), which resolves `rateLimit: { enabled: true, timeWindow: 86400000, maxRequests: 10 }` and writes those as concrete columns onto every key the cockpit creates. Every `verifyApiKey` burns one, and the CLI presents its key on every call. If that is what actually happens, an agent doing real work through the CLI with login on gets about ten requests and then starts failing with "this DorkOS instance did not accept your API key", which breaks the credential path agents depend on whenever login is on. **This is unverified.** It was traced in the installed plugin source, with the citations in §3.4, and never reproduced against a running server: that reproduction was this spec's own phase 1 task 1 and it was never done. **Verifying it is the first step, and the ticket should not propose a fix before the reproduction exists.** If it reproduces, it is a live defect and a small one to fix. If it does not, the finding is retired and the §3.4 citations say where to look next. Either way it is independent of approvals and does not wait for phase 2, which the Open Questions caveat below already states.
+
+**2. OpenCode has no agent-identity seam.** `resolveAgentTokenEnv` (`services/core/agent-identity/agent-token-env.ts:42`) has two production call sites, `services/runtimes/claude-code/messaging/message-sender.ts:399` and `services/runtimes/codex/codex-runtime.ts:484`. Nothing under `services/runtimes/opencode/` calls it, so an OpenCode agent carries no `DORKOS_AGENT_TOKEN` and is unattributed everywhere attribution is read. OpenCode is in this spec's own premise, so this is a gap in the identity story regardless of credentials. It is a change to attribution rather than authorization, and §3.4 has the reasoning for shipping and reviewing it on its own.
+
+**Minting an agent's own key is not a follow-up.** It is phase 1 tasks 1 through 3 above, and it stays there. It needs no separate ticket, and nothing outside these phases should be described as waiting on it.
 
 Decomposition in `03-tasks.json`.
 
@@ -442,7 +496,7 @@ Decomposition in `03-tasks.json`.
 - ~~What is an unscoped legacy key?~~ **(RESOLVED)** Person-scoped. Reasoning and the operator's recommended follow-up in §3.6. The alternative breaks a person's own CLI approval flow with an error blaming an agent, which is a security change nobody keeps.
 - ~~Does this need a config field, and therefore a semver-keyed migration?~~ **(RESOLVED)** No, on both counts. The scope lives on the `apikey.permissions` column, which already exists in the schema (`packages/db/src/schema/auth.ts:130`) and in applied migration `0022` (`:40`), so there is no database migration either. The posture is the existing `auth.enabled`. A knob such as "require a cookie to approve" would be a dial whose only settings are the safe default and something less safe, so it is not offered. If a later round does add a field, it follows `contributing/configuration.md` and the `adding-config-fields` skill: append-only migration keyed to the release version, guarded by `store.has()`.
 - ~~Should the two credentials be collapsed into one?~~ **(RESOLVED)** No. Reasoning in §3.5. Revisit if login-on ever becomes the default posture.
-- **(OPEN)** Does the Better Auth **client** SDK's `listApiKeys` response type surface `permissions`? The endpoint parses and returns it (`index.mjs:1323`), but the client type was not verified. If it does not, the Security panel needs a small server-side projection instead. Resolve during phase 2, task 9.
+- **(OPEN)** Does the Better Auth **client** SDK's `listApiKeys` response type surface `permissions`? The endpoint parses and returns it (`index.mjs:1323`), but the client type was not verified. If it does not, the Security panel needs a small server-side projection instead. Resolve during phase 2, task 7 (the Security-panel scope labels).
 - ~~Should deciding require a session cookie, refusing every API key?~~ **(RESOLVED 2026-07-27, by Dorian: yes, and scoping becomes phase 2.)** Resolved No on 2026-07-25, on the grounds that cookie-only forecloses a headless operator and a future `dorkos approve` verb while buying nothing today. The grounds are intact. What changed is the price.
 
   **Cookie-only costs nothing today, which was the open unknown.** Every first-party client already authenticates with a cookie: the client transport layer sends `credentials: 'include'` throughout (`apps/client/src/layers/shared/lib/transport/http-client.ts:37`, and the mesh, relay and room methods beside it), and no `Authorization` header is constructed anywhere in the client, desktop, or Obsidian surfaces outside the settings snippet generator that prints config for **external** MCP clients (`layers/features/settings/lib/external-mcp-snippets.ts`). So cockpit, Electron, and Obsidian-over-HTTP all keep deciding approvals. Nothing first-party breaks.
@@ -454,7 +508,7 @@ Decomposition in `03-tasks.json`.
   Three things on the record, so the next reader does not have to rediscover them:
   1. **Cookie-only does not subsume the rate-limit defect.** A cockpit-created key dying after ten verifications a day is an independent shipped bug (§3.4). It needs its own ticket and it does not wait for phase 2.
   2. **It forecloses §3.10 and the Settings scope labels** until phase 2. DorkOS cannot say "an agent asked" on a card without a way to tell an agent's credential apart, and cannot label a key it cannot classify. Real, and small.
-  3. **Where the bar goes is a decision, not an inheritance.** Putting it inside `resolveDecisionAuthority` gives it the same reach §3.3 describes, so an operator's own script holding an API key would also lose the `marketplace.ts` and `tasks.ts` act-without-approval paths. That may be right, since "whoever may decide may act without one" is the invariant those paths rest on. But it follows from the placement rather than from the goal, so whoever implements it should choose the placement deliberately and say which they chose and why.
+  3. **Where the bar goes is a decision, not an inheritance.** Putting it inside `resolveDecisionAuthority` gives it the same reach §3.3 describes, so an operator's own script holding an API key would also lose the `marketplace.ts` and `tasks.ts` act-without-approval paths. That may be right, since "whoever may decide may act without one" is the invariant those paths rest on. But it follows from the placement rather than from the goal, so whoever implements it should choose the placement deliberately and say which they chose and why. **The check order is not part of that choice:** the identity-header check answers first and each check answers a distinct code, whichever placement is taken (§3.3, and see Implementation Phases).
 
 ## Related ADRs
 
