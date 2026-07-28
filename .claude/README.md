@@ -12,7 +12,7 @@ This directory contains the **Claude Code Harness** — the customization framew
 | Agents        | 7     | `.claude/agents/`                                                            |
 | Skills        | 31    | `.claude/skills/` (13 Claude-only dirs + 18 symlinks into `.agents/skills/`) |
 | Shared Skills | 18    | `.agents/skills/` (canonical, projected to other harnesses)                  |
-| Rules         | 11    | `.claude/rules/`                                                             |
+| Rules         | 12    | `.claude/rules/`                                                             |
 | Claude Hooks  | 10    | `.claude/hooks/`, wired in `.claude/settings.json`                           |
 | Git Hooks     | —     | `lefthook.yml` (pre-commit/pre-push) + `.claude/git-hooks/` (post-commit)    |
 | ADRs          | 249   | `decisions/` (+87 archived)                                                  |

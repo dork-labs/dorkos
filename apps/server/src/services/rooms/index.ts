@@ -12,6 +12,7 @@ import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { configManager } from '../core/config-manager.js';
+import { readOwnerAccount } from '../core/auth/index.js';
 import { AuthorRegistry } from './author-registry.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { RoomService } from './room-service.js';
@@ -132,6 +133,11 @@ export function createRoomSubsystem(opts: {
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,
+    // Read per check for the same reason, and for one more: an install becomes
+    // owned partway through its life (the enable-login flow), so a value
+    // captured at boot would leave the rooms domain believing forever that the
+    // unbound `'local'` author is still the operator.
+    isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
   });
   return { service, store, authors, broadcaster };
 }

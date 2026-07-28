@@ -44,6 +44,7 @@ import { user, session, account, verification, apikey, type Db } from '@dorkos/d
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
 import { resolveTrustedOrigins } from '../../../lib/trusted-origins.js';
+import { findOwnerAccount, type Account } from './accounts.js';
 import { resolveBetterAuthSecret } from './secret.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 
@@ -212,6 +213,23 @@ export function initAuth(db: Db, dorkHome: string): Auth {
 export function hasAnyUser(): boolean {
   if (!activeDb) return false;
   return activeDb.select({ id: user.id }).from(user).limit(1).get() !== undefined;
+}
+
+/**
+ * The account that owns this install, or `null` when nobody has registered yet
+ * (or auth was never initialized — a unit test app built without
+ * {@link initAuth}).
+ *
+ * The request-time reader for {@link findOwnerAccount}, sibling to
+ * {@link hasAnyUser} and resolved the same way: a synchronous better-sqlite3
+ * read off the retained db handle. The rooms subsystem is what turns on it: it
+ * is how `isOwnerAuthor` decides which author id IS this owner, which is the
+ * question room authorization asks instead of "is this author a human"
+ * (DOR-598).
+ */
+export function readOwnerAccount(): Account | null {
+  if (!activeDb) return null;
+  return findOwnerAccount(activeDb);
 }
 
 /**

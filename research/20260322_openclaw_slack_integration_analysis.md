@@ -2,11 +2,24 @@
 title: 'OpenClaw Slack Integration: Comprehensive Analysis'
 date: 2026-03-22
 type: external-best-practices
-status: active
+status: superseded-in-part
+superseded_by: research/20260727_hermes-openclaw-group-chat.md
 tags: [openclaw, slack, slack-bot, ai-agent, messaging, relay-adapter, security, rate-limiting]
 searches_performed: 10
 sources_count: 35
 ---
+
+> **Stale on mechanics as of 2026-07-27; the security analysis still holds.**
+> Re-verified against upstream by `research/20260727_hermes-openclaw-group-chat.md`.
+> The central mechanical claim below, that OpenClaw has binary mention gating and
+> no thread-aware mode, **is no longer true**: OpenClaw shipped a third trigger
+> state (`unmentionedInbound: "room_event"`) and `implicitMentions.threadParticipation`,
+> which are the resolutions of the very feature requests this report cites as
+> open. Also new since March: the `messages.groupChat.*` namespace, `visibleReplies`,
+> `contextVisibility`, `botLoopProtection`, four queue modes, opt-in
+> agent-to-agent messaging, and a Slack `textChunkLimit` raised from 4000 to 8000.
+> Read the July report for anything behavioral; read this one for the security
+> and landscape sections.
 
 ## Research Summary
 
