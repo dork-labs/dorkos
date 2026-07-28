@@ -1,0 +1,109 @@
+name: db-check
+
+# Fails when a Drizzle schema change ships without the migration it implies.
+#
+# Before this workflow existed, nothing in CI ran it. `packages/db/package.json`
+# has declared `"db:check": "drizzle-kit generate --config drizzle.config.ts &&
+# git diff --exit-code drizzle/"` for as long as the package has existed, and
+# `grep -rn "db:check" .github/workflows/` returned nothing. It is not part of
+# `turbo test` or `turbo typecheck` either — `db:check` is its own turbo task
+# with `cache: false`, and no other task depends on it. So a change to
+# packages/db/src/schema/*.ts could reach main with `drizzle/` never regenerated,
+# leaving the committed migrations describing a database the code no longer
+# expects. The same "a change merges green because no job looks" defect as
+# DOR-656, which is why it lands here alongside it.
+#
+# HOW THE CHECK ACTUALLY CATCHES DRIFT, because it is not the obvious way.
+# `git diff --exit-code drizzle/` only reports files git already TRACKS, and a
+# newly generated migration is an untracked `drizzle/00NN_*.sql` plus an
+# untracked `drizzle/meta/00NN_snapshot.json` — neither of which `git diff` sees.
+# What it does see is `drizzle/meta/_journal.json`, which is tracked and gains an
+# entry for every generated migration. That journal entry is the whole signal.
+# Verified by hand: adding one column to packages/db/src/schema/rooms.ts and
+# running `pnpm --filter @dorkos/db db:check` exits 1 with a diff showing exactly
+# the new `_journal.json` entry.
+#
+# That is a thin thread to hang a gate on, so the second step below does not rely
+# on it: it asserts `git status --porcelain packages/db/drizzle/` is empty, which
+# covers untracked and deleted files as well as modified ones. If the journal
+# mechanism ever stops working, that step still catches the drift, and it also
+# stops the job leaving a dirty tree behind for a later step to misread.
+#
+# A GENERATE FAILURE IS NOT A CLEAN DIFF. `drizzle-kit generate && git diff` is
+# an `&&` chain, so a generator that errors short-circuits and the script exits
+# non-zero without ever running the diff — the job goes red and the log says
+# which half failed. The one shape to watch is drizzle-kit's interactive rename
+# prompt: renaming a table or column makes it ask whether that is a rename or a
+# drop-plus-add. With no TTY it cannot be answered, so it fails rather than
+# hangs, but `timeout-minutes` below is the backstop either way.
+#
+# NO `paths:` FILTER, for the reason .github/workflows/browser-test.yml spells
+# out at length: a workflow skipped by path filtering leaves its check Pending
+# forever rather than reporting success, so a path-filtered workflow can never
+# become a required check. This one is a much better candidate for required than
+# the browser suite is — it is deterministic and finishes in under a minute — so
+# it should not be disqualified by an optimization worth a few runner-seconds.
+# `merge_group` is here for the same reason: ADR 260728-112203 makes reporting on
+# merge groups a hard prerequisite for any required check, and getting that wrong
+# on a required check blocks the queue.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Same form as test.yml, typecheck.yml and browser-test.yml — see typecheck.yml's
+# comment for why push events group by SHA rather than by ref.
+concurrency:
+  group: db-check-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  db-check:
+    runs-on: ubuntu-latest
+    # The check itself is ~5s; the install dominates. Low enough that drizzle-kit
+    # blocking on a prompt it cannot be asked fails the job rather than hanging.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Deliberately the package script rather than a copy of its two commands,
+      # so this job and a developer running `pnpm --filter @dorkos/db db:check`
+      # can never disagree about what the gate is.
+      - name: Regenerate migrations and fail if they differ from the committed ones
+        run: pnpm --filter @dorkos/db run db:check
+
+      # The backstop for the journal mechanism described in the header, and the
+      # reason this job cannot hand a dirty tree to anything downstream.
+      # `git status --porcelain` reports untracked and deleted paths that
+      # `git diff --exit-code` does not.
+      - name: Prove the generator left nothing behind
+        run: |
+          set -uo pipefail
+          dirty=$(git status --porcelain packages/db/drizzle/)
+          if [ -n "$dirty" ]; then
+            echo "::error::Regenerating the Drizzle migrations changed packages/db/drizzle/, so the committed migrations do not match packages/db/src/schema/."
+            echo
+            echo "$dirty"
+            echo
+            echo "Run 'pnpm --filter @dorkos/db run db:generate' and commit what it writes."
+            exit 1
+          fi
+          echo "packages/db/drizzle/ is unchanged: the committed migrations match the schema."

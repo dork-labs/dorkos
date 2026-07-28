@@ -1,0 +1,193 @@
+name: browser-test
+
+# Runs the Playwright browser suite (apps/e2e) on every PR, on push to main, and
+# on merge groups.
+#
+# Before this workflow existed, NOTHING in CI ran it. `grep -rlE
+# 'playwright|e2e|browser' .github/workflows/` returned nothing across fifteen
+# workflows, while apps/e2e declared `"e2e": "playwright test"` and 104 tests sat
+# in 22 spec files that no gate ever executed. A change could break every browser
+# test and merge green — and did. That is DOR-656.
+#
+# FULL MONOREPO TRIGGER, NO `paths:` FILTER. Two independent reasons, and either
+# alone would be enough.
+#
+#   1. A path filter would not have caught the regression this ticket cites. That
+#      one was a changed placeholder STRING in apps/client which broke a
+#      Playwright locator in apps/e2e. A filter scoped to `apps/e2e/**` misses it
+#      by construction, and "scope asserted from where you happen to be working"
+#      is a named recurring defect here. An honest filter would have to list
+#      apps/client, apps/server, apps/site and most of packages/ — i.e. nearly
+#      the whole tree — which buys a rounding error of runner time for a
+#      permanent correctness hole.
+#   2. A path-filtered workflow can never become a required check. GitHub's
+#      troubleshooting-required-status-checks doc is explicit: "A workflow is
+#      skipped by path filtering, branch filtering, or a commit message →
+#      Associated checks stay in a 'Pending' state and block merging → Avoid
+#      requiring workflows that can be skipped." A skipped JOB reports success; a
+#      skipped WORKFLOW reports nothing at all, and under the merge queue
+#      (ADR 260728-112203) a required check that never reports blocks the queue
+#      until `check_response_timeout_minutes` (60) expires. So the filter and the
+#      option of ever making this required are mutually exclusive.
+#
+# The trade this accepts, stated plainly: a docs-only or changelog-only PR pays
+# for a browser run it cannot possibly break. The `concurrency` block below
+# cancels superseded PR runs, which is what keeps that from compounding.
+#
+# `merge_group` IS in the trigger list even though this check is NOT required
+# today (see the note on required-ness below). ADR 260728-112203 makes reporting
+# on `merge_group` a hard prerequisite for any required check, and says it should
+# land first and separately. Doing that here means the day somebody decides this
+# should be required, it is a branch-protection toggle rather than a code change
+# — and cannot deadlock the queue on the way in. It is also the only trigger that
+# can catch the two-PR interaction class (two PRs each green alone against the
+# base they branched from, red once combined), which is precisely the shape of
+# the regression that reached main.
+#
+# THIS IS NOT A REQUIRED CHECK, and adding it to the required contexts is
+# deliberately NOT part of the change that adds this file. Two separate reasons,
+# and the second one outlives the first.
+#
+#   * The suite is not green. Measured on 2026-07-28 against a healthy, hand-
+#     booted stack on an unloaded machine: 42 passed, 53 failed, 3 skipped out of
+#     98. The failures are real, not contention — `tests/settings/settings-dialog
+#     .spec.ts` fails all 8 of its tests serially, waiting on a settings dialog
+#     that never opens. A required check that is red on arrival gets routed
+#     around, and this repo has the receipts: see test.yml's header on
+#     `--no-verify` being used six times in one day by three different actors.
+#   * Even once it is green, "reports on merge_group" is a claim to verify rather
+#     than assume. A required check that never reports blocks the queue until
+#     `check_response_timeout_minutes` (60) expires, on every merge, for
+#     everybody. So the trigger lands first, somebody watches it report on a real
+#     merge group, and the branch-protection change is a separate deliberate act
+#     after that.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs on the same ref for PRs only. For push events, group by
+# SHA instead of ref: GitHub only lets one run per group be *pending* at a time,
+# so several quick merges to main sharing a `browser-test-refs/heads/main` group
+# would cancel each other's queued runs and only the final push would be tested.
+#
+# Deliberately IDENTICAL in form to test.yml and typecheck.yml, which arrived at
+# this after #543 (DOR-517) found real merges whose runs were cancelled before
+# they started. Three CI workflows with different concurrency semantics is the
+# kind of divergence nobody notices until a run goes missing — keep them in step.
+concurrency:
+  group: browser-test-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  browser-test:
+    runs-on: ubuntu-latest
+    # The suite boots five webServer legs (Express API, Vite client, a second
+    # Express+Vite pair for the TestModeRuntime project, and the Next.js
+    # marketing site) and then runs 104 tests with `workers: 1` under CI. Generous
+    # headroom for a cold 4-core runner, and low enough that a leg which never
+    # comes up fails the job rather than burning an hour.
+    timeout-minutes: 45
+    env:
+      # NOT a DORK_HOME override, on purpose, and this is load-bearing.
+      #
+      # The `Express API` webServer leg runs `turbo dev --filter=@dorkos/server`,
+      # which is `tsx watch`. The server rewrites its runtime-compiled
+      # core-extension artifact (DORK_HOME/cache/extensions/server/_run/*.js) on
+      # every boot and `require()`s it. tsx watch ignores dot-directories under
+      # its own cwd (apps/server), which is why the DEFAULT data directory —
+      # apps/server/.temp/.dork — is invisible to it. Point DORK_HOME anywhere
+      # else, including /tmp, and the path is no longer under that cwd, tsx sees
+      # its own dependency change, and the server restart-loops until the run
+      # dies. apps/e2e/playwright.config.ts already documents this loop and works
+      # around it for the test-mode leg by not using `turbo dev` there; the real
+      # API leg still has it.
+      #
+      # So the suite must run on the default. Setting NODE_ENV explicitly is what
+      # makes that safe rather than accidental: `resolveDorkHome()` falls back to
+      # `os.homedir()/.dork` ONLY when NODE_ENV === 'production', and pinning it
+      # here means no future change to the runner image can silently redirect the
+      # suite at a real home directory. On a runner the resolved path is
+      # apps/server/.temp/.dork inside the ephemeral checkout.
+      NODE_ENV: development
+      # Boot the marketing-site leg and run the two specs that target it
+      # (marketplace.spec.ts, features.spec.ts). The config already defaults this
+      # on under CI; setting it explicitly means the suite's coverage does not
+      # depend on a conditional that a future edit could invert. It also keeps
+      # the invariant the assert step checks simple and total: EVERY spec file in
+      # the repo runs, so there is no exclusion list to quietly grow.
+      E2E_SITE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `--with-deps` installs the OS libraries headless Chromium needs, which
+      # ubuntu-latest does not ship in full. Without it the browser is present
+      # but fails to launch, and a launch failure is an error rather than a skip
+      # — but only if the binary was fetched at all, so this step failing is
+      # meant to fail the job.
+      - name: Install the Chromium browser Playwright drives
+        run: pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
+
+      # No `--reporter` flag, deliberately: passing one REPLACES the config's
+      # reporter list rather than adding to it, and the json reporter is what the
+      # next step reads. A run invoked with `--reporter=list` writes no
+      # results.json and the proof step has nothing to check.
+      #
+      # `--continue`-style behaviour is Playwright's default (it runs every test
+      # and reports them all), so there is no flag needed for it here.
+      #
+      # KNOWN, HARMLESS HERE: apps/e2e/reporters/manifest-reporter.ts rewrites
+      # the TRACKED file apps/e2e/manifest.json on every run — including on a
+      # bare `playwright test --list`. So this step leaves the checkout dirty.
+      # On an ephemeral runner that costs nothing and no later step reads it, but
+      # do not add a "the tree is clean" assertion to this job without dealing
+      # with that first: it would fail every time, for a reason unrelated to the
+      # code under test.
+      - name: Run the browser suite
+        run: pnpm --filter @dorkos/e2e run e2e
+
+      # THE POINT OF THIS STEP. Playwright exits 0 in more ways than it fails.
+      # A `testIgnore` glob widened by accident drops a whole spec file from the
+      # run while it still prints "N passed" and exits 0 (verified against 1.59.1
+      # on a two-spec tree). A spec whose tests all skip is green. A spec moved
+      # out of testDir is simply never collected. None of that is visible in the
+      # exit code, so this reads the JSON report and asserts against the
+      # FILESYSTEM that every spec file in apps/e2e actually executed something.
+      # See scripts/assert-browser-tests-executed.sh for the full argument and
+      # scripts/test-assert-browser-tests-executed.sh for its fixtures.
+      #
+      # It runs only when the previous step succeeded (default `if: success()`),
+      # which is right — a red suite is already a red job, and "did anything
+      # actually run" only matters when the answer looks like yes.
+      - name: Prove the browser suite actually executed
+        run: bash scripts/assert-browser-tests-executed.sh
+
+      # The report is the only way to read a browser failure after the fact: it
+      # carries the trace, the screenshot and the video the config captures on
+      # failure. Uploaded on failure only, because a green run's report is 100MB
+      # of things nobody opens.
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/e2e/playwright-report/
+          retention-days: 7
