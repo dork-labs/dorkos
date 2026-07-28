@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(server): enforce capability tiers with approval gating (DOR-448) (#452)'
+---
+
 ### Added
 
 - Agents now have to ask before removing an installed package. Every DorkOS action an

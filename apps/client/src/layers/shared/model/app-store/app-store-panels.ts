@@ -32,11 +32,13 @@ export type SettingsTab =
 // ---------------------------------------------------------------------------
 
 export interface PanelsSlice {
+  /**
+   * Settings dialog open flag. Deep-linking to a *tab* is not a store concern —
+   * the Settings dialog reads its active tab from `?settings=<tab>`, so callers
+   * that want a specific tab use `useSettingsDeepLink().open(tab)`.
+   */
   settingsOpen: boolean;
-  settingsInitialTab: SettingsTab | null;
   setSettingsOpen: (open: boolean) => void;
-  /** Open the Settings dialog pre-navigated to a specific tab. */
-  openSettingsToTab: (tab: SettingsTab) => void;
 
   tasksOpen: boolean;
   setTasksOpen: (open: boolean) => void;
@@ -102,10 +104,7 @@ export const createPanelsSlice: StateCreator<
   PanelsSlice
 > = (set) => ({
   settingsOpen: false,
-  settingsInitialTab: null,
-  setSettingsOpen: (open) =>
-    set(open ? { settingsOpen: true } : { settingsOpen: false, settingsInitialTab: null }),
-  openSettingsToTab: (tab) => set({ settingsOpen: true, settingsInitialTab: tab }),
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
 
   tasksOpen: false,
   setTasksOpen: (open) =>

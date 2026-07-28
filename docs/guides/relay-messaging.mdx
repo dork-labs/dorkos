@@ -203,10 +203,15 @@ The Telegram adapter connects a Telegram bot to Relay. Messages from the chat ar
   "builtin": true,
   "enabled": true,
   "config": {
-    "token": "123456:ABC-DEF..."
+    "token": "123456:ABC-DEF...",
+    "respondMode": "thread-aware"
   }
 }
 ```
+
+In a one-on-one chat the bot replies to everything you send it. In a group chat, `respondMode` decides when it joins in: `thread-aware` (default: when someone mentions it by name, sends it a command, or replies to one of its messages), `mention-only` (only when named), or `always` (every message in the group).
+
+Your bot never replies to another bot, whatever you pick. That is not a setting, because two bots that reply to each other will keep going forever and neither can tell it is happening. The one exception is an anonymous group admin: Telegram sends their messages in a way that looks like a bot, but they are a person, so your bot treats them like anyone else in the group. Posts from a linked channel are treated as automated and ignored.
 
 ### Slack adapter
 
@@ -225,12 +230,12 @@ The Slack adapter connects a Slack workspace to Relay using Socket Mode, so you 
     "streaming": true,
     "typingIndicator": "reaction",
     "respondMode": "thread-aware",
-    "dmPolicy": "open"
+    "dmPolicy": "allowlist"
   }
 }
 ```
 
-`respondMode` controls when the bot replies in a channel: `thread-aware` (default: replies to @mentions and to threads it's already part of), `mention-only` (only @mentions), or `always` (every message). `dmPolicy` controls direct messages: `open` (default) or `allowlist` (only the user IDs listed in `dmAllowlist`). You can also set overrides per channel with `channelOverrides`.
+`respondMode` controls when the bot replies in a channel: `thread-aware` (default: replies to @mentions and to threads it's already part of), `mention-only` (only @mentions), or `always` (every message). `dmPolicy` controls direct messages: `allowlist` (default: only the user IDs listed in `dmAllowlist`) or `open` (anyone in the workspace). A direct message can start an agent turn on your machine, so it is limited to people you name unless you open it. You can also set overrides per channel with `channelOverrides`.
 
 ### Webhook adapter
 

@@ -178,6 +178,39 @@ describe('OnboardingFlow', () => {
     expect(await screen.findByTestId('welcome-step')).toBeTruthy();
   });
 
+  // ── The requirements stage is not a dead end (DOR-481) ─────
+  //
+  // The nav bar is a sibling of the step, not something the step renders when
+  // the scan succeeds — so these hold whatever the runtime probe returns. The
+  // zero-runtime rendering itself is browser-verified: jsdom loads no CSS, so
+  // it cannot speak to whether the controls are actually reachable on screen.
+
+  it('the requirements step offers Back and Skip all setup', async () => {
+    await renderFlow('/?onboarding=requirements');
+    expect(screen.getByTestId('requirements-step')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Skip all setup' })).toBeTruthy();
+  });
+
+  it('Skip all setup on requirements dismisses, names the way back, and completes', async () => {
+    const onComplete = vi.fn();
+    await renderFlow('/?onboarding=requirements', onComplete);
+    fireEvent.click(screen.getByRole('button', { name: 'Skip all setup' }));
+    expect(mockDismiss).toHaveBeenCalled();
+    await waitFor(() => expect(onComplete).toHaveBeenCalled());
+    await expectWayBackToast();
+  });
+
+  it('Back on requirements returns to the welcome screen', async () => {
+    const harness = await renderFlow('/');
+    fireEvent.click(screen.getByText('Get Started'));
+    await screen.findByTestId('requirements-step');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByTestId('welcome-step')).toBeTruthy();
+    await waitFor(() => expect(harness.readStage()).toBe('welcome'));
+  });
+
   it('the conversation nav bar names its whole-flow exit honestly, and has no step dots', async () => {
     await renderFlow('/');
     fireEvent.click(screen.getByText('Get Started'));

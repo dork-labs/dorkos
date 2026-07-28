@@ -210,6 +210,11 @@ export const CONFIG_WRITE_POLICY = {
   // agent-writable would hand back the thing it was built to hold.
   'rooms.maxAutomaticTurnsPerRoomPerHour': 'operator-only',
   'rooms.maxAutomaticTurnsTotalPerHour': 'operator-only',
+  // How long a room waits, and when it gives up. Neither removes a bound: a
+  // longer wait costs patience, not turns, and the spend caps above are what
+  // hold the bill whatever these say.
+  'rooms.replyWaitMinutes': 'agent-writable',
+  'rooms.lateReplyCeilingMinutes': 'agent-writable',
 
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',
@@ -278,6 +283,10 @@ export const CONFIG_WRITE_POLICY = {
   'workspace.retentionCap': 'agent-writable',
 
   'harness.autoSync': 'agent-writable',
+  // The record of a person allowing an installed package to write shell commands
+  // into the files a coding agent runs on their behalf (DOR-522). An agent that
+  // could append to this list could approve its own package's hooks.
+  'harness.approvedHooks': 'operator-only',
 
   'workbench.defaultViewers': 'agent-writable',
   'workbench.terminalGraceTtlMinutes': 'agent-writable',
