@@ -94,6 +94,17 @@ async function buildDeps(): Promise<{
   };
 }
 
+/** Run one project-scoped install through the flow. */
+async function flowInstall(
+  deps: Awaited<ReturnType<typeof buildDeps>>,
+  pkgPath: string,
+  manifest: AgentPackageManifest,
+  projectPath: string
+): Promise<void> {
+  const flow = new AgentInstallFlow(deps);
+  await flow.install(pkgPath, manifest, { name: manifest.name, projectPath });
+}
+
 describe('AgentInstallFlow', () => {
   const cleanupDirs: string[] = [];
 
@@ -190,6 +201,32 @@ describe('AgentInstallFlow', () => {
     expect(await pathExists(path.join(targetDir, '.dork', 'manifest.json'))).toBe(true);
     // dorkHome must not have been touched for a project-local install.
     expect(await pathExists(path.join(deps.dorkHome, 'agents', 'local-agent'))).toBe(false);
+  });
+
+  it('leaves the project it installs into intact (DOR-522)', async () => {
+    // The sharper half of the same defect. `runTransaction` moves an existing
+    // target aside to a sibling backup, renames the staged package into its
+    // place, and deletes the backup on success. With the project root AS the
+    // target, installing an agent package renamed the person's whole project
+    // away, replaced it with the package, and then removed the original.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const projectPath = await mkdtemp(path.join(tmpdir(), 'install-agent-live-'));
+    cleanupDirs.push(projectPath);
+    await mkdir(path.join(projectPath, 'src'), { recursive: true });
+    await writeFile(path.join(projectPath, 'src', 'index.ts'), 'export const keep = true;\n');
+    await writeFile(path.join(projectPath, 'README.md'), '# my project\n');
+
+    const manifest = buildManifest({ name: 'tenant-agent' });
+    const pkgPath = await stagePackage(manifest);
+    cleanupDirs.push(pkgPath);
+
+    await flowInstall(deps, pkgPath, manifest, projectPath);
+
+    expect(await readFile(path.join(projectPath, 'src', 'index.ts'), 'utf-8')).toBe(
+      'export const keep = true;\n'
+    );
+    expect(await readFile(path.join(projectPath, 'README.md'), 'utf-8')).toBe('# my project\n');
   });
 
   it('cannot land an extension where DorkOS would discover it (DOR-522)', async () => {
