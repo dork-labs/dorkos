@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
 import { TourSpotlight } from '@/layers/shared/ui';
 
 import { TOUR_DEFINITIONS, type TourId } from '../model/tour-definitions';
@@ -20,7 +20,7 @@ export function TourHost() {
   const { runningDefinition, activeIndex, advanceStep, endTour, runTour } = useTours();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const openSettingsToTab = useAppStore((s) => s.openSettingsToTab);
+  const { open: openSettings } = useSettingsDeepLink();
   const requestedTour = useAppStore((s) => s.requestedTour);
   const clearRequestedTour = useAppStore((s) => s.clearRequestedTour);
 
@@ -60,9 +60,9 @@ export function TourHost() {
       // yank the anchor out from under the spotlight while it is resolving.
       if (pathname !== link.to) navigate({ to: link.to });
     } else if (link.kind === 'settings-tab') {
-      openSettingsToTab(link.tab);
+      openSettings(link.tab);
     }
-  }, [runningDefinition, pathname, navigate, openSettingsToTab]);
+  }, [runningDefinition, pathname, navigate, openSettings]);
 
   if (!runningDefinition) return null;
 

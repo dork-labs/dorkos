@@ -208,7 +208,7 @@ function OnboardingNavBarShowcase() {
   return (
     <PlaygroundSection
       title="OnboardingNavBar"
-      description="The conversation's slim nav bar — Back to the ready gate and Skip all setup (the whole-flow exit; single steps skip themselves). No step dots (a conversation is not a dotted wizard)."
+      description="The slim nav bar carried by every stage past the welcome screen — Back one stage and Skip all setup (the whole-flow exit; single steps skip themselves). The ready gate renders it even when no agent was found, which is exactly when the exit is needed. No step dots (a conversation is not a dotted wizard)."
     >
       <ShowcaseDemo>
         <OnboardingNavBar onBack={noop} onSkipAll={noop} />
