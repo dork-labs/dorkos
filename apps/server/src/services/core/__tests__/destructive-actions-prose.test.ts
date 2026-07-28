@@ -1,5 +1,5 @@
 /**
- * The docs must not contradict what actually stops for a person (DOR-509).
+ * The docs must not contradict what actually stops for a person (DOR-509, DOR-555).
  *
  * DorkOS shipped a working approval gate and then described it in docs written
  * before it covered anything. `docs/guides/action-approvals.mdx` said "an agent can
@@ -68,6 +68,15 @@
  *   posture makes it true. There is no phrase to match, and a regex for "does this
  *   paragraph mention login" would be noise. The copy rule lives in
  *   `meta/positioning-202607/02-positioning.md` and is enforced by review.
+ * - **The retired-phrase scan covers published copy, not the whole repo.** Eight
+ *   files under `meta/`, `research/`, `decisions/`, and `changelog/` contain
+ *   "secure by default" and "sign-in required the moment" legitimately: they are the
+ *   copy rules that forbid the phrases and the changelog entry recording the removal.
+ *   A repo-wide literal ban would redden the rule stating the ban. See
+ *   {@link RETIRED_PHRASES}.
+ * - **The exposure-guard pairing check skips `decisions/`.** A cross-reference to
+ *   another ADR's mechanism is a citation, not an explanation. See
+ *   {@link exposureGuardPages}.
  * - **`specs/` is not scanned, and it has live hits** at
  *   `specs/agent-approval-settings/02-specification.md:265` and `:345`. That is not
  *   an oversight: specs are frozen records of what was true when written, and
@@ -77,7 +86,9 @@
  *   in a comment. Prose that names a subset and says so honestly ("there are others;
  *   this is not a list of them") is correct writing, and a guard that reddens it
  *   teaches people to pad unrelated sentences, which is how guards get deleted. The
- *   marker is deliberate and greppable, so an audit can find every use.
+ *   marker is deliberate and greppable, so an audit can find every use — and since
+ *   DOR-555 the audit is a test: {@link MARKER_FILES} pins the exact inventory, and
+ *   the whole-file scans honour the marker at whole-file granularity.
  *
  * Files are read from disk as text, so there is no stale-`dist` exposure in the
  * SCANNED prose. The imports below do resolve through the package graph
@@ -104,8 +115,21 @@ import type { MarketplaceMcpDeps } from '../../marketplace-mcp/marketplace-mcp-t
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../../../', import.meta.url));
 
-/** User-facing prose, checked against {@link PLAIN_LANGUAGE}. */
-const USER_ROOT = path.join(REPO_ROOT, 'docs');
+/** The docs tree, named separately because two exclusions hang off it. */
+const DOCS_ROOT = path.join(REPO_ROOT, 'docs');
+/** Release announcements — published copy, read by more people than the docs. */
+const BLOG_ROOT = path.join(REPO_ROOT, 'blog');
+/**
+ * User-facing prose, checked against {@link PLAIN_LANGUAGE}.
+ *
+ * `blog/` joined this list in DOR-555. It was the gap that let
+ * `blog/dorkos-0-8-0.mdx` carry the tool-access claim in its strongest form —
+ * "define **exactly** which tools each agent **can access**" — on live public copy
+ * while every scanned tree was clean. That post is not rewritten (see
+ * {@link MARKER_FILES}); what changes here is that the NEXT post cannot make the
+ * claim fresh.
+ */
+const USER_ROOTS = [DOCS_ROOT, BLOG_ROOT];
 /** Dev-facing prose, checked against the derived identifier spellings. */
 const DEV_ROOTS = [path.join(REPO_ROOT, 'contributing'), path.join(REPO_ROOT, 'decisions')];
 
@@ -117,13 +141,35 @@ const DEV_ROOTS = [path.join(REPO_ROOT, 'contributing'), path.join(REPO_ROOT, 'd
  * record what was true when written and must not be rewritten.
  */
 const EXCLUDED = [
-  path.join(USER_ROOT, 'api'),
-  path.join(USER_ROOT, 'changelog-archive.mdx'),
+  path.join(DOCS_ROOT, 'api'),
+  path.join(DOCS_ROOT, 'changelog-archive.mdx'),
   path.join(REPO_ROOT, 'decisions', 'archive'),
 ];
 
 /** An author's deliberate, greppable opt-out for an honestly-disclaimed subset. */
 const PARTIAL_MARKER = 'destructive-actions: partial';
+
+/**
+ * Every file carrying {@link PARTIAL_MARKER}, pinned so an opt-out is a visible diff.
+ *
+ * The marker is the one way to make this guard stop looking at something, which
+ * makes an unnoticed marker the most valuable thing an author could add by mistake.
+ * DOR-509 added two markers and then removed both once the prose was accurate —
+ * correctly, since a marker that is no longer needed is a future blind spot. So the
+ * inventory is a list, not a convention.
+ *
+ * `blog/dorkos-0-8-0.mdx` is the first legitimate entry. It describes per-agent tool
+ * filtering as controlling which tools an agent can access, which was never true,
+ * and it carries a dated correction note saying exactly that. Rewriting the body of
+ * a shipped announcement would falsify what we told people, against the security
+ * page's own no-quiet-edits stance; archiving it silently would preserve the error
+ * unmarked. The marker is the third option: the post stays as published, the
+ * correction stays above it, and the guard is told this is a corrected historical
+ * record rather than a page it has never looked at. Note the correction note itself
+ * repeats the claim in order to name it, so a chunk-level marker would not be enough
+ * here — the whole file is opted out of the FILE-level scans.
+ */
+const MARKER_FILES = ['blog/dorkos-0-8-0.mdx'];
 
 /** Hand-registered tools that stop and ask. */
 function destructiveToolNames(): string[] {
@@ -241,6 +287,64 @@ const UNGATED_CLAIM =
 const TOOL_ACCESS_CLAIM =
   /(?<!not )(?<!never )control which tools[^.]{0,50}agents?[^.]{0,20}can (?:use|access|call)|which tools[^.]{0,40}agents? can (?:use|access|call)|tool groups?[^.]{0,30}available to|(?<!not )(?<!never )restricts? which tools/i;
 
+/**
+ * Trees whose text a stranger reads: the docs site, the blog, the marketing site's
+ * own components, and the app's UI copy. Markdown AND source, because the sentence
+ * DOR-509 had to pull off the marketing site lived in a `.tsx`.
+ */
+const PUBLISHED_ROOTS = [
+  DOCS_ROOT,
+  BLOG_ROOT,
+  path.join(REPO_ROOT, 'apps', 'site', 'src'),
+  path.join(REPO_ROOT, 'apps', 'client', 'src'),
+];
+
+/**
+ * Claims we retired because they were FALSE, checked over published copy only.
+ *
+ * Both were introduced by DOR-509's own first pass, which is the point: the fix for
+ * a wrong security claim wrote five fresh sentences saying sign-in is required the
+ * moment you expose DorkOS. The shipped `Dockerfile:144-145` sets
+ * `DORKOS_HOST=0.0.0.0` AND `DORKOS_ALLOW_INSECURE_BIND=true`, and
+ * `exposure-guard.ts:156` returns `allowed` on that flag, so the container we
+ * publish serves the whole API with login off. One of the five was on public
+ * marketing copy. Two reviewers caught them; nothing automated would have.
+ *
+ * ## Why literal strings, and why only these trees
+ *
+ * These are substrings, deliberately. A regex over prose reads neither negation nor
+ * domain: an earlier guard in this file was written to catch "control which tools
+ * your commands can use" and reddened a docs page describing Claude Code's own
+ * `allowed-tools`, where the restriction is genuinely real. If a future author wants
+ * to ban a CONCEPT rather than a string, that is a conversation, not a regex.
+ *
+ * And the scan is scoped to {@link PUBLISHED_ROOTS} rather than the whole repo
+ * because eight files under `meta/`, `research/`, `decisions/`, and `changelog/`
+ * legitimately contain these exact phrases — they are the copy rules that FORBID
+ * them ("Do not pair it with 'secure by default'") and the changelog entry recording
+ * the removal. A repo-wide literal ban would redden the rule that states the ban,
+ * which teaches people the guard cries wolf. Reviewers own those trees; this owns
+ * what ships.
+ */
+const RETIRED_PHRASES = [
+  'secure by default',
+  'sign-in required the moment',
+  'sign in required the moment',
+  'signin required the moment',
+  'login required the moment',
+  'sign-in is required the moment',
+];
+
+/**
+ * The escape hatch that makes the exposure guard conditional.
+ *
+ * `DORKOS_ALLOW_INSECURE_BIND=true` makes `exposure-guard.ts` return `allowed` on a
+ * wide bind with no login, and the shipped Docker image sets it. A page that
+ * explains the guard without naming the flag describes a protection the artifact we
+ * publish does not have.
+ */
+const EXPOSURE_GUARD_HATCH = 'dorkos_allow_insecure_bind';
+
 interface ProseFile {
   /** Repo-relative, so a failure names something a person can open. */
   rel: string;
@@ -276,16 +380,31 @@ function toUnits(block: string): string[] {
   return parts.length > 0 ? parts : [block];
 }
 
-/** Every `.md`/`.mdx` file under `dir`, minus the excluded paths. */
-async function proseFiles(dir: string): Promise<string[]> {
+/** Directories that never hold shipped copy. */
+const SKIPPED_DIRS = new Set(['node_modules', 'dist', '__tests__']);
+
+/**
+ * Every file under `dir` whose name matches `pattern`, minus the excluded paths.
+ *
+ * @param dir - Directory to walk.
+ * @param pattern - Filename test, e.g. markdown only or markdown plus sources.
+ */
+async function filesUnder(dir: string, pattern: RegExp): Promise<string[]> {
   const found: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (EXCLUDED.includes(full)) continue;
-    if (entry.isDirectory()) found.push(...(await proseFiles(full)));
-    else if (/\.mdx?$/.test(entry.name)) found.push(full);
+    if (entry.isDirectory()) {
+      if (SKIPPED_DIRS.has(entry.name)) continue;
+      found.push(...(await filesUnder(full, pattern)));
+    } else if (pattern.test(entry.name)) found.push(full);
   }
   return found;
+}
+
+/** Every `.md`/`.mdx` file under `dir`, minus the excluded paths. */
+async function proseFiles(dir: string): Promise<string[]> {
+  return filesUnder(dir, /\.mdx?$/);
 }
 
 /**
@@ -312,10 +431,20 @@ async function load(roots: string[]): Promise<ProseFile[]> {
 
 let userDocs: ProseFile[] = [];
 let devDocs: ProseFile[] = [];
+let publishedCopy: { rel: string; lower: string }[] = [];
 
 beforeAll(async () => {
-  userDocs = await load([USER_ROOT]);
+  userDocs = await load(USER_ROOTS);
   devDocs = await load(DEV_ROOTS);
+  const files = (
+    await Promise.all(PUBLISHED_ROOTS.map((root) => filesUnder(root, /\.(mdx?|tsx?)$/)))
+  ).flat();
+  publishedCopy = await Promise.all(
+    files.map(async (file) => ({
+      rel: path.relative(REPO_ROOT, file),
+      lower: (await readFile(file, 'utf-8')).toLowerCase(),
+    }))
+  );
 });
 
 /**
@@ -339,6 +468,41 @@ function chunksNaming(
       named: spellings.filter((forms) => forms.some((form) => block.includes(form.toLowerCase()))),
     }))
     .filter((entry) => entry.named.length > 0);
+}
+
+/**
+ * Files a whole-file scan must skip: the author marked the page as a corrected
+ * historical record.
+ *
+ * The chunk scans above already honour the marker per chunk, which is the right
+ * granularity for "does this list name all of them". The two regex scans below ask
+ * a whole-file question, so the marker has to work at whole-file granularity for
+ * them or it does not work at all. {@link MARKER_FILES} keeps the set of pages that
+ * can use it from growing unseen.
+ *
+ * @param docs - Files to filter.
+ * @returns The files with no marker.
+ */
+function withoutMarkedFiles(docs: ProseFile[]): ProseFile[] {
+  return docs.filter((doc) => !doc.lower.includes(PARTIAL_MARKER));
+}
+
+/**
+ * The pages the exposure-guard pairing check reads: docs, blog, and dev guides.
+ *
+ * `decisions/` is deliberately out. An ADR is a dated record, and the sentence that
+ * put it out was a CITATION rather than an explanation — "Tunnel + ADR-0320's
+ * exposure guard" in
+ * `decisions/260727-184933-the-community-server-never-runs-a-members-agent.md`. That
+ * is a cross-reference to a mechanism decided elsewhere, and reddening it would push
+ * an author to pad an unrelated decision record with a caveat about a flag that
+ * record never discussed, or to edit a frozen record to satisfy a guard. The same
+ * reasoning already keeps `decisions/archive/` and `specs/` out of this file.
+ *
+ * @returns The pages to check.
+ */
+function exposureGuardPages(): ProseFile[] {
+  return [...userDocs, ...devDocs.filter((doc) => doc.rel.startsWith('contributing/'))];
 }
 
 describe('destructive actions vs the docs that describe them (DOR-509)', () => {
@@ -450,8 +614,25 @@ describe('destructive actions vs the docs that describe them (DOR-509)', () => {
     }
   });
 
+  it('the partial-marker opt-out is used by exactly the files that declare it', () => {
+    // The marker is the one way to switch this guard off for a page. An unnoticed
+    // one is a hole the size of a file, so the inventory is pinned: adding a marker
+    // has to be a deliberate diff here, and REMOVING a marker that is no longer
+    // earned has to be one too.
+    const marked = [...userDocs, ...devDocs]
+      .filter((doc) => doc.lower.includes(PARTIAL_MARKER))
+      .map((doc) => doc.rel)
+      .sort();
+    expect(
+      marked,
+      `A file carries "${PARTIAL_MARKER}" that MARKER_FILES does not list, or a listed ` +
+        `file no longer carries it. The marker stops the whole-file scans from reading ` +
+        `that page; it is not a convention, it is an inventory.`
+    ).toEqual([...MARKER_FILES].sort());
+  });
+
   it('no page tells a reader the hand-registered tools carry no tier', () => {
-    const offenders = [...userDocs, ...devDocs]
+    const offenders = withoutMarkedFiles([...userDocs, ...devDocs])
       .filter((doc) => UNTIERED_CLAIM.test(doc.lower))
       .map((doc) => doc.rel)
       .sort();
@@ -465,7 +646,7 @@ describe('destructive actions vs the docs that describe them (DOR-509)', () => {
   });
 
   it('no page promises control over which tools an agent can use', () => {
-    const offenders = [...userDocs, ...devDocs]
+    const offenders = withoutMarkedFiles([...userDocs, ...devDocs])
       .flatMap((doc) => {
         const claim = TOOL_ACCESS_CLAIM.exec(doc.lower);
         return claim ? [`${doc.rel}: "${claim[0]}"`] : [];
@@ -479,6 +660,55 @@ describe('destructive actions vs the docs that describe them (DOR-509)', () => {
         'control over tool access is the one a user acts on when they believe they have ' +
         'sandboxed an agent.'
     ).toEqual([]);
+  });
+
+  it('reads published copy outside the docs tree', () => {
+    // The retired-phrase scan below walks four roots and would pass forever if the
+    // walker returned nothing. One of the phrases was on the marketing site, so
+    // reaching apps/site is the part worth asserting, not just the total.
+    expect(publishedCopy.length).toBeGreaterThan(100);
+    expect(publishedCopy.some((file) => file.rel.startsWith('apps/site/src/'))).toBe(true);
+    expect(publishedCopy.some((file) => file.rel.startsWith('blog/'))).toBe(true);
+  });
+
+  it.each(RETIRED_PHRASES)('no published copy says "%s" again', (phrase) => {
+    const offenders = publishedCopy
+      .filter((file) => file.lower.includes(phrase))
+      .map((file) => file.rel)
+      .sort();
+    expect(
+      offenders,
+      `"${phrase}" was retired because it is false, not because it went out of date. ` +
+        `Every protection DorkOS has depends on an auth posture, and the default posture ` +
+        `trusts every program running as you; the Docker image goes further and sets ` +
+        `DORKOS_HOST=0.0.0.0 with DORKOS_ALLOW_INSECURE_BIND=true. State the protection ` +
+        `and its posture. The claim that IS true: "it listens only on your own machine ` +
+        `by default."`
+    ).toEqual([]);
+  });
+
+  it('no page explains the exposure guard without naming its escape hatch', () => {
+    const offenders = exposureGuardPages()
+      .filter((doc) => doc.lower.includes('exposure guard'))
+      .filter((doc) => !doc.lower.includes(EXPOSURE_GUARD_HATCH))
+      .map((doc) => doc.rel)
+      .sort();
+    expect(
+      offenders,
+      'A page describes the exposure guard without mentioning DORKOS_ALLOW_INSECURE_BIND. ' +
+        'The guard refuses a wide bind without a login UNLESS that flag is set, and the ' +
+        'Docker image we publish sets it (Dockerfile:144-145; exposure-guard.ts:156 returns ' +
+        '"allowed" on the flag). Describing the guard without the hatch promises a ' +
+        'protection our own artifact does not have.'
+    ).toEqual([]);
+  });
+
+  it('finds pages that discuss the exposure guard at all', () => {
+    // Guards the guard above: if nothing matched "exposure guard", it would pass on
+    // an empty set forever.
+    expect(
+      exposureGuardPages().filter((doc) => doc.lower.includes('exposure guard')).length
+    ).toBeGreaterThan(0);
   });
 
   it('the model-facing capability resource says the same thing the docs do', () => {

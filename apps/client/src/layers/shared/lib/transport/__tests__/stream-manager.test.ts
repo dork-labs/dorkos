@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectionState } from '@dorkos/shared/types';
 import {
   SessionEventSchema,
+  SessionListEventSchema,
   type SessionEvent,
   type SessionSnapshot,
   type SessionStatus,
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 
-import { StreamManager, type SSEConnectionLike } from '../stream-manager';
+import { StreamManager, GENERIC_EVENTS, type SSEConnectionLike } from '../stream-manager';
 import type { SSEConnectionOptions } from '../sse-connection';
 
 // NOTE on the testing-rule's "mock Transport via TransportProvider" wording:
@@ -251,6 +252,59 @@ describe('StreamManager', () => {
     // Exactly the schema's discriminants plus the hydration 'snapshot' frame —
     // a stale extra name here means the array outlived a schema removal.
     expect(new Set(registered).size).toBe(discriminants.length + 1);
+  });
+
+  it('registers a frame handler for EVERY SessionListEventSchema discriminant (schema-drift pin)', () => {
+    // Real failure mode, and the exact one the sibling pin above exists for, on the
+    // OTHER allowlist: `SESSION_LIST_EVENT_TYPES` (stream-manager.ts) is the gate
+    // every session-list event the shipped web/Electron/CLI cockpit receives over
+    // HTTP passes through. A discriminant the server broadcasts but this array does
+    // not name gets no listener, and `EventSource` drops the frame in silence — no
+    // warning, no failed request, just a sidebar that stops updating. Nothing
+    // guarded it: the server-side `sse-event-allowlist` scan matches
+    // `.broadcast('literal')`, and the session-list broadcast site passes a
+    // variable (`eventFanOut.broadcast(outgoing.type, outgoing)`).
+    const { manager, connections } = setup();
+    manager.connectList();
+    const handlers = connections[0]!.opts.eventHandlers;
+    const registered = Object.keys(handlers);
+    const discriminants = SessionListEventSchema.options.map(
+      (option) => (option.shape.type as { value: string }).value
+    );
+    expect(discriminants.length).toBeGreaterThan(0);
+
+    // Forward: every discriminant the schema declares has a listener.
+    for (const type of discriminants) {
+      expect(
+        registered,
+        `no handler registered for '${type}' — EventSource would silently drop the frame`
+      ).toContain(type);
+    }
+
+    // Reverse: no name in the allowlist that the schema no longer declares.
+    //
+    // Compared by HANDLER IDENTITY rather than by subtracting GENERIC_EVENTS,
+    // because the same map also carries the generic names (stream-manager.ts
+    // registers both). Every session-list name shares one `onListEvent` reference
+    // while each generic name gets its own closure, so the reference partition IS
+    // the session-list allowlist — a flat count would flag generic entries as
+    // stale, and a set subtraction would MISS a stale name that happens to also
+    // appear in GENERIC_EVENTS.
+    const listHandler = handlers[discriminants[0]!];
+    const listNames = registered.filter((name) => handlers[name] === listHandler);
+    expect(
+      [...listNames].sort(),
+      'SESSION_LIST_EVENT_TYPES names something SessionListEventSchema does not declare. ' +
+        'A name that outlived its discriminant registers a listener for frames the server ' +
+        'can no longer send, which reads as coverage and is not.'
+    ).toEqual([...discriminants].sort());
+
+    // Guards the guard: if the two lists ever went disjoint, the identity
+    // partition above would compare an empty set against an empty set.
+    expect(listNames.length).toBeGreaterThan(0);
+    // And the generic names really are in the same map, which is what makes the
+    // identity comparison necessary rather than decorative.
+    expect(registered).toContain(GENERIC_EVENTS[0]);
   });
 
   it.each([

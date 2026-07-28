@@ -8,6 +8,57 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   test: {
     environment: 'jsdom',
+    // Resolve a few `@dorkos/shared` subpaths to the package's SOURCE, not its
+    // built `dist/`. This is `test.alias`, NOT `resolve.alias`, on purpose: it
+    // applies only under Vitest, so the shipped browser bundle keeps resolving
+    // the package's `exports` map exactly as it does today.
+    //
+    // The `exports` map points `default` at `dist/`, so without this a stale dist
+    // silently tests yesterday's module. That is a false PASS, not a loud failure.
+    // `pnpm test` is safe (turbo's `^build`), but the targeted
+    // `pnpm vitest run <path>` loop AGENTS.md prescribes is not, and that is where
+    // the next author actually stands.
+    //
+    // Every entry backs a DRIFT GUARD — a test whose whole job is to notice that a
+    // table grew a row, which is exactly the test a stale dist turns into
+    // decoration:
+    //
+    // - `session-stream` backs the two schema-drift pins in
+    //   `transport/__tests__/stream-manager.test.ts` and the third in
+    //   `session-stream-methods.test.ts`. They introspect `SessionEventSchema` /
+    //   `SessionListEventSchema` discriminants and pin them against the SSE event
+    //   names the client registers listeners for. A name missing from an allowlist
+    //   is a frame `EventSource` drops in silence, so a guard that reads the old
+    //   union is worse than none.
+    // - `config-schema` backs `status/__tests__/status-bar-registry.test.ts`, which
+    //   pins the pinnable registry items against the `ui.statusBar.pins` enum.
+    // - `constants` backs the three `STATUS_VALUE_MAX_CHARS` budget assertions
+    //   (`status-labels`, `status-budget`, `ConnectionItem`). Shrink the budget in
+    //   `src/` and a stale dist measures against the old, roomier one.
+    // - `trait-renderer` backs `agent/__tests__/trait-sliders.test.tsx`, which is
+    //   an exhaustive loop over `TRAIT_ORDER`: a new trait read from a stale dist
+    //   produces zero extra assertions and a green run.
+    //
+    // Scoped to these four on purpose — see the same note in
+    // `apps/server/vitest.config.ts` for what widening to all 43 subpaths cost.
+    alias: [
+      {
+        find: '@dorkos/shared/session-stream',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/session-stream.ts'),
+      },
+      {
+        find: '@dorkos/shared/config-schema',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/config-schema.ts'),
+      },
+      {
+        find: '@dorkos/shared/constants',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/constants.ts'),
+      },
+      {
+        find: '@dorkos/shared/trait-renderer',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/trait-renderer.ts'),
+      },
+    ],
     // Ensure React loads development bundles (act, error messages) even when
     // the host shell has NODE_ENV=production.
     env: { NODE_ENV: 'test' },
