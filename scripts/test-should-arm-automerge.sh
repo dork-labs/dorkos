@@ -74,6 +74,11 @@ check "merged"                    "SKIP not-open"             '.state = "MERGED"
 check "draft"                     "SKIP draft"                '.isDraft = true'
 check "already armed"             "SKIP already-armed"        '.autoMergeRequest = {"enabledAt": "now"}'
 
+# A queued PR reports autoMergeRequest:null, so the armed check above cannot see
+# it. Without its own branch the bot re-arms every queued PR on every tick.
+check "already queued"            "SKIP already-queued"       '.mergeQueueEntry = {"position": 1, "state": "AWAITING_CHECKS"}'
+check "queued and armed"          "SKIP already-armed"        '.mergeQueueEntry = {"position": 1} | .autoMergeRequest = {"enabledAt": "now"}'
+
 # A hold label outranks every green signal, including on an otherwise
 # perfect PR. Both payload shapes gh can produce are covered: objects and
 # bare strings.
