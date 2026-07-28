@@ -36,10 +36,9 @@ interface OnboardingFlowProps {
 export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingFlowProps) {
   const { stage, goToStage, goBack } = useOnboardingStage();
   const { dismiss, startOnboarding } = useOnboarding();
-  // The skip-all toast's shortcut back in. The Settings deep link is what
-  // actually targets a tab: `settingsInitialTab` — what the store's
-  // `openSettingsToTab` writes — is read by nothing, so only `?settings=` lands
-  // a person on the tab that holds "Replay setup" rather than on Appearance.
+  // The skip-all toast's shortcut back in. `?settings=preferences` is what
+  // selects the tab holding "Replay setup" — the Settings dialog reads its
+  // active tab from the URL.
   const { open: openSettingsTab } = useSettingsDeepLink();
 
   // Record onboarding start timestamp once on mount. `startOnboarding` is itself
@@ -73,6 +72,7 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
   // and falls back to requirements when the user landed here via refresh.
   const goToRequirements = useCallback(() => goToStage('requirements'), [goToStage]);
   const goToConversation = useCallback(() => goToStage('conversation'), [goToStage]);
+  const backToWelcome = useCallback(() => goBack('welcome'), [goBack]);
   const backToRequirements = useCallback(() => goBack('requirements'), [goBack]);
 
   if (stage === 'welcome') {
@@ -85,14 +85,23 @@ export function OnboardingFlow({ onComplete, renderRuntimeConnect }: OnboardingF
     );
   }
 
+  // The requirements stage carries the same nav bar as the conversation, and it
+  // is not conditional on the scan finding anything. Someone with no coding
+  // agent installed cannot continue from here, so without a nav bar this screen
+  // is a dead end with no in-app way out (DOR-481). They are free to leave: the
+  // marketplace, the docs and the rest of the cockpit still work, and the
+  // getting-started card offers the setup again later.
   if (stage === 'requirements') {
     return (
-      <div className="bg-background h-full w-full overflow-y-auto">
-        <div className="flex min-h-full w-full items-center justify-center p-4 py-10">
-          <SystemRequirementsStep
-            onContinue={goToConversation}
-            renderConnect={renderRuntimeConnect}
-          />
+      <div className="bg-background flex h-full w-full flex-col">
+        <OnboardingNavBar onBack={backToWelcome} onSkipAll={handleSkipAll} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex min-h-full w-full items-center justify-center p-4 pb-10">
+            <SystemRequirementsStep
+              onContinue={goToConversation}
+              renderConnect={renderRuntimeConnect}
+            />
+          </div>
         </div>
       </div>
     );
