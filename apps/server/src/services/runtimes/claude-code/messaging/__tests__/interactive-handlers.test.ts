@@ -146,6 +146,100 @@ describe('createCanUseTool — approval gate', () => {
   });
 });
 
+/**
+ * DOR-625 — the reproduction, and then the whole surface it belongs to.
+ *
+ * `mcp__dorkos__control_ui` sits in {@link DORKOS_AGENT_TOOLS}, which
+ * `createCanUseTool` short-circuits on BEFORE `resolveModeDecision` runs, so the
+ * session's permission mode never gets a vote. It was put there under the comment
+ * "pure client-side UI mutations, no system access", and for 21 of its 22 actions
+ * that is true.
+ *
+ * `apply_layout` is the twenty-second. The cockpit answers it by POSTing
+ * `/api/shapes/:name/apply`, and applying a Shape creates that Shape's schedules
+ * ENABLED, each carrying the permission mode the Shape's own manifest chose —
+ * `bypassPermissions` is in `SHAPE_SCHEDULE_PERMISSION_MODES`. So one auto-allowed
+ * tool call armed a recurring unattended run with every safety prompt off, in
+ * plain `default` mode, with nobody asked.
+ *
+ * `control_ui` is the only MULTIPLEXER on the auto-allow list: one tool name, 22
+ * different effects, one blanket decision. These tests are per-ACTION for that
+ * reason — a tool-name-level assertion is exactly what could not see this.
+ */
+describe('control_ui is auto-allowed per action, not per tool (DOR-625)', () => {
+  const CONTROL_UI = 'mcp__dorkos__control_ui';
+
+  /** Run one control_ui command through the gate and say what the gate did. */
+  async function gate(
+    mode: PermissionMode,
+    input: Record<string, unknown>
+  ): Promise<{ outcome: 'allowed' | 'asked'; session: ReturnType<typeof makeSession> }> {
+    const session = makeSession(mode);
+    const canUseTool = createCanUseTool(session, noopLog);
+    const pending = canUseTool(CONTROL_UI, input, makeContext('ui-1'));
+    // Raced against a MACROtask, not `Promise.resolve()`: an auto-allow resolves
+    // on a microtask, so an already-resolved rival would always win and every
+    // call would read as "asked" — a green that means nothing.
+    const outcome = await Promise.race([
+      pending.then(() => 'allowed' as const),
+      new Promise<'asked'>((resolve) => setTimeout(() => resolve('asked'), 0)),
+    ]);
+    return { outcome, session };
+  }
+
+  it('raises an approval card for apply_layout in default mode', async () => {
+    const { outcome, session } = await gate('default', {
+      action: 'apply_layout',
+      shape: 'linear-ops',
+    });
+
+    expect(outcome).toBe('asked');
+    expect(session.eventQueue).toHaveLength(1);
+    expect(session.eventQueue[0].type).toBe('approval_required');
+    expect(session.eventQueue[0].data).toMatchObject({ toolName: CONTROL_UI });
+  });
+
+  // The mode is the point: the short-circuit ran ahead of `resolveModeDecision`,
+  // so `plan` — a mode whose whole promise is that nothing executes — auto-allowed
+  // this too.
+  it.each(['default', 'acceptEdits', 'auto', 'plan'] as const)(
+    'raises an approval card for apply_layout in %s mode',
+    async (mode) => {
+      const { outcome } = await gate(mode, { action: 'apply_layout', shape: 'linear-ops' });
+      expect(outcome).toBe('asked');
+    }
+  );
+
+  it('still auto-allows the client-only actions, so the nicety keeps working', async () => {
+    for (const input of [
+      { action: 'open_panel', panel: 'tasks' },
+      { action: 'close_sidebar' },
+      { action: 'scroll_to_message' },
+      { action: 'show_toast', message: 'hi' },
+      { action: 'celebrate' },
+      { action: 'switch_agent', cwd: '/tmp/project' },
+    ]) {
+      const { outcome, session } = await gate('default', input);
+      expect(outcome, `${String(input.action)} should not raise a card`).toBe('allowed');
+      expect(session.eventQueue).toHaveLength(0);
+    }
+  });
+
+  it('asks rather than guesses when the command does not parse', async () => {
+    // Fail closed. An input the union rejects has no known action, so there is no
+    // classification to read and "no rule" must never mean "allowed".
+    const { outcome } = await gate('default', { action: 'not_a_real_action' });
+    expect(outcome).toBe('asked');
+  });
+
+  it('leaves get_ui_state alone — reading the UI asks nobody', async () => {
+    const session = makeSession('default');
+    const canUseTool = createCanUseTool(session, noopLog);
+    const result = await canUseTool('mcp__dorkos__get_ui_state', {}, makeContext('ui-2'));
+    expect(result).toEqual({ behavior: 'allow', updatedInput: {} });
+  });
+});
+
 describe('resolveModeDecision — the gate closes on non-match (DOR-604)', () => {
   /**
    * The whole decision table, written out. Each entry names the mode, the tool,
