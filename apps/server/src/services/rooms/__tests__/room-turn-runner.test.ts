@@ -31,11 +31,16 @@ vi.mock('../../core/runtime-registry.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: () => Promise.resolve(null) }));
 
+/** The projector the stub is handed, as this file drives it. */
+interface TestProjector {
+  ingest: (event: Record<string, unknown>) => unknown;
+}
+
 /** What the stubbed `triggerTurn` does with the projector it is handed. */
-let turnBehaviour: (opts: {
-  sessionId: string;
-  projector: { ingest: (event: Record<string, unknown>) => unknown };
-}) => { accepted: boolean; canonicalId?: string };
+let turnBehaviour: (opts: { sessionId: string; projector: TestProjector; content: string }) => {
+  accepted: boolean;
+  canonicalId?: string;
+};
 
 vi.mock('../../session/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session/index.js')>()),
@@ -46,9 +51,22 @@ const { createSessionRoomTurnRunner, composeRoomPrompt } = await import('../room
 
 let counter = 0;
 
-/** A trigger request for a room nothing else is using. */
-function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
+/** Flush the microtasks a `run` call needs to reach its subscription. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * A trigger request for a room nothing else is using.
+ *
+ * @param overrides - Fields to replace, plus `entryText` for the message body,
+ *   which is what makes two requests compose two different prompts.
+ */
+function request(
+  overrides: Partial<RoomTurnRequest> & { entryText?: string } = {}
+): RoomTurnRequest {
   counter += 1;
+  const { entryText, ...rest } = overrides;
   const room = {
     id: `room-${counter}`,
     kind: 'channel',
@@ -70,7 +88,7 @@ function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
     id: `entry-${counter}`,
     authorId: 'human',
     kind: 'post',
-    body: { text: 'is the build green?' },
+    body: { text: entryText ?? 'is the build green?' },
     mentions: [],
     sessionId: null,
     cascadeRoot: `entry-${counter}`,
@@ -86,7 +104,7 @@ function request(overrides: Partial<RoomTurnRequest> = {}): RoomTurnRequest {
     sessionId: null,
     entry,
     authorName: 'Dorian',
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -133,6 +151,157 @@ describe('createSessionRoomTurnRunner', () => {
     turnBehaviour = () => ({ accepted: false });
     const result = await createSessionRoomTurnRunner().run(request());
     expect(result.text).toBeNull();
+    // Named, not merely empty: a `null` on its own is what an agent with
+    // nothing to say returns, and the room stayed silent about both (DOR-621).
+    expect(result.unanswered).toBe('busy');
+  });
+
+  it('reports a turn that ended in an error, rather than an empty answer', async () => {
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest({ type: 'turn_end', terminalReason: 'error' });
+      return { accepted: true, canonicalId: sessionId };
+    };
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBeNull();
+    expect(result.unanswered).toBe('failed');
+  });
+
+  it('does not mistake a quiet turn for a failed one', async () => {
+    turnBehaviour = saysAndCloses('   ');
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBeNull();
+    expect(result.unanswered).toBeUndefined();
+  });
+
+  it('hands back an answer that outran the wait instead of dropping it', async () => {
+    // The turn is still open when the runner returns, so `run` cannot resolve
+    // before the deadline and the assertion below cannot race it.
+    let finishTurn = (): void => undefined;
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      finishTurn = () => {
+        projector.ingest({ type: 'text_delta', text: 'green' });
+        projector.ingest({ type: 'turn_end' });
+      };
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
+    expect(result.text).toBeNull();
+    expect(result.unanswered).toBeUndefined();
+    expect(result.late).toBeDefined();
+
+    finishTurn();
+    const late = await result.late;
+    expect(late?.text).toBe('green');
+    expect(late?.unanswered).toBeUndefined();
+    expect(late?.waitedMs).toBeGreaterThanOrEqual(5);
+  });
+
+  it('never posts the half of an answer it had when the wait ran out', async () => {
+    // The old timeout aborted the read, so whatever had streamed by then was
+    // returned as if it were the whole answer.
+    let finishTurn = (): void => undefined;
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest({ type: 'text_delta', text: 'the build is ' });
+      finishTurn = () => {
+        projector.ingest({ type: 'text_delta', text: 'green' });
+        projector.ingest({ type: 'turn_end' });
+      };
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
+    expect(result.text).toBeNull();
+
+    finishTurn();
+    expect((await result.late)?.text).toBe('the build is green');
+  });
+
+  it('reads its own turn, never the tail of the one already running', async () => {
+    // The session write-lock lets the same room re-acquire, so a follow-up
+    // message starts a second turn while the first is still streaming. Its
+    // cursor sits INSIDE turn one, and anchoring on the cursor alone made it
+    // break at turn one's `turn_end` and post the tail it had caught —
+    // mid-sentence, and a duplicate of what turn one was already posting.
+    let stream: TestProjector | undefined;
+    const prompts: string[] = [];
+    turnBehaviour = ({ sessionId, projector, content }) => {
+      stream = projector;
+      prompts.push(content);
+      return { accepted: true, canonicalId: sessionId };
+    };
+    const runner = createSessionRoomTurnRunner();
+    const shared = 'session-two-messages';
+
+    const first = runner.run(request({ sessionId: shared }));
+    await settle();
+    stream?.ingest({ type: 'turn_start', userMessage: prompts[0] });
+    stream?.ingest({ type: 'text_delta', text: 'the build is ' });
+
+    // The follow-up lands mid-turn. Its cursor is now inside turn one.
+    const second = runner.run(request({ sessionId: shared, entryText: 'and the tests?' }));
+    await settle();
+
+    stream?.ingest({ type: 'text_delta', text: 'green and here is why' });
+    stream?.ingest({ type: 'turn_end' });
+    expect((await first).text).toBe('the build is green and here is why');
+
+    stream?.ingest({ type: 'turn_start', userMessage: prompts[1] });
+    stream?.ingest({ type: 'text_delta', text: 'the tests pass' });
+    stream?.ingest({ type: 'turn_end' });
+    expect((await second).text).toBe('the tests pass');
+  });
+
+  it('keeps listening for at least as long as it waits, whatever the pair says', async () => {
+    // `rooms.replyWaitMinutes: 120` with `rooms.lateReplyCeilingMinutes: 1` is
+    // schema-valid — two independent fields, both in range. Unclamped, the room
+    // stops LISTENING an hour and fifty-nine minutes before it stops WAITING,
+    // so a healthy turn is reported as failed and its answer is thrown away:
+    // this PR's own defect, reintroduced through the settings screen.
+    //
+    // The pair here is that shape with the clock scaled down: a wait no timer
+    // in this test can reach, and a ceiling that has already expired many times
+    // over by the time the turn answers.
+    let finishTurn = (): void => undefined;
+    turnBehaviour = ({ sessionId, projector, content }) => {
+      projector.ingest({ type: 'turn_start', userMessage: content });
+      finishTurn = () => {
+        projector.ingest({ type: 'text_delta', text: 'green' });
+        projector.ingest({ type: 'turn_end' });
+      };
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const runner = createSessionRoomTurnRunner({ waitMs: () => 60_000, ceilingMs: () => 1 });
+    const answered = runner.run(request());
+    // Twenty times the unclamped ceiling: if it were in force, it has fired.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    finishTurn();
+
+    const result = await answered;
+    // The subject is the answer, not the absence of a crash.
+    expect(result.text).toBe('green');
+    expect(result.unanswered).toBeUndefined();
+    expect(result.late).toBeUndefined();
+  });
+
+  it('gives up on a turn that never closes, and says the turn failed', async () => {
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner({ waitMs: () => 5, ceilingMs: () => 30 }).run(
+      request()
+    );
+    expect(result.late).toBeDefined();
+
+    const late = await result.late;
+    expect(late?.text).toBeNull();
+    expect(late?.unanswered).toBe('failed');
   });
 
   it('writes no runtime binding for a turn that never started', async () => {

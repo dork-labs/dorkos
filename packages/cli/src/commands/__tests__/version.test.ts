@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 vi.mock('../../lib/api-client.js', () => {
   class ApiError extends Error {
@@ -26,7 +26,7 @@ import { parseVersionArgs, runVersionCheck, runVersionDispatcher } from '../vers
 
 const apiCallMock = vi.mocked(apiCall);
 
-let logSpy: ReturnType<typeof vi.spyOn>;
+let logSpy: MockInstance<typeof console.log>;
 let writeSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {

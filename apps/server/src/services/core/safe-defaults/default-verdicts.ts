@@ -176,6 +176,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'rooms.maxAgentDepth': 3,
   'rooms.maxAutomaticTurnsPerRoomPerHour': 60,
   'rooms.maxAutomaticTurnsTotalPerHour': 240,
+  // How long a room waits, and when it gives up. Neither is a spend bound, so
+  // the safe value is simply the shipped one.
+  'rooms.replyWaitMinutes': 10,
+  'rooms.lateReplyCeilingMinutes': 60,
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
@@ -184,6 +188,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'extensions.enabled': [],
   'extensions.disabled': [],
   'extensions.approvedToRun': [],
+  // No installed package writes a shell command into a coding agent's hook files
+  // until a person approves those exact commands (DOR-522).
+  'harness.approvedHooks': [],
   // No static shared secret; the per-instance local token gates /mcp instead.
   'mcp.apiKey': null,
   'mcp.rateLimit.enabled': true,

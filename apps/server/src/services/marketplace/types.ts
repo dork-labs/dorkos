@@ -5,7 +5,73 @@
  *
  * @module services/marketplace/types
  */
-import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
+import type {
+  MarketplacePackageManifest,
+  PackageType,
+  ShapePackageManifest,
+} from '@dorkos/marketplace';
+
+/**
+ * How much a scheduled job may do on its own once it fires.
+ *
+ * Derived from the Shape manifest's own schedule schema
+ * (`SHAPE_SCHEDULE_PERMISSION_MODES` in `@dorkos/marketplace`) so a mode added
+ * there is picked up here without a second list to keep in sync. Task
+ * SKILL.md files (`.dork/tasks/<name>/SKILL.md`) declare a narrower set
+ * (`acceptEdits` | `bypassPermissions`) that is a subset of these.
+ */
+export type SchedulePermissionMode = ShapePackageManifest['schedules'][number]['permissionMode'];
+
+/**
+ * A shell hook a package registers with the harness. `command` is the literal
+ * string that will run, verbatim as the package authored it — the preview must
+ * never paraphrase it.
+ */
+export interface PreviewHook {
+  /** Harness event the hook fires on (e.g. `PreToolUse`, `Stop`). */
+  event: string;
+  /** Optional tool/event matcher the hook narrows to. */
+  matcher?: string;
+  /** The literal shell command the hook runs. */
+  command: string;
+}
+
+/**
+ * A hook declaration the package ships that could not be read.
+ *
+ * Surfaced as its own preview field rather than folded into `hooks`: a package
+ * that declares hooks we cannot parse is a worse signal than a package with no
+ * hooks, and silently returning an empty list would render the two identical.
+ */
+export interface UnreadablePreviewHook {
+  /** Package-relative path of the unreadable declaration (e.g. `hooks/hooks.json`). */
+  path: string;
+  /** Set when a single event entry is malformed; absent when the whole file is. */
+  event?: string;
+}
+
+/**
+ * A scheduled job the package will create, and how much it may do unattended.
+ *
+ * Both declaration sites land here: a package's `.dork/tasks/<name>/SKILL.md`
+ * files and a Shape manifest's `schedules[]`. The person reading the preview
+ * cares that a job will run on a timer, not which file declared it.
+ */
+export interface PreviewSchedule {
+  /** Job name as declared by the package. */
+  name: string;
+  /** Cron expression, or `null` when the job only runs when asked. */
+  cron: string | null;
+  /** How much the job may do without a human in the loop. */
+  permissionMode: SchedulePermissionMode;
+  /**
+   * Whether the job is created switched on. Shapes additionally create a
+   * schedule disabled when its agent is missing at apply time, which the
+   * preview cannot know in advance — so this reports the package's declared
+   * intent, which is always the more permissive of the two.
+   */
+  startsEnabled: boolean;
+}
 
 /**
  * A configured marketplace source — a remote location (Git URL or
@@ -44,8 +110,8 @@ export interface InstallRequest {
 
 /**
  * A preview of every effect a package install will have — file changes,
- * extension registrations, scheduled tasks, secrets requested, external
- * hosts contacted, dependencies, and conflicts. Surfaced to the user
+ * extension registrations, shell hooks, scheduled jobs, secrets requested,
+ * external hosts contacted, dependencies, and conflicts. Surfaced to the user
  * before any disk mutation.
  */
 export interface PermissionPreview {
@@ -53,8 +119,12 @@ export interface PermissionPreview {
   fileChanges: { path: string; action: 'create' | 'modify' | 'delete' }[];
   /** Extensions that will be registered */
   extensions: { id: string; slots: string[] }[];
-  /** Tasks that will be created */
-  tasks: { name: string; cron: string | null }[];
+  /** Shell hooks the package registers with the harness, commands verbatim */
+  hooks: PreviewHook[];
+  /** Hook declarations the package ships that could not be read */
+  unreadableHooks: UnreadablePreviewHook[];
+  /** Scheduled jobs that will be created, and what each may do unattended */
+  schedules: PreviewSchedule[];
   /** Secrets the package will request */
   secrets: { key: string; required: boolean; description?: string }[];
   /** External hosts the package will contact */

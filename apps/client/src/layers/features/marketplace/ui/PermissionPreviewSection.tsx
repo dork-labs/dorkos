@@ -1,13 +1,24 @@
 /**
  * Permission preview display for the install confirmation dialog and the
- * package detail sheet. Renders all five permission groups produced by
- * `formatPermissionPreview` — effects, secrets, external hosts, dependencies,
- * and conflicts — collapsing any group that has no items.
+ * package detail sheet. Renders every permission group produced by
+ * `formatPermissionPreview` — effects, shell commands, scheduled jobs, secrets,
+ * external hosts, dependencies, and conflicts — collapsing any group that has
+ * no items.
  *
  * @module features/marketplace/ui/PermissionPreviewSection
  */
 import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
-import { AlertTriangle, Check, ChevronRight, Clock, File, Globe, Key, Puzzle } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronRight,
+  Clock,
+  File,
+  Globe,
+  Key,
+  Puzzle,
+  Terminal,
+} from 'lucide-react';
 import type { ComponentType } from 'react';
 
 import { cn } from '@/layers/shared/lib';
@@ -29,6 +40,7 @@ const ICON_MAP: Record<
   file: File,
   puzzle: Puzzle,
   clock: Clock,
+  terminal: Terminal,
   key: Key,
   globe: Globe,
   check: Check,
@@ -62,8 +74,14 @@ function PermissionItem({ item }: { item: FormattedPermission }) {
   return (
     <li className={cn('flex items-start gap-2 text-sm', colorClass)}>
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
-      <div className="flex-1">
-        <span>{item.label}</span>
+      <div className="min-w-0 flex-1">
+        {item.mono ? (
+          <code className="bg-muted text-foreground block rounded px-1.5 py-1 font-mono text-xs break-all">
+            {item.label}
+          </code>
+        ) : (
+          <span>{item.label}</span>
+        )}
         {item.description && (
           <p className="text-muted-foreground mt-0.5 text-xs">{item.description}</p>
         )}
@@ -128,11 +146,21 @@ interface PermissionPreviewSectionProps {
 
 /**
  * Renders a full, human-readable breakdown of everything a package will do on
- * install — file effects, secrets required, external hosts, dependencies, and
- * conflicts.
+ * install: file effects, shell commands it declares, scheduled jobs it
+ * creates, secrets required, external hosts, dependencies, and conflicts.
  *
- * Sections with no items render nothing (no orphaned headings). The conflicts
- * section uses amber/warning tone to draw the user's attention.
+ * The commands heading says "declares", not "will run". A package's
+ * `hooks/hooks.json` only reaches a settings file when the package is
+ * project-scoped AND of type plugin or skill-pack, and the cockpit's default
+ * install scope is global — so "will run" would over-claim in the common case.
+ * The declaration is real either way (the file lands on disk, and a later
+ * project-scoped install would run it), so the honest verb is the weaker one.
+ *
+ * Sections with no items render nothing (no orphaned headings), so a package
+ * that declares no commands and schedules no jobs shows no empty promise of
+ * either. The commands and conflicts sections start expanded and use
+ * amber/warning tone where relevant, because they are what a person needs to
+ * see before trusting a stranger's package.
  *
  * Used by both the package detail sheet and the install confirmation dialog.
  *
@@ -144,6 +172,12 @@ export function PermissionPreviewSection({ preview }: PermissionPreviewSectionPr
   return (
     <div className="space-y-6">
       <PermissionSection title="What this package will do" items={groups.effects} />
+      <PermissionSection
+        title="Commands this package declares"
+        items={groups.commands}
+        defaultOpen
+      />
+      <PermissionSection title="Jobs it will schedule" items={groups.schedules} defaultOpen />
       <PermissionSection title="Secrets required" items={groups.secrets} />
       <PermissionSection title="External hosts" items={groups.hosts} />
       <PermissionSection title="Dependencies" items={groups.dependencies} />

@@ -192,10 +192,20 @@ message" tax that is the top complaint in both upstream trackers.
 
 ### 4.1 Alone in a DM with one agent: what is the default?
 
-**Respond to everything.** `direct-only` seeded from the manifest, which is what
-ships. A DM is defined by who you are talking to, so every message in it is
-addressed by construction, and E1 makes answering obligatory. No tool call, no
-gate. This is the one case where the current behavior needs no change at all.
+**Respond to everything.** Seeded from the manifest, which is what ships. A DM is
+defined by who you are talking to, so every message in it is addressed by
+construction, and E1 makes answering obligatory. No tool call, no gate. This is
+the one case where the current behavior needs no change at all.
+
+> **Correction (2026-07-28).** An earlier version of this paragraph named
+> `direct-only` as the seeded value. The manifest default is **`always`**
+> (`ResponseModeSchema.default('always')` at `packages/shared/src/mesh-schemas.ts:79`,
+> and `AgentBehaviorSchema.default({ responseMode: 'always' })` at `:165`); the DM
+> seed reads the manifest and falls back to `'always'`
+> (`apps/server/src/services/rooms/room-roster.ts:216`). `specs/rooms/02-specification.md:90`
+> and `docs/concepts/rooms.mdx:140` both had it right. The conclusion is unchanged
+> either way: in a DM, `direct-only` and `always` trigger identically
+> (`apps/server/src/services/rooms/addressing.ts:60`).
 
 ### 4.2 One human, two agents, one message: do both respond?
 
@@ -584,6 +594,12 @@ ratio of harm-removed to work.
     (§4.8).
 
 ## 8) Open questions for Dorian
+
+> **All six were answered on 2026-07-28.** The answers, with the reasoning behind
+> each, are [`02-specification.md`](./02-specification.md) §2. They are settled;
+> do not reopen them here. The same session also decided that a thread is an
+> entry-level relation rather than a child room, which dissolves §5's edge case 7
+> (§3 of the specification works through what survives).
 
 1. **Is `engaged` the right channel default, or too eager for a first release?**
    The conservative alternative is to ship `engaged` as an option and leave

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { UI_COMMAND_REACH } from '@dorkos/shared/schemas';
+import type { UiCommand } from '@dorkos/shared/types';
 import {
   executeUiCommand,
   type DispatcherContext,
@@ -578,5 +580,107 @@ describe('executeUiCommand — celebrate', () => {
       emoji: undefined,
       origin: undefined,
     });
+  });
+});
+
+// --- Reach: which commands leave the browser (DOR-625) ---
+
+/**
+ * The other half of the DOR-625 guard, and the half no server test can perform.
+ *
+ * The server decides whether an agent's `control_ui` call needs an approval card
+ * by reading `UI_COMMAND_REACH` — a verdict per UI action, `client-only` meaning
+ * "this only moves pixels, so do not ask". That verdict is a claim about code in
+ * THIS package: the dispatcher below is what actually runs the command, and
+ * `apply_layout` is `reaches-the-machine` because the case body calls
+ * `ctx.applyShape`, which POSTs `/api/shapes/:name/apply` and arms cron
+ * schedules.
+ *
+ * Nothing connected the claim to the code. `mcp-tool-gate.test.ts` pins that
+ * every action HAS a verdict; it says in its own comment that it cannot check
+ * whether the verdicts are true, because following `control_ui` → dispatcher →
+ * transport → route crosses a package boundary. This test closes that gap from
+ * the other side: it drives the real dispatcher with a real command for every
+ * action and fails if a `client-only` one reaches a server mutation.
+ *
+ * ## What it can see
+ *
+ * `applyShape` is the only `DispatcherContext` callback that mutates server
+ * state, and the dispatcher holds no transport of its own — every route call it
+ * can cause goes through an injected callback. So spying the callbacks covers
+ * every server effect the dispatcher can reach TODAY.
+ *
+ * ## What it cannot see
+ *
+ * - A store action that starts calling the server. `DispatcherStore` is Zustand
+ *   state today, but nothing forces it to stay that way, and a `setFoo` that
+ *   grew a fetch would slip past. The store methods are spies here, so such a
+ *   call would be invisible rather than caught.
+ * - The dispatcher importing a transport directly instead of taking a callback.
+ * - Anything downstream of `applyShapeAction` beyond the POST itself.
+ * - Codex. Its `control_ui` events are produced in the server event-mapper and
+ *   dispatched through this same function, but its approval gate is the Codex
+ *   SDK's and does not consult `UI_COMMAND_REACH` at all.
+ */
+describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
+  /**
+   * One real command per action. Deliberately a total map rather than generated:
+   * a generated fixture would drift into passing empty objects the dispatcher
+   * short-circuits on, which is a green that proves nothing.
+   */
+  const SAMPLES: Record<UiCommand['action'], UiCommand> = {
+    open_panel: { action: 'open_panel', panel: 'tasks' },
+    close_panel: { action: 'close_panel', panel: 'tasks' },
+    toggle_panel: { action: 'toggle_panel', panel: 'tasks' },
+    open_sidebar: { action: 'open_sidebar' },
+    close_sidebar: { action: 'close_sidebar' },
+    switch_sidebar_tab: { action: 'switch_sidebar_tab', tab: 'overview' },
+    open_canvas: { action: 'open_canvas', content: { type: 'markdown', content: '# hi' } },
+    update_canvas: { action: 'update_canvas', content: { type: 'markdown', content: '# hi' } },
+    close_canvas: { action: 'close_canvas' },
+    open_pip: { action: 'open_pip', title: 'Board' },
+    close_pip: { action: 'close_pip' },
+    open_file: { action: 'open_file', sourcePath: 'README.md' },
+    open_diff: { action: 'open_diff', sourcePath: 'README.md' },
+    open_terminal: { action: 'open_terminal' },
+    browser_navigate: { action: 'browser_navigate', url: 'http://localhost:3000' },
+    show_toast: { action: 'show_toast', message: 'hi', level: 'info' },
+    set_theme: { action: 'set_theme', theme: 'dark' },
+    scroll_to_message: { action: 'scroll_to_message' },
+    switch_agent: { action: 'switch_agent', cwd: '/tmp/project' },
+    apply_layout: { action: 'apply_layout', shape: 'linear-ops' },
+    open_command_palette: { action: 'open_command_palette' },
+    celebrate: { action: 'celebrate' },
+  };
+
+  afterEach(() => setEmbedded(false));
+
+  it('covers every action the union declares', () => {
+    // Without this the map could silently shrink and every case below would keep
+    // passing on a smaller surface.
+    expect(Object.keys(SAMPLES).sort()).toEqual(Object.keys(UI_COMMAND_REACH).sort());
+  });
+
+  it('no client-only command reaches a server mutation', () => {
+    for (const [action, reach] of Object.entries(UI_COMMAND_REACH)) {
+      if (reach !== 'client-only') continue;
+      const ctx = makeMockCtx();
+      executeUiCommand(ctx, SAMPLES[action as UiCommand['action']], 'agent');
+      expect(
+        ctx.applyShape,
+        `${action} is classified client-only, so an agent may issue it with nobody asked — ` +
+          `but the dispatcher answers it by applying a Shape, which arms cron schedules on ` +
+          `the operator's machine. Either the verdict in UI_COMMAND_REACH is wrong or this ` +
+          `case body is.`
+      ).not.toHaveBeenCalled();
+    }
+  });
+
+  it('apply_layout really does reach one, so the guard has a live subject', () => {
+    // The other direction. Without it, deleting the `ctx.applyShape` call from the
+    // dispatcher would make the check above vacuously green.
+    const ctx = makeMockCtx();
+    executeUiCommand(ctx, SAMPLES.apply_layout, 'agent');
+    expect(ctx.applyShape).toHaveBeenCalledWith('linear-ops');
   });
 });

@@ -8,6 +8,7 @@ import {
   initConfigManager,
   backfillExtensionsDisabled,
   backfillExtensionsApprovedToRun,
+  backfillHarnessApprovedHooks,
   backfillHarnessDefaults,
   backfillSidebarDefaults,
   backfillShapesDefaults,
@@ -231,9 +232,9 @@ describe('ConfigManager', () => {
     });
   });
 
-  it('exposes harness.autoSync default (true) on a fresh config', () => {
+  it('exposes harness defaults (auto-sync on, no hooks allowed) on a fresh config', () => {
     const configManager = initConfigManager(testDir);
-    expect(configManager.get('harness')).toEqual({ autoSync: true });
+    expect(configManager.get('harness')).toEqual({ autoSync: true, approvedHooks: [] });
     expect(configManager.getDot('harness.autoSync')).toBe(true);
   });
 
@@ -1235,6 +1236,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 3,
       maxAutomaticTurnsPerRoomPerHour: 60,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1251,6 +1254,10 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 1,
       maxAutomaticTurnsPerRoomPerHour: 5,
       maxAutomaticTurnsTotalPerHour: 9,
+      // Untouched above, seeded here: the two wait bounds are new keys on a
+      // block that predates them, which is the additive half of the same rule.
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1267,6 +1274,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 0,
       maxAutomaticTurnsPerRoomPerHour: 0,
       maxAutomaticTurnsTotalPerHour: 0,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1280,6 +1289,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 1,
       maxAutomaticTurnsPerRoomPerHour: 60,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 
@@ -1295,6 +1306,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAgentDepth: 2,
       maxAutomaticTurnsPerRoomPerHour: 7,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     });
   });
 });
@@ -1794,6 +1807,43 @@ describe('backfillExtensionsApprovedToRun migration (DOR-516)', () => {
       disabled: [],
       approvedToRun: [],
     });
+  });
+});
+
+describe('backfillHarnessApprovedHooks migration (DOR-522)', () => {
+  it('seeds an EMPTY list, allowing nothing an installed package already wanted to run', () => {
+    // Same choice, and the same reason, as the extension approval list: an
+    // upgrade must never hand out an approval nobody gave. Anyone already running
+    // a hook-shipping plugin is asked once, on their next install.
+    const store = createMockStore({ harness: { autoSync: true } });
+    backfillHarnessApprovedHooks(store);
+    expect(store.data.harness).toEqual({ autoSync: true, approvedHooks: [] });
+  });
+
+  it('is idempotent — leaves an existing list untouched', () => {
+    const store = createMockStore({ harness: { autoSync: false, approvedHooks: ['flow@abc'] } });
+    backfillHarnessApprovedHooks(store);
+    backfillHarnessApprovedHooks(store);
+    expect(store.data.harness).toEqual({ autoSync: false, approvedHooks: ['flow@abc'] });
+  });
+
+  it('skips when the harness key is absent (no throw, no write)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => backfillHarnessApprovedHooks(store)).not.toThrow();
+    expect(store.data.harness).toBeUndefined();
+  });
+
+  it('repairs a non-array approvedHooks rather than trusting it', () => {
+    const store = createMockStore({ harness: { autoSync: true, approvedHooks: 'oops' } });
+    backfillHarnessApprovedHooks(store);
+    expect(store.data.harness).toEqual({ autoSync: true, approvedHooks: [] });
+  });
+
+  it('leaves the migrated config parseable by the schema', () => {
+    const store = createMockStore({ harness: { autoSync: true } });
+    backfillHarnessApprovedHooks(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ...store.data });
+    expect(parsed.harness).toEqual({ autoSync: true, approvedHooks: [] });
   });
 });
 
