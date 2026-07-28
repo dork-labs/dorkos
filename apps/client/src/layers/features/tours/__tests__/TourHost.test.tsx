@@ -12,7 +12,7 @@ import {
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
+import { mergeDialogSearch } from '@/layers/shared/model';
 
 import { TourHost } from '../ui/TourHost';
 import { TOUR_DEFINITIONS, type TourDefinition } from '../model/tour-definitions';
