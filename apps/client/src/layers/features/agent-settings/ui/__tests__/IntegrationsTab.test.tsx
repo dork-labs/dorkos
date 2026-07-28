@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
+import { createContext, useContext, type ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router';
+import { zodValidator } from '@tanstack/zod-adapter';
+import { z } from 'zod';
+import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, CatalogEntry, ObservedChat } from '@dorkos/shared/relay-schemas';
 
@@ -100,13 +111,6 @@ vi.mock('@/layers/entities/relay', () => ({
   useRelayEnabled: () => mockUseRelayEnabled(),
   useExternalAdapterCatalog: () => mockUseExternalAdapterCatalog(),
   useObservedChats: () => mockUseObservedChats(),
-}));
-
-const mockOpenSettingsToTab = vi.fn();
-
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: { openSettingsToTab: typeof mockOpenSettingsToTab }) => unknown) =>
-    selector({ openSettingsToTab: mockOpenSettingsToTab }),
 }));
 
 vi.mock('@/layers/features/relay', () => ({
@@ -242,8 +246,57 @@ function makeCatalogEntryInternal(): CatalogEntry {
   };
 }
 
+// ── Router harness ───────────────────────────────────────────
+//
+// The tab's two empty-state CTAs deep-link Settings through the URL, so it has
+// to render inside a real router. The route validates the dialog params the way
+// every real leaf route does (`mergeDialogSearch`) — without that, validation
+// would strip `?settings=` and an assertion on it would prove nothing.
+//
+// The tab is injected into the route component through a context slot so
+// `renderTab` keeps its plain signature, and the router is loaded ahead of the
+// render so the tree paints synchronously (as it did before the router).
+
+const searchSchema = mergeDialogSearch(z.object({}));
+
+const SlotContext = createContext<ReactNode>(null);
+
+function RouteSlot() {
+  return <>{useContext(SlotContext)}</>;
+}
+
+function buildRouter() {
+  const rootRoute = createRootRoute();
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/',
+    validateSearch: zodValidator(searchSchema),
+    component: RouteSlot,
+  });
+  return createRouter({
+    routeTree: rootRoute.addChildren([indexRoute]),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  });
+}
+
+let router: ReturnType<typeof buildRouter>;
+
+beforeEach(async () => {
+  router = buildRouter();
+  await router.load();
+});
+
+/** The Settings tab the URL currently deep-links to, or `undefined` for none. */
+function readSettingsTab(): string | undefined {
+  return (router.state.location.search as { settings?: string }).settings;
+}
+
 function renderTab(agent: AgentManifest = baseAgent) {
-  const { container } = render(<IntegrationsTab agent={agent} />);
+  const { container } = render(
+    <SlotContext.Provider value={<IntegrationsTab agent={agent} />}>
+      <RouterProvider router={router} />
+    </SlotContext.Provider>
+  );
   return within(container);
 }
 
@@ -268,11 +321,14 @@ describe('IntegrationsTab', () => {
       expect(view.getByRole('button', { name: 'Open Relay settings' })).toBeInTheDocument();
     });
 
-    it('State A: CTA calls openSettingsToTab("advanced")', () => {
+    // `?settings=<tab>` is what the Settings dialog reads to pick its tab.
+    // Asserting only that the CTA fired an action is what let both of these
+    // silently land on Appearance for as long as they did (DOR-484).
+    it('State A: the CTA lands Settings on the Advanced tab, where Relay is switched on', async () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
       fireEvent.click(view.getByRole('button', { name: 'Open Relay settings' }));
-      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('advanced');
+      await waitFor(() => expect(readSettingsTab()).toBe('advanced'));
     });
 
     it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
@@ -282,11 +338,11 @@ describe('IntegrationsTab', () => {
       expect(view.getByRole('button', { name: 'Add an integration' })).toBeInTheDocument();
     });
 
-    it('State B: CTA calls openSettingsToTab("integrations")', () => {
+    it('State B: the CTA lands Settings on the Integrations tab', async () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
       fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
-      expect(mockOpenSettingsToTab).toHaveBeenCalledWith('integrations');
+      await waitFor(() => expect(readSettingsTab()).toBe('integrations'));
     });
 
     it('State C: shows no-bindings message with IntegrationPicker CTA when relay is on and adapters exist', () => {
@@ -698,8 +754,8 @@ describe('IntegrationsTab', () => {
     });
 
     /**
-     * Verifies that the inline wizard flow does NOT call openSettingsToTab —
-     * that action is reserved for the empty-state CTAs (States A and B).
+     * Verifies that the inline wizard flow does NOT deep-link Settings — that
+     * is reserved for the empty-state CTAs (States A and B).
      */
     it('does not dispatch cross-dialog navigation when setting up a new integration', async () => {
       // Provide a catalog entry with an unconfigured adapter
@@ -726,9 +782,9 @@ describe('IntegrationsTab', () => {
       fireEvent.click(view.getByText('Add Integration'));
       fireEvent.click(screen.getByText('Webhook'));
 
-      // The wizard opens inline; openSettingsToTab was NOT called.
+      // The wizard opens inline; Settings was never deep-linked.
       expect(screen.getAllByTestId('adapter-setup-wizard').length).toBeGreaterThan(0);
-      expect(mockOpenSettingsToTab).not.toHaveBeenCalled();
+      expect(readSettingsTab()).toBeUndefined();
     });
   });
 });
