@@ -66,7 +66,7 @@ const HUMAN: RoomRosterEntry = {
 };
 
 function roster(members: RoomRosterEntry[]): RoomWithRoster {
-  return { ...ROOM, members };
+  return { ...ROOM, members, viewerAuthorId: HUMAN.authorId };
 }
 
 const FLEET = [
