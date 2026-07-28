@@ -23,6 +23,15 @@ membership is where per-room state lives, carrying the `(member, room)` read cur
 addressing and atomicity but never a concurrency primitive; a room may reference a workspace;
 signing is reserved but deferred.
 
+**260726-170125 deliberately keeps `status: accepted`, and that is not an oversight.** The ADR
+vocabulary has no partial state: the manifest carries only `accepted`, `superseded`, `deprecated`,
+`proposed`, `rejected` and `draft`, and both the `writing-adrs` skill and `/adr:review` treat
+`superseded` as a terminal state meaning "replaced by a newer ADR." A status is therefore an
+instruction about whether to rely on the document, not a description of its history, and a reader
+must still rely on nearly all of 260726-170125. Marking it terminal to record a one-clause change
+would tell every future reader to stop reading the document that establishes the rooms model. The
+scope of the change lives in prose at the top of that ADR instead.
+
 ## Context
 
 260726-170125 chose the child-room shape for one good reason, stated in its own Consequences:
@@ -112,11 +121,32 @@ decides; it does not implement.
 - `rooms.parentId`, `rooms.rootEntryId`, `idx_rooms_parent_id` and the `'thread'` member of
   `RoomKind` retire, along with `NESTED_THREAD` in its current room-shaped form.
 - `POST /api/rooms/:id/threads` becomes an entry-level route, and `createThread` stops being a
-  room-creating operation. The roster inheritance in `room-roster.inheritedFrom` and the thread
-  branch of `seedResponseMode` go with it, since there is no second roster to seed.
+  room-creating operation. `RoomRoster.inheritedFrom` and the thread branch of `seedResponseMode`
+  (`apps/server/src/services/rooms/room-roster.ts:71-90, 196-214`) retire with it, since there is no
+  second roster to seed.
+- **The client surface is four lines of `thread ?? id` precedence and nothing else.** All three
+  readers change together and none of them is a writer: `apps/client/src/router.tsx:242-252` (the
+  `?thread=` search-param schema, whose docstring says "`thread` names a child room of `id`"),
+  `apps/client/src/app/use-room-document-title.ts:63-64` (the tab title), and
+  `apps/client/src/layers/features/dashboard-sidebar/ui/DashboardSidebar.tsx:131-133` (the
+  active-room highlight). `ChannelsPage.tsx:20-21` reads the same param.
+  `useRoomsByKind` (`use-rooms.ts:100-108`) already selects channels and DMs by kind and drops
+  everything else, so it needs no change beyond its docstring at `:82-90`.
+- **Two prose spots say the retired thing.** `docs/getting-started/configuration.mdx:182` and the
+  seeding-gate docstring at `room-service.ts:46` both read "rooms and threads are free to create."
+  Under this decision only rooms are.
+- One e2e fixture types the room kind by hand: `apps/e2e/fixtures/rooms-api.ts:40`
+  (`kind: 'channel' | 'dm' | 'thread'`). No browser test exercises a thread; only the type needs
+  narrowing.
 - **There is no data to move.** On the operator's live install, measured read-only on 2026-07-28,
   `rooms` holds 6 channels, 2 DMs and 0 threads. That is one install on one day, not a claim about
   every install, but it is the install that exists.
+- **The surfaces that do NOT touch the thread-as-room shape, verified by search so nobody repeats
+  it:** no MCP tool and no Capability Registry entry mentions threads, and neither the Obsidian
+  plugin nor the desktop shell contains anything about them (their only "thread" hits are about OS
+  threads). Relay's `ChannelTypeSchema` (`packages/shared/src/relay-envelope-schemas.ts:26-28`) has
+  a `'thread'` member and `packages/relay/src/lib/thread-id.ts` exists, but both name a Slack or
+  Discord thread on the remote side and are unrelated to room storage.
 
 ## Consequences
 
