@@ -1,7 +1,7 @@
 ---
 description: Create an isolated git worktree for parallel feature work
 argument-hint: '<branch-name> [--from-current]'
-allowed-tools: Bash(git gtr:*), Bash(git rev-parse:*), Bash(git worktree list:*), Read, EnterWorktree, AskUserQuestion
+allowed-tools: Bash(git gtr:*), Bash(git rev-parse:*), Bash(git worktree list:*), Bash(git -C:*), Read, EnterWorktree, AskUserQuestion
 category: git
 ---
 
@@ -13,14 +13,14 @@ Create an isolated git worktree with automatic dependency installation and port 
 
 Parse `$ARGUMENTS` for:
 
-| Argument         | Effect                                               |
-| ---------------- | ---------------------------------------------------- |
-| `<branch-name>`  | **Required.** Name of the branch/worktree to create  |
-| `--from-current` | Base the new branch on the current branch (not main) |
+| Argument         | Effect                                                        |
+| ---------------- | ------------------------------------------------------------- |
+| `<branch-name>`  | **Required.** Name of the branch/worktree to create           |
+| `--from-current` | Base the new branch on the current branch (not `origin/main`) |
 
 **Examples:**
 
-- `/worktree:create feat-auth` — New worktree from main
+- `/worktree:create feat-auth` — New worktree from `origin/main`
 - `/worktree:create feat-auth --from-current` — New worktree from current branch
 
 ## Task
@@ -56,26 +56,33 @@ Scan the output — if a worktree already exists for `<branch-name>`, report its
 ### Step 2: Create Worktree
 
 ```bash
-# From main (default)
-git gtr new <branch-name> --yes
+# From origin/main (default)
+git gtr new <branch-name> --from origin/main --yes
 
 # OR from current branch (if --from-current)
 git gtr new <branch-name> --from-current --yes
 ```
 
+**Always pass `--from origin/main` explicitly.** A bare `git gtr new` bases the branch on the _local_ default branch, which in this repo routinely trails `origin/main` by several commits — the worktree then starts on a stale base.
+
 This will:
 
-1. Create a sibling directory `../<repo>-<branch-name>/`
+1. Create the worktree under `gtr.worktrees.dir` — `~/.dork/workspaces/<project>/<branch-name>/`, set in the committed `.gtrconfig` and overridable per machine by an untracked `.git/config`, so read it rather than assuming (slashes in the branch name become hyphens)
 2. Copy gitignored files from the main repo (`.env`, `.mcp.json`, `.vercel/`) per `.gtrconfig`
 3. Run `pnpm install` (from `.gtrconfig` postCreate hook)
 4. Run `.claude/scripts/worktree-setup.sh` (patches `.env` with unique `DORKOS_PORT` + `VITE_PORT`)
 
-### Step 3: Report Results
+### Step 3: Verify, Then Report
+
+`gtr` prints `[OK] Worktree created` even in cases where the worktree does not end up on disk, so confirm it before reporting a path to anyone:
 
 ```bash
-# Show the new worktree
+W=$(git gtr go <branch-name> | tail -1)
+[ -d "$W" ] && git -C "$W" log --oneline -1 || echo "MISSING — recreate it"
 git worktree list
 ```
+
+The `-d` guard matters: `git gtr go` prints nothing to stdout when the worktree is missing, and `git -C ""` falls back to the current directory. If the check says `MISSING`, retry once and report the failure rather than handing out a path that does not exist.
 
 ### Step 4: Offer to Switch the Session
 

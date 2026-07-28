@@ -72,23 +72,48 @@ The `/flow` intent stages — `/flow:ideate`, `/flow:specify`, `/flow:decompose`
 3. **Create the worktree** (keyed by unit of work — `spec-<slug>`, `DOR-123`):
 
    ```
-   /worktree:create <branch-name>            # from main (default)
+   /worktree:create <branch-name>            # from origin/main (default)
    /worktree:create <branch-name> --from-current
    ```
 
-   This provisions everything via `.gtrconfig`: copies `.env`/`.mcp.json`/`.vercel`, runs `pnpm install`, generates fumadocs types, and patches **unique `DORKOS_PORT`/`VITE_PORT`/`SITE_PORT`** values (`worktree-setup.sh`) so parallel `pnpm dev` instances never collide. Worktrees live at `~/.dork/workspaces/dorkos/<branch>/`.
+   **Do not key the branch by ticket id unless the branch will _complete_ that ticket.** Linear closes an issue whose identifier appears in the merged PR's branch name, so `DOR-123` on a branch that only partly delivers DOR-123 closes it anyway. Use a descriptive slug for partial work; see `creating-pull-requests` → **A merged PR closes the ticket it names**.
+
+   This provisions everything via `.gtrconfig`: copies `.env`/`.mcp.json`/`.vercel`, runs `pnpm install`, generates fumadocs types, and patches **unique `DORKOS_PORT`/`VITE_PORT`/`SITE_PORT`** values (`worktree-setup.sh`) so parallel `pnpm dev` instances never collide. Worktrees live under `gtr.worktrees.dir` — `~/.dork/workspaces/<project>/<branch>/`, committed in `.gtrconfig` but overridable per machine by an untracked `.git/config`, so resolve it rather than assuming (`git config --get gtr.worktrees.dir`, or `git gtr go <branch>` for the full path).
 
    **Port isolation only works for dev scripts that read their port from one of those env vars.** A hardcoded port in any package's dev script collides with the main checkout, and one `EADDRINUSE` kills the entire `turbo dev` run (persistent tasks take their siblings down). If you add a dev script that listens on a port: take the port from an env var, patch that var in `worktree-setup.sh`, and add it to `globalPassThroughEnv` in `turbo.json` — Turbo's strict env mode silently strips undeclared vars before they reach the task process.
 
    **Lighter dev runs:** when you only need the app (e.g. testing a server/client change), skip the site and plugin builds entirely: `pnpm exec dotenv -- turbo dev --filter=@dorkos/server --filter=@dorkos/client`.
 
-4. **Enter without restarting** — move the running session in with the **EnterWorktree** tool, passing `path` = the new worktree's absolute location. **`EnterWorktree` accepts gtr worktrees** — it works for any path that appears in `git worktree list`, which gtr's `~/.dork/workspaces/dorkos/…` worktrees do. The session cwd switches with no CLI restart and the SDK session continues. Do _not_ believe the stale claim that a gtr worktree must be re-created under `.claude/worktrees/` before it can be entered — that older limitation no longer holds (re-confirmed 2026-06-27). (`claude -w <name>` instead starts a _fresh_ session already inside one.)
+4. **Verify it exists before you rely on it — `gtr` reports success either way.** (`/worktree:create` runs `git gtr new` underneath, so this applies however you created it.)
 
-5. **Do the work**, commit, push, open the PR from the worktree branch.
+   On 2026-07-28 `git gtr new … --yes` printed `[OK] Worktree created: <path>` **four times for paths that did not exist** when an agent went to use them; `git worktree list` had no record of them either. Worktrees that were **never written to** did not survive; every one an author actually committed in did. The mechanism is unknown, so treat that success line as a claim, not a fact:
 
-6. **Exit** with **ExitWorktree** (`keep` to leave it on disk, `remove` to delete) before cleanup, or `cd` back to the main checkout.
+   ```bash
+   git gtr new <branch> --from origin/main --yes     # only if creating by hand
+   W=$(git gtr go <branch> | tail -1)                 # resolves the folder: slashes become hyphens
+   if [ -d "$W" ]; then
+     git -C "$W" log --oneline -1
+     git -C "$W" rev-list --count HEAD..origin/main   # 0 == based on origin's tip
+   else
+     echo "MISSING — recreate it"
+   fi
+   ```
 
-7. **Clean up after merge** — the `/flow:done` stage (`closing-work`) offers this; `/flow:execute` records the worktree in `04-implementation.md`:
+   **Every line that touches `$W` must sit inside the guard.** `git gtr go` prints nothing to stdout when the worktree is missing, and `git -C ""` falls back to the _current_ directory — so a `git -C "$W" …` left outside the `if` reports on wherever you happen to be standing, exits `0`, and manufactures the success you were trying to disprove.
+
+   Notice how far that defect travelled: `gtr` reported a creation that had not happened, the first check written against it could not fail, and the fix for _that_ check left its second line unguarded — three layers of the same mistake in one thread. A check that cannot fail is worse than no check, because it produces confidence instead of an answer.
+
+   **Always pass `--from origin/main`.** A bare `git gtr new` bases on the _local_ default branch, which drifts behind; local `main` was three commits behind `origin/main` when this was written. An author who quietly recreated a missing worktree got exactly that, and caught it only just before writing code.
+
+   **Then commit something before you hand the path to anyone.** An empty worktree is the kind that vanishes, and a path in a briefing is a promise someone else acts on. Equally, **if you were handed a path, verify it before you start and say so if it is wrong.** Of three agents briefed against paths that did not exist, two silently recreated or relocated them and only the third reported it — which is the only reason this was found at all. Adapting quietly costs the orchestrator more than failing loudly.
+
+5. **Enter without restarting** — move the running session in with the **EnterWorktree** tool, passing `path` = the new worktree's absolute location. **`EnterWorktree` accepts gtr worktrees** — it works for any path that appears in `git worktree list`, which gtr's `~/.dork/workspaces/…` worktrees do. The session cwd switches with no CLI restart and the SDK session continues. Do _not_ believe the stale claim that a gtr worktree must be re-created under `.claude/worktrees/` before it can be entered — that older limitation no longer holds (re-confirmed 2026-06-27). (`claude -w <name>` instead starts a _fresh_ session already inside one.)
+
+6. **Do the work**, commit, push, open the PR from the worktree branch.
+
+7. **Exit** with **ExitWorktree** (`keep` to leave it on disk, `remove` to delete) before cleanup, or `cd` back to the main checkout.
+
+8. **Clean up after merge** — the `/flow:done` stage (`closing-work`) offers this; `/flow:execute` records the worktree in `04-implementation.md`:
    ```
    /worktree:remove <branch> --delete-branch
    ```
@@ -109,7 +134,7 @@ Better still: start the work in a worktree from the outset (the steps above, min
 
 ## Best Practices
 
-- **Key by unit of work, not session.** `spec-<slug>` or `DOR-123` — a workspace outlives any one session and can be reattached.
+- **Key by unit of work, not session.** `spec-<slug>` or `DOR-123` — a workspace outlives any one session and can be reattached. Use `DOR-123` only when the branch will **complete** that ticket; merging a branch whose name carries the id closes the issue (step 3).
 - **Prefer gtr worktrees** (`/worktree:create`) over native `claude -w`/`.claude/worktrees/` for anything that runs lint/typecheck hooks or a dev server — gtr ones are fully provisioned; native ones are instant but unprovisioned (fine for docs-only).
 - **`main` is the merge target, not the workbench.** Land branches into it; don't accumulate ad-hoc code edits there.
 - **Record the worktree** in `04-implementation.md` (specs) so completion and the `/flow:done` stage can offer cleanup.
@@ -118,6 +143,8 @@ Better still: start the work in a worktree from the outset (the steps above, min
 
 - ❌ Starting code work in a shared checkout "because it's a small change" — the auto-checkpoint race does not care how small your change is.
 - ❌ Creating a worktree from inside a worktree (always run the two-path `rev-parse` detection first).
+- ❌ Trusting `gtr`'s `[OK] Worktree created` line — check the path exists and commit in it before handing it to anyone.
+- ❌ Silently recreating or relocating a worktree path you were handed. Say it is wrong; the orchestrator cannot see what you quietly fixed, and the replacement may be based on a stale local `main`.
 - ❌ Auto-removing a worktree with **uncommitted, untracked, or unpushed** work — refuse and confirm first. This is where Claude Code and Cursor both shipped data-loss bugs.
 - ❌ Forcing the `/flow` intent stages (`/flow:ideate`, `/flow:specify`, `/flow:decompose`) into worktrees — they only write `specs/` markdown; stay in `main`.
 - ❌ Reading `.env` directly to learn a worktree's ports (the file-guard hook denies it) — use `/worktree:list`.
