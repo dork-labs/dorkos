@@ -43,6 +43,22 @@ export interface ScriptedTurnRunner extends RoomTurnRunner {
 export function scriptedRunner(
   reply: (request: RoomTurnRequest) => string | null = () => 'on it'
 ): ScriptedTurnRunner {
+  return outcomeRunner((request) => ({ text: reply(request) }));
+}
+
+/**
+ * The same runner, for the outcomes a reply string cannot express: a session
+ * that was busy, a turn that failed, an answer still on its way.
+ *
+ * Kept separate from {@link scriptedRunner} so the common case stays a
+ * one-liner, and shared with it so both mint sessions the same way.
+ *
+ * @param outcome - The whole turn result, minus the session id.
+ * @param outcome.throws - Throw instead of returning, for the runtime-is-down path.
+ */
+export function outcomeRunner(
+  outcome: (request: RoomTurnRequest) => Omit<RoomTurnResult, 'sessionId'> | { throws: Error }
+): ScriptedTurnRunner {
   const turns: RecordedTurn[] = [];
   let minted = 0;
   return {
@@ -55,9 +71,11 @@ export function scriptedRunner(
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
       });
+      const result = outcome(request);
+      if ('throws' in result) return Promise.reject(result.throws);
       return Promise.resolve({
         sessionId: request.sessionId ?? `session-${(minted += 1)}`,
-        text: reply(request),
+        ...result,
       });
     },
   };

@@ -7,6 +7,7 @@ import {
   type DispatcherStore,
 } from '@/layers/shared/lib';
 import { switchAgentCwd, type SwitchAgentCwdStore } from '../lib/switch-agent-cwd';
+import { sessionKeys } from '../api/query-keys';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -21,7 +22,7 @@ function makeStore(overrides: Partial<SwitchAgentCwdStore> = {}): SwitchAgentCwd
 
 /** Seed the sessions cache for a directory with a minimal Session shape. */
 function seedSession(queryClient: QueryClient, dir: string, id: string): void {
-  queryClient.setQueryData(['sessions', dir], [{ id }] as Session[]);
+  queryClient.setQueryData(sessionKeys.list(dir), [{ id }] as Session[]);
 }
 
 describe('switchAgentCwd', () => {

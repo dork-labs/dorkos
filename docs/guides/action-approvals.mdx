@@ -140,7 +140,9 @@ An agent can tell DorkOS who it is, and most do. One that doesn't is still stopp
 
 This also holds for `dorkos call`, which is how an agent reaches any DorkOS action from a shell. Running an agent outside DorkOS does not get past the question.
 
-There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. An agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries. But a program that deliberately drops that identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it.
+There is one gap, and it is worth knowing about. `dorkos uninstall` is the older, person-shaped command for removing a package. An agent that runs it is asked, the same as everywhere else, because DorkOS spots the agent by the identity it carries. But a program that deliberately drops that identity first looks exactly like you clicking Uninstall in DorkOS, and with **Require login** off there is nothing left to tell the two apart. Turning **Require login** on is what closes it: removing a package then puts a card in front of you like any other risky action, and the command tells you how to try again once you have said yes.
+
+Two things stay open even with login on, and both are open on purpose. Adding or removing a package source, and creating or changing a scheduled task, are still things one of your API keys can do, because those are commands you run from your own terminal and DorkOS cannot tell your key apart from a copy of it. Answering an approval is the one thing a key can never do.
 
 ## The agent that asked cannot answer
 
@@ -154,14 +156,19 @@ Saying yes is your half of this. An agent that asks for something is never allow
   and is deliberately pretending to be you. Nothing on the same machine can, with no password in
   the way.
 
-Turn on **Require login** (Settings, under Security) and that changes: answering a request then
-needs a real account, and a program with no account cannot answer at all. If you run agents you
-don't fully trust, or you reach DorkOS from another device, turn it on.
+Turn on **Require login** (Settings, under Security) and that changes: answering a request then has
+to happen in DorkOS itself, in a browser you are signed in to. An API key is not enough, on purpose.
+Your agents hold one of your keys so they can run `dorkos` commands, and if a key could answer
+requests, an agent could approve its own work. So it cannot. If you run agents you don't fully
+trust, or you reach DorkOS from another device, turn login on.
 
-Worth knowing either way: a real account is what gets checked, not a real person. If you hand a
-program one of your API keys, it can answer requests the way you would. Your activity feed says
-"a signed-in account" rather than "a person" for exactly that reason. So give out API keys the way
-you would give out your password.
+That also means there is no way to say yes from a script or a terminal while login is on. That is
+the point of it, not a gap.
+
+Worth knowing either way: what gets checked is a browser sign-in, not a person at the keyboard.
+Your activity feed says "a signed-in account" rather than "a person" for that reason. And a key
+still does plenty you can do, like installing packages, changing where packages come from, and
+creating tasks. So give out API keys the way you would give out your password.
 
 </Callout>
 

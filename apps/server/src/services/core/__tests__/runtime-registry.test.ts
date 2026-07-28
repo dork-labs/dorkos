@@ -531,4 +531,86 @@ describe('RuntimeRegistry', () => {
       expect(registry.getSessionSettingsMany([]).size).toBe(0);
     });
   });
+
+  describe('rekeySessionSettings (DOR-493)', () => {
+    let db: Db;
+
+    beforeEach(() => {
+      db = createTestDb();
+      registry.setDb(db);
+      registry.register(createMockRuntime('claude-code'));
+    });
+
+    /** Every row in the table, so "exactly one key" can be asserted, not assumed. */
+    function allRows() {
+      return db.select().from(sessionMetadata).all();
+    }
+
+    it('moves the whole row, identity columns included', async () => {
+      await registry.persistSessionRuntime('old', 'test-mode', '/agent/path');
+      await registry.saveSessionSettings('old', { permissionMode: 'plan', fastMode: true });
+      const createdAt = allRows()[0]?.createdAt;
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      const rows = allRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        sessionId: 'new',
+        runtime: 'test-mode',
+        agentPath: '/agent/path',
+        createdAt,
+        permissionMode: 'plan',
+        fastMode: true,
+      });
+    });
+
+    it('merges into an existing destination row without changing its owner', async () => {
+      await registry.persistSessionRuntime('new', 'claude-code');
+      await registry.saveSessionSettings('new', { model: 'sonnet' });
+      await registry.persistSessionRuntime('old', 'test-mode');
+      await registry.saveSessionSettings('old', { permissionMode: 'bypassPermissions' });
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      const rows = allRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        sessionId: 'new',
+        // Ownership is immutable (ADR-0255) — the destination keeps its runtime.
+        runtime: 'claude-code',
+        permissionMode: 'bypassPermissions',
+        // A NULL source column leaves the destination's value alone.
+        model: 'sonnet',
+      });
+    });
+
+    it('does not resurrect a destination value the source overwrote', async () => {
+      await registry.saveSessionSettings('new', { permissionMode: 'plan' });
+      await registry.saveSessionSettings('old', { permissionMode: 'bypassPermissions' });
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(await registry.getSessionSettings('new')).toEqual({
+        permissionMode: 'bypassPermissions',
+      });
+    });
+
+    it('is a no-op when the source has no row', async () => {
+      await registry.saveSessionSettings('new', { permissionMode: 'plan' });
+
+      await registry.rekeySessionSettings('absent', 'new');
+
+      expect(await registry.getSessionSettings('new')).toEqual({ permissionMode: 'plan' });
+      expect(allRows()).toHaveLength(1);
+    });
+
+    it('is a no-op when the ids are the same (never deletes the row)', async () => {
+      await registry.saveSessionSettings('same', { permissionMode: 'plan' });
+
+      await registry.rekeySessionSettings('same', 'same');
+
+      expect(await registry.getSessionSettings('same')).toEqual({ permissionMode: 'plan' });
+    });
+  });
 });

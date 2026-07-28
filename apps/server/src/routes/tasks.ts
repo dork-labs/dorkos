@@ -27,7 +27,7 @@ import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
-import { trustedCaller } from '../services/core/capabilities/index.js';
+import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import {
   describeOperatorOnlyTaskRefusal,
@@ -36,6 +36,43 @@ import {
   OPERATOR_ONLY_TASK_ERROR,
 } from '../services/tasks/task-write-policy.js';
 import fs from 'node:fs/promises';
+
+/**
+ * Whether this caller clears the agent bar: it names no agent and holds no
+ * approval token, in any login posture.
+ *
+ * ## This is the bar tasks have always run, spelled out rather than borrowed
+ *
+ * It used to read `trustedCaller(...) !== undefined`, which asked the same
+ * question by delegation. DOR-474 changed what a trusted-caller MARKER means: it
+ * now also demands a session cookie under login-on, because the marker stands in
+ * for "could have granted itself the approval anyway" and answering an approval
+ * now needs a cookie. Tasks must not inherit that, so they stop asking through the
+ * marker and ask the resolver directly.
+ *
+ * Inheriting it would have been a silent regression, not a hardening, and it was
+ * caught on a live server rather than in review: `dorkos task create` presents a
+ * per-user API key and no cookie, so `POST /api/tasks` would have parked every
+ * task the operator scheduled at `pending_approval` while the CLI printed
+ * `Created task <name>` and nothing else (`packages/cli/src/commands/task.ts:252`).
+ * A cron job reported as created that never fires is worse than a refusal. And
+ * `PATCH /api/tasks/:id` with `permissionMode` would have hard-403'd with no
+ * approval path at all, which is a lockout by the same rule
+ * `services/marketplace/source-write-policy.ts` applies to package sources.
+ *
+ * Whether an agent holding the operator's key should be able to schedule
+ * unattended work is a real question, and `services/tasks/task-write-policy.ts`
+ * asks to be reconsidered deliberately if the cookie requirement is ever
+ * generalized. It is DOR-553's, in flight elsewhere. A security fix must not
+ * answer an adjacent subsystem's open question as a side effect.
+ *
+ * @param req - The incoming request.
+ * @param res - The response, for `sessionGate`'s resolved user.
+ * @returns True when no machine principal presented itself.
+ */
+function clearsTheAgentBar(req: Request, res: Response): boolean {
+  return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
+}
 
 /**
  * Refuse a task write that reaches for a field only a person may set (DOR-504),
@@ -47,8 +84,8 @@ import fs from 'node:fs/promises';
  * unconditionally, because an MCP tool call is by construction the agent surface.
  * This route is not: the cockpit's Approve button writes `status: 'active'`
  * through it (`TaskRow.tsx`), and its task form writes `permissionMode`. So the
- * policy is skipped for a caller that clears `trustedCaller` — no agent identity
- * and no approval token — and applied to everyone else. That is exactly the shape
+ * policy is skipped for a caller that clears {@link clearsTheAgentBar} — no agent
+ * identity and no approval token — and applied to everyone else. That is exactly the shape
  * `PATCH /api/config` uses for operator-only settings, and the long note there
  * states the divergence it creates: under the default `local-trust` posture a
  * caller with a shell can omit both headers and clear the check, so this stops
@@ -66,7 +103,7 @@ import fs from 'node:fs/promises';
  *
  * @param req - The incoming request, whose raw body is inspected.
  * @param res - The response, answered with 403 when a field is refused.
- * @param trusted - Whether the caller cleared {@link trustedCaller}. Passed in
+ * @param trusted - Whether the caller cleared {@link clearsTheAgentBar}. Passed in
  *   rather than resolved here because `POST /` needs the same answer a second
  *   time, to decide whether the new task is parked (see {@link parksOnCreate}),
  *   and asking twice would let the two uses disagree.
@@ -112,7 +149,7 @@ function refusedOperatorOnlyTaskWrite(req: Request, res: Response, trusted: bool
  * predicate — so the cockpit's task form and a signed-in operator are untouched,
  * and an agent's REST-created task now waits exactly like its MCP-created one.
  *
- * @param trusted - Whether the caller cleared {@link trustedCaller}.
+ * @param trusted - Whether the caller cleared {@link clearsTheAgentBar}.
  * @returns True when the new task must be parked at `pending_approval`.
  */
 function parksOnCreate(trusted: boolean): boolean {
@@ -155,7 +192,7 @@ export function createTasksRouter(
   });
 
   router.post('/', async (req, res) => {
-    const trusted = trustedCaller(readCallerAuthority(req, res)) !== undefined;
+    const trusted = clearsTheAgentBar(req, res);
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
     const data = parseBody(CreateTaskRequestSchema, req.body, res);
     if (!data) return;
@@ -263,7 +300,7 @@ export function createTasksRouter(
   });
 
   router.patch('/:id', async (req, res) => {
-    const trusted = trustedCaller(readCallerAuthority(req, res)) !== undefined;
+    const trusted = clearsTheAgentBar(req, res);
     if (refusedOperatorOnlyTaskWrite(req, res, trusted)) return;
     const data = parseBody(UpdateTaskRequestSchema, req.body, res);
     if (!data) return;

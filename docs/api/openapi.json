@@ -5366,7 +5366,9 @@
         "type": "string",
         "enum": [
           "cascade_stopped",
-          "budget_reached"
+          "budget_reached",
+          "agent_busy",
+          "turn_failed"
         ]
       },
       "PostToRoomResponse": {

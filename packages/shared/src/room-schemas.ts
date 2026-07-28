@@ -57,9 +57,13 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  * - `budget_reached` — the room hit its cap on automatic turns for the window.
  *   Separate from the cascade guard on purpose: that one bounds ONE
  *   conversation, this one bounds the room whoever the caller claims to be.
+ * - `agent_busy` — the agent's session was already being written to, so the
+ *   trigger was skipped. Nothing is wrong with the agent; it was just occupied.
+ * - `turn_failed` — the agent started answering and the turn ended in an error,
+ *   or it never finished at all.
  */
 export const RoomNoticeCodeSchema = z
-  .enum(['cascade_stopped', 'budget_reached'])
+  .enum(['cascade_stopped', 'budget_reached', 'agent_busy', 'turn_failed'])
   .openapi('RoomNoticeCode');
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
