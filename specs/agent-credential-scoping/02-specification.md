@@ -19,6 +19,8 @@ Give an API key a scope, so DorkOS can tell a credential it issued to an agent f
 
 Scoped entirely to the `signed-in-operator` posture (`auth.enabled: true`). Section 3.7 says why, and says what is still not true afterwards.
 
+**Sequencing, decided 2026-07-27.** The hole itself is closed first by a cookie bar on the decide route, which costs nothing because every first-party client already sends a cookie. Scoping then follows as phase 2 and buys what a cookie bar cannot: a headless operator that can still decide, an agent that never needs the operator's key, and a card that can say an agent asked. Reasoning and caveats in Open Questions; phase order in Implementation Phases.
+
 ## What changed between writing this and 2026-07-27
 
 This branch was cut on 2026-07-25 and six PRs have landed on ground it stands on. The defect is unchanged and still composes; the surroundings moved. Corrections are folded into each section below, and the summary is here so a reader does not have to find them:
@@ -29,7 +31,7 @@ This branch was cut on 2026-07-25 and six PRs have landed on ground it stands on
 | §3.2     | Add `credential` and `scope` to `RequestUser`               | `credential: 'cookie' \| 'api-key'` already shipped (#486, DOR-505). Only `scope` is new, and the union member is `'cookie'`, not `'session'`                                                                                        |
 | §3.2     | `res.locals.user` is read nowhere                           | False. Read at `lib/caller-authority.ts:67` and `:206`, and `routes/room-caller.ts:63`                                                                                                                                               |
 | §3.9     | Add a posture lock so `auth.enabled` is not tool-writable   | **Shipped.** `config-write-policy.ts` (#469) classifies every config leaf with a drift guard, `PATCH /api/config` got the same guard (#476), and DOR-505 added the cookie bar. §3.9 is now a record, not a task                      |
-| §3.4     | `expiresIn: TOKEN_IDLE_TTL_MS`                              | `expiresIn` is in SECONDS and caps at 365 days. A milliseconds value throws `EXPIRES_IN_IS_TOO_LARGE`, and "failure is not fatal" would have made that a silent no-op                                                                |
+| §3.4     | `expiresIn: TOKEN_IDLE_TTL_MS`                              | Wrong unit AND wrong clock. `expiresIn` is in SECONDS, caps at 365 days, and is ABSOLUTE: never refreshed by use. The identity token's 7-day window is sliding. Use `TOKEN_ABSOLUTE_TTL_MS / 1000`                                   |
 | §3.4     | Mint at the `resolveAgentTokenEnv` seam                     | That seam has two call sites, claude-code and codex. **OpenCode has none**, and OpenCode is in this spec's own premise                                                                                                               |
 | §3.8     | Add `ApprovalDecisionProbe` / `ApprovalDecisionProbeResult` | Both names are taken, by #476, for a different probe (requester-cannot-decide). `GATED_ADAPTER_PATHS` and `checkDestructiveGateConformance` no longer exist; the pattern to follow is `checkRegistryGateConformance`                 |
 | Standing | Not discussed                                               | Standing permissions shipped (DOR-501) and creating one already requires a session cookie (`routes/approvals.ts:382`). An agent-held key cannot open one. It can still decide a **one-time** approval, which is the remaining defect |
@@ -64,7 +66,7 @@ So the credential is the same object for two authorities: "may this request reac
 - Retiring the `X-DorkOS-Agent` header check. It stays as the honest-caller check, alongside the new one.
 - Replacing the agent identity token with the API key, or the reverse (§3.5).
 - A `dorkos approve` CLI verb. None exists today; §3.3 leaves room for one.
-- Any change to `MCP_API_KEY` or the local MCP token (`middleware/mcp-auth.ts:59-61`, `:72`). Neither is accepted by `sessionGate`, so neither can reach `/api/approvals/*`.
+- Any change to `MCP_API_KEY` or the local MCP token (`middleware/mcp-auth.ts:59-61`, `:86-87`). Neither is accepted by `sessionGate`, so neither can reach `/api/approvals/*`.
 - The posture lock. It shipped while this branch sat; §3.9 records it rather than proposing it.
 
 ## Technical Dependencies
@@ -88,7 +90,7 @@ Two more authorities shipped after this table was written:
 - **Act without an approval**, enforced by `trustedCaller` (`services/core/capabilities/trusted-caller.ts:134`), which delegates to the same `resolveDecisionAuthority` on purpose. Its invariant is "whoever may decide an approval may act without one", so it moves with row three by construction, in both directions. §3.3 says what that costs.
 - **Open a standing permission**, enforced by `requireOperatorCookie` (`lib/caller-authority.ts:224`), which under login-on accepts a session cookie and nothing else.
 
-So the repo already has one effect that no key of any kind may cause. This spec does not change that bar; it brings the one-time decide route, and with it the act-without-approval path, up to a weaker version of it. The reopened Open Question at the end asks whether the weaker version is the right call now.
+So the repo already has one effect that no key of any kind may cause. **The decide route joins it**: Dorian resolved on 2026-07-27 that a cookie is required to decide, shipping ahead of scoping (Open Questions). Row three then reads "session cookie only" until phase 2 adds the scope, at which point a person-scoped key is let back in and an agent-scoped one stays out.
 
 The invariant, stated so it is checkable rather than aspirational:
 
@@ -149,11 +151,24 @@ The addition is still additive, but not because nothing reads `res.locals.user`.
 **Editing that function reaches further than the decide routes, and this spec has to own that.** `resolveDecisionAuthority` has two families of consumer:
 
 1. The four approvals routes, through `decisionAuthority()` (`routes/approvals.ts:137`): `POST /:id/grant`, `POST /:id/deny`, `GET /grants`, `DELETE /grants/:id`.
-2. `trustedCaller` (`services/core/capabilities/trusted-caller.ts:134`), which is the one way a caller reaches a capability **without** the tier gate. It is used by `routes/config.ts:319`, `routes/marketplace.ts:302` and `:343`, `routes/tasks.ts:158` and `:266`, and `routes/extensions-approval.ts:120`.
+2. `trustedCaller` (`services/core/capabilities/trusted-caller.ts:134`), which is the one way a caller reaches a capability **without** the tier gate. Six call sites: `routes/config.ts:319`, `routes/marketplace.ts:302` and `:343`, `routes/tasks.ts:158` and `:266`, and `routes/extensions-approval.ts:120`.
 
-So an agent-scoped key stops being a trusted caller at those six sites too. **That is intended, and it is the reason to put the check in the shared predicate rather than in the routes.** The invariant `trusted-caller.ts` is built on is "whoever may decide an approval may act without one", and it holds in both directions: a caller that cannot grant its own approval must not be handed the effect directly either, or the gate is two steps of theatre. Splitting the check would break that sentence, which the module doc calls the load-bearing design decision.
+So an agent-scoped key stops being a trusted caller too. **That is intended, and it is the reason to put the check in the shared predicate rather than in the routes.** The invariant `trusted-caller.ts` is built on is "whoever may decide an approval may act without one", and it holds in both directions: a caller that cannot grant its own approval must not be handed the effect directly either, or the gate is two steps of theatre. Splitting the check would break that sentence, which the module doc calls the load-bearing design decision.
 
-The practical consequence, which belongs in the PR description and in the release note: with login on, an agent holding a DorkOS-minted key that runs `dorkos uninstall` or a config patch will now see the approval card instead of the effect, even with its agent header stripped. That is a behavior change on six routes, not two, and it should be verified on all six rather than reasoned about.
+**Six call sites, but the change is observable at four.** Two of them sit downstream of a cookie bar that already refuses an API-key caller under login-on, so their behavior does not move:
+
+| Site                                | Observable? | Why                                                                                                                  |
+| ----------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| `routes/marketplace.ts:302`         | **Yes**     | No cookie bar on the path                                                                                            |
+| `routes/marketplace.ts:343`         | **Yes**     | No cookie bar on the path                                                                                            |
+| `routes/tasks.ts:158`               | **Yes**     | No cookie bar on the path                                                                                            |
+| `routes/tasks.ts:266`               | **Yes**     | No cookie bar on the path                                                                                            |
+| `routes/config.ts:319`              | No          | Inside the `if (operatorOnly.length > 0)` block, after `requireOperatorCookieUnderLogin` at `:286` returns at `:291` |
+| `routes/extensions-approval.ts:120` | No          | After the cookie bar at `:107`, which returns at `:112`                                                              |
+
+The distinction is not pedantry. This spec tells an implementer to write a case per site, and a case on either of the last two rows would pass on the day it is written whether or not the scope check exists: the assertion would be satisfied by the cookie bar, not by the thing under test. That is REVIEW.md's "assertion satisfied by the wrong subject". Write four cases that can fail, and for the other two assert what is actually true, that the cookie bar refuses first, so a later reordering that puts `trustedCaller` in front is caught.
+
+The practical consequence, which belongs in the PR description and in the release note: with login on, an agent holding a DorkOS-minted key that runs `dorkos uninstall` or writes a task will now see the approval card instead of the effect, even with its agent header stripped.
 
 The three checks in order, with what each is worth:
 
@@ -186,11 +201,19 @@ The key is created by a headless server-side call: `auth.api.createApiKey({ body
 | `permissions`      | `{ dorkos: ['agent'], agentPath: [<agentPath>] }` | The scope (§3.2). Server-only, which is the whole point                                         |
 | `rateLimitEnabled` | `false`                                           | The plugin default is 10 requests per rolling day and it is enforced on every verify. See below |
 | `userId`           | the owner's id                                    | Allowed only on a headless call (`index.mjs:736`); there is no session to infer it from         |
-| `expiresIn`        | `604800` (7 days, in **seconds**)                 | Matches the identity token minted beside it, so the two credentials age out together            |
+| `expiresIn`        | `TOKEN_ABSOLUTE_TTL_MS / 1000` (2,592,000 s)      | The identity token's hard ceiling. The two clocks are not the same; see below                   |
 
 Also `name: "Agent: <displayName or agentPath>"`, so the key is legible in Settings > Security.
 
-**On `expiresIn`, because getting this wrong ships a silent no-op.** The plugin reads `expiresIn` in seconds: it computes `expiresIn / (3600 * 24)` and rejects the result against `maxExpiresIn`, which defaults to 365 days (`index.mjs:785-791`, defaults at `:2278-2279`). This spec originally said `TOKEN_IDLE_TTL_MS`, which is 604,800,000, reads as 7,000 days, and throws `EXPIRES_IN_IS_TOO_LARGE`. Combined with "failure is not fatal, logged at warn" below, every mint would have failed quietly and the feature would have shipped as a no-op that passed its own mocked tests. Derive the value from `TOKEN_IDLE_TTL_MS / 1000` with the unit named at the call site, and pin it with a test that asserts a real `createApiKey` accepts it, not a mock.
+**On `expiresIn`, because getting this wrong ships a silent no-op, twice over.**
+
+_The unit._ The plugin reads `expiresIn` in seconds: it computes `expiresIn / (3600 * 24)` and rejects the result against `maxExpiresIn`, which defaults to 365 days (`index.mjs:785-791`, defaults at `:2278-2279`). This spec originally said `TOKEN_IDLE_TTL_MS`, which is 604,800,000, reads as 7,000 days, and throws `EXPIRES_IN_IS_TOO_LARGE`. Combined with "failure is not fatal, logged at warn" below, every mint would have failed quietly.
+
+_The clock, which is the subtler error._ The two credentials do **not** age out together, and the earlier draft of this section claimed they did. The identity token runs two clocks: a **sliding** 7-day idle window (`TOKEN_IDLE_TTL_MS`, `agent-identity-service.ts:69`, checked at `:160` against `lastActivity`) under a **hard** 30-day ceiling (`TOKEN_ABSOLUTE_TTL_MS`, `:75`, checked at `:156` against `createdAt`). Better Auth has no sliding clock at all: `expiresAt` is written once at create (`index.mjs:821`) and compared to `Date.now()` on every verify (`:1636-1637`), never refreshed by use, and an expired key is **deleted** before the 401 comes back.
+
+So a 7-day `expiresIn` would hard-expire the key of an agent that is working continuously, exactly the agent that keeps renewing its identity token. It would start 401ing mid-run, with no re-mint path in this spec and "failure is not fatal" hiding the cause. Use `TOKEN_ABSOLUTE_TTL_MS / 1000` (2,592,000 s, well under the 365-day cap), so the key outlives every identity token that could be minted beside it and the ceiling is the thing both credentials share.
+
+Name the unit at the call site, and pin the value with a test that drives a real `createApiKey`, not a mock. Neither of these two errors is visible to a mock.
 
 **On the rate limit.** `apiKey()` with no options resolves `rateLimit: { enabled: true, timeWindow: 86400000, maxRequests: 10 }` (`index.mjs:2270-2274`), writes those as concrete columns on every created key (`index.mjs:826-831`), and enforces them on every `verifyApiKey` (`index.mjs:1609-1613`, `:1790-1794`), which `verifyRequestAuth` sees as `valid: false` and turns into a 401. The CLI presents its key on every call and holds no cookie, so every call burns one. This is a shipped defect independent of scoping: an agent using the CLI with login on gets about ten requests and then starts failing. Traced in the installed plugin source, **not reproduced against a running server** - reproducing it is task 1 (§Implementation Phases), and if it does not reproduce, `rateLimitEnabled: false` is still correct for an agent key and nothing else in this spec changes.
 
@@ -210,7 +233,7 @@ They answer different questions, and they disagree on what absence means. The AP
 
 Collapsing them means making the identity token authorizing. In the login-on posture that would be a small gain (dropping it 401s). In the login-off posture, which is the default, it is a loss: dropping it still reaches everything, and now also sheds the `tierCeiling`. The credentials also disagree on verifier (Better Auth versus `AgentIdentityService`), on revocation granularity (per key versus agentPath-wide), and on applicability (the identity token matters in both postures, the key only in one).
 
-They are not collapsed. They are co-located: minted together at one seam, expiring together, revoked together. The operator sees one thing happen.
+They are not collapsed. They are co-located: minted together at one seam, bounded by the same 30-day ceiling, revoked together. Not _expiring_ together, which an earlier draft claimed: the identity token can die at 7 idle days while the key lives to 30 (§3.4). Co-location is about the seam and the operator's mental model, not about the clocks.
 
 This decision would be worth revisiting if login-on ever became the default posture, at which point the identity token's login-off role disappears and the argument changes.
 
@@ -321,7 +344,7 @@ What actually shipped is broader and better than the `POSTURE_CONFIG_KEYS` set t
 
 - `services/core/operator/config-write-policy.ts` (#469, DOR-488) classifies **every** leaf of `UserConfigSchema` as `agent-writable` or `operator-only`, with a drift guard in `__tests__/config-write-policy.test.ts` that fails the build when a new config field carries no verdict. `auth.enabled` is `operator-only`, alongside `tunnel.*`, `mcp.*`, `telemetry.*`, `extensions.*`, the credential references, and the path fields that widen what DorkOS may touch.
 - `createConfigPatchHandler` refuses a patch touching any of them, naming the offending paths and telling the model to ask the person (`describeOperatorOnlyRefusal`).
-- `PATCH /api/config` runs the same guard (#476, DOR-467) plus a cookie bar under login-on (#486, DOR-505) at `routes/config.ts:246` and `:265`. Without that second one, a key minted by §3.4 could still have turned login off through the REST route, which was the sharpest finding in this branch's review.
+- `PATCH /api/config` runs the same guard (#476, DOR-467) plus a cookie bar under login-on (#486, DOR-505) at `routes/config.ts:253` and `:286`. Without that second one, a key minted by §3.4 could still have turned login off through the REST route, which was the sharpest finding in this branch's review.
 - The guard sits at the capability handler and at the route, **not** inside `applyConfigPatch`, for exactly the reason this section gave: the cockpit's own enable-login and disable-login flows reach the same function and must keep working.
 
 The residual those PRs state, and this spec inherits: with login **off** there is no cookie for anyone, so the cookie bar allows and only the agent bar is left. A program on the machine that omits its agent header can still write every `operator-only` setting. That is the same posture §3.7 scopes out.
@@ -346,7 +369,7 @@ The one visible change: if an operator had been driving approvals from a script 
 
 **Integration.** The five decide-route cases from §3.8, driven through the real app. `POST /api/approvals/:id/grant` with an agent-scoped key leaves the approval listed by `GET /api/approvals/pending`. The full defect walked end to end: destructive invoke returns 202, the same credential is refused at grant, a cookie grants it, the retry with the token succeeds.
 
-**The six `trustedCaller` sites (§3.3).** An agent-scoped key is no longer a trusted caller at `routes/config.ts`, `routes/marketplace.ts` (both sites), `routes/tasks.ts` (both sites), and `routes/extensions-approval.ts`. Each gets a case, because the change reaches them whether or not anyone remembered it would.
+**The four observable `trustedCaller` sites (§3.3).** An agent-scoped key is no longer a trusted caller at `routes/marketplace.ts:302` and `:343` and `routes/tasks.ts:158` and `:266`. Four cases that go red without the change. The other two sites (`routes/config.ts:319`, `routes/extensions-approval.ts:120`) sit behind a cookie bar that already refuses an API-key caller, so a case there would pass either way: assert instead that the cookie bar answers first, which is the thing a later reordering would break.
 
 **A real mint, not a mocked one.** At least one test drives `auth.api.createApiKey` against a real Better Auth instance with the exact body §3.4 specifies, and asserts the key comes back. A mocked mint cannot catch a unit error in `expiresIn`, and "failure is not fatal" means such an error is invisible everywhere else.
 
@@ -386,7 +409,11 @@ No entry in `contributing/configuration.md`, because no config field is added (s
 
 ## Implementation Phases
 
-Two phases. **The invariant is not true until phase 2 lands, and must not be claimed before then** (the demo-claim gate applies to security properties too).
+Three phases now, because the cookie bar was pulled ahead of the rest (Open Questions).
+
+**Phase 0 - close DOR-474 with a cookie bar.** Being implemented separately, tracked on DOR-474 itself. Deciding an approval requires `credential === 'cookie'` under login-on. Nothing in this spec is a prerequisite, and DOR-474 is closed when it lands. Whoever builds it chooses deliberately whether the bar sits inside `resolveDecisionAuthority` (which extends it to the act-without-approval paths, §3.3) or at the decide routes alone, and records which.
+
+Phases 1 and 2 then deliver what the cookie bar does not: an agent that never needs the operator's key, a key that survives past ten calls a day, and a credential DorkOS can name on an approval card. **Neither phase may be described as closing the self-approval hole; phase 0 does that.** The demo-claim gate applies to security properties too.
 
 **Phase 1 - make an agent's credential its own.**
 
@@ -399,7 +426,7 @@ Two phases. **The invariant is not true until phase 2 lands, and must not be cla
 **Phase 2 - make the distinction mean something.**
 
 6. `scope` on `RequestUser` (§3.2). `credential` already shipped in DOR-505.
-7. The decide refusal, in `resolveDecisionAuthority` (§3.3).
+7. The scope refusal, alongside phase 0's cookie bar rather than instead of it (§3.3). This is what lets a person-scoped key decide again, so it **widens** what phase 0 allows, and the four observable `trustedCaller` sites move with it.
 8. `CredentialScopeProbe`, `DECIDING_CREDENTIALS`, `checkCredentialScopeConformance`, and both seeded regressions (§3.8).
 9. Security-panel scope labels (§3.6) and the approval-card wording (§3.10).
 10. Docs and changelog.
@@ -416,13 +443,18 @@ Decomposition in `03-tasks.json`.
 - ~~Does this need a config field, and therefore a semver-keyed migration?~~ **(RESOLVED)** No, on both counts. The scope lives on the `apikey.permissions` column, which already exists in the schema (`packages/db/src/schema/auth.ts:130`) and in applied migration `0022` (`:40`), so there is no database migration either. The posture is the existing `auth.enabled`. A knob such as "require a cookie to approve" would be a dial whose only settings are the safe default and something less safe, so it is not offered. If a later round does add a field, it follows `contributing/configuration.md` and the `adding-config-fields` skill: append-only migration keyed to the release version, guarded by `store.has()`.
 - ~~Should the two credentials be collapsed into one?~~ **(RESOLVED)** No. Reasoning in §3.5. Revisit if login-on ever becomes the default posture.
 - **(OPEN)** Does the Better Auth **client** SDK's `listApiKeys` response type surface `permissions`? The endpoint parses and returns it (`index.mjs:1323`), but the client type was not verified. If it does not, the Security panel needs a small server-side projection instead. Resolve during phase 2, task 9.
-- **(REOPENED 2026-07-27)** Should deciding require a session cookie, refusing every API key? It was resolved No on 2026-07-25, on the grounds that cookie-only forecloses a headless operator and a future `dorkos approve` verb while buying nothing today. The grounds are intact, but the repo moved: **two** effects now accept a cookie and nothing else, and both are approvals-adjacent. Opening a standing permission does (`requireOperatorCookie`, `routes/approvals.ts:382`), and writing any `operator-only` setting under login-on does (`requireOperatorCookieUnderLogin`, `routes/config.ts:265`). So cookie-only is now the house pattern, its cost is one function call, and this spec is proposing a weaker rule for the one-time decide route than the repo already enforces for the standing one.
+- ~~Should deciding require a session cookie, refusing every API key?~~ **(RESOLVED 2026-07-27, by Dorian: yes, and scoping becomes phase 2.)** Resolved No on 2026-07-25, on the grounds that cookie-only forecloses a headless operator and a future `dorkos approve` verb while buying nothing today. The grounds are intact. What changed is the price.
 
-  The case for keeping scoping: it is strictly more expressive. Cookie-only says no credential on disk may ever decide; scoping says the operator's own may, which is what a headless operator and a `dorkos approve` verb need. It also produces the §3.10 card improvement and the Settings labels, neither of which cookie-only gives.
+  **Cookie-only costs nothing today, which was the open unknown.** Every first-party client already authenticates with a cookie: the client transport layer sends `credentials: 'include'` throughout (`apps/client/src/layers/shared/lib/transport/http-client.ts:37`, and the mesh, relay and room methods beside it), and no `Authorization` header is constructed anywhere in the client, desktop, or Obsidian surfaces outside the settings snippet generator that prints config for **external** MCP clients (`layers/features/settings/lib/external-mcp-snippets.ts`). So cockpit, Electron, and Obsidian-over-HTTP all keep deciding approvals. Nothing first-party breaks.
 
-  The case for switching: everything in phase 1 exists to make the scope real. Cookie-only needs none of it, closes the same hole in one line, and matches what the repo already does two doors down.
+  **And the repo had already chosen it twice**, both times approvals-adjacent: opening a standing permission (`requireOperatorCookie`, `routes/approvals.ts:382`) and writing any `operator-only` setting under login-on (`requireOperatorCookieUnderLogin`, `routes/config.ts:286`). A weaker rule for the one-time decide route than for the standing one is not a design, it is a gap nobody had gotten to.
 
-  **Decide before phase 1 starts, and record the answer here.** If the answer is cookie-only, this spec collapses to a single change plus a docs update, and the minting work becomes a separate ticket about the rate limit, which is a real defect on its own. Dorian's call; a spec should not resolve this quietly on a rebase.
+  So: **the cookie bar ships first and closes DOR-474.** Per-key scoping stays specified and becomes phase 2, because it is strictly more expressive: it is what lets a headless operator and a `dorkos approve` verb exist, and it is what produces the §3.10 card wording and the §3.6 Settings labels.
+
+  Three things on the record, so the next reader does not have to rediscover them:
+  1. **Cookie-only does not subsume the rate-limit defect.** A cockpit-created key dying after ten verifications a day is an independent shipped bug (§3.4). It needs its own ticket and it does not wait for phase 2.
+  2. **It forecloses §3.10 and the Settings scope labels** until phase 2. DorkOS cannot say "an agent asked" on a card without a way to tell an agent's credential apart, and cannot label a key it cannot classify. Real, and small.
+  3. **Where the bar goes is a decision, not an inheritance.** Putting it inside `resolveDecisionAuthority` gives it the same reach §3.3 describes, so an operator's own script holding an API key would also lose the `marketplace.ts` and `tasks.ts` act-without-approval paths. That may be right, since "whoever may decide may act without one" is the invariant those paths rest on. But it follows from the placement rather than from the goal, so whoever implements it should choose the placement deliberately and say which they chose and why.
 
 ## Related ADRs
 
