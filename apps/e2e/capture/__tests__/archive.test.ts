@@ -47,7 +47,12 @@ async function publishFixture(): Promise<void> {
 
 describe('parseArchiveArgs', () => {
   it('parses a bare label', () => {
-    expect(parseArchiveArgs(['v0.45.0'])).toEqual({ label: 'v0.45.0', shots: undefined });
+    // DELIBERATE BREAK — DOR-544 proof that the CI test gate can go red.
+    // Reverted in the next commit.
+    expect(parseArchiveArgs(['v0.45.0'])).toEqual({
+      label: 'DELIBERATE-BREAK-DOR-544',
+      shots: undefined,
+    });
   });
 
   it('parses --shots into a trimmed list', () => {
