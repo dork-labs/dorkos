@@ -10,6 +10,8 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 | ------------------------------------------ | ----------------------------------------------------------- |
 | Local Better Auth instance                 | `apps/server/src/services/core/auth/index.ts`               |
 | Session gate (the request gate)            | `apps/server/src/services/core/auth/session-gate.ts`        |
+| Who the owner is                           | `apps/server/src/services/core/auth/accounts.ts`            |
+| Which author id the owner IS               | `apps/server/src/routes/room-caller.ts`                     |
 | Exposure guard (tunnel / bind)             | `apps/server/src/services/core/auth/exposure-guard.ts`      |
 | Legacy MCP key seeding                     | `apps/server/src/services/core/auth/seed-legacy-mcp-key.ts` |
 | MCP auth middleware (4-tier)               | `apps/server/src/middleware/mcp-auth.ts`                    |
@@ -31,6 +33,8 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 | Verify a credential outside the gate                 | `verifyRequestAuth(req)` (cookie → Bearer API key, one path) |
 | Decide whether an instance may be exposed            | `canExpose()` / `isExposureAllowed(state)`                   |
 | Check whether an owner account exists                | `hasAnyUser()`                                               |
+| Read who the owner is (id + name)                    | `readOwnerAccount()`                                         |
+| Ask whether an AUTHOR is the owner                   | The injected `isOwnerAuthor(authorId)` — never `kind`        |
 | Accept a machine credential on `/mcp`                | `mcpApiKeyAuth` (env override → user key → legacy → open)    |
 | Create the owner from a machine (no server, no SMTP) | `dorkos auth enable`                                         |
 | Reset a lost owner password                          | `dorkos auth reset-password`                                 |
@@ -67,7 +71,38 @@ The gate is mounted **after** the Better Auth handler and `express.json()`, **be
 
 ### Owner-only registration
 
-The auth instance is always mounted (even when `auth.enabled` is `false`) so the enable-login flow can create the owner before flipping the flag. A `databaseHooks.user.create.before` hook enforces the policy: sign-up succeeds only while the `user` table is empty, and the first user is stamped `role: 'owner'`. Every later sign-up throws `FORBIDDEN` / `REGISTRATION_CLOSED`. The schema stays multi-user-capable for the future invites spec.
+The auth instance is always mounted (even when `auth.enabled` is `false`) so the enable-login flow can create the owner before flipping the flag. A `databaseHooks.user.create.before` hook enforces the policy: sign-up succeeds only while the `user` table is empty, and the first user is stamped `role: 'owner'`. Every later sign-up throws `FORBIDDEN` / `REGISTRATION_CLOSED`.
+
+**This is permanent.** ADR 260727-184933 D6: the local install is single-user for good — nobody else ever holds an account on the machine that runs your agents and spends your model quota. Multi-user lives in `apps/community`, which is a different server with a different job. Do not reopen registration here.
+
+### There are no roles here, and there is no gate for them
+
+A local install has exactly one person, so it has nothing to grant and nothing to withhold. `sessionGate` answers the only question there is — "is this the owner" — and every route behind it is the owner's. Roles (`owner` / `admin` / `member`) belong to `apps/community`, which has a roster; see D7. Do not add a role model to this app.
+
+### The owner is an identity, not a column
+
+`findOwnerAccount(db)` returns **the earliest account, unconditionally** — `ORDER BY created_at ASC LIMIT 1`, no `role` in the query.
+
+It used to prefer the row stamped `role: 'owner'` with the earliest row as a fallback, which was worse than either rule alone: a state where the owner's stamp was blanked and a second row carried one satisfied the first query and never reached the fallback, so it handed the whole install to the wrong account. Creation order is what the registration policy actually guarantees, so it is the only thing worth reading — and no write to `user.role` can move ownership.
+
+### Room authorization asks who the OWNER is, never whether an author is human
+
+The rooms domain read `kind === 'human'` in three places and meant "is the operator". Those were the same question only while the `authors` table held exactly one human author, and **it will not** — joining a community fills it with other humans, cached remote members whose messages you hold (D6). Reading `kind` would then hand the operator's powers to every one of them, on your own machine, with no second account anywhere.
+
+`RoomService` takes an injected `isOwnerAuthor(authorId)`, wired in `services/rooms/index.ts` from `readOwnerAccount()` and resolved by `AuthorRegistry.isOwner`. It is injected rather than read here because whether an account exists is not a room's business to know. Two modes, one meaning:
+
+- **No owner account:** the unbound `'local'` human author is the owner. With no accounts there is nobody else it could be, which is what keeps the default posture identical.
+- **An owner account exists:** the author bound to `user:<ownerUserId>` is the owner, and nobody else is — not another human, not an agent, not the system author.
+
+The predicate is strictly narrower than the old one (`isOwner` returns `false` for anything that is not a human author), so no agent's behavior changed in either direction.
+
+### The `'local'` author binds to the owner's account, in place
+
+A human author's natural key is `user:<betterAuthUserId>` — opaque, free of personal data, and stable across the person changing their email or their name. The single pre-account author (natural key `'local'`) is rebound onto the owner's account by `AuthorRegistry.bindOwner`, which is **one UPDATE that does not change the opaque `id`**. Every `room_entries.author_id`, every `room_members` row and every read cursor keeps pointing at the same author, so nothing is migrated and nothing is rewritten.
+
+**It does not write `display_name`, and that is deliberate.** There is one name column per author, so writing the account name would not label the owner going forward — it would relabel every message they had ever written, retroactively, the moment they turned login on. Under D6 the owner is the only person who reads their own roster, so `'You'` stays right forever. (`specs/invites` §17 #5 asked whether the rename was acceptable; D6 answers no.)
+
+`resolveCaller` (`routes/room-caller.ts`) is the only caller, and it runs the rebind on the owner's first request after the account exists. That is what covers **both** ways an owner is created: the web enable-login flow, and `dorkos auth enable`, which runs in its own process and has no server hook to fire. Its no-session branch resolves the owner too, rather than minting a fresh `'local'` author — otherwise turning **Require login** back off would strand every room, membership and cursor behind an author id nothing points at.
 
 ### Exposure guard: BOTH facts required
 
@@ -162,6 +197,15 @@ if (req.path === '/API/Sessions') {
 if (configManager.get('auth')?.enabled) startTunnel(); // open API if no gate + no users
 // ✅ require BOTH facts
 if (canExpose()) startTunnel();
+
+// ❌ NEVER read "is this the operator" off an author kind
+if (author.kind === 'human') allowEverything(); // true for every CACHED REMOTE member
+// ✅ ask who the owner is
+if (isOwnerAuthor(author.id)) allowEverything();
+
+// ❌ NEVER reopen registration on the local install
+if (invite) allowSecondSignUp(); // D6: nobody else holds an account on this machine
+// ✅ multi-user is `apps/community`, a different server with a roster
 
 // ❌ NEVER mount express.json() before the Better Auth handler
 app.use(express.json());
