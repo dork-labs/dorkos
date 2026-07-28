@@ -225,16 +225,18 @@ function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSch
  * loud what it could not read. Every discarded declaration therefore comes back
  * in `unreadable`.
  *
- * Two scoping facts this function deliberately does NOT encode, because the
- * preview's job is to disclose what the package declares, not to predict every
- * downstream filter:
+ * Facts this function deliberately does NOT encode, because the preview's job
+ * is to disclose what the package declares, not to predict every downstream
+ * filter:
  *
- * - Those hooks only reach `.claude/settings.local.json` for a PROJECT-scoped
- *   install of a `plugin` or `skill-pack` (`installed.ts` records global
- *   installs as identity-only; `projector.ts` filters to
- *   `PROJECTABLE_PLUGIN_TYPES`). An agent or Shape ships its `hooks/hooks.json`
- *   to disk and nothing ever reads it. The UI therefore says the package
- *   "declares" these commands rather than that it "will run" them.
+ * - Those hooks only reach a harness settings file for a PROJECT-scoped install
+ *   of a `plugin` or `skill-pack` (`installed.ts` records global installs as
+ *   identity-only; `projector.ts` filters to `PROJECTABLE_PLUGIN_TYPES`), and
+ *   only after a person approves that exact command set for that project
+ *   (`services/harness/hook-approval.ts`, DOR-522). An agent or Shape ships its
+ *   `hooks/hooks.json` to disk and nothing ever reads it. The UI therefore says
+ *   the package "declares" these commands rather than that it "will run" them —
+ *   this preview is read BEFORE installing, the approval card BEFORE running.
  * - `readPluginHooks` validates only that an event's value is an array; the
  *   group interior is unchecked, and malformed groups make the PROJECTOR throw
  *   rather than skip (tracked separately). This reader validates the interior

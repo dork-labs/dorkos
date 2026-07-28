@@ -798,40 +798,34 @@ describe('PermissionPreviewBuilder', () => {
     }
 
     /**
-     * A preview that names paths the installer never touches is a lie, and this
-     * is the one package type where the two sides disagree: the preview
-     * resolves a project-scoped agent to `<projectPath>/.dork/agents/<name>`,
-     * while `AgentInstallFlow` writes straight into `<projectPath>`.
+     * A preview that names paths the installer never touches is a lie. This was
+     * the one package type where the two sides disagreed: the preview resolved
+     * a project-scoped agent to `<projectPath>/.dork/agents/<name>` while
+     * `AgentInstallFlow` wrote straight into `<projectPath>`. DOR-522 (#559)
+     * nested the installer, and the two now agree.
      *
-     * Both sides are pinned to a CONCRETE expected path, not merely to each
-     * other. Asserting only that they differ (or only that they match) would
-     * certify *that* they disagree and never *how*: the preview could drift to
-     * some third directory and the test would stay green, and then DOR-522's
-     * author would "fix" the installer into agreement with nothing. These two
-     * lines are also the only concrete assertion anywhere in the suite for the
-     * project-scoped install root — the sibling `agent package destination` and
-     * Shape tests only ever exercise the global path.
+     * Both sides stay pinned to a CONCRETE expected path, not merely to each
+     * other. Asserting only that they match would certify *that* they agree and
+     * never *on what*: both could drift together to a third directory and this
+     * would stay green. These two lines are also the only concrete assertion
+     * anywhere in the suite for the project-scoped install root — the sibling
+     * `agent package destination` and Shape tests exercise only the global path.
      *
-     * A plain `it`, not `it.fails`: an inverted test passes on ANY throw, so a
-     * crash in the shared setup would read as the bug still being open. Here a
-     * throw is red, which is what it should be.
-     *
-     * **DOR-522 owns the fix.** It nests `install-agent.ts`'s target under
-     * `.dork/agents/<name>`, which is exactly what the preview already
-     * promises. That lands on the `installed` line below and nowhere else:
-     * whoever makes the change updates that one expectation to
-     * `join(projectPath, '.dork', 'agents', name, 'manifest.json')`, at which
-     * point the two sides are pinned to the same value and the bug is closed.
-     * Until then this test fails loudly the moment either side moves.
+     * A plain `it`, never `it.fails`. An inverted test passes on ANY throw, so
+     * a setup crash would have read as the bug still being open, and it could
+     * not distinguish "the preview drifted somewhere new" from "the installer
+     * was fixed". Both shapes are red here, which is what they should be.
      */
     it('pins the project-scoped agent install root on both sides', async () => {
       const { projectPath, name, installed, previewed } = await bothDestinations();
 
-      // What the preview promises the user.
-      expect(previewed).toBe(join(projectPath, '.dork', 'agents', name, 'manifest.json'));
+      const expected = join(projectPath, '.dork', 'agents', name, 'manifest.json');
 
-      // What the installer actually does today. DOR-522 changes THIS line.
-      expect(installed).toBe(join(projectPath, 'manifest.json'));
+      // What the preview promises the user, and what the installer does. These
+      // are asserted separately, against the same literal, so a future change to
+      // either side names itself in the failure rather than hiding in a compare.
+      expect(previewed).toBe(expected);
+      expect(installed).toBe(expected);
     });
   });
 });
