@@ -2,10 +2,12 @@
  * Read, from one Express request, exactly the facts that decide whether a caller
  * is a person acting for themselves (spec `agent-trust` §3.3, DOR-467).
  *
- * There is one predicate for that question — `resolveDecisionAuthority` — and
- * three surfaces that need it: the endpoint that DECIDES an approval
- * (`routes/approvals.ts`), and the two mutation routes that must act without one
- * when the caller is a person (`routes/marketplace.ts`, `routes/config.ts`).
+ * There is one predicate for that question — `resolveDecisionAuthority` — and two
+ * kinds of surface that need it: the endpoints that DECIDE an approval
+ * (`routes/approvals.ts`), and the mutation routes that must act without one when
+ * the caller is a person (`routes/config.ts`, `routes/marketplace.ts`,
+ * `routes/tasks.ts`, `routes/extensions-approval.ts` — the first two reach it both
+ * directly and through `trustedCaller`, the last two through one path each).
  *
  * They share this reader rather than each pulling headers off a request, because
  * the failure that matters here is not a wrong answer but a DIVERGENT one: if the
@@ -30,10 +32,20 @@
  *   the cockpit rather than something holding a per-user API key? **With login
  *   off it allows, because there is no cookie for anyone to present.** That allow
  *   is the residual DOR-505 could not close, and putting it in its own function
- *   is what makes the posture it covers readable instead of buried.
+ *   is what makes the posture it covers readable instead of buried. Four surfaces
+ *   run it now: `PATCH /api/config` on its operator-only paths, extension
+ *   approval, opening a standing permission, and — since DOR-474 — answering any
+ *   approval at all.
  *
  * {@link requireOperatorCookie} composes both, for the one surface that needs
  * both: creating a standing permission.
+ *
+ * Since DOR-474, DECIDING an approval runs
+ * {@link requireOperatorCookieUnderLogin} too, and not only when the caller asked
+ * for a standing permission: an agent legitimately holds one of the person's API
+ * keys, so under login-on it could otherwise answer the very request it made.
+ * `trustedCaller` applies the same bar for the same reason, which is what keeps
+ * "whoever may decide may act without one" true in both directions.
  *
  * They live here for the same anti-divergence reason as the reader above —
  * several routes enforce them and they must not mean different things by it.
@@ -192,6 +204,9 @@ export function requireStandingGrantsLogin(
  * @param subject - What the caller tried to change, as the refusal names it, so
  *   one bar can serve several surfaces without any of them inheriting another's
  *   wording. Reads as "Only a person signed in to DorkOS can change {subject}".
+ *   A surface whose effect is not a CHANGE to something (deciding an approval) may
+ *   keep the status and code and answer with its own sentence, the way
+ *   `routes/config.ts` already does.
  * @param isLoginEnabled - Optional login-state lookup for tests.
  * @returns `undefined` when login is off, or when the caller presented a session
  *   cookie. Otherwise the refusal to answer with.
