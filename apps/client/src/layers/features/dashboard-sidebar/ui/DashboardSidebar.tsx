@@ -28,6 +28,7 @@ import {
   useRenameSession,
   useRecentSessions,
   useAgentAttentionMap,
+  sessionKeys,
 } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
@@ -342,7 +343,7 @@ export function DashboardSidebar() {
       // Include a session ID so the URL always has ?session=, ensuring ChatPanel's
       // focus effect fires on every agent switch. Reuse the most-recent cached
       // session for the target agent, or generate a fresh UUID.
-      const cached = queryClient.getQueryData<Session[]>(['sessions', agentPath]);
+      const cached = queryClient.getQueryData<Session[]>(sessionKeys.list(agentPath));
       const sessionId = cached?.[0]?.id ?? crypto.randomUUID();
       navigate({ to: '/session', search: { dir: agentPath, session: sessionId } });
     },
@@ -390,7 +391,7 @@ export function DashboardSidebar() {
     async (sessionId: string) => {
       try {
         const forked = await transport.forkSession(sessionId, undefined, selectedCwd ?? undefined);
-        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
         navigate({ to: '/session', search: (prev) => ({ ...prev, session: forked.id }) });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to fork session');

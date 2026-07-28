@@ -77,7 +77,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', sdkSessionIndex: new Map(), sessionMapKey: 's1', ...overrides };
+  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
 }
 
 /** A minimal main-thread assistant SDK message carrying `uuid`. */

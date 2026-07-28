@@ -5110,10 +5110,16 @@
                 "items": {
                   "$ref": "#/components/schemas/RoomRosterEntry"
                 }
+              },
+              "viewerAuthorId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things."
               }
             },
             "required": [
-              "members"
+              "members",
+              "viewerAuthorId"
             ]
           }
         ]
@@ -5360,7 +5366,9 @@
         "type": "string",
         "enum": [
           "cascade_stopped",
-          "budget_reached"
+          "budget_reached",
+          "agent_busy",
+          "turn_failed"
         ]
       },
       "PostToRoomResponse": {
@@ -9955,7 +9963,45 @@
                             ]
                           }
                         },
-                        "tasks": {
+                        "hooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "event": {
+                                "type": "string"
+                              },
+                              "matcher": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "event",
+                              "command"
+                            ]
+                          }
+                        },
+                        "unreadableHooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "event": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path"
+                            ]
+                          }
+                        },
+                        "schedules": {
                           "type": "array",
                           "items": {
                             "type": "object",
@@ -9968,11 +10014,27 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "permissionMode": {
+                                "type": "string",
+                                "enum": [
+                                  "default",
+                                  "plan",
+                                  "acceptEdits",
+                                  "dontAsk",
+                                  "bypassPermissions",
+                                  "auto"
+                                ]
+                              },
+                              "startsEnabled": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
                               "name",
-                              "cron"
+                              "cron",
+                              "permissionMode",
+                              "startsEnabled"
                             ]
                           }
                         },
@@ -10069,7 +10131,9 @@
                       "required": [
                         "fileChanges",
                         "extensions",
-                        "tasks",
+                        "hooks",
+                        "unreadableHooks",
+                        "schedules",
                         "secrets",
                         "externalHosts",
                         "requires",
@@ -10209,7 +10273,45 @@
                             ]
                           }
                         },
-                        "tasks": {
+                        "hooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "event": {
+                                "type": "string"
+                              },
+                              "matcher": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "event",
+                              "command"
+                            ]
+                          }
+                        },
+                        "unreadableHooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "event": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path"
+                            ]
+                          }
+                        },
+                        "schedules": {
                           "type": "array",
                           "items": {
                             "type": "object",
@@ -10222,11 +10324,27 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "permissionMode": {
+                                "type": "string",
+                                "enum": [
+                                  "default",
+                                  "plan",
+                                  "acceptEdits",
+                                  "dontAsk",
+                                  "bypassPermissions",
+                                  "auto"
+                                ]
+                              },
+                              "startsEnabled": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
                               "name",
-                              "cron"
+                              "cron",
+                              "permissionMode",
+                              "startsEnabled"
                             ]
                           }
                         },
@@ -10323,7 +10441,9 @@
                       "required": [
                         "fileChanges",
                         "extensions",
-                        "tasks",
+                        "hooks",
+                        "unreadableHooks",
+                        "schedules",
                         "secrets",
                         "externalHosts",
                         "requires",

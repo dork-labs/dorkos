@@ -27,12 +27,15 @@ export function ChannelsPage() {
   const room = roomQuery.data;
   const entries = useMemo(() => entriesQuery.data ?? [], [entriesQuery.data]);
 
-  // v1 mints exactly one human author (spec `rooms` §2), so the roster's human
-  // member IS the person reading — there is no "who am I" call to make, and
-  // there will not be one until accounts land. Their cursor is what the unread
-  // rule reads; `null` (not a member) draws no rule at all.
+  // `viewerAuthorId` is the server's own answer to "which of these members am
+  // I", resolved on the request that returned this room. Matching on it rather
+  // than on `kind === 'human'` is what makes the unread rule this reader's own:
+  // with two people in a room the old lookup returned whichever sorted first, so
+  // one person's divider tracked the other's cursor. `null` (not a member)
+  // draws no rule at all.
   const lastReadSeq = useMemo(
-    () => room?.members.find((member) => member.author.kind === 'human')?.lastReadSeq ?? null,
+    () =>
+      room?.members.find((member) => member.author.id === room.viewerAuthorId)?.lastReadSeq ?? null,
     [room]
   );
 

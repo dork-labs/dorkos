@@ -12,7 +12,7 @@ export default defineConfig({
     // `pnpm vitest run <path>` loop AGENTS.md prescribes is not, and that is
     // where the next author actually stands.
     //
-    // Both entries below are here because they back a DRIFT GUARD — a test whose
+    // Every entry below is here because it backs a DRIFT GUARD — a test whose
     // whole job is to notice that a table grew a row. Those are exactly the tests
     // a stale dist turns into decoration, because the guard reads the old table,
     // finds it consistent, and reports success:
@@ -39,6 +39,48 @@ export default defineConfig({
     //   reintroducing "carries no gate of its own" in `src/` would pass against a
     //   dist built before the edit. That is the DOR-509 bug itself, checked by a test
     //   that cannot see it.
+    // - `schemas` backs two enumerations of `PermissionModeSchema.options` — the
+    //   permission-mode firewall proves a behaviour for EVERY mode, and
+    //   `interactive-handlers` pins the decided set against it — plus
+    //   `task-write-policy`, which reads `Create/UpdateTaskRequestSchema.shape` to
+    //   prove every writable task field has a policy. A mode or a field added in
+    //   `src/` and read from a stale `dist/` is a guard that never sees the thing
+    //   it exists to see.
+    // - `additional-context` backs the two `CONTEXT_TAG` guards
+    //   (`transcript-parser`, `context-roundtrip`). It also comes along for free —
+    //   `schemas` and `additional-context` import each other, so aliasing either one
+    //   resolves the pair from `src/`; naming both keeps that explicit instead of
+    //   accidental.
+    //
+    //   A note on the two `it.each` guards above (`permission-mode-firewall` and
+    //   `transcript-parser`), because a first reading calls them tautological and
+    //   they are not. Neither reddens when a member is merely ADDED — correctly, since
+    //   each asserts a property that holds for any member. They redden on the
+    //   REALISTIC regression, which is the code under test ceasing to be exhaustive,
+    //   and both were measured: adding a 7th permission mode AND letting
+    //   `enforceCapabilityTier` return `allowed` for it fails 1 of 7 with the alias and
+    //   passes green with the alias removed; adding a `ContextKind` AND replacing
+    //   `stripSystemTags`' `Object.values(CONTEXT_TAG)` loop with a hardcoded 5-name
+    //   array fails 1 of 55 with the alias and passes green without it. The generated
+    //   case IS the catch, and the alias is what generates it. Load-bearing, not
+    //   decorative.
+    // - `constants` backs `model-catalog-labels`, which asserts every runtime's
+    //   model display name fits inside `STATUS_VALUE_MAX_CHARS`. Shrink the budget
+    //   in `src/` and a stale dist measures against the old, roomier one.
+    // - `trait-renderer` backs the `DEFAULT_TRAITS` pins in `routes/__tests__/
+    //   agents-conventions.test.ts` and `agents-creation.test.ts`, which assert the
+    //   scaffolder is called with a SIX-KEY literal (`{ verbosity: 3, … spice: 3 }`).
+    //   The client twin of this alias was here from the start; the server twin was
+    //   missed in the DOR-541 sweep because the import reads as a fixture. It is not:
+    //   a hardcoded literal compared against a shared table is a drift guard by
+    //   construction. Measured both ways with the same seed (a 7th key on
+    //   `DEFAULT_TRAITS` in `src/`, `dist` left stale): with this alias, 5 failed
+    //   across the two files; with the alias removed, all green.
+    // - `@dorkos/marketplace/package-types` backs `install-roots`, which iterates
+    //   `PackageTypeSchema.options` to prove no package type installs somewhere the
+    //   scanners never look. The test used to import the schema from the package
+    //   ROOT; it now takes the narrow subpath so the alias can be a single
+    //   zod-only module instead of the whole package index.
     //
     // Scoped to these modules on purpose. Aliasing all 43 subpaths made every
     // worker re-transform the whole package and took the suite from ~51s to
@@ -47,13 +89,23 @@ export default defineConfig({
     // total, transform 18.9s to 19.4s. Both runs were dominated by a 45s flaky
     // watcher integration test, so treat transform time as the signal here and
     // total time as noise, and re-measure in ONE session rather than comparing
-    // against a number written down on a different day. The trade-off is
+    // against a number written down on a different day.
+    //
+    // DOR-541 added the five entries below and re-measured the same way, on a box
+    // under heavy concurrent load: aliased 129.0s (transform 68.6s) against an
+    // un-aliased 158.2s (transform 86.7s) and an earlier un-aliased 134.7s
+    // (transform 136.6s) in the same session, over the same test set. The aliased
+    // run being the FAST one is the point: on this machine the spread between two
+    // runs of the SAME config is wider than any delta these aliases produce, so the
+    // honest reading is "no measurable cost", not "an improvement". If a future
+    // author sees a real regression, widen the suspicion to `shared/schemas` first —
+    // it is by far the largest of the five. The trade-off is
     // that other `dist/*.js` files reach these modules by relative imports, which
     // this alias does not rewrite, so a test process can hold both the src and
-    // dist copies. That is safe for these two and only because of what they are:
-    // no mutable state, and they export only Zod schemas, plain constants, and
-    // pure functions over them, nothing whose identity is ever compared. Do not
-    // widen this alias without re-measuring.
+    // dist copies. That is safe for these modules and only because of what they
+    // are: no mutable state, and they export only Zod schemas, plain constants,
+    // and pure functions over them, nothing whose identity is ever compared. Do
+    // not widen this alias without re-measuring.
     alias: [
       {
         find: '@dorkos/shared/config-schema',
@@ -78,6 +130,36 @@ export default defineConfig({
         find: /^@dorkos\/operating-skills$/,
         replacement: fileURLToPath(
           new URL('../../packages/operating-skills/src/index.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/schemas',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/schemas.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/additional-context',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/additional-context.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/constants',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/constants.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/trait-renderer',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/trait-renderer.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/marketplace/package-types',
+        replacement: fileURLToPath(
+          new URL('../../packages/marketplace/src/package-types.ts', import.meta.url)
         ),
       },
     ],

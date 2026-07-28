@@ -57,9 +57,13 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  * - `budget_reached` — the room hit its cap on automatic turns for the window.
  *   Separate from the cascade guard on purpose: that one bounds ONE
  *   conversation, this one bounds the room whoever the caller claims to be.
+ * - `agent_busy` — the agent's session was already being written to, so the
+ *   trigger was skipped. Nothing is wrong with the agent; it was just occupied.
+ * - `turn_failed` — the agent started answering and the turn ended in an error,
+ *   or it never finished at all.
  */
 export const RoomNoticeCodeSchema = z
-  .enum(['cascade_stopped', 'budget_reached'])
+  .enum(['cascade_stopped', 'budget_reached', 'agent_busy', 'turn_failed'])
   .openapi('RoomNoticeCode');
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
@@ -219,9 +223,26 @@ export const RoomRosterEntrySchema = RoomMemberSchema.extend({
 
 export type RoomRosterEntry = z.infer<typeof RoomRosterEntrySchema>;
 
-/** One room with its roster — the `GET /api/rooms/:id` body. */
+/**
+ * One room with its roster — the `GET /api/rooms/:id` body.
+ *
+ * `viewerAuthorId` is the answer to "which of these members am I", and it has
+ * to be on the wire because nothing else tells a client. A reader used to be
+ * findable by `kind === 'human'`, which was only ever true while an install
+ * minted exactly one human author; with two, `find` returns whichever sorts
+ * first and one person reads and advances the other's cursor. The server
+ * already resolves this id on every one of these routes and already scopes the
+ * read by it, so carrying it costs nothing and makes it authoritative rather
+ * than inferred.
+ */
 export const RoomWithRosterSchema = RoomSchema.extend({
   members: z.array(RoomRosterEntrySchema),
+  viewerAuthorId: z
+    .string()
+    .min(1)
+    .describe(
+      'The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things.'
+    ),
 }).openapi('RoomWithRoster');
 
 export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;

@@ -286,8 +286,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         adapterManager: this.adapterManager,
         mcpServerFactory: this.mcpServerFactory,
         ...this.cache.buildSendCallbacks(cwdKey),
-        sdkSessionIndex: this.sessionStore.getSdkSessionIndex(),
-        sessionMapKey: sessionId,
+        onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
+          this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
         modelThinkingCapability: modelCapability,
         modelSupportsAutoMode: modelCapability
           ? (modelCapability.supportsAutoMode ?? false)

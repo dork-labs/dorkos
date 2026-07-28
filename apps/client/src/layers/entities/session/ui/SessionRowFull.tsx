@@ -2,10 +2,16 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, type TargetAndTransition, type Transition } from 'motion/react';
 import { ChevronDown, Pencil, ShieldOff, GitFork, Hand } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
-import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import {
+  cn,
+  formatRelativeTime,
+  isBypassPermissionMode,
+  permissionModeLabel,
+} from '@/layers/shared/lib';
 import { CopyButton, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { RuntimeMark, getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
+import { useSessionPermissionMode } from '../model/use-session-detail';
 import { usePulseMotion } from '../model/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
@@ -51,7 +57,17 @@ export function SessionRowFull({
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
-  const isUnsafe: boolean = session.permissionMode === 'bypassPermissions';
+
+  // Read-only on purpose. `enabled: false` means a rail of fifty rows subscribes
+  // to the session cache without any of them fetching, and the row still picks up
+  // a mode change the instant it is made in the status line — the list it is
+  // rendered from only refreshes when the server says so.
+  const permissionMode =
+    useSessionPermissionMode(session.id, {
+      enabled: false,
+      fallback: session.permissionMode,
+    }) ?? 'default';
+  const isUnsafe = isBypassPermissionMode(permissionMode);
 
   const now = useNow(60_000);
   const relativeTime = useMemo(
@@ -259,7 +275,11 @@ export function SessionRowFull({
                   label="Origin"
                   value={session.originLabel ?? getOriginDescriptor(session.origin)?.label ?? 'You'}
                 />
-                <DetailRow label="Permissions" value={isUnsafe ? 'Skip (unsafe)' : 'Default'} />
+                <DetailRow
+                  label="Permissions"
+                  value={permissionModeLabel(permissionMode)}
+                  valueClassName={isUnsafe ? 'text-red-500' : undefined}
+                />
                 {onFork && (
                   <button
                     type="button"
@@ -354,15 +374,20 @@ function DetailRow({
   label,
   value,
   copyable = false,
+  valueClassName,
 }: {
   label: string;
   value: string;
   copyable?: boolean;
+  /** Extra classes for the value, e.g. a warning tint on a risky setting. */
+  valueClassName?: string;
 }) {
   return (
     <div className="flex items-start gap-2">
       <span className="text-muted-foreground/60 w-16 flex-shrink-0">{label}</span>
-      <span className="min-w-0 flex-1 truncate font-mono select-all">{value}</span>
+      <span className={cn('min-w-0 flex-1 truncate font-mono select-all', valueClassName)}>
+        {value}
+      </span>
       {copyable && <CopyButton value={value} label={`Copy ${label}`} />}
     </div>
   );

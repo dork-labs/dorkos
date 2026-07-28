@@ -70,7 +70,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', sdkSessionIndex: new Map(), sessionMapKey: 's1', ...overrides };
+  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
 }
 
 /** Drive one turn whose SDK stream throws `error`, collecting yielded events. */

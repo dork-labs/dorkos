@@ -305,6 +305,7 @@ interface TelegramAdapterConfig {
   mode: 'polling' | 'webhook'; // Update delivery mode
   webhookUrl?: string; // Required if mode is 'webhook'
   webhookPort?: number; // Optional, defaults to 8443
+  respondMode: RespondMode; // When to answer in groups; defaults to 'thread-aware'
 }
 
 interface WebhookAdapterConfig {
@@ -361,6 +362,61 @@ interface StandardPayload {
 }
 ```
 
+**Bot-loop guard:**
+
+Any inbound message whose sender is a bot (`from.is_bot`) is dropped before it
+reaches the relay, including the adapter's own account. This is a mechanism, not
+a setting: it runs before every configurable gate, no config field reaches it,
+and `respondMode: 'always'` does not switch it off. Two DorkOS-driven bots in one
+group otherwise answer each other without end, and no prompt can prevent that —
+a loop is a property of the whole conversation, while each agent only sees its
+own turn (`.claude/rules/room-conduct.md`, ADR `260726-170127`, DOR-619).
+
+The one carve-out is an **anonymous group admin**, who is a person. Telegram
+routes their message through a service bot account, so `from.is_bot` is `true`
+and the guard would otherwise drop a human. They are identified by `sender_chat`
+matching the chat itself, which the Bot API documents as "the supergroup itself
+for messages sent by its anonymous administrators" (and documents `from` as "a
+fake sender user" in that case). They are carved out of the guard and then gated
+like any other person by the respond mode below, not waved through.
+
+Deliberately **not** keyed on the service account's numeric id (`1087968824`):
+that value is widely repeated but appears nowhere in the Bot API reference or in
+`@grammyjs/types`, so it is folklore, and a loop-prevention branch should not
+rest on it. `sender_chat` is documented, is set server-side so no bot can forge
+it, and is narrower.
+
+**What stays dropped, and knowingly:** a message posted on behalf of a _channel_
+arrives from Telegram's `Channel_Bot` service account with `sender_chat` set to
+that channel rather than to this chat, so it does not match the carve-out. This
+covers both a linked channel's posts auto-forwarded into its discussion group and
+a person posting to the group under a channel identity. The first is automation
+and should be ignored. The second is a person, and ignoring them is a real cost —
+accepted because the alternative is keying on undocumented account ids, and
+because they can always speak as themselves. Revisit if it bites someone.
+
+**Respond Modes:**
+
+The `respondMode` field controls when the bot answers in a group or supergroup.
+Private chats are always answered. Same three values as Slack, from the same
+shared enum, so the two adapters cannot drift on what they mean:
+
+| Mode           | Behavior in a group                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------- |
+| `thread-aware` | Answers when the message names the bot, and when it replies to a message the bot sent. **Default.** |
+| `mention-only` | Answers only when the message names the bot.                                                        |
+| `always`       | Answers every message in the group. This is what the adapter did unconditionally before DOR-619.    |
+
+"Names the bot" means a `@botname` mention, a `/command@botname`, or a
+`text_mention` entity carrying the bot's user id. Telegram's entity offsets are
+used rather than a substring scan, so a handle inside a URL or code span does not
+count.
+
+A Telegram integration created before this field existed picks up the
+`thread-aware` default like a new one. There is deliberately no carry-forward to
+`always` (unlike `dmPolicy` in `services/relay/safe-defaults.ts`): answering
+every message in every group was the bug, not a setting anyone chose.
+
 **Outbound:**
 
 Sends Relay envelopes as Telegram messages. Truncates content to Telegram's 4096-character limit.
@@ -411,10 +467,10 @@ The `respondMode` config field controls when the bot responds in channels (DMs a
 
 The `dmPolicy` field controls who can DM the bot:
 
-| Policy      | Behavior                                                                  |
-| ----------- | ------------------------------------------------------------------------- |
-| `open`      | Any Slack user can DM the bot. Default.                                   |
-| `allowlist` | Only user IDs listed in `dmAllowlist` can DM the bot. Others are ignored. |
+| Policy      | Behavior                                                                           |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `open`      | Any Slack user can DM the bot.                                                     |
+| `allowlist` | Only user IDs listed in `dmAllowlist` can DM the bot. Others are ignored. Default. |
 
 **Channel Overrides:**
 

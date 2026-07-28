@@ -54,6 +54,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 /** `apps/server/src`, resolved from this file rather than from the cwd. */
@@ -98,7 +99,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'sourceManager.add(',
     allowed: {
       'routes/marketplace.ts':
-        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller, with no approval that could unlock it (DOR-502)',
+        'the cockpit + CLI REST route — refuses any caller the agent bar (resolveDecisionAuthority) turns away, with no approval that could unlock it (DOR-502). Deliberately NOT the cookie bar: `dorkos marketplace add` is a terminal verb whose only credential is an API key, so demanding a cookie is a lockout (source-write-policy.ts)',
       'services/marketplace-mcp/personal-marketplace.ts':
         'the boot-time bootstrap of the local personal marketplace; no request reaches it and the source it registers is always a file:// URL under this dork home',
     },
@@ -108,7 +109,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'sourceManager.remove(',
     allowed: {
       'routes/marketplace.ts':
-        'the cockpit + CLI REST route — refuses any caller that is not a trusted caller (DOR-502)',
+        'the cockpit + CLI REST route — refuses any caller the agent bar (resolveDecisionAuthority) turns away (DOR-502); see the add entry above for why the cookie bar is not copied here',
     },
   },
   {
@@ -144,18 +145,54 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the registry choke point — every capability inherits the gate from inside invoke (DOR-467)',
       'services/core/mcp-tool-gate.ts':
         'the hand-registered MCP tools, which are not registry capabilities and so cannot inherit it (DOR-468)',
+      'routes/shapes.ts':
+        'POST /api/shapes/:name/apply, which owns its own effect and has no capability twin — shapes is not a registry domain, and minting one purely so authorizeCapability had something to look up would add an agent-invocable path to the effect being closed (DOR-625)',
       'services/core/capabilities/tier-enforcement.ts':
         'the definition itself, plus authorizeCapability next to it',
     },
   },
   {
+    what: 'records the YES that lets a destructive action through, which is the whole gate',
+    call: 'approvals.grant(',
+    allowed: {
+      'routes/approvals.ts':
+        'the cockpit route a person answers on — runs the agent bar, the requester bar, and under login the cookie bar, so an API key cannot answer for a person (DOR-474)',
+    },
+  },
+  {
+    what: 'records a NO, which buries the card a person would otherwise have answered',
+    call: 'approvals.deny(',
+    allowed: {
+      'routes/approvals.ts': 'the same route, guarded the same way — see the grant entry above',
+    },
+  },
+  {
+    what: "arms a Shape's schedules — created ENABLED, carrying the permission mode its manifest chose (bypassPermissions included) — and deletes the ones an earlier version of that Shape left behind",
+    call: 'applyShape(',
+    allowed: {
+      'routes/shapes.ts':
+        'the cockpit REST route — runs the tier gate first, and it is the ONLY entry point an agent can reach (DOR-625)',
+      'index.ts':
+        'the marketplace update hook: re-applies the ACTIVE Shape in place after an update replaced it. The name is read from config, never from a caller, and reaching it at all requires already having cleared the install gate',
+      'services/shapes/apply-shape.ts': 'the definition itself',
+    },
+  },
+  {
     what: 'mints the marker that skips the tier gate entirely',
+    // Since DOR-474 a marker also requires a session cookie whenever login is on,
+    // because the two-step path it stands in for (ask, then grant) requires one.
+    // Two entries left this list for that reason rather than because they became
+    // ungated: the package-source routes and the task write routes wanted the AGENT
+    // bar, not this marker, and now read `resolveDecisionAuthority` directly. Their
+    // effects are still watched below (`sourceManager.add(`, `createTask(`, and the
+    // rest), so dropping them here narrows what this token means without narrowing
+    // what the scan covers.
     call: 'trustedCaller(',
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
-      'routes/tasks.ts':
-        'a person approving a scheduled task, or setting how it runs, in their own cockpit (DOR-504)',
+      'routes/shapes.ts':
+        'a person clicking a Shape in their own cockpit — applying one arms scheduled work, so an agent is asked first (DOR-625)',
       'routes/extensions-approval.ts':
         'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
@@ -166,7 +203,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'createTask(',
     allowed: {
       'routes/tasks.ts':
-        'the cockpit REST route, on its parse-failure FALLBACK branch only — the happy path is upsertFromFile below. Refuses operator-only task fields unless the caller is a trusted caller, and parks the task at pending_approval when it is not (DOR-504)',
+        'the cockpit REST route, on its parse-failure FALLBACK branch only — the happy path is upsertFromFile below. Refuses operator-only task fields unless the caller clears the agent bar, and parks the task at pending_approval when it does not (DOR-504). Deliberately NOT the DOR-474 cookie bar: `dorkos task create` presents an API key, so a cookie demand would park every task the operator schedules while telling them it was created',
       'services/runtimes/claude-code/mcp-tools/task-tools.ts':
         'the tasks_create handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
       'services/shapes/shape-schedule-service.ts':
@@ -179,7 +216,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'upsertFromFile(',
     allowed: {
       'routes/tasks.ts':
-        'the cockpit REST route, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504)',
+        'the cockpit REST route, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504); same agent bar as createTask',
       'services/tasks/task-file-watcher.ts':
         'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
       'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
@@ -193,7 +230,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'updateTask(',
     allowed: {
       'routes/tasks.ts':
-        'the cockpit REST route — refuses operator-only task fields unless the caller is a trusted caller (DOR-504)',
+        'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
       'services/runtimes/claude-code/mcp-tools/task-tools.ts':
         'the tasks_create and tasks_update handlers shared by both MCP servers — refuse operator-only fields unconditionally (DOR-504)',
       'services/tasks/task-store.ts': 'the definition itself',
@@ -219,24 +256,162 @@ async function productionSources(dir: string): Promise<string[]> {
 
 const SOURCES = await productionSources(SERVER_SRC);
 
+/**
+ * A file's CODE, with every comment and string removed, using TypeScript's own
+ * parser.
+ *
+ * ## Why this is not a pair of regexes, which is what it used to be
+ *
+ * Comments can contain string delimiters and strings can contain comment
+ * delimiters, so **no fixed order of independent regexes is correct** — each
+ * order is blind to the other's mirror case, and both cases are live in this
+ * repo:
+ *
+ * - Block-comments-first is fooled by a `/*` inside a LINE comment.
+ *   `index.ts:322` ends a `//` comment with the route path `/api/auth/` + `*`,
+ *   which opened a comment that ran to the next `*` + `/` **1,530 lines later**.
+ *   Everything in between — including this file's own `applyShape(` subject —
+ *   was invisible to the scan.
+ * - Line-comments-first is fooled by a `/*` inside a STRING. `app.ts:145` is
+ *   `app.all('/api/auth/*splat', …)`, and no `*` + `/` follows for the rest of
+ *   the file: the entire router mount table vanished, `sessionGate`,
+ *   `resolveAgentIdentity` and every `app.use('/api/…')` with it. An ungated
+ *   route calling a protected effect anywhere below that line read as GREEN.
+ * - And the "obvious" third order (strings, then line comments, then blocks) has
+ *   the mirror bug one level up: an APOSTROPHE in prose opens a fake string.
+ *   `services/workbench-serve/token.ts:7` says "the API's cookie/header", which
+ *   swallows everything up to the next quote. That pipeline loses most of the
+ *   content of 216 of 454 files.
+ *
+ * So the lexing is delegated to the real thing. `ts.createSourceFile` decides
+ * what is a string, what is a comment, and — the part no regex can do at all —
+ * whether a `/` opens a regular expression or is division. The literal ranges it
+ * reports are blanked out in place (newlines preserved, so offsets and line
+ * numbers still line up), and only THEN are comments removed.
+ *
+ * **Blanking literals first removes one hazard, not both.** It guarantees no
+ * comment delimiter survives inside a STRING, so the block-comment replace below
+ * cannot be opened by string content. It guarantees nothing about a delimiter
+ * inside a COMMENT — comments are still matched by regex, so the two comment
+ * forms must be removed in a way that cannot feed each other. That is why line
+ * comments are stripped to end-of-line rather than by dropping whole lines; the
+ * earlier whole-line version left a trailing comment's `/*` to open a fake block
+ * span. See the comment at the `replace` calls for the reproduction.
+ *
+ * ## What it still cannot see
+ *
+ * The token inside a template literal's TEXT (`` `applyShape(` ``) is left
+ * alone, so it would read as a call. That is a false POSITIVE — the safe
+ * direction, and it fails loudly rather than silently. Aliasing
+ * (`const f = applyShape; f()`) and dynamic dispatch remain out of reach, as the
+ * module TSDoc says.
+ *
+ * Note which direction the literal-blanking can err in, because it is easy to
+ * mis-tune: a call expression can never exist inside a string literal, so
+ * blanking string content is INCAPABLE of hiding a call. A file that blanks to
+ * almost nothing (`lib/git-safety.ts` is mostly a table of banned command
+ * strings) is this working, not failing. Do not tune toward a retention floor —
+ * that would mean deliberately leaving string content in, which is where the
+ * false positives come from. The one over-blanking class that COULD hide a call
+ * is a template substitution, and that is why only the literal chunks are blanked
+ * while recursion continues into `${…}`.
+ *
+ * @param text - The file's full source.
+ * @returns The same source with comments and string/regex literals blanked.
+ */
+function codeOnly(text: string): string {
+  const source = ts.createSourceFile(
+    'scan.ts',
+    text,
+    ts.ScriptTarget.Latest,
+    false,
+    ts.ScriptKind.TS
+  );
+  const chars = [...text];
+
+  /** Blank a range, keeping newlines so positions and line numbers survive. */
+  const blank = (start: number, end: number): void => {
+    for (let i = start; i < end && i < chars.length; i++) {
+      if (chars[i] !== '\n' && chars[i] !== '\r') chars[i] = ' ';
+    }
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isStringLiteralLike(node) ||
+      ts.isRegularExpressionLiteral(node) ||
+      node.kind === ts.SyntaxKind.TemplateHead ||
+      node.kind === ts.SyntaxKind.TemplateMiddle ||
+      node.kind === ts.SyntaxKind.TemplateTail
+    ) {
+      blank(node.getStart(source), node.end);
+      // A template's SUBSTITUTIONS are ordinary expressions and can contain real
+      // calls, so only the literal chunks above are blanked; recursion continues.
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+
+  // Comments last. Line comments are removed to END OF LINE — not by dropping
+  // whole lines — and that distinction is the whole of the residual this closes.
+  //
+  // The whole-line filter (`!line.trim().startsWith('//')`) misses a TRAILING
+  // comment, so its `/*` survived into the block replace below and opened a span
+  // that the next genuine doc block closed, swallowing the code between:
+  //
+  //   export const a = 1; // route glob /api/auth/*
+  //   export function b() { return applyShape('victim'); }   // ← not reported
+  //   /** an ordinary doc block, which closes the fake span */
+  //
+  // Reproduced, and pinned to trailing comments specifically: the same file
+  // without that comment reports the call, and the sibling cases (a trailing
+  // `*/`, a string containing `/*`) were already correct.
+  //
+  // `\/\/.*$` was UNSAFE under every previous pipeline, which is exactly why it
+  // was not used: a string could contain `//` (every `https://` URL does), so it
+  // would have eaten real code. Literals are blanked by the parser BEFORE this
+  // line now, so no `//` can survive inside one and the objection is gone. Do not
+  // "simplify" this back to a line filter.
+  return chars
+    .join('')
+    .replace(/\/\/.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/**
+ * Every source, read and lexed ONCE, as `[relative path, code-only text]`.
+ *
+ * Hoisted because the corpus is static and the parser is not free: one lexing
+ * pass over the 454 server sources costs ~970ms (the regex pipeline it replaced
+ * cost ~29ms). `callersOf` used to re-read and re-lex all of them per protected
+ * effect, so the twelve assertions below spent ~11.7s between them — against
+ * vitest's 5s DEFAULT per-test timeout. Under load that failed three assertions
+ * on time alone, which is a flaky CI job that says "ungated caller" when it means
+ * "slow". Lexing once is ~12x cheaper and makes the whole file ~1s.
+ *
+ * The timeout is deliberately NOT raised instead: the work was gratuitous, and a
+ * raised timeout would keep it while hiding the next regression in cost.
+ */
+const LEXED: readonly (readonly [string, string])[] = await Promise.all(
+  SOURCES.map(
+    async (file) =>
+      [path.relative(SERVER_SRC, file), codeOnly(await readFile(file, 'utf-8'))] as const
+  )
+);
+
 /** Files that call `call`, as paths relative to `apps/server/src`. */
-async function callersOf(call: string): Promise<string[]> {
+function callersOf(call: string): string[] {
   const hits: string[] = [];
-  for (const file of SOURCES) {
-    const text = await readFile(file, 'utf-8');
-    // Ignore the token where it only appears inside prose: a TSDoc or a `//`
-    // comment naming the function is documentation, not a call path.
-    const code = text
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('//'))
-      .join('\n');
-    // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
-    // call to `trustedCaller(` — a plain substring match reports the guard itself
-    // as a bypass. A leading `.` is deliberately allowed, because a receiver
-    // (`deps.uninstallFlow.uninstall(`) is still that call.
-    const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace('(', '\\(')}`);
-    if (pattern.test(code)) hits.push(path.relative(SERVER_SRC, file));
+  // The token is ignored where it only appears inside prose: a TSDoc or a `//`
+  // comment naming the function is documentation, not a call path. That removal
+  // already happened in `codeOnly`, when the corpus was lexed.
+  // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
+  // call to `trustedCaller(` — a plain substring match reports the guard itself
+  // as a bypass. A leading `.` is deliberately allowed, because a receiver
+  // (`deps.uninstallFlow.uninstall(`) is still that call.
+  const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace('(', '\\(')}`);
+  for (const [relative, code] of LEXED) {
+    if (pattern.test(code)) hits.push(relative);
   }
   return hits.sort();
 }
@@ -249,8 +424,8 @@ describe('no ungated path reaches a protected effect', () => {
   });
 
   for (const effect of PROTECTED_EFFECTS) {
-    it(`${effect.call} is called only by modules that gate it`, async () => {
-      const actual = await callersOf(effect.call);
+    it(`${effect.call} is called only by modules that gate it`, () => {
+      const actual = callersOf(effect.call);
       const allowed = Object.keys(effect.allowed).sort();
       const unexpected = actual.filter((f) => !allowed.includes(f));
       const missing = allowed.filter((f) => !actual.includes(f));

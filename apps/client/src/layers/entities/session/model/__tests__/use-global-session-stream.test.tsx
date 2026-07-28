@@ -4,6 +4,7 @@ import { renderHook, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
+import { sessionKeys } from '../../api/query-keys';
 
 // Stub the StreamManager so the hook's `connectList()` never opens a real fetch
 // in jsdom. The binding stays real (it only wires listeners), and we drive the
@@ -50,9 +51,9 @@ describe('reconcileSessionsCache', () => {
     const s = session();
     reconcileSessionsCache(queryClient, { s1: s }, {});
 
-    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toEqual([s]);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toEqual([s]);
     // A different cwd key is untouched.
-    expect(queryClient.getQueryData(['sessions', '/other'])).toBeUndefined();
+    expect(queryClient.getQueryData(sessionKeys.list('/other'))).toBeUndefined();
   });
 
   it('updates an existing session by id without duplicating it', () => {
@@ -61,7 +62,7 @@ describe('reconcileSessionsCache', () => {
     const updated = session({ title: 'Renamed' });
     reconcileSessionsCache(queryClient, { s1: updated }, { s1: s });
 
-    const list = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!;
+    const list = queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))!;
     expect(list).toHaveLength(1);
     expect(list[0].title).toBe('Renamed');
   });
@@ -71,17 +72,17 @@ describe('reconcileSessionsCache', () => {
     reconcileSessionsCache(queryClient, { s1: s }, {});
     reconcileSessionsCache(queryClient, {}, { s1: s });
 
-    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toEqual([]);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toEqual([]);
   });
 
   it('skips an entry whose object reference is unchanged (idempotent)', () => {
     const s = session();
     reconcileSessionsCache(queryClient, { s1: s }, {});
-    const before = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd']);
+    const before = queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'));
 
     // Same reference in next and prev → the loop short-circuits, no re-add.
     reconcileSessionsCache(queryClient, { s1: s }, { s1: s });
-    const after = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd']);
+    const after = queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'));
 
     expect(after).toBe(before); // cache array reference untouched
     expect(after).toHaveLength(1); // no duplicate
@@ -94,7 +95,7 @@ describe('reconcileSessionsCache', () => {
     reconcileSessionsCache(queryClient, { a: older }, {});
     reconcileSessionsCache(queryClient, { a: older, b: newer }, { a: older });
 
-    const list = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!;
+    const list = queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))!;
     expect(list.map((s) => s.id)).toEqual(['b', 'a']);
   });
 });
@@ -113,15 +114,15 @@ describe('reconcileRetiredSessions', () => {
     // placeholder is RE-IDed (not dropped): the session the operator is
     // actively driving must never vanish from the rail.
     const placeholder = session({ id: 'request-uuid', title: 'Session request-' });
-    queryClient.setQueryData(['sessions', '/test/cwd'], [placeholder, session()]);
-    queryClient.setQueryData(['sessions', null], [placeholder]);
+    queryClient.setQueryData(sessionKeys.list('/test/cwd'), [placeholder, session()]);
+    queryClient.setQueryData(sessionKeys.list(null), [placeholder]);
 
     reconcileRetiredSessions(queryClient, { 'request-uuid': 'canonical-id' }, {});
 
     expect(
-      queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!.map((s) => s.id)
+      queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))!.map((s) => s.id)
     ).toEqual(['canonical-id', 's1']);
-    expect(queryClient.getQueryData<Session[]>(['sessions', null])!.map((s) => s.id)).toEqual([
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list(null))!.map((s) => s.id)).toEqual([
       'canonical-id',
     ]);
   });
@@ -129,22 +130,22 @@ describe('reconcileRetiredSessions', () => {
   it('drops the retired placeholder when the canonical row already landed (duplicate)', () => {
     const placeholder = session({ id: 'request-uuid', title: 'Session request-' });
     const canonical = session({ id: 'canonical-id', title: 'Real title' });
-    queryClient.setQueryData(['sessions', '/test/cwd'], [canonical, placeholder]);
+    queryClient.setQueryData(sessionKeys.list('/test/cwd'), [canonical, placeholder]);
 
     reconcileRetiredSessions(queryClient, { 'request-uuid': 'canonical-id' }, {});
 
-    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toEqual([canonical]);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toEqual([canonical]);
   });
 
   it('only processes retirements NEW since the previous reconcile', () => {
     const known = { 'old-retired': 'canonical-old' };
-    queryClient.setQueryData(['sessions', '/test/cwd'], [session({ id: 'old-retired' })]);
+    queryClient.setQueryData(sessionKeys.list('/test/cwd'), [session({ id: 'old-retired' })]);
 
     // No new keys → untouched (an already-processed retirement is not re-swept,
     // so a cache rebuilt by a later refetch is left alone).
-    const before = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd']);
+    const before = queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'));
     reconcileRetiredSessions(queryClient, known, known);
-    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toBe(before);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toBe(before);
   });
 });
 
@@ -169,11 +170,11 @@ describe('useGlobalSessionStream', () => {
   it('reconciles sessions already present in the store at mount time', () => {
     useSessionListStore.getState().applyListEvent({ type: 'session_upserted', session: session() });
     // Cache is empty until the hook mounts and reconciles the existing store state.
-    expect(queryClient.getQueryData(['sessions', '/test/cwd'])).toBeUndefined();
+    expect(queryClient.getQueryData(sessionKeys.list('/test/cwd'))).toBeUndefined();
 
     renderHook(() => useGlobalSessionStream(), { wrapper });
 
-    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toEqual([session()]);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toEqual([session()]);
   });
 
   it('reflects live global-stream session_upserted / session_removed into the cache', () => {
@@ -185,13 +186,13 @@ describe('useGlobalSessionStream', () => {
         .getState()
         .applyListEvent({ type: 'session_upserted', session: session() });
     });
-    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toEqual([session()]);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toEqual([session()]);
 
     // Removing it on the stream drops it from the cache.
     act(() => {
       useSessionListStore.getState().applyListEvent({ type: 'session_removed', sessionId: 's1' });
     });
-    expect(queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])).toEqual([]);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))).toEqual([]);
   });
 
   it('surfaces an externally-created session (e.g. Claude Code CLI) live, without polling', () => {
@@ -204,7 +205,7 @@ describe('useGlobalSessionStream', () => {
         .applyListEvent({ type: 'session_upserted', session: external });
     });
 
-    const list = queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!;
+    const list = queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))!;
     expect(list.map((s) => s.id)).toContain('cli-1');
   });
 
@@ -216,10 +217,9 @@ describe('useGlobalSessionStream', () => {
     // announce resolves it in place (re-id, since the canonical row has not
     // landed yet) so the rail shows exactly one row for the session throughout.
     renderHook(() => useGlobalSessionStream(), { wrapper });
-    queryClient.setQueryData(
-      ['sessions', '/test/cwd'],
-      [session({ id: 'request-uuid', title: 'Session request-' })]
-    );
+    queryClient.setQueryData(sessionKeys.list('/test/cwd'), [
+      session({ id: 'request-uuid', title: 'Session request-' }),
+    ]);
 
     act(() => {
       useSessionListStore.getState().applyListEvent({
@@ -242,7 +242,7 @@ describe('useGlobalSessionStream', () => {
     });
 
     expect(
-      queryClient.getQueryData<Session[]>(['sessions', '/test/cwd'])!.map((s) => s.id)
+      queryClient.getQueryData<Session[]>(sessionKeys.list('/test/cwd'))!.map((s) => s.id)
     ).toEqual(['canonical-id']);
   });
 });

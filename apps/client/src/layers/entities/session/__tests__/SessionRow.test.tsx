@@ -5,8 +5,9 @@ import { SessionRow } from '../ui/SessionRow';
 import type { Session } from '@dorkos/shared/types';
 import { useSessionChatStore } from '../model/session-chat-store';
 import { useSessionListStore } from '../model/session-list-store';
+import { useSessionSettingsOverridesStore } from '../model/session-settings-overrides';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
 
 // Mock window.matchMedia for useIsMobile hook
@@ -77,6 +78,8 @@ describe('SessionRow variant="full"', () => {
     vi.setSystemTime(NOW);
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+    useSessionSettingsOverridesStore.setState({ bySession: {} });
+    useAppStore.setState({ selectedCwd: null });
   });
   afterEach(() => {
     cleanup();
@@ -217,18 +220,92 @@ describe('SessionRow variant="full"', () => {
     expect(screen.getByText('Updated')).toBeDefined();
   });
 
-  it('shows permission mode in details panel', () => {
+  // The details panel answers "will this agent ask me before it acts?", so it
+  // has to name the mode the session is actually in. It used to derive a
+  // boolean — "is this bypass?" — and print "Default" for everything else,
+  // which told the person that Plan Mode (proposes, never acts) and Don't Ask
+  // (acts without prompting) were the same setting (DOR-496).
+  it.each([
+    ['bypassPermissions', 'Bypass All'],
+    ['plan', 'Plan Mode'],
+    ['acceptEdits', 'Accept Edits'],
+    ['dontAsk', "Don't Ask"],
+    ['auto', 'Auto'],
+    ['default', 'Default'],
+  ] as const)('names %s as "%s" in the details panel', (mode, label) => {
     renderRow(
       <SessionRow
         variant="full"
-        session={makeSession({ permissionMode: 'bypassPermissions' })}
+        session={makeSession({ permissionMode: mode })}
         isActive={false}
         onClick={() => {}}
       />
     );
     fireEvent.click(screen.getByLabelText('Session details'));
     expect(screen.getByText('Permissions')).toBeDefined();
-    expect(screen.getByText('Skip (unsafe)')).toBeDefined();
+    expect(screen.getByText(label)).toBeDefined();
+  });
+
+  it("shows a runtime's own name for a mode DorkOS has no label for", () => {
+    // A made-up label would be a worse answer than the runtime's own spelling.
+    renderRow(
+      <SessionRow
+        variant="full"
+        session={makeSession({ permissionMode: 'scripted' as Session['permissionMode'] })}
+        isActive={false}
+        onClick={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByLabelText('Session details'));
+    expect(screen.getByText('scripted')).toBeDefined();
+  });
+
+  it('mounting a list of rows does not fetch a single session', async () => {
+    // Each row reports on a session someone else owns. Fetching the detail row
+    // per row would turn opening the sidebar into one request per session.
+    //
+    // The working directory is resolved first, on purpose: with it still null
+    // every session request is suppressed anyway (DOR-495), and this test would
+    // pass whether or not the rows opted out of fetching.
+    useAppStore.setState({ selectedCwd: '/projects/api' });
+    const transport = createMockTransport();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            {['a', 'b', 'c'].map((id) => (
+              <SessionRow
+                key={id}
+                variant="full"
+                session={makeSession({ id })}
+                isActive={false}
+                onClick={() => {}}
+              />
+            ))}
+          </TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    await vi.waitFor(() => expect(screen.getAllByTestId('session-row')).toHaveLength(3));
+    expect(transport.getSession).not.toHaveBeenCalled();
+  });
+
+  it('follows a permission change the person just made, ahead of the server', () => {
+    // The row renders from the session LIST, which only refreshes when the
+    // server says so. A change made in the status line is pending in the
+    // shared override store; the row has to honour it or the sidebar keeps
+    // claiming "Default" about a session that is now bypassing everything.
+    useSessionSettingsOverridesStore
+      .getState()
+      .apply('abc12345-def6-7890-abcd-ef1234567890', { permissionMode: 'bypassPermissions' });
+
+    const { container } = renderRow(
+      <SessionRow variant="full" session={makeSession()} isActive={false} onClick={() => {}} />
+    );
+    fireEvent.click(screen.getByLabelText('Session details'));
+    expect(screen.getByText('Bypass All')).toBeDefined();
+    expect(container.querySelector('.text-red-500')).not.toBeNull();
   });
 
   it('does not trigger onClick when details button is clicked', () => {
@@ -509,6 +586,8 @@ describe('Session border indicator', () => {
     vi.setSystemTime(NOW);
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+    useSessionSettingsOverridesStore.setState({ bySession: {} });
+    useAppStore.setState({ selectedCwd: null });
   });
   afterEach(() => {
     cleanup();
@@ -615,6 +694,8 @@ describe('SessionRow variant="compact"', () => {
     vi.setSystemTime(NOW);
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+    useSessionSettingsOverridesStore.setState({ bySession: {} });
+    useAppStore.setState({ selectedCwd: null });
   });
   afterEach(() => {
     cleanup();

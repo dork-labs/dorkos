@@ -12,6 +12,7 @@ import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { configManager } from '../core/config-manager.js';
+import { readOwnerAccount } from '../core/auth/index.js';
 import { AuthorRegistry } from './author-registry.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { RoomService } from './room-service.js';
@@ -96,6 +97,21 @@ const turnBudgetLimits: TurnBudgetLimits = {
   },
 };
 
+/**
+ * A room-turn bound in milliseconds, read live from config and degrading to the
+ * shipped default the same way {@link readMaxAgentDepth} does — a config
+ * manager that is not up yet must never stop a room answering.
+ *
+ * @param field - Which `rooms.*` minutes field to read.
+ */
+function readRoomMinutesMs(field: 'replyWaitMinutes' | 'lateReplyCeilingMinutes'): number {
+  try {
+    return configManager.get('rooms')[field] * 60_000;
+  } catch {
+    return USER_CONFIG_DEFAULTS.rooms[field] * 60_000;
+  }
+}
+
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
   try {
@@ -127,11 +143,21 @@ export function createRoomSubsystem(opts: {
     authors,
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),
-    turns: opts.turns ?? createSessionRoomTurnRunner(),
+    turns:
+      opts.turns ??
+      createSessionRoomTurnRunner({
+        waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
+        ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+      }),
     budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits }),
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,
+    // Read per check for the same reason, and for one more: an install becomes
+    // owned partway through its life (the enable-login flow), so a value
+    // captured at boot would leave the rooms domain believing forever that the
+    // unbound `'local'` author is still the operator.
+    isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
   });
   return { service, store, authors, broadcaster };
 }

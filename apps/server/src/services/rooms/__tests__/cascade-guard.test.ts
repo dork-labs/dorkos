@@ -10,7 +10,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { buildCascadeNotice, deriveCascade, evaluateCascade } from '../cascade-guard.js';
+import { deriveCascade, evaluateCascade } from '../cascade-guard.js';
+import { buildCascadeNotice } from '../room-notices.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import {
@@ -482,9 +483,15 @@ describe('triggering', () => {
     broken.service.post(room.id, { authorId: broken.human, text: 'hi' });
     await expect(broken.service.triggersIdle()).resolves.toBeUndefined();
 
-    // The failure belongs on the agent own session stream, not in the room log
-    // as a stack trace — so the room holds exactly the message that was sent.
-    expect(broken.service.listEntries(room.id, broken.human, { limit: 20 })).toHaveLength(1);
+    // The DETAIL belongs on the agent own session stream, not in the room log
+    // as a stack trace. The FACT belongs here: a turn that threw and said
+    // nothing used to be indistinguishable from an agent ignoring you
+    // (DOR-621), so the room holds the message and one plain-language notice.
+    const log = broken.service.listEntries(room.id, broken.human, { limit: 20 });
+    expect(log).toHaveLength(2);
+    expect(log[1].kind).toBe('notice');
+    expect(log[1].body.notice).toBe('turn_failed');
+    expect(log[1].body.text).not.toContain('runtime exploded');
     // And the next message still triggers: a thrown turn releases its claim.
     broken.service.post(room.id, { authorId: broken.human, text: 'still there?' });
     await broken.service.triggersIdle();

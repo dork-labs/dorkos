@@ -19,6 +19,13 @@ function createFakePort() {
     saveSessionSettings: vi.fn(async (id: string, s: SessionSettings) => {
       store.set(id, { ...store.get(id), ...s });
     }),
+    // Models the real store: the row MOVES, it is never copied.
+    rekeySessionSettings: vi.fn(async (fromId: string, toId: string) => {
+      const row = store.get(fromId);
+      if (!row) return;
+      store.set(toId, { ...store.get(toId), ...row });
+      store.delete(fromId);
+    }),
   };
 }
 
@@ -114,6 +121,31 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
       permissionMode: 'bypassPermissions',
       model: 'sonnet',
     });
+  });
+
+  it('rebindSdkSession moves the stored row AND the reverse index to the canonical id', async () => {
+    const port = createFakePort();
+    store.configureSettings(port, 'default');
+    store.ensureSession('request-id', { permissionMode: 'default' });
+    await store.updateSession('request-id', { permissionMode: 'bypassPermissions' });
+
+    await store.rebindSdkSession('request-id', 'canonical', 'request-id');
+
+    expect(port.store.get('canonical')).toEqual({ permissionMode: 'bypassPermissions' });
+    expect(port.store.has('request-id')).toBe(false);
+    // The canonical id now resolves to the same live session via the index.
+    expect(store.hasSession('canonical')).toBe(true);
+  });
+
+  it('rebindSdkSession is a no-op when the SDK keeps the id it was given', async () => {
+    const port = createFakePort();
+    store.configureSettings(port, 'default');
+    store.ensureSession('s1', { permissionMode: 'plan' });
+
+    await store.rebindSdkSession('s1', 's1', 's1');
+
+    expect(port.rekeySessionSettings).not.toHaveBeenCalled();
+    expect(store.hasSession('s1')).toBe(true);
   });
 
   it('functions without a settings port (port is optional)', async () => {

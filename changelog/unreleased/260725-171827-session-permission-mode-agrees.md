@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(sessions): report one permission mode on every session surface (DOR-463)'
+  - 'fix(sessions): make permissionMode agree across endpoints, and stop two supertest flakes (DOR-463, DOR-458, DOR-465) (#463)'
 ---
 
 ### Fixed

@@ -252,6 +252,29 @@ describe('/api/rooms', () => {
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('ROOM_NOT_FOUND');
     });
+
+    it('tells the caller which author the server resolved them as', async () => {
+      // Nothing else on the wire says. Without it a client can only guess by
+      // author kind, which stops being the reader the moment two people share
+      // a room (spec `invites` §4.5).
+      const room = await createChannel();
+      const res = await request(app).get(`/api/rooms/${room.id}`);
+      const me = res.body.viewerAuthorId;
+      expect(me).toEqual(expect.any(String));
+      expect(res.body.members.map((m: { authorId: string }) => m.authorId)).toContain(me);
+    });
+
+    it('answers an agent with the agent own author id, not the human one', async () => {
+      const room = await createChannel();
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+
+      const asHuman = await request(app).get(`/api/rooms/${room.id}`);
+      const asAgent = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
+
+      expect(asAgent.body.viewerAuthorId).not.toBe(asHuman.body.viewerAuthorId);
+    });
   });
 
   describe('POST /:id/entries', () => {

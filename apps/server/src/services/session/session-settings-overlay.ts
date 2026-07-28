@@ -27,6 +27,11 @@
  * session (DOR-463). `getInternalSessionId` is idempotent on a canonical id, so
  * resolving through it on every path converges all of them on one key.
  *
+ * ONE key, not a list of candidates. A row can never be stranded under a
+ * retired id, because the runtime moves it the moment it rebinds the session
+ * (`rekeySessionSettings`, DOR-493) — so no reader has to guess which id an
+ * operator's choice was written under, and no two readers can pick differently.
+ *
  * @module services/session/session-settings-overlay
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -83,24 +88,11 @@ export function applyStoredSettings(target: Session, stored: SessionSettings): v
   if (stored.fastMode !== undefined) target.fastMode = stored.fastMode;
 }
 
-/** The store key(s) to try for one session, in priority order. */
-function settingsKeysFor(
-  session: Session,
-  port: SessionSettingsOverlayPort,
-  requestedId?: string
-): string[] {
+/** The one store key for a session: its owning runtime's canonical id. */
+function settingsKeyFor(session: Session, port: SessionSettingsOverlayPort): string {
   const type = session.runtime;
   const runtime = type !== undefined && port.has(type) ? port.get(type) : undefined;
-  const canonical = resolveSettingsKey(session.id, runtime);
-  // Canonical first, then the session's own id, then the id the caller asked
-  // about. The last one only ever differs on a single-session read of a RETIRED
-  // id, and it is what keeps a row written BEFORE the alias existed reachable:
-  // an operator sets a mode on a session the runtime is not tracking yet, so
-  // `getInternalSessionId` returns undefined and `PATCH` writes under that id —
-  // only a later turn binds a different canonical id. Without this the row is
-  // stranded and the read silently shows the runtime-derived mode instead of
-  // the operator's choice.
-  return [...new Set([canonical, session.id, ...(requestedId ? [requestedId] : [])])];
+  return resolveSettingsKey(session.id, runtime);
 }
 
 /**
@@ -113,27 +105,13 @@ function settingsKeysFor(
  *
  * @param sessions - Runtime-derived sessions to overlay, mutated in place
  * @param port - Settings store + runtime lookup
- * @param requestedId - For a SINGLE-session read: the id the client asked
- *   about, which may be a retired alias of `sessions[0].id`. Tried last. Ignored
- *   for multi-session listings, where no such per-row id exists.
  */
-export function overlayStoredSettings(
-  sessions: Session[],
-  port: SessionSettingsOverlayPort,
-  requestedId?: string
-): void {
+export function overlayStoredSettings(sessions: Session[], port: SessionSettingsOverlayPort): void {
   if (sessions.length === 0) return;
-  const keys = sessions.map((session) =>
-    settingsKeysFor(session, port, sessions.length === 1 ? requestedId : undefined)
-  );
-  const stored = port.getSessionSettingsMany([...new Set(keys.flat())]);
+  const keys = sessions.map((session) => settingsKeyFor(session, port));
+  const stored = port.getSessionSettingsMany([...new Set(keys)]);
   sessions.forEach((session, i) => {
-    for (const key of keys[i]!) {
-      const settings = stored.get(key);
-      if (settings) {
-        applyStoredSettings(session, settings);
-        return;
-      }
-    }
+    const settings = stored.get(keys[i]!);
+    if (settings) applyStoredSettings(session, settings);
   });
 }

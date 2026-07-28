@@ -5,8 +5,9 @@
  * flow with a mocked `agentCreator` dependency. The four cases cover the
  * happy path (agent template installed under `<dorkHome>/agents/<name>`),
  * `agentDefaults.traits` propagation, project-local installs (via
- * `opts.projectPath`), and the failure path where `createAgentWorkspace`
- * throws — staging must be cleaned and the install root must not exist.
+ * `opts.projectPath`), the containment boundary a project-local install has to
+ * hold (DOR-522), and the failure path where `createAgentWorkspace` throws —
+ * staging must be cleaned and the install root must not exist.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
@@ -93,6 +94,17 @@ async function buildDeps(): Promise<{
   };
 }
 
+/** Run one project-scoped install through the flow. */
+async function flowInstall(
+  deps: Awaited<ReturnType<typeof buildDeps>>,
+  pkgPath: string,
+  manifest: AgentPackageManifest,
+  projectPath: string
+): Promise<void> {
+  const flow = new AgentInstallFlow(deps);
+  await flow.install(pkgPath, manifest, { name: manifest.name, projectPath });
+}
+
 describe('AgentInstallFlow', () => {
   const cleanupDirs: string[] = [];
 
@@ -167,7 +179,7 @@ describe('AgentInstallFlow', () => {
     });
   });
 
-  it('places project-local installs under opts.projectPath instead of dorkHome', async () => {
+  it('nests project-local installs under <projectPath>/.dork/agents/<name>', async () => {
     const deps = await buildDeps();
     cleanupDirs.push(deps.dorkHome);
     const projectPath = await mkdtemp(path.join(tmpdir(), 'install-agent-proj-'));
@@ -176,19 +188,83 @@ describe('AgentInstallFlow', () => {
     const pkgPath = await stagePackage(manifest);
     cleanupDirs.push(pkgPath);
 
-    // For project-local installs, opts.projectPath is used as the targetDir directly
-    // (the spec snippet uses projectPath as the full target, not as a parent).
-    const targetDir = path.join(projectPath, 'local-agent');
     const flow = new AgentInstallFlow(deps);
     const result = await flow.install(pkgPath, manifest, {
       name: manifest.name,
-      projectPath: targetDir,
+      projectPath,
     });
 
+    // The package gets its own directory, exactly as a plugin does. It used to
+    // get the project root itself (DOR-522).
+    const targetDir = path.join(projectPath, '.dork', 'agents', 'local-agent');
     expect(result.installPath).toBe(targetDir);
-    expect(await pathExists(targetDir)).toBe(true);
+    expect(await pathExists(path.join(targetDir, '.dork', 'manifest.json'))).toBe(true);
     // dorkHome must not have been touched for a project-local install.
     expect(await pathExists(path.join(deps.dorkHome, 'agents', 'local-agent'))).toBe(false);
+  });
+
+  it('leaves the project it installs into intact (DOR-522)', async () => {
+    // The sharper half of the same defect. `runTransaction` moves an existing
+    // target aside to a sibling backup, renames the staged package into its
+    // place, and deletes the backup on success. With the project root AS the
+    // target, installing an agent package renamed the person's whole project
+    // away, replaced it with the package, and then removed the original.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const projectPath = await mkdtemp(path.join(tmpdir(), 'install-agent-live-'));
+    cleanupDirs.push(projectPath);
+    await mkdir(path.join(projectPath, 'src'), { recursive: true });
+    await writeFile(path.join(projectPath, 'src', 'index.ts'), 'export const keep = true;\n');
+    await writeFile(path.join(projectPath, 'README.md'), '# my project\n');
+
+    const manifest = buildManifest({ name: 'tenant-agent' });
+    const pkgPath = await stagePackage(manifest);
+    cleanupDirs.push(pkgPath);
+
+    await flowInstall(deps, pkgPath, manifest, projectPath);
+
+    expect(await readFile(path.join(projectPath, 'src', 'index.ts'), 'utf-8')).toBe(
+      'export const keep = true;\n'
+    );
+    expect(await readFile(path.join(projectPath, 'README.md'), 'utf-8')).toBe('# my project\n');
+  });
+
+  it('cannot land an extension where DorkOS would discover it (DOR-522)', async () => {
+    // The destination is the boundary. An `agent` package can ship any layout it
+    // likes; what stops `.dork/extensions/<id>/server.ts` — code DorkOS loads
+    // into its own process once approved — from arriving at a path
+    // `ExtensionDiscovery` scans is that the package unpacks into a directory of
+    // its own, not into the project root.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const projectPath = await mkdtemp(path.join(tmpdir(), 'install-agent-evil-'));
+    cleanupDirs.push(projectPath);
+    const manifest = buildManifest({ name: 'trojan-agent' });
+    const pkgPath = await stagePackage(manifest);
+    cleanupDirs.push(pkgPath);
+
+    const smuggled = path.join(pkgPath, '.dork', 'extensions', 'evil');
+    await mkdir(smuggled, { recursive: true });
+    await writeFile(
+      path.join(smuggled, 'extension.json'),
+      JSON.stringify({ id: 'evil', name: 'Evil', version: '1.0.0', server: 'server.js' }),
+      'utf-8'
+    );
+    await writeFile(path.join(smuggled, 'server.ts'), 'export function initialize() {}\n', 'utf-8');
+
+    const flow = new AgentInstallFlow(deps);
+    await flow.install(pkgPath, manifest, { name: manifest.name, projectPath });
+
+    // The two directories `ExtensionDiscovery.discover()` scans: `<cwd>/.dork/
+    // extensions` and `<dorkHome>/extensions`. Neither may hold `evil`.
+    expect(await pathExists(path.join(projectPath, '.dork', 'extensions', 'evil'))).toBe(false);
+    expect(await pathExists(path.join(deps.dorkHome, 'extensions', 'evil'))).toBe(false);
+    // It is still installed, inside its own directory, where nothing scans it.
+    expect(
+      await pathExists(
+        path.join(projectPath, '.dork', 'agents', 'trojan-agent', '.dork', 'extensions', 'evil')
+      )
+    ).toBe(true);
   });
 
   it('rolls back staging and skips installRoot when createAgentWorkspace throws', async () => {

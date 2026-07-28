@@ -652,11 +652,38 @@ export const UserConfigSchema = z.object({
        * come from. `0` stops automatic replies entirely.
        */
       maxAutomaticTurnsTotalPerHour: z.number().int().min(0).max(100_000).default(240),
+      /**
+       * How long a room waits for an agent's answer before it carries on
+       * without it.
+       *
+       * The agent is NOT stopped. It keeps working, and its answer is posted
+       * when it lands, saying which message it answers and how late it is. This
+       * only decides how long the room holds its breath.
+       *
+       * Like every number in this area, this one is a judgement rather than a
+       * measurement — see `meta/agent-etiquette.md` §9. Tune it to how long your
+       * agents actually take.
+       */
+      replyWaitMinutes: z.number().int().min(1).max(120).default(10),
+      /**
+       * When a room gives up on a turn altogether and says the agent could not
+       * answer.
+       *
+       * Counted from the same moment as `replyWaitMinutes` and always longer
+       * than it: the wait is when the room stops waiting, this is when it stops
+       * listening. Reaching it means an agent that kept producing output and
+       * never finished, which is a fault worth reporting rather than waiting on
+       * forever. Also a judgement, not a measurement (`meta/agent-etiquette.md`
+       * §9).
+       */
+      lateReplyCeilingMinutes: z.number().int().min(1).max(1440).default(60),
     })
     .default(() => ({
       maxAgentDepth: 3,
       maxAutomaticTurnsPerRoomPerHour: 60,
       maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
     })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],
@@ -896,8 +923,21 @@ export const UserConfigSchema = z.object({
        * projection manually via `dorkos harness sync`.
        */
       autoSync: z.boolean().default(true),
+      /**
+       * The hook projections a person has allowed: installed packages that may
+       * write shell commands into the files a coding agent runs on their behalf
+       * (`.claude/settings.local.json`, `.codex/hooks.json`, and the rest).
+       *
+       * Each entry is `<packageName>@<digest>`, where the digest covers the
+       * project and the exact commands that were shown on the approval card
+       * (`services/harness/hook-approval.ts`). Binding the digest rather than the
+       * name alone is what makes an update that changes a package's commands ask
+       * again instead of riding an old yes. Empty by default: nothing writes a
+       * hook until somebody says so.
+       */
+      approvedHooks: z.array(z.string()).default(() => []),
     })
-    .default(() => ({ autoSync: true })),
+    .default(() => ({ autoSync: true, approvedHooks: [] })),
   workbench: z
     .object({
       /**

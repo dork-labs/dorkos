@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
+import { isSessionRequestReady } from '@/layers/shared/lib';
 import type { PermissionMode, Session } from '@dorkos/shared/types';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
@@ -32,7 +33,9 @@ export interface UseSessionDetailOptions<T> {
  * one session cost a single fetch and can never disagree.
  *
  * @param sessionId - The active session id, or null when none is selected.
- *   When null the query is disabled and no request is made.
+ *   When null the query is disabled and no request is made. The same holds
+ *   while the working directory is still resolving — see
+ *   {@link isSessionRequestReady}.
  * @param options - Fetch gate and field selector; see {@link UseSessionDetailOptions}.
  */
 export function useSessionDetail<T = Session>(
@@ -44,9 +47,9 @@ export function useSessionDetail<T = Session>(
 
   return useQuery({
     queryKey: sessionKeys.detail(sessionId, selectedCwd),
-    queryFn: () => transport.getSession(sessionId!, selectedCwd ?? undefined),
+    queryFn: () => transport.getSession(sessionId!, selectedCwd!),
     staleTime: 30_000,
-    enabled: !!sessionId && (options?.enabled ?? true),
+    enabled: isSessionRequestReady(sessionId, selectedCwd) && (options?.enabled ?? true),
     select: options?.select,
   });
 }
@@ -60,14 +63,23 @@ export function useSessionDetail<T = Session>(
  * Returns null when no session is selected, which is not the same as `'default'`:
  * nothing is running, so there is nothing to say about it.
  *
+ * Precedence, most trusted first: the change in flight, the detail row, then
+ * whatever the caller already knew.
+ *
  * @param sessionId - The active session id, or null when none is selected.
  * @param options.enabled - Whether this caller may fetch the row itself.
  *   Defaults to true; a passive reporting surface should pass false on pages
- *   that show nothing about the session.
+ *   that show nothing about the session, and a surface rendering a whole list
+ *   of sessions must pass false or it costs one request per row.
+ * @param options.fallback - The mode this caller already holds from somewhere
+ *   else, typically its row in the session list. Used when the detail cache has
+ *   nothing for this session — the normal case for any session the person is
+ *   not currently inside. Without it such a caller would be told `'default'`,
+ *   which is a specific claim about the session, not an absence of one.
  */
 export function useSessionPermissionMode(
   sessionId: string | null,
-  options?: { enabled?: boolean }
+  options?: { enabled?: boolean; fallback?: PermissionMode }
 ): PermissionMode | null {
   // Selected down to the mode itself: this feeds the app-wide banner slot, so an
   // observer tracking the whole row would re-render the shell every time an
@@ -79,5 +91,5 @@ export function useSessionPermissionMode(
   const overrides = useSessionSettingsOverride(sessionId ?? '');
 
   if (!sessionId) return null;
-  return resolvePermissionMode(overrides.permissionMode, confirmed);
+  return resolvePermissionMode(overrides.permissionMode, confirmed ?? options?.fallback);
 }

@@ -116,6 +116,8 @@ describe('what an OpenCode turn carries', () => {
     runtime.setSessionSettings({
       getSessionSettings: vi.fn(async () => null),
       saveSessionSettings: vi.fn(async () => undefined),
+      // OpenCode never aliases a session id, so it never re-keys (DOR-493).
+      rekeySessionSettings: vi.fn(async () => undefined),
     });
 
     const sessionId = '3f2b8c1e-9d4a-4b6f-8a1c-2e5d7f9b0a3c';

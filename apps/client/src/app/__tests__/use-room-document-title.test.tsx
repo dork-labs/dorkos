@@ -60,7 +60,7 @@ function summary(overrides: Partial<RoomSummary> = {}): RoomSummary {
 }
 
 function withRoster(overrides: Partial<RoomSummary> = {}): RoomWithRoster {
-  return { ...summary(overrides), members: [] };
+  return { ...summary(overrides), members: [], viewerAuthorId: 'author-you' };
 }
 
 function wrapperFor(transport: Transport) {

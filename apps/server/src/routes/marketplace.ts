@@ -60,6 +60,7 @@ import {
   type CapabilityRegistry,
   type TierEnforcementDecision,
 } from '../services/core/capabilities/index.js';
+import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import {
@@ -329,6 +330,19 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
    * The full reasoning, including why the `PATCH /api/config` cookie bar is not
    * copied here, lives in `services/marketplace/source-write-policy.ts`.
    *
+   * ## Why this reads the resolver directly instead of asking for a marker
+   *
+   * It used to call `trustedCaller` and throw the marker away, using it as a
+   * boolean. That stopped being the same question when DOR-474 put a cookie
+   * requirement inside `trustedCaller`: a marker now means "may act without an
+   * approval", and under login only a session cookie earns one. This route wants
+   * the OTHER thing — the agent bar, which refuses anything naming itself an agent
+   * or holding an approval token, and accepts the person's API key from their own
+   * terminal. `dorkos marketplace add|remove` has no cookie to present and no
+   * approval card to fall back to, so demanding one here is a lockout rather than
+   * a hardening (DOR-502). Reading `resolveDecisionAuthority` says exactly that,
+   * and cannot silently inherit a tightening aimed at a different question.
+   *
    * @param req - The incoming request.
    * @param res - The response, for `sessionGate`'s resolved user.
    * @param action - Which write was attempted, for the refusal wording.
@@ -340,7 +354,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     res: Response,
     action: MarketplaceSourceAction
   ): Response | undefined => {
-    if (trustedCaller(readCallerAuthority(req, res))) return undefined;
+    if (resolveDecisionAuthority(readCallerAuthority(req, res)).allowed) return undefined;
     return res.status(403).json({
       error: marketplaceSourceRefusalError(action),
       code: OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,

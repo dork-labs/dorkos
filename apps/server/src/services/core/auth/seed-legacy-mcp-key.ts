@@ -34,25 +34,14 @@
  *
  * @module services/core/auth/seed-legacy-mcp-key
  */
-import { user, apikey, eq, type Db } from '@dorkos/db';
+import { apikey, eq, type Db } from '@dorkos/db';
 import { defaultKeyHasher } from '@better-auth/api-key';
 import { configManager } from '../config-manager.js';
 import { logger, logError } from '../../../lib/logger.js';
+import { findOwnerAccount } from './accounts.js';
 
 /** The name attached to the seeded key so it is recognizable in the API-key list UI. */
 const SEEDED_KEY_NAME = 'Legacy MCP key';
-
-/**
- * Resolve the owner user id: the sole/first account, preferring `role === 'owner'`.
- * Returns `null` when no user exists yet (the legacy compat window keeps the key
- * working until an owner is created).
- */
-function findOwnerId(db: Db): string | null {
-  const owner =
-    db.select({ id: user.id }).from(user).where(eq(user.role, 'owner')).limit(1).get() ??
-    db.select({ id: user.id }).from(user).limit(1).get();
-  return owner?.id ?? null;
-}
 
 /**
  * Seed a lingering `config.mcp.apiKey` as an owner-owned Better Auth API key, then
@@ -69,10 +58,10 @@ export async function seedLegacyMcpApiKey(db: Db): Promise<void> {
     // Primary idempotency guard: once seeded (and cleared) there is nothing to do.
     if (!legacyKey) return;
 
-    const ownerId = findOwnerId(db);
+    const owner = findOwnerAccount(db);
     // Without an owner there is no user to own the key. Leave the legacy value in
     // place; the mcp-auth compat window keeps it working until an owner exists.
-    if (!ownerId) return;
+    if (!owner) return;
 
     const hashed = await defaultKeyHasher(legacyKey);
 
@@ -84,7 +73,7 @@ export async function seedLegacyMcpApiKey(db: Db): Promise<void> {
       db.insert(apikey)
         .values({
           id: crypto.randomUUID(),
-          referenceId: ownerId,
+          referenceId: owner.id,
           name: SEEDED_KEY_NAME,
           key: hashed,
           prefix: null,

@@ -172,6 +172,8 @@ export const CONFIG_DISCLOSURE = {
   'rooms.maxAgentDepth': 'expose',
   'rooms.maxAutomaticTurnsPerRoomPerHour': 'expose',
   'rooms.maxAutomaticTurnsTotalPerHour': 'expose',
+  'rooms.replyWaitMinutes': 'expose',
+  'rooms.lateReplyCeilingMinutes': 'expose',
 
   'onboarding.completedSteps': 'expose',
   'onboarding.skippedSteps': 'expose',
@@ -226,6 +228,10 @@ export const CONFIG_DISCLOSURE = {
   'workspace.retentionCap': 'expose',
 
   'harness.autoSync': 'expose',
+  // Which packages a person let write shell commands into a coding agent's hook
+  // files. Names packages and digests, no secrets, and an agent that can read it
+  // can already read the hook files themselves.
+  'harness.approvedHooks': 'expose',
 
   // An open record (see EXPOSED_RECORD_PATHS): file extension -> viewer id.
   'workbench.defaultViewers': 'expose',
