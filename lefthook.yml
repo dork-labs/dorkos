@@ -46,7 +46,7 @@ pre-push:
       # A push that touches only docs, specs or a workflow runs nothing at
       # all, in about a second.
       #
-      # TWO THINGS THIS GATE NO LONGER CATCHES, both covered by the
+      # THREE THINGS THIS GATE NO LONGER CATCHES, all covered by the
       # full-monorepo `test` workflow (.github/workflows/test.yml) — the split
       # is the point: local gate fast and survivable, CI gate complete.
       #   * A break that only exists once two independently-affected PRs
@@ -55,6 +55,14 @@ pre-push:
       #     base branch, so on main it resolves to zero packages and runs
       #     nothing. `test` runs on push to main, so the commit is still
       #     checked — just after it lands rather than before.
+      #   * A commit that touches only repo-root files: AGENTS.md, README.md,
+      #     this file, the root package.json, even pnpm-lock.yaml on a
+      #     dependency bump. `--affected` maps changed files onto packages and
+      #     root files belong to none, so the run resolves to the `//` package
+      #     and executes zero suites ("Tasks: 0 successful, 0 total", ~150ms).
+      #     turbo.json is the one exception, being a global input: changing it
+      #     marks every package affected and runs all 18. `test` has no path
+      #     filter and runs on every PR, so the rest are still caught there.
       #
       # CACHE-KEY CONSTRAINT — do not re-fork the turbo invocation below.
       # Turbo hashes the passthrough args (everything after `--`) into the

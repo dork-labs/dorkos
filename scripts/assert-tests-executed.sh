@@ -68,10 +68,17 @@ Run the suite with --summarize so there is something to check:
   pnpm exec turbo test --summarize --continue -- --run"
 fi
 
-# Count the workspace packages that declare a `test` script. This mirrors
-# pnpm-workspace.yaml's globs (apps/*, packages/*) and is derived rather than
-# hard-coded so adding or removing a package keeps the assertion honest without
-# anyone remembering to update a number here.
+# Count the workspace packages that declare a `test` script. The COUNT is
+# derived from the tree, so adding or removing a package keeps the assertion
+# honest without anyone remembering to update a number here.
+#
+# The apps/* and packages/* globs below are hard-coded, not read from
+# pnpm-workspace.yaml: this script runs on bash and jq alone, which is what lets
+# the CI `fixtures` job skip a pnpm install, and neither reads YAML. Those are
+# the workspace's only two globs today. A third one added later would not make
+# this lie: its packages would go uncounted, `expected` would fall below the
+# number of `test` tasks turbo really ran, and the equality check at the bottom
+# would fail loudly rather than certify a shrunken run.
 expected=0
 while IFS= read -r manifest; do
   if [ "$(jq -r 'if .scripts.test == null then "no" else "yes" end' "$manifest" 2>/dev/null)" = 'yes' ]; then

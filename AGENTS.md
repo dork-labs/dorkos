@@ -143,9 +143,9 @@ Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: R
 
 ## CI
 
-**Two gates, split by what each is good at.** The lefthook `pre-push` hook runs **affected-only** tests (`turbo test --affected`) — fast, survivable on a machine already busy with other agents, and it skips packages your push never touched. GitHub Actions runs the **full monorepo** on every PR and every push to main: `typecheck` and `test`. Because turbo caches `test` and replays a full cache hit in ~280ms while printing "18 successful", the `test` job asserts it actually executed (`scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`) — never weaken that step without reading its header.
+**Two gates, split by what each is good at.** The lefthook `pre-push` hook runs **affected-only** tests (`turbo test --affected`) — fast, survivable on a machine already busy with other agents, and it skips packages your push never touched. GitHub Actions runs the **full monorepo** on every PR and every push to main: `typecheck` and `test`. Because turbo caches `test` and replays a full cache hit in ~280ms while printing "29 successful", the `test` job asserts it actually executed (`scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`) — never weaken that step without reading its header.
 
-Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and on push to main CLI smoke tests (Node 22/24) + integration tests. Locally: `pnpm smoke:docker` / `pnpm smoke:integration`.
+Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and CLI smoke tests (Node 22/24) + integration tests, which run on push to main and on PRs that touch what they package. Locally: `pnpm smoke:docker` / `pnpm smoke:integration`.
 
 ## Research
 

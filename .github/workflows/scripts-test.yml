@@ -74,9 +74,18 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
+# Cancel superseded runs on the same ref for PRs only. For push events, group by
+# SHA instead of ref: GitHub only lets one run per group be *pending* at a time,
+# so several quick merges to main sharing a `scripts-test-refs/heads/main` group
+# would cancel each other's queued runs and only the final push would actually be
+# checked. Per-SHA groups give every push-to-main its own slot.
+#
+# Deliberately IDENTICAL in form to typecheck.yml (fixed by #543, DOR-517) and
+# test.yml. Three CI workflows with different concurrency semantics is the kind
+# of divergence nobody notices until a run goes missing; keep them in step.
 concurrency:
-  group: scripts-test-${{ github.ref }}
-  cancel-in-progress: true
+  group: scripts-test-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

@@ -112,7 +112,8 @@ jobs:
         run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
-      # "Tasks: 18 successful", exits 0, and takes ~280ms without starting a
+      # "Tasks: 29 successful, 29 total" (18 test tasks plus the 11 builds they
+      # depend on), exits 0, and takes ~280ms without starting a
       # single test process. A job that reports green off that is worse than no
       # job, because it manufactures a signal. So the run has to PROVE it
       # executed: this reads the summary above and fails if any package's test
