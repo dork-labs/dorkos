@@ -8,9 +8,11 @@
  * @module features/marketplace/lib/format-permissions
  */
 import {
+  describeHookEvent,
   describeSchedulePermissionMode,
   type PermissionPreview,
 } from '@dorkos/shared/marketplace-schemas';
+import cronstrue from 'cronstrue';
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -111,7 +113,7 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
   const rows: FormattedPermission[] = preview.hooks.map((hook) => ({
     icon: 'terminal',
     label: hook.command,
-    description: hook.matcher ? `Runs on ${hook.event} (${hook.matcher})` : `Runs on ${hook.event}`,
+    description: `Runs ${describeHookEvent(hook.event, hook.matcher)}`,
     mono: true,
   }));
 
@@ -130,19 +132,36 @@ function formatCommands(preview: PermissionPreview): FormattedPermission[] {
 }
 
 /**
+ * Translate a cron expression into plain words via `cronstrue`, the same
+ * library (and the same fallback stance) the task builder already uses.
+ *
+ * An expression `cronstrue` cannot parse falls back to the raw text rather
+ * than to silence: the preview would otherwise claim less than it knows.
+ */
+function describeCron(cron: string): string {
+  try {
+    return cronstrue.toString(cron);
+  } catch {
+    return `On the schedule ${cron}`;
+  }
+}
+
+/**
  * Format the `schedules` field into the `schedules` group.
  *
  * Names the permission mode in plain words rather than echoing the raw id: a
  * person deciding whether to trust a package learns nothing from
  * "bypassPermissions" and everything from "can run any command without asking
- * you". A job that runs unattended without asking is flagged at warning
- * severity.
+ * you". The cron expression gets the same treatment for the same reason —
+ * translating one and not the other in a single sentence was the inconsistency
+ * this dialog exists to avoid. A job that runs unattended without asking is
+ * flagged at warning severity.
  *
  * @param preview - Full permission preview from the server.
  */
 function formatSchedules(preview: PermissionPreview): FormattedPermission[] {
   return preview.schedules.map((schedule) => {
-    const when = schedule.cron ? `Runs on ${schedule.cron}` : 'Runs only when you ask';
+    const when = schedule.cron ? describeCron(schedule.cron) : 'Runs only when you ask';
     const state = schedule.startsEnabled ? 'starts switched on' : 'starts switched off';
     const unattended =
       schedule.permissionMode === 'bypassPermissions' ||

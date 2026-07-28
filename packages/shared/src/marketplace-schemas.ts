@@ -20,6 +20,7 @@
  *
  * @module shared/marketplace-schemas
  */
+import type { PermissionMode } from './schemas.js';
 
 // ---------------------------------------------------------------------------
 // Package type
@@ -165,17 +166,14 @@ export interface MarketplaceManifestSummary {
 /**
  * How much a scheduled job may do on its own once it fires.
  *
- * Mirrors `SHAPE_SCHEDULE_PERMISSION_MODES` in `@dorkos/marketplace` —
- * redeclared here for the same reason {@link MarketplacePackageType} is, so the
- * client transport layer needs no dependency on that package.
+ * Aliased to this package's own {@link PermissionMode} rather than redeclared:
+ * `PermissionModeSchema` lives one file over in `schemas.ts`, and
+ * `@dorkos/marketplace` already pins its `SHAPE_SCHEDULE_PERMISSION_MODES`
+ * against it with a drift test. A fourth hand-written copy of the same six
+ * strings could only ever go stale. The import is type-only, so it erases at
+ * compile time and this file stays browser-safe.
  */
-export type SchedulePermissionMode =
-  | 'default'
-  | 'plan'
-  | 'acceptEdits'
-  | 'dontAsk'
-  | 'bypassPermissions'
-  | 'auto';
+export type SchedulePermissionMode = PermissionMode;
 
 /**
  * Plain-language summary of what a scheduled job may do on its own, keyed by
@@ -210,6 +208,44 @@ export function describeSchedulePermissionMode(mode: string): string {
     SCHEDULE_PERMISSION_MODE_SUMMARY[mode as SchedulePermissionMode] ??
     `runs in "${mode}" mode, which this version of DorkOS does not recognise`
   );
+}
+
+/**
+ * Plain-language phrasing for the harness hook events, keyed by Claude's event
+ * name.
+ *
+ * Each entry completes the sentence "Runs ...". `PreToolUse` tells a
+ * non-developer nothing; "before the agent uses a tool" tells them when the
+ * command fires. Use {@link describeHookEvent}, never this map directly — the
+ * event is an open string and a package may declare one that is not listed
+ * here.
+ */
+export const HOOK_EVENT_SUMMARY: Record<string, string> = {
+  SessionStart: 'when a session starts',
+  SessionEnd: 'when a session ends',
+  UserPromptSubmit: 'when you send a message',
+  PreToolUse: 'before the agent uses a tool',
+  PostToolUse: 'after the agent uses a tool',
+  PermissionRequest: 'when the agent asks for permission',
+  Notification: 'when the agent sends a notification',
+  SubagentStart: 'when a subagent starts',
+  SubagentStop: 'when a subagent finishes',
+  Stop: 'when the agent finishes',
+  PreCompact: 'before the conversation is shortened',
+  PostCompact: 'after the conversation is shortened',
+};
+
+/**
+ * Describe when a hook fires, in plain words.
+ *
+ * @param event - The harness event name the package declared.
+ * @param matcher - Optional tool/event matcher the hook narrows to.
+ * @returns A phrase completing "Runs ...". An event with no known phrasing
+ *   falls back to naming it verbatim, which is still true.
+ */
+export function describeHookEvent(event: string, matcher?: string): string {
+  const when = HOOK_EVENT_SUMMARY[event] ?? `on ${event}`;
+  return matcher ? `${when} (${matcher})` : when;
 }
 
 /**

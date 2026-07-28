@@ -216,14 +216,29 @@ function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSch
  * `{ event, matcher?, command }` rows, plus the declarations that could not be
  * read.
  *
- * Parsing mirrors `readPluginHooks` in `packages/harness/src/sources/installed.ts`
- * — the function that actually feeds these hooks into
- * `.claude/settings.local.json` — including its tolerance for both the
+ * Parsing mirrors `readPluginHooks` in `packages/harness/src/sources/installed.ts`,
+ * the reader that feeds Harness Sync, including its tolerance for both the
  * settings-style `{ hooks: {…} }` wrapper and a bare `{ Event: […] }` object.
  * It is reimplemented rather than imported because the harness copy is module
- * private, and because the two want opposite things from a parse failure: the
- * projector drops what it cannot use, while the preview has to say so out loud.
- * Every discarded declaration therefore comes back in `unreadable`.
+ * private, and because the two want different things from a bad declaration:
+ * the projector only needs what it can use, while the preview has to say out
+ * loud what it could not read. Every discarded declaration therefore comes back
+ * in `unreadable`.
+ *
+ * Two scoping facts this function deliberately does NOT encode, because the
+ * preview's job is to disclose what the package declares, not to predict every
+ * downstream filter:
+ *
+ * - Those hooks only reach `.claude/settings.local.json` for a PROJECT-scoped
+ *   install of a `plugin` or `skill-pack` (`installed.ts` records global
+ *   installs as identity-only; `projector.ts` filters to
+ *   `PROJECTABLE_PLUGIN_TYPES`). An agent or Shape ships its `hooks/hooks.json`
+ *   to disk and nothing ever reads it. The UI therefore says the package
+ *   "declares" these commands rather than that it "will run" them.
+ * - `readPluginHooks` validates only that an event's value is an array; the
+ *   group interior is unchecked, and malformed groups make the PROJECTOR throw
+ *   rather than skip (tracked separately). This reader validates the interior
+ *   too, which is why it can report a partially-bad file instead of dying on it.
  */
 async function readPackageHooks(
   packagePath: string

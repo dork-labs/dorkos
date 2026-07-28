@@ -146,11 +146,18 @@ interface PermissionPreviewSectionProps {
 
 /**
  * Renders a full, human-readable breakdown of everything a package will do on
- * install — file effects, shell commands it registers, scheduled jobs it
+ * install: file effects, shell commands it declares, scheduled jobs it
  * creates, secrets required, external hosts, dependencies, and conflicts.
  *
+ * The commands heading says "declares", not "will run". A package's
+ * `hooks/hooks.json` only reaches a settings file when the package is
+ * project-scoped AND of type plugin or skill-pack, and the cockpit's default
+ * install scope is global — so "will run" would over-claim in the common case.
+ * The declaration is real either way (the file lands on disk, and a later
+ * project-scoped install would run it), so the honest verb is the weaker one.
+ *
  * Sections with no items render nothing (no orphaned headings), so a package
- * that runs no commands and schedules no jobs shows no empty promise of
+ * that declares no commands and schedules no jobs shows no empty promise of
  * either. The commands and conflicts sections start expanded and use
  * amber/warning tone where relevant, because they are what a person needs to
  * see before trusting a stranger's package.
@@ -165,7 +172,11 @@ export function PermissionPreviewSection({ preview }: PermissionPreviewSectionPr
   return (
     <div className="space-y-6">
       <PermissionSection title="What this package will do" items={groups.effects} />
-      <PermissionSection title="Commands it will run" items={groups.commands} defaultOpen />
+      <PermissionSection
+        title="Commands this package declares"
+        items={groups.commands}
+        defaultOpen
+      />
       <PermissionSection title="Jobs it will schedule" items={groups.schedules} defaultOpen />
       <PermissionSection title="Secrets required" items={groups.secrets} />
       <PermissionSection title="External hosts" items={groups.hosts} />

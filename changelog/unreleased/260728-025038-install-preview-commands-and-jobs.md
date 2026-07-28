@@ -5,7 +5,7 @@ covers:
 
 ### Added
 
-- See the exact commands a package will run on your machine before you install it. The install preview now lists each one, word for word, next to the moment it fires (DOR-635)
+- See the exact commands a package sets up before you install it. The install preview now lists each one, word for word, next to a plain description of when it would run (DOR-635)
 - See the jobs a package will schedule, when they run, whether they start switched on, and how much each one may do without asking you. Shapes used to create timed jobs that no preview mentioned at all (DOR-635)
 
 ### Changed

@@ -372,6 +372,22 @@ describe('PermissionPreviewBuilder', () => {
       expect(preview.unreadableHooks).toEqual([{ path: 'hooks/hooks.json', event: 'Stop' }]);
     });
 
+    it('treats an event declared with an empty group list as declaring nothing', async () => {
+      const manifest = pluginManifest('empty-event-list');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        hooksJson: JSON.stringify({ hooks: { Stop: [] } }),
+      });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      // Deliberate, and the one input where a declared key is dropped on the
+      // floor. `[]` is not unreadable — it parsed fine and says "no groups" —
+      // and the harness projects nothing from it either, so no command can run.
+      // Reporting it as unreadable would cry wolf on a well-formed file.
+      expect(preview.hooks).toEqual([]);
+      expect(preview.unreadableHooks).toEqual([]);
+    });
+
     it('leaves both hook fields empty for a package that ships no hooks', async () => {
       const manifest = pluginManifest('no-hooks');
       const pkgPath = await createFixturePackage(pkgRoot, manifest);
@@ -738,13 +754,19 @@ describe('PermissionPreviewBuilder', () => {
     /**
      * Run BOTH sides for real against one throwaway project dir: a live
      * `AgentInstallFlow.install`, then a `builder.build` for the same package
-     * and scope. Returns the `manifest.json` destination each side chose.
+     * and scope. Returns the `manifest.json` destination each side chose, plus
+     * the inputs needed to state each expected value concretely.
      *
      * Deliberately drives the public flow rather than the module-private
      * `computeTargetDir` / `computeInstallRoot`, so DOR-522 can reshape either
      * internal without touching this test.
      */
-    async function bothDestinations(): Promise<{ installed: string; previewed?: string }> {
+    async function bothDestinations(): Promise<{
+      projectPath: string;
+      name: string;
+      installed: string;
+      previewed?: string;
+    }> {
       const projectPath = await mkdtemp(join(tmpdir(), 'permission-preview-project-'));
       try {
         const manifest = agentManifest('shared-root-agent');
@@ -765,6 +787,8 @@ describe('PermissionPreviewBuilder', () => {
         const preview = await builder.build(pkgPath, manifest, { projectPath });
 
         return {
+          projectPath,
+          name: manifest.name,
           installed: join(result.installPath, 'manifest.json'),
           previewed: preview.fileChanges.find((f) => f.path.endsWith('manifest.json'))?.path,
         };
@@ -774,41 +798,40 @@ describe('PermissionPreviewBuilder', () => {
     }
 
     /**
-     * Guards the `it.fails` below. An inverted test passes on ANY throw, so a
-     * crash in the shared setup would masquerade as the bug still being open.
-     * This one is a plain `it`: if the install flow or the preview stops
-     * producing a destination at all, THIS goes red and says so.
-     */
-    it('gets a real destination out of both the installer and the preview', async () => {
-      const { installed, previewed } = await bothDestinations();
-
-      expect(installed).toMatch(/manifest\.json$/);
-      expect(previewed).toBeDefined();
-    });
-
-    /**
      * A preview that names paths the installer never touches is a lie, and this
-     * is the one package type where the two sides disagree: the preview resolves
-     * a project-scoped agent to `<projectPath>/.dork/agents/<name>`, while
-     * `AgentInstallFlow` writes straight into `<projectPath>`.
+     * is the one package type where the two sides disagree: the preview
+     * resolves a project-scoped agent to `<projectPath>/.dork/agents/<name>`,
+     * while `AgentInstallFlow` writes straight into `<projectPath>`.
      *
-     * `it.fails` because the disagreement is REAL TODAY and this is what pins
-     * it: both sides run for real and the assertion genuinely does not hold.
-     * Inverting it keeps `main` green while the bug is open, without weakening
-     * the check into a snapshot of the wrong path.
+     * Both sides are pinned to a CONCRETE expected path, not merely to each
+     * other. Asserting only that they differ (or only that they match) would
+     * certify *that* they disagree and never *how*: the preview could drift to
+     * some third directory and the test would stay green, and then DOR-522's
+     * author would "fix" the installer into agreement with nothing. These two
+     * lines are also the only concrete assertion anywhere in the suite for the
+     * project-scoped install root — the sibling `agent package destination` and
+     * Shape tests only ever exercise the global path.
      *
-     * **DOR-522 owns the fix** — it nests `install-agent.ts`'s target under
+     * A plain `it`, not `it.fails`: an inverted test passes on ANY throw, so a
+     * crash in the shared setup would read as the bug still being open. Here a
+     * throw is red, which is what it should be.
+     *
+     * **DOR-522 owns the fix.** It nests `install-agent.ts`'s target under
      * `.dork/agents/<name>`, which is exactly what the preview already
-     * promises. The moment that lands, the two paths agree, this assertion
-     * starts passing, and `it.fails` reports a failure. That is deliberate: it
-     * is self-clearing and loud, so nobody has to carry a merge-order note in
-     * their head. **Whoever lands DOR-522 must change `it.fails` back to a
-     * plain `it` in the same PR.**
+     * promises. That lands on the `installed` line below and nowhere else:
+     * whoever makes the change updates that one expectation to
+     * `join(projectPath, '.dork', 'agents', name, 'manifest.json')`, at which
+     * point the two sides are pinned to the same value and the bug is closed.
+     * Until then this test fails loudly the moment either side moves.
      */
-    it.fails('agrees with AgentInstallFlow for a project-scoped agent install', async () => {
-      const { installed, previewed } = await bothDestinations();
+    it('pins the project-scoped agent install root on both sides', async () => {
+      const { projectPath, name, installed, previewed } = await bothDestinations();
 
-      expect(previewed).toBe(installed);
+      // What the preview promises the user.
+      expect(previewed).toBe(join(projectPath, '.dork', 'agents', name, 'manifest.json'));
+
+      // What the installer actually does today. DOR-522 changes THIS line.
+      expect(installed).toBe(join(projectPath, 'manifest.json'));
     });
   });
 });

