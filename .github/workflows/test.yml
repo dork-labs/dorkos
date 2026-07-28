@@ -49,19 +49,23 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
-# On a PR, coalesce by ref: a new push supersedes the run for the commit it
-# replaced, which is what you want while iterating.
+# Cancel superseded runs on the same ref for PRs only. For push events, group
+# by SHA instead of ref: GitHub only lets one run per group be *pending* at a
+# time, so several quick merges to main sharing a `test-refs/heads/main` group
+# would cancel each other's queued runs and only the final push would actually
+# get tested. Per-SHA groups give every push-to-main its own slot.
 #
-# On a push to main, group by COMMIT instead. GitHub keeps only one PENDING run
-# per concurrency group and cancels any earlier pending one, so a shared
-# main-wide group silently drops the middle run whenever two PRs merge in quick
-# succession — and this job is slow enough (minutes, not seconds) that a queue
-# is the normal case, not a rare one. Losing that run means a commit reaches
-# main with the tests never executed against it, which is the exact hole this
-# workflow was added to close. A per-commit group never contends, so every main
-# commit keeps its own run.
+# This job is slow (14 minutes on a runner), so a queue is the normal case here
+# rather than a rare one, and a dropped run means a commit reaches main with
+# the tests never executed against it — the exact hole this workflow closes.
+#
+# Deliberately IDENTICAL in form to typecheck.yml's group as fixed by #543
+# (DOR-517), which found the same defect from the other end and cited four real
+# merges on 2026-07-26 where two commits' runs were cancelled before they ever
+# started. Two CI workflows with different concurrency semantics is the kind of
+# divergence nobody notices until a run goes missing — keep these in step.
 concurrency:
-  group: test-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: test-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
