@@ -71,14 +71,11 @@ export interface RoomContextDeps {
 export interface RoomContextInput {
   /**
    * The room the turn was triggered in, and the room every read below is scoped
-   * to: its roster, its log, its read cursor. For a thread that is the THREAD,
-   * which today is a room of its own holding its own entries.
-   *
-   * It is NOT resolved to a channel. Only the FRAME is — the name and topic the
-   * agent is told it is talking in (`resolveFrame`). Reading the parent's log
-   * for a thread turn hands the agent the channel's backlog and hides every
-   * message in the thread it was actually asked about; `room-context.test.ts`
-   * pins both halves.
+   * to: its roster, its log, its read cursor. For a thread turn that is the
+   * CHANNEL, because a thread is a set of entries inside it rather than a room
+   * of its own (ADR 260728-022013) — so an agent answering in a thread reads the
+   * channel's history and answers on the channel's session, which is the
+   * continuity the child-room shape threw away.
    */
   room: Room;
   /** The agent whose turn this is. */
@@ -101,13 +98,11 @@ export interface RoomContextInput {
  * @returns The structured entry an adapter renders into `<room_context>`.
  */
 export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput): RoomContextData {
-  // Two different rooms, and conflating them is the mistake to avoid. The turn
-  // HAPPENED in `input.room` — that is whose log, roster and read cursor apply,
-  // and for a thread today that really is a separate room with its own entries.
-  // What it is ABOUT is the conversation the person is in, which for a thread is
-  // the channel it hangs off: that is what `frame` names. When threads stop
-  // being rooms (spec §3) the two collapse into one and nothing here changes.
-  const frame = resolveFrame(deps, input.room);
+  // The two rooms collapsed into one (ADR 260728-022013): a thread reply lives
+  // in the channel's own log, so the room the turn HAPPENED in and the
+  // conversation it is ABOUT are the same room, and `frame` reads the position
+  // within it off the triggering entry rather than off a container.
+  const frame = resolveFrame(deps, input.room, input.entry);
   const members = deps.store.listMembers(input.room.id);
   const self = members.find((member) => member.authorId === input.agentAuthorId);
 
@@ -206,21 +201,61 @@ interface ContextFrame {
 }
 
 /**
- * Name the conversation this turn belongs to.
+ * Name the conversation this turn belongs to, and say where in it the turn sits.
  *
- * A thread is stored as a child room today and is becoming an entry relation
- * (spec §3). Either way an agent answering in a thread is inside its parent
- * conversation, so the frame is the CHANNEL's name and topic and the thread is
- * carried as a position within it — `RoomContextData.room.kind` has no `thread`
- * member on purpose. This reads the parent only for its label; whose log and
- * roster apply is a separate question, answered by the caller.
+ * An agent answering in a thread is inside the channel the thread hangs off, so
+ * the frame is that channel's name and topic and the thread is carried as a
+ * POSITION within it — `RoomContextData.room.kind` has no `thread` member on
+ * purpose. Under the entry relation (ADR 260728-022013) the frame needs no
+ * lookup at all: `room` already IS the channel, and the position comes off the
+ * triggering entry's own pointer.
  *
- * A thread whose parent has vanished frames itself, because a conversation with
- * a stale name beats an agent with no idea where it is.
+ * @param room - The room the turn was triggered in.
+ * @param entry - The entry that triggered it; its thread pointer is the position.
  */
-function resolveFrame(deps: RoomContextDeps, room: Room): ContextFrame {
-  if (room.kind !== 'thread') return { room: frameOf(room, room.kind), thread: null };
+function resolveFrame(deps: RoomContextDeps, room: Room, entry: RoomEntry): ContextFrame {
+  if (room.kind === 'thread') return legacyChildRoomFrame(deps, room);
+  return { room: frameOf(room, room.kind), thread: threadOf(deps, room, entry) };
+}
 
+/**
+ * Where this turn sits in the room's log: inside a thread, or at the top level.
+ *
+ * `null` for a top-level turn, which is most of them — the pointer being null is
+ * the whole test, so a channel with no threads in it costs no query.
+ */
+function threadOf(deps: RoomContextDeps, room: Room, entry: RoomEntry): RoomContextData['thread'] {
+  const rootEntryId = entry.threadRootEntryId;
+  if (!rootEntryId) return null;
+  // The root is in THIS room — that is the change. Under the child-room shape it
+  // lived in the parent's log and this had to cross a room boundary to find it.
+  const root = deps.store.getEntryById(room.id, rootEntryId);
+  return {
+    rootEntryId,
+    rootExcerpt: (root?.body.text ?? '').slice(0, THREAD_EXCERPT_CHARS),
+    // Counted over the relation, NOT by reusing `countUnread(threadRoomId, 0)`
+    // the way the child-room shape did. That reuse read "how many entries are in
+    // this thread room" out of the unread counter, and it only ever worked
+    // because a thread had a room to itself.
+    replyCount: deps.store.countThreadReplies(room.id, rootEntryId),
+  };
+}
+
+/**
+ * The frame for a thread that is still stored as a child room.
+ *
+ * **Transitional, and deliberately unreachable for anything created from now
+ * on.** `RoomService` no longer mints a `kind: 'thread'` room, so this serves
+ * rows that predate DOR-634 and nothing else. It is here rather than deleted
+ * because deleting it would silently stop telling an agent it is in a thread for
+ * any install that has one; PR 3 of DOR-634 drops the `thread` room kind and
+ * this function with it.
+ *
+ * Frames the PARENT's name and topic, and reads the thread's replies out of the
+ * child room's own log — which for such a room is every entry in it, since the
+ * entry it hangs off lives in the parent.
+ */
+function legacyChildRoomFrame(deps: RoomContextDeps, room: Room): ContextFrame {
   const parent = room.parentId ? deps.store.getRoom(room.parentId) : null;
   const root =
     parent && room.rootEntryId ? deps.store.getEntryById(parent.id, room.rootEntryId) : null;
@@ -228,13 +263,12 @@ function resolveFrame(deps: RoomContextDeps, room: Room): ContextFrame {
     ? {
         rootEntryId: room.rootEntryId,
         rootExcerpt: (root?.body.text ?? '').slice(0, THREAD_EXCERPT_CHARS),
-        // Every entry in a thread room is a reply: the entry it hangs off lives
-        // in the PARENT's log, never here. So "entries after seq 0" is all of
-        // them, and the count needs no separate query.
         replyCount: deps.store.countUnread(room.id, 0),
       }
     : null;
 
+  // A thread whose parent has vanished frames itself, because a conversation
+  // with a stale name beats an agent with no idea where it is.
   if (!parent || parent.kind === 'thread') return { room: frameOf(room, 'channel'), thread };
   return { room: frameOf(parent, parent.kind), thread };
 }

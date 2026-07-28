@@ -442,6 +442,8 @@ describe('ChannelsPage — whose unread rule is this', () => {
       sessionId: null,
       cascadeRoot: `entry-${seq}`,
       cascadeDepth: 0,
+      parentEntryId: null,
+      threadRootEntryId: null,
       signature: null,
       createdAt: '2026-07-26T10:00:00.000Z',
     };

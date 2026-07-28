@@ -30,11 +30,16 @@
  * The per-room cap alone is not a spend bound, and it is worth being exact
  * about why rather than discovering it again. **Rooms are free.** A caller that
  * can create rooms multiplies its budget by creating them: measured through the
- * real mount, a cap of 2/room bought 16 turns across 8 channels. Threads are
- * cheaper still, since a thread inherits the parent's whole roster, so five
- * threads off one parent bought 12. Neither is a defect in the per-room cap —
- * it does exactly what it says — it is the difference between bounding a room
- * and bounding a wallet.
+ * real mount, a cap of 2/room bought 16 turns across 8 channels. That is not a
+ * defect in the per-room cap — it does exactly what it says — it is the
+ * difference between bounding a room and bounding a wallet.
+ *
+ * **Threads used to be the cheaper lever and are not any more.** While a thread
+ * was a child room it came with a window of its own, and five threads off one
+ * parent bought 12 turns against a cap of 2. Under ADR 260728-022013 a thread
+ * reply is an entry in its channel, so one window now covers a channel and
+ * everything threaded inside it. `rooms-cascade.test.ts` runs that same script
+ * — five distinct roots, one reply into each — and measures 2.
  *
  * The global cap is what makes "the ceiling on what this can cost you" true.
  * The per-room cap stays because it is what keeps one runaway room from eating

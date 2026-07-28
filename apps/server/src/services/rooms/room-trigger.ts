@@ -140,13 +140,31 @@ export interface RoomTurnRunner {
   run(request: RoomTurnRequest): Promise<RoomTurnResult>;
 }
 
-/** How a post gets written back into the room. */
+/**
+ * How a post gets written back into the room.
+ *
+ * `replyTo` is what keeps an answer where the question was asked: an agent
+ * triggered by a thread reply answers in that thread, not at the channel's top
+ * level (ADR 260728-022013). Under the child-room shape the answer landed in the
+ * thread for free, because the thread was the room.
+ */
 export interface RoomTriggerWriter {
   post(
     roomId: string,
-    input: { authorId: string; text: string; sessionId?: string; trigger: CascadeStamp }
+    input: {
+      authorId: string;
+      text: string;
+      sessionId?: string;
+      trigger: CascadeStamp;
+      replyTo?: string;
+    }
   ): RoomEntry;
-  postNotice(roomId: string, body: RoomEntryBody, cascade: CascadeStamp): RoomEntry;
+  postNotice(
+    roomId: string,
+    body: RoomEntryBody,
+    cascade: CascadeStamp,
+    replyTo?: string
+  ): RoomEntry;
 }
 
 /** The cascade a written entry belongs to. */
@@ -577,6 +595,10 @@ export class RoomTriggerDispatcher {
       text,
       sessionId: opts.sessionId,
       trigger: { root: entry.cascadeRoot, depth: target.depth },
+      // Answer where you were asked. `threadRootEntryId` is already a validated
+      // top-level entry — every reply carries the root, never another reply —
+      // so re-resolving it in `post` cannot refuse this write.
+      replyTo: entry.threadRootEntryId ?? undefined,
     });
   }
 
@@ -681,10 +703,15 @@ export class RoomTriggerDispatcher {
     body: RoomEntryBody
   ): boolean {
     try {
-      this.deps.writer.postNotice(room.id, body, {
-        root: entry.cascadeRoot,
-        depth: entry.cascadeDepth,
-      });
+      this.deps.writer.postNotice(
+        room.id,
+        body,
+        { root: entry.cascadeRoot, depth: entry.cascadeDepth },
+        // Reported where the exchange happened. A refusal at the channel's top
+        // level, about a back-and-forth three replies deep inside a thread, is a
+        // notice the reader cannot connect to anything.
+        entry.threadRootEntryId ?? undefined
+      );
       return true;
     } catch (err) {
       // Refusals are evaluated synchronously inside `post`, so a throw here

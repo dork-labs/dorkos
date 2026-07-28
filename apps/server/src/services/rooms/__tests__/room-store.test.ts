@@ -32,6 +32,8 @@ function entry(overrides: Partial<NewRoomEntry> & { id: string }): NewRoomEntry 
     sessionId: null,
     cascadeRoot: overrides.id,
     cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
     createdAt: '2026-07-26T12:00:00.000Z',
     ...overrides,
   };
@@ -219,6 +221,70 @@ describe('RoomStore.findDmByMemberSet', () => {
 
   it('answers null when there is no DM at all', () => {
     expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+});
+
+describe('RoomStore thread pointers and the counters over them', () => {
+  let store: RoomStore;
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+    seedRoom(store);
+  });
+
+  it('round-trips both pointers through the insert', () => {
+    store.appendEntry(entry({ id: 'root' }));
+    store.appendEntry(entry({ id: 'reply', parentEntryId: 'root', threadRootEntryId: 'root' }));
+
+    const stored = store.getEntryById(ROOM_ID, 'reply');
+    expect(stored?.parentEntryId).toBe('root');
+    expect(stored?.threadRootEntryId).toBe('root');
+    // And the root stays outside its own thread, which is what makes the count
+    // below mean "replies".
+    expect(store.getEntryById(ROOM_ID, 'root')?.threadRootEntryId).toBeNull();
+  });
+
+  it('counts one thread replies, not the room, and not another thread', () => {
+    store.appendEntry(entry({ id: 'root-a' }));
+    store.appendEntry(entry({ id: 'root-b' }));
+    store.appendEntry(entry({ id: 'top-level' }));
+    for (const id of ['a1', 'a2', 'a3']) {
+      store.appendEntry(entry({ id, parentEntryId: 'root-a', threadRootEntryId: 'root-a' }));
+    }
+    store.appendEntry(entry({ id: 'b1', parentEntryId: 'root-b', threadRootEntryId: 'root-b' }));
+
+    expect(store.countThreadReplies(ROOM_ID, 'root-a')).toBe(3);
+    expect(store.countThreadReplies(ROOM_ID, 'root-b')).toBe(1);
+    // A root nobody answered has no replies — not "the room's entries".
+    expect(store.countThreadReplies(ROOM_ID, 'top-level')).toBe(0);
+  });
+
+  it('is scoped to one room', () => {
+    seedRoom(store, 'room-2');
+    store.appendEntry(entry({ id: 'root' }));
+    store.appendEntry(entry({ id: 'here', parentEntryId: 'root', threadRootEntryId: 'root' }));
+    store.appendEntry(
+      entry({ id: 'there', roomId: 'room-2', parentEntryId: 'root', threadRootEntryId: 'root' })
+    );
+
+    expect(store.countThreadReplies(ROOM_ID, 'root')).toBe(1);
+    expect(store.countThreadReplies('room-2', 'root')).toBe(1);
+  });
+
+  it('keeps countUnread counting every entry, thread replies included', () => {
+    // **Pinned deliberately, because filtering this is the tempting mistake**
+    // (DOR-634). The read cursor is only ever advanced to the newest entry in
+    // the array the client was handed, and that array is unfiltered — so a count
+    // that excluded thread replies would leave a badge nothing can clear.
+    store.appendEntry(entry({ id: 'root' }));
+    store.appendEntry(entry({ id: 'r1', parentEntryId: 'root', threadRootEntryId: 'root' }));
+    store.appendEntry(entry({ id: 'r2', parentEntryId: 'root', threadRootEntryId: 'root' }));
+
+    expect(store.countUnread(ROOM_ID, 0)).toBe(3);
+    expect(store.countUnread(ROOM_ID, 1)).toBe(2);
+    // The room's true max seq, which is what the mark-read path writes: reading
+    // the room clears the badge, threads and all.
+    expect(store.countUnread(ROOM_ID, store.maxSeq(ROOM_ID))).toBe(0);
   });
 });
 

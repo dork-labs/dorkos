@@ -5,7 +5,7 @@ import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import { RoomError } from '../room-errors.js';
-import { agentLookupFor, createRoomHarness } from './room-test-harness.js';
+import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';
 
 /** Ana answers everything by manifest; Bo stays quiet unless mentioned. */
 const agentLookup = agentLookupFor({
@@ -244,56 +244,144 @@ describe('RoomService', () => {
   });
 
   describe('threads', () => {
-    let parentId: string;
+    let roomId: string;
     let rootEntryId: string;
-    let ana: string;
 
     beforeEach(() => {
       const room = service.createRoom(
         { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
         human
       );
-      parentId = room.id;
-      ana = service.addMember(parentId, human, {
+      roomId = room.id;
+      service.addMember(roomId, human, {
         agentPath: '/agents/ana',
         responseMode: 'direct-only',
-      }).authorId;
-      rootEntryId = service.post(parentId, { authorId: human, text: 'why is the build slow?' }).id;
+      });
+      rootEntryId = service.post(roomId, { authorId: human, text: 'why is the build slow?' }).id;
     });
 
-    it('opens a child room off an entry, inheriting the roster', () => {
-      const thread = service.createThread(parentId, rootEntryId, human);
+    it('writes a reply into this room, pointing at the entry it hangs off', () => {
+      const reply = service.post(roomId, {
+        authorId: human,
+        text: 'the cache is cold',
+        replyTo: rootEntryId,
+      });
 
-      expect(thread.kind).toBe('thread');
-      expect(thread.parentId).toBe(parentId);
-      expect(thread.rootEntryId).toBe(rootEntryId);
-      expect(thread.members.map((m) => m.authorId).sort()).toEqual([human, ana].sort());
+      // The whole change in one assertion: same room, same log, same seq space.
+      expect(reply.roomId).toBe(roomId);
+      expect(reply.parentEntryId).toBe(rootEntryId);
+      expect(reply.threadRootEntryId).toBe(rootEntryId);
+      // And no room was minted for it. `listRooms` never returns a thread
+      // because there is no longer such a thing to return.
+      expect(service.listRooms(human).map((r) => r.id)).toEqual([roomId]);
     });
 
-    it('inherits the parent membership response mode, not the room-kind seed', () => {
-      const thread = service.createThread(parentId, rootEntryId, human);
-      expect(thread.members.find((m) => m.authorId === ana)?.responseMode).toBe('direct-only');
+    it('leaves the root itself outside its own thread', () => {
+      service.post(roomId, { authorId: human, text: 'the cache is cold', replyTo: rootEntryId });
+      const root = service.listEntries(roomId, human, { limit: 10 })[0];
+
+      // Null on the root is what makes `countThreadReplies` mean replies. A root
+      // that pointed at itself would report "2 replies" for one answer.
+      expect(root.id).toBe(rootEntryId);
+      expect(root.parentEntryId).toBeNull();
+      expect(root.threadRootEntryId).toBeNull();
     });
 
-    it('titles itself from the entry it hangs off', () => {
-      expect(service.createThread(parentId, rootEntryId, human).title).toBe(
-        'why is the build slow?'
+    it('leaves an ordinary post at the top level', () => {
+      const plain = service.post(roomId, { authorId: human, text: 'unrelated' });
+      expect(plain.parentEntryId).toBeNull();
+      expect(plain.threadRootEntryId).toBeNull();
+    });
+
+    it('refuses a reply whose root is itself a reply', () => {
+      const reply = service.post(roomId, {
+        authorId: human,
+        text: 'a follow-up',
+        replyTo: rootEntryId,
+      });
+
+      // One level, and it is now a rule this method enforces rather than a shape
+      // the schema decided — `parent_entry_id` would happily store it.
+      expect(() =>
+        service.post(roomId, { authorId: human, text: 'deeper', replyTo: reply.id })
+      ).toThrow(expect.objectContaining({ code: 'NESTED_THREAD' }));
+    });
+
+    it('writes nothing when the reply is refused', () => {
+      const before = service.listEntries(roomId, human, { limit: 50 }).length;
+      const reply = service.post(roomId, {
+        authorId: human,
+        text: 'a follow-up',
+        replyTo: rootEntryId,
+      });
+
+      expect(() =>
+        service.post(roomId, { authorId: human, text: 'deeper', replyTo: reply.id })
+      ).toThrow(expect.objectContaining({ code: 'NESTED_THREAD' }));
+      // The refusal happens before the append, so the log gained the one legal
+      // reply and nothing else.
+      expect(service.listEntries(roomId, human, { limit: 50 })).toHaveLength(before + 1);
+    });
+
+    it('refuses a reply to an entry that is not in this room', () => {
+      expect(() =>
+        service.post(roomId, { authorId: human, text: 'orphan', replyTo: 'no-such-entry' })
+      ).toThrow(expect.objectContaining({ code: 'ENTRY_NOT_FOUND' }));
+    });
+
+    it('refuses a reply to an entry that lives in another room', () => {
+      const other = service.createRoom(
+        { kind: 'channel', title: 'Frontend', members: [], agentPaths: [] },
+        human
       );
+      const elsewhere = service.post(other.id, { authorId: human, text: 'over here' });
+
+      // Scoped by room, so an entry id the caller can legitimately see does not
+      // let it graft a reply onto a conversation in a different room.
+      expect(() =>
+        service.post(roomId, { authorId: human, text: 'wrong room', replyTo: elsewhere.id })
+      ).toThrow(expect.objectContaining({ code: 'ENTRY_NOT_FOUND' }));
     });
 
-    it('refuses a thread whose parent is itself a thread', () => {
-      const thread = service.createThread(parentId, rootEntryId, human);
-      const inThread = service.post(thread.id, { authorId: human, text: 'a follow-up' });
-
-      expect(() => service.createThread(thread.id, inThread.id, human)).toThrow(
-        expect.objectContaining({ code: 'NESTED_THREAD' })
+    it('never writes one pointer without the other', () => {
+      // The schema doc says the two columns coincide on every row while the
+      // one-level policy holds. That was prose enforced nowhere, and the shape
+      // it forbids is quiet: PR 2 groups by `parentEntryId` while
+      // `countThreadReplies` scopes by `threadRootEntryId`, so a row with one
+      // and not the other is a thread whose replies count but do not render.
+      //
+      // Every writer this service has, in one mix.
+      const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+      service.post(roomId, { authorId: human, text: 'top level' });
+      service.post(roomId, { authorId: human, text: 'a reply', replyTo: rootEntryId });
+      service.post(roomId, {
+        authorId: ana,
+        text: 'an agent answering in the thread',
+        replyTo: rootEntryId,
+        trigger: { root: rootEntryId, depth: 1 },
+      });
+      service.postNotice(roomId, { text: 'at the top level', notice: 'budget_reached' });
+      service.postNotice(
+        roomId,
+        { text: 'inside the thread', notice: 'cascade_stopped' },
+        { root: rootEntryId, depth: 1 },
+        rootEntryId
       );
-    });
 
-    it('refuses a thread off an entry that is not in this room', () => {
-      expect(() => service.createThread(parentId, 'no-such-entry', human)).toThrow(
-        expect.objectContaining({ code: 'ENTRY_NOT_FOUND' })
-      );
+      const log = service.listEntries(roomId, human, { limit: 50 });
+      // The mix is asserted before the invariant is, because "no row breaks the
+      // rule" is trivially true of a log where no row has a pointer at all.
+      expect(log.filter((entry) => entry.threadRootEntryId !== null)).toHaveLength(3);
+      expect(log.filter((entry) => entry.threadRootEntryId === null)).toHaveLength(3);
+
+      const broken = (
+        db.$client
+          .prepare(
+            'SELECT COUNT(*) AS n FROM room_entries WHERE (parent_entry_id IS NULL) != (thread_root_entry_id IS NULL)'
+          )
+          .get() as { n: number }
+      ).n;
+      expect(broken).toBe(0);
     });
   });
 
@@ -382,6 +470,160 @@ describe('RoomService', () => {
   });
 });
 
+describe('RoomService — the ancestry rule holds across a thread boundary', () => {
+  /**
+   * The one place the thread change makes a real bound TIGHTER
+   * (room-participation spec §3.4, ADR 260728-022013).
+   *
+   * `authorsInCascade` is scoped `(room_id, cascade_root)`. Under the child-room
+   * shape, a cascade that went from a channel into a thread crossed a `room_id`
+   * boundary, the ancestry set reset, and the same authors could be triggered a
+   * second time inside one exchange — the cross-room carve-out
+   * ADR 260726-170127 documented and could not close. A thread reply now carries
+   * the CHANNEL's `room_id`, so the set does not reset and A → thread → A is
+   * refused at the first repeat instead of running to the depth ceiling.
+   *
+   * Driven through the real dispatcher: the guard's absence is only visible
+   * under a cascade, so a test that called the guard directly would prove
+   * nothing about the path that ships.
+   */
+  const agents = agentLookupFor({
+    '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
+    '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'always' },
+  });
+
+  it('refuses a cascade that opens a thread and comes back to the same author', async () => {
+    const harness = createRoomHarness({
+      agents,
+      runner: scriptedRunner(() => 'on it'),
+      // Well clear of anything this exchange can reach, so a refusal below is
+      // the ancestry rule and never the depth ceiling wearing its clothes. It is
+      // also what makes a broken ancestry rule LOUD here rather than subtle: an
+      // A → B → A loop that is not stopped runs to this number.
+      maxAgentDepth: 10,
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      harness.human
+    );
+
+    // The root goes in before either agent does, so neither is in this cascade
+    // by way of a TOP-LEVEL entry. Everything that puts them in it from here is
+    // a thread reply — which is exactly the thing the child-room shape kept out
+    // of the set, and the thing this test has to be able to see.
+    const root = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: 'the deploy is stuck',
+    });
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toEqual([]);
+
+    const anaId = harness.service.addMember(room.id, harness.human, {
+      agentPath: '/agents/ana',
+      responseMode: 'always',
+    }).authorId;
+    const boId = harness.service.addMember(room.id, harness.human, {
+      agentPath: '/agents/bo',
+      responseMode: 'always',
+    }).authorId;
+
+    // Ana moves the exchange into a thread off the person's message, carrying
+    // the cascade she is answering under — the same stamp
+    // `RoomTriggerDispatcher` puts on a reply, passed explicitly so this is a
+    // settled state rather than a race against her own in-flight claim.
+    const anasReply = harness.service.post(room.id, {
+      authorId: anaId,
+      text: 'taking this to a thread',
+      replyTo: root.id,
+      trigger: { root: root.id, depth: 1 },
+    });
+    await harness.service.triggersIdle();
+
+    // The mechanism FIRST, so a failure names which half broke: Ana's reply is
+    // in the CHANNEL's log, under the channel's cascade. Under the child-room
+    // shape all of that moved into a room of its own.
+    expect(anasReply.roomId).toBe(room.id);
+    expect(anasReply.threadRootEntryId).toBe(root.id);
+    expect(anasReply.cascadeRoot).toBe(root.id);
+
+    // Exactly one turn: Bo answered Ana, in the thread. Ana was then refused on
+    // Bo's answer, because her thread reply put her in this cascade — the
+    // ancestry rule holding across a boundary it used to reset at
+    // (room-participation spec §3.4). A set that skipped thread replies would
+    // never have found her, and A → B → A would have run to `maxAgentDepth`.
+    expect(harness.runner.turns).toHaveLength(1);
+    expect(harness.runner.turns[0].authorId).toBe(boId);
+
+    // Bo answered inside the thread rather than beside it, which is what makes
+    // the hop above a real one and not a message that escaped to the top level.
+    const bosAnswer = harness.service
+      .listEntries(room.id, harness.human, { limit: 50 })
+      .find((entry) => entry.authorId === boId && entry.kind === 'post');
+    expect(bosAnswer?.threadRootEntryId).toBe(root.id);
+    expect(harness.service.authorsInCascade(room.id, root.id).sort()).toEqual(
+      // The exact set: both agents, the person, and the system author that wrote
+      // the refusal notice. Naming it beats "contains Ana", which would still
+      // pass if Bo had fallen out of his own cascade.
+      [harness.human, anaId, boId, harness.authors.system().id].sort()
+    );
+  });
+
+  it('reports a refusal inside the thread it happened in', async () => {
+    // `I3` — a refusal is visible. Visible at the channel's top level, about a
+    // turn that was refused inside a thread, is a notice the reader cannot
+    // connect to anything. Under the child-room shape this was free, because the
+    // refusal was written into the thread's own room.
+    //
+    // Driven off the BUDGET refusal rather than the cascade one, because it is
+    // the deterministic path: two agents refusing each other race on roster
+    // order, and a test built on that shape passes about half the time
+    // (`room-silence.test.ts` says so at length).
+    const harness = createRoomHarness({
+      agents,
+      runner: scriptedRunner(() => 'on it'),
+      maxAutomaticTurnsPerRoomPerHour: 0,
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      harness.human
+    );
+    // The root goes in BEFORE Ana does, so the room's one budget notice is spent
+    // on the thread reply rather than on this: the notice is keyed on the room
+    // and re-armed only when the room can spend again.
+    const root = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: 'the deploy is stuck',
+    });
+    await harness.service.triggersIdle();
+    expect(
+      harness.service
+        .listEntries(room.id, harness.human, { limit: 50 })
+        .filter((e) => e.kind === 'notice')
+    ).toEqual([]);
+
+    const anaId = harness.service.addMember(room.id, harness.human, {
+      agentPath: '/agents/ana',
+      responseMode: 'always',
+    }).authorId;
+    harness.service.post(room.id, { authorId: harness.human, text: 'any idea?', replyTo: root.id });
+    await harness.service.triggersIdle();
+
+    const notices = harness.service
+      .listEntries(room.id, harness.human, { limit: 50 })
+      .filter((entry) => entry.kind === 'notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0].body.notice).toBe('budget_reached');
+    // The whole point: it is IN the thread, not beside it.
+    expect(notices[0].threadRootEntryId).toBe(root.id);
+    expect(notices[0].parentEntryId).toBe(root.id);
+    // Ana really was the agent that would have run, so this is a refusal and not
+    // an empty room writing a notice about nobody.
+    expect(
+      harness.service.getRoom(room.id, harness.human)?.members.map((m) => m.authorId)
+    ).toContain(anaId);
+  });
+});
+
 describe('RoomService — atomicity, slug reclaim and visibility', () => {
   let db: Db;
   let service: RoomService;
@@ -410,13 +652,15 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
     ).toBe('backend');
   });
 
-  it('creates no thread at all when the parent lookup fails mid-way', () => {
+  it('writes no entry at all when the reply target does not resolve', () => {
     const room = service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
       human
     );
-    expect(() => service.createThread(room.id, 'no-such-entry', human)).toThrow(RoomError);
-    expect(service.listRooms(human, { kind: 'thread' })).toEqual([]);
+    expect(() =>
+      service.post(room.id, { authorId: human, text: 'orphan', replyTo: 'no-such-entry' })
+    ).toThrow(RoomError);
+    expect(service.listEntries(room.id, human, { limit: 10 })).toEqual([]);
   });
 
   it('refuses to un-archive a channel whose slug someone else has taken', () => {
@@ -842,35 +1086,28 @@ describe('RoomService — only the operator changes a roster', () => {
     expect(own.members.map((m) => m.authorId)).toEqual([ana]);
   });
 
-  it('refuses an agent opening a thread that inherits a second agent', () => {
-    // A thread copies the parent roster wholesale, so opening one is a seeding
-    // operation. It also gets a NEW cascade namespace (`authorsInCascade` is
-    // scoped to `(room_id, cascade_root)`), so an ungated `createThread` is an
-    // unlimited supply of fresh cascades for whoever can call it.
+  it('lets an agent reply in a thread beside a second agent, and keeps the bound that mattered', () => {
+    // The seeding gate used to cover `createThread`, because a thread was a new
+    // room: a fresh roster, a fresh budget window and — the real prize — a fresh
+    // `(room_id, cascade_root)` namespace the ancestry rule had never seen.
+    //
+    // A thread reply buys none of those any more (ADR 260728-022013), so the
+    // gate has nothing left to protect and replying is exactly as allowed as
+    // posting. This test pins BOTH halves, because the loosening is only safe if
+    // the second one holds: the reply lands in the channel's own cascade set.
     service.addMember(roomId, human, { agentPath: '/agents/bo' });
     const entry = service.post(roomId, { authorId: human, text: 'worth a thread' });
 
-    expect(() => service.createThread(roomId, entry.id, ana)).toThrow(
-      expect.objectContaining({ code: 'OPERATOR_ONLY' })
-    );
-    expect(service.listRooms(human, { kind: 'thread' })).toEqual([]);
-  });
+    const reply = service.post(roomId, {
+      authorId: ana,
+      text: 'looking',
+      replyTo: entry.id,
+      trigger: { root: entry.cascadeRoot, depth: 1 },
+    });
 
-  it('lets the operator open that same thread', () => {
-    service.addMember(roomId, human, { agentPath: '/agents/bo' });
-    const entry = service.post(roomId, { authorId: human, text: 'worth a thread' });
-    expect(service.createThread(roomId, entry.id, human).kind).toBe('thread');
-  });
-
-  it('lets an agent open a thread in a room where it is the only agent', () => {
-    // Nothing is conscripted, so nothing is refused — the same line `createRoom`
-    // draws. An agent alone with the operator cannot amplify anything.
-    const solo = service.createRoom(
-      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
-      human
-    );
-    const entry = service.post(solo.id, { authorId: human, text: 'a thought' });
-    expect(service.createThread(solo.id, entry.id, ana).kind).toBe('thread');
+    expect(reply.roomId).toBe(roomId);
+    expect(reply.threadRootEntryId).toBe(entry.id);
+    expect(service.authorsInCascade(roomId, entry.cascadeRoot).sort()).toEqual([human, ana].sort());
   });
 
   it('lets the operator do all three', () => {
@@ -1226,34 +1463,25 @@ describe('RoomService — a human who is not the owner is not the operator', () 
     // the old test and the new one identically, and the set of refused callers
     // grew by exactly one thing — a human who is not the owner.
     //
-    // This is pinned because `createThread` inherits the parent roster through
-    // `requireSeedingAllowed`, so a careless widening here would silently take
-    // threads away from agents. Both answers below are the pre-DOR-598 ones.
+    // Pinned on `createRoom`, which is now the whole of what
+    // `requireSeedingAllowed` guards: a careless widening here would let an
+    // agent assemble a room whose members answer each other. Both answers below
+    // are the pre-DOR-598 ones.
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
 
-    // Alone with the owner: nothing is conscripted, so a thread is allowed.
-    const solo = service.createRoom(
-      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
-      owner
-    );
-    const soloEntry = service.post(solo.id, { authorId: owner, text: 'a thought' });
-    expect(service.createThread(solo.id, soloEntry.id, ana).kind).toBe('thread');
-
-    // Beside a second agent: refused, exactly as it was before.
-    const pair = service.createRoom(
-      { kind: 'channel', title: 'Pair', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
-      owner
-    );
-    const pairEntry = service.post(pair.id, { authorId: owner, text: 'worth a thread' });
-    expect(() => service.createThread(pair.id, pairEntry.id, ana)).toThrow(
-      expect.objectContaining({ code: 'OPERATOR_ONLY' })
-    );
-
-    // And an agent may still open a room for itself.
+    // Alone with the owner: nothing is conscripted, so it is allowed.
     expect(
       service.createRoom({ kind: 'dm', title: 'Ana notes', members: [], agentPaths: [] }, ana)
         .members
     ).toHaveLength(1);
+
+    // Conscripting a second agent: refused, exactly as it was before.
+    expect(() =>
+      service.createRoom(
+        { kind: 'channel', title: 'Pair', members: [], agentPaths: ['/agents/bo'] },
+        ana
+      )
+    ).toThrow(expect.objectContaining({ code: 'OPERATOR_ONLY' }));
   });
 
   it('leaves the owner passing everything, unchanged', () => {

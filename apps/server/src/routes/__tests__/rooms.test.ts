@@ -425,7 +425,7 @@ describe('/api/rooms', () => {
   });
 
   describe('POST /:id/threads', () => {
-    it('opens a thread off an entry', async () => {
+    it('accepts a reply and writes it into this room, not a new one', async () => {
       const room = await createChannel();
       const posted = await request(app)
         .post(`/api/rooms/${room.id}/entries`)
@@ -433,31 +433,83 @@ describe('/api/rooms', () => {
 
       const res = await request(app)
         .post(`/api/rooms/${room.id}/threads`)
-        .send({ rootEntryId: posted.body.entryId });
+        .send({ rootEntryId: posted.body.entryId, text: 'the cache is cold' });
 
-      expect(res.status).toBe(201);
-      expect(res.body.kind).toBe('thread');
-      expect(res.body.parentId).toBe(room.id);
+      // Trigger-only, exactly like `POST /:id/entries`: 202 and the identity,
+      // while the entry itself reaches readers over the room stream.
+      expect(res.status).toBe(202);
+      expect(res.body.accepted).toBe(true);
+
+      const entries = await request(app).get(`/api/rooms/${room.id}/entries?limit=50`);
+      const reply = entries.body.entries.find((e: { id: string }) => e.id === res.body.entryId) as {
+        parentEntryId: string;
+        threadRootEntryId: string;
+      };
+      expect(reply.parentEntryId).toBe(posted.body.entryId);
+      expect(reply.threadRootEntryId).toBe(posted.body.entryId);
+
+      // And no room was minted. The room list is the channel and nothing else.
+      const rooms = await request(app).get('/api/rooms');
+      expect(rooms.body.rooms.map((r: { id: string }) => r.id)).toEqual([room.id]);
     });
 
-    it('400s a thread off a thread', async () => {
+    it('400s a reply whose root is itself a reply', async () => {
       const room = await createChannel();
       const posted = await request(app)
         .post(`/api/rooms/${room.id}/entries`)
         .send({ text: 'why is the build slow?' });
-      const thread = await request(app)
+      const reply = await request(app)
         .post(`/api/rooms/${room.id}/threads`)
-        .send({ rootEntryId: posted.body.entryId });
-      const inThread = await request(app)
-        .post(`/api/rooms/${thread.body.id}/entries`)
-        .send({ text: 'follow-up' });
+        .send({ rootEntryId: posted.body.entryId, text: 'the cache is cold' });
 
       const res = await request(app)
-        .post(`/api/rooms/${thread.body.id}/threads`)
-        .send({ rootEntryId: inThread.body.entryId });
+        .post(`/api/rooms/${room.id}/threads`)
+        .send({ rootEntryId: reply.body.entryId, text: 'deeper' });
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('NESTED_THREAD');
+    });
+
+    it('404s a reply to an entry this room does not hold', async () => {
+      const room = await createChannel();
+      const res = await request(app)
+        .post(`/api/rooms/${room.id}/threads`)
+        .send({ rootEntryId: 'no-such-entry', text: 'orphan' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ENTRY_NOT_FOUND');
+    });
+
+    it('409s a reply into an archived room', async () => {
+      // New: `createThread` went through neither the archive check nor the
+      // membership one. Routing a reply through `RoomService.post` means a
+      // thread answers to every rule an ordinary post does, and the OpenAPI
+      // registration says so.
+      const room = await createChannel();
+      const posted = await request(app)
+        .post(`/api/rooms/${room.id}/entries`)
+        .send({ text: 'why is the build slow?' });
+      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+
+      const res = await request(app)
+        .post(`/api/rooms/${room.id}/threads`)
+        .send({ rootEntryId: posted.body.entryId, text: 'too late' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ROOM_ARCHIVED');
+    });
+
+    it('400s a reply with no text, because it writes a message', async () => {
+      const room = await createChannel();
+      const posted = await request(app)
+        .post(`/api/rooms/${room.id}/entries`)
+        .send({ text: 'why is the build slow?' });
+
+      const res = await request(app)
+        .post(`/api/rooms/${room.id}/threads`)
+        .send({ rootEntryId: posted.body.entryId });
+
+      expect(res.status).toBe(400);
     });
   });
 

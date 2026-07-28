@@ -166,6 +166,8 @@ describe('RoomEventSchema', () => {
     sessionId: null,
     cascadeRoot: baseEntry.id,
     cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
     signature: null,
   };
 
@@ -197,6 +199,24 @@ describe('RoomEventSchema', () => {
 
   it('keeps signature null in v1', () => {
     expect(RoomEntrySchema.parse(entry).signature).toBeNull();
+  });
+
+  it('carries both thread pointers, null for a top-level entry', () => {
+    // A thread is a relation between entries (ADR 260728-022013), so these ride
+    // every entry on the wire and a client can group a log without a second
+    // request. Asserted through `.parse` because Zod strips what it does not
+    // know: a field missing from the schema reads as `undefined` here.
+    const parsed = RoomEntrySchema.parse(entry);
+    expect(parsed.parentEntryId).toBeNull();
+    expect(parsed.threadRootEntryId).toBeNull();
+
+    const reply = RoomEntrySchema.parse({
+      ...entry,
+      parentEntryId: baseEntry.id,
+      threadRootEntryId: baseEntry.id,
+    });
+    expect(reply.parentEntryId).toBe(baseEntry.id);
+    expect(reply.threadRootEntryId).toBe(baseEntry.id);
   });
 });
 
