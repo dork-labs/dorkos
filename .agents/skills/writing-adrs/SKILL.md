@@ -75,6 +75,20 @@ When scanning specs for ADR candidates, look for:
 
 There is no `draft` status: significance is judged **at extraction time**. `/adr:from-spec` applies the significance rubric when extracting — decisions meeting 2+ "When to Write" criteria are written as `proposed` (or `accepted` if the spec already shipped); the rest are never written as files.
 
+### Partial supersession
+
+When a new ADR reverses **part** of an older one, the older ADR **stays `accepted`**. There is no `superseded-in-part` status, and inventing one is not the answer: a status is an instruction about whether to rely on the document, and marking a mostly-live ADR terminal tells every future reader to stop reading something they still need.
+
+So:
+
+1. **Parent keeps `status: accepted` and `superseded-by: null`**, in the file and in `decisions/manifest.json`.
+2. **Parent's Status section names exactly what is retired:** quote the clause, list any Consequences bullets that fall with it, then state what still governs. Follow the shape `260726-170125` uses.
+3. **Child links back** with `supersedes: <parent-id>` in its manifest entry, and says in its own Status section which clause it replaces. That field is the only machine-readable link, so it is not optional.
+
+Reserve `status: superseded` for a **whole** ADR being replaced (`0224` → `260726-193526`, `0070` → `260726-171347`).
+
+**One older ADR diverges from this rule:** `260713-143958` is a partial supersession that set `status: superseded` anyway. It predates this rule and is deliberately left alone. Do not copy it, and do not "fix" it either.
+
 ### Review Gate
 
 **`/adr:review`** (triggered when a spec is implemented or the proposed backlog grows)

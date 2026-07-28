@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(runtimes): OpenCode connect PR3 — change power source, honest local availability (DOR-427) (#423)'
+---
+
 ### Changed
 
 - You can now change how OpenCode is powered without disconnecting first. A connected OpenCode shows a Change link that reopens the power-source picker with your current source labeled ("Currently: On your computer (Ollama)"), so switching from your own computer to the cloud, or the other way, is one clear choice (DOR-427).
