@@ -49,6 +49,7 @@ import {
   _buildMeshToolsBlock,
   _buildAdapterToolsBlock,
   _buildTasksToolsBlock,
+  _buildMarketplaceToolsBlock,
   _buildPeerAgentsBlock,
   _buildRelayConnectionsBlock,
 } from '../../runtimes/claude-code/messaging/context-builder.js';
@@ -60,6 +61,16 @@ import { isRelayEnabled } from '../../relay/relay-state.js';
 import { isTasksEnabled } from '../../tasks/task-state.js';
 import { configManager } from '../config-manager.js';
 import type { GitStatusResponse } from '@dorkos/shared/types';
+// The real Zod input shapes the marketplace tools are registered with — imported
+// (not re-typed) so the signature-pin test below diffs against the schema itself,
+// not a second hand-written copy of it that could drift the same way the prose did.
+import { SearchInputSchema } from '../../marketplace-mcp/tool-search.js';
+import { GetInputSchema } from '../../marketplace-mcp/tool-get.js';
+import { ListInstalledInputSchema } from '../../marketplace-mcp/tool-list-installed.js';
+import { RecommendInputSchema } from '../../marketplace-mcp/tool-recommend.js';
+import { InstallInputSchema } from '../../marketplace-mcp/tool-install.js';
+import { UninstallInputSchema } from '../../marketplace-mcp/tool-uninstall.js';
+import { CreatePackageInputSchema } from '../../marketplace-mcp/tool-create-package.js';
 
 const mockedGetGitStatus = vi.mocked(getGitStatus);
 const mockedReadManifest = vi.mocked(readManifest);
@@ -199,6 +210,27 @@ describe('buildSystemPromptAppend', () => {
     expect(result).toContain('<mesh_tools>');
     expect(result).toContain('<adapter_tools>');
     expect(result).toContain('<tasks_tools>');
+    expect(result).toContain('<marketplace_tools>');
+  });
+
+  it('includes the marketplace tools block even when every other toggle is off (DOR-529)', async () => {
+    // Marketplace has no enabledToolGroups entry and no feature flag — it is
+    // unconditional, like <ui_tools>, so it must survive every other group
+    // being switched off.
+    vi.mocked(isRelayEnabled).mockReturnValue(false);
+    vi.mocked(isTasksEnabled).mockReturnValue(false);
+    vi.mocked(configManager.get).mockReturnValue({
+      relayTools: false,
+      meshTools: false,
+      adapterTools: false,
+      tasksTools: false,
+    });
+    const result = await buildSystemPromptAppend('/test/dir');
+    expect(result).not.toContain('<relay_tools>');
+    expect(result).not.toContain('<mesh_tools>');
+    expect(result).not.toContain('<adapter_tools>');
+    expect(result).not.toContain('<tasks_tools>');
+    expect(result).toContain('<marketplace_tools>');
   });
 
   it('excludes relay and adapter blocks when relay is disabled', async () => {
@@ -714,6 +746,76 @@ describe('buildTasksToolsBlock', () => {
     vi.mocked(isTasksEnabled).mockReturnValue(true); // global says on
     const result = _buildTasksToolsBlock({ tasks: false, relay: true, mesh: true, adapter: true });
     expect(result).toBe('');
+  });
+});
+
+describe('buildMarketplaceToolsBlock', () => {
+  it('always returns the marketplace context (no toggle to gate on)', () => {
+    const result = _buildMarketplaceToolsBlock();
+    expect(result).toContain('<marketplace_tools>');
+    expect(result).toContain('marketplace_search');
+    expect(result).toContain('marketplace_install');
+    expect(result).toContain('marketplace_uninstall');
+    expect(result).toContain('marketplace_create_package');
+    expect(result).toContain('confirmationToken');
+    expect(result).toContain('</marketplace_tools>');
+  });
+
+  it('documents the two-call confirmation protocol', () => {
+    const result = _buildMarketplaceToolsBlock();
+    expect(result).toContain('requires_confirmation');
+    expect(result).toContain('STOP');
+  });
+
+  /**
+   * Parse the parameter names documented for `toolName` out of a rendered
+   * `<marketplace_tools>` block — reads the literal `toolName(a, b?, c?)` call
+   * signature and returns bare names with the optional `?` stripped. `()`
+   * yields `[]`.
+   *
+   * @param block - The rendered block text.
+   * @param toolName - The tool whose documented signature to read.
+   */
+  function documentedParams(block: string, toolName: string): string[] {
+    const match = new RegExp(`${toolName}\\(([^)]*)\\)`).exec(block);
+    if (!match) throw new Error(`no "${toolName}(...)" signature found in the block`);
+    const inner = match[1].trim();
+    return inner === '' ? [] : inner.split(',').map((p) => p.trim().replace(/\?$/, ''));
+  }
+
+  it('documents every tool parameter the real Zod schema defines, and no others', () => {
+    // A hardcoded `toContain('exact string')` check cannot catch schema drift: it
+    // was tried in an earlier revision of this test and the reviewer's drill
+    // disproved it — adding an undocumented field to a real InputSchema left it
+    // (and all 81 other tests) green, because a string literal has no idea what
+    // the schema actually contains. This version reads the block's documented
+    // param NAMES with `documentedParams` and diffs them against
+    // `Object.keys(<the real, imported InputSchema>)` for each tool, so a schema
+    // change that drifts from the docs fails loudly, naming the tool.
+    const result = _buildMarketplaceToolsBlock();
+
+    const cases: ReadonlyArray<[string, Record<string, unknown>]> = [
+      ['marketplace_search', SearchInputSchema],
+      ['marketplace_get', GetInputSchema],
+      ['marketplace_list_installed', ListInstalledInputSchema],
+      ['marketplace_recommend', RecommendInputSchema],
+      ['marketplace_install', InstallInputSchema],
+      ['marketplace_uninstall', UninstallInputSchema],
+      ['marketplace_create_package', CreatePackageInputSchema],
+    ];
+    for (const [toolName, schema] of cases) {
+      const documented = documentedParams(result, toolName).slice().sort();
+      const real = Object.keys(schema).sort();
+      expect(
+        documented,
+        `${toolName}: documented params vs. Object.keys(real InputSchema)`
+      ).toEqual(real);
+    }
+
+    // marketplace_list_marketplaces has no InputSchema constant to import — its
+    // capability is registered with a literal `z.object({})` inline in
+    // marketplace-capabilities.ts — so it is asserted directly instead.
+    expect(documentedParams(result, 'marketplace_list_marketplaces')).toEqual([]);
   });
 });
 
