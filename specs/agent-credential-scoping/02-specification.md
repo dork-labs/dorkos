@@ -183,7 +183,17 @@ All three return before the route touches `ApprovalService`, so a refused decisi
 - **A shared code makes the probe unable to fail.** If the credential refusal and the header refusal are indistinguishable in the response, then deleting the credential check changes nothing observable for a caller that also sends an identity header: the header check answers first, with the same status and the same code, and the conformance row stays green. A security probe whose row cannot go red when the thing under test is removed is `.claude/rules/testing.md`'s "assertions that cannot fail", and REVIEW.md's "assertion satisfied by the wrong subject". §3.8's table is exactly that probe, so the codes have to differ for it to prove anything.
 - **A shared message is also wrong for the person reading it.** Under the phase 0 cookie bar, a refused caller may be the operator's own script holding the operator's own key. Telling that person "not by an agent" names the wrong cause and gives them nothing to act on.
 
-So the credential refusal takes its own code and its own sentence, saying that approvals are answered in the DorkOS cockpit and inviting the person to open it, at the `writing-for-humans` bar. The two header refusals keep `AGENT_CANNOT_DECIDE`, which stays accurate for them. The exact code is the implementing PR's to choose and to pin in §3.8's table.
+So the credential refusal takes its own code and its own sentence, saying that approvals are answered in the DorkOS cockpit and inviting the person to open it, at the `writing-for-humans` bar. The exact code is the implementing PR's to choose and to pin in §3.8's table.
+
+**One code per check is already the shipped pattern, not a new rule.** The two existing refusals do not share a code either: the identity-header check answers `AGENT_CANNOT_DECIDE` (`decision-authority.ts:156`) and the approval-token check answers `REQUESTER_CANNOT_DECIDE` (`:167`). An earlier draft of this section said "all three answer `403 AGENT_CANNOT_DECIDE`", which was wrong about the code that ships as well as wrong about what the third check needs. The credential refusal is the third distinct code, not an exception to a convention.
+
+**Ordering is a requirement, and it is what makes the codes worth having.**
+
+> **The identity-header check answers first, then the approval-token check, then the credential check, and each answers a distinct code.**
+
+This is falsifiability, not message quality, and it is the same argument §3.8 makes about the probe table. Codes only tell you which check refused if the checks run in a known order. If the credential check ran first, every API-key caller would get the credential code whether or not it sent an identity header, the two refusals would become indistinguishable again, and deleting the header check would be unobservable to the probe. Distinct codes plus a fixed order are jointly what make each check independently deletable and detectable. Either one alone proves nothing.
+
+**This pins existing behavior rather than requiring a change,** which is what makes it cheap. `resolveDecisionAuthority` already runs the header check first (`decision-authority.ts:152-159`), then the approval-token check (`:163-170`), then the posture branch. The requirement exists so that a future reordering reads as the regression it would be, and so the phase 0 table in §3.8 is grounded in something the spec actually guarantees. The PR implementing the cookie bar places its refusal so the header check still answers first; keep the two aligned rather than letting them drift.
 
 Standing permissions need no change. Creating one already requires a session cookie (`requireOperatorCookie`, reached at `routes/approvals.ts:382`), which no key of any scope can present, so an agent-held key could never open one. This spec closes the one-time decide path that bar does not cover.
 
@@ -339,6 +349,8 @@ Every probe drives the real Express stack with `auth.enabled: true` and `session
 
 **"The credential code" is not a placeholder, and the two 403 codes must differ.** `agent-api-key` is refused by the header check; `agent-api-key-without-identity-header` and `person-api-key` can only be refused by the credential check (§3.3). If all three answered the same code, then deleting the credential check would leave `agent-api-key` answering identically through the header check, and **the probe would stay green while the thing it exists to prove was gone**. That is an assertion that cannot fail sitting inside a security probe. Pin the distinct code the implementing PR chooses, so removing the credential check turns the rows that depend on it red and leaves the header row alone.
 
+**These rows depend on the check order §3.3 requires, and that dependency is the reason it is a requirement.** The table assigns `agent-api-key` the header code and the other two the credential code, which is only true because the identity-header check answers before the credential check (`decision-authority.ts:152-159`, ahead of the posture branch). Put the credential check first and every API-key row collapses to one code, at which point the header check becomes undeletable-without-detection in exactly the way this section exists to prevent. So the ordering is not a free implementation choice that the table quietly assumes: it is stated in §3.3, it matches what ships, and a build that reorders it fails this table rather than silently weakening it.
+
 `agent-api-key-without-identity-header` is the reported defect, verbatim.
 
 **Test the test.** Seeded regressions, each asserted to fail the checker, and each asserted to fail the **specific** rows named:
@@ -437,7 +449,13 @@ No entry in `contributing/configuration.md`, because no config field is added (s
 
 Three phases now, because the cookie bar was pulled ahead of the rest (Open Questions).
 
-**Phase 0 - close DOR-474 with a cookie bar.** Being implemented separately, tracked on DOR-474 itself. Deciding an approval requires `credential === 'cookie'` under login-on. Nothing in this spec is a prerequisite, and DOR-474 is closed when it lands. Whoever builds it chooses deliberately whether the bar sits inside `resolveDecisionAuthority` (which extends it to the act-without-approval paths, §3.3) or at the decide routes alone, and records which.
+**Phase 0 - close DOR-474 with a cookie bar.** Being implemented separately, tracked on DOR-474 itself. Deciding an approval requires `credential === 'cookie'` under login-on. Nothing in this spec is a prerequisite, and DOR-474 is closed when it lands.
+
+Two things about it are the implementer's choice and one is not.
+
+- **Choice: where the bar sits.** Inside `resolveDecisionAuthority`, which extends it to the act-without-approval paths (§3.3), or at the decide routes alone. Choose deliberately and record which.
+- **Choice: the credential refusal's code and message**, subject to being distinct (§3.3) and pinned in §3.8's table.
+- **Not a choice: the order.** The identity-header check answers before the credential check, and each answers a distinct code (§3.3). Either placement above can honour this and the shipped code already does (`decision-authority.ts:152-159`), so this constrains nothing anyone wants to do. A placement that cannot preserve distinct codes in a fixed order is not an acceptable option, because it makes §3.8's probe unable to detect the deletion of either check.
 
 Phases 1 and 2 then deliver what the cookie bar does not: an agent that never needs the operator's key, a key that survives past ten calls a day, and a credential DorkOS can name on an approval card. **Neither phase may be described as closing the self-approval hole; phase 0 does that.** The demo-claim gate applies to security properties too.
 
@@ -490,7 +508,7 @@ Decomposition in `03-tasks.json`.
   Three things on the record, so the next reader does not have to rediscover them:
   1. **Cookie-only does not subsume the rate-limit defect.** A cockpit-created key dying after ten verifications a day is an independent shipped bug (§3.4). It needs its own ticket and it does not wait for phase 2.
   2. **It forecloses §3.10 and the Settings scope labels** until phase 2. DorkOS cannot say "an agent asked" on a card without a way to tell an agent's credential apart, and cannot label a key it cannot classify. Real, and small.
-  3. **Where the bar goes is a decision, not an inheritance.** Putting it inside `resolveDecisionAuthority` gives it the same reach §3.3 describes, so an operator's own script holding an API key would also lose the `marketplace.ts` and `tasks.ts` act-without-approval paths. That may be right, since "whoever may decide may act without one" is the invariant those paths rest on. But it follows from the placement rather than from the goal, so whoever implements it should choose the placement deliberately and say which they chose and why.
+  3. **Where the bar goes is a decision, not an inheritance.** Putting it inside `resolveDecisionAuthority` gives it the same reach §3.3 describes, so an operator's own script holding an API key would also lose the `marketplace.ts` and `tasks.ts` act-without-approval paths. That may be right, since "whoever may decide may act without one" is the invariant those paths rest on. But it follows from the placement rather than from the goal, so whoever implements it should choose the placement deliberately and say which they chose and why. **The check order is not part of that choice:** the identity-header check answers first and each check answers a distinct code, whichever placement is taken (§3.3, and see Implementation Phases).
 
 ## Related ADRs
 
