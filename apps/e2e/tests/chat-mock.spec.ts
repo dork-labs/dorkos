@@ -535,7 +535,11 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
    */
   async function switchAgentViaPalette(page: Page, agentName: string): Promise<void> {
     await page.keyboard.press('Meta+k');
-    const search = page.getByPlaceholder('Search agents, features, commands...');
+    // By test id, not by placeholder. The placeholder is user-facing copy: it
+    // changed once already (DOR-630 put rooms in the palette) and took this
+    // helper's two callers down with it, silently — a `getByPlaceholder` that
+    // matches nothing waits out its timeout instead of naming what is missing.
+    const search = page.getByTestId('command-palette-input');
     await search.waitFor({ state: 'visible', timeout: 10_000 });
     await search.fill(agentName);
     await page
