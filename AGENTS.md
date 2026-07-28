@@ -147,6 +147,13 @@ Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: R
 
 Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and CLI smoke tests (Node 22/24) + integration tests, which run on push to main and on PRs that touch what they package. Locally: `pnpm smoke:docker` / `pnpm smoke:integration`.
 
+**`main` merges through a merge queue** (ADR 260728-112203). You never update a branch to satisfy a gate: GitHub builds your PR on top of `main` plus everything ahead of it in the queue, runs the required checks against that combined tree, and fast-forwards only if they pass. "Require branches to be up to date" is off, and being behind `main` no longer blocks anything. Two consequences worth knowing:
+
+- **Every required check must report on `merge_group`.** A required check that only fires on `pull_request` blocks the queue forever. Any new required check needs `merge_group:` in its `on:` list.
+- **Some checks stay PR-only on purpose.** Fragment _coverage_ needs the PR's labels and number, which the `merge_group` payload does not carry, so it is answered before queueing and not re-asked. Fragment _validity_ does re-run in the queue.
+
+**Landing a PR is automated.** `merge-tail.yml` arms auto-merge every 10 minutes on PRs that are finished (open, undrafted, unlabelled `hold`, cleanly mergeable, no unresolved threads, every check settled green). Its decision is `scripts/should-arm-automerge.sh`, fixture-pinned. Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed.
+
 ## Research
 
 290+ reports in `research/` (`YYYYMMDD_topic-slug.md`). **Always check `research/` before doing new research.**

@@ -3000,6 +3000,13 @@
       "created": "2026-07-28",
       "specSlug": "rooms",
       "supersedes": "260726-170125"
+    },
+    {
+      "id": "260728-112203",
+      "slug": "merge-queue-replaces-branch-currency",
+      "title": "The merge queue replaces require-branches-up-to-date, and arming a merge is somebody's job",
+      "status": "accepted",
+      "created": "2026-07-28"
     }
   ]
 }
