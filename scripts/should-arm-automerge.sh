@@ -78,6 +78,13 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" '
   if (.state // "") != "OPEN"                       then "SKIP not-open"
   elif (.isDraft // false)                          then "SKIP draft"
   elif (.autoMergeRequest // null) != null          then "SKIP already-armed"
+
+  # A pull request sitting in the merge queue reports `autoMergeRequest: null`,
+  # so the branch above does NOT catch it. Without this one, the bot re-arms
+  # every queued pull request on every tick. Verified on 2026-07-28: PRs 573,
+  # 572 and 566 were at queue positions 1-3 in AWAITING_CHECKS with a null
+  # autoMergeRequest.
+  elif (.mergeQueueEntry // null) != null           then "SKIP already-queued"
   elif ((labels) as $l | any($hold[]; . as $h | $l | index($h)))
                                                     then "SKIP held-by-label"
 
