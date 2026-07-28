@@ -134,7 +134,8 @@ Non-negotiable, enforced by ESLint/CI/convention:
 3. **`os.homedir()` banned** — use `lib/dork-home.ts` (sole carve-out: that file)
 4. **TSDoc on exports** — enforced by `eslint-plugin-jsdoc`
 5. **Prettier + Tailwind class sorting** are automatic — never hand-sort
-6. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
+6. **`git stash` and `git checkout -- <path>` are refused** — the stash is shared by every worktree and holds your auto-checkpoints; the pathspec checkout silently reverts uncommitted work. Both have eaten work here. Park files in the session scratchpad and restore with `cp`. Enforced by `.claude/hooks/git-guard.mjs`; `git stash list`/`show` and branch switching still work
+7. Path-specific rules in `.claude/rules/` load when editing matching files (see `.claude/README.md`)
 
 ## Testing
 
