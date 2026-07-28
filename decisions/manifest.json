@@ -2998,7 +2998,8 @@
       "title": "A thread is a relation between entries, not a child room",
       "status": "accepted",
       "created": "2026-07-28",
-      "specSlug": "rooms"
+      "specSlug": "rooms",
+      "supersedes": "260726-170125"
     }
   ]
 }

@@ -92,13 +92,13 @@ That economics does not transfer, because we own a SQL engine and `WHERE parent_
 is free.
 
 **The timing is not incidental.** R4 (DOR-527), the phase that builds threading's product surface,
-has not started. The cockpit's entire thread surface is four lines of `thread ?? id` precedence
-(`router.tsx:242-252`, `ChannelsPage.tsx:20-21`, `use-room-document-title.ts:64-65`,
-`DashboardSidebar.tsx:131-133`), and nothing in the client ever writes `?thread=`. Server-side it is
-one route (`POST /:id/threads`, `apps/server/src/routes/rooms.ts:209-227`), one service method with
-exactly one non-test call site, one request schema, one error code, one enum member and two columns.
-There is no transport method for thread creation, by design: `room-methods.ts:5-9` says thread
-creation "reaches the client in later phases."
+has not started. The cockpit has no thread pane, no "N replies" row and no create-thread affordance:
+its whole thread surface is a `?thread=` route param that four call sites read and **nothing in the
+client ever writes**, plus one icon branch. Server-side it is one route
+(`POST /:id/threads`, `apps/server/src/routes/rooms.ts:209-227`), one service method with exactly one
+non-test call site, one request schema, one error code, one enum member and two columns. There is no
+transport method for thread creation, by design: `room-methods.ts:5-9` says thread creation "reaches
+the client in later phases." The full inventory is the table under Decision.
 
 ## Decision
 
@@ -121,32 +121,45 @@ decides; it does not implement.
 - `rooms.parentId`, `rooms.rootEntryId`, `idx_rooms_parent_id` and the `'thread'` member of
   `RoomKind` retire, along with `NESTED_THREAD` in its current room-shaped form.
 - `POST /api/rooms/:id/threads` becomes an entry-level route, and `createThread` stops being a
-  room-creating operation. `RoomRoster.inheritedFrom` and the thread branch of `seedResponseMode`
-  (`apps/server/src/services/rooms/room-roster.ts:71-90, 196-214`) retire with it, since there is no
-  second roster to seed.
-- **The client surface is four lines of `thread ?? id` precedence and nothing else.** All three
-  readers change together and none of them is a writer: `apps/client/src/router.tsx:242-252` (the
-  `?thread=` search-param schema, whose docstring says "`thread` names a child room of `id`"),
-  `apps/client/src/app/use-room-document-title.ts:63-64` (the tab title), and
-  `apps/client/src/layers/features/dashboard-sidebar/ui/DashboardSidebar.tsx:131-133` (the
-  active-room highlight). `ChannelsPage.tsx:20-21` reads the same param.
-  `useRoomsByKind` (`use-rooms.ts:100-108`) already selects channels and DMs by kind and drops
-  everything else, so it needs no change beyond its docstring at `:82-90`.
-- **Two prose spots say the retired thing.** `docs/getting-started/configuration.mdx:182` and the
-  seeding-gate docstring at `room-service.ts:46` both read "rooms and threads are free to create."
-  Under this decision only rooms are.
-- One e2e fixture types the room kind by hand: `apps/e2e/fixtures/rooms-api.ts:40`
-  (`kind: 'channel' | 'dm' | 'thread'`). No browser test exercises a thread; only the type needs
-  narrowing.
+  room-creating operation.
 - **There is no data to move.** On the operator's live install, measured read-only on 2026-07-28,
   `rooms` holds 6 channels, 2 DMs and 0 threads. That is one install on one day, not a claim about
   every install, but it is the install that exists.
+
+**The full surface, re-derived from a fresh search rather than accumulated.** This list is the main
+thing DOR-634 inherits from this ADR, so it is exhaustive by intent. `L` marks live code that
+behaves differently after the change; `P` marks prose or a type that only has to stop saying the
+retired thing.
+
+| Where                                                                                          | What                                                                         |     |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --- |
+| `packages/db/src/schema/rooms.ts:86,89-90,105,118`                                             | `kind` doc, `parentId`, `rootEntryId`, `idx_rooms_parent_id`                 | L   |
+| `packages/shared/src/room-schemas.ts:31-34,150,158-161,188,206,304,389-396`                    | `RoomKindSchema`, `parentId`, `rootEntryId`, `CreateThreadRequestSchema`     | L   |
+| `apps/server/src/routes/rooms.ts:46,209-227`                                                   | `POST /:id/threads`, `NESTED_THREAD` status mapping                          | L   |
+| `apps/server/src/services/rooms/room-service.ts:320-382,948-951`                               | `createThread`, its nested-thread guard, `summarize` for the default title   | L   |
+| `apps/server/src/services/rooms/room-roster.ts:71-90,196-214`                                  | `inheritedFrom`, the thread branch of `seedResponseMode`                     | L   |
+| `apps/server/src/services/rooms/room-errors.ts:21`                                             | `NESTED_THREAD` error code                                                   | L   |
+| `apps/client/src/layers/entities/room/ui/RoomAvatar.tsx:86-94`                                 | live `room.kind === 'thread'` branch rendering `MessagesSquare`              | L   |
+| `apps/client/src/router.tsx:232,242-243,251`                                                   | the `?thread=` search-param schema and its "child room" docstring            | L   |
+| `apps/client/src/layers/widgets/room-view/ui/ChannelsPage.tsx:15-16,20-21`                     | `thread ?? id` precedence                                                    | L   |
+| `apps/client/src/app/use-room-document-title.ts:44-45,64-65`                                   | same precedence, for the tab title                                           | L   |
+| `.../features/dashboard-sidebar/ui/DashboardSidebar.tsx:131-133`                               | same precedence, for the active-room highlight                               | L   |
+| `apps/e2e/fixtures/rooms-api.ts:40`                                                            | hand-written `kind: 'channel' \| 'dm' \| 'thread'`                           | P   |
+| `apps/server/src/services/rooms/room-service.ts:46`                                            | "rooms and threads are free to create"                                       | P   |
+| `docs/getting-started/configuration.mdx:182`                                                   | the same sentence, user-facing                                               | P   |
+| `apps/client/src/layers/entities/room/model/use-rooms.ts:82-90`                                | docstring; `useRoomsByKind` (`:100-108`) selects by kind and needs no change | P   |
+| `apps/client/src/layers/entities/room/{index.ts:2,ui/RoomTitle.tsx:28,lib/room-display.ts:98}` | "channels, direct messages and threads" asides                               | P   |
+| `apps/client/src/layers/shared/lib/transport/room-methods.ts:5-9`                              | "thread creation reaches the client in later phases"                         | P   |
+| `apps/client/src/layers/features/chat/ui/message/message-variants.ts:37`                       | "reactions and reply-in-thread land here in later phases"                    | P   |
+
 - **The surfaces that do NOT touch the thread-as-room shape, verified by search so nobody repeats
-  it:** no MCP tool and no Capability Registry entry mentions threads, and neither the Obsidian
-  plugin nor the desktop shell contains anything about them (their only "thread" hits are about OS
-  threads). Relay's `ChannelTypeSchema` (`packages/shared/src/relay-envelope-schemas.ts:26-28`) has
-  a `'thread'` member and `packages/relay/src/lib/thread-id.ts` exists, but both name a Slack or
-  Discord thread on the remote side and are unrelated to room storage.
+  it:** no MCP tool and no Capability Registry entry mentions threads; no browser test exercises one
+  (only the fixture type above); and neither the Obsidian plugin nor the desktop shell contains
+  anything about them (their only "thread" hits are about OS threads). Relay's `ChannelTypeSchema`
+  (`packages/shared/src/relay-envelope-schemas.ts:26-28`) has a `'thread'` member, and
+  `packages/relay/src/lib/thread-id.ts`, `trace-store.ts:303`, `binding-form.ts:27`,
+  `BindingDialog.tsx:48` and `binding-tools.ts:50` all carry it, but every one of them names a Slack
+  or Discord thread on the remote side and is unrelated to room storage.
 
 ## Consequences
 
@@ -174,6 +187,25 @@ decides; it does not implement.
 
 ### Negative
 
+- **The parent room's unread count changes meaning, and the shipped mark-read path cannot clear it.**
+  This is the sharpest consequence of one shared `seq` space and the one the migration is most
+  likely to get wrong. `countUnread` counts every entry above the cursor with no visibility
+  predicate (`room-store.ts:525-532`), while the cursor is only ever advanced to the newest entry
+  the reader can actually see: `useMarkRoomRead` takes its `newestSeq` from the entries the open
+  room rendered (`use-mark-room-read.ts:76-83`, fed by `ChannelsPage.tsx:47`). A thread reply draws
+  from the parent's `seq` and is excluded from a `WHERE parent_entry_id IS NULL` timeline, so it
+  lands above the cursor in a view that can never move past it. **The two places the predicate could
+  go fail differently, and both are wrong:** put it inside `listEntries` and the sidebar's "Mark as
+  read" (`use-mark-room-read.ts:105-107`, which reads `listRoomEntries(roomId, { limit: 1 })`) stops
+  at the same top-level entry, leaving a badge the reader cannot clear from anywhere; put it only in
+  the client view and the sidebar clears the badge while the open room never does, so it returns on
+  the next refetch. Either way the count includes entries the reader is not being shown.
+  The fix is DOR-634's to choose, and there are two shapes: filter `countUnread` to the same
+  predicate the timeline renders and surface thread unreads separately on the summary row, or
+  advance the mark-read path to the room's true max `seq` regardless of visibility. We lean to the
+  first, because unread should mean unread in what the reader is looking at, but that is a lean and
+  not a decision. **The old model had this for free** (a thread was a room, with its own cursor and
+  its own count), and giving that up is what buys everything above.
 - **A thread can no longer have its own membership subset.** Under the child-room shape you could in
   principle add somebody to a thread without adding them to the parent, or drop somebody from one
   branch. That capability is now gone. It was never reachable (`createThread` inherits the parent's
