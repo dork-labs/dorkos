@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(shapes): an agent can no longer schedule unattended work without asking (DOR-625)'
+  - 'fix(shapes): lex the gate-bypass scan with the TypeScript parser, and reserve shapes.apply for real (DOR-625)'
 ---
 
 ### Security
