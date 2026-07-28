@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(evals): governance eval and trust docs (DOR-451) (#454)'
+---
+
 ### Added
 
 - New guide, [Action Approvals](https://dorkos.ai/docs/guides/action-approvals), explaining
