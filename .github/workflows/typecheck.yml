@@ -57,10 +57,18 @@ name: typecheck
 #
 # Anything added to this list is a real hole — say which files it leaves
 # unchecked and why, rather than naming a package.
+# `merge_group` is where this workflow finally does the job its header describes.
+# The #488/#489 break it was written for was an INTERACTION between two PRs, each
+# green alone against the base it branched from. A `pull_request` run cannot see
+# that by construction: it only ever knows its own diff. The merge queue builds
+# `main` + every PR ahead in the queue + this one and runs the checks against
+# that combined tree, so the interaction is checked before anything lands rather
+# than discovered on `main` afterwards.
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).
