@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(server): approval primitive for destructive capabilities (DOR-447) (#448)'
+---
+
 ### Added
 
 - DorkOS can now ask you before an agent does something you cannot undo. When an agent requests
