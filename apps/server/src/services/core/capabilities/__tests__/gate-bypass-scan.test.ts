@@ -167,14 +167,16 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'mints the marker that skips the tier gate entirely',
     // Since DOR-474 a marker also requires a session cookie whenever login is on,
     // because the two-step path it stands in for (ask, then grant) requires one.
-    // The package-source routes are NOT on this list any more for that reason: they
-    // wanted the agent bar, not this marker, and now read the resolver directly.
+    // Two entries left this list for that reason rather than because they became
+    // ungated: the package-source routes and the task write routes wanted the AGENT
+    // bar, not this marker, and now read `resolveDecisionAuthority` directly. Their
+    // effects are still watched below (`sourceManager.add(`, `createTask(`, and the
+    // rest), so dropping them here narrows what this token means without narrowing
+    // what the scan covers.
     call: 'trustedCaller(',
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
-      'routes/tasks.ts':
-        'a person approving a scheduled task, or setting how it runs, in their own cockpit (DOR-504)',
       'routes/extensions-approval.ts':
         'a person allowing an extension to run its code inside DorkOS, in their own cockpit (DOR-516). Gated: both bars from `PATCH /api/config` for an operator-only setting, in the same order — the cookie bar under login, then this one — because the field it writes (`extensions.approvedToRun`) IS operator-only, plus a trusted-`Origin` bar the config route does not need because these two routes are reachable by a plain cross-site POST. There is no MCP twin to walk around, by design',
       'services/core/capabilities/trusted-caller.ts': 'the definition itself',
@@ -185,7 +187,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'createTask(',
     allowed: {
       'routes/tasks.ts':
-        'the cockpit REST route, on its parse-failure FALLBACK branch only — the happy path is upsertFromFile below. Refuses operator-only task fields unless the caller is a trusted caller, and parks the task at pending_approval when it is not (DOR-504)',
+        'the cockpit REST route, on its parse-failure FALLBACK branch only — the happy path is upsertFromFile below. Refuses operator-only task fields unless the caller clears the agent bar, and parks the task at pending_approval when it does not (DOR-504). Deliberately NOT the DOR-474 cookie bar: `dorkos task create` presents an API key, so a cookie demand would park every task the operator schedules while telling them it was created',
       'services/runtimes/claude-code/mcp-tools/task-tools.ts':
         'the tasks_create handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
       'services/shapes/shape-schedule-service.ts':
@@ -198,7 +200,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'upsertFromFile(',
     allowed: {
       'routes/tasks.ts':
-        'the cockpit REST route, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504)',
+        'the cockpit REST route, on its HAPPY path — this is how a created task normally reaches the DB, not createTask above (DOR-504); same agent bar as createTask',
       'services/tasks/task-file-watcher.ts':
         'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
       'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
@@ -212,7 +214,7 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'updateTask(',
     allowed: {
       'routes/tasks.ts':
-        'the cockpit REST route — refuses operator-only task fields unless the caller is a trusted caller (DOR-504)',
+        'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
       'services/runtimes/claude-code/mcp-tools/task-tools.ts':
         'the tasks_create and tasks_update handlers shared by both MCP servers — refuse operator-only fields unconditionally (DOR-504)',
       'services/tasks/task-store.ts': 'the definition itself',

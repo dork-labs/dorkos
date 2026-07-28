@@ -64,6 +64,21 @@
  * free on one surface and a lockout on the other, and that — not "a source is less
  * dangerous than a standing grant" — is why they differ.
  *
+ * ## An unresolved inversion, recorded rather than argued away (DOR-474)
+ *
+ * The paragraph below says adding a source is strictly MORE consequential than
+ * uninstalling a package. After DOR-474 the postures do not line up with that:
+ * uninstall carries the cookie bar under login-on (its caller gets an approval
+ * card instead of a removal), and adding a source does not. Read as a pair, that
+ * is incoherent.
+ *
+ * It is not a contradiction of the decision below, because that decision does not
+ * rest on consequence — it rests on the ABSENCE of an approval path. A caller
+ * refused here has nowhere to go; a caller refused at uninstall gets a card a
+ * person answers, so nobody is locked out. But the doc and the posture now
+ * disagree about which act is graver, and that is worth resolving on purpose
+ * rather than leaving for someone to trip over. Filed separately.
+ *
  * Do NOT reach for the argument that the neighbouring install and uninstall routes
  * settled this already. They did not settle the same question, and this module's
  * own opening argues the opposite of it: the install gate never asks WHERE a

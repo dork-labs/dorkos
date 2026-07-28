@@ -280,5 +280,56 @@ describe('operator-only task fields on the REST routes', () => {
       expect(res.status).toBe(403);
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
+
+    describe('the DOR-474 cookie bar stops short of here, and that is the decision', () => {
+      /** What `dorkos task create|update` presents, and all it can present. */
+      const CLI_OPERATOR = { userId: 'user_cli', credential: 'api-key' as const };
+
+      // DOR-474 put a session-cookie bar on answering an approval, and on the
+      // trusted-caller marker that skips the approval entirely. These routes used
+      // to ask for that marker, so they inherited it — and inheriting it here is a
+      // regression, not a hardening, which is why these two cases exist.
+      //
+      // `dorkos task create|update` authenticates with a per-user API key and has
+      // no cookie by design (`packages/cli/src/lib/api-client.ts`). Under the
+      // inherited bar, PATCH hard-403'd with no approval path — a lockout — and
+      // POST silently parked every task at `pending_approval` while the CLI printed
+      // "Created task <name>" and nothing else, so an operator's cron job would be
+      // reported as created and never fire.
+      //
+      // Whether an agent holding that key should schedule unattended work is a real
+      // question, and `services/tasks/task-write-policy.ts` asks to be reconsidered
+      // deliberately rather than swept into an adjacent fix. It is DOR-553's.
+
+      it('still lets an API key set an operator-only field on PATCH', async () => {
+        signedInUser = CLI_OPERATOR;
+        const res = await request(app)
+          .patch(`/api/tasks/${existing.id}`)
+          .send({ permissionMode: 'bypassPermissions' });
+
+        expect(res.status).toBe(200);
+        expect(store.getTask(existing.id)!.permissionMode).toBe('bypassPermissions');
+      });
+
+      it('still lets an API key create a LIVE task, unparked, on POST', async () => {
+        // The `parksOnCreate` half of the same predicate, and the one a status
+        // assertion alone would miss: a regression here refuses nothing. It answers
+        // 201, says "created", and quietly parks the task so it never runs.
+        signedInUser = CLI_OPERATOR;
+        const res = await request(app).post('/api/tasks').send({
+          name: 'from-the-terminal',
+          description: 'made by dorkos task create',
+          prompt: 'do a thing',
+          cron: '0 3 * * *',
+          target: 'global',
+        });
+
+        expect(res.status).toBe(201);
+        expect(res.body.status, 'a task the operator scheduled must actually be armed').toBe(
+          'active'
+        );
+        expect(scheduler.registerTask).toHaveBeenCalled();
+      });
+    });
   });
 });
