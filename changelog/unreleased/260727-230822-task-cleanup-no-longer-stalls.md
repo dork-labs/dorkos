@@ -4,6 +4,7 @@ covers:
   - 'fix(tasks): a task file that is on disk is never treated as deleted'
   - 'fix(tasks): only a folder DorkOS actually read can retire a task'
   - 'fix(tasks): check the file itself before retiring a task'
+  - 'fix(tasks): a file in the templates folder never becomes a task'
 ---
 
 ### Fixed
@@ -16,6 +17,7 @@ covers:
 - Two tasks with the same name in different projects no longer interfere. One losing its file used to pause the other.
 - A task paused because its file went missing now runs again once the file is back.
 - Stopped the repeated log warning about a missing file in your `tasks/templates` folder. That folder holds the starter tasks DorkOS ships with, so it is not a task itself. A task folder of yours that really is missing its file is still reported.
+- A task file placed loose in your `tasks/templates` folder no longer turns into a task. It became one that ran on a schedule, and deleting it took every one of your templates with it.
 
 ### Changed
 

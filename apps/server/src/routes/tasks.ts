@@ -164,10 +164,11 @@ export function createTasksRouter(
     const slug = slugify(data.name);
 
     // `templates/` is a container the tasks system owns, so a task cannot live
-    // at that path. Refused here rather than silently allowed: the file would
-    // be written, the watcher would create the row, and the reconciler — which
-    // skips reserved names — would then retire it as a task whose file had
-    // vanished.
+    // at that path. Refused rather than silently allowed, because a row
+    // pointing into a reserved container is worse than useless: the reconciler
+    // skips reserved names, so nothing ever re-syncs it, and the delete route
+    // below derives the directory to remove from `filePath` — which for such a
+    // row is the container itself, taking every template with it.
     if (RESERVED_TASK_DIRNAMES.includes(slug)) {
       return res.status(400).json({
         error: `"${slug}" is a reserved name in the tasks folder. Pick a different name.`,
