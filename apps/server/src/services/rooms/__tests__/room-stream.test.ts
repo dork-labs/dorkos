@@ -15,6 +15,8 @@ function entryEvent(seq: number): RoomEvent {
     sessionId: null,
     cascadeRoot: `e-${seq}`,
     cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
     signature: null,
     createdAt: '2026-07-26T12:00:00.000Z',
   };

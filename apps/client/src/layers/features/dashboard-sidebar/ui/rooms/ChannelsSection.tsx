@@ -14,6 +14,7 @@ import {
   setChannelsCollapsed,
 } from '@/layers/entities/config';
 import { ChannelCreateDialog } from '@/layers/features/room-membership';
+import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
 
@@ -21,8 +22,16 @@ import { RoomRow } from './RoomRow';
 const SKELETON_ROWS = 2;
 
 interface ChannelsSectionProps {
-  /** Channels, newest activity first. */
+  /**
+   * Channels that are in no group, alphabetically. Grouped channels render in
+   * their group instead — a channel lives in exactly one place, the same rule
+   * the Agents section has always followed (sidebar-groups §4).
+   */
   channels: RoomSummary[];
+  /** Whether any channel is in a group, which changes what an empty list means. */
+  hasGroupedChannels: boolean;
+  /** The mark to draw for a channel — a `#` sigil, from the item view model. */
+  visualOf: (room: RoomSummary) => SidebarItemVisual;
   /** True while the room list is loading with nothing cached. */
   isLoading: boolean;
   /** Set when the room list could not be read. */
@@ -36,12 +45,18 @@ interface ChannelsSectionProps {
 }
 
 /**
- * The sidebar's "Channels" section: every conversation with a `#name`, one click
- * from open, with an unread count when you are behind.
+ * The sidebar's "Channels" section: every ungrouped conversation with a `#name`,
+ * one click from open, with an unread count when you are behind.
  *
  * Collapsible and persisted via `ui.sidebar.channelsCollapsed`. The section is
  * always present, empty or not — a person who has never made a channel should
  * still be able to find out that they can.
+ *
+ * **Empty means two different things and says so.** With no channels at all, the
+ * empty state is the invitation to make one. With channels that are all filed
+ * into groups, that invitation is simply false, and telling someone to create
+ * their first channel when they have five of them a few pixels away reads as a
+ * bug in the sidebar.
  *
  * The "+" opens {@link ChannelCreateDialog} rather than an inline row, because
  * naming a channel and picking who is in it is one step and a picker does not
@@ -49,6 +64,8 @@ interface ChannelsSectionProps {
  */
 export function ChannelsSection({
   channels,
+  hasGroupedChannels,
+  visualOf,
   isLoading,
   error,
   activeRoomId,
@@ -99,6 +116,7 @@ export function ChannelsSection({
                 <RoomRow
                   key={room.id}
                   room={room}
+                  visual={visualOf(room)}
                   isActive={room.id === activeRoomId}
                   onSelect={() => onSelectRoom(room)}
                   onOpenAgentProfile={onOpenAgentProfile}
@@ -108,7 +126,9 @@ export function ChannelsSection({
               {channels.length === 0 && (
                 <SidebarMenuItem>
                   <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
-                    No channels yet — create one to get a few agents talking in the same place.
+                    {hasGroupedChannels
+                      ? 'Your channels are all in groups above.'
+                      : 'No channels yet — create one to get a few agents talking in the same place.'}
                   </p>
                 </SidebarMenuItem>
               )}

@@ -5009,6 +5009,10 @@
           "agentRef": {
             "type": "string",
             "description": "Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name."
+          },
+          "mentionHandle": {
+            "type": "string",
+            "description": "What to type after an `@` to address this author, when anything does. A mention picker inserts it verbatim, so the string written is the string the server resolves — and it is resolved against the whole roster, so it reaches THIS author and not another member who happens to answer to the same name. Carried on every resolved roster (`RoomWithRoster`: create, read, update, and the room stream's hydration snapshot), and absent from the bulk room list, which addresses nobody. Absent also means this author cannot be addressed by `@` at all — every name it answers to either contains a space, which the mention pattern cannot span, or belongs to an earlier member. Never assume a display name works: those routinely contain spaces."
           }
         },
         "required": [
@@ -5189,7 +5193,7 @@
               "channel",
               "dm"
             ],
-            "description": "Threads are created via POST /:id/threads."
+            "description": "A thread is not a room: it is a relation between entries, written by replying with POST /:id/threads (ADR 260728-022013)."
           },
           "title": {
             "type": "string",
@@ -5312,6 +5316,20 @@
             "type": "integer",
             "minimum": 0
           },
+          "parentEntryId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The entry in this same room that this one answers, or null for a top-level entry. A thread is a relation between entries, never a room of its own (ADR 260728-022013)."
+          },
+          "threadRootEntryId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The entry at the head of this entry's thread, or null when it is top-level — including for a root that has replies, so a thread's reply count never counts its own root. The default timeline is every entry whose parentEntryId is null."
+          },
           "signature": {
             "type": [
               "string",
@@ -5334,6 +5352,8 @@
           "sessionId",
           "cascadeRoot",
           "cascadeDepth",
+          "parentEntryId",
+          "threadRootEntryId",
           "signature",
           "createdAt"
         ]
@@ -5466,22 +5486,28 @@
           "lastReadSeq"
         ]
       },
-      "CreateThreadRequest": {
+      "PostThreadReplyRequest": {
         "type": "object",
         "properties": {
           "rootEntryId": {
             "type": "string",
             "minLength": 1,
-            "description": "The parent entry this thread hangs off."
+            "description": "The entry this reply hangs off, in this same room. Refused with NESTED_THREAD when it is itself a reply — one level deep is a service policy, not a shape the schema decided."
           },
-          "title": {
+          "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
+            "maxLength": 100000
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The session that produced this reply, when one did."
           }
         },
         "required": [
-          "rootEntryId"
+          "rootEntryId",
+          "text"
         ]
       },
       "RoomSnapshot": {
@@ -13042,8 +13068,8 @@
         "tags": [
           "Rooms"
         ],
-        "summary": "Open a thread off an entry",
-        "description": "One level only: a thread whose parent is itself a thread is refused with 400. The thread inherits the parent roster and each member keeps their parent response mode.",
+        "summary": "Reply inside a thread",
+        "description": "A thread is a relation between entries in this room, not a room of its own, so there is nothing to create first: this posts the first reply and every later one. The reply keeps the room roster, the room read cursor and the room budget, and answers to the same rules any post does — the caller must be a member, and an archived room refuses. One level only: a reply whose root is itself a reply is refused with 400 (`NESTED_THREAD`). Trigger-only, like `POST /api/rooms/{id}/entries`: 202 with the entry identity, while the entry itself rides the room event stream to every reader.",
         "parameters": [
           {
             "schema": {
@@ -13059,24 +13085,24 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateThreadRequest"
+                "$ref": "#/components/schemas/PostThreadReplyRequest"
               }
             }
           }
         },
         "responses": {
-          "201": {
-            "description": "The new thread room with its roster",
+          "202": {
+            "description": "Accepted; the entry reaches readers over the room event stream",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoomWithRoster"
+                  "$ref": "#/components/schemas/PostToRoomResponse"
                 }
               }
             }
           },
           "400": {
-            "description": "Validation error, or the parent is already a thread",
+            "description": "Validation error, or the root entry is itself a reply",
             "content": {
               "application/json": {
                 "schema": {
@@ -13086,7 +13112,17 @@
             }
           },
           "404": {
-            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "description": "No such room, not a member of it, or no such entry in it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived",
             "content": {
               "application/json": {
                 "schema": {

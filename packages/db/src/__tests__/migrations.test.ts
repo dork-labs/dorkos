@@ -259,6 +259,28 @@ describe('Database Migrations', () => {
     }).toThrow(/UNIQUE|PRIMARY/);
   });
 
+  it('gives room_entries its thread relation, behind a partial index', () => {
+    // The columns and the index that carry a thread (ADR 260728-022013),
+    // asserted off the migrated database rather than off the schema file: the
+    // two can disagree, and `db:check` — the only thing that would notice —
+    // runs in no workflow.
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    const columns = (
+      db.$client.prepare('PRAGMA table_info(room_entries)').all() as { name: string }[]
+    ).map((row) => row.name);
+    expect(columns).toContain('parent_entry_id');
+    expect(columns).toContain('thread_root_entry_id');
+
+    const index = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_room_entries_thread_root') as { sql: string } | undefined;
+    // Partial: a full index would carry a row per ordinary message to serve a
+    // lookup that only ever asks for a non-null root.
+    expect(index?.sql).toContain('WHERE "thread_root_entry_id" IS NOT NULL');
+  });
+
   it('unique constraint on relay_traces.message_id is enforced', () => {
     const db = createDb(':memory:');
     runMigrations(db);

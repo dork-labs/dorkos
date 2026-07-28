@@ -1,18 +1,24 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo } from 'react';
 import type { SidebarDisplayFilter } from '@dorkos/shared/config-schema';
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
-import type { AttentionState } from '@/layers/entities/session';
 import { AddAgentMenu } from './AddAgentMenu';
 import { UngroupedSectionMenu } from './UngroupedSectionMenu';
 import { RevealRow } from './RevealRow';
 import { Droppable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
-import { sortAgentPaths, type SortAgentsContext } from '../model/sort-agents';
-import { filterSectionAgents } from '../model/filter-agents';
+import type { RenderSidebarItem, SidebarItem } from '../model/sidebar-item';
+import { sortSidebarItems } from '../model/sort-sidebar-items';
+import { filterSidebarItems } from '../model/filter-sidebar-items';
 import type { SmartGroupPreset } from '../model/smart-group-presets';
 
 interface UngroupedSectionProps {
-  /** Ungrouped agent paths (known roster), pre-filter/pre-sort order. */
-  paths: string[];
+  /**
+   * Ungrouped agents as view-model items, pre-filter/pre-sort.
+   *
+   * Agents only, by construction: a room that is in no group belongs to the
+   * Channels or Direct messages section, not to this one — an item lives in
+   * exactly one place.
+   */
+  items: SidebarItem[];
   /**
    * Whether the sidebar is "organized" (has groups or pins). When true, this
    * section shows its "Agents" label (and the "Show" filter menu) to
@@ -20,21 +26,17 @@ interface UngroupedSectionProps {
    * renders as a header-less flat list.
    */
   organized: boolean;
+  /**
+   * Whether every agent in the fleet is in a group, which is why this list is
+   * empty. Distinct from an empty fleet, which the onboarding card speaks to.
+   */
+  allAgentsGrouped: boolean;
   /** The ungrouped section's sort mode (`ui.sidebar.ungroupedSortMode`). */
   sortMode: 'name' | 'recent';
   /** The ungrouped section's display filter (`ui.sidebar.ungroupedDisplayFilter`). */
   filter: SidebarDisplayFilter;
-  /** Display-name + activity lookups for sorting. */
-  sortCtx: SortAgentsContext;
-  /** Attention state per agent path (from `useAgentAttentionMap`, computed once for the whole sidebar). */
-  attention: Record<string, AttentionState>;
-  /**
-   * Agent paths that are individually muted — the agent members of
-   * `ui.sidebar.muted`, narrowed to paths by `DashboardSidebar`.
-   */
-  mutedPaths: ReadonlySet<string>;
   /** Render one agent row. */
-  renderRow: (path: string, keyPrefix: string) => ReactNode;
+  renderItem: RenderSidebarItem;
   /** Open the inline group-create flow (feeds the "+" menu's "New group" entry). */
   onNewGroup: () => void;
   /**
@@ -56,28 +58,29 @@ interface UngroupedSectionProps {
  * new group) lives here so the add affordance is always present. Filtered and
  * sorted the same way a group section is — filtering first, then sort, with an
  * honest reveal row for whatever the filter hides (spec agent-list-settings §3).
+ *
+ * Empty because every agent is in a group says exactly that, rather than leaving
+ * a labelled section with nothing under it and no reason why.
  */
 export function UngroupedSection({
-  paths,
+  items,
   organized,
+  allAgentsGrouped,
   sortMode,
   filter,
-  sortCtx,
-  attention,
-  mutedPaths,
-  renderRow,
+  renderItem,
   onNewGroup,
   smartGroupPresets,
   onCreatePresetSmartGroup,
   onOpenSmartGroupDialog,
 }: UngroupedSectionProps) {
   const filtered = useMemo(
-    () => filterSectionAgents(paths, { filter, attention, mutedPaths, groupMuted: false }),
-    [paths, filter, attention, mutedPaths]
+    () => filterSidebarItems(items, { filter, groupMuted: false }),
+    [items, filter]
   );
   const sortedVisible = useMemo(
-    () => sortAgentPaths(filtered.visible, sortMode, sortCtx),
-    [filtered.visible, sortMode, sortCtx]
+    () => sortSidebarItems(filtered.visible, sortMode),
+    [filtered.visible, sortMode]
   );
 
   return (
@@ -103,20 +106,29 @@ export function UngroupedSection({
         id="container::ungrouped"
         data={{ type: 'container', container: { kind: 'ungrouped' } }}
       >
-        <SortableList items={sortedVisible.map((p) => agentRowDndId('ungrouped', p))}>
-          <SidebarMenu>{sortedVisible.map((path) => renderRow(path, 'ungrouped'))}</SidebarMenu>
+        <SortableList
+          items={sortedVisible.flatMap((item) =>
+            item.ref.kind === 'agent' ? [agentRowDndId('ungrouped', item.ref.path)] : []
+          )}
+        >
+          <SidebarMenu>{sortedVisible.map((item) => renderItem(item, 'ungrouped'))}</SidebarMenu>
         </SortableList>
+        {allAgentsGrouped && (
+          <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+            Your agents are all in groups above.
+          </p>
+        )}
         <SidebarMenu>
           <RevealRow
             kind="hidden"
-            agents={filtered.filteredOut}
-            renderRow={renderRow}
+            items={filtered.filteredOut}
+            renderItem={renderItem}
             keyPrefix="ungrouped"
           />
           <RevealRow
             kind="inactive"
-            agents={filtered.inactive}
-            renderRow={renderRow}
+            items={filtered.inactive}
+            renderItem={renderItem}
             keyPrefix="ungrouped"
           />
         </SidebarMenu>

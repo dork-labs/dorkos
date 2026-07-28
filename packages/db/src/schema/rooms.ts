@@ -166,6 +166,23 @@ export const roomMembers = sqliteTable(
  * `cascade_root` / `cascade_depth` are the provenance the cascade guard reads
  * (ADR 260726-170127). A human's post always starts fresh — its own id at depth
  * 0 — so a person can always re-engage a room the guard has stopped.
+ *
+ * `parent_entry_id` / `thread_root_entry_id` are the thread relation
+ * (ADR 260728-022013). A thread is a set of entries in THIS room pointing at a
+ * common root; it is not a room, has no roster of its own, and never appears in
+ * a room list. The default timeline is `WHERE parent_entry_id IS NULL`.
+ *
+ * **Two columns, because they answer two questions.** `thread_root_entry_id` is
+ * the SCOPE — one indexed column every thread query filters on, so counting a
+ * thread's replies, and later narrowing the engaged window or the history tools
+ * to a thread (room-participation spec §3.2, §3.3), is one predicate rather than
+ * a recursive walk. `parent_entry_id` is the RELATION — which entry this one
+ * answers. Keeping it is how the schema stops having a vote on nesting: the
+ * one-level rule is a service policy (`RoomService.post` refuses a reply whose
+ * root is itself a reply) rather than a shape the table has already decided, and
+ * a future ADR that opens a second level changes an `if` and no migration. While
+ * that policy holds the two columns coincide on every row, which is the expected
+ * state and not redundancy waiting to be collapsed.
  */
 export const roomEntries = sqliteTable(
   'room_entries',
@@ -197,6 +214,16 @@ export const roomEntries = sqliteTable(
 
     cascadeDepth: integer('cascade_depth').notNull().default(0),
 
+    /** The entry this one answers, in this same room. Null for a top-level entry. */
+    parentEntryId: text('parent_entry_id'),
+
+    /**
+     * The entry at the head of this entry's thread, in this same room. Null for
+     * a top-level entry — including for a root that has replies, so a thread's
+     * reply count is `COUNT(*)` over this column and never counts the root.
+     */
+    threadRootEntryId: text('thread_root_entry_id'),
+
     /** Reserved for phase 4 message signing. Always null in v1. */
     signature: text('signature'),
 
@@ -206,6 +233,18 @@ export const roomEntries = sqliteTable(
     primaryKey({ columns: [table.roomId, table.seq] }),
     uniqueIndex('room_entries_room_id_entry_id_unique').on(table.roomId, table.id),
     index('idx_room_entries_cascade_root').on(table.roomId, table.cascadeRoot),
+    // PARTIAL, like `rooms_channel_slug_unique` above and for the same reason:
+    // the predicate is the query. Every thread read asks for a NON-NULL root
+    // (`WHERE room_id = ? AND thread_root_entry_id = ?`), and in a channel that
+    // is a small minority of rows, so a full index would carry one entry per
+    // ordinary message to serve a lookup that never asks for them. The opposite
+    // half — the default timeline's `parent_entry_id IS NULL` — is deliberately
+    // NOT indexed: it is a residual filter on a `(room_id, seq)` range the
+    // primary key already serves, and an index whose predicate matches most of
+    // the table saves nothing.
+    index('idx_room_entries_thread_root')
+      .on(table.roomId, table.threadRootEntryId)
+      .where(sql`"thread_root_entry_id" IS NOT NULL`),
   ]
 );
 

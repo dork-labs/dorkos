@@ -151,9 +151,35 @@ export class RoomsApi {
    *
    * @param slug - The channel's `#name`, which must be unique among live channels.
    * @param title - Its display title. Defaults to the slug.
+   * @param agents - Agents to seed onto the roster, for a test that needs a
+   *   channel with somebody in it. A channel's memberships seed to
+   *   `mention-only`, and every seeded agent is silent, so nobody is triggered.
    */
-  async createChannel(slug: string, title = slug): Promise<SeededRoom> {
-    return this.createRoom({ kind: 'channel', slug, title });
+  async createChannel(slug: string, title = slug, agents: SeededAgent[] = []): Promise<SeededRoom> {
+    return this.createRoom({
+      kind: 'channel',
+      slug,
+      title,
+      agentPaths: agents.map((a) => a.path),
+    });
+  }
+
+  /**
+   * Read a room's entries back, including the author ids each one resolved its
+   * `@mentions` to.
+   *
+   * The resolved list is the only place a mention's EFFECT is visible: the text
+   * looks the same whether it addressed somebody or posted as plain prose.
+   *
+   * @param roomId - The room to read.
+   */
+  async listEntries(roomId: string): Promise<{ body: { text: string }; mentions: string[] }[]> {
+    const res = await this.request.get(`/api/rooms/${roomId}/entries`);
+    if (!res.ok()) throw new Error(`Could not read entries of ${roomId}: ${await res.text()}`);
+    const { entries } = (await res.json()) as {
+      entries: { body: { text: string }; mentions: string[] }[];
+    };
+    return entries;
   }
 
   /**

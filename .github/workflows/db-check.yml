@@ -1,0 +1,129 @@
+name: db-check
+
+# Fails when a Drizzle schema change ships without the migration it implies.
+#
+# Before this workflow existed, nothing in CI ran it. `packages/db` had declared
+# a `db:check` script for as long as the package has existed, and
+# `grep -rn "db:check" .github/workflows/` returned nothing. It is not part of
+# `turbo test` or `turbo typecheck` either — `db:check` is its own turbo task
+# with `cache: false`, and no other task depends on it. So a change to
+# packages/db/src/schema/*.ts could reach main with `drizzle/` never regenerated,
+# leaving the committed migrations describing a database the code no longer
+# expects. The same "a change merges green because no job looks" defect as
+# DOR-656 (the browser suite, which no workflow ran either), found alongside it
+# and split out because this half is green today and that half is not.
+#
+# THE ONE-LINER THAT USED TO BE `db:check` COULD NOT DO THIS JOB, and its two
+# failure modes are why this workflow calls a script instead. It was:
+#
+#   drizzle-kit generate --config drizzle.config.ts && git diff --exit-code drizzle/
+#
+# Both halves fail OPEN, and together they were green on the likeliest way a
+# schema actually drifts. Measured, not reasoned:
+#
+#   * drizzle-kit 0.31.10 EXITS 0 WHEN IT REFUSES TO RUN. Any ambiguous diff —
+#     above all a column RENAME — needs an interactive answer. Without a TTY it
+#     prints "Error: Interactive prompts require a TTY terminal", writes nothing,
+#     and returns 0. So `&&` does not short-circuit; the diff runs against a tree
+#     the generator never touched and finds it clean. On a pure rename that keeps
+#     the TypeScript property name (`integer('max_runtime')` ->
+#     `integer('max_runtime_ms')`), no call site changes, so typecheck cannot see
+#     it either: generator exit 0, diff exit 0, `tsc --noEmit` exit 0, schema
+#     drifted, no migration. An earlier revision of THIS FILE asserted the
+#     opposite in a comment, which is worse than no comment.
+#   * `pnpm --filter @dorkos/db` EXITS 0 WHEN THE NAME STOPS MATCHING. It prints
+#     "No projects matched the filters" and returns 0 (pnpm 10.28.2) — the
+#     `--filter=<typo>` shape scripts/assert-tests-executed.sh was written about.
+#     Renaming or moving the package turns the job into a no-op, and nothing else
+#     notices, because pnpm-lock.yaml keys workspace packages by PATH not name,
+#     so `--frozen-lockfile` stays happy.
+#
+# scripts/assert-migrations-current.sh closes both: it resolves packages/db by
+# PATH (no name filter anywhere), and it judges the generator by what it PRINTED
+# rather than what it returned, passing only when the generator announced one of
+# its two known outcomes. Silence is a refusal. A rename now fails with an
+# instruction to answer the prompt on a real terminal.
+#
+# It also keeps the one thing the old one-liner got right by accident. `git diff
+# --exit-code drizzle/` sees only TRACKED files, and a new migration is an
+# untracked `00NN_*.sql` plus an untracked `meta/00NN_snapshot.json`; the sole
+# reason drift was ever caught is that `meta/_journal.json` is tracked and gains
+# an entry per migration. The script uses `git status --porcelain` instead, which
+# covers untracked and deleted paths too, so the gate no longer hangs on that one
+# file staying tracked. Fixtures: scripts/test-assert-migrations-current.sh.
+#
+# NO `paths:` FILTER, even though `packages/db/**` looks like an obvious one.
+# GitHub's troubleshooting-required-status-checks doc is explicit: "A workflow is
+# skipped by path filtering, branch filtering, or a commit message → Associated
+# checks stay in a 'Pending' state and block merging → Avoid requiring workflows
+# that can be skipped." A skipped JOB reports success; a skipped WORKFLOW reports
+# nothing at all, and under the merge queue a required check that never reports
+# blocks the queue until `check_response_timeout_minutes` (60) expires. So the
+# filter and the option of ever making this required are mutually exclusive, and
+# this is a good candidate for required — deterministic, and under a minute. Not
+# worth trading that away for a few runner-seconds on unrelated PRs.
+# `merge_group` is here for the same reason: ADR 260728-112203 makes reporting on
+# merge groups a hard prerequisite for any required check, and getting that wrong
+# on a required check blocks the queue.
+#
+# IT IS NOT REQUIRED YET, and this file does not make it so. The trigger lands
+# first, somebody watches it report on a real merge group, and promoting it to a
+# required context is a separate deliberate act after that.
+#
+# WHAT IT DOES AND DOES NOT COVER, so nobody treats it as more cover than it is.
+# It catches an ADDITIVE schema change whose migration was not committed (the
+# generator writes one, the tree goes dirty, the job fails). It also now catches
+# a RENAME — but by REFUSING, not by resolving it: drizzle-kit needs a human to
+# say whether a rename is a rename, so the job fails and tells the author to run
+# `db:generate` on a terminal and answer. That is the correct outcome and it is
+# the difference between this and the old one-liner, which passed. What no gate
+# here can check is whether a hand-written data migration is CORRECT.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Same form as test.yml and typecheck.yml — see typecheck.yml's
+# comment for why push events group by SHA rather than by ref.
+concurrency:
+  group: db-check-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  db-check:
+    runs-on: ubuntu-latest
+    # The install dominates this job; the check itself is a single generator run.
+    # This is an outer bound on a job that should never approach it, NOT a guard
+    # against drizzle-kit blocking on a prompt — it cannot block, because the
+    # script closes its stdin and drizzle-kit fails fast without a TTY.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Invoked as a path, not through `pnpm --filter @dorkos/db`. That filter is
+      # the defect described above: `pnpm --filter <name>` prints "No projects
+      # matched the filters" and EXITS 0 when the name stops matching, so the
+      # hardcoded package name in this file was itself a way for the whole job to
+      # become a silent no-op. The script resolves packages/db by path and fails
+      # when it is not there. `pnpm --filter @dorkos/db run db:check` still works
+      # for a developer and runs this very script, so there is one gate, not two.
+      - name: Prove the committed migrations still match the schema
+        run: bash scripts/assert-migrations-current.sh

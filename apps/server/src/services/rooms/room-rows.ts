@@ -51,6 +51,10 @@ export interface NewRoomEntry {
   sessionId: string | null;
   cascadeRoot: string;
   cascadeDepth: number;
+  /** The entry this one answers, or null for a top-level entry. */
+  parentEntryId: string | null;
+  /** The head of this entry's thread, or null when it is top-level. */
+  threadRootEntryId: string | null;
   createdAt: string;
 }
 

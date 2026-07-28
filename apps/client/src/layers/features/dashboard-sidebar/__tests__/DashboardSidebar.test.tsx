@@ -1,13 +1,50 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+import { resolveAgentVisual } from '@/layers/shared/lib';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 
 /** An agent member reference — `pinned`, `muted` and `items` all hold these. */
 const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
+/** A room member reference. */
+const roomRef = (roomId: string): SidebarItemRef => ({ kind: 'room', roomId });
+
+/** A room as `GET /api/rooms` carries it. */
+function room(overrides: Partial<RoomSummary> & Pick<RoomSummary, 'id' | 'kind'>): RoomSummary {
+  return {
+    parentId: null,
+    slug: null,
+    title: 'Untitled',
+    topic: null,
+    workspaceId: null,
+    rootEntryId: null,
+    archived: false,
+    createdAt: '2026-07-01T00:00:00.000Z',
+    lastActivityAt: '2026-07-20T10:00:00.000Z',
+    unreadCount: 0,
+    participants: null,
+    ...overrides,
+  };
+}
+
+const channel = (id: string, slug: string) => room({ id, kind: 'channel', slug, title: slug });
+
+/**
+ * A direct message with one agent in it. The `AuthorRef` deliberately carries
+ * NO emoji and NO colour: the server only caches those for an agent that has one
+ * stored on its manifest, and drawing this row from them is what DOR-582 was.
+ */
+function dmWith(id: string, agentPath: string, title: string): RoomSummary {
+  const participants: AuthorRef[] = [
+    { id: `${id}-you`, kind: 'human', displayName: 'You' },
+    { id: `${id}-agent`, kind: 'agent', displayName: title, agentRef: agentAuthorRef(agentPath) },
+  ];
+  return room({ id, kind: 'dm', title, participants });
+}
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -31,8 +68,12 @@ const mockSetGlobalPaletteOpen = vi.fn();
 const mockUpdateSidebar = vi.fn<(updater: (prev: unknown) => unknown) => void>();
 const mockSetRightPanelOpen = vi.fn();
 const mockSetActiveRightPanelTab = vi.fn();
+// `id` is required on a real `AgentManifest` and is what the agent's face is
+// hashed from, so a fixture without one is not a manifest the app could ever
+// receive — and leaving it out crashes the hash rather than failing an
+// assertion.
 const mockResolvedAgents = vi.fn<
-  () => Record<string, { name: string; displayName?: string } | null>
+  () => Record<string, { id: string; name: string; displayName?: string } | null>
 >(() => ({}));
 let mockSelectedCwd: string | null = null;
 
@@ -64,11 +105,13 @@ const mockRecent = vi.fn<() => RecentResult>(() => ({
   isLoading: false,
 }));
 
+const mockRooms = vi.fn<() => RoomSummary[]>(() => []);
 const mockTransport = {
   getConfig: vi.fn().mockResolvedValue({ agents: { defaultAgent: 'dorkbot' } }),
   listMeshAgentPaths: vi.fn(),
   resolveAgents: vi.fn().mockResolvedValue({}),
   listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+  listRooms: vi.fn(() => Promise.resolve(mockRooms())),
 };
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -257,6 +300,8 @@ describe('DashboardSidebar', () => {
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockSidebarPrefs.mockReturnValue(makePrefs());
     mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
     mockAttentionMap.mockReset();
     mockAttentionMap.mockImplementation((paths: string[]) =>
       Object.fromEntries(paths.map((p) => [p, 'active']))
@@ -312,8 +357,8 @@ describe('DashboardSidebar', () => {
   it('sorts ungrouped agents by resolved display name, overriding path order', () => {
     mockMeshPaths.mockReturnValue(['/projects/zebra', '/projects/alpha']);
     mockResolvedAgents.mockReturnValue({
-      '/projects/zebra': { name: 'zebra', displayName: 'Apple' },
-      '/projects/alpha': { name: 'alpha', displayName: 'Zulu' },
+      '/projects/zebra': { id: 'zebra-id', name: 'zebra', displayName: 'Apple' },
+      '/projects/alpha': { id: 'alpha-id', name: 'alpha', displayName: 'Zulu' },
     });
     renderWithProviders(<DashboardSidebar />);
     const t = document.body.textContent ?? '';
@@ -572,6 +617,8 @@ describe('DashboardSidebar attention filters + reveal (DOR-339)', () => {
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockSidebarPrefs.mockReturnValue(makePrefs());
     mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
     mockAttentionMap.mockReset();
     mockSelectedCwd = null;
     mockPathname = '/';
@@ -634,6 +681,8 @@ describe('DashboardSidebar smart groups (DOR-338)', () => {
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockSidebarPrefs.mockReturnValue(makePrefs());
     mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
     mockAttentionMap.mockReset();
     mockSelectedCwd = null;
     mockPathname = '/';
@@ -723,5 +772,197 @@ describe('DashboardSidebar smart groups (DOR-338)', () => {
 
     expect(screen.getAllByText('alpha')).toHaveLength(1); // only the ungrouped copy survives
     expect(screen.getByText('No agents match these rules')).toBeInTheDocument();
+  });
+});
+
+describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMeshPaths.mockReset();
+    mockSidebarPrefs.mockReset();
+    mockUpdateSidebar.mockReset();
+    mockRecent.mockReset();
+    mockNavigate.mockReset();
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
+    mockMeshPaths.mockReturnValue(['/projects/alpha', '/projects/beta']);
+    mockSidebarPrefs.mockReturnValue(makePrefs());
+    mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
+    mockAttentionMap.mockReset();
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    mockSelectedCwd = null;
+    mockPathname = '/';
+  });
+
+  /** The room row's mark, as the accessibility tree exposes it: decorative text. */
+  function markOf(roomName: string): string {
+    const row = screen.getByText(roomName).closest('[data-slot="sidebar-menu-item"]');
+    return row?.querySelector('[data-slot="room-avatar"]')?.textContent ?? '';
+  }
+
+  it('renders a channel inside the group it was filed into, beside its agents', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mockSidebarPrefs.mockReturnValue(
+      makePrefs({ groups: [group({ items: [agent('/projects/alpha'), roomRef('c1')] })] })
+    );
+    renderWithProviders(<DashboardSidebar />);
+
+    // Gate on the CHANNEL, not on the group header: the header renders from
+    // prefs on the first pass, so waiting for it proves nothing about whether
+    // the room list has arrived yet.
+    await screen.findByText('#general');
+    const groupBody = screen
+      .getByText('Clients')
+      .closest('[data-slot="sidebar-group"]') as HTMLElement;
+    expect(within(groupBody).getByText('alpha')).toBeInTheDocument();
+    expect(within(groupBody).getByText('#general')).toBeInTheDocument();
+  });
+
+  it('shows a grouped channel in exactly one place — never also in Channels', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general'), channel('c2', 'random')]);
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [roomRef('c1')] })] }));
+    renderWithProviders(<DashboardSidebar />);
+
+    // The gate: #random only ever renders once the room list has settled, so
+    // reaching it proves the ungrouped Channels list has been built.
+    expect(await screen.findByText('#random')).toBeInTheDocument();
+    // The count is knowable, so assert it rather than "not more than one".
+    expect(screen.getAllByText('#general')).toHaveLength(1);
+    expect(screen.getAllByText('#random')).toHaveLength(1);
+    // And the one #general is the copy inside the group.
+    const groupBody = screen.getByText('Clients').closest('[data-slot="sidebar-group"]')!;
+    expect(within(groupBody as HTMLElement).getByText('#general')).toBeInTheDocument();
+  });
+
+  it('a direct message in a group keeps out of the Direct messages section', async () => {
+    mockRooms.mockReturnValue([
+      dmWith('dm1', '/projects/alpha', 'Ana'),
+      dmWith('dm2', '/projects/beta', 'Bo'),
+    ]);
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [roomRef('dm1')] })] }));
+    renderWithProviders(<DashboardSidebar />);
+
+    expect(await screen.findByText('Bo')).toBeInTheDocument();
+    expect(screen.getAllByText('Ana')).toHaveLength(1);
+    const groupBody = screen.getByText('Clients').closest('[data-slot="sidebar-group"]')!;
+    expect(within(groupBody as HTMLElement).getByText('Ana')).toBeInTheDocument();
+  });
+
+  it('a pinned room renders in Pinned as well as its own section (multi-presence)', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mockSidebarPrefs.mockReturnValue(makePrefs({ pinned: [roomRef('c1')] }));
+    renderWithProviders(<DashboardSidebar />);
+
+    await screen.findByText('Pinned');
+    expect(screen.getAllByText('#general')).toHaveLength(2);
+  });
+
+  // --- Empty states that must not lie (spec §4) ---
+
+  it('invites a first channel when there are genuinely none', async () => {
+    renderWithProviders(<DashboardSidebar />);
+    expect(await screen.findByText(/No channels yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/channels are all in groups/)).not.toBeInTheDocument();
+  });
+
+  it('says why Channels is empty when every channel is in a group, instead of "create one"', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [roomRef('c1')] })] }));
+    renderWithProviders(<DashboardSidebar />);
+
+    expect(await screen.findByText('Your channels are all in groups above.')).toBeInTheDocument();
+    expect(screen.queryByText(/No channels yet/)).not.toBeInTheDocument();
+  });
+
+  it('invites a first conversation when there are genuinely none', async () => {
+    renderWithProviders(<DashboardSidebar />);
+    expect(await screen.findByText(/No messages yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/conversations are all in groups/)).not.toBeInTheDocument();
+  });
+
+  it('says why Direct messages is empty when every conversation is in a group', async () => {
+    mockRooms.mockReturnValue([dmWith('dm1', '/projects/alpha', 'Ana')]);
+    mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [roomRef('dm1')] })] }));
+    renderWithProviders(<DashboardSidebar />);
+
+    expect(
+      await screen.findByText('Your conversations are all in groups above.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No messages yet/)).not.toBeInTheDocument();
+  });
+
+  it('says why Agents is empty when every agent is in a group', async () => {
+    mockSidebarPrefs.mockReturnValue(
+      makePrefs({ groups: [group({ items: [agent('/projects/alpha'), agent('/projects/beta')] })] })
+    );
+    renderWithProviders(<DashboardSidebar />);
+    expect(await screen.findByText('Your agents are all in groups above.')).toBeInTheDocument();
+  });
+
+  it('stays quiet about grouping when some agents are still ungrouped', async () => {
+    mockSidebarPrefs.mockReturnValue(
+      makePrefs({ groups: [group({ items: [agent('/projects/alpha')] })] })
+    );
+    renderWithProviders(<DashboardSidebar />);
+    // Gate on the settled sidebar: beta's ungrouped row is what proves the
+    // section rendered at all before the absence below is asserted.
+    expect(await screen.findByText('beta')).toBeInTheDocument();
+    expect(screen.queryByText('Your agents are all in groups above.')).not.toBeInTheDocument();
+  });
+
+  // --- DOR-582: a DM wears its agent's face ---
+
+  it("draws a one-to-one conversation with the agent's own emoji, not a letter", async () => {
+    mockRooms.mockReturnValue([dmWith('dm1', '/projects/alpha', 'Ana')]);
+    renderWithProviders(<DashboardSidebar />);
+
+    await screen.findByText('Ana');
+    // No manifest is resolved in this fixture, so the face is hashed from the
+    // path — the same expression the agent's own row resolves through.
+    const expected = resolveAgentVisual({ id: '/projects/alpha' }).emoji;
+    expect(markOf('Ana')).toBe(expected);
+    // 'A' is what the old AuthorRef-driven mark drew for "Ana". Naming it here
+    // is the point: this test fails loudly if the row regresses to a letter.
+    expect(markOf('Ana')).not.toBe('A');
+  });
+
+  it('draws a group conversation as a stack of every agent in it', async () => {
+    const participants: AuthorRef[] = [
+      { id: 'p-you', kind: 'human', displayName: 'You' },
+      {
+        id: 'p-ana',
+        kind: 'agent',
+        displayName: 'Ana',
+        agentRef: agentAuthorRef('/projects/alpha'),
+      },
+      { id: 'p-bo', kind: 'agent', displayName: 'Bo', agentRef: agentAuthorRef('/projects/beta') },
+    ];
+    mockRooms.mockReturnValue([room({ id: 'dm1', kind: 'dm', title: 'Ana and Bo', participants })]);
+    renderWithProviders(<DashboardSidebar />);
+
+    await screen.findByText('Ana and Bo');
+    const expected =
+      resolveAgentVisual({ id: '/projects/alpha' }).emoji +
+      resolveAgentVisual({ id: '/projects/beta' }).emoji;
+    expect(markOf('Ana and Bo')).toBe(expected);
+  });
+
+  it('gives a channel the # sigil rather than any face', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    renderWithProviders(<DashboardSidebar />);
+
+    await screen.findByText('#general');
+    const row = screen.getByText('#general').closest('[data-slot="sidebar-menu-item"]')!;
+    const mark = row.querySelector('[data-slot="room-avatar"]')!;
+    // The lucide Hash glyph is an <svg>, and it carries no text at all — which
+    // is exactly how it differs from every face-bearing mark.
+    expect(mark.tagName.toLowerCase()).toBe('svg');
+    expect(mark.textContent).toBe('');
   });
 });

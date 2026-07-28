@@ -13,7 +13,7 @@
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { AuthorRef, Room, RoomMember, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { toAuthorRef, type AuthorRecord, type AuthorRegistry } from './author-registry.js';
-import type { MentionCandidate } from './mentions.js';
+import { advertisedHandle, claimNames, type MentionCandidate } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
@@ -68,30 +68,6 @@ export class RoomRoster {
   }
 
   /**
-   * The roster a new thread inherits from its parent, as rows ready to insert.
-   *
-   * Returns rather than writes, so the caller can put the thread row and its
-   * roster in one transaction.
-   *
-   * Each membership inherits the PARENT's `responseMode` rather than re-seeding
-   * from the room kind: an agent you asked to stay quiet in `#backend` should
-   * not start answering everything because somebody opened a thread there.
-   *
-   * @param parentRoomId - The room to copy from.
-   * @param joinedAt - Timestamp to stamp every inherited membership with.
-   */
-  inheritedFrom(
-    parentRoomId: string,
-    joinedAt: string
-  ): Array<{ authorId: string; responseMode: ResponseMode; joinedAt: string }> {
-    return this.store.listMembers(parentRoomId).map((member) => ({
-      authorId: member.authorId,
-      responseMode: member.responseMode,
-      joinedAt,
-    }));
-  }
-
-  /**
    * Change one membership's per-room response mode.
    *
    * @param roomId - The room.
@@ -134,14 +110,30 @@ export class RoomRoster {
    * A room's roster with every author resolved — one query for the memberships
    * and one for the authors, not one per member.
    *
+   * This is the projection a mention picker reads, so it is the one that also
+   * carries each member's `mentionHandle`. That costs one mesh lookup per agent
+   * member, which is why it is not done on the bulk room-list path
+   * ({@link RoomRoster.authorsIn}) where nothing addresses anybody.
+   *
    * @param roomId - The room.
    */
   list(roomId: string): RoomRosterEntry[] {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
+    // Ownership is computed over the SAME candidate sequence `mentionCandidates`
+    // hands `resolveMentions`, so a handle is advertised to a member only when
+    // that member is the one it would actually reach. Deriving it per member in
+    // isolation cannot see a name an earlier member claimed but never
+    // advertised, and silently offers a handle that addresses somebody else.
+    const claims = claimNames(this.candidatesFrom(members, authors));
     return members.map((member) => {
       const author = authors.get(member.authorId);
-      return { ...member, author: author ? toAuthorRef(author) : unknownAuthor(member.authorId) };
+      if (!author) return { ...member, author: unknownAuthor(member.authorId) };
+      const handle = advertisedHandle(
+        { authorId: author.id, names: this.namesFor(author) },
+        claims
+      );
+      return { ...member, author: toAuthorRef(author, handle) };
     });
   }
 
@@ -178,17 +170,48 @@ export class RoomRoster {
   mentionCandidates(roomId: string): MentionCandidate[] {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
+    return this.candidatesFrom(members, authors);
+  }
+
+  /**
+   * Project already-read memberships onto the mention-candidate sequence.
+   *
+   * Shared by {@link RoomRoster.mentionCandidates} and {@link RoomRoster.list}
+   * so both walk members in the same order — the order that decides which
+   * member wins a contested name. Takes what the caller has already fetched
+   * rather than re-querying, so advertising handles costs `list` no extra reads.
+   *
+   * @param members - The room's memberships, in store order.
+   * @param authors - The resolved authors, keyed by id.
+   */
+  private candidatesFrom(
+    members: readonly RoomMember[],
+    authors: ReadonlyMap<string, AuthorRecord>
+  ): MentionCandidate[] {
     const candidates: MentionCandidate[] = [];
     for (const member of members) {
       const author = authors.get(member.authorId);
       if (!author) continue;
-      const handle = author.kind === 'agent' ? this.agents.byPath(author.naturalKey)?.name : null;
-      candidates.push({
-        authorId: author.id,
-        names: handle ? [handle, author.displayName] : [author.displayName],
-      });
+      candidates.push({ authorId: author.id, names: this.namesFor(author) });
     }
     return candidates;
+  }
+
+  /**
+   * Every name an author answers to after an `@`, most preferred first: an
+   * agent's handle, then whatever it renders as.
+   *
+   * The single definition behind BOTH halves of the contract — what
+   * {@link RoomRoster.mentionCandidates} resolves at write time, and what
+   * {@link RoomRoster.list} advertises to a mention picker. Two derivations of
+   * "the name this author answers to" is how a picker starts offering a handle
+   * the resolver does not accept.
+   *
+   * @param author - The stored author.
+   */
+  private namesFor(author: AuthorRecord): string[] {
+    const handle = author.kind === 'agent' ? this.agents.byPath(author.naturalKey)?.name : null;
+    return handle ? [handle, author.displayName] : [author.displayName];
   }
 
   /**

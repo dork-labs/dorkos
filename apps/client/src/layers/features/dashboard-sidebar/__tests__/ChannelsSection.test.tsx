@@ -103,6 +103,8 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
   return render(
     <ChannelsSection
       channels={[]}
+      hasGroupedChannels={false}
+      visualOf={() => ({ kind: 'sigil' })}
       isLoading={false}
       error={null}
       activeRoomId={null}

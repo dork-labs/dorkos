@@ -90,8 +90,13 @@ export interface AuthorRecord {
  * to an agent without comparing rendered names.
  *
  * @param record - The stored author.
+ * @param mentionHandle - What to type after an `@` to address this author, when
+ *   the caller knows it. It cannot be derived here: an agent's handle lives in
+ *   the mesh cache, keyed on the path this function exists to hide. Only
+ *   `RoomRoster.list` supplies one, so the field is absent everywhere a picker
+ *   does not read.
  */
-export function toAuthorRef(record: AuthorRecord): AuthorRef {
+export function toAuthorRef(record: AuthorRecord, mentionHandle?: string): AuthorRef {
   return {
     id: record.id,
     kind: record.kind,
@@ -99,6 +104,7 @@ export function toAuthorRef(record: AuthorRecord): AuthorRef {
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),
     ...(record.kind === 'agent' ? { agentRef: agentAuthorRef(record.naturalKey) } : {}),
+    ...(mentionHandle ? { mentionHandle } : {}),
   };
 }
 

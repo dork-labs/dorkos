@@ -12,7 +12,7 @@
   },
   "scripts": {
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
-    "db:check": "drizzle-kit generate --config drizzle.config.ts && git diff --exit-code drizzle/",
+    "db:check": "bash ../../scripts/assert-migrations-current.sh",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

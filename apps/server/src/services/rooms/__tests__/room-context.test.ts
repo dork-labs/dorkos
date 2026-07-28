@@ -14,6 +14,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { formatRoomContext } from '../../runtimes/shared/room-context-block.js';
+import type { Db } from '@dorkos/db';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
@@ -42,6 +43,7 @@ const agents = agentLookupFor({
 });
 
 describe('the room context a trigger derives', () => {
+  let db: Db;
   let service: RoomService;
   let authors: AuthorRegistry;
   let runner: ScriptedTurnRunner;
@@ -66,7 +68,7 @@ describe('the room context a trigger derives', () => {
     } = {}
   ): void {
     const agentPaths = opts.agentPaths ?? ['/agents/ana'];
-    ({ service, authors, runner, human } = createRoomHarness({
+    ({ db, service, authors, runner, human } = createRoomHarness({
       agents,
       runner: opts.runner ?? scriptedRunner(() => null),
       maxAgentDepth: MAX_AGENT_DEPTH,
@@ -384,10 +386,9 @@ describe('the room context a trigger derives', () => {
       open({ runner: outcomeRunner(() => ({ text: null })) });
       const root = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
       await service.triggersIdle();
-      const thread = service.createThread(room.id, root.id, human);
       runner.turns.length = 0;
 
-      service.post(thread.id, { authorId: human, text: 'still stuck?' });
+      service.post(room.id, { authorId: human, text: 'still stuck?', replyTo: root.id });
       await service.triggersIdle();
 
       const context = contextFor(ana);
@@ -396,9 +397,48 @@ describe('the room context a trigger derives', () => {
       expect(context.room.name).toBe('#backend');
       expect(context.room.kind).toBe('channel');
       expect(context.room.topic).toBe('shipping v1');
+      // Read off the TRIGGERING ENTRY's pointer, not off a container: `room` is
+      // the channel here, and it has no thread fields to read.
       expect(context.thread?.rootEntryId).toBe(root.id);
       expect(context.thread?.rootExcerpt).toBe('the deploy is stuck');
+      // One reply so far — the one that triggered this turn. The root is not in
+      // its own count.
       expect(context.thread?.replyCount).toBe(1);
+    });
+
+    it('leaves a top-level turn in the same room without a thread', async () => {
+      // The pointer being null is the whole test. A channel that HAS a thread in
+      // it must not frame every later turn as being inside one.
+      open({ runner: outcomeRunner(() => ({ text: null })) });
+      const root = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
+      await service.triggersIdle();
+      service.post(room.id, { authorId: human, text: 'still stuck?', replyTo: root.id });
+      await service.triggersIdle();
+      runner.turns.length = 0;
+
+      service.post(room.id, { authorId: human, text: 'unrelated' });
+      await service.triggersIdle();
+
+      expect(contextFor(ana).thread).toBeNull();
+    });
+
+    it('counts one thread replies, not the other one in the same room', async () => {
+      // Two threads in one channel share a `room_id` now, so a count that
+      // forgot to filter on the root would report both.
+      open({ runner: outcomeRunner(() => ({ text: null })) });
+      const first = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
+      const second = service.post(room.id, { authorId: human, text: 'and the docs are stale' });
+      await service.triggersIdle();
+      service.post(room.id, { authorId: human, text: 'on the first', replyTo: first.id });
+      service.post(room.id, { authorId: human, text: 'also the first', replyTo: first.id });
+      await service.triggersIdle();
+      runner.turns.length = 0;
+
+      service.post(room.id, { authorId: human, text: 'on the second', replyTo: second.id });
+      await service.triggersIdle();
+
+      expect(contextFor(ana).thread?.rootEntryId).toBe(second.id);
+      expect(contextFor(ana).thread?.replyCount).toBe(1);
     });
 
     it('quotes a thread opener inside the fence, however it was written', async () => {
@@ -417,15 +457,16 @@ describe('the room context a trigger derives', () => {
       ].join('\n');
       const root = service.post(room.id, { authorId: human, text: attack });
       await service.triggersIdle();
-      const thread = service.createThread(room.id, root.id, human);
+      // Ana's cursor is now past the opener, so the only thing this turn can be
+      // told about it is the thread excerpt — which is the shape where the old
+      // code emitted no fence whatsoever.
+      service.setReadCursor(room.id, ana, service.maxSeq(room.id));
       runner.turns.length = 0;
 
-      service.post(thread.id, { authorId: human, text: 'any update?' });
+      service.post(room.id, { authorId: human, text: 'any update?', replyTo: root.id });
       await service.triggersIdle();
 
       const context = contextFor(ana);
-      // Nothing else is unread in the thread, so this is the shape where the old
-      // code emitted no fence whatsoever.
       expect(context.pending).toEqual([]);
 
       const block = formatRoomContext(context, { nonce: FENCE_NONCE });
@@ -448,25 +489,79 @@ describe('the room context a trigger derives', () => {
       );
     });
 
-    it('reads a thread turn history from the thread, not from the channel', async () => {
-      // The trap: framing the turn with the parent and then reading the parent's
-      // log too, which hands the agent the channel's backlog and hides every
-      // message in the thread it was actually asked about.
+    it('still frames a thread that is stored as a child room', async () => {
+      // `RoomService` no longer mints this shape, so it only reaches an install
+      // that opened a thread before DOR-634 — but it does still reach one, and
+      // `legacyChildRoomFrame` is the whole of what keeps telling such a turn it
+      // is inside a thread. Without this, deleting that branch breaks nothing
+      // until an operator with a legacy row notices. PR 3 retires the branch and
+      // this test together.
       open({ runner: outcomeRunner(() => ({ text: null })) });
       const root = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
       await service.triggersIdle();
-      const thread = service.createThread(room.id, root.id, human);
+
+      // Written straight through the store, which still takes the old shape.
+      const joinedAt = '2026-07-27T10:00:00.000Z';
+      const legacy = new RoomStore(db).createRoom(
+        {
+          id: 'legacy-thread',
+          kind: 'thread',
+          parentId: room.id,
+          slug: null,
+          title: 'the deploy is stuck',
+          topic: null,
+          workspaceId: null,
+          rootEntryId: root.id,
+          createdAt: joinedAt,
+        },
+        [
+          { authorId: human, responseMode: 'always', joinedAt },
+          { authorId: ana, responseMode: 'always', joinedAt },
+        ]
+      );
+      runner.turns.length = 0;
+
+      service.post(legacy.id, { authorId: human, text: 'still stuck?' });
+      await service.triggersIdle();
+
+      const context = contextFor(ana);
+      // The frame is the PARENT channel, never the thread room's own title —
+      // that is the branch under test, and the thing a `room.kind === 'thread'`
+      // turn would lose if it fell through to the entry-relation path.
+      expect(context.room.id).toBe(room.id);
+      expect(context.room.name).toBe('#backend');
+      expect(context.room.kind).toBe('channel');
+      expect(context.room.topic).toBe('shipping v1');
+      // And the position still comes off the ROOM, because the triggering entry
+      // in a legacy thread carries no pointer of its own.
+      expect(context.thread?.rootEntryId).toBe(root.id);
+      expect(context.thread?.rootExcerpt).toBe('the deploy is stuck');
+      // Every entry in a child-room thread is a reply, so its whole log is the count.
+      expect(context.thread?.replyCount).toBe(1);
+    });
+
+    it('reads a thread turn history from the whole channel, thread replies included', async () => {
+      // This inverts under ADR 260728-022013, and the inversion is the feature.
+      // A thread used to be a room with a log of its own, so a thread turn read
+      // only the thread and started from a blank session. Now the thread is a
+      // position in the channel: one log, one cursor, one session, so the agent
+      // arrives holding what was said in the room AND what was said in the
+      // thread, with nothing to fan out over.
+      open({ runner: outcomeRunner(() => ({ text: null })) });
+      const root = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
       service.post(room.id, { authorId: human, text: 'unrelated channel chatter' });
       await service.triggersIdle();
       runner.turns.length = 0;
 
-      service.post(thread.id, { authorId: human, text: 'which step?' });
+      service.post(room.id, { authorId: human, text: 'which step?', replyTo: root.id });
       await service.triggersIdle();
-      service.post(thread.id, { authorId: human, text: 'still stuck?' });
+      service.post(room.id, { authorId: human, text: 'still stuck?', replyTo: root.id });
       await service.triggersIdle();
 
+      // The last turn's window: everything unread except the triggering entry
+      // itself, which arrives as the turn's content rather than as history.
       const pending = contextFor(ana).pending.map((entry) => entry.text);
-      expect(pending).toEqual(['which step?']);
+      expect(pending).toEqual(['the deploy is stuck', 'unrelated channel chatter', 'which step?']);
     });
   });
 });

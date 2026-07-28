@@ -108,6 +108,8 @@ function request(
     sessionId: null,
     cascadeRoot: `entry-${counter}`,
     cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
     signature: null,
     createdAt: room.createdAt,
   };

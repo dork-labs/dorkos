@@ -530,6 +530,13 @@ explicitly supersede them.
 
 ### From `specs/community-adapter/02-specification.md` (frozen for DECOMPOSE)
 
+> **Amended 2026-07-28.** `specs/community-adapter/02-specification.md` was amended that day (all nine
+> of its Open Questions resolved; the `resume` capability and `signals: 'receive'` removed), so every
+> `:<line>` anchor into that file below predates the edit and no longer lands on the content it names.
+> The quoted text and the claims are still accurate; only the anchors moved. Re-derive a line number
+> before relying on one. Deliberately not renumbered: this is a living document and the anchors would
+> rot again on its next edit.
+
 29. **Every room reference is `(community, roomId)`.** `CommunityRef` is opaque, branded, **minted locally at
     configure time and never supplied by a remote**. `LOCAL_COMMUNITY = 'local'` is the reserved ref for this
     machine's SQLite rooms. **One adapter instance serves exactly one community** — joining two Buzz
@@ -953,6 +960,11 @@ Quoted, with the spec's own framing preserved — several are flagged as "decide
 ### From `specs/community-adapter/02-specification.md` §Open Questions (`:724-736`)
 
 Preamble: _"Every one of these is a genuine uncertainty, flagged rather than papered over."_
+
+> **All nine were answered on 2026-07-28** and that section is now "Decisions resolved after SPECIFY"
+> in the spec. Read the nine below as the questions that were asked, not as open work; the answers,
+> and which of them changed the contract, are in the spec's own section. The `:<line>` anchors here
+> predate the amendment.
 
 1. **Threads vs. the cockpit's thread pane** (`:728`) — _"Does `listRooms` excluding threads break the
    cockpit's thread pane? … I believe the entry relation is the correct seam and that the translation is

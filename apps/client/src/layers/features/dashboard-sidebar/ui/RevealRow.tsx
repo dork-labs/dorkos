@@ -1,15 +1,21 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { SidebarMenuItem, SidebarMenuButton } from '@/layers/shared/ui';
-import type { AgentEntry } from '../model/filter-agents';
+import type { RenderSidebarItem, SidebarItem } from '../model/sidebar-item';
 
 interface RevealRowProps {
   /** Which honest count this ghost row reports. */
   kind: 'hidden' | 'inactive';
-  /** The hidden member paths — revealed inline on click. */
-  agents: AgentEntry[];
-  /** Render one agent row (same renderer the section uses for its visible rows). */
-  renderRow: (path: string, keyPrefix: string) => ReactNode;
+  /**
+   * The hidden items — revealed inline on click.
+   *
+   * The `inactive` row can only ever hold agents: a room is never in the
+   * `inactive` attention state (see `SidebarItem.attention`), which is what
+   * keeps its "N inactive agents" wording true.
+   */
+  items: SidebarItem[];
+  /** Render one row (the same renderer the section uses for its visible rows). */
+  renderItem: RenderSidebarItem;
   /** Dnd key prefix for revealed rows (the section's own container key). */
   keyPrefix: string;
 }
@@ -27,15 +33,15 @@ interface RevealRowProps {
  * consistent look and full click/context-menu/mute behavior, but are not
  * currently draggable while in the revealed state.
  */
-export function RevealRow({ kind, agents, renderRow, keyPrefix }: RevealRowProps) {
+export function RevealRow({ kind, items, renderItem, keyPrefix }: RevealRowProps) {
   const [expanded, setExpanded] = useState(false);
 
-  if (agents.length === 0) return null;
+  if (items.length === 0) return null;
 
   const label =
     kind === 'inactive'
-      ? `${agents.length} inactive ${agents.length === 1 ? 'agent' : 'agents'}`
-      : `${agents.length} hidden`;
+      ? `${items.length} inactive ${items.length === 1 ? 'agent' : 'agents'}`
+      : `${items.length} hidden`;
 
   return (
     <>
@@ -53,7 +59,7 @@ export function RevealRow({ kind, agents, renderRow, keyPrefix }: RevealRowProps
           {label}
         </SidebarMenuButton>
       </SidebarMenuItem>
-      {expanded && agents.map((path) => renderRow(path, keyPrefix))}
+      {expanded && items.map((item) => renderItem(item, keyPrefix))}
     </>
   );
 }

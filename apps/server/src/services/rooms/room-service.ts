@@ -1,8 +1,8 @@
 /**
- * Room orchestration: create, join, post, read cursor, thread create.
+ * Room orchestration: create, join, post, read cursor, thread replies.
  *
- * The service owns the rules a room has that the tables cannot state — a thread
- * may not have a thread for a parent, a channel slug is unique while it is
+ * The service owns the rules a room has that the tables cannot state — a reply
+ * may not hang off another reply, a channel slug is unique while it is
  * live — and it publishes what happened to the two streams a room fans out on:
  * its own SSE stream for entries and signals, the global `/api/events` stream
  * for lifecycle. Membership lives next door in `room-roster.ts`, and turning a
@@ -43,9 +43,16 @@
  * What holds regardless is `turn-budget.ts`, which counts without asking who is
  * calling: a per-room cap on what any ONE room may spend, and a global cap on
  * what the whole install may. The per-room one bounds a room, not a bill —
- * rooms and threads are free to create, so it alone can be multiplied by making
- * more of them; the global one is the ceiling. These gates shape a healthy
- * room; those caps are what bound a dishonest one.
+ * rooms are free to create, so it alone can be multiplied by making more of
+ * them; the global one is the ceiling. These gates shape a healthy room; those
+ * caps are what bound a dishonest one.
+ *
+ * **A thread is no longer one of those levers** (ADR 260728-022013). While a
+ * thread was a child room it came with a fresh budget window and a fresh cascade
+ * namespace, which is why opening one used to answer to the seeding gate; now a
+ * thread reply is an entry in its channel, so it spends the channel's budget and
+ * lands in the channel's ancestry set. Threads got cheaper to make and stopped
+ * buying anything.
  *
  * @module server/services/rooms/room-service
  */
@@ -158,7 +165,8 @@ export class RoomService {
       maxAgentDepth: deps.maxAgentDepth,
       writer: {
         post: (roomId, input) => this.post(roomId, input),
-        postNotice: (roomId, body, cascade) => this.postNotice(roomId, body, cascade),
+        postNotice: (roomId, body, cascade, replyTo) =>
+          this.postNotice(roomId, body, cascade, replyTo),
       },
     });
   }
@@ -314,72 +322,6 @@ export class RoomService {
 
     eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
     return { ...this.withRoster(room, creatorAuthorId), created: true };
-  }
-
-  /**
-   * Open a thread off an entry. One level only — a thread of a thread is
-   * refused here rather than silently flattened, because a reader who thought
-   * they had branched twice and got one branch has been lied to.
-   *
-   * @param parentId - The room the thread hangs off.
-   * @param rootEntryId - The entry it hangs off.
-   * @param viewerAuthorId - The caller; must be on the parent's roster.
-   * @param title - Optional title; defaults to the root entry's opening words.
-   * @returns The new thread room with its roster.
-   */
-  createThread(
-    parentId: string,
-    rootEntryId: string,
-    viewerAuthorId: string,
-    title?: string
-  ): RoomWithRoster {
-    const parent = this.requireVisibleRoom(parentId, viewerAuthorId);
-    if (parent.kind === 'thread') {
-      throw new RoomError('NESTED_THREAD', 'A thread cannot hang off another thread');
-    }
-    const rootEntry = this.store.getEntryById(parentId, rootEntryId);
-    if (!rootEntry) throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
-
-    const createdAt = new Date().toISOString();
-    // A thread inherits the parent's whole roster, response modes included, so
-    // opening one is a seeding operation and answers to the same rule
-    // `createRoom` does: only the operator puts a SECOND agent in a room. It is
-    // not a formality here — a thread is a new room, and `authorsInCascade` is
-    // scoped `(room_id, cascade_root)`, so an ungated `createThread` would hand
-    // an agent an unlimited supply of fresh cascade namespaces.
-    //
-    // Read ONCE and used for both the check and the insert, so what was checked
-    // is what is written rather than two reads that merely ought to agree.
-    const inherited = this.roster.inheritedFrom(parent.id, createdAt);
-    this.requireSeedingAllowed(
-      this.roster.requireAuthor(viewerAuthorId),
-      inherited.map((member) => this.roster.requireAuthor(member.authorId))
-    );
-    // Same atomicity as createRoom: the thread and the roster it inherits land
-    // together or not at all. A thread with no roster is a room nobody — not
-    // even the person who opened it — can post into.
-    const thread = this.store.createRoom(
-      {
-        id: ulid(),
-        kind: 'thread',
-        parentId: parent.id,
-        slug: null,
-        title: title ?? summarize(rootEntry.body.text),
-        topic: null,
-        workspaceId: parent.workspaceId,
-        rootEntryId,
-        createdAt,
-      },
-      inherited
-    );
-
-    eventFanOut.broadcast('room_created', {
-      roomId: thread.id,
-      kind: thread.kind,
-      title: thread.title,
-      parentId: parent.id,
-    });
-    return this.withRoster(thread, viewerAuthorId);
   }
 
   /**
@@ -592,16 +534,30 @@ export class RoomService {
    * A post with no trigger starts a fresh cascade at depth 0 — which is what
    * makes a human able to re-engage a room the guard has stopped.
    *
+   * **`replyTo` is what makes this a thread reply**, and it is the only way to
+   * write one (ADR 260728-022013). It names an entry in THIS room; the reply
+   * lands in the same log, under the same roster, spending the same budget, and
+   * — the point of the change — inside the same `(room_id, cascade_root)`
+   * ancestry set, so a cascade that goes through a thread is bounded by the same
+   * rule as one that does not.
+   *
    * @param roomId - The room.
    * @param input.authorId - Who is posting.
    * @param input.text - What they wrote.
    * @param input.sessionId - The session that produced it, if any.
    * @param input.trigger - Cascade provenance, when a trigger produced this.
+   * @param input.replyTo - The entry this answers, when it is a thread reply.
    * @returns The committed entry.
    */
   post(
     roomId: string,
-    input: { authorId: string; text: string; sessionId?: string; trigger?: PostTrigger }
+    input: {
+      authorId: string;
+      text: string;
+      sessionId?: string;
+      trigger?: PostTrigger;
+      replyTo?: string;
+    }
   ): RoomEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
@@ -630,6 +586,7 @@ export class RoomService {
       body: { text: input.text },
       mentions: resolveMentions(input.text, this.roster.mentionCandidates(roomId)),
       sessionId: input.sessionId ?? null,
+      ...this.threadPointers(roomId, input.replyTo),
       ...deriveCascade(id, {
         trigger,
         // An author row that has vanished is treated as an agent — the
@@ -658,12 +615,17 @@ export class RoomService {
    * @param roomId - The room.
    * @param body - The notice body, e.g. from `buildCascadeNotice`.
    * @param cascade - The cascade this notice belongs to, so it stays traceable.
+   * @param replyTo - The entry it belongs under, when the turn it is about
+   *   happened inside a thread. A refusal reported at the channel's top level
+   *   while the exchange it refused is three replies deep in a thread is a
+   *   notice the reader cannot connect to anything (`I3` — a refusal is visible).
    * @returns The committed entry.
    */
   postNotice(
     roomId: string,
     body: RoomEntryBody,
-    cascade?: { root: string; depth: number }
+    cascade?: { root: string; depth: number },
+    replyTo?: string
   ): RoomEntry {
     const room = this.requireRoom(roomId);
     // Archived means archived for the room's own voice too. `post` has always
@@ -679,6 +641,7 @@ export class RoomService {
       body,
       mentions: [],
       sessionId: null,
+      ...this.threadPointers(roomId, replyTo),
       cascadeRoot: cascade?.root ?? id,
       cascadeDepth: cascade?.depth ?? 0,
       createdAt: new Date().toISOString(),
@@ -762,6 +725,40 @@ export class RoomService {
   }
 
   // === Internals ===
+
+  /**
+   * Resolve the two thread pointers an entry is written with.
+   *
+   * **This is where the one-level rule lives, and it is the whole of it**
+   * (ADR 260728-022013). The schema permits `parent_entry_id` to name a reply;
+   * the service refuses to write one, on the same reasoning 260726-170125 gave
+   * and every surveyed product shares. So the depth ceiling is a policy a later
+   * ADR can revisit by changing the `if` below — not a shape a migration would
+   * have to undo. Opening a second level means deriving
+   * `threadRootEntryId = parent.threadRootEntryId ?? parent.id` here instead of
+   * throwing; nothing else in the schema has an opinion.
+   *
+   * Refusing beats flattening: a reader who thought they had branched twice and
+   * got one branch has been lied to.
+   *
+   * @param roomId - The room the entry is being written into.
+   * @param replyTo - The entry it answers, or undefined for a top-level entry.
+   * @returns The `parentEntryId` / `threadRootEntryId` pair to persist.
+   */
+  private threadPointers(
+    roomId: string,
+    replyTo: string | undefined
+  ): { parentEntryId: string | null; threadRootEntryId: string | null } {
+    if (replyTo === undefined) return { parentEntryId: null, threadRootEntryId: null };
+    // Scoped to this room, so an entry id from a room the caller can see cannot
+    // pull a reply into a conversation it does not belong to.
+    const root = this.store.getEntryById(roomId, replyTo);
+    if (!root) throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
+    if (root.threadRootEntryId !== null) {
+      throw new RoomError('NESTED_THREAD', 'A thread reply cannot hang off another reply');
+    }
+    return { parentEntryId: root.id, threadRootEntryId: root.id };
+  }
 
   /**
    * Fetch a room or throw the typed not-found the routes map to a 404.
@@ -943,11 +940,4 @@ function slugify(title: string): string | null {
       .slice(0, 80)
       .replace(/-+$/, '') || null
   );
-}
-
-/** First words of an entry, for a thread's default title. */
-function summarize(text: string): string {
-  const trimmed = text.trim().replace(/\s+/g, ' ');
-  if (trimmed.length <= 60) return trimmed || 'Thread';
-  return `${trimmed.slice(0, 57)}…`;
 }

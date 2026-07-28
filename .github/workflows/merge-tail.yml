@@ -110,15 +110,25 @@ jobs:
             gh pr checks "$pr" --repo "$REPO" --json name,bucket > "$work/checks.json" 2>/dev/null
             jq -e . "$work/checks.json" >/dev/null 2>&1 || echo '[]' > "$work/checks.json"
 
+            # `mergeQueueEntry` rides along here rather than in `gh pr view`
+            # because it is GraphQL-only. It is not optional: a pull request in
+            # the merge queue reports `autoMergeRequest: null`, so without it
+            # the gate's already-armed branch misses every queued pull request
+            # and this workflow re-arms them all on every tick.
             gh api graphql -F number="$pr" -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query='
               query($owner:String!,$name:String!,$number:Int!){
                 repository(owner:$owner,name:$name){
                   pullRequest(number:$number){
+                    mergeQueueEntry{ position state }
                     reviewThreads(last:100){ nodes{ isResolved } } } } }' \
-              > "$work/threads.json" 2>/dev/null
+              > "$work/gql.json" 2>/dev/null
             threads=$(jq '[.data.repository.pullRequest.reviewThreads.nodes[]?
                            | select(.isResolved == false)] | length' \
-                      "$work/threads.json" 2>/dev/null)
+                      "$work/gql.json" 2>/dev/null)
+            queued=$(jq -c '.data.repository.pullRequest.mergeQueueEntry // null' \
+                     "$work/gql.json" 2>/dev/null)
+            # An unreadable queue entry must not read as "not queued".
+            [[ -n "$queued" ]] || { echo "PR #$pr -> SKIP could-not-read-queue-entry"; skipped=$(( skipped + 1 )); continue; }
             # An unreadable thread count must not read as zero. Zero means
             # "checked, none open"; unknown means "do not arm".
             if ! [[ "$threads" =~ ^[0-9]+$ ]]; then
@@ -126,8 +136,8 @@ jobs:
               skipped=$(( skipped + 1 )); continue
             fi
 
-            jq -s --argjson t "$threads" \
-              '.[0] + {checks: .[1], unresolvedThreads: $t}' \
+            jq -s --argjson t "$threads" --argjson q "$queued" \
+              '.[0] + {checks: .[1], unresolvedThreads: $t, mergeQueueEntry: $q}' \
               "$work/meta.json" "$work/checks.json" > "$work/payload.json"
 
             verdict=$(./scripts/should-arm-automerge.sh "$work/payload.json")

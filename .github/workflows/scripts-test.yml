@@ -123,6 +123,16 @@ jobs:
       - name: Test-execution assertion fixtures
         run: bash scripts/test-assert-tests-executed.sh
 
+      # assert-migrations-current.sh replaced a one-liner that was green on a
+      # drifted schema, and both halves of that one-liner failed OPEN: drizzle-kit
+      # exits 0 when it refuses to run for want of a TTY, and `pnpm --filter
+      # <name>` exits 0 when it matches nothing. The replacement is affirmative —
+      # it only passes when the generator announced a known outcome — which means
+      # its verdicts live in a handful of greps. Pin them, or the next person to
+      # loosen one turns the gate back into a decoration silently.
+      - name: Migration-currency assertion fixtures
+        run: bash scripts/test-assert-migrations-current.sh
+
       - name: Auto-merge arming-gate fixtures
         run: bash scripts/test-should-arm-automerge.sh
 

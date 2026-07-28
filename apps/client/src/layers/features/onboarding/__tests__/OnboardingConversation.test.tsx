@@ -26,9 +26,18 @@ vi.mock('@/layers/entities/config', () => ({
 const mockCompleteStep = vi.fn();
 const mockSkipStep = vi.fn();
 const mockCompleteOnboarding = vi.fn();
+/**
+ * The ABSOLUTE agents directory the server reports — `GET /api/config` resolves
+ * `agents.defaultDirectory` against the DorkOS data directory in use, so a
+ * literal `~/.dork/agents` never reaches the client (DOR-662). `undefined`
+ * stands in for the moment before the config query has landed.
+ */
+let mockOnboardingConfig:
+  | { agents: { defaultDirectory: string; defaultAgent: string } }
+  | undefined;
 vi.mock('../model/use-onboarding', () => ({
   useOnboarding: () => ({
-    config: { agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' } },
+    config: mockOnboardingConfig,
     completeStep: mockCompleteStep,
     skipStep: mockSkipStep,
     completeOnboarding: mockCompleteOnboarding,
@@ -117,6 +126,9 @@ async function reachDiscovery() {
 describe('OnboardingConversation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOnboardingConfig = {
+      agents: { defaultDirectory: '/home/kai/.dork/agents', defaultAgent: 'dorkbot' },
+    };
     useAgentBirthStore.setState({ records: {} });
     useAppStore.setState({ requestedTour: null });
   });
@@ -143,13 +155,30 @@ describe('OnboardingConversation', () => {
     fireEvent.click(screen.getByTestId('confirm-personality'));
     await waitFor(() =>
       expect(mockMutateAsync).toHaveBeenCalledWith({
-        path: '~/.dork/agents/dorkbot',
+        path: '/home/kai/.dork/agents/dorkbot',
         updates: {
           traits: { verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 5, spice: 3 },
         },
       })
     );
     expect(mockCompleteStep).toHaveBeenCalledWith('meet-dorkbot');
+  });
+
+  // This save is a WRITE, and the path it writes to used to fall back to a
+  // literal `~/.dork/agents` — which the server expands against the operator's
+  // real home, so from a dev tree it edited the DorkBot of their live install
+  // (DOR-662). With no configured directory yet there is no honest target, so
+  // the save fails visibly instead of guessing one.
+  it('writes nothing until the server has said where DorkBot lives', async () => {
+    mockOnboardingConfig = undefined;
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await screen.findByTestId('pick-personality');
+
+    fireEvent.click(screen.getByTestId('confirm-personality'));
+
+    await waitFor(() => expect(screen.getByTestId('pick-personality')).toBeTruthy());
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+    expect(mockCompleteStep).not.toHaveBeenCalled();
   });
 
   it('"Skip this step" moves past personality into discovery, saving nothing', async () => {

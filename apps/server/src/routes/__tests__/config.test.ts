@@ -19,6 +19,10 @@ vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
 
 vi.mock('../../lib/boundary.js', () => ({
   getBoundary: () => '/Users/test-user',
+  // `lib/agents-home.js` reaches through boundary for a directory a person
+  // configured themselves. Left real-ish so the resolved-directory assertions
+  // below measure the dork-home mapping, not a stub.
+  expandTilde: (p: string) => (p.startsWith('~/') ? `/Users/test-user/${p.slice(2)}` : p),
 }));
 
 function createTempDir(): string {
@@ -567,6 +571,61 @@ describe('GET /api/config', () => {
     expect(res.body).toHaveProperty('tasks');
     expect(res.body).toHaveProperty('relay');
     expect(res.body).toHaveProperty('mesh');
+  });
+
+  // The cockpit shows a person where a new agent will live and probes that path
+  // for a conflict, so the reported directory has to be the one the server will
+  // actually create in — the stored `~/.dork/agents` is not it once `DORK_HOME`
+  // points somewhere else, which is the whole of DOR-662.
+  it('reports agents.defaultDirectory resolved against DORK_HOME, not the home dir', async () => {
+    const res = await request(app).get('/api/config').expect(200);
+
+    expect(res.body.agents.defaultDirectory).toBe(path.join(tmpDir, 'agents'));
+    expect(res.body.agents.defaultDirectory).not.toContain('~');
+    expect(res.body.agents.defaultAgent).toBe('dorkbot');
+  });
+
+  it('reports a directory the person configured as their own, tilde expanded', async () => {
+    const { configManager } = await import('../../services/core/config-manager.js');
+    configManager.set('agents', { defaultDirectory: '~/work/agents', defaultAgent: 'dorkbot' });
+
+    const res = await request(app).get('/api/config').expect(200);
+
+    expect(res.body.agents.defaultDirectory).toBe('/Users/test-user/work/agents');
+  });
+
+  // ── The invariant that makes shipping a RESOLVED value out of GET safe ──────
+  //
+  // GET reports `agents.defaultDirectory` resolved, while the store keeps the
+  // portable `~/.dork/agents` spelling. That split is only safe while nothing
+  // round-trips the reported value back into the store: persisting the absolute
+  // form would pin the config to one machine's home, and in a dev tree would
+  // bake the scratch directory in permanently, so a later `DORK_HOME` change
+  // would be silently ignored. No caller does that today — these two fence it
+  // so it stays that way rather than holding by absence.
+  it('does not persist the resolved directory when a patch touches other config', async () => {
+    const { configManager } = await import('../../services/core/config-manager.js');
+    const get = await request(app).get('/api/config').expect(200);
+    expect(get.body.agents.defaultDirectory).toBe(path.join(tmpDir, 'agents'));
+
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { theme: 'dark' } })
+      .expect(200);
+
+    expect(configManager.get('agents').defaultDirectory).toBe('~/.dork/agents');
+  });
+
+  it('does not persist the resolved directory when the default agent changes', async () => {
+    const { configManager } = await import('../../services/core/config-manager.js');
+    await request(app).get('/api/config').expect(200);
+
+    await request(app).put('/api/config/agents/defaultAgent').send({ value: 'scout' }).expect(200);
+
+    expect(configManager.get('agents')).toEqual({
+      defaultDirectory: '~/.dork/agents',
+      defaultAgent: 'scout',
+    });
   });
 
   it('includes ui.sidebar organization prefs (DOR-329)', async () => {

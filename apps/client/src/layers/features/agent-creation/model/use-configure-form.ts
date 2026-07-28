@@ -46,7 +46,11 @@ export function useConfigureForm({
     staleTime: 30_000,
   });
 
-  const defaultDirectory = config?.agents?.defaultDirectory ?? '~/.dork/agents';
+  // The server reports this already resolved to the absolute directory it will
+  // actually create the agent in. There is nothing sensible to substitute while
+  // the config loads — a guessed path would name a folder the server does not
+  // use — so the preview and the conflict check stay blank until it arrives.
+  const defaultDirectory = config?.agents?.defaultDirectory ?? '';
 
   // Form fields
   const [displayName, setDisplayName] = useState('');
@@ -89,7 +93,8 @@ export function useConfigureForm({
   }, [slug]);
 
   const showSlugError = displayName.length > 0 && slug.length > 0 && !slugValidation.valid;
-  const resolvedDirectory = directoryOverride || `${defaultDirectory}/${slug}`;
+  const resolvedDirectory =
+    directoryOverride || (defaultDirectory && slug ? `${defaultDirectory}/${slug}` : '');
   const canSubmit = displayName.length > 0 && slugValidation.valid && conflictStatus !== 'error';
 
   // Auto-fill name from the selected template on entering the naming step.
@@ -126,8 +131,7 @@ export function useConfigureForm({
   useEffect(() => {
     if (step !== 'naming') return;
 
-    const resolvedPath = directoryOverride || (slug ? `${defaultDirectory}/${slug}` : '');
-    if (!resolvedPath) {
+    if (!resolvedDirectory) {
       setConflictStatus('idle');
       return;
     }
@@ -136,7 +140,7 @@ export function useConfigureForm({
 
     const timer = setTimeout(async () => {
       try {
-        const result = await transport.browseDirectory(resolvedPath);
+        const result = await transport.browseDirectory(resolvedDirectory);
         const hasDork = result.entries.some((entry) => entry.name === '.dork');
         setConflictStatus(hasDork ? 'exists-has-dork' : 'exists-no-dork');
       } catch (err) {
@@ -150,7 +154,7 @@ export function useConfigureForm({
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [step, directoryOverride, slug, defaultDirectory, transport]);
+  }, [step, resolvedDirectory, transport]);
 
   function handleNameChange(value: string) {
     setDisplayName(value);

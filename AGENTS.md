@@ -109,7 +109,7 @@ React 19 + Vite 6 + Tailwind 4 + shadcn/ui (new-york, neutral gray). **Feature-S
 
 ### Site, Shared, CLI
 
-`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (24 subpaths). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
+`apps/site`: Next.js 16 + Fumadocs at dorkos.ai; public marketplace browse + install telemetry (Neon Postgres + Drizzle). `packages/shared`: import via `@dorkos/shared/*` subpaths — see the `exports` map in `packages/shared/package.json` (46 subpaths). `packages/cli`: published as `dorkos`; config precedence CLI flags > env vars > `~/.dork/config.json` > defaults.
 
 ## The `/flow` Workflow
 
@@ -146,6 +146,13 @@ Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: R
 **Two gates, split by what each is good at.** The lefthook `pre-push` hook runs **affected-only** tests (`turbo test --affected`) — fast, survivable on a machine already busy with other agents, and it skips packages your push never touched. GitHub Actions runs the **full monorepo** on every PR and every push to main: `typecheck` and `test`. Because turbo caches `test` and replays a full cache hit in ~280ms while printing "29 successful", the `test` job asserts it actually executed (`scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`) — never weaken that step without reading its header.
 
 Also on GitHub Actions: `fragment-present` (changelog), `scripts-test`, and CLI smoke tests (Node 22/24) + integration tests, which run on push to main and on PRs that touch what they package. Locally: `pnpm smoke:docker` / `pnpm smoke:integration`.
+
+**`main` merges through a merge queue** (ADR 260728-112203). You never update a branch to satisfy a gate: GitHub builds your PR on top of `main` plus everything ahead of it in the queue, runs the required checks against that combined tree, and fast-forwards only if they pass. "Require branches to be up to date" is off, and being behind `main` no longer blocks anything. Two consequences worth knowing:
+
+- **Every required check must report on `merge_group`.** A required check that only fires on `pull_request` blocks the queue forever. Any new required check needs `merge_group:` in its `on:` list.
+- **Some checks stay PR-only on purpose.** Fragment _coverage_ needs the PR's labels and number, which the `merge_group` payload does not carry, so it is answered before queueing and not re-asked. Fragment _validity_ does re-run in the queue.
+
+**Landing a PR is automated.** `merge-tail.yml` arms auto-merge every 10 minutes on PRs that are finished (open, undrafted, unlabelled `hold`, cleanly mergeable, no unresolved threads, every check settled green). Its decision is `scripts/should-arm-automerge.sh`, fixture-pinned. Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed.
 
 ## Research
 

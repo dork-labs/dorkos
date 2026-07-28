@@ -422,6 +422,8 @@ export class RoomStore {
             sessionId: entry.sessionId,
             cascadeRoot: entry.cascadeRoot,
             cascadeDepth: entry.cascadeDepth,
+            parentEntryId: entry.parentEntryId,
+            threadRootEntryId: entry.threadRootEntryId,
             signature: null,
             createdAt: entry.createdAt,
           })
@@ -443,6 +445,8 @@ export class RoomStore {
           sessionId: entry.sessionId,
           cascadeRoot: entry.cascadeRoot,
           cascadeDepth: entry.cascadeDepth,
+          parentEntryId: entry.parentEntryId,
+          threadRootEntryId: entry.threadRootEntryId,
           signature: null,
           createdAt: entry.createdAt,
         };
@@ -585,6 +589,23 @@ export class RoomStore {
   /**
    * How many entries a member has not read.
    *
+   * **No visibility predicate, and that is the decision rather than an
+   * oversight** (DOR-634). Now that a thread reply is an entry in this room
+   * (ADR 260728-022013) it is tempting to exclude one here so the badge matches
+   * a timeline that only draws top-level rows. Do not: the cursor is only ever
+   * advanced to the newest entry in the array the client was handed, that array
+   * is unfiltered, and a count filtered against a cursor that is not would leave
+   * a badge nothing in the product can clear. Unread means "entries in this room
+   * you have not seen", which stays true and stays clearable. The grouping
+   * belongs in the render.
+   *
+   * Two callers, two meanings, so a change here is never local. `RoomService.listRooms`
+   * reads it for the sidebar badge — that is the one this predicate is written
+   * for. `legacyChildRoomFrame` (`room-context.ts`) reuses it as a plain row
+   * count, which is sound only because every entry in a child-room thread is a
+   * reply; that caller and the room kind behind it both retire in PR 3 of
+   * DOR-634. Nothing new may take the second reading.
+   *
    * @param roomId - The room.
    * @param lastReadSeq - The member's read cursor.
    */
@@ -598,7 +619,39 @@ export class RoomStore {
   }
 
   /**
+   * How many replies hang off one thread root.
+   *
+   * The root itself carries a null `thread_root_entry_id`, so it is never in its
+   * own count — which is what makes "3 replies" mean three answers and not the
+   * opening message plus two.
+   *
+   * Reads `idx_room_entries_thread_root`, the partial index. Deliberately NOT
+   * `countUnread(threadRoomId, 0)`, which is what the child-room shape reused
+   * for this: that reuse only worked while a thread had a room of its own, and
+   * bending the unread predicate to keep it working would have changed the
+   * sidebar badge too (DOR-634).
+   *
+   * @param roomId - The room the thread lives in.
+   * @param threadRootEntryId - The entry the thread hangs off.
+   */
+  countThreadReplies(roomId: string, threadRootEntryId: string): number {
+    const row = this.db
+      .select({ value: count() })
+      .from(roomEntries)
+      .where(
+        and(eq(roomEntries.roomId, roomId), eq(roomEntries.threadRootEntryId, threadRootEntryId))
+      )
+      .get();
+    return row?.value ?? 0;
+  }
+
+  /**
    * The distinct authors already in one cascade — the ancestry rule's input.
+   *
+   * **Scoped to the room, which now includes its threads.** A thread reply
+   * carries the channel's `room_id` (ADR 260728-022013), so a cascade that opens
+   * a thread stays inside one ancestry set instead of resetting at a room
+   * boundary the way a child-room thread did (room-participation spec §3.4).
    *
    * @param roomId - The room.
    * @param cascadeRoot - The entry id that began the cascade.
