@@ -332,6 +332,52 @@ describe('validatePackage', () => {
         true
       );
     });
+
+    // Root ignores file permissions, so this SKIPS in any root container — a
+    // green CI Docker run is not evidence this path is covered.
+    it.skipIf(process.getuid?.() === 0)(
+      'reports an unreadable skills directory as an issue instead of throwing',
+      async () => {
+        const pkg = await tempDir();
+        await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+          schemaVersion: 1,
+          name: 'locked-skills-pkg',
+          version: '1.0.0',
+          type: 'plugin',
+          description: 'A plugin whose skills directory cannot be listed',
+          license: 'MIT',
+          tags: [],
+          layers: ['skills'],
+          extensions: [],
+        });
+        await writeJson(path.join(pkg, CLAUDE_PLUGIN_MANIFEST_PATH), {
+          name: 'locked-skills-pkg',
+          version: '1.0.0',
+          description: 'plugin manifest',
+        });
+
+        const skillsDir = path.join(pkg, 'skills');
+        await fs.mkdir(path.join(skillsDir, 'inner'), { recursive: true });
+        await fs.chmod(skillsDir, 0o000);
+
+        try {
+          // A validator returns findings. Throwing here would propagate through
+          // scanInstalledPackages and turn the whole installed list into a 500
+          // over one unreadable subdirectory — the realistic trigger being a
+          // transient, system-wide EMFILE.
+          const result = await validatePackage(pkg);
+
+          expect(result.ok).toBe(false);
+          expect(
+            result.issues.some(
+              (i) => i.code === 'SKILL_INVALID' && i.message.includes('Could not read')
+            )
+          ).toBe(true);
+        } finally {
+          await fs.chmod(skillsDir, 0o755);
+        }
+      }
+    );
   });
 
   describe('NAME_DIRECTORY_MISMATCH', () => {

@@ -186,7 +186,7 @@ describe('TaskReconciler', () => {
       // Same row, same id, history intact — the file is right there.
       const after = store.getTask(created.id);
       expect(after).not.toBeNull();
-      expect(after?.status).not.toBe('paused');
+      expect(after?.status).toBe('active');
       expect(store.countRuns(created.id)).toBe(1);
     });
 
@@ -211,6 +211,9 @@ describe('TaskReconciler', () => {
     });
 
     // Root ignores file permissions, so the chmod setup only works non-root.
+    // NOTE: this SKIPS in any root container (including CI Docker images), so a
+    // green run there is not evidence the unlistable-directory path is covered.
+    // Verify it on a non-root machine before trusting the suite on this point.
     it.skipIf(process.getuid?.() === 0)(
       'leaves every task alone when its directory cannot be listed',
       async () => {
@@ -237,6 +240,62 @@ describe('TaskReconciler', () => {
         );
       }
     );
+  });
+
+  describe('a directory nobody listed cannot testify that a file is gone', () => {
+    /** Age every row so the next pass is past the 24h grace period. */
+    function expireGracePeriod(): void {
+      db.update(pulseSchedules)
+        .set({ updatedAt: new Date(Date.now() - 2 * DAY_MS).toISOString() })
+        .run();
+    }
+
+    /** A project tasks directory with one real task file, never registered. */
+    async function unregisteredProjectTask(): Promise<{ dir: string; filePath: string }> {
+      const dir = path.join(dorkHome, 'late-project', '.dork', 'tasks');
+      await fs.mkdir(path.join(dir, 'late-task'), { recursive: true });
+      const filePath = path.join(dir, 'late-task', 'SKILL.md');
+      await fs.writeFile(filePath, skillFile('late-task'), 'utf-8');
+      store.createTask({
+        name: 'late-task',
+        description: 'created for an agent that registered after boot',
+        prompt: 'do it',
+        filePath,
+      });
+      return { dir, filePath };
+    }
+
+    it('leaves a task whose directory was never registered', async () => {
+      // addDirectory only runs at boot and Mesh has no onRegister hook, so a
+      // task created for an agent that registered afterwards lives in a
+      // directory this pass never looks at.
+      const { filePath } = await unregisteredProjectTask();
+      expireGracePeriod();
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+
+      expect(store.getTasks()).toHaveLength(1);
+      expect(store.getTasks()[0].status).toBe('active');
+      await expect(fs.access(filePath)).resolves.toBeUndefined();
+    });
+
+    it('leaves a task behind after its directory is removed on agent unregister', async () => {
+      const { dir } = await unregisteredProjectTask();
+      reconciler.addDirectory(dir, 'project', path.join(dorkHome, 'late-project'));
+      await reconciler.reconcile();
+      const task = store.getTasks()[0];
+      store.createRun(task.id, 'scheduled');
+
+      // The agent unregisters: index.ts drops the directory but keeps the rows.
+      reconciler.removeDirectory(dir);
+      expireGracePeriod();
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+
+      // Re-registering must find the same row, with its history.
+      expect(store.getTask(task.id)).not.toBeNull();
+      expect(store.countRuns(task.id)).toBe(1);
+    });
   });
 
   describe('same slug in two directories', () => {

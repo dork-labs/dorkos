@@ -2680,6 +2680,24 @@ export const TaskStatusSchema = z
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
+/**
+ * The subset of {@link TaskStatusSchema} a caller may SET on an update.
+ *
+ * `paused` is readable but not settable. Tasks are file-first: an update
+ * writes every user-settable field into the task's SKILL.md, and `status` has
+ * no frontmatter field, so a `status` the file cannot express does not survive
+ * the next reconciliation pass. `paused` specifically is written only by the
+ * server, to say "your file went missing" or "this agent was unregistered",
+ * and is cleared automatically when that condition lifts.
+ *
+ * To pause a task, send `enabled: false` — that lands in the file, so it holds.
+ */
+export const SettableTaskStatusSchema = z
+  .enum(['active', 'pending_approval'])
+  .openapi('SettableTaskStatus');
+
+export type SettableTaskStatus = z.infer<typeof SettableTaskStatusSchema>;
+
 export const TaskRunStatusSchema = z
   .enum(['running', 'completed', 'failed', 'cancelled'])
   .openapi('TaskRunStatus');
@@ -2868,7 +2886,7 @@ export const UpdateTaskRequestSchema = z
     enabled: z.boolean().optional(),
     maxRuntime: z.string().nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
-    status: TaskStatusSchema.optional(),
+    status: SettableTaskStatusSchema.optional(),
   })
   .openapi('UpdateTaskRequest');
 
