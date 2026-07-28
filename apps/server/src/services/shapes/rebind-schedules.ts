@@ -84,7 +84,7 @@ export async function rebindShapeSchedulesForAgent(
       // other-Shape one is not ours to move.
       if (!existing || existing.agentId !== null || existing.shapeOrigin !== shape.name) continue;
 
-      const enabled = !schedule.startDisabled;
+      const enabled = schedule.startEnabled;
       await deps.scheduleService.rebindSchedule(schedule.name, { agentId: agent.id, enabled });
       existingByName.set(schedule.name, {
         name: schedule.name,
