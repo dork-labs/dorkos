@@ -36,6 +36,7 @@ vi.mock('../../../lib/logger.js', () => ({
 }));
 
 import { createAgentWorkspace, AgentCreationError } from '../agent-creator.js';
+import { setOnAgentCreated } from '../agent-created-hook.js';
 
 let tmpRoot: string;
 let projectDir: string;
@@ -83,6 +84,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  setOnAgentCreated(null);
   await fs.rm(tmpRoot, { recursive: true, force: true });
 });
 
@@ -260,5 +262,46 @@ describe('createAgentWorkspace rollback', () => {
     expect(await fs.readFile(path.join(projectDir, 'important.txt'), 'utf-8')).toBe(
       'a year of work'
     );
+  });
+
+  it('does not project until every step that can still roll back has finished', async () => {
+    // Pins the projection OUTSIDE the rollback-protected block. `ScaffoldLedger`
+    // classifies a symlink as `other` and never unlinks it, and `pruneEmpty`
+    // only `rmdir`s, so a symlink made inside that block would survive a
+    // rollback and pin `.claude/` in place, stranding a half-built workspace.
+    //
+    // The agent-created listener is the last thing the block awaits, so it is
+    // the latest possible moment to observe that nothing has been linked yet.
+    // (Nothing after it can throw — `notifyAgentCreated` swallows its own
+    // listener's errors — so this is as late as any test can look.)
+    let linkedDuringScaffold: boolean | undefined;
+    setOnAgentCreated(async () => {
+      linkedDuringScaffold = await exists(path.join(projectDir, '.claude', 'skills'));
+    });
+
+    await createAgentWorkspace({ name: 'my-agent', directory: projectDir });
+
+    expect(linkedDuringScaffold).toBe(false);
+    // ...and it certainly happened by the time creation returned.
+    expect(await exists(path.join(projectDir, '.claude', 'skills', 'operating-dorkos'))).toBe(true);
+  });
+
+  it('links the seeded skills where the default runtime reads them (DOR-659)', async () => {
+    await createAgentWorkspace({ name: 'my-agent', directory: projectDir });
+
+    // Seeding writes the canonical copies, which Claude Code cannot see...
+    const source = path.join(projectDir, '.agents', 'skills', 'operating-dorkos');
+    expect(await exists(path.join(source, 'SKILL.md'))).toBe(true);
+
+    // ...so creation also links every seeded skill into `.claude/skills/`.
+    const seeded = await fs.readdir(path.join(projectDir, '.agents', 'skills'));
+    expect(seeded.length).toBeGreaterThan(0);
+    for (const name of seeded) {
+      const link = path.join(projectDir, '.claude', 'skills', name);
+      expect((await fs.lstat(link)).isSymbolicLink()).toBe(true);
+      expect(await fs.realpath(link)).toBe(
+        await fs.realpath(path.join(projectDir, '.agents', 'skills', name))
+      );
+    }
   });
 });

@@ -42,6 +42,20 @@ vi.mock('@dorkos/operating-skills', () => ({
   seedOperatingSkills: (...args: unknown[]) => mockSeedOperatingSkills(...args),
 }));
 
+// Stubbed here so this suite stays a pure unit test of the creation pipeline —
+// the projection's own behavior, and the real symlinks it makes, are covered by
+// `services/harness/__tests__/project-agent-workspace.test.ts` and the
+// real-filesystem creation test in `agent-creator-rollback.test.ts`.
+const mockProjectAgentWorkspace = vi.fn(() => ({
+  status: 'projected' as const,
+  applied: 5,
+  conflicts: 0,
+  scaffoldedManifest: true,
+}));
+vi.mock('../../harness/project-agent-workspace.js', () => ({
+  projectAgentWorkspace: (...args: unknown[]) => mockProjectAgentWorkspace(...args),
+}));
+
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(),
   validateBoundaryOrDorkHome: vi.fn(),
@@ -144,6 +158,13 @@ describe('createAgentWorkspace', () => {
 
     expect(mockSeedOperatingSkills).toHaveBeenCalledTimes(1);
     expect(mockSeedOperatingSkills).toHaveBeenCalledWith(result.path);
+  });
+
+  it('projects the seeded skills to the new workspace harnesses (DOR-659)', async () => {
+    const result = await createAgentWorkspace({ name: 'my-agent' }, mockMeshCore);
+
+    expect(mockProjectAgentWorkspace).toHaveBeenCalledTimes(1);
+    expect(mockProjectAgentWorkspace).toHaveBeenCalledWith(result.path);
   });
 
   it('uses the DorkBot template as the canonical body for DorkBot', async () => {

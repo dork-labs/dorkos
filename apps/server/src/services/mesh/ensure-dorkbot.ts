@@ -11,23 +11,31 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { scaffoldInstructions } from '@dorkos/harness';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
 import type { MeshCore } from '@dorkos/mesh';
+import { projectAgentWorkspace } from '../harness/project-agent-workspace.js';
 import { logger } from '../../lib/logger.js';
 
 /**
- * Seed (or re-seed) the Operating DorkOS skill pack into DorkBot's home.
+ * Seed (or re-seed) the Operating DorkOS skill pack into DorkBot's home, then
+ * link it into the layout DorkBot's harness reads.
  *
  * Runs on every boot so DorkBot picks up newer pack versions; idempotent and
  * version-stamped, and best-effort so a seeding hiccup never blocks boot (which
  * must finish before the task watchers start).
  *
+ * The projection is the half that makes the pack usable: seeding writes
+ * `.agents/skills/`, which DorkBot's default runtime (Claude Code) cannot read.
+ * Running it on every boot is also what makes DorkBot self-healing — a workspace
+ * whose links were never made, or were deleted, gets them back (DOR-659).
+ *
  * @param dorkbotDir - DorkBot's workspace root.
  */
-async function seedDorkbotSkills(dorkbotDir: string): Promise<void> {
+async function provisionDorkbotSkills(dorkbotDir: string): Promise<void> {
   try {
     await seedOperatingSkills(dorkbotDir);
   } catch (err) {
     logger.warn('[Mesh] Failed to seed DorkBot Operating DorkOS skill pack: %s', String(err));
   }
+  projectAgentWorkspace(dorkbotDir);
 }
 
 /** DorkBot's branded display name — the label every roster surface renders. */
@@ -83,7 +91,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
     // up newer pack versions on boot) then sync. registerAgent re-asserts default
     // access rules on every boot, so existing installs pick up newly-introduced
     // rules (e.g. the system-agent cross-namespace allow) without a manifest change.
-    await seedDorkbotSkills(dorkbotDir);
+    await provisionDorkbotSkills(dorkbotDir);
     await meshCore.syncFromDisk(dorkbotDir);
     return;
   }
@@ -123,7 +131,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
   scaffoldInstructions(dorkbotDir, { agentsBody: dorkbotClaudeMdTemplate() });
 
   // Seed the Operating DorkOS skill pack so DorkBot ships knowing how to run DorkOS.
-  await seedDorkbotSkills(dorkbotDir);
+  await provisionDorkbotSkills(dorkbotDir);
 
   // Sync to Mesh DB
   await meshCore.syncFromDisk(dorkbotDir);

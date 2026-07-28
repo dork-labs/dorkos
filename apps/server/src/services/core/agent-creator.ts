@@ -26,6 +26,7 @@ import { renderTraits } from '@dorkos/shared/trait-renderer';
 import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { scaffoldInstructions } from '@dorkos/harness';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
+import { projectAgentWorkspace } from '../harness/project-agent-workspace.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import { resolveAgentsDirectory } from '../../lib/agents-home.js';
 import { configManager } from './config-manager.js';
@@ -325,6 +326,7 @@ export async function createAgentWorkspace(
     }
   }
 
+  let result: AgentCreationResult;
   try {
     // Create .dork/. Tolerates an existing directory so this works in both
     // modes: a fresh agent creation (where it doesn't exist) and a marketplace
@@ -444,7 +446,7 @@ export async function createAgentWorkspace(
       displayName: manifest.displayName,
     });
 
-    return { manifest, path: resolvedPath, meta };
+    result = { manifest, path: resolvedPath, meta };
   } catch (scaffoldErr) {
     if (scaffoldErr instanceof AgentCreationError) throw scaffoldErr;
 
@@ -457,4 +459,14 @@ export async function createAgentWorkspace(
       500
     );
   }
+
+  // Link the seeded skills into the layout each harness reads, so a Claude Code
+  // session in this workspace can actually load them (DOR-659). Deliberately
+  // OUTSIDE the rollback-protected block above: the ledger only removes files
+  // and empty directories, so a symlink it created would survive a rollback and
+  // then keep `.claude/` from being pruned, stranding a half-built workspace.
+  // Nothing past this point can fail, so nothing has to be undone.
+  projectAgentWorkspace(resolvedPath);
+
+  return result;
 }
