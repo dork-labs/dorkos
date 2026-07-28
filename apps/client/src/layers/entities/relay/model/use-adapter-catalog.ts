@@ -27,6 +27,18 @@ export function useAdapterCatalog(enabled = true) {
   });
 }
 
+/**
+ * Opt out of the app-wide mutation error toast in `query-client.ts`.
+ *
+ * Every mutation here reports its own failure through `onError`, showing the
+ * server's sentence rather than a generic one. A refused save says exactly what
+ * to change and what it did not touch — "Invalid channelOverrides: expected
+ * JSON, and the existing value was left unchanged." Without this opt-out the
+ * app-wide handler appends "Action failed. Please try again." underneath, which
+ * talks over the reason and invites a retry of the same broken input.
+ */
+const OWN_ERROR_TOAST = { suppressErrorToast: true };
+
 /** Mutation to add a new adapter instance. */
 export function useAddAdapter() {
   const transport = useTransport();
@@ -49,6 +61,7 @@ export function useAddAdapter() {
     onError: (error) => {
       toast.error(getErrorMessage(error));
     },
+    meta: OWN_ERROR_TOAST,
   });
 }
 
@@ -66,6 +79,7 @@ export function useRemoveAdapter() {
     onError: (error) => {
       toast.error(getErrorMessage(error));
     },
+    meta: OWN_ERROR_TOAST,
   });
 }
 
@@ -84,6 +98,7 @@ export function useUpdateAdapterConfig() {
     onError: (error) => {
       toast.error(getErrorMessage(error));
     },
+    meta: OWN_ERROR_TOAST,
   });
 }
 

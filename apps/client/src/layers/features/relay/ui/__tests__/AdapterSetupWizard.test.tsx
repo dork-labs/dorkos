@@ -77,10 +77,11 @@ const telegramManifest: AdapterManifest = {
  * connection mode and the group respond mode.
  *
  * Mirrors `TELEGRAM_MANIFEST` in `@dorkos/relay`, which the client cannot import
- * (it pulls in grammy and the Slack SDKs). The invariant that every config field
- * is named by some step is pinned against the real manifest in
- * `packages/relay/src/adapters/telegram/__tests__/telegram-adapter.test.ts`;
- * this fixture pins the other half — that a field a step names actually renders.
+ * (it pulls in grammy and the Slack SDKs). That every declared field reaches
+ * some step is pinned against the real manifests in
+ * `packages/relay/src/adapters/__tests__/wizard-field-coverage.test.ts`; this
+ * fixture pins the other half — that a field a step names actually renders.
+ * Fields no step names are covered in `AdapterSetupWizardUnclaimedFields.test.tsx`.
  */
 const telegramSteppedManifest: AdapterManifest = {
   type: 'telegram',

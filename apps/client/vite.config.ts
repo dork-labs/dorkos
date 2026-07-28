@@ -44,8 +44,14 @@ export default defineConfig({
     // - `trait-renderer` backs `agent/__tests__/trait-sliders.test.tsx`, which is
     //   an exhaustive loop over `TRAIT_ORDER`: a new trait read from a stale dist
     //   produces zero extra assertions and a green run.
+    // - `relay-schemas` backs `relay/ui/__tests__/AdapterSetupWizardUnclaimedFields.test.tsx`,
+    //   which asserts what the adapter wizard paints for a manifest whose fields
+    //   and setup steps disagree. The rule it paints by (`setupStepFields`) lives
+    //   in the package, so a stale dist renders yesterday's rule — and the
+    //   negative assertions (no "Advanced" heading for a manifest with no setup
+    //   steps) stay green while the shipped rule regresses.
     //
-    // Scoped to these four on purpose — see the same note in
+    // Scoped to these five on purpose — see the same note in
     // `apps/server/vitest.config.ts` for what widening to all 43 subpaths cost.
     alias: [
       {
@@ -63,6 +69,10 @@ export default defineConfig({
       {
         find: '@dorkos/shared/trait-renderer',
         replacement: path.resolve(__dirname, '../../packages/shared/src/trait-renderer.ts'),
+      },
+      {
+        find: '@dorkos/shared/relay-schemas',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/relay-schemas.ts'),
       },
     ],
     // Ensure React loads development bundles (act, error messages) even when

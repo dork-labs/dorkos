@@ -328,6 +328,17 @@ export const ConfigFieldSchema = z
     displayAs: z.literal('radio-cards').optional(),
     /** Markdown help content shown in a collapsible disclosure below the field. */
     helpMarkdown: z.string().optional(),
+    /**
+     * How a `textarea` field's text relates to the value stored on disk.
+     *
+     * A textarea always edits text, but some fields persist as something else:
+     * `id-list` stores one entry per line as an array, `json-object` stores the
+     * text parsed as an object. Both ends read this one declaration — the form
+     * turns a stored value into editable text, and the server turns the text
+     * back — so neither side keeps its own list of which key is which shape.
+     * Omit it for a textarea that stores plain text.
+     */
+    valueShape: z.enum(['id-list', 'json-object']).optional(),
   })
   .openapi('ConfigField');
 

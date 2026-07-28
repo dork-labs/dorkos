@@ -39,20 +39,34 @@ const CONFIG_SCHEMA_BY_TYPE = {
 /** The adapter entry minus its `config`, which is validated by type below. */
 const AdapterEnvelopeSchema = AdapterConfigSchema.omit({ config: true });
 
-/** Config keys sent as one entry per line by a `textarea`, stored as arrays. */
-const ID_LIST_FIELDS = new Set(['dmAllowlist', 'approverAllowlist']);
-
-/** Config keys sent as JSON text by a `textarea`, stored as objects. */
-const JSON_OBJECT_FIELDS = new Set(['channelOverrides']);
+/**
+ * Which keys persist as something other than the text a `textarea` edits.
+ *
+ * Read off the manifest's `valueShape` declarations rather than listed here, so
+ * this side and the form's `storedValueToFormText` can never disagree about
+ * which key is which shape — the drift that turns a saved allowlist into one
+ * bogus id (DOR-640 review).
+ *
+ * @param manifest - The manifest for the adapter being persisted, when known.
+ * @returns Field key to declared value shape.
+ */
+function valueShapesOf(manifest?: AdapterManifest): Map<string, 'id-list' | 'json-object'> {
+  const shapes = new Map<string, 'id-list' | 'json-object'>();
+  for (const field of manifest?.configFields ?? []) {
+    if (field.valueShape) shapes.set(field.key, field.valueShape);
+  }
+  return shapes;
+}
 
 /**
  * Translate a setup-form payload into the shape the adapter schemas describe.
  *
  * The form seeds every untouched field with `''` and sends a `textarea` as text
- * (`use-adapter-setup-form.ts`), so the wizard's own payload does not match the
- * strict schemas. Rather than loosening the schemas — which cost them their
- * literal types, and which would spread form concerns into the contract — the
- * translation happens here, at the one boundary that receives form data.
+ * (`initializeValues`, in the client's `wizard/adapter-config-utils.ts`), so the
+ * wizard's own payload does not match the strict schemas. Rather than loosening
+ * the schemas — which cost them their literal types, and which would spread form
+ * concerns into the contract — the translation happens here, at the one boundary
+ * that receives form data.
  *
  * Dropping an empty string is what lets `.default()` fire for it: `.default()`
  * only replaces `undefined`, so `''` used to survive as itself. That mattered
@@ -61,17 +75,21 @@ const JSON_OBJECT_FIELDS = new Set(['channelOverrides']);
  * enough for the warning's `=== 'open'` — open, and silent about it.
  *
  * @param config - The raw `config` block as the caller sent it.
+ * @param manifest - The adapter's manifest, read for its `valueShape` declarations.
  * @returns The same config with form shapes resolved.
+ * @throws AdapterError `INVALID_CONFIG` when a `json-object` field holds unparseable text.
  */
-function normalizeFormConfig(config: unknown): unknown {
+function normalizeFormConfig(config: unknown, manifest?: AdapterManifest): unknown {
   if (typeof config !== 'object' || config === null || Array.isArray(config)) return config;
 
+  const shapes = valueShapesOf(manifest);
   const normalized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
-    if (ID_LIST_FIELDS.has(key)) {
+    const shape = shapes.get(key);
+    if (shape === 'id-list') {
       normalized[key] = toIdList(value);
-    } else if (JSON_OBJECT_FIELDS.has(key)) {
-      normalized[key] = toJsonObject(value);
+    } else if (shape === 'json-object') {
+      normalized[key] = toJsonObject(key, value);
     } else if (value !== '') {
       // An untouched form field arrives as `''`; leaving it out lets the
       // schema's own default apply instead of persisting the blank.
@@ -81,15 +99,31 @@ function normalizeFormConfig(config: unknown): unknown {
   return normalized;
 }
 
-/** Read a JSON-object field that may arrive as text from a textarea. */
-function toJsonObject(value: unknown): unknown {
+/**
+ * Read a JSON-object field that may arrive as text from a textarea.
+ *
+ * Unparseable text is refused rather than resolved to `{}`. Swallowing it meant
+ * one stray keystroke in the Channel Overrides box erased every per-channel rule
+ * and reported success (DOR-640 review); a refused save leaves the stored value
+ * alone and says why. Empty text still means an empty object — that is a person
+ * clearing the field, not a typo.
+ *
+ * @param key - Field key, for the error message.
+ * @param value - The raw value, text from the form or an object from disk.
+ * @returns The parsed object.
+ * @throws AdapterError `INVALID_CONFIG` when the text is not valid JSON.
+ */
+function toJsonObject(key: string, value: unknown): unknown {
   if (typeof value !== 'string') return value ?? {};
   const trimmed = value.trim();
   if (!trimmed) return {};
   try {
     return JSON.parse(trimmed) as unknown;
   } catch {
-    return {};
+    throw new AdapterError(
+      `Invalid ${key}: expected JSON, and the existing value was left unchanged.`,
+      'INVALID_CONFIG'
+    );
   }
 }
 
@@ -119,10 +153,16 @@ function toJsonObject(value: unknown): unknown {
  * rather than "merely form-shaped".
  *
  * @param entry - The adapter entry about to be persisted.
+ * @param manifest - The adapter's manifest, read for the `valueShape` of its
+ *   textarea fields. Without it a list or object field arriving as form text is
+ *   left as text and the schema refuses it, rather than being silently mangled.
  * @returns The parsed entry, with every schema default materialized.
  * @throws AdapterError `INVALID_CONFIG` when the entry does not hold.
  */
-export function parseAdapterConfigForPersist(entry: Record<string, unknown>): AdapterConfig {
+export function parseAdapterConfigForPersist(
+  entry: Record<string, unknown>,
+  manifest?: AdapterManifest
+): AdapterConfig {
   const envelope = AdapterEnvelopeSchema.safeParse(entry);
   if (!envelope.success) {
     throw new AdapterError(
@@ -138,7 +178,7 @@ export function parseAdapterConfigForPersist(entry: Record<string, unknown>): Ad
     return { ...envelope.data, config: entry.config } as AdapterConfig;
   }
 
-  const config = schema.safeParse(normalizeFormConfig(entry.config));
+  const config = schema.safeParse(normalizeFormConfig(entry.config, manifest));
   if (!config.success) {
     throw new AdapterError(
       `Invalid ${envelope.data.type} configuration: ${z.prettifyError(config.error)}`,

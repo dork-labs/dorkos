@@ -34,7 +34,13 @@ export function CatalogCard({ manifest, onAdd }: CatalogCardProps) {
         <p className="text-muted-foreground text-xs">{manifest.description}</p>
       </div>
       <div className="mt-3">
-        <Button variant="outline" size="sm" className="w-full" onClick={onAdd}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={onAdd}
+          aria-label={`Add ${manifest.displayName}`}
+        >
           <Plus className="mr-1 size-3" />
           Add
         </Button>
