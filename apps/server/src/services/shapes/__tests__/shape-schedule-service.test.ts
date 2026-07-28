@@ -15,6 +15,9 @@ import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Logger } from '@dorkos/shared/logger';
 import type { CreateTaskRequest } from '@dorkos/shared/schemas';
+import { SHAPE_SCHEDULE_PERMISSION_MODES } from '@dorkos/marketplace/manifest-schema';
+import { parseSkillFile } from '@dorkos/skills/parser';
+import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { TaskStore } from '../../tasks/task-store.js';
@@ -197,6 +200,75 @@ describe('ShapeScheduleService.rebindSchedule (integration)', () => {
     expect(store.getTasks()).toHaveLength(1);
     expect(await exists(path.join(dorkHome, 'tasks', 'inbox-tick', 'SKILL.md'))).toBe(true);
   });
+});
+
+describe('ShapeScheduleService.createSchedule — every declarable permission mode', () => {
+  let db: Db;
+  let store: TaskStore;
+  let dorkHome: string;
+  let service: ShapeScheduleService;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dork-shape-mode-'));
+    service = new ShapeScheduleService({
+      taskStore: store,
+      scheduler: {
+        registerTask: vi.fn(),
+        unregisterTask: vi.fn(),
+      } as unknown as TaskSchedulerService,
+      meshCore: undefined,
+      dorkHome,
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+        error: vi.fn(),
+      } as unknown as Logger,
+    });
+  });
+
+  afterEach(async () => {
+    await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  // THE DRIFT CASE. `createSchedule` writes the requested mode into the
+  // SKILL.md `permissions:` frontmatter and immediately parses the file back
+  // with `TaskFrontmatterSchema` — the same schema the task file watcher and
+  // the reconciler use. If the frontmatter schema accepts fewer modes than a
+  // Shape manifest may declare, the file it just wrote is unreadable: the parse
+  // fails, `createSchedule` silently falls through to the `createTask` branch,
+  // and disk and DB disagree forever while the watcher re-rejects the file on
+  // every touch. Driving the whole declarable set through the real writer +
+  // real parser is what catches that; a hardcoded list of modes would not.
+  it.each(SHAPE_SCHEDULE_PERMISSION_MODES)(
+    'writes a file that parses back, and a matching DB row, for %s',
+    async (mode) => {
+      const request: CreateTaskRequest = {
+        name: `tick-${mode.toLowerCase()}`,
+        description: `poll under ${mode}`,
+        prompt: 'run one tick',
+        cron: '*/15 * * * *',
+        timezone: null,
+        target: 'global',
+        enabled: true,
+        permissionMode: mode,
+      };
+      await service.createSchedule(request, { shape: 'linear-ops' });
+
+      const filePath = path.join(dorkHome, 'tasks', request.name, 'SKILL.md');
+      const parsed = parseSkillFile(
+        filePath,
+        await fs.readFile(filePath, 'utf-8'),
+        TaskFrontmatterSchema
+      );
+      expect(parsed.ok, parsed.ok ? '' : parsed.error).toBe(true);
+
+      const row = store.getTasks().find((t) => t.name === request.name);
+      expect(row?.permissionMode).toBe(mode);
+    }
+  );
 });
 
 describe('ShapeScheduleService.deleteSchedulesForShape (integration)', () => {
