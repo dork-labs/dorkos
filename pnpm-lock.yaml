@@ -1018,6 +1018,12 @@ importers:
       '@dorkos/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/qrcode-terminal':
+        specifier: ^0.12.2
+        version: 0.12.2
       better-auth:
         specifier: ^1.6
         version: 1.6.23(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(better-sqlite3@12.11.1)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.22.0))(next@16.2.9(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(pg@8.22.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10)(vue@3.5.39(typescript@5.9.3))
@@ -7457,6 +7463,12 @@ packages:
     resolution:
       {
         integrity: sha512-E6OCaRmAe4WDmWNsL/9RMqdkkzDCY1etutkflWk4c+AcjDU07Pcz1fQwTX0TQz+Pxqn9i4L1TU3UFpjnrcDgxA==,
+      }
+
+  '@types/qrcode-terminal@0.12.2':
+    resolution:
+      {
+        integrity: sha512-v+RcIEJ+Uhd6ygSQ0u5YYY7ZM+la7GgPbs0V/7l/kFs2uO4S8BcIUEMoP7za4DNIqNnUD5npf0A/7kBhrCKG5Q==,
       }
 
   '@types/qs@6.15.0':
@@ -21725,6 +21737,8 @@ snapshots:
       '@types/node': 24.12.2
       xmlbuilder: 15.1.1
     optional: true
+
+  '@types/qrcode-terminal@0.12.2': {}
 
   '@types/qs@6.15.0': {}
 
