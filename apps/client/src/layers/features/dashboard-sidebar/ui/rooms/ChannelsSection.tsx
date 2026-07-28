@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { toast } from 'sonner';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import {
   SidebarGroup,
@@ -9,16 +8,15 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
   setChannelsCollapsed,
 } from '@/layers/entities/config';
-import { useCreateChannel } from '@/layers/entities/room';
+import { ChannelCreateDialog } from '@/layers/features/room-membership';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
-import { ChannelCreateInput } from './ChannelCreateInput';
-import type { AgentPickerCandidate } from './AgentChipPicker';
 
 /** Skeleton rows shown while the first room list loads. */
 const SKELETON_ROWS = 2;
@@ -47,6 +45,10 @@ interface ChannelsSectionProps {
  * Collapsible and persisted via `ui.sidebar.channelsCollapsed`. The section is
  * always present, empty or not — a person who has never made a channel should
  * still be able to find out that they can.
+ *
+ * The "+" opens {@link ChannelCreateDialog} rather than an inline row, because
+ * naming a channel and picking who is in it is one step and a picker does not
+ * fit in a sidebar's width (spec `rooms` §14.2).
  */
 export function ChannelsSection({
   channels,
@@ -60,16 +62,6 @@ export function ChannelsSection({
   const { channelsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
   const [creating, setCreating] = useState(false);
-  const createChannel = useCreateChannel();
-
-  const handleCommit = (name: string) => {
-    setCreating(false);
-    createChannel.mutate(name, {
-      // A channel's mark is `#`, so the list never carries its roster.
-      onSuccess: (room) => onSelectRoom({ ...room, unreadCount: 0, participants: null }),
-      onError: (err) => toast.error(err.message || 'Could not create that channel'),
-    });
-  };
 
   return (
     <SidebarGroup>
@@ -82,12 +74,20 @@ export function ChannelsSection({
         <Plus />
       </SidebarGroupAction>
 
+      {/* Mounted only while open, so a name and a half-picked roster are
+          forgotten between attempts rather than waiting there next time. */}
+      {creating && (
+        <ChannelCreateDialog
+          open
+          onOpenChange={(next) => !next && setCreating(false)}
+          agents={agents}
+          // A channel's mark is `#`, so the list never carries its roster.
+          onCreated={(room) => onSelectRoom({ ...room, unreadCount: 0, participants: null })}
+        />
+      )}
+
       {!channelsCollapsed && (
         <SidebarMenu>
-          {creating && (
-            <ChannelCreateInput onCommit={handleCommit} onCancel={() => setCreating(false)} />
-          )}
-
           {isLoading && channels.length === 0 ? (
             Array.from({ length: SKELETON_ROWS }, (_, i) => (
               <SidebarMenuSkeleton key={`channel-skeleton-${i}`} showIcon />
@@ -111,7 +111,7 @@ export function ChannelsSection({
                 />
               ))}
 
-              {channels.length === 0 && !creating && (
+              {channels.length === 0 && (
                 <SidebarMenuItem>
                   <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
                     No channels yet — create one to get a few agents talking in the same place.

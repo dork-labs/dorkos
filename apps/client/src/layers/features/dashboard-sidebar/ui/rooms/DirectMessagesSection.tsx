@@ -6,12 +6,12 @@ import {
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
 import { NewDirectMessageMenu } from './NewDirectMessageMenu';
-import type { AgentPickerCandidate } from './AgentChipPicker';
 
 /** Skeleton rows shown while the first room list loads. */
 const SKELETON_ROWS = 2;

@@ -6,7 +6,11 @@ import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { toast } from 'sonner';
-import { useResolvedAgents } from '@/layers/entities/agent';
+import {
+  disambiguateDisplayNames,
+  toAgentPickerCandidates,
+  useResolvedAgents,
+} from '@/layers/entities/agent';
 import {
   useConfig,
   useSidebarPrefs,
@@ -55,7 +59,6 @@ import {
   agentDndData,
   DISABLED_SORTABLE_BINDINGS,
 } from './dnd/SidebarDndPrimitives';
-import { disambiguateDisplayNames } from '../model/disambiguate-display-names';
 import {
   agentPathsOf,
   effectiveMutedAgentPaths,
@@ -154,12 +157,12 @@ export function DashboardSidebar() {
   );
   // The fleet as the room pickers read it: one sorted list, derived once, so
   // starting a conversation and adding agents to an existing room offer exactly
-  // the same agents in exactly the same order.
+  // the same agents in exactly the same order. Built by the same entity-layer
+  // helper `useAgentPickerCandidates` uses, so the open room — which has no
+  // sidebar to ask — offers that same list rather than one that merely
+  // resembles it.
   const agentCandidates = useMemo(
-    () =>
-      Object.entries(displayNamesRecord)
-        .map(([agentPath, displayName]) => ({ agentPath, displayName }))
-        .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+    () => toAgentPickerCandidates(displayNamesRecord),
     [displayNamesRecord]
   );
 

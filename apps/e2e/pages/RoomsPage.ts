@@ -144,15 +144,43 @@ export class RoomsPage {
 
   /**
    * Create a channel the way a person does: the "+" beside Channels, a name,
-   * Enter. The cockpit opens the new channel on success.
+   * the agents that are to be in it, then Create. The cockpit opens the new
+   * channel on success.
+   *
+   * Naming it and filling it are one step (spec `rooms` §14.2), and the whole
+   * thing is ONE request — so a caller that names agents can assert the roster
+   * straight after this returns rather than waiting on follow-up writes.
    *
    * @param name - The channel's name. The server derives its `#slug` from this.
+   * @param agents - Display names to put in it, as the picker lists them. Empty
+   *   takes the deliberate "Create it without agents" path.
    */
-  async createChannel(name: string): Promise<void> {
+  async createChannel(name: string, agents: string[] = []): Promise<void> {
     await this.channels.getByRole('button', { name: 'New channel' }).click();
-    const input = this.page.getByRole('textbox', { name: 'New channel name' });
-    await input.fill(name);
-    await input.press('Enter');
+    const dialog = this.page.getByRole('dialog');
+    await dialog.waitFor({ state: 'visible' });
+    await dialog.getByRole('textbox', { name: 'Channel name' }).fill(name);
+
+    for (const agent of agents) {
+      await this.agentSearch.fill(agent);
+      await this.page.getByRole('option', { name: agent, exact: true }).click();
+    }
+
+    await dialog
+      .getByRole('button', {
+        name: agents.length === 0 ? 'Create it without agents' : /^Create channel with /,
+      })
+      .click();
+  }
+
+  /** The open room's roster in the masthead, which opens the members panel. */
+  get membersButton(): Locator {
+    return this.page.getByRole('button', { name: /^Members of / });
+  }
+
+  /** The empty state's own affordance for putting agents in the room. */
+  get emptyStateAddAgents(): Locator {
+    return this.page.getByRole('button', { name: /^Add (more )?agents$/ });
   }
 
   /** Open the "+" beside Direct messages. */

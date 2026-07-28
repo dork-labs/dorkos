@@ -134,7 +134,16 @@ vi.mock('@/layers/entities/mesh', () => ({
   }),
 }));
 
-vi.mock('@/layers/entities/agent', () => ({
+vi.mock('@/layers/entities/agent', async () => ({
+  // The two naming helpers are pure and are what the sidebar's ORDER comes
+  // from, so they are the real ones — a stub would make every sort assertion
+  // below a test of the stub.
+  ...(await vi.importActual<
+    typeof import('@/layers/entities/agent/lib/disambiguate-display-names')
+  >('@/layers/entities/agent/lib/disambiguate-display-names')),
+  ...(await vi.importActual<typeof import('@/layers/entities/agent/lib/agent-choices')>(
+    '@/layers/entities/agent/lib/agent-choices'
+  )),
   useResolvedAgents: () => ({ data: mockResolvedAgents() }),
   useAgentVisual: () => ({ color: '#aaaaaa', emoji: '🤖' }),
   AgentIdentity: ({ name, emoji }: { name: string; emoji: string }) => (

@@ -2,14 +2,7 @@ import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'rea
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
-
-/** One agent the operator can put in a conversation. */
-export interface AgentPickerCandidate {
-  /** The agent's directory — its stable identity (ADR 260726-170126). */
-  agentPath: string;
-  /** What to call it on screen, already disambiguated across the roster. */
-  displayName: string;
-}
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 
 interface AgentChipPickerProps {
   /**
@@ -38,6 +31,17 @@ interface AgentChipPickerProps {
   allChosenMessage: string;
   /** Disable the commit button while a write is in flight. */
   isSubmitting?: boolean;
+  /**
+   * The container has its own reason the selection cannot be committed yet.
+   *
+   * Distinct from {@link AgentChipPickerProps.isSubmitting}, which says a write
+   * is already going. This says the rest of the form is not ready: the
+   * channel-create dialog holds a name field beside this picker, and a channel
+   * with agents and no name is not a thing the server will make. It gates the
+   * keyboard commit as well as the button, so Enter cannot walk past a rule the
+   * pointer is stopped by.
+   */
+  submitDisabled?: boolean;
   /**
    * The search field, handed back so whatever holds this picker can put the
    * cursor in it.
@@ -132,6 +136,7 @@ export function AgentChipPicker({
   emptyRosterMessage,
   allChosenMessage,
   isSubmitting = false,
+  submitDisabled = false,
   inputRef,
 }: AgentChipPickerProps) {
   const [query, setQuery] = useState('');
@@ -180,7 +185,7 @@ export function AgentChipPicker({
   }
 
   function commit() {
-    if (chosen.length === 0 || isSubmitting) return;
+    if (chosen.length === 0 || isSubmitting || submitDisabled) return;
     onSubmit(chosen);
   }
 
@@ -343,7 +348,7 @@ export function AgentChipPicker({
       <Button
         type="button"
         size="sm"
-        disabled={chosen.length === 0 || isSubmitting}
+        disabled={chosen.length === 0 || isSubmitting || submitDisabled}
         onClick={commit}
         className="mt-3 w-full shrink-0 md:mt-2"
       >

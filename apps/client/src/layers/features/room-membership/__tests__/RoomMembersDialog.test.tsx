@@ -14,7 +14,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
-import { RoomMembersDialog } from '../ui/rooms/RoomMembersDialog';
+import { RoomMembersDialog } from '../ui/RoomMembersDialog';
 
 // ---------------------------------------------------------------------------
 // Fixtures

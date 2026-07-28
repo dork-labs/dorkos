@@ -10,7 +10,7 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { DirectMessagesSection } from '../ui/rooms/DirectMessagesSection';
-import type { AgentPickerCandidate } from '../ui/rooms/AgentChipPicker';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 
 // ---------------------------------------------------------------------------
 // Mocks

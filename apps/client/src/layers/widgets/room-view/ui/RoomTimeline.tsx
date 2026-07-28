@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { MessagesSquare } from 'lucide-react';
 import { buildTimelineRows } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
-import { Skeleton } from '@/layers/shared/ui';
+import { Button, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
 import { authorsById, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
@@ -19,6 +19,11 @@ interface RoomTimelineProps {
   isLoading: boolean;
   /** Set when the history could not be read. */
   error: unknown;
+  /**
+   * Open the members panel. The empty state promises you can put agents in
+   * here, so this is what makes that promise a button (spec `rooms` §14.3).
+   */
+  onAddAgents: () => void;
 }
 
 /** Placeholder rows shown while a room's history loads. */
@@ -38,6 +43,7 @@ export function RoomTimeline({
   lastReadSeq,
   isLoading,
   error,
+  onAddAgents,
 }: RoomTimelineProps) {
   const authors = useMemo(() => authorsById(members), [members]);
   // Ticked rather than read at render, so "Today" becomes "Yesterday" on its own
@@ -83,13 +89,27 @@ export function RoomTimeline({
   }
 
   if (entries.length === 0) {
+    // A room with nobody in it answers nothing, so the empty state says which
+    // kind of empty this is rather than one line that is wrong half the time.
+    const hasAgents = members.some((member) => member.author.kind === 'agent');
     return (
       <div className="text-muted-foreground flex flex-col items-center gap-2 p-10 text-center text-sm">
         <MessagesSquare className="text-muted-foreground/50 size-8" aria-hidden />
         <p className="text-foreground font-medium">Nothing said here yet</p>
         <p className="max-w-sm">
-          Add the agents you want in this conversation, and everything they say will stay here.
+          {hasAgents
+            ? 'Say something to get it going. Everything said here stays here.'
+            : 'There are no agents in here, so nothing will answer. Add one and it can read everything said here.'}
         </p>
+        <Button
+          type="button"
+          size="sm"
+          variant={hasAgents ? 'ghost' : 'default'}
+          onClick={onAddAgents}
+          className="mt-1"
+        >
+          {hasAgents ? 'Add more agents' : 'Add agents'}
+        </Button>
       </div>
     );
   }

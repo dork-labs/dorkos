@@ -61,6 +61,7 @@ function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> =
       lastReadSeq={null}
       isLoading={false}
       error={null}
+      onAddAgents={vi.fn()}
       {...overrides}
     />,
     { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> }

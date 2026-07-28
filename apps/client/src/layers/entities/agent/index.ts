@@ -21,6 +21,11 @@ export { useMcpConfig } from './model/use-mcp-config';
 export { useNebulaAlpha, useIsDark } from './lib/nebula-theme';
 export type { NebulaAlpha } from './lib/nebula-theme';
 
+// Lib — naming the fleet
+export { disambiguateDisplayNames } from './lib/disambiguate-display-names';
+export { toAgentPickerCandidates } from './lib/agent-choices';
+export type { AgentPickerCandidate } from './lib/agent-choices';
+
 // UI — reusable agent display primitives
 export { AgentAvatar } from './ui/AgentAvatar';
 export type { AgentAvatarProps } from './ui/AgentAvatar';

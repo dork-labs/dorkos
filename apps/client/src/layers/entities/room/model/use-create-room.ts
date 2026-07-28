@@ -8,6 +8,18 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 
+/** What a new channel is called, and who is in it from the start. */
+export interface CreateChannelInput {
+  /** What to call it. The server derives the `#slug` from this. */
+  title: string;
+  /**
+   * The agents' directories — each one's stable identity across
+   * re-registration. Empty is allowed and makes an empty channel, which is a
+   * channel nothing will answer in until somebody is added to it.
+   */
+  agentPaths: string[];
+}
+
 /** Who a new direct message is with. */
 export interface StartDirectMessageInput {
   /**
@@ -20,16 +32,26 @@ export interface StartDirectMessageInput {
 }
 
 /**
- * Create a channel. The caller joins it, and its `#slug` is derived from the
- * name unless the server finds nothing sluggable in it.
+ * Create a channel, with the agents that are to be in it.
+ *
+ * The caller joins it, and its `#slug` is derived from the name unless the
+ * server finds nothing sluggable in it.
+ *
+ * **One call, however many agents are named.** `POST /api/rooms` resolves every
+ * agent path before it writes anything and then writes the room and its whole
+ * roster in one transaction (`RoomService.createRoom`), which is the same
+ * guarantee the direct-message flow relies on. So an agent that has since been
+ * unregistered fails the request while the channel does not exist yet, and the
+ * obvious retry works — rather than leaving behind a named, empty channel
+ * holding a `#slug` that a retry would then collide with.
  */
-export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, string> {
+export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, CreateChannelInput> {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (title: string) =>
-      transport.createRoom({ kind: 'channel', title, members: [], agentPaths: [] }),
+    mutationFn: ({ title, agentPaths }: CreateChannelInput) =>
+      transport.createRoom({ kind: 'channel', title, members: [], agentPaths }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: roomKeys.all }),
   });
 }

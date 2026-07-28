@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UserMinus } from 'lucide-react';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import {
-  agentAuthorRef,
-  type RoomRosterEntry,
-  type RoomSummary,
-} from '@dorkos/shared/room-schemas';
+import { agentAuthorRef, type Room, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { initialOf } from '@/layers/shared/lib';
 import {
   Button,
@@ -32,14 +28,26 @@ import {
   useSetMemberResponseMode,
   RESPONSE_MODE_OPTIONS,
 } from '@/layers/entities/room';
-import { AgentChipPicker, type AgentPickerCandidate } from './AgentChipPicker';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import { AgentChipPicker } from './AgentChipPicker';
 
 /** Which half of the panel the reader asked for, so that half gets the focus. */
 export type MembersDialogIntent = 'roster' | 'add';
 
+/**
+ * The least this panel needs to know about a room.
+ *
+ * Deliberately narrower than `RoomSummary`: the three entry points spec §14.3
+ * names hold different shapes — a sidebar row has a `RoomSummary`, the open
+ * room has a `RoomWithRoster` — and neither is assignable to the other. The
+ * panel reads the room itself anyway, so an id and enough to name it is all it
+ * ever needed.
+ */
+export type MembersDialogRoom = Pick<Room, 'id' | 'kind' | 'slug' | 'title'>;
+
 interface RoomMembersDialogProps {
   /** The room whose roster is being managed. */
-  room: RoomSummary;
+  room: MembersDialogRoom;
   /** Whether the panel is on screen. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,9 +60,11 @@ interface RoomMembersDialogProps {
 /**
  * Who is in a room, and how each agent decides when to reply there.
  *
- * This is the surface spec §14.3 asks for: one panel that the row's
- * "Members…" and "Add agents…" both reach, and that the room header and the
- * empty state will reach too. It is also the first UI ever to touch the
+ * This is the surface spec §14.3 asks for, and all three of its entry points
+ * now land here: the sidebar row's "Members…" and "Add agents…", the open
+ * room's header roster, and the empty state that promises it. One panel, so
+ * there is one place to learn and one place a change lands. It is also the
+ * first UI ever to touch the
  * per-room `responseMode` override — a field the schema has carried since R1,
  * which until now was fixed at join time and changeable only by editing the
  * database.

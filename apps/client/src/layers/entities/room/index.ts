@@ -19,7 +19,7 @@ export { useRoomDraft, useRoomDraftStore } from './model/room-drafts';
 export { useRoomListStream } from './model/use-room-list-stream';
 export { useMarkRoomRead, useMarkRoomReadNow } from './model/use-mark-room-read';
 export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
-export type { StartDirectMessageInput } from './model/use-create-room';
+export type { CreateChannelInput, StartDirectMessageInput } from './model/use-create-room';
 export {
   useRenameRoom,
   useSetRoomTopic,

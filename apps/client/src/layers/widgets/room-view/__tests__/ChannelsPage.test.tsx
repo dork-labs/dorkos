@@ -9,7 +9,7 @@
  * observe that; only mounting the page and changing its search param can.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -130,6 +130,109 @@ function renderPage(overrides: Partial<Transport> = {}) {
 
   return { transport, openRoom };
 }
+
+/**
+ * The two entry points spec §14.3 puts inside the room itself (DOR-600).
+ *
+ * Both must land on the SAME panel the sidebar row's menu opens. A second
+ * surface that happened to look similar is the failure this covers: one place
+ * to learn, one place a change lands.
+ */
+describe('ChannelsPage members-panel entry points', () => {
+  /**
+   * A fleet the page can offer, read through the same two transport calls the
+   * sidebar reads — so this also proves the open room builds its own candidate
+   * list rather than waiting on a sidebar that may be a closed drawer.
+   */
+  const fleet = {
+    listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [{ projectPath: '/w/Ana' }] }),
+    resolveAgents: vi.fn().mockResolvedValue({}),
+  };
+
+  /** A room with somebody in it, so the header has a roster to draw. */
+  function peopled(id: string, slug: string): RoomWithRoster {
+    const room = roomWith(id, slug);
+    return {
+      ...room,
+      members: [
+        {
+          roomId: id,
+          authorId: 'author-you',
+          responseMode: 'silent',
+          joinedAt: '2026-07-26T09:00:00.000Z',
+          lastReadSeq: 0,
+          author: { id: 'author-you', kind: 'human', displayName: 'You' },
+        },
+      ],
+    };
+  }
+
+  it('opens the panel from the header roster, which used to do nothing at all', async () => {
+    renderPage({
+      ...fleet,
+      getRoom: vi.fn((id: string) => Promise.resolve(peopled(id, 'general'))),
+    });
+
+    // Named for the action and the room, not "1 member" — the roster is what
+    // you press, so it has to say what pressing it does.
+    const roster = await screen.findByRole('button', {
+      name: 'Members of #general, 1 member',
+    });
+    fireEvent.click(roster);
+
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByText('Members of #general')).toBeInTheDocument();
+    // The roster half, because that is what the header asked for.
+    expect(within(panel).getByLabelText('Search agents')).not.toHaveFocus();
+  });
+
+  it('makes the empty state say what is wrong, and gives it the button it promises', async () => {
+    // A channel with no agents in it answers nothing. The empty state used to
+    // tell you to add some and offer no way to do it.
+    renderPage({
+      ...fleet,
+      getRoom: vi.fn((id: string) => Promise.resolve(peopled(id, 'general'))),
+      listRoomEntries: vi.fn().mockResolvedValue([]),
+    });
+
+    expect(
+      await screen.findByText(/no agents in here, so nothing will answer/i)
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add agents' }));
+
+    const panel = await screen.findByRole('dialog');
+    expect(within(panel).getByText('Members of #general')).toBeInTheDocument();
+    // "Add agents…" lands on the picker, so the next keystroke is a search.
+    await waitFor(() => expect(within(panel).getByLabelText('Search agents')).toHaveFocus());
+  });
+
+  it('stops telling a peopled room it is empty of agents', async () => {
+    renderPage({
+      getRoom: vi.fn((id: string) => {
+        const room = peopled(id, 'general');
+        return Promise.resolve({
+          ...room,
+          members: [
+            ...room.members,
+            {
+              roomId: id,
+              authorId: 'author-ana',
+              responseMode: 'mention-only' as const,
+              joinedAt: '2026-07-26T09:00:00.000Z',
+              lastReadSeq: 0,
+              author: { id: 'author-ana', kind: 'agent' as const, displayName: 'Ana' },
+            },
+          ],
+        });
+      }),
+      listRoomEntries: vi.fn().mockResolvedValue([]),
+    });
+
+    expect(await screen.findByText(/Say something to get it going/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no agents in here/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add more agents' })).toBeInTheDocument();
+  });
+});
 
 describe('ChannelsPage room switching', () => {
   it('leaves a half-typed message behind in the room it was typed in', async () => {

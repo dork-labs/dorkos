@@ -1,11 +1,15 @@
 /**
- * Disambiguate duplicate agent display names for the sidebar (DOR-329).
+ * Disambiguate duplicate agent display names (DOR-329).
  *
  * Two agents whose base display name collides (e.g. two `server` directories)
  * get a parenthetical suffix from the nearest differentiating path segment, so
  * every rendered label is unique.
  *
- * @module features/dashboard-sidebar/model/disambiguate-display-names
+ * Built for the sidebar and now shared with every agent picker, which is why it
+ * sits at the entity layer: an agent's name on screen is the agent's, not one
+ * feature's.
+ *
+ * @module entities/agent/lib/disambiguate-display-names
  */
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { getAgentDisplayName } from '@/layers/shared/lib';

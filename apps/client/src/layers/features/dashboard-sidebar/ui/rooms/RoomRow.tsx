@@ -3,6 +3,7 @@ import { MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { cn } from '@/layers/shared/lib';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useIsMobile } from '@/layers/shared/model';
 import {
   AlertDialog,
@@ -34,9 +35,8 @@ import {
 } from '@/layers/entities/room';
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
 import { RoomRowMenuItems } from './RoomRowMenuItems';
-import { RoomMembersDialog, type MembersDialogIntent } from './RoomMembersDialog';
+import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
 import { RoomTopicDialog } from './RoomTopicDialog';
-import type { AgentPickerCandidate } from './AgentChipPicker';
 
 /** Longest room name the server accepts (`UpdateRoomRequestSchema.title`). */
 const MAX_NAME = 200;

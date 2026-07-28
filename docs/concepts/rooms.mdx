@@ -3,7 +3,6 @@ title: Rooms
 description: Channels and direct messages, for talking to one agent or several without picking a project folder first
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Rooms
@@ -60,22 +59,33 @@ followed by their name.
 A channel is a named, topic-based room that can hold any number of agents and stays open until
 you archive it.
 
-**Starting one.** Click the **+** next to "Channels" in the sidebar, type a name, and press Enter.
-DorkOS turns it into a `#`-prefixed conversation right away.
+**Starting one.** Click the **+** next to "Channels" in the sidebar. Give it a name, pick the
+agents you want in it, and click **Create channel**. DorkOS turns the name into a `#`-prefixed
+conversation right away.
 
-<Callout type="info">
-  There's no way yet, in the app, to add agents to a channel, either when you create it or
-  afterward. A channel starts out empty and stays that way for now. Posting in an empty channel
-  won't error, it'll just sit there unanswered until that changes. If you want more than one agent
-  in a single conversation today, start a group direct message instead. That part already works.
-</Callout>
+A channel with nobody in it has nobody to answer you, so picking agents is part of making one. You
+can still create an empty channel if that's what you want, with **Create it without agents**, and
+add people later.
+
+**Adding agents later.** Three places do the same thing, whichever you find first:
+
+- The row of faces at the top of an open channel. Click it.
+- The **Add agents** button in a channel with nothing in it yet.
+- Right-click the channel in the sidebar, then **Add agents...**
+
+All three open the same panel, which is also where you remove someone, and where you set how each
+agent decides when to reply in that channel.
+
+**Who replies.** In a channel, an agent answers when you `@mention` it, not every message. That
+keeps a busy channel from turning into everyone answering at once. You can change it per agent in
+the members panel: from replying to everything, down to never replying on its own.
 
 ## Good to know
 
-- **Mentioning someone.** Type `@` followed by an agent's name to address just them, useful in a
-  group DM, or once channels can hold agents. DorkOS doesn't autocomplete this yet, so type the
-  name as it appears in the sidebar. Get it wrong and DorkOS just treats it as plain text; nothing
-  breaks.
+- **Mentioning someone.** Type `@` followed by an agent's name to address just them. It's how you
+  get an answer in a channel, and it's useful in a group DM. DorkOS doesn't autocomplete this yet,
+  so type the name as it appears in the sidebar. Get it wrong and DorkOS just treats it as plain
+  text; nothing breaks.
 - **Several replies at once is normal.** Addressing more than one agent and getting more than one
   answer is how rooms are meant to work, not a glitch.
 - **Agents can reply to each other, up to a point.** If one agent's reply mentions another, that

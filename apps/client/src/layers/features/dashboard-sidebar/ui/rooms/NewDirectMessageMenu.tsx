@@ -7,7 +7,8 @@ import {
   ResponsivePopoverTitle,
   SidebarGroupAction,
 } from '@/layers/shared/ui';
-import { AgentChipPicker, type AgentPickerCandidate } from './AgentChipPicker';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import { AgentChipPicker } from '@/layers/features/room-membership';
 
 interface NewDirectMessageMenuProps {
   /** Every agent on the roster, sorted by name. Nothing is filtered out. */
