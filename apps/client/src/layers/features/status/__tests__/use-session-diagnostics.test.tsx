@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session, ServerConfig, SubagentInfo } from '@dorkos/shared/types';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 
 // The runtime resolution reads the session list for its "started" signal; the
 // real useSessions needs router search params, absent in this suite.
@@ -55,7 +55,7 @@ import {
 function sessionRow(overrides: Partial<Session> = {}): Session {
   return {
     id: 's1',
-    cwd: '/Users/dev/work/dorkos',
+    cwd: CWD,
     model: 'claude-opus-4-6',
     permissionMode: 'plan',
     effort: 'high',
@@ -129,7 +129,13 @@ function harness(rows: Session[] = [sessionRow()]) {
   return { transport, queryClient, wrapper };
 }
 
+const CWD = '/Users/dev/work/dorkos';
+
 beforeEach(() => {
+  // Session-scoped queries wait for the working directory (DOR-495), and the
+  // real store starts at null — so this suite has to resolve one, exactly as
+  // the app does before any session request goes out.
+  useAppStore.setState({ selectedCwd: CWD });
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
   useSessionChatStore.setState({ sessions: {} });
   useSessionSettingsOverridesStore.setState({ bySession: {} });

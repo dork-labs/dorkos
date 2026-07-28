@@ -276,7 +276,7 @@ export function AppShell() {
   // deliberately silent on the last tab so the window still closes.
   useElectronCloseTab();
   // Bridge the global `/api/events` session-list stream into the shared
-  // `['sessions', cwd]` query cache (sidebar/dashboard/loader go live; ADR-0265).
+  // session-list query cache (sidebar/dashboard/loader go live; ADR-0265).
   useGlobalSessionStream();
   // Re-fetch the command registry when the server hot-reloads plugins after a
   // marketplace install/uninstall, so the command palette stays an honest
