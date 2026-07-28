@@ -2,6 +2,7 @@
 covers:
   - 'fix(marketplace): ask before a package writes shell commands into your settings (DOR-522)'
   - 'fix(marketplace): bind hook approvals to when a command fires, not just what it runs (DOR-522)'
+  - 'fix(marketplace): pin that a project-scoped agent install cannot eat the project (DOR-522)'
 ---
 
 ### Security
