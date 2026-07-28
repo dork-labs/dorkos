@@ -19,6 +19,13 @@ import { fileURLToPath } from 'node:url';
  * not the one being shipped. So this test re-derives the mapping from the CLI
  * source and asserts the mirror matches it exactly — no missing shim, no shim
  * pointing at the wrong module, no shim left behind after its import is gone.
+ *
+ * WHAT THIS CANNOT SEE: a dynamic import whose specifier is a variable rather
+ * than a literal (`await import(someServerPath)`). Nothing catches that one —
+ * tsc cannot resolve it either, and esbuild's redirect plugin cannot rewrite
+ * it, so it would survive the build and then fail at a user's install, where
+ * `dist/server/` contains only `index.js`. Do not write one; there are none
+ * today. A literal specifier is what makes every other mechanism here work.
  */
 const CLI_PKG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ROOT = path.resolve(CLI_PKG, '../..');
