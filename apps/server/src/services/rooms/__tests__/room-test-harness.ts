@@ -88,8 +88,19 @@ export interface RoomHarness {
   service: RoomService;
   authors: AuthorRegistry;
   runner: ScriptedTurnRunner;
-  /** The local human author id. */
+  /** The owner's human author id — the `'local'` sentinel, or the bound account. */
   human: string;
+  /**
+   * Give this install an owner account, the way enabling login does.
+   *
+   * The live wiring reads ownership per check rather than capturing it, so this
+   * is what lets a test drive the transition an install actually makes: rooms
+   * and messages first, an account afterwards.
+   *
+   * @param userId - The owner's account id.
+   * @returns The owner's author id, which does not change.
+   */
+  setOwner(userId: string): string;
 }
 
 /**
@@ -104,6 +115,11 @@ export interface RoomHarness {
  *   literal, and high enough by default that it never silently masks a cascade
  *   test — a budget refusal and a guard refusal look alike from the outside.
  * @param opts.maxAutomaticTurnsTotalPerHour - The install-wide spend cap.
+ * @param opts.ownerUserId - The account that owns this install, when the test is
+ *   about one. Omitted means "no accounts", which is the default posture and the
+ *   one where the `'local'` author is the owner. Resolved through the real
+ *   {@link AuthorRegistry.isOwner} rather than a stub, so a test proves the
+ *   predicate that ships.
  */
 export function createRoomHarness(opts: {
   agents: RoomAgentLookup;
@@ -111,6 +127,7 @@ export function createRoomHarness(opts: {
   maxAgentDepth?: number;
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
+  ownerUserId?: string;
 }): RoomHarness {
   const db = createTestDb();
   const authors = new AuthorRegistry(db);
@@ -118,6 +135,9 @@ export function createRoomHarness(opts: {
   const maxAgentDepth = opts.maxAgentDepth ?? 3;
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
+  // Mutable so `setOwner` can drive the transition, and read per check the way
+  // the live wiring reads it — an install becomes owned partway through its life.
+  let ownerUserId = opts.ownerUserId ?? null;
   const service = new RoomService({
     store: new RoomStore(db),
     authors,
@@ -126,6 +146,18 @@ export function createRoomHarness(opts: {
     turns: runner,
     budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
     maxAgentDepth: () => maxAgentDepth,
+    isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
   });
-  return { db, service, authors, runner, human: authors.localHuman().id };
+  const human = ownerUserId === null ? authors.localHuman() : authors.bindOwner(ownerUserId);
+  return {
+    db,
+    service,
+    authors,
+    runner,
+    human: human.id,
+    setOwner(userId) {
+      ownerUserId = userId;
+      return authors.bindOwner(userId).id;
+    },
+  };
 }
