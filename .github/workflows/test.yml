@@ -92,8 +92,24 @@ jobs:
 
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The next step is the only reason it is here.
+      #
+      # --concurrency=1 for the DOR-121 reason the pre-push gate already gives,
+      # which applies harder here, not less. Turbo's default is to fan out ten
+      # package suites at once, and every `vitest run` then spawns its own
+      # ~CPU-count worker pool. That is ~10x oversubscription on a 14-core
+      # developer machine; ubuntu-latest has 4 cores, so it is worse. Suites run
+      # one at a time and each keeps its internal parallelism, which is the
+      # right shape for a small runner.
+      #
+      # This is not a preference. The first two runs of this workflow at the
+      # default concurrency failed on a DIFFERENT pair of timing-sensitive tests
+      # each time, on code neither run had changed — "dev child #0 was never
+      # spawned", "Test timed out in 5000ms". Starving a suite of CPU and then
+      # reporting its timeouts as failures makes the gate a coin toss, and a
+      # gate people cannot trust is a gate people route around. Retries would
+      # have hidden this; running the work properly fixes it.
       - name: Run every package's test suite
-        run: pnpm exec turbo test --summarize --continue -- --run
+        run: pnpm exec turbo test --summarize --continue --concurrency=1 -- --run
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 18 successful", exits 0, and takes ~280ms without starting a
