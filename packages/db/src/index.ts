@@ -18,7 +18,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Opens (or creates) the DorkOS SQLite database at the given path.
- * Applies WAL mode, NORMAL sync, 5s busy timeout, and foreign key enforcement.
+ * Applies WAL mode, NORMAL sync, 5s busy timeout, foreign key enforcement, and
+ * recursive triggers.
  *
  * @param dbPath - Absolute path to the database file, or ':memory:' for tests
  */
@@ -28,6 +29,42 @@ export function createDb(dbPath: string) {
   sqlite.pragma('synchronous = NORMAL');
   sqlite.pragma('busy_timeout = 5000');
   sqlite.pragma('foreign_keys = ON');
+  // WITHOUT THIS, `INSERT OR REPLACE` SILENTLY CORRUPTS THE MESSAGE-SEARCH INDEX.
+  //
+  // SQLite fires a table's DELETE triggers for rows that REPLACE conflict
+  // resolution removes ONLY when recursive_triggers is on. It defaults to OFF,
+  // and OFF was measured here (`PRAGMA recursive_triggers` returned 0 before
+  // this line existed). So a REPLACE onto `messages` dropped the old row
+  // without ever running `messages_fts_ad`, leaving the FTS5 index holding
+  // terms for text that no longer exists anywhere.
+  //
+  // What made it worth a pragma rather than a rule is that NOTHING REPORTS IT.
+  // Measured on the migrated database, after one REPLACE: `MATCH 'dog'` returns
+  // a hit for the deleted text, `bm25()` scores it without complaint, and BOTH
+  // integrity checks — `PRAGMA integrity_check` and FTS5's own
+  // `INSERT INTO messages_fts(messages_fts) VALUES('integrity-check')` — report
+  // `ok`. Only `snippet()` fails, with `database disk image is malformed`. A
+  // convention would have to be obeyed by every future writer to hold; this
+  // holds by itself.
+  //
+  // Safe to turn on for THIS database, and the reason is structural rather than
+  // a headcount. The three triggers in migration 0037 are the only ones in the
+  // migration history, and the operator's production database carries none at
+  // all — but "there are no other triggers" is not the argument, because
+  // extensions may declare their own: a manifest migration is the one place
+  // third-party `CREATE TRIGGER` is allowed
+  // (`packages/extension-api/src/manifest-schema.ts`). Those live in a separate
+  // `store.db` on a separate connection opened by `openExtensionDb`, which
+  // deliberately does NOT set this pragma and says so. So no trigger this
+  // pragma can reach is one DorkOS did not write.
+  //
+  // The rest follows: none of the three writes to a table carrying triggers, so
+  // none can recurse, and SQLite defines foreign key actions as unaffected by
+  // this pragma.
+  //
+  // It is per-connection, so it protects connections opened through here and no
+  // others. Anything writing `messages` must come through `createDb`.
+  sqlite.pragma('recursive_triggers = ON');
   return drizzle(sqlite, { schema });
 }
 

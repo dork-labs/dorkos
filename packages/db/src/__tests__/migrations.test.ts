@@ -59,6 +59,21 @@ describe('Database Migrations', () => {
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',
       'mesh_namespace_rules',
+      // The message-search index and its frontier: a derived, rebuildable
+      // projection of what was said, never a store (ADR 260728-214214,
+      // migration 0037).
+      'messages',
+      // `messages_fts` is the FTS5 virtual table; the four `messages_fts_*`
+      // entries are the shadow tables SQLite creates to back it, and they are
+      // listed rather than filtered out so that dropping the virtual table
+      // cannot pass unnoticed. There is no `messages_fts_content` — this is an
+      // external-content index, which is exactly why it stores no second copy
+      // of the text and needs the three sync triggers in 0037.
+      'messages_fts',
+      'messages_fts_config',
+      'messages_fts_data',
+      'messages_fts_docsize',
+      'messages_fts_idx',
       // Durable DorkOS-id <-> OpenCode-session-id bindings so OpenCode
       // session ids survive a server restart (DOR-251, migration 0027).
       'opencode_sessions',
@@ -74,6 +89,9 @@ describe('Database Migrations', () => {
       'room_members',
       'room_sessions',
       'rooms',
+      // The indexer's frontier — one row per container, recording what has
+      // already been read (migration 0037).
+      'search_sources',
       'session',
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
