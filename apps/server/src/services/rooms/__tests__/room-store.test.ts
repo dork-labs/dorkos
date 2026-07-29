@@ -45,12 +45,10 @@ function seedRoom(store: RoomStore, id = ROOM_ID): void {
     {
       id,
       kind: 'channel',
-      parentId: null,
       slug: id,
       title: `#${id}`,
       topic: null,
       workspaceId: null,
-      rootEntryId: null,
       createdAt: '2026-07-26T11:00:00.000Z',
     },
     []
@@ -116,12 +114,10 @@ describe('RoomStore.findDmByMemberSet', () => {
       {
         id,
         kind: opts.kind ?? 'dm',
-        parentId: null,
         slug: opts.kind === 'channel' ? id : null,
         title: id,
         topic: null,
         workspaceId: null,
-        rootEntryId: null,
         createdAt,
       },
       authorIds.map((authorId) => ({
@@ -424,12 +420,10 @@ describe('RoomStore.listRooms ordering', () => {
       {
         id,
         kind: 'channel',
-        parentId: null,
         slug: id,
         title: `#${id}`,
         topic: null,
         workspaceId: null,
-        rootEntryId: null,
         createdAt: at,
       },
       [{ authorId: ANA, responseMode: 'always', joinedAt: at }]

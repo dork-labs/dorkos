@@ -112,12 +112,10 @@ function dm(overrides: Partial<RoomSummary> = {}): RoomSummary {
   return {
     id: 'dm-1',
     kind: 'dm',
-    parentId: null,
     slug: null,
     title: 'Ana',
     topic: null,
     workspaceId: null,
-    rootEntryId: null,
     archived: false,
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',

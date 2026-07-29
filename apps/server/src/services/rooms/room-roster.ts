@@ -170,11 +170,15 @@ export class RoomRoster {
   }
 
   /**
-   * The `responseMode` a membership is seeded with, per spec §2: the parent's
-   * value in a thread, `mention-only` in a channel, the agent's manifest default
-   * in a DM. Written explicitly at join time, so nothing has to re-derive it
-   * later and changing the manifest never rewrites a room somebody already
-   * configured.
+   * The `responseMode` a membership is seeded with, per spec §2: `mention-only`
+   * in a channel, the agent's manifest default in a DM. Written explicitly at
+   * join time, so nothing has to re-derive it later and changing the manifest
+   * never rewrites a room somebody already configured.
+   *
+   * There is no third case. A thread is a position inside a channel, not a room
+   * (ADR 260728-022013), so a reply there reads the channel's membership and
+   * there is nothing to inherit — the branch that copied a parent's value into a
+   * thread membership retired with the child room.
    *
    * The field describes when an AGENT answers without being addressed. Humans
    * and the system are never auto-triggered — addressing filters to agent
@@ -186,10 +190,6 @@ export class RoomRoster {
    */
   seedResponseMode(room: Room, author: AuthorRecord): ResponseMode {
     if (author.kind !== 'agent') return INERT_RESPONSE_MODE;
-    if (room.kind === 'thread' && room.parentId) {
-      const inherited = this.store.getMember(room.parentId, author.id);
-      if (inherited) return inherited.responseMode;
-    }
     if (room.kind === 'channel') return CHANNEL_RESPONSE_MODE;
     return this.agents.byPath(author.naturalKey)?.responseMode ?? 'always';
   }

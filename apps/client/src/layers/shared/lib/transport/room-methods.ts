@@ -1,12 +1,13 @@
 /**
- * Room Transport methods factory (HTTP adapter) — channels, DMs and threads
- * (spec `rooms`). Talks to the Express `/api/rooms/*` routes.
+ * Room Transport methods factory (HTTP adapter) — channels and DMs (spec
+ * `rooms`). Talks to the Express `/api/rooms/*` routes.
  *
  * Only what the cockpit performs today is here: reading a room, posting to it,
  * settling its title / topic / archived flag, editing its roster, and moving
- * the read cursor. Thread creation reaches the client in a later phase of the
- * spec; the server already serves it, so it is a factory addition and not a
- * protocol change when it lands.
+ * the read cursor. Posting a thread reply is `POST /api/rooms/:id/threads` and
+ * reaches this factory when the cockpit grows an affordance for it; nothing has
+ * to be created first, since a thread is a relation between entries
+ * (ADR 260728-022013), so it is a factory addition and not a protocol change.
  *
  * @module shared/lib/transport/room-methods
  */
