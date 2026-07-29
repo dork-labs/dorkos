@@ -57,7 +57,8 @@ async function saveKeyThroughUi(page: Page): Promise<void> {
   const card = page.locator(`[data-testid="provider-card-${PROVIDER}"]`);
   await card.getByLabel(/Test connector API key/i).fill('e2e-test-key');
   await card.getByRole('button', { name: 'Save key' }).click();
-  await expect(card.getByText('Ready')).toBeVisible();
+  // exact: a substring match would also accept future copy like "Not Ready".
+  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
 }
 
 /**

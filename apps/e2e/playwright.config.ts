@@ -328,7 +328,8 @@ export default defineConfig({
       // `POST /api/test/reset` clears runtime sessions and scenarios, neither of
       // which these specs' assertions depend on (the session-attach spec uses
       // its session only as an id; the attach surface is connector-service
-      // state, not runtime state).
+      // state, not runtime state). Verified empirically 2026-07-29: both
+      // projects run concurrently against one test-mode server, 18/18 passed.
       name: 'chromium-connections',
       use: {
         ...devices['Desktop Chrome'],

@@ -165,6 +165,7 @@ import { createDb, runMigrations, agents } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
+import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
@@ -1084,12 +1085,14 @@ async function start() {
   // endpoints over Nango's credentialed proxy, mounted below beside the
   // connector routes. Created before the bootstrapper because every Nango
   // provider instance (boot and reload alike) exposes tools through it.
-  // `localhost`, not `127.0.0.1`: the server binds env.DORKOS_HOST (default
-  // `localhost`), which Node resolves to ONE family — on hosts where that is
-  // ::1, a 127.0.0.1 URL is connection-refused. Minting the origin from the
-  // same name the listener binds keeps the URL reachable by construction
+  // Minted from the DIAL form of the bind host, not `127.0.0.1`: the server
+  // binds env.DORKOS_HOST (default `localhost`), which Node resolves to ONE
+  // family — on hosts where that is ::1, a 127.0.0.1 URL is connection-refused
   // (proven by the connections browser spec against the test-mode provider).
-  const nangoProxyMcp = new NangoProxyMcp({ localOrigin: `http://${env.DORKOS_HOST}:${PORT}` });
+  // `localDialHost` also keeps the URL honest where the bind host itself is
+  // not dialable: Docker's 0.0.0.0 wildcard, and bare IPv6 literals.
+  const localOrigin = `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`;
+  const nangoProxyMcp = new NangoProxyMcp({ localOrigin });
   // Created before the bootstrapper so its unregister hook can revoke cached
   // session attachments the moment a credential is deleted.
   const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
@@ -1124,8 +1127,8 @@ async function start() {
             await import('./services/connectors/providers/test-mode.js');
           return maybeCreateTestModeConnectorProvider({
             credentials: credentialProvider,
-            // Same-family origin as the listener — see nangoProxyMcp above.
-            localOrigin: `http://${env.DORKOS_HOST}:${PORT}`,
+            // Same dial origin as the Nango proxy — see localOrigin above.
+            localOrigin,
           });
         },
       },
