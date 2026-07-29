@@ -1,8 +1,11 @@
 /**
  * Connector gateway service barrel — the server-side surface of the
  * `ConnectorProvider` seam (connector-gateway spec). Re-exports the registry,
- * the routing surface, the custody-disclosure copy, the per-session tool
- * exposure binder, and the shipped provider backends.
+ * the provider bootstrapper (lifecycle + live reload), the shared flow-binding
+ * map, the agent-facing capability domain, the routing surface, the
+ * custody-disclosure copy, the per-session tool exposure binder, the public
+ * account mapping, the Nango Proxy→MCP wrapper, and the shipped provider
+ * backends.
  *
  * Exposed as the `@dorkos/server/services/connectors` subpath so the eval
  * harness (`@dorkos/evals`) can express the W4 connector evals against the real
@@ -19,6 +22,17 @@ export {
   type AggregatedToolkits,
   type ConnectedAccountBinding,
 } from './registry.js';
+export {
+  ConnectorProviderBootstrapper,
+  TEST_CONNECTOR_PROVIDER_TYPE,
+  TEST_CONNECTOR_CREDENTIAL_NAME,
+  TEST_CONNECTOR_API_KEY_REF,
+  type ConnectorProviderBootstrapperOpts,
+} from './bootstrap.js';
+export { ConnectorFlowBindings } from './flow-bindings.js';
+export { connectorDomain, type ConnectorCapabilityDeps } from './connector-capabilities.js';
+export { toPublicAccount, type PublicConnectedAccount } from './public-account.js';
+export { NangoProxyMcp, type NangoProxyMcpOpts } from './providers/nango-proxy-mcp.js';
 export {
   recommendConnector,
   type RecommendConnectorResult,

@@ -144,6 +144,14 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'workbench.defaultViewers',
   'workbench.terminalGraceTtlMinutes',
   'workbench.autoOpenDiff',
+  // Fields OF a configured raw-MCP server entry. The protective default is
+  // structural: `connectors.rawMcpServers` ships EMPTY, so no tool endpoint
+  // exists until a person writes one; these leaves carry no default of their
+  // own (they exist only inside an entry someone added).
+  'connectors.rawMcpServers[].slug',
+  'connectors.rawMcpServers[].displayName',
+  'connectors.rawMcpServers[].url',
+  'connectors.rawMcpServers[].transport',
   'runtimes.default',
   'runtimes.opencode.enabled',
   'runtimes.opencode.binaryPath',

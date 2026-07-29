@@ -181,6 +181,16 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       anthropic: 'file:LEAK-7-anthropic-key-file',
       openrouter: 'env:LEAK-8-OPENROUTER_API_KEY',
     },
+    connectors: {
+      rawMcpServers: [
+        {
+          slug: 'notion',
+          displayName: 'Notion',
+          url: 'https://mcp.notion.example',
+          transport: 'http',
+        },
+      ],
+    },
     mesh: { scanRoots: ['/Users/me/code', '/Users/me/work'] },
   };
 }

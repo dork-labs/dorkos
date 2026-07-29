@@ -195,6 +195,21 @@ A room is a conversation more than one agent can be in. When you post, every age
   make. Turn on **Require login** to close the gap.
 </Callout>
 
+### Connectors
+
+Connectors let your agents reach outside services (Gmail, Slack, and so on). Most of that is set up in the app, not here. The one piece that lives in the config file is the list of remote MCP servers you want DorkOS to offer as connectable services.
+
+<TypeTable
+  type={{
+    'connectors.rawMcpServers': {
+      description:
+        'Remote MCP servers to offer as connectable services. Each entry names the service (`slug`, `displayName`), where it lives (`url`), and how to talk to it (`transport`: `http` or `sse`). DorkOS reads this list when it starts, so add or remove entries and then restart. Only you can change this.',
+      type: 'array of { slug, displayName, url, transport }',
+      default: '[]',
+    },
+  }}
+/>
+
 ### Extensions
 
 Extensions add UI, commands, and behavior to DorkOS. Core extensions ship with DorkOS and appear in Settings → Extensions under a "Core extensions" section, each with an enable or disable toggle. Extensions you install yourself appear under "Installed extensions". Toggling in the UI is all most people need. The underlying state lives in `~/.dork/config.json` under the `extensions` key.

@@ -240,7 +240,9 @@ const serverEnvSchema = z.object({
   // DOR-371). The base URL DorkOS points its self-host connector at, e.g.
   // http://localhost:3003. Absent = the Nango connector is not configured, and
   // the registry is left unchanged (no `nango` provider, no crash).
-  NANGO_BASE_URL: z.string().optional(),
+  // `.url()` so a malformed address fails env parse at boot with a Zod message
+  // instead of surfacing later as an unreachable connector (DOR-415 review nit).
+  NANGO_BASE_URL: z.string().url().optional(),
   // The 256-bit encryption key (written in base64) your self-hosted Nango uses
   // at rest. DorkOS gates on it: when the Nango connector is otherwise configured
   // (base URL + secret key), it refuses to register unless this is set to a valid

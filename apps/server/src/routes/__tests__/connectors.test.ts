@@ -12,6 +12,7 @@ import type {
   ConnectStart,
 } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
+import { ConnectorFlowBindings } from '../../services/connectors/flow-bindings.js';
 import type { RelayAdapterCatalog } from '../../services/connectors/routing.js';
 import { createConnectorsRouter } from '../connectors.js';
 
@@ -62,7 +63,10 @@ describe('connectors router', () => {
   function buildApp(relay?: RelayAdapterCatalog) {
     const app = express();
     app.use(express.json());
-    app.use('/api/connectors', createConnectorsRouter({ registry, relay }));
+    app.use(
+      '/api/connectors',
+      createConnectorsRouter({ registry, flowBindings: new ConnectorFlowBindings(), relay })
+    );
     return app;
   }
 
@@ -108,7 +112,10 @@ describe('connectors router', () => {
     bounded.register(new HungProvider());
     const app = express();
     app.use(express.json());
-    app.use('/api/connectors', createConnectorsRouter({ registry: bounded }));
+    app.use(
+      '/api/connectors',
+      createConnectorsRouter({ registry: bounded, flowBindings: new ConnectorFlowBindings() })
+    );
 
     const start = Date.now();
     const res = await request(app).get('/api/connectors/recommend?service=gmail');

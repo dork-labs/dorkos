@@ -155,10 +155,32 @@ const marketplaceDeps = {
   logger: noopLogger,
 } as unknown as MarketplaceMcpDeps;
 
+// Fake connector bundle: a real registry + binder over an in-memory db with a
+// fake provider, so the connector capabilities' invoke assertions run the real
+// service code with no network.
+const { ConnectorRegistry } = await import('../../../connectors/registry.js');
+const { ConnectorFlowBindings } = await import('../../../connectors/flow-bindings.js');
+const { SessionConnectorService } = await import('../../../connectors/session-exposure.js');
+const { FakeConnectorProvider } = await import('@dorkos/test-utils');
+const { runMigrations } = await import('@dorkos/db');
+
+const connectorDb = createTestDb();
+runMigrations(connectorDb);
+const conformanceConnectorRegistry = new ConnectorRegistry({ db: connectorDb });
+conformanceConnectorRegistry.register(
+  new FakeConnectorProvider({ type: 'composio', custody: 'managed' })
+);
+const connectorDeps = {
+  registry: conformanceConnectorRegistry,
+  sessionConnectors: new SessionConnectorService({ registry: conformanceConnectorRegistry }),
+  flowBindings: new ConnectorFlowBindings(),
+};
+
 const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
   operatorDeps,
   marketplaceDeps,
+  connectorDeps,
 });
 
 /** Tool names the real in-session adapter registers for the capability surface. */
@@ -365,16 +387,24 @@ capabilityConformance(registry, {
       type: 'plugin',
       description: 'A conformance fixture package.',
     },
+    'connector.recommend': { service: 'gmail' },
+    'connector.start_connect': { service: 'gmail', label: 'conformance' },
+    // An unknown flow: the handler answers with its structured CapabilityToolError.
+    'connector.poll_connect': { flowId: 'conformance-flow' },
+    // Destructive: refused by the gate before the handler runs (asserted above).
+    'connector.attach_account': { accountId: 'conformance-account', sessionId: 'conformance' },
+    'connector.detach_account': { accountId: 'conformance-account', sessionId: 'conformance' },
   },
 });
 
 // A tiny sanity assertion so this file also documents the shape of the fixtures
 // it feeds the shared suite (and fails loudly if a domain stops registering).
 describe('capability conformance wiring', () => {
-  it('composes a non-empty registry across all three domains', () => {
+  it('composes a non-empty registry across all four domains', () => {
     const ids = registry.capabilities.map((c) => c.id);
     expect(ids).toContain('operator.config_get');
     expect(ids).toContain('marketplace.search');
+    expect(ids).toContain('connector.list_toolkits');
     expect(ids).toContain('capabilities.list');
   });
 });

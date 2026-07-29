@@ -143,4 +143,20 @@ describe('serverEnv', () => {
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
   });
+
+  it('rejects a malformed NANGO_BASE_URL at boot (DOR-415 nit)', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubEnv('NANGO_BASE_URL', 'not a url');
+    await import('../env.js');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    exitSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('accepts a well-formed NANGO_BASE_URL', async () => {
+    vi.stubEnv('NANGO_BASE_URL', 'http://localhost:3003');
+    const { env } = await import('../env.js');
+    expect(env.NANGO_BASE_URL).toBe('http://localhost:3003');
+  });
 });

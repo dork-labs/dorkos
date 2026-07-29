@@ -961,6 +961,25 @@ export function backfillSidebarRoomSections(store: {
 }
 
 /**
+ * Migration body: backfill the `connectors` section (`rawMcpServers`, the
+ * remote MCP servers the raw-MCP connector offers; connector-completion spec)
+ * for configs persisted before it existed. Additive + idempotent: only writes
+ * when the key is absent; the schema default also yields `{ rawMcpServers: [] }`
+ * on read, so this just writes it through on the upgrade where it lands.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `has`/`set`).
+ */
+export function backfillConnectorsDefaults(store: {
+  has: (key: string) => boolean;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (!store.has('connectors')) {
+    store.set('connectors', { rawMcpServers: [] });
+  }
+}
+
+/**
  * Migration body: backfill the `rooms` section (the cascade ceiling agents
  * reply within, DOR-526) for configs persisted before it existed. Additive +
  * idempotent: only writes when the key is absent; the schema default also
@@ -1334,6 +1353,7 @@ export const CONFIG_MIGRATIONS = {
   // extending the next unreleased one is the convention.
   '0.57.0': (store: {
     get: (key: string) => unknown;
+    has: (key: string) => boolean;
     set: (key: string, value: unknown) => void;
   }) => {
     // Put `ui.statusBar` into its pins shape on an existing `ui` block —
@@ -1380,6 +1400,11 @@ export const CONFIG_MIGRATIONS = {
     // after the sidebar backfills above so it sees the same `ui.sidebar` object
     // (order is otherwise immaterial — they touch disjoint fields).
     migrateSidebarMembersToItemRefs(store);
+    // The `connectors` section (`rawMcpServers`, connector-completion spec):
+    // the remote MCP servers the raw-MCP connector offers as connectable
+    // services. Additive + idempotent; seeds the list EMPTY, so an upgrade
+    // never grants a tool endpoint nobody configured.
+    backfillConnectorsDefaults(store);
   },
 } as const;
 

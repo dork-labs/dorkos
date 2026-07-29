@@ -5,24 +5,23 @@
  * Postgres, on infrastructure they control.
  *
  * Capabilities: `type: 'nango'`, `supportsMultiAccount: true`,
- * `custody: 'self-host'`, **`exposesOverMcp: false`**. Custody is `self-host`
+ * `custody: 'self-host'`, **`exposesOverMcp: true`**. Custody is `self-host`
  * because DorkOS holds only a `file:` reference to the Nango secret key + the
  * self-host base URL; the upstream tokens live in the operator's Nango, never in
  * DorkOS's store. The `connectionId ↔ ConnectedAccountId` normalization is
  * confined to this file ({@link toConnectedAccountId} / {@link toNangoConnectionId}).
  *
- * **Why `exposesOverMcp: false` (the honest scope of this phase).** Free
- * self-hosted Nango gives Auth + a credentialed HTTP proxy and *no MCP server* —
- * Nango's own MCP server is Enterprise-gated, and this adapter must never depend
- * on it (spike §1.3, spec §Non-Goals). Turning Nango's Proxy into MCP tools is a
- * DorkOS-built wrapper that does not exist yet and would be an unverified surface
- * to ship, so this adapter declares `exposesOverMcp: false` and
- * {@link NangoConnectorProvider.toolServerForAccount} always resolves `null` —
- * exactly the port's documented null branch ("a transport this host cannot
- * independently reconnect", `connector-provider.ts`). An account still connects
- * and its custody is handled truthfully; tool exposure waits on the Proxy→MCP
- * wrapper. This mirrors a `FakeConnectorProvider` in false-mode and passes the
- * conformance suite's `exposesOverMcp: false` branch.
+ * **How tools are exposed (DOR-415).** Free self-hosted Nango gives Auth + a
+ * credentialed HTTP proxy and *no MCP server* — Nango's own MCP server is
+ * Enterprise-gated, and this adapter must never depend on it (spike §1.3, spec
+ * §Non-Goals). Tool exposure therefore rides the DorkOS-built Proxy→MCP wrapper
+ * ({@link NangoProxyMcp}): {@link NangoConnectorProvider.toolServerForAccount}
+ * resolves an ACTIVE account, registers it with the wrapper, and returns the
+ * wrapper's bearer-gated local endpoint as the session's tool server. A
+ * non-active or unresolvable account resolves `null` — exactly the port's
+ * documented null branch ("a transport this host cannot independently
+ * reconnect", `connector-provider.ts`) — surfaced as a per-account warning,
+ * never a throw.
  *
  * **Self-host re-check (2026-07-21, DOR-371 P7 kickoff — spec OQ2 / spike §4.1).**
  * The spec mandates re-confirming Nango vs `oomol-lab/open-connector` (Apache-2.0)
@@ -56,6 +55,7 @@ import {
   type NangoConnectionStatus,
   type NangoHttpClient,
 } from './nango-client.js';
+import type { NangoProxyMcp } from './nango-proxy-mcp.js';
 
 /** The backend type identifier this provider registers and reports under. */
 export const NANGO_PROVIDER_TYPE = 'nango';
@@ -185,6 +185,8 @@ function toPortStatus(status: NangoConnectionStatus): ConnectedAccountStatus {
 export interface NangoConnectorProviderOpts {
   /** The Nango HTTP boundary (a fake in tests, {@link FetchNangoHttpClient} in prod). */
   client: NangoHttpClient;
+  /** The Proxy→MCP wrapper that mints per-account tool-server endpoints (DOR-415). */
+  proxy: NangoProxyMcp;
 }
 
 /**
@@ -205,8 +207,10 @@ export interface NangoConnectorProviderOpts {
  * - `startConnect` — MAY throw: connect is an interactive settings action with no
  *   failure type on the port, so a transport failure or a missing authorize URL
  *   throws a clear error the UI surfaces for retry.
- * - `toolServerForAccount` — always resolves `null` (`exposesOverMcp: false`); it
- *   touches no network, so it is inherently throw-free.
+ * - `toolServerForAccount` — throw-free; a transport failure while resolving the
+ *   account, or a non-active account, resolves `null` (the surfaced per-account
+ *   null branch), because its consumer (`session-exposure.attach`) awaits it
+ *   unguarded and a throw would 500 the attach route.
  *
  * A non-transport error (a genuine bug, not a routine API failure) is never
  * swallowed — it surfaces from every method.
@@ -215,14 +219,17 @@ export class NangoConnectorProvider implements ConnectorProvider {
   readonly type = NANGO_PROVIDER_TYPE;
 
   private readonly _client: NangoHttpClient;
+  private readonly _proxy: NangoProxyMcp;
 
   /**
-   * Construct the provider over an injected Nango HTTP client.
+   * Construct the provider over an injected Nango HTTP client and the Proxy→MCP
+   * wrapper its accounts expose tools through.
    *
-   * @param opts - The HTTP client seam; see {@link NangoConnectorProviderOpts}.
+   * @param opts - The HTTP client + wrapper seams; see {@link NangoConnectorProviderOpts}.
    */
   constructor(opts: NangoConnectorProviderOpts) {
     this._client = opts.client;
+    this._proxy = opts.proxy;
   }
 
   getCapabilities(): ConnectorCapabilities {
@@ -230,9 +237,9 @@ export class NangoConnectorProvider implements ConnectorProvider {
       type: this.type,
       supportsMultiAccount: true,
       custody: 'self-host',
-      // Free self-hosted Nango has no MCP server (Enterprise-gated); the
-      // Proxy→MCP wrapper is a separate deliverable, so no tool server yet.
-      exposesOverMcp: false,
+      // Tools ride the DorkOS-built Proxy→MCP wrapper (DOR-415) — never Nango's
+      // Enterprise-gated MCP server.
+      exposesOverMcp: true,
       features: {},
     };
   }
@@ -320,13 +327,35 @@ export class NangoConnectorProvider implements ConnectorProvider {
     await this._client.deleteConnection(toNangoConnectionId(accountId));
   }
 
-  toolServerForAccount(_accountId: ConnectedAccountId): Promise<McpAppServerConnection | null> {
-    // exposesOverMcp: false — free self-hosted Nango has no MCP server (its own is
-    // Enterprise-gated, spike §1.3), and the DorkOS Proxy→MCP wrapper is a
-    // separate deliverable. So every account resolves null (the port's documented
-    // "transport this host cannot independently reconnect" branch), never a throw,
-    // and this never depends on Nango's Enterprise MCP.
-    return Promise.resolve(null);
+  async toolServerForAccount(
+    accountId: ConnectedAccountId
+  ): Promise<McpAppServerConnection | null> {
+    // Resolve the account and register it with the Proxy→MCP wrapper. Only an
+    // ACTIVE connection is exposable — anything else resolves null (the port's
+    // documented null branch, surfaced as a per-account warning), never a throw.
+    // Its consumer (session-exposure attach) awaits this UNGUARDED, so a stale
+    // key's 401, a 5xx, or a timeout must also resolve null.
+    try {
+      const connectionId = toNangoConnectionId(accountId);
+      const connections = await this._client.listConnections();
+      const connection = connections.find((c) => c.connectionId === connectionId);
+      if (!connection || connection.status !== 'ACTIVE') return null;
+      return this._proxy.connectionForAccount(
+        accountId,
+        {
+          integration: connection.integration,
+          connectionId,
+          label: connection.label ?? connection.integration,
+        },
+        this._client
+      );
+    } catch (err) {
+      if (isTransportError(err)) {
+        logger.warn(`[Connectors] nango toolServerForAccount degraded to null: ${errText(err)}`);
+        return null;
+      }
+      throw err;
+    }
   }
 
   /** Map a Nango domain connection onto the provider-neutral {@link ConnectedAccount}. */
@@ -346,6 +375,8 @@ export class NangoConnectorProvider implements ConnectorProvider {
 export interface MaybeCreateNangoProviderDeps {
   /** The credential read port that resolves the secret-key reference. */
   credentials: CredentialProvider;
+  /** The Proxy→MCP wrapper the provider's accounts expose tools through (DOR-415). */
+  proxy: NangoProxyMcp;
   /** The reference to resolve for the secret key (defaults to {@link NANGO_SECRET_KEY_REF}). */
   secretKeyRef?: string;
   /** The self-hosted Nango base URL (absent = the connector is unconfigured). */
@@ -394,5 +425,5 @@ export async function maybeCreateNangoProvider(
       new FetchNangoHttpClient({ secretKey: opts.secretKey, baseUrl: opts.baseUrl }));
 
   const client = makeClient({ secretKey: resolution.secret, baseUrl });
-  return new NangoConnectorProvider({ client });
+  return new NangoConnectorProvider({ client, proxy: deps.proxy });
 }

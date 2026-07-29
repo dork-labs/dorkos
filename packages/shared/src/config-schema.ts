@@ -515,6 +515,26 @@ export const STATUS_BAR_PREFS_DEFAULTS: StatusBarPrefs = StatusBarPrefsSchema.pa
  */
 export const DEFAULT_AGENTS_DIRECTORY = '~/.dork/agents';
 
+/**
+ * One remote MCP server the raw-MCP connector exposes as a connectable service
+ * (`connectors.rawMcpServers`, connector-completion spec §Detailed Design 1).
+ * Read at boot by the connector bootstrapper; config edits take effect on the
+ * next server start.
+ */
+export const RawMcpServerConfigSchema = z.object({
+  /** Stable service slug used as the toolkit id, e.g. `'notion'`. */
+  slug: z.string().min(1),
+  /** Human-facing name shown in the connect picker. */
+  displayName: z.string().min(1),
+  /** The remote MCP endpoint URL. */
+  url: z.string().url(),
+  /** Streamable HTTP or SSE — the two remote MCP transports. */
+  transport: z.enum(['http', 'sse']),
+});
+
+/** One configured remote MCP server. See {@link RawMcpServerConfigSchema}. */
+export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -1138,6 +1158,18 @@ export const UserConfigSchema = z.object({
       linkedAccountLabel: z.string().nullable().default(null),
     })
     .default(() => ({ instanceToken: null, instanceName: null, linkedAccountLabel: null })),
+  /**
+   * Connector gateway settings (connector-completion spec). `rawMcpServers`
+   * lists the remote MCP servers the raw-MCP connector offers as connectable
+   * services; the provider registers at boot with whatever is here — including
+   * the empty list, so the seam is live before anyone configures a server.
+   */
+  connectors: z
+    .object({
+      /** Remote MCP servers the raw-MCP connector exposes (boot-read). */
+      rawMcpServers: z.array(RawMcpServerConfigSchema).default(() => []),
+    })
+    .default(() => ({ rawMcpServers: [] })),
   /**
    * Per-provider credential references, keyed by a stable provider id
    * (`anthropic`, `openrouter`, `openai`, …). Values are references

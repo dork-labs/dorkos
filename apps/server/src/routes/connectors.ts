@@ -14,24 +14,30 @@
  * command/env or session URL) ever travels to the client — these routes carry
  * only reference-shaped account metadata and connect statuses.
  *
- * The router holds no I/O of its own beyond an in-memory map of in-flight
- * connect flows to their originating provider (a `flowId` is provider-scoped but
- * the spec's poll route is not); every real collaborator is injected, so it is
- * driven with fakes in tests and the real singletons in `index.ts`.
+ * The router holds no I/O of its own; every real collaborator is injected, so
+ * it is driven with fakes in tests and the real singletons in `index.ts`. The
+ * in-flight flow → provider bindings live in the injected
+ * {@link ConnectorFlowBindings}, SHARED with the agent-facing connector
+ * capabilities — one map, so a flow started in chat can be polled here and vice
+ * versa (connector-completion spec §Detailed Design 2/3).
  *
  * @module routes/connectors
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import type { ConnectedAccount, ConnectedAccountId } from '@dorkos/shared/connector-provider';
+import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 import { parseBody } from '../lib/route-utils.js';
 import { recommendConnector, type RelayAdapterCatalog } from '../services/connectors/routing.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
+import type { ConnectorFlowBindings } from '../services/connectors/flow-bindings.js';
+import { toPublicAccount } from '../services/connectors/public-account.js';
 
 /** Constructor dependencies for {@link createConnectorsRouter}. */
 export interface ConnectorsRouterDeps {
   /** The registry holding the connector backends + id → provider routing. */
   registry: ConnectorRegistry;
+  /** The shared in-flight flow → provider map (one instance per process). */
+  flowBindings: ConnectorFlowBindings;
   /** Optional relay adapter catalog for relay-adapter-first routing; absent when relay is off. */
   relay?: RelayAdapterCatalog;
 }
@@ -42,15 +48,6 @@ const ConnectRequestSchema = z.object({
   label: z.string().min(1).optional(),
 });
 
-/** The session-facing account shape — the server-only `provider` field removed. */
-type PublicConnectedAccount = Omit<ConnectedAccount, 'provider'>;
-
-/** Strip the server-only `provider` field before an account crosses to the client. */
-function toPublicAccount(account: ConnectedAccount): PublicConnectedAccount {
-  const { provider: _provider, ...rest } = account;
-  return rest;
-}
-
 /**
  * Create the connectors router.
  *
@@ -59,14 +56,7 @@ function toPublicAccount(account: ConnectedAccount): PublicConnectedAccount {
  */
 export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   const router = Router();
-  const { registry } = deps;
-
-  // Maps an in-flight connect flow id to the provider type that minted it, so
-  // the provider-less poll route can route pollConnect back to the right
-  // backend. In-memory and process-scoped: an in-flight OAuth flow does not
-  // survive a server restart (the user simply re-initiates), which is the same
-  // liveness the loopback-PKCE flow already assumes.
-  const flowProviders = new Map<string, string>();
+  const { registry, flowBindings } = deps;
 
   router.get('/toolkits', async (_req, res) => {
     const { toolkits, warnings } = await registry.listToolkits();
@@ -103,7 +93,7 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
         body.toolkit,
         body.label ? { label: body.label } : undefined
       );
-      flowProviders.set(start.flowId, providerType);
+      flowBindings.record(start.flowId, providerType);
       res.json(start);
     } catch (err) {
       // A rejected startConnect is a bad request (unknown toolkit, or a second
@@ -116,7 +106,7 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
 
   router.get('/flows/:flowId', async (req, res) => {
     const flowId = req.params.flowId;
-    const providerType = flowProviders.get(flowId);
+    const providerType = flowBindings.providerFor(flowId);
     const provider = providerType ? registry.resolveProvider(providerType) : undefined;
     if (!provider) {
       res.status(404).json({ error: `Unknown connect flow '${flowId}'` });
@@ -128,11 +118,9 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
     if (poll.status === 'connected' && poll.account) {
       registry.recordConnect(poll.account);
     }
-    // Drop the flow → provider binding once the flow reaches a terminal state so
-    // the map can't grow unbounded across many connect attempts. A pending poll
-    // keeps its binding for the next poll.
+    // A terminal poll releases the binding (pending keeps it for the next poll).
     if (poll.status === 'connected' || poll.status === 'failed') {
-      flowProviders.delete(flowId);
+      flowBindings.release(flowId);
     }
     res.json(poll);
   });
