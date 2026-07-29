@@ -7,6 +7,7 @@ import type {
   OpencodeClient,
 } from '@opencode-ai/sdk';
 import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../session-mapper.js';
+import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
 
 // SDK-only access guard (ADR-0308: OpenCode's store is opaque, runtime-owned).
 // The mapper must reach session data exclusively through the SDK client — if it
@@ -103,6 +104,33 @@ function createMockClient() {
 
 type MockClient = ReturnType<typeof createMockClient>;
 
+/**
+ * Serve `sessions` the way the real sidecar does — honouring `limit`. Tests
+ * that hand back a fixed array regardless of `limit` model a sidecar that
+ * IGNORES it, which is precisely what the probe is built to reject.
+ */
+function serveSessions(client: MockClient, sessions: OpenCodeSession[]): void {
+  client.session.list.mockImplementation(
+    ({ query }: { query: { limit: number } }) =>
+      Promise.resolve({ data: sessions.slice(0, query.limit) }) as never
+  );
+}
+
+/**
+ * A sidecar that drops `limit` and serves its own fixed page — the future
+ * upgrade this guard exists for. `cap` is deliberately varied across tests:
+ * pinning the check to any single value is the hole being closed.
+ */
+function serveWithCapIgnoringLimit(
+  client: MockClient,
+  sessions: OpenCodeSession[],
+  cap: number
+): void {
+  client.session.list.mockImplementation(
+    () => Promise.resolve({ data: sessions.slice(0, cap) }) as never
+  );
+}
+
 function asClient(mock: MockClient): OpencodeClient {
   return mock as unknown as OpencodeClient;
 }
@@ -188,7 +216,9 @@ describe('OpenCodeSessionMapper', () => {
 
       const sessions = await mapper.listSessions(PROJECT_DIR);
 
-      expect(client.session.list).toHaveBeenCalledWith({ query: { directory: PROJECT_DIR } });
+      expect(client.session.list).toHaveBeenCalledWith({
+        query: { directory: PROJECT_DIR, roots: true, limit: SESSION_LIST_LIMIT + 1 },
+      });
       expect(sessions).toHaveLength(1);
       const session = sessions[0]!;
       expect(session.runtime).toBe('opencode');
@@ -202,9 +232,7 @@ describe('OpenCodeSessionMapper', () => {
 
     it('keeps DorkOS ids stable across calls and distinct per OpenCode session (1:1)', async () => {
       const client = createMockClient();
-      client.session.list.mockResolvedValue({
-        data: [ocSession({ id: 'ses_a' }), ocSession({ id: 'ses_b' })],
-      });
+      serveSessions(client, [ocSession({ id: 'ses_a' }), ocSession({ id: 'ses_b' })]);
       const mapper = new OpenCodeSessionMapper(createProvider(client));
 
       const first = await mapper.listSessions(PROJECT_DIR);
@@ -240,11 +268,136 @@ describe('OpenCodeSessionMapper', () => {
       expect(sessions[0]!.id).toBe(DORKOS_ID);
     });
 
+    it('asks for more than the sidecar default of 100, so session 101+ still list (DOR-673)', async () => {
+      const client = createMockClient();
+      // The live sidecar returns only the 100 most-recently-updated sessions
+      // when no `limit` is sent — silently, with no error and no marker. The
+      // request is the only place the adapter can prevent that.
+      serveSessions(
+        client,
+        Array.from({ length: 150 }, (_, i) => ocSession({ id: `ses_${i}` }))
+      );
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      const sessions = await mapper.listSessions(PROJECT_DIR);
+
+      const query = client.session.list.mock.calls[0]![0]!.query;
+      expect(query.limit).toBe(SESSION_LIST_LIMIT + 1);
+      expect(query.limit).toBeGreaterThan(100);
+      expect(sessions).toHaveLength(150);
+    });
+
+    it('excludes child sessions server-side so the limit is not spent on them (DOR-673)', async () => {
+      const client = createMockClient();
+      client.session.list.mockResolvedValue({ data: [ocSession()] });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      await mapper.listSessions(PROJECT_DIR);
+
+      // Filtering children only after the server truncated would let N child
+      // sessions cost the user N visible ones.
+      expect(client.session.list.mock.calls[0]![0]!.query.roots).toBe(true);
+    });
+
+    it('rejects when the sentinel row proves sessions were left behind (DOR-673)', async () => {
+      const client = createMockClient();
+      // One MORE than the budget came back, which can only mean the read was
+      // truncated. There is no offset cursor to fetch the remainder, so
+      // aggregation turns the rejection into a per-runtime warning (ADR-0310)
+      // instead of a plausible short list.
+      client.session.list.mockResolvedValue({
+        data: Array.from({ length: SESSION_LIST_LIMIT + 1 }, (_, i) =>
+          ocSession({ id: `ses_${i}` })
+        ),
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/missing some/);
+    });
+
+    it('serves a project sitting exactly on the ceiling — nothing was truncated', async () => {
+      const client = createMockClient();
+      // The sentinel is what makes this distinguishable from an overflow:
+      // asking for LIMIT+1 and receiving LIMIT proves that is all there is.
+      // Rejecting here would strand a complete list and make the real ceiling
+      // one lower than the constant says.
+      serveSessions(
+        client,
+        Array.from({ length: SESSION_LIST_LIMIT }, (_, i) => ocSession({ id: `ses_${i}` }))
+      );
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      await expect(mapper.listSessions(PROJECT_DIR)).resolves.toHaveLength(SESSION_LIST_LIMIT);
+    });
+
+    // Any cap, not one blessed value: a sidecar that dropped `limit` AND moved
+    // its default would walk straight through a check pinned to 100. 50 and
+    // 120 are the caps such a check misses; 100 is today's.
+    it.each([50, 100, 120])(
+      'rejects a sidecar that ignores `limit` and re-caps at %i',
+      async (cap) => {
+        const client = createMockClient();
+        const sessions = Array.from({ length: 150 }, (_, i) => ocSession({ id: `ses_${i}` }));
+        serveWithCapIgnoringLimit(client, sessions, cap);
+        const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+        await expect(mapper.listSessions(PROJECT_DIR)).rejects.toThrow(/ignored the session limit/);
+        expect(client.session.list.mock.calls[1]![0]!.query.limit).toBe(1);
+      }
+    );
+
+    it('serves a page the size of the old default once the probe clears it', async () => {
+      const client = createMockClient();
+      // An honouring sidecar holding exactly 100 sessions: the one-row probe
+      // answers with one row, so this is real data, not a re-cap.
+      serveSessions(
+        client,
+        Array.from({ length: 100 }, (_, i) => ocSession({ id: `ses_${i}` }))
+      );
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      await expect(mapper.listSessions(PROJECT_DIR)).resolves.toHaveLength(100);
+    });
+
+    it('probes once per mapper and re-probes in a fresh one', async () => {
+      const client = createMockClient();
+      serveSessions(client, [ocSession({ id: 'ses_a' }), ocSession({ id: 'ses_b' })]);
+      const provider = createProvider(client);
+      const mapper = new OpenCodeSessionMapper(provider);
+
+      await mapper.listSessions(PROJECT_DIR);
+      await mapper.listSessions(PROJECT_DIR);
+      await mapper.listSessions(PROJECT_DIR);
+
+      // Whether `limit` works is a property of the sidecar build, not of any
+      // one listing: 3 listings + 1 probe, not 3 listings + 3 probes.
+      const probes = client.session.list.mock.calls.filter((c) => c[0]!.query.limit === 1);
+      expect(client.session.list).toHaveBeenCalledTimes(4);
+      expect(probes).toHaveLength(1);
+
+      // A fresh mapper has proven nothing and must ask again.
+      await new OpenCodeSessionMapper(createProvider(client)).listSessions(PROJECT_DIR);
+      expect(client.session.list.mock.calls.filter((c) => c[0]!.query.limit === 1)).toHaveLength(2);
+    });
+
+    it('does not probe an empty or single-session project', async () => {
+      const client = createMockClient();
+      serveSessions(client, [ocSession({ id: 'ses_only' })]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      await mapper.listSessions(PROJECT_DIR);
+
+      // A one-row page is what an honouring sidecar gives the probe anyway, so
+      // it can never discriminate — probing it would only cost a request.
+      expect(client.session.list).toHaveBeenCalledTimes(1);
+    });
+
     it('excludes child (subtask) sessions', async () => {
       const client = createMockClient();
-      client.session.list.mockResolvedValue({
-        data: [ocSession({ id: 'ses_root' }), ocSession({ id: 'ses_kid', parentID: 'ses_root' })],
-      });
+      serveSessions(client, [
+        ocSession({ id: 'ses_root' }),
+        ocSession({ id: 'ses_kid', parentID: 'ses_root' }),
+      ]);
       const mapper = new OpenCodeSessionMapper(createProvider(client));
 
       const sessions = await mapper.listSessions(PROJECT_DIR);
@@ -458,6 +611,100 @@ describe('OpenCodeSessionMapper', () => {
 
       expect(client.session.messages).toHaveBeenCalledWith({ path: { id: 'ses_prev' } });
       expect(history[0]!.content).toBe('hello again');
+    });
+
+    it('lifts the cap on the id-rebuild re-list, and keeps child sessions in it (DOR-673)', async () => {
+      const client = createMockClient();
+      client.session.list.mockResolvedValue({ data: [ocSession({ id: 'ses_prev' })] });
+      client.session.messages.mockResolvedValue({
+        data: [{ info: userMessage(), parts: [textPart('hello again')] }],
+      });
+      const [listed] = await new OpenCodeSessionMapper(createProvider(client)).listSessions(
+        PROJECT_DIR
+      );
+      client.session.list.mockClear();
+
+      await new OpenCodeSessionMapper(createProvider(client)).getMessageHistory(
+        PROJECT_DIR,
+        listed!.id
+      );
+
+      // Capped at 100, a session older than the 100 most recent could not be
+      // bound here at all and its history 404'd. `roots` must stay off: this
+      // rebuild has to be able to bind a CHILD session's id too.
+      const query = client.session.list.mock.calls[0]![0]!.query;
+      expect(query.limit).toBe(SESSION_REBUILD_LIMIT + 1);
+      expect(query.limit).toBeGreaterThan(100);
+      expect(query.roots).toBeUndefined();
+    });
+
+    it('budgets for children so it reaches every root the list showed (DOR-673)', async () => {
+      const client = createMockClient();
+      client.session.list.mockResolvedValue({ data: [ocSession({ id: 'ses_prev' })] });
+      client.session.messages.mockResolvedValue({
+        data: [{ info: userMessage(), parts: [textPart('hi')] }],
+      });
+      const [listed] = await new OpenCodeSessionMapper(createProvider(client)).listSessions(
+        PROJECT_DIR
+      );
+      client.session.list.mockClear();
+
+      await new OpenCodeSessionMapper(createProvider(client)).getMessageHistory(
+        PROJECT_DIR,
+        listed!.id
+      );
+
+      // This read counts roots AND children while the list's budget counts
+      // roots only. An equal budget would run out at roughly half the root
+      // count the list happily shows, so a visible session would fail to open.
+      const query = client.session.list.mock.calls[0]![0]!.query;
+      expect(query.limit).toBeGreaterThan(SESSION_LIST_LIMIT + 1);
+    });
+
+    it('says the search was cut short, not that the session is missing (DOR-673)', async () => {
+      const client = createMockClient();
+      // Truncated read that does NOT contain the wanted id. Absence here
+      // proves nothing, so reporting "no such session" would blame the session
+      // for the adapter having stopped reading.
+      client.session.list.mockResolvedValue({
+        data: Array.from({ length: SESSION_REBUILD_LIMIT + 1 }, (_, i) =>
+          ocSession({ id: `ses_other_${i}` })
+        ),
+      });
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      const history = mapper.getMessageHistory(PROJECT_DIR, DORKOS_ID);
+
+      await expect(history).rejects.toThrow(/not missing — the search was cut short/);
+      await expect(history).rejects.not.toThrow(/No OpenCode session mapped/);
+    });
+
+    it('still binds from a truncated read when the wanted session is inside it', async () => {
+      const client = createMockClient();
+      client.session.messages.mockResolvedValue({
+        data: [{ info: userMessage(), parts: [textPart('found me')] }],
+      });
+      client.session.list.mockResolvedValue({ data: [ocSession({ id: 'ses_prev' })] });
+      const [listed] = await new OpenCodeSessionMapper(createProvider(client)).listSessions(
+        PROJECT_DIR
+      );
+      // Same page, now overflowing: truncation only matters when the lookup
+      // MISSES — a hit is a hit however much was left unread.
+      client.session.list.mockResolvedValue({
+        data: [
+          ocSession({ id: 'ses_prev' }),
+          ...Array.from({ length: SESSION_REBUILD_LIMIT }, (_, i) =>
+            ocSession({ id: `ses_other_${i}` })
+          ),
+        ],
+      });
+
+      const history = await new OpenCodeSessionMapper(createProvider(client)).getMessageHistory(
+        PROJECT_DIR,
+        listed!.id
+      );
+
+      expect(history[0]!.content).toBe('found me');
     });
 
     it('throws for a session id the OpenCode server does not know', async () => {

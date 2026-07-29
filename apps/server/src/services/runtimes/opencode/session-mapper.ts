@@ -32,6 +32,7 @@ import type {
   TextPart,
   ToolCallPart,
 } from '@dorkos/shared/types';
+import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from './runtime-constants.js';
 
 /**
  * Narrow seam to the durable sessionId <-> OpenCode-session-id store
@@ -73,6 +74,30 @@ export interface OpenCodeClientProvider {
    * sidecar can never stall the aggregated session list.
    */
   peekClient(): OpencodeClient | null;
+}
+
+/**
+ * Query for `GET /session`, including the two params the sidecar accepts but
+ * the GENERATED SDK TYPES OMIT (`@opencode-ai/sdk@1.17.13` declares only
+ * `directory`). Both were read off the running sidecar's own OpenAPI document
+ * (`GET /doc`) at that version and driven live, so this is a gap in the
+ * generated client, not an unsupported call:
+ *
+ * - `limit` — lifts the silent 100-session cap ({@link SESSION_LIST_LIMIT}).
+ * - `roots` — drops child (subtask) sessions SERVER-side, so the cap is spent
+ *   only on real user sessions. Without it the cap is applied first and the
+ *   client-side `parentID` filter then removes rows from an already-truncated
+ *   page, so N child sessions cost the user N visible ones.
+ *
+ * An older sidecar that predates either param ignores it (unknown query params
+ * are dropped, verified live) and simply falls back to the capped behavior —
+ * never an error.
+ */
+interface SessionListQuery {
+  directory: string;
+  limit: number;
+  /** Omitted where child sessions must also be adopted (id-binding rebuilds). */
+  roots?: true;
 }
 
 /**
@@ -255,6 +280,16 @@ export class OpenCodeSessionMapper {
   private readonly dorkosToOpenCode = new Map<string, string>();
   /** OpenCode session id -> DorkOS session id. */
   private readonly openCodeToDorkos = new Map<string, string>();
+  /**
+   * Whether this sidecar has been observed honouring `limit` (see
+   * {@link OpenCodeSessionMapper.assertLimitHonoured}). Latches on the first
+   * pass so the probe costs one request per mapper rather than one per
+   * listing. Scoped to the mapper, not the process: a sidecar swapped for a
+   * differently-behaving build UNDER a live mapper keeps the old verdict until
+   * DorkOS restarts — accepted, because the mapper is constructed with the
+   * runtime and a sidecar upgrade in place is not a path DorkOS drives.
+   */
+  private limitProven = false;
 
   /**
    * @param provider - Sidecar client source
@@ -373,19 +408,111 @@ export class OpenCodeSessionMapper {
    * (spec §Performance / `aggregate-session-list.ts`) and no sidecar means
    * there are no OpenCode sessions to show anyway.
    *
+   * Reads up to {@link SESSION_LIST_LIMIT} root sessions. Genuine overflow
+   * REJECTS instead of returning the page, because the sidecar reports no
+   * total and offers no offset paging to fetch the remainder (`start` is a
+   * timestamp filter, not a cursor — verified live). Aggregation degrades the
+   * rejection to a per-runtime `warnings[]` entry (ADR-0310), so the list is
+   * never silently short.
+   *
    * @param projectDir - Working directory, passed as `?directory=`
    */
   async listSessions(projectDir: string): Promise<Session[]> {
     const client = this.provider.peekClient();
     if (!client) return [];
 
-    const listed = unwrap(
-      await client.session.list({ query: { directory: projectDir } }),
-      'session.list'
-    );
-    return listed
+    const { rows, saturated } = await this.listWithBudget(client, {
+      directory: projectDir,
+      budget: SESSION_LIST_LIMIT,
+      roots: true,
+    });
+    if (saturated) {
+      throw new Error(
+        `OpenCode has more than ${SESSION_LIST_LIMIT} sessions in this folder, so this list would be missing some. Showing none is safer than showing a list that looks complete.`
+      );
+    }
+    return rows
       .filter((session) => session.parentID === undefined)
       .map((session) => mapSession(session, this.adoptOpenCodeSession(session.id)));
+  }
+
+  /**
+   * One `GET /session` read whose result is provably complete or provably
+   * truncated — never ambiguously either.
+   *
+   * Asks for `budget + 1`. Since the sidecar applies no clamp of its own, a
+   * response of `budget + 1` rows proves MORE exist, while exactly `budget`
+   * proves that is all there is: the sentinel row is what separates "exactly
+   * 1000 exist" from "more than 1000 exist", so a project sitting precisely on
+   * the ceiling is served rather than rejected.
+   *
+   * Any page that did NOT overflow is a page some unknown cap could have
+   * produced, so the first such page proves `limit` is still live before the
+   * result is trusted — see {@link OpenCodeSessionMapper.assertLimitHonoured}.
+   * Deliberately not keyed to the observed default of 100: that number belongs
+   * to the sidecar, not to DorkOS, and a build that dropped `limit` AND moved
+   * its default would have walked straight through a check pinned to it.
+   * Overflowing pages need no probe — returning `budget + 1` rows is itself
+   * proof that no smaller cap was applied.
+   *
+   * @param client - Sidecar client to read through
+   * @param opts - Read parameters
+   * @param opts.directory - Working directory, passed as `?directory=`
+   * @param opts.budget - Rows allowed before the read counts as truncated
+   * @param opts.roots - Exclude child sessions server-side
+   * @returns The rows read, and whether more exist beyond them
+   */
+  private async listWithBudget(
+    client: OpencodeClient,
+    opts: { directory: string; budget: number; roots?: true }
+  ): Promise<{ rows: OpenCodeSession[]; saturated: boolean }> {
+    const query: SessionListQuery = {
+      directory: opts.directory,
+      limit: opts.budget + 1,
+      ...(opts.roots === undefined ? {} : { roots: opts.roots }),
+    };
+    const rows = unwrap(await client.session.list({ query }), 'session.list');
+    // `>= 2` keeps empty and single-session projects out of it: a one-row
+    // answer is what an honouring sidecar gives the probe anyway, so such a
+    // page can never discriminate and probing it would only add a request.
+    if (!this.limitProven && rows.length >= 2 && rows.length <= opts.budget) {
+      await this.assertLimitHonoured(client, opts.directory);
+      this.limitProven = true;
+    }
+    return { rows, saturated: rows.length > opts.budget };
+  }
+
+  /**
+   * Prove the sidecar still honours `limit`, or throw.
+   *
+   * `limit` is undeclared in the generated SDK types, so NO type-checker sees
+   * it and a sidecar that renames or drops it fails silently — unknown query
+   * params are ignored, not rejected (verified live). Its own default cap
+   * would simply return, comfortably under the budget, so the saturation guard
+   * would never fire: exactly the invisible-truncation bug this module exists
+   * to end, re-entering through the fix for it.
+   *
+   * Asks for ONE row, which is the whole point — a sidecar honouring `limit`
+   * can only answer with one, whatever its default cap happens to be, so this
+   * catches any cap rather than one particular value. Probes the BEHAVIOUR
+   * relied on rather than reading `GET /doc`, which would only prove the
+   * parameter is still documented, and a spec can advertise a param the
+   * implementation drops.
+   *
+   * Runs once per mapper (see `limitProven`): the answer is a property of the
+   * sidecar build, not of any one listing.
+   *
+   * @param client - Sidecar client to probe
+   * @param directory - Working directory, passed as `?directory=`
+   */
+  private async assertLimitHonoured(client: OpencodeClient, directory: string): Promise<void> {
+    const query: SessionListQuery = { directory, limit: 1 };
+    const probe = unwrap(await client.session.list({ query }), 'session.list');
+    if (probe.length > 1) {
+      throw new Error(
+        'This version of OpenCode ignored the session limit DorkOS asked for, so DorkOS cannot tell whether this list is complete.'
+      );
+    }
   }
 
   /**
@@ -461,12 +588,26 @@ export class OpenCodeSessionMapper {
 
     let openCodeId = this.dorkosToOpenCode.get(sessionId);
     if (!openCodeId) {
-      const listed = unwrap(
-        await client.session.list({ query: { directory: projectDir } }),
-        'session.list'
-      );
-      for (const session of listed) this.adoptOpenCodeSession(session.id);
+      // Deliberately NO `roots`: this rebuild must be able to bind a CHILD
+      // session's id too, which is why it gets its own (larger) budget — see
+      // SESSION_REBUILD_LIMIT. Under the default 100-session cap, opening a
+      // session older than the 100 most recent could not resolve its id at all
+      // and its history 404'd.
+      const { rows, saturated } = await this.listWithBudget(client, {
+        directory: projectDir,
+        budget: SESSION_REBUILD_LIMIT,
+      });
+      for (const session of rows) this.adoptOpenCodeSession(session.id);
       openCodeId = this.dorkosToOpenCode.get(sessionId);
+      // Only a MISS against a truncated read is unresolvable. Absence from a
+      // complete read is real absence; absence from a truncated one says
+      // nothing, and reporting it as "no such session" would blame the session
+      // for the adapter having stopped reading.
+      if (!openCodeId && saturated) {
+        throw new Error(
+          `OpenCode has more than ${SESSION_REBUILD_LIMIT} sessions in this folder, so DorkOS could not search far enough to open this one. The session is not missing — the search was cut short.`
+        );
+      }
     }
     if (!openCodeId) {
       throw new Error(`No OpenCode session mapped to DorkOS session ${sessionId}`);
