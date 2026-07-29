@@ -3017,6 +3017,13 @@
       "specSlug": "message-search",
       "extractedFrom": "message-search",
       "supersedes": 310
+    },
+    {
+      "id": "260729-134044",
+      "slug": "agents-answer-for-dorkos-from-the-live-docs",
+      "title": "An agent learns DorkOS from a seeded pack and answers for it from the live docs, never from memory",
+      "status": "accepted",
+      "created": "2026-07-29"
     }
   ]
 }
