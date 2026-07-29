@@ -691,6 +691,24 @@ describe('Marketplace Routes', () => {
       expect(pkg.adapterType).toBe('connector');
     });
 
+    it('drops adapterType from non-adapter entries (contract: adapters only)', async () => {
+      fetcher.fetchDorkosSidecar.mockResolvedValue({
+        schemaVersion: 1 as const,
+        plugins: {
+          'sample-plugin': {
+            type: 'plugin' as const,
+            adapterType: 'connector',
+          },
+        },
+      });
+
+      const res = await request(app).get('/api/marketplace/packages');
+      expect(res.status).toBe(200);
+      const pkg = res.body.packages.find((p: { name: string }) => p.name === 'sample-plugin');
+      expect(pkg.type).toBe('plugin');
+      expect(pkg.adapterType).toBeUndefined();
+    });
+
     it('returns packages when sidecar is absent', async () => {
       fetcher.fetchDorkosSidecar.mockResolvedValue(null);
 

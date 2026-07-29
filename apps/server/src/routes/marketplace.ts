@@ -900,7 +900,10 @@ function flattenMergedEntry(
     category: primaryCategory(entry.dorkos?.categories, entry.category),
     tags: entry.tags,
     type: entry.dorkos?.type,
-    adapterType: entry.dorkos?.adapterType,
+    // Gated on type so the AggregatedPackage contract ("present only for
+    // adapter packages") is enforced here, not merely documented — a sidecar
+    // that sets adapterType on a non-adapter entry does not leak it downstream.
+    adapterType: entry.dorkos?.type === 'adapter' ? entry.dorkos.adapterType : undefined,
     icon: entry.dorkos?.icon,
     featured: entry.dorkos?.featured,
     marketplace,

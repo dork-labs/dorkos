@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(marketplace): surface connector packages in discovery (DOR-704)'
+  - 'fix(marketplace): review nits — pin the connector URL enum, gate adapterType at flatten, complete the badge showcase'
 ---
 
 ### Added

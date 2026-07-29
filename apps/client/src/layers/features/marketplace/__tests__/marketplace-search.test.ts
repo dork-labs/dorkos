@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { CONNECTOR_ADAPTER_TYPE } from '@dorkos/marketplace';
 import { marketplaceSearchSchema, normalizeCategoryParam } from '../model/marketplace-search';
 
 // The schema is wired into the /marketplace route via `zodValidator`, which
@@ -10,6 +11,14 @@ describe('marketplaceSearchSchema — type facet', () => {
     for (const type of ['all', 'agent', 'plugin', 'skill-pack', 'adapter', 'shape'] as const) {
       expect(marketplaceSearchSchema.parse({ type }).type).toBe(type);
     }
+  });
+
+  it('accepts the connector refinement (?type=connector)', () => {
+    // Derived from the constant so the sidebar's setType(CONNECTOR_ADAPTER_TYPE)
+    // and this URL schema can never drift apart.
+    expect(marketplaceSearchSchema.parse({ type: CONNECTOR_ADAPTER_TYPE }).type).toBe(
+      CONNECTOR_ADAPTER_TYPE
+    );
   });
 
   it('drops an unknown type rather than throwing (stale-link fallback)', () => {
