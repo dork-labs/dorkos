@@ -3,15 +3,16 @@
  *
  * Backs {@link ClaudeCodeRuntime.subscribeSessionList}: it emits one
  * `session_upserted` per session already on disk — across EVERY project slug
- * directory under `~/.claude/projects/` — then a `session_upserted` /
- * `session_removed` whenever a JSONL transcript appears, changes, or is deleted
+ * directory under EVERY Claude account's `projects/` — then a `session_upserted`
+ * / `session_removed` whenever a JSONL transcript appears, changes, or is deleted
  * in ANY of them, INCLUDING sessions created or appended by the Claude Code CLI
  * entirely outside DorkOS (ADR-0263). Each emitted session carries its true
  * `cwd` (read from the JSONL head, since the slug is lossy), which is how
- * multi-project clients route the event to the right list (SRV-I4). Emission is
- * on lifecycle transitions only; there is NO timer poll.
+ * multi-project clients route the event to the right list (SRV-I4), and the
+ * account it belongs to. Emission is on lifecycle transitions only; there is NO
+ * timer poll.
  *
- * The watch targets the projects ROOT directory with `depth: 1` and filters to
+ * The watch targets each projects ROOT directory with `depth: 1` and filters to
  * `.jsonl` files in the handler. It must NOT pass a glob to `chokidar.watch`:
  * chokidar v4 removed glob support, so a `{dir}/*.jsonl` pattern watches a
  * literal path that never exists and silently never fires (a real production
@@ -53,7 +54,16 @@ import { logger } from '../../../../lib/logger.js';
  */
 export const SESSION_LIST_DEBOUNCE_MS = 250;
 
-/** Compare two sessions on the fields that matter to the sidebar/global view. */
+/**
+ * Compare two sessions on the fields that matter to the sidebar/global view.
+ *
+ * `account` is deliberately absent, like `runtime`, `origin` and `cwd`: a
+ * session's account is the directory its transcript lives under, and a transcript
+ * cannot move between accounts, so the value can never differ between two
+ * readings of the same session. Comparing it would only cost work. It is listed
+ * here rather than merely omitted so the next reader knows the omission was a
+ * decision (spec `claude-code-accounts` §8).
+ */
 function sessionMetaEqual(a: Session, b: Session): boolean {
   return (
     a.title === b.title &&
@@ -92,22 +102,33 @@ function diffInventory(
 }
 
 /**
- * Watch the SDK projects root and yield session-list transitions for every
- * project. Yields the initial fleet-wide inventory as `session_upserted`s, then
- * live upserts/removals as transcripts change on disk anywhere under the root.
- * Runs until the consumer stops iterating (e.g. the broadcaster stops), at
- * which point the watcher is closed in `return()`.
+ * Watch every Claude account's projects root and yield session-list transitions
+ * for every project. Yields the initial fleet-wide inventory as
+ * `session_upserted`s, then live upserts/removals as transcripts change on disk
+ * anywhere under any of the roots. Runs until the consumer stops iterating (e.g.
+ * the broadcaster stops), at which point every watcher is closed in `return()`.
+ *
+ * One chokidar watcher per root, each capturing its OWN root for the
+ * child-of-root guards in its handlers: a single shared capture would compare a
+ * second account's file events against the first account's root and drop them as
+ * "not a slug dir". The queue, the debounce timers and the last-known inventory
+ * stay shared and need no per-root partitioning — both maps are keyed by absolute
+ * directory path, so entries from different accounts cannot collide.
  *
  * @param transcriptReader - Reader used to list/extract sessions per slug dir.
- * @param projectsRoot - The `~/.claude/projects` root to watch. Defaults to
- *   {@link TranscriptReader.getProjectsRoot}; injectable for tests.
+ * @param projectsRoots - The `{claudeRoot}/projects` roots to watch, one per
+ *   account. Defaults to {@link TranscriptReader.getProjectsRootSet};
+ *   injectable for tests. An empty array watches nothing and yields nothing,
+ *   which is the correct answer on a machine with no Claude account (spec §9).
  */
 export function watchSessionList(
   transcriptReader: TranscriptReader,
-  projectsRoot: string = transcriptReader.getProjectsRoot()
+  projectsRoots: string[] = transcriptReader.getProjectsRootSet()
 ): AsyncIterableIterator<SessionListEvent> {
-  // Last-known inventory per slug directory. Diffing is scoped per dir so a
-  // re-scan of one project can never "remove" another project's sessions.
+  // Last-known inventory per slug directory, keyed by ABSOLUTE path so the same
+  // project under two accounts is two independent entries. Diffing is scoped per
+  // dir so a re-scan of one project can never "remove" another project's
+  // sessions — nor another account's copy of the same project.
   const known = new Map<string, Map<string, Session>>();
 
   // Buffered events awaiting delivery, and the single waiter (if `next()` is
@@ -161,76 +182,88 @@ export function watchSessionList(
     );
   };
 
-  /** Route a chokidar file event to its slug dir's debounced re-scan. */
-  const onFileEvent = (filePath: string): void => {
-    if (!filePath.endsWith('.jsonl')) return;
-    const transcriptsDir = dirname(filePath);
-    // Transcripts live one level down ({root}/{slug}/{id}.jsonl); a stray
-    // .jsonl directly in the root is not a session and must not trigger a
-    // re-scan of the root itself as if it were a slug dir.
-    if (transcriptsDir === projectsRoot) return;
-    scheduleRescan(transcriptsDir);
-  };
+  /**
+   * Attach one account's watcher and kick off its initial inventory. Every guard
+   * below closes over THIS root, which is what keeps N accounts from
+   * misattributing each other's events.
+   */
+  const watchRoot = (projectsRoot: string): FSWatcher => {
+    /** Route a chokidar file event to its slug dir's debounced re-scan. */
+    const onFileEvent = (filePath: string): void => {
+      if (!filePath.endsWith('.jsonl')) return;
+      const transcriptsDir = dirname(filePath);
+      // Transcripts live one level down ({root}/{slug}/{id}.jsonl); a stray
+      // .jsonl directly in the root is not a session and must not trigger a
+      // re-scan of the root itself as if it were a slug dir.
+      if (transcriptsDir === projectsRoot) return;
+      scheduleRescan(transcriptsDir);
+    };
 
-  /** Route a slug dir appearing/disappearing to its debounced re-scan. */
-  const onDirEvent = (dirPath: string): void => {
-    // Only immediate children of the root are slug dirs; this guard also
-    // excludes the root itself and anything deeper.
-    if (dirname(dirPath) !== projectsRoot) return;
-    // chokidar attaches a new dir's own fs.watch only AFTER scanning it, so a
-    // file created in that scan-then-attach window emits no per-file `add` (lost,
-    // not late). This `addDir` fires from the long-lived root watch before that
-    // window; the rescan recovers whatever landed. On `unlinkDir` the rescan
-    // lists an absent dir as `[]`, emitting `session_removed` for its sessions.
-    scheduleRescan(dirPath);
-  };
+    /** Route a slug dir appearing/disappearing to its debounced re-scan. */
+    const onDirEvent = (dirPath: string): void => {
+      // Only immediate children of the root are slug dirs; this guard also
+      // excludes the root itself and anything deeper.
+      if (dirname(dirPath) !== projectsRoot) return;
+      // chokidar attaches a new dir's own fs.watch only AFTER scanning it, so a
+      // file created in that scan-then-attach window emits no per-file `add` (lost,
+      // not late). This `addDir` fires from the long-lived root watch before that
+      // window; the rescan recovers whatever landed. On `unlinkDir` the rescan
+      // lists an absent dir as `[]`, emitting `session_removed` for its sessions.
+      scheduleRescan(dirPath);
+    };
 
-  // Register the watch BEFORE the initial scan so externally-added files that
-  // land during the first enumeration are not missed. NO glob (see module doc);
-  // depth 1 = the root's slug dirs and the JSONL files directly inside them.
-  const watcher: FSWatcher = chokidar.watch(projectsRoot, {
-    persistent: true,
-    ignoreInitial: true, // initial inventory delivered by the scan below
-    depth: 1,
-    awaitWriteFinish: {
-      stabilityThreshold: WATCHER.STABILITY_THRESHOLD_MS,
-      pollInterval: WATCHER.POLL_INTERVAL_MS,
-    },
-  });
-  watcher.on('add', onFileEvent);
-  watcher.on('change', onFileEvent);
-  watcher.on('unlink', onFileEvent);
-  watcher.on('addDir', onDirEvent);
-  watcher.on('unlinkDir', onDirEvent);
+    // Register the watch BEFORE the initial scan so externally-added files that
+    // land during the first enumeration are not missed. NO glob (see module doc);
+    // depth 1 = the root's slug dirs and the JSONL files directly inside them.
+    const watcher: FSWatcher = chokidar.watch(projectsRoot, {
+      persistent: true,
+      ignoreInitial: true, // initial inventory delivered by the scan below
+      depth: 1,
+      awaitWriteFinish: {
+        stabilityThreshold: WATCHER.STABILITY_THRESHOLD_MS,
+        pollInterval: WATCHER.POLL_INTERVAL_MS,
+      },
+    });
+    watcher.on('add', onFileEvent);
+    watcher.on('change', onFileEvent);
+    watcher.on('unlink', onFileEvent);
+    watcher.on('addDir', onDirEvent);
+    watcher.on('unlinkDir', onDirEvent);
 
-  // Initial fleet-wide inventory — emit every on-disk session once, project by
-  // project (off the event loop so the caller can begin iterating immediately).
-  void (async () => {
-    try {
-      const entries = await readdir(projectsRoot, { withFileTypes: true });
-      for (const entry of entries) {
-        if (closed) return;
-        if (!entry.isDirectory()) continue;
-        await rescanDir(join(projectsRoot, entry.name));
-      }
-    } catch (err) {
-      // A missing projects root is the normal first-run state — Claude Code has
-      // never written a transcript on this machine, so there is nothing to list
-      // yet. The watch registered above stays armed and picks the directory up
-      // the moment the first session creates it; WARN is reserved for scans
-      // that fail on a root that exists (DOR-247).
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        logger.debug('[session-list-watcher] no sessions yet; projects directory not created', {
+    // Initial fleet-wide inventory for this account — emit every on-disk session
+    // once, project by project (off the event loop so the caller can begin
+    // iterating immediately).
+    void (async () => {
+      try {
+        const entries = await readdir(projectsRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          if (closed) return;
+          if (!entry.isDirectory()) continue;
+          await rescanDir(join(projectsRoot, entry.name));
+        }
+      } catch (err) {
+        // A missing projects root is the normal first-run state — Claude Code has
+        // never written a transcript on this machine, so there is nothing to list
+        // yet. The watch registered above stays armed and picks the directory up
+        // the moment the first session creates it; WARN is reserved for scans
+        // that fail on a root that exists (DOR-247).
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          logger.debug('[session-list-watcher] no sessions yet; projects directory not created', {
+            projectsRoot,
+          });
+          return;
+        }
+        logger.warn('[session-list-watcher] initial scan failed', {
           projectsRoot,
+          error: err instanceof Error ? err.message : String(err),
         });
-        return;
       }
-      logger.warn('[session-list-watcher] initial scan failed', {
-        projectsRoot,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  })();
+    })();
+
+    return watcher;
+  };
+
+  const watchers = projectsRoots.map(watchRoot);
 
   const close = async (): Promise<void> => {
     if (closed) return;
@@ -242,7 +275,7 @@ export function watchSessionList(
       waiter = null;
       resolve({ value: undefined, done: true });
     }
-    await watcher.close();
+    await Promise.all(watchers.map((watcher) => watcher.close()));
   };
 
   return {

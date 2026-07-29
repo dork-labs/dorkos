@@ -152,6 +152,13 @@ export class SessionStore {
    *
    * Handles auto-creation with transcript-based hasStarted detection
    * and deferred transcript checks from updateSession.
+   *
+   * The transcript probe answers two questions at once, and BOTH are kept:
+   * whether the session has started (so the turn resumes rather than begins), and
+   * which Claude account holds it (`accountRoot`) — the account that turn must
+   * run and bill on, whichever one happens to be active. The probe already
+   * resolved it; discarding it is what would make a resumed conversation land on
+   * a different client's subscription (spec `claude-code-accounts` D3).
    */
   async ensureForMessage(
     sessionId: string,
@@ -162,7 +169,7 @@ export class SessionStore {
     const existing = this.findSession(sessionId);
     if (!existing) {
       const effectiveCwd = opts?.cwd ?? defaultCwd;
-      const hasTranscript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
+      const transcript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
       // Hydrate settings from the durable store (ADR-0260) so a session whose
       // in-memory state was evicted/restarted keeps the operator's chosen mode,
       // model, effort, and toggles. Precedence: per-send override → persisted →
@@ -170,7 +177,8 @@ export class SessionStore {
       const persisted = await this.settingsPort?.getSessionSettings(sessionId);
       logger.debug('[sendMessage] auto-creating session', {
         session: sessionId,
-        hasTranscript,
+        hasTranscript: transcript.exists,
+        accountRoot: transcript.root,
         cwd: effectiveCwd,
         hydratedPermissionMode: persisted?.permissionMode,
       });
@@ -181,16 +189,23 @@ export class SessionStore {
         effort: opts?.effort ?? persisted?.effort,
         fastMode: opts?.fastMode ?? persisted?.fastMode,
         cwd: opts?.cwd,
-        hasStarted: hasTranscript,
+        hasStarted: transcript.exists,
       });
+      // Set after creation rather than through SessionOpts: the account is not
+      // something a caller may choose, it is what the disk already decided.
+      if (transcript.root) this.findSession(sessionId)!.accountRoot = transcript.root;
     } else if (existing.needsTranscriptCheck) {
-      // updateSession auto-created with hasStarted=false — verify transcript on disk
+      // updateSession auto-created with hasStarted=false — verify transcript on
+      // disk. This path exists because updateSession can auto-create a session
+      // with no cwd at all, so it is the FIRST place the account can be known.
       existing.needsTranscriptCheck = false;
       const effectiveCwd = opts?.cwd || existing.cwd || defaultCwd;
-      const hasTranscript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
-      if (hasTranscript) {
+      const transcript = await transcriptReader.hasTranscript(effectiveCwd, sessionId);
+      if (transcript.root) existing.accountRoot = transcript.root;
+      if (transcript.exists) {
         logger.debug('[sendMessage] upgrading hasStarted for existing transcript', {
           session: sessionId,
+          accountRoot: transcript.root,
         });
         existing.hasStarted = true;
       }

@@ -56,7 +56,7 @@ describe('watchSessionList', () => {
   let projectsRoot: string;
   let dirA: string;
   let dirB: string;
-  let reader: Pick<TranscriptReader, 'getProjectsRoot' | 'listSessionsInDir'>;
+  let reader: Pick<TranscriptReader, 'getProjectsRootSet' | 'listSessionsInDir'>;
   let listSessionsInDir: ReturnType<typeof vi.fn>;
   /** Canned per-dir inventories the fake reader serves. */
   let inventory: Record<string, Session[]>;
@@ -76,7 +76,7 @@ describe('watchSessionList', () => {
     inventory = { [dirA]: [], [dirB]: [] };
     listSessionsInDir = vi.fn(async (dir: string) => inventory[dir] ?? []);
     reader = {
-      getProjectsRoot: vi.fn(() => projectsRoot),
+      getProjectsRootSet: vi.fn(() => [projectsRoot]),
       listSessionsInDir,
     };
     // Fake ONLY the debounce timers: the initial inventory does real fs.readdir
@@ -283,7 +283,7 @@ describe('watchSessionList', () => {
   // scan (DOR-247). Real scan failures on an existing root still WARN.
   it('logs at debug, not warn, when the projects root does not exist yet', async () => {
     const missingRoot = join(projectsRoot, 'does-not-exist');
-    (reader.getProjectsRoot as ReturnType<typeof vi.fn>).mockReturnValue(missingRoot);
+    (reader.getProjectsRootSet as ReturnType<typeof vi.fn>).mockReturnValue([missingRoot]);
     const it = start();
     // Wait for the scan to actually report, not for a fixed number of turns:
     // this is the assertion that went red twice in CI purely because the

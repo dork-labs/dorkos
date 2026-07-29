@@ -7,7 +7,17 @@ vi.mock('fs/promises', () => ({
     stat: vi.fn(),
     open: vi.fn(),
     readFile: vi.fn(),
+    // The account probe for `todos/{id}.json` — resolving by default, so the
+    // staged account below is the one every todo read lands in.
+    access: vi.fn().mockResolvedValue(undefined),
   },
+}));
+// One staged account; unmocked, the probe would walk whatever accounts the
+// developer's machine has (or none on CI).
+const MOCK_CLAUDE_ROOT = '/mock/.claude';
+vi.mock('../claude-config-dir.js', () => ({
+  resolveActiveClaudeRoot: () => MOCK_CLAUDE_ROOT,
+  resolveClaudeRootSet: () => [MOCK_CLAUDE_ROOT],
 }));
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),

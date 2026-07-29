@@ -114,21 +114,6 @@ export function resolveActiveClaudeRoot(config: ConfigReader = configManager): s
 }
 
 /**
- * Resolve the Claude Agent SDK's config root directory.
- *
- * The name every existing read site imports; kept as an alias of
- * {@link resolveActiveClaudeRoot} so those sites are not touched twice — the
- * change that makes each read session-scoped (a resumed session belongs to the
- * root its transcript lives under, not to whichever account is active now) is a
- * separate step.
- *
- * @returns The active account's directory, else `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
- */
-export function resolveClaudeConfigDir(): string {
-  return resolveActiveClaudeRoot();
-}
-
-/**
  * Resolve every Claude root DorkOS should enumerate — what listing and search
  * read across, as opposed to the single root a new session runs in.
  *
@@ -201,7 +186,10 @@ export function describeClaudeCodeAccounts(
     accounts: accounts.map((account) => ({
       path: account.path,
       label: account.label,
-      exists: isClaudeAccountRoot(account.path),
+      // NOT `exists`: this is D4's structural check, so a directory that is
+      // really there but holds no `projects/` reports false. Naming it `exists`
+      // would read as `fs.existsSync` to any UI and mislabel that case.
+      isAccountRoot: isClaudeAccountRoot(account.path),
     })),
   };
 }

@@ -29,9 +29,15 @@ function createFakePort() {
   };
 }
 
-/** Minimal TranscriptReader stub — only `hasTranscript` is used by ensureForMessage. */
-function fakeTranscript(hasTranscript: boolean): TranscriptReader {
-  return { hasTranscript: vi.fn().mockResolvedValue(hasTranscript) } as unknown as TranscriptReader;
+/**
+ * Minimal TranscriptReader stub — only `hasTranscript` is used by
+ * ensureForMessage. It answers with the account the transcript was found under
+ * as well as the verdict, which is how the store learns a session's account.
+ */
+function fakeTranscript(exists: boolean, root = '/staged/.claude'): TranscriptReader {
+  return {
+    hasTranscript: vi.fn().mockResolvedValue(exists ? { exists, root } : { exists }),
+  } as unknown as TranscriptReader;
 }
 
 describe('SessionStore session-settings hydration (ADR-0260)', () => {

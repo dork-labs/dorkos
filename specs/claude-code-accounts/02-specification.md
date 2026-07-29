@@ -167,3 +167,23 @@ The SDK memoizes its config root **keyed on** `process.env.CLAUDE_CONFIG_DIR`, s
 - `TranscriptReader.metaCache` is keyed by bare `sessionId` with no root in the key. That is safe **because** ids are root-unique, and unsafe the moment that invariant breaks — assert distinctness in a test rather than assuming it.
 - `mcp-resources/session-resources.ts:40` uses `SessionSchema.pick({...})`, an allowlist: `account` will not reach `dorkos://sessions` unless added there.
 - Only **two** call sites read `resolveClaudeConfigDir()` today, both in `transcript-reader.ts` (`:61`, `:515`), which is why this change stays contained.
+
+## 9. Amendment 2 — D6 said more than the code enforces (2026-07-29)
+
+Phase A classified all three leaves `operator-only` as D6 requires, then **probed whether the guard actually fires** and found it does not for the two array-element leaves. `findOperatorOnlyPaths({ runtimes: { claudeCode: { accounts: [{ path: '/evil', label: null }] } } })` returns `[]`: `patchPaths` (`config-write-policy.ts:436`) stops walking at an array, so it can never bridge `accounts` to `accounts[].path`. The identical probe on `connectors.rawMcpServers` also returns `[]`, so this is pre-existing and general, not something this feature introduced — and the limitation is already noted in that file at `:148-151`.
+
+**What D6 actually guarantees, corrected.** Moving the operator's work onto a different client's subscription requires writing `activeAccount`, which is a scalar leaf and **is** refused for an agent. That is the property D6 exists to protect and it holds. What an agent holding `operator.config_patch` can still do is **append an entry to the account roster**, which does not change billing but does add a directory to the set DorkOS enumerates — an information-disclosure surface, since sessions under that root would then be listed.
+
+**Decision: do not fix `patchPaths` here.** Teaching it to walk arrays would change refusal behavior for `connectors.rawMcpServers[]` at the same time, which is a policy change to an unrelated feature and belongs in its own change with its own review. This spec records the real boundary instead of implying a stronger one, and the gap is filed as **DOR-737** with a failing-today test as its bar.
+
+A targeted mitigation inside this feature — special-casing `runtimes.claudeCode.accounts` in the PATCH handler — was considered and rejected: it would special-case one path while the general mechanism stays broken, and it becomes dead code the day DOR-737 lands. Both outcomes are things this codebase explicitly refuses.
+
+The array-leaf verdicts stay in the table regardless: they are the correct declaration of intent, the drift guards require every leaf to be classified, and they become enforcing for free the day `patchPaths` learns to walk arrays.
+
+### Naming correction
+
+Phase A's wire field `accounts[].exists` does **not** mean `fs.existsSync` — it reports D4's structural check, so a directory that exists without a `projects/` subdirectory reports `false`. `exists` is therefore misleading to any UI that reads it. It is renamed **`isAccountRoot`** before the client consumes it.
+
+### A note for Phase B
+
+`resolveClaudeRootSet()` can legitimately return an **empty array** — D4 excludes a root without `projects/`, including when it is the active root (a freshly authenticated account that has never run a session). Listing must treat an empty set as "no sessions", never as an error, and must not assume the active root is a member.

@@ -634,8 +634,8 @@ describe('GET /api/config', () => {
         resolvedAccount: real,
         inherited: false,
         accounts: [
-          { path: real, label: 'Acme Corp', exists: true },
-          { path: missing, label: null, exists: false },
+          { path: real, label: 'Acme Corp', isAccountRoot: true },
+          { path: missing, label: null, isAccountRoot: false },
         ],
       });
     });

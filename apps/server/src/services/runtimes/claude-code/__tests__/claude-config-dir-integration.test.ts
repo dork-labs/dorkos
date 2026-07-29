@@ -19,11 +19,23 @@ import { initBoundary } from '../../../../lib/boundary.js';
 describe('CLAUDE_CONFIG_DIR honored by TranscriptReader and watchSessionList', () => {
   let configDir: string;
   let vaultRoot: string;
-  const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
+  const ORIGINAL = {
+    configDir: process.env.CLAUDE_CONFIG_DIR,
+    home: process.env.HOME,
+    userProfile: process.env.USERPROFILE,
+  };
 
   beforeEach(async () => {
     configDir = await mkdtemp(join(tmpdir(), 'claude-config-dir-'));
     process.env.CLAUDE_CONFIG_DIR = configDir;
+    // Stage HOME as well (the technique `claude-config-dir.test.ts` uses, per
+    // `.claude/rules/dork-home.md`). `~/.claude` is an unconditional member of
+    // the account set, so without this the reads below would ALSO enumerate the
+    // developer's real accounts — slow, and non-deterministic in exactly the
+    // dimension this file is asserting. The staged home has no `.claude`, so the
+    // account set is precisely `configDir`.
+    process.env.HOME = configDir;
+    process.env.USERPROFILE = configDir;
     // A real directory, distinct from configDir, that stands in for the
     // user's project cwd. Boundary-scoped to configDir so validateBoundary
     // (a real production check) passes without weakening it for the test.
@@ -33,10 +45,13 @@ describe('CLAUDE_CONFIG_DIR honored by TranscriptReader and watchSessionList', (
   });
 
   afterEach(async () => {
-    if (ORIGINAL_ENV === undefined) {
-      delete process.env.CLAUDE_CONFIG_DIR;
-    } else {
-      process.env.CLAUDE_CONFIG_DIR = ORIGINAL_ENV;
+    for (const [key, value] of [
+      ['CLAUDE_CONFIG_DIR', ORIGINAL.configDir],
+      ['HOME', ORIGINAL.home],
+      ['USERPROFILE', ORIGINAL.userProfile],
+    ] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
     await rm(configDir, { recursive: true, force: true });
   });
@@ -80,12 +95,16 @@ describe('CLAUDE_CONFIG_DIR honored by TranscriptReader and watchSessionList', (
     expect(session).toMatchObject({ id: 'session-a1', cwd: vaultRoot });
   });
 
-  it('watchSessionList, defaulting to TranscriptReader.getProjectsRoot(), discovers a session under the custom config dir', async () => {
+  it('watchSessionList, defaulting to TranscriptReader.getProjectsRootSet(), discovers a session under the custom config dir', async () => {
     const reader = new TranscriptReader();
     await seedTranscript(reader, 'session-a1');
+    // The default the assertion below rides on: the account set the watcher gets
+    // is exactly the custom config dir, so a discovery event can only come from
+    // there.
+    expect(reader.getProjectsRootSet()).toEqual([join(configDir, 'projects')]);
 
-    // No projectsRoot passed — this is the default-parameter path
-    // (`= transcriptReader.getProjectsRoot()`) that the fleet-wide watcher
+    // No roots passed — this is the default-parameter path
+    // (`= transcriptReader.getProjectsRootSet()`) that the fleet-wide watcher
     // actually runs with in production.
     const iterator = watchSessionList(reader)[Symbol.asyncIterator]();
     try {

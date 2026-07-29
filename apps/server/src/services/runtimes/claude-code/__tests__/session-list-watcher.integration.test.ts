@@ -99,7 +99,7 @@ describe('watchSessionList (real chokidar integration)', () => {
     await mkdir(dirA);
     await writeFile(join(dirA, 'session-a1.jsonl'), jsonlLine('/work/alpha', 'Alpha hello'));
 
-    iterator = watchSessionList(new TranscriptReader(), projectsRoot)[Symbol.asyncIterator]();
+    iterator = watchSessionList(new TranscriptReader(), [projectsRoot])[Symbol.asyncIterator]();
 
     // 1. Initial fleet-wide inventory, with the TRUE cwd from the JSONL head.
     const initial = await nextEvent(iterator, 'initial inventory');

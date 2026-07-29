@@ -7,7 +7,6 @@ import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
   describeClaudeCodeAccounts,
   resolveActiveClaudeRoot,
-  resolveClaudeConfigDir,
   resolveClaudeRootSet,
 } from '../claude-config-dir.js';
 
@@ -37,37 +36,6 @@ const brokenConfig = {
     throw new Error('config manager not initialized');
   },
 };
-
-describe('resolveClaudeConfigDir', () => {
-  const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
-
-  beforeEach(() => {
-    delete process.env.CLAUDE_CONFIG_DIR;
-  });
-
-  afterEach(() => {
-    if (ORIGINAL_ENV === undefined) {
-      delete process.env.CLAUDE_CONFIG_DIR;
-    } else {
-      process.env.CLAUDE_CONFIG_DIR = ORIGINAL_ENV;
-    }
-  });
-
-  it('defaults to ~/.claude when CLAUDE_CONFIG_DIR is unset', () => {
-    expect(resolveClaudeConfigDir()).toBe(path.join(os.homedir(), '.claude'));
-  });
-
-  it('honors CLAUDE_CONFIG_DIR when set, matching the SDK subprocess', () => {
-    process.env.CLAUDE_CONFIG_DIR = '/tmp/custom-claude-config';
-    expect(resolveClaudeConfigDir()).toBe('/tmp/custom-claude-config');
-  });
-
-  it('re-reads the env var on every call (no stale caching)', () => {
-    expect(resolveClaudeConfigDir()).toBe(path.join(os.homedir(), '.claude'));
-    process.env.CLAUDE_CONFIG_DIR = '/tmp/second-config';
-    expect(resolveClaudeConfigDir()).toBe('/tmp/second-config');
-  });
-});
 
 describe('resolveActiveClaudeRoot (spec claude-code-accounts D2)', () => {
   const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
@@ -107,6 +75,14 @@ describe('resolveActiveClaudeRoot (spec claude-code-accounts D2)', () => {
     // on the transcript read path — failing there must not break a read.
     process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
     expect(resolveActiveClaudeRoot(brokenConfig)).toBe('/tmp/inherited-claude');
+  });
+
+  it('re-reads the env var on every call (no stale caching)', () => {
+    // The SDK subprocess reads the variable per spawn, so a value cached at
+    // module load would split-brain the moment anything changed it (DOR-250).
+    expect(resolveActiveClaudeRoot(fakeConfig())).toBe(path.join(os.homedir(), '.claude'));
+    process.env.CLAUDE_CONFIG_DIR = '/tmp/second-config';
+    expect(resolveActiveClaudeRoot(fakeConfig())).toBe('/tmp/second-config');
   });
 });
 
@@ -309,8 +285,8 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
         })
       ).accounts
     ).toEqual([
-      { path: real, label: 'Acme Corp', exists: true },
-      { path: missing, label: null, exists: false },
+      { path: real, label: 'Acme Corp', isAccountRoot: true },
+      { path: missing, label: null, isAccountRoot: false },
     ]);
   });
 });

@@ -8,7 +8,7 @@ const { mockReadTranscript, mockLoggerWarn, transcriptReaderFactory } = vi.hoist
     TranscriptReader: vi.fn().mockImplementation(function () {
       return {
         readTranscript: mockReadTranscript,
-        hasTranscript: vi.fn().mockResolvedValue(false),
+        hasTranscript: vi.fn().mockResolvedValue({ exists: false }),
         getProjectSlug: vi.fn().mockReturnValue('mock-slug'),
         getTranscriptsDir: vi.fn().mockReturnValue('/mock/.claude/projects/mock-slug'),
       };

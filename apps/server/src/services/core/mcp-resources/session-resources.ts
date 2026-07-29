@@ -36,6 +36,13 @@ import {
  * list. Deliberately narrower than `SessionSchema`: the external MCP surface
  * is metadata-only by design, so transcript-adjacent fields — above all
  * `lastMessagePreview`, which carries actual message text — are excluded.
+ *
+ * `account` is excluded too, and that is a decision rather than an oversight.
+ * It is the absolute path of a Claude config directory, so publishing it would
+ * tell every MCP client — including agents — how the operator's paying clients
+ * are laid out on disk, to no benefit: nothing reachable through `/mcp` acts on
+ * an account. The cockpit reads `account` from `GET /api/sessions`, which is the
+ * operator's own surface. Add it here only with a consumer that needs it.
  */
 const SessionResourceSchema = SessionSchema.pick({
   id: true,

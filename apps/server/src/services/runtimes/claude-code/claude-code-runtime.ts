@@ -20,6 +20,7 @@ import type {
   TaskItem,
   CommandRegistry,
   ReloadPluginsResult,
+  SessionListWarning,
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
@@ -567,6 +568,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.transcriptReader.listSessions(projectDir);
   }
 
+  /**
+   * @inheritdoc
+   *
+   * One store per Claude account: an account DorkOS cannot read costs that
+   * account's sessions and nothing else, so the accounts that read still list
+   * (spec `claude-code-accounts` AC6).
+   */
+  async listSessionsWithWarnings(
+    projectDir: string
+  ): Promise<{ sessions: Session[]; warnings: SessionListWarning[] }> {
+    return this.transcriptReader.listSessionsAcrossAccounts(projectDir);
+  }
+
   /** @inheritdoc */
   async getSession(projectDir: string, sessionId: string): Promise<Session | null> {
     return this.transcriptReader.getSession(projectDir, sessionId);
@@ -631,13 +645,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @inheritdoc
    *
    * Wraps {@link watchSessionList}: emits one `session_upserted` per session
-   * already on disk — fleet-wide, across every project slug directory under
-   * `~/.claude/projects/` — then upserts/removals as transcripts change in any
-   * of them, including sessions created or appended by the Claude Code CLI
+   * already on disk — fleet-wide, across every project slug directory under every
+   * Claude ACCOUNT's `projects/` — then upserts/removals as transcripts change in
+   * any of them, including sessions created or appended by the Claude Code CLI
    * outside DorkOS (ADR-0263). Each session carries its true `cwd` from the
    * JSONL head, so multi-project clients route events to the right list
-   * (SRV-I4). `ctx` is unused: the contract is "ALL sessions the adapter can
-   * observe", not a per-cwd scope. Debounced; no timer poll.
+   * (SRV-I4), and the account it belongs to. `ctx` is unused: the contract is
+   * "ALL sessions the adapter can observe", not a per-cwd scope. Debounced; no
+   * timer poll.
    */
   subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
     return watchSessionList(this.transcriptReader);

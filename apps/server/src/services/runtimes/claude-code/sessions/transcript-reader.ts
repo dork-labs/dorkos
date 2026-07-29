@@ -7,13 +7,15 @@ import type {
   HistoryMessage,
   HistoryToolCall,
   TaskItem,
+  SessionListWarning,
 } from '@dorkos/shared/types';
 import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { parseTasks } from './task-reader.js';
+import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
-import { resolveClaudeConfigDir } from '../claude-config-dir.js';
+import { resolveActiveClaudeRoot, resolveClaudeRootSet } from '../claude-config-dir.js';
 import { TRANSCRIPT } from '../../../../config/constants.js';
 // The DorkHome-aware seam: a session's transcript is keyed off its working
 // directory, which for the system agent (DorkBot) and marketplace agents is
@@ -28,15 +30,40 @@ export type { HistoryMessage, HistoryToolCall };
 
 /**
  * Single source of truth for session data — reads SDK JSONL transcript files
- * from `$CLAUDE_CONFIG_DIR/projects/{slug}/` (defaulting to
- * `~/.claude/projects/{slug}/`; see {@link resolveClaudeConfigDir}).
+ * from `{claudeRoot}/projects/{slug}/`, where `claudeRoot` is a Claude Code
+ * account's config directory (`~/.claude` by default; see
+ * {@link resolveActiveClaudeRoot}).
+ *
+ * Reads span EVERY account the operator has, not just the active one (spec
+ * `claude-code-accounts`). Listing unions the accounts and tags each session
+ * with the one it came from; a read that holds only a session id finds its
+ * account through {@link SessionRootIndex}. What a NEW session runs on — the
+ * active account — is a separate question, and the only place this class asks it
+ * is the fallback path for a session that does not exist yet.
  *
  * Provides session listing, metadata extraction, full message history parsing,
  * task state reconstruction, and incremental byte-offset reading for sync.
  * Uses a metadata cache keyed by file mtime to avoid re-parsing unchanged files.
  */
 export class TranscriptReader {
-  private metaCache = new Map<string, { session: Session; mtimeMs: number; hidden: boolean }>();
+  /**
+   * Extracted metadata per session id, valid while the transcript it came from is
+   * unchanged. `filePath` is part of the validity check, not just the mtime:
+   * session ids are unique to one account in practice, but the key here is the
+   * bare id, so a hit from a DIFFERENT account's file would report that account's
+   * metadata for this one. Comparing the path makes the collision a cache miss
+   * rather than a wrong answer, and costs a string compare on the hot path.
+   */
+  private metaCache = new Map<
+    string,
+    { session: Session; mtimeMs: number; hidden: boolean; filePath: string }
+  >();
+
+  /**
+   * Session → owning Claude account. Memoized, and cleared together with
+   * {@link metaCache} because both are answers about the current account set.
+   */
+  private rootIndex = new SessionRootIndex();
 
   /**
    * Drop the cached metadata for a session so the next listSessions/getSession
@@ -47,55 +74,172 @@ export class TranscriptReader {
     this.metaCache.delete(sessionId);
   }
 
+  /**
+   * Drop EVERY cached answer — session metadata and remembered accounts alike.
+   *
+   * For when the set of accounts itself changes: after a switch, a session's
+   * account can be one this reader has never probed, and a row cached under the
+   * old set carries the old account. Per-session {@link invalidate} cannot
+   * express that, since the change is not about any one session.
+   */
+  invalidateAll(): void {
+    this.metaCache.clear();
+    this.rootIndex.clear();
+  }
+
   /** Convert a working directory path to an SDK project slug (filesystem-safe). */
   getProjectSlug(cwd: string): string {
     return cwd.replace(/[^a-zA-Z0-9-]/g, '-');
   }
 
   /**
-   * The SDK projects root (`$CLAUDE_CONFIG_DIR/projects`, defaulting to
-   * `~/.claude/projects`) holding one slug directory per working directory.
-   * The fleet-wide session-list watcher watches this root.
+   * The ACTIVE account's projects root (`{activeRoot}/projects`) holding one
+   * slug directory per working directory.
+   *
+   * Where a session that does not exist yet would be written. Reads enumerate
+   * {@link getProjectsRootSet} instead — an existing session may live under any
+   * account, not just this one.
    */
   getProjectsRoot(): string {
-    return path.join(resolveClaudeConfigDir(), 'projects');
+    return path.join(resolveActiveClaudeRoot(), 'projects');
   }
 
-  /** Resolve the SDK transcripts directory for a given vault root. */
+  /**
+   * Every account's projects root, active first — what the fleet-wide
+   * session-list watcher watches and what listing enumerates.
+   *
+   * Possibly EMPTY: an account with no `projects/` is excluded even when it is
+   * the active one, so a machine where Claude Code has never run has nothing to
+   * enumerate. That is "no sessions", never an error (spec §9).
+   */
+  getProjectsRootSet(): string[] {
+    return resolveClaudeRootSet().map((root) => path.join(root, 'projects'));
+  }
+
+  /**
+   * Resolve the ACTIVE account's transcripts directory for a given vault root.
+   * The write-side answer, and the fallback for a transcript no account holds.
+   */
   getTranscriptsDir(vaultRoot: string): string {
     return path.join(this.getProjectsRoot(), this.getProjectSlug(vaultRoot));
   }
 
   /**
-   * Check whether a JSONL transcript file exists for the given session ID.
-   * Lightweight stat-only check (no parsing). Skips boundary validation
-   * since the caller is expected to have already validated.
+   * Locate a session's transcript across every account.
+   *
+   * @returns The transcript path and the account holding it, or null when none does.
    */
-  async hasTranscript(vaultRoot: string, sessionId: string): Promise<boolean> {
-    const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
+  private async locateTranscript(
+    vaultRoot: string,
+    sessionId: string
+  ): Promise<{ filePath: string; root: string } | null> {
+    const slug = this.getProjectSlug(vaultRoot);
+    const root = await this.rootIndex.forTranscript(slug, sessionId);
+    if (root === undefined) return null;
+    return { root, filePath: path.join(root, 'projects', slug, `${sessionId}.jsonl`) };
+  }
+
+  /**
+   * The path to read a session's transcript from: the account that holds it,
+   * else the active account's slug dir so the caller's own ENOENT handling
+   * reports the session as absent exactly as it did before multi-account.
+   */
+  private async transcriptPath(vaultRoot: string, sessionId: string): Promise<string> {
+    const located = await this.locateTranscript(vaultRoot, sessionId);
+    return located?.filePath ?? path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
+  }
+
+  /**
+   * Check whether a JSONL transcript exists for the given session ID, in ANY
+   * account, and report which account that is. Lightweight stat-only check (no
+   * parsing). Skips boundary validation since the caller is expected to have
+   * already validated.
+   *
+   * Returns the account as well as the verdict because the probe has to resolve
+   * it either way and the caller needs it: `SessionStore.ensureForMessage` binds
+   * it onto the live session as `accountRoot`, which is how a resumed turn runs
+   * on the account that created the session instead of whichever is active. A
+   * second method would mean a second walk of the accounts for one answer.
+   *
+   * @returns `exists`, plus `root` — the owning account — when it does.
+   */
+  async hasTranscript(
+    vaultRoot: string,
+    sessionId: string
+  ): Promise<{ exists: boolean; root?: string }> {
+    const located = await this.locateTranscript(vaultRoot, sessionId);
+    return located ? { exists: true, root: located.root } : { exists: false };
   }
 
   /**
    * List all sessions by scanning SDK JSONL transcript files.
    * Extracts metadata (title, timestamps, preview) from file content and stats.
    *
-   * Every returned session carries a cwd: a transcript whose head records
-   * carry none (oversized or unparseable first lines) is attributed to the
-   * project directory it was listed from — its own slug dir — so exact-match
-   * cwd scoping downstream can never orphan it (ADR 260707-193314). Copies,
-   * never mutates: the shared metaCache also serves the fleet-wide watcher,
-   * which has no vaultRoot to attribute with.
+   * The warnings-dropping form of {@link listSessionsAcrossAccounts} — use that
+   * one where a partially-read list must be reported as partial.
    */
   async listSessions(vaultRoot: string): Promise<Session[]> {
+    return (await this.listSessionsAcrossAccounts(vaultRoot)).sessions;
+  }
+
+  /**
+   * List this project's sessions from EVERY Claude account, and report the
+   * accounts that could not be read.
+   *
+   * The union is the point: with three accounts registered, a list covering only
+   * the active one shows a fraction of the history and looks exactly like a
+   * complete list. Each session is tagged with the account it came from
+   * (`Session.account`), set during extraction from the path it was found at.
+   *
+   * Degrades per account (spec AC6): an account whose slug dir is simply absent
+   * contributes nothing and says nothing — the normal case for a project that
+   * account has never worked on. An account that exists but cannot be READ
+   * (permissions, I/O) contributes one warning and zero sessions, and never
+   * fails the call, so the accounts that DO read still list.
+   *
+   * Every returned session carries a cwd: a transcript whose head records carry
+   * none (oversized or unparseable first lines) is attributed to the project
+   * directory it was listed from — its own slug dir — so exact-match cwd scoping
+   * downstream can never orphan it (ADR 260707-193314). Copies, never mutates:
+   * the shared metaCache also serves the fleet-wide watcher, which has no
+   * vaultRoot to attribute with.
+   */
+  async listSessionsAcrossAccounts(
+    vaultRoot: string
+  ): Promise<{ sessions: Session[]; warnings: SessionListWarning[] }> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const sessions = await this.listSessionsInDir(this.getTranscriptsDir(vaultRoot));
-    return sessions.map((s) => (s.cwd === undefined ? { ...s, cwd: vaultRoot } : s));
+    const slug = this.getProjectSlug(vaultRoot);
+    const sessions: Session[] = [];
+    const warnings: SessionListWarning[] = [];
+    const seen = new Set<string>();
+
+    for (const projectsRoot of this.getProjectsRootSet()) {
+      try {
+        const found = await this.listSessionsInDir(path.join(projectsRoot, slug));
+        for (const session of found) {
+          // One row per id, first account (the active one) wins. Real machines
+          // never produce a collision — ids are UUIDs and each transcript exists
+          // under one account — but a duplicated id must not reach clients as two
+          // rows claiming to be the same session, and this is also the order every
+          // single-session read resolves in (SessionRootIndex, active first), so
+          // the row and the session it opens agree.
+          if (seen.has(session.id)) continue;
+          seen.add(session.id);
+          sessions.push(session.cwd === undefined ? { ...session, cwd: vaultRoot } : session);
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.warn('[TranscriptReader] account listing degraded', { projectsRoot, error: reason });
+        warnings.push({
+          runtime: 'claude-code',
+          message: `Claude account ${path.dirname(projectsRoot)} could not be read: ${reason}`,
+        });
+      }
+    }
+
+    // One ordering across the union — each account's own sort is only per-account.
+    sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return { sessions, warnings };
   }
 
   /**
@@ -114,14 +258,24 @@ export class TranscriptReader {
    * excludes them. {@link getSession} is unaffected — fetching a hidden
    * session by id still returns it.
    *
-   * @param transcriptsDir - Absolute path of a `~/.claude/projects/{slug}` dir.
+   * An absent directory lists as `[]`, which is load-bearing in two places: a
+   * project an account has never worked on contributes nothing to the union, and
+   * the watcher's `unlinkDir` rescan needs an empty listing to emit the
+   * `session_removed` events for a slug dir that just disappeared. Any OTHER
+   * read failure THROWS, so a directory that exists but cannot be read is
+   * reported rather than silently downgraded to "no sessions here" — the caller
+   * turns it into a warning (spec AC6), and the watcher's rescan logs it instead
+   * of announcing every session in that project as removed.
+   *
+   * @param transcriptsDir - Absolute path of a `{claudeRoot}/projects/{slug}` dir.
    */
   async listSessionsInDir(transcriptsDir: string): Promise<Session[]> {
     let files: string[];
     try {
       files = (await fs.readdir(transcriptsDir)).filter((f) => f.endsWith('.jsonl'));
-    } catch {
-      return [];
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
     }
 
     const sessions: Session[] = [];
@@ -133,12 +287,12 @@ export class TranscriptReader {
       try {
         const fileStat = await fs.stat(filePath);
         const cached = this.metaCache.get(sessionId);
-        if (cached && cached.mtimeMs === fileStat.mtimeMs) {
+        if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.filePath === filePath) {
           if (!cached.hidden) sessions.push(cached.session);
           continue;
         }
         const { session, hidden } = await this.extractSessionMeta(filePath, sessionId, fileStat);
-        this.metaCache.set(sessionId, { session, mtimeMs: fileStat.mtimeMs, hidden });
+        this.metaCache.set(sessionId, { session, mtimeMs: fileStat.mtimeMs, hidden, filePath });
         if (!hidden) sessions.push(session);
       } catch {
         // Skip unreadable files
@@ -161,7 +315,7 @@ export class TranscriptReader {
    */
   async getSession(vaultRoot: string, sessionId: string): Promise<Session | null> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
+    const filePath = await this.transcriptPath(vaultRoot, sessionId);
     try {
       const { session } = await this.extractSessionMeta(filePath, sessionId);
       // Attribute a head-record-less transcript to the directory it was
@@ -430,6 +584,13 @@ export class TranscriptReader {
     if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
     if (tailStatus.lastAutoCompactAt) session.lastAutoCompactAt = tailStatus.lastAutoCompactAt;
 
+    // Which Claude account this session belongs to: the root the file was found
+    // under, read straight off the path — no syscall, no config read. Set
+    // conditionally like the readings above, so an unattributable path leaves the
+    // field absent (an honest "unknown") rather than carrying a derived guess.
+    const account = accountForTranscript(filePath);
+    if (account) session.account = account;
+
     // Provably empty means the whole file fit in the head read and still had
     // no conversation — a larger transcript's user message could simply live
     // past the head buffer, so size is what turns "none found" into "none
@@ -470,8 +631,7 @@ export class TranscriptReader {
    */
   async readTranscript(vaultRoot: string, sessionId: string): Promise<HistoryMessage[]> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const transcriptsDir = this.getTranscriptsDir(vaultRoot);
-    const filePath = path.join(transcriptsDir, `${sessionId}.jsonl`);
+    const filePath = await this.transcriptPath(vaultRoot, sessionId);
 
     let content: string;
     try {
@@ -485,23 +645,32 @@ export class TranscriptReader {
   }
 
   /**
-   * List available SDK session transcript IDs.
+   * List available SDK session transcript IDs, across every account. Ids are
+   * unique to one account, so the union needs no tie-breaking; it is deduplicated
+   * anyway rather than relying on that.
    */
   async listTranscripts(vaultRoot: string): Promise<string[]> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const transcriptsDir = this.getTranscriptsDir(vaultRoot);
-    try {
-      const files = await fs.readdir(transcriptsDir);
-      return files.filter((f) => f.endsWith('.jsonl')).map((f) => f.replace('.jsonl', ''));
-    } catch {
-      return [];
+    const slug = this.getProjectSlug(vaultRoot);
+    const ids = new Set<string>();
+    for (const projectsRoot of this.getProjectsRootSet()) {
+      try {
+        const files = await fs.readdir(path.join(projectsRoot, slug));
+        for (const file of files) {
+          if (file.endsWith('.jsonl')) ids.add(file.replace('.jsonl', ''));
+        }
+      } catch {
+        // An account with no directory for this project, or one that cannot be
+        // read, simply contributes no ids — same shape as before multi-account.
+      }
     }
+    return [...ids];
   }
 
   /** Get an ETag for a session transcript (mtime + size) for HTTP caching. */
   async getTranscriptETag(vaultRoot: string, sessionId: string): Promise<string | null> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
+    const filePath = await this.transcriptPath(vaultRoot, sessionId);
     try {
       const stat = await fs.stat(filePath);
       return `"${stat.mtimeMs}-${stat.size}"`;
@@ -510,19 +679,31 @@ export class TranscriptReader {
     }
   }
 
-  /** Resolve the SDK todo file path for a given session ID. */
-  private getTodoFilePath(sessionId: string): string {
-    return path.join(resolveClaudeConfigDir(), 'todos', `${sessionId}.json`);
+  /**
+   * Resolve the SDK todo file path for a given session ID, in the session's OWN
+   * account.
+   *
+   * Todos are flat under `{claudeRoot}/todos/`, so a bare session id is enough to
+   * find them — no working directory needed, which is what let this path stay
+   * account-blind by signature (spec C1). Resolving it against the ACTIVE account
+   * would silently serve another client's todo list, or none. Falls back to the
+   * active account when no account holds the file, so a session with no todos
+   * still reads as ENOENT exactly as before.
+   */
+  private async resolveTodoFilePath(sessionId: string): Promise<string> {
+    const root = (await this.rootIndex.forTodoFile(sessionId)) ?? resolveActiveClaudeRoot();
+    return path.join(root, 'todos', `${sessionId}.json`);
   }
 
   /**
-   * Read task items from the SDK's dedicated todo file (`~/.claude/todos/{sessionId}.json`).
+   * Read task items from the SDK's dedicated todo file
+   * (`{claudeRoot}/todos/{sessionId}.json`, in the session's own account).
    * Returns null when the file does not exist; throws on other filesystem errors.
    */
   async readTodosFromFile(sessionId: string): Promise<TaskItem[] | null> {
     let raw: string;
     try {
-      raw = await fs.readFile(this.getTodoFilePath(sessionId), 'utf-8');
+      raw = await fs.readFile(await this.resolveTodoFilePath(sessionId), 'utf-8');
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw err;
@@ -552,7 +733,7 @@ export class TranscriptReader {
   /** Get an ETag for a session's todo file (mtime + size) for HTTP caching. */
   async getTodoFileETag(sessionId: string): Promise<string | null> {
     try {
-      const stat = await fs.stat(this.getTodoFilePath(sessionId));
+      const stat = await fs.stat(await this.resolveTodoFilePath(sessionId));
       return `"${stat.mtimeMs}-${stat.size}"`;
     } catch {
       return null;
@@ -563,14 +744,18 @@ export class TranscriptReader {
    * Read task state — tries the SDK todo file first, falls back to JSONL transcript parsing.
    */
   async readTasks(vaultRoot: string, sessionId: string): Promise<TaskItem[]> {
-    // File-first: SDK todo file is the authoritative source when present
+    // File-first: SDK todo file is the authoritative source when present. The
+    // boundary check below therefore does NOT gate this read — an ordering that
+    // predates multi-account and is left exactly as it was, because reordering it
+    // would change who can read a todo file and that belongs in its own reviewed
+    // change. The path it reads is still fully derived (account root + session id),
+    // never assembled from `vaultRoot`.
     const fileTasks = await this.readTodosFromFile(sessionId);
     if (fileTasks !== null) return fileTasks;
 
     // Fallback: parse TaskCreate/TaskUpdate tool_use blocks from JSONL transcript
     await validateBoundaryOrDorkHome(vaultRoot);
-    const transcriptsDir = this.getTranscriptsDir(vaultRoot);
-    const filePath = path.join(transcriptsDir, `${sessionId}.jsonl`);
+    const filePath = await this.transcriptPath(vaultRoot, sessionId);
 
     let content: string;
     try {
@@ -593,7 +778,7 @@ export class TranscriptReader {
     fromOffset: number
   ): Promise<{ content: string; newOffset: number }> {
     await validateBoundaryOrDorkHome(vaultRoot);
-    const filePath = path.join(this.getTranscriptsDir(vaultRoot), `${sessionId}.jsonl`);
+    const filePath = await this.transcriptPath(vaultRoot, sessionId);
     const stat = await fs.stat(filePath);
 
     if (stat.size <= fromOffset) {

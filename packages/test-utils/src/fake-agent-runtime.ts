@@ -25,6 +25,7 @@ import type {
   CommandRegistry,
   PermissionMode,
   EffortLevel,
+  SessionListWarning,
 } from '@dorkos/shared/types';
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
@@ -126,6 +127,15 @@ export class FakeAgentRuntime implements AgentRuntime {
     () => null
   );
   listSessions = vi.fn<(projectDir: string) => Promise<Session[]>>().mockResolvedValue([]);
+  /**
+   * Defaults to `listSessions` with an empty warning list, which is the contract
+   * the interface states: the same read, warnings dropped. So a test that only
+   * stubs `listSessions` keeps working, and one about partial failures overrides
+   * this instead of having to hand-roll a runtime.
+   */
+  listSessionsWithWarnings = vi.fn<
+    (projectDir: string) => Promise<{ sessions: Session[]; warnings: SessionListWarning[] }>
+  >(async (projectDir) => ({ sessions: await this.listSessions(projectDir), warnings: [] }));
   getSession = vi
     .fn<(projectDir: string, sessionId: string) => Promise<Session | null>>()
     .mockResolvedValue(null);

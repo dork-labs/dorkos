@@ -11,7 +11,10 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   getSessionInfo: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../../claude-config-dir.js', () => ({
-  resolveClaudeConfigDir: () => hoisted.configDir,
+  // Both resolvers point at the one staged account, so reads resolve there and
+  // the multi-account union has exactly one root to walk.
+  resolveActiveClaudeRoot: () => hoisted.configDir,
+  resolveClaudeRootSet: () => [hoisted.configDir],
 }));
 // NB: the boundary module is deliberately NOT mocked. This test exercises the
 // REAL DorkHome-aware seam through the reader — the layer that 403'd the

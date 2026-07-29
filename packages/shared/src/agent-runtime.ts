@@ -18,6 +18,7 @@ import type {
   EffortLevel,
   ReloadPluginsResult,
   SessionSettings,
+  SessionListWarning,
 } from './types.js';
 import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
@@ -589,6 +590,32 @@ export interface AgentRuntime {
 
   /** List all sessions for a project directory. */
   listSessions(projectDir: string): Promise<Session[]>;
+
+  /**
+   * List sessions for a project directory AND report the stores that could not
+   * be read, when a runtime reads from more than one store and can lose part of
+   * its own history without failing.
+   *
+   * ADR-0310 already degrades per RUNTIME: a rejected `listSessions` becomes one
+   * `warnings[]` entry and zero sessions. A runtime whose history is spread
+   * across several stores needs the same honesty one level down — claude-code
+   * reads one store per Claude account, and an account it cannot read must cost
+   * that account's sessions, not the whole runtime's. Rejecting would throw away
+   * the accounts that ARE readable; returning a short list silently would look
+   * exactly like a complete one, which is the failure this reporting exists to
+   * prevent (spec `claude-code-accounts` §6).
+   *
+   * Optional: a single-store runtime implements only `listSessions` and
+   * aggregation treats it as "no partial failures possible". A runtime that
+   * implements this method should treat `listSessions` as the same read with the
+   * warnings dropped, so the two can never disagree about the sessions.
+   *
+   * @param projectDir - Working directory to list sessions for
+   * @returns The merged sessions plus one warning per unreadable store
+   */
+  listSessionsWithWarnings?(
+    projectDir: string
+  ): Promise<{ sessions: Session[]; warnings: SessionListWarning[] }>;
 
   /** Get metadata for a single session, or null if not found. */
   getSession(projectDir: string, sessionId: string): Promise<Session | null>;

@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'feat(server,client): choose which Claude Code account runs your work (DOR-729)'
+  - 'feat(server,shared): choose which Claude Code account new work runs on (DOR-729)'
+  - 'feat(server,shared): list and read sessions from every Claude Code account (DOR-729)'
 ---
 
 ### Added
