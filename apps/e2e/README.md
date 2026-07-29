@@ -13,6 +13,10 @@ environment (a worktree, or any machine whose default ports are busy).
   site leg is enabled; see below).
 - `chromium-mock` — `chat-mock.spec.ts` only, against a `TestModeRuntime` server
   (no real Claude API calls).
+- `chromium-connections` — `tests/connections/`, also against the test-mode
+  server: its `DORKOS_TEST_RUNTIME` gate is what makes the scripted
+  `test-connector` provider exist, so these specs can walk the real save-key →
+  connect → attach flow with no vendor anywhere.
 
 ## webServer legs
 

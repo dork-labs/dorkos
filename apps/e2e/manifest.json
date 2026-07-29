@@ -180,6 +180,30 @@
         "apps/client/src/layers/features/dashboard-sidebar/ui/rooms/RoomRow.tsx"
       ],
       "lastModified": ""
+    },
+    "marketplace-connectors": {
+      "specFile": "tests/connections/marketplace-connectors.spec.ts",
+      "feature": "connections",
+      "description": "shows the CONNECTOR badge and narrows the grid with the Connectors facet",
+      "lastRun": "2026-07-29T19:28:15.417Z",
+      "lastStatus": "passed",
+      "runCount": 5,
+      "passCount": 5,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "connections": {
+      "specFile": "tests/connections/connections.spec.ts",
+      "feature": "connections",
+      "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
+      "lastRun": "2026-07-29T19:28:15.417Z",
+      "lastStatus": "passed",
+      "runCount": 5,
+      "passCount": 3,
+      "failCount": 2,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
@@ -443,6 +467,51 @@
       "failed": 0,
       "skipped": 0,
       "duration": 46274
+    },
+    {
+      "id": "2026-07-29T19-21-24",
+      "timestamp": "2026-07-29T19:21:24.207Z",
+      "total": 3,
+      "passed": 2,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 55813
+    },
+    {
+      "id": "2026-07-29T19-24-43",
+      "timestamp": "2026-07-29T19:24:43.247Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 42068
+    },
+    {
+      "id": "2026-07-29T19-25-48",
+      "timestamp": "2026-07-29T19:25:48.793Z",
+      "total": 9,
+      "passed": 6,
+      "failed": 3,
+      "skipped": 0,
+      "duration": 47959
+    },
+    {
+      "id": "2026-07-29T19-27-41",
+      "timestamp": "2026-07-29T19:27:41.704Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 47845
+    },
+    {
+      "id": "2026-07-29T19-28-15",
+      "timestamp": "2026-07-29T19:28:15.417Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 26239
     }
   ]
 }

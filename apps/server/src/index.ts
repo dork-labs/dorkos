@@ -1084,7 +1084,12 @@ async function start() {
   // endpoints over Nango's credentialed proxy, mounted below beside the
   // connector routes. Created before the bootstrapper because every Nango
   // provider instance (boot and reload alike) exposes tools through it.
-  const nangoProxyMcp = new NangoProxyMcp({ localOrigin: `http://127.0.0.1:${PORT}` });
+  // `localhost`, not `127.0.0.1`: the server binds env.DORKOS_HOST (default
+  // `localhost`), which Node resolves to ONE family — on hosts where that is
+  // ::1, a 127.0.0.1 URL is connection-refused. Minting the origin from the
+  // same name the listener binds keeps the URL reachable by construction
+  // (proven by the connections browser spec against the test-mode provider).
+  const nangoProxyMcp = new NangoProxyMcp({ localOrigin: `http://${env.DORKOS_HOST}:${PORT}` });
   // Created before the bootstrapper so its unregister hook can revoke cached
   // session attachments the moment a credential is deleted.
   const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
@@ -1119,7 +1124,8 @@ async function start() {
             await import('./services/connectors/providers/test-mode.js');
           return maybeCreateTestModeConnectorProvider({
             credentials: credentialProvider,
-            localOrigin: `http://127.0.0.1:${PORT}`,
+            // Same-family origin as the listener — see nangoProxyMcp above.
+            localOrigin: `http://${env.DORKOS_HOST}:${PORT}`,
           });
         },
       },
