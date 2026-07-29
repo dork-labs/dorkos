@@ -14,7 +14,7 @@ Some services run their own remote tool server that speaks MCP (the standard tha
 
 ## Where your login lives
 
-The remote server holds its own sign-in. DorkOS never sees or stores its keys. DorkOS shows you this before you connect:
+The remote server holds its own sign-in. DorkOS never sees or stores its keys. Before you connect, DorkOS shows you this (with your server's name in place of "that server"):
 
 > This tool connects straight to that server. DorkOS doesn't store or see its keys, that server manages its own sign-in.
 
@@ -36,9 +36,41 @@ You need a server you can reach over the web, with its own sign-in already set u
 
 <Step>
 
-### Connect DorkOS to it
+### Tell DorkOS about it in your config file
 
-Point DorkOS at the server's address. DorkOS signs in using the standard web sign-in flow. Your keys stay on the server, never on your computer.
+Raw MCP servers live in DorkOS's config file at `~/.dork/config.json`, under `connectors.rawMcpServers`. Each entry names the service and where its server lives:
+
+```json
+{
+  "connectors": {
+    "rawMcpServers": [
+      {
+        "slug": "notion",
+        "displayName": "Notion",
+        "url": "https://mcp.notion.example/mcp",
+        "transport": "http"
+      }
+    ]
+  }
+}
+```
+
+The four fields:
+
+- `slug`: a short id for the service, like `notion`. Lowercase, no spaces.
+- `displayName`: the name you want to see on the Connections page, like `Notion`.
+- `url`: the server's address.
+- `transport`: how DorkOS talks to it. Use `http` for Streamable HTTP (most servers) or `sse` for older servers that stream over SSE (server-sent events, an older streaming style).
+
+DorkOS reads this list when it starts. After you add or remove an entry, restart DorkOS to pick up the change.
+
+</Step>
+
+<Step>
+
+### Connect it
+
+Open **Connections** in the sidebar. Your server now shows up as a tile in the Services grid. Click **Connect** and read the custody line. Your keys stay on the server, never on your computer.
 
 </Step>
 
@@ -46,7 +78,7 @@ Point DorkOS at the server's address. DorkOS signs in using the standard web sig
 
 ### Use it in a session
 
-Attach the connection to a session to let that session's agent use the server's tools.
+Open a session, then the right panel's **Session** tab. Attach the connection in the **Connectors** group to let that session's agent use the server's tools.
 
 </Step>
 
