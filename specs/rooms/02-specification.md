@@ -4,9 +4,19 @@
 - **Id:** 260726-170533
 - **Date:** 2026-07-26
 - **Status:** specified
-- **Decisions:** ADR 260726-170125 (room model), ADR 260726-170126 (author identity), ADR 260726-170127 (cascade guard)
+- **Decisions:** ADR 260726-170125 (room model), ADR 260726-170126 (author identity), ADR 260726-170127 (cascade guard), ADR 260728-022013 (a thread is a relation between entries)
 
 Read `01-ideation.md` first for what is already settled and must not be re-argued.
+
+> **Amended 2026-07-29 (DOR-634): a thread is no longer a kind of room.** ADR
+> `260728-022013` supersedes the "a thread is a child room" clause of ADR
+> `260726-170125`; migration `0038` dropped `rooms.parentId`,
+> `rooms.rootEntryId`, `idx_rooms_parent_id` and the `'thread'` member of
+> `RoomKind`, and moved any surviving thread room's entries into its parent. A
+> thread is now a set of entries in one room's log pointing at a common root,
+> carried by `room_entries.parentEntryId` / `threadRootEntryId`. Everything
+> below is amended in place; §12's R4 row is the one place the old shape is
+> deliberately left standing, as the plan it was at the time.
 
 ---
 
@@ -14,7 +24,7 @@ Read `01-ideation.md` first for what is already settled and must not be re-argue
 
 | Term            | Meaning                                                                                                                                                              |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Room**        | A membership-scoped durable stream. Three kinds: `channel`, `dm`, `thread`.                                                                                          |
+| **Room**        | A membership-scoped durable stream. Two kinds: `channel` and `dm`. A thread is a relation between entries, not a kind of room (ADR 260728-022013).                   |
 | **Author**      | Anyone who can post: a human, an agent, or the system. Identified by an opaque `authorId`.                                                                           |
 | **Membership**  | An author's binding to one room, carrying that room's addressing override and read cursor.                                                                           |
 | **Entry**       | One durable, turn-atomic item in a room's log. Either a `post` (someone said something) or a `notice` (the room says something happened).                            |
@@ -52,23 +62,21 @@ v1 mints exactly one `human` author (`naturalKey: 'local'`) and one `system` aut
 
 ```ts
 id               text primary key      // ULID
-kind             text not null         // 'channel' | 'dm' | 'thread'
-parentId         text                  // non-null iff kind = 'thread'
+kind             text not null         // 'channel' | 'dm'
 slug             text                  // channels only; unique among non-archived channels
 title            text not null
 topic            text
 workspaceId      text                  // optional reference; behavior is out of scope (see §9)
-rootEntryId      text                  // threads only: the parent entry this thread hangs off
 archived         integer not null default 0
 createdAt        text not null
 lastActivityAt   text not null
 ```
 
-Partial unique index on `slug` where `kind = 'channel' AND archived = 0`. Index on `parentId`.
+Partial unique index on `slug` where `kind = 'channel' AND archived = 0`.
 
 Archived channels are deliberately excluded: a unique index over all channels would let a long-dead `#general` hold that name forever, and "you cannot reuse the name of a channel you archived two years ago" is a bug report waiting to happen.
 
-**A thread is a room with a parent.** One level only: creating a thread whose parent is itself a thread is rejected at the service boundary with a typed error, not silently flattened.
+**A thread is a relation between entries in one room's log**, not a room with a parent (ADR 260728-022013). One level only, and that is now a service policy rather than a shape the schema decided: a reply whose root is itself a reply is rejected with a typed error (`NESTED_THREAD`), not silently flattened.
 
 ### `room_members`
 
@@ -89,7 +97,6 @@ primary key (roomId, authorId)
 | --------- | ----------------------------------------------------------------------------------------------------------- |
 | `dm`      | the agent's manifest `behavior.responseMode` (`packages/shared/src/mesh-schemas.ts:62`), default `'always'` |
 | `channel` | `'mention-only'`                                                                                            |
-| `thread`  | inherit the parent room's membership value                                                                  |
 
 Storing it explicitly means there is no dynamic rule to reason about later, and the value is editable per room.
 
@@ -163,7 +170,7 @@ New service domain `apps/server/src/services/rooms/`, following the `workspace` 
 rooms/
   room-store.ts        Drizzle CRUD over the five tables
   author-registry.ts   mint-on-first-use resolution of (kind, naturalKey) -> authorId
-  room-service.ts      orchestration: create, join, post, read cursor, thread create
+  room-service.ts      orchestration: create, join, post, read cursor, thread replies
   addressing.ts        who should be triggered by an entry (§5)
   cascade-guard.ts     depth + ancestry (§6)
   mentions.ts          parse @name -> authorId[] at post time
@@ -186,7 +193,7 @@ Wired in `apps/server/src/index.ts` beside `createWorkspaceSubsystem`. Routes at
 | `PATCH`  | `/api/rooms/:id/members/:authorId` | Change `responseMode`.                                                                               |
 | `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                                                                     |
 | `PUT`    | `/api/rooms/:id/read-cursor`       | Set `lastReadSeq`.                                                                                   |
-| `POST`   | `/api/rooms/:id/threads`           | Open a thread off an entry.                                                                          |
+| `POST`   | `/api/rooms/:id/threads`           | Reply inside a thread off an entry in this room. Nothing is created first.                           |
 
 Every route obtains runtimes via `runtimeRegistry`, never an SDK import. All eleven routes and their schemas are registered in the OpenAPI route registry, and `docs/api/openapi.json` is regenerated (`pnpm docs:export-api`) and committed — an API surface `/api/docs` does not know about is not a shipped API surface. Note the `openapi-fresh` CI job regenerates and diffs, so unregistered routes produce **no drift and a green check**; the gap is silent and has to be closed deliberately.
 
@@ -301,7 +308,7 @@ const channelsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/channels',
   component: ChannelsPage,
-  validateSearch: zodValidator(channelsSearchSchema), // { id?: string, thread?: string }
+  validateSearch: zodValidator(channelsSearchSchema), // { id?: string }
 });
 ```
 
@@ -506,7 +513,7 @@ Everything above was reasoned from source. This section is what a browser showed
 
 The palette (`features/command-palette/`) has fuzzy search, frecency, preview panels and prefix scoping — `@` for agents, `>` for commands. **Rooms are absent from all of it.** A channel is reachable only by finding it in the sidebar with a mouse.
 
-**Add `#` for rooms.** Slack and Discord both use it and it is the closest thing to universal muscle memory in this product category. Threads are child rooms, so they read as `#parent › thread title`.
+**Add `#` for rooms.** Slack and Discord both use it and it is the closest thing to universal muscle memory in this product category. (Threads read as `#parent › thread title` here because a thread was a child room at the time; under ADR 260728-022013 a thread is never a row in this list at all.)
 
 **DMs stay under `@`, not `#`.** This is not arbitrary: a channel is addressed by its name, a DM by who is in it. Typing `@ana` should offer _both_ "Message Ana" and "New session with Ana" — the same distinction §8.5 already draws between a session (about a directory) and a DM (about a participant). It is also where DorkOS diverges from every chat app: the entity you navigate to is also an actor you can dispatch work to, so the agent's palette row wants verbs, not just a destination.
 

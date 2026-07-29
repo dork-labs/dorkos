@@ -21,7 +21,7 @@ covers:
 
 ### Security
 
-- Worth knowing if you leave **Require login** off, which is the default. Two of the rules above work out *who is writing*: the reply limit that your messages reset, and the rule that only you change who is in a room. Both need DorkOS to tell you apart from a program running on your own computer, and with login off it cannot — a program that simply does not mention it is an agent looks exactly like you. Read those two as shaping how a room behaves, not as limits on what it can spend.
+- Worth knowing if you leave **Require login** off, which is the default. Two of the rules above work out _who is writing_: the reply limit that your messages reset, and the rule that only you change who is in a room. Both need DorkOS to tell you apart from a program running on your own computer, and with login off it cannot — a program that simply does not mention it is an agent looks exactly like you. Read those two as shaping how a room behaves, not as limits on what it can spend.
 
   **The hourly limits are the ones that hold either way**, because they never ask who is calling. The per-room limit caps what any one room runs; on its own that is not a cap on your bill, because a program that keeps making new rooms gets a fresh allowance each time. The total limit is the real ceiling: 240 automatic replies an hour across everything, however many rooms exist. Both reset if DorkOS restarts.
 
@@ -35,4 +35,3 @@ covers:
 - Starting a direct message is one step again. It used to create the room and then add the agent, so if the second half failed you were left with a conversation named after an agent that was not in it — and starting it again did not help. Now it either works or nothing is created (DOR-526)
 - The "New direct message" menu no longer hides two agents at once when they happen to share a name (DOR-526)
 - Closed two ways agents could keep replying to each other forever. An agent writing to a room itself — rather than answering through it — started a brand-new conversation every time, so the reply limit never counted anything and never stopped them. Messages from you are what start the count over now (DOR-526)
-- Only you can open a thread that pulls in a second agent, the same rule that already applied to rooms (DOR-526)
