@@ -48,7 +48,8 @@ test.beforeEach(async ({ request }) => {
     data: { onboarding: { dismissedAt: new Date().toISOString() } },
   });
   // Seed a test agent so the chat UI has an agent to select and enables the send button.
-  // The agent is created at ~/tmp/dorkos-e2e-agent, within the default home-directory boundary.
+  // The agent is created at <boundary>/tmp/dorkos-e2e-agent — the server derives it from the
+  // resolved directory boundary, so it is in-bounds whatever DORKOS_BOUNDARY is set to.
   const seedRes = await request.post(`${API_URL}/api/test/seed-agent`);
   ({ agentDir } = (await seedRes.json()) as { agentDir: string });
 });
@@ -70,6 +71,23 @@ test.describe('TestModeRuntime — mock browser tests', () => {
   test('renders tool call card for tool-call scenario', async ({ page, request }) => {
     await request.post(`${API_URL}/api/test/scenario`, {
       data: { name: 'tool-call' },
+    });
+
+    // Turn off auto-hide, which is a stored preference and defaults to ON.
+    //
+    // A tool call that is ALREADY complete on the frame its part first mounts is
+    // never rendered at all — not hidden with CSS, simply not in the DOM. The
+    // built-in scenarios are documented as zero-latency and yield the whole turn
+    // in one synchronous pass, and at `turn_end` the live bubble is replaced by
+    // the rebuilt history message, which remounts the part as complete. So this
+    // card was only ever visible for as long as the assertion could outrun the
+    // turn, and it lost that race for good once the API leg stopped restarting
+    // under `tsx watch`.
+    //
+    // Set here rather than in `ChatPage` so every other spec keeps the shipped
+    // default. What auto-hide does in its own right has no browser coverage.
+    await page.addInitScript(() => {
+      localStorage.setItem('dorkos-auto-hide-tool-calls', 'false');
     });
 
     const chatPage = new ChatPage(page);
@@ -501,7 +519,7 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
   test.beforeAll(async () => {
     const ctx = await apiRequest.newContext();
     // Learn a boundary-safe base directory from the seed route, then derive two
-    // siblings so registration passes the server's homedir boundary check.
+    // siblings so registration passes the server's directory boundary check.
     const seed = await ctx.post(`${API_URL}/api/test/seed-agent`);
     const { agentDir: baseDir } = (await seed.json()) as { agentDir: string };
     dirA = `${baseDir}-remount-a`;

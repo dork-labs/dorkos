@@ -33,8 +33,13 @@ export class DashboardSidebarPage {
   constructor(page: Page) {
     this.page = page;
     this.newSessionButton = page.getByRole('button', { name: /new session/i });
+    // Scoped by `data-sidebar`, not `data-slot`. The trigger is a Radix
+    // `PopoverTrigger asChild`, and Radix's own `data-slot="popover-trigger"`
+    // wins over the one `SidebarGroupAction` sets — so the `data-slot` form of
+    // this selector matched nothing. `data-sidebar` is ours alone, and it keeps
+    // the scoping this locator exists for.
     this.addAgentButton = page.locator(
-      'button[data-slot="sidebar-group-action"][aria-label="Add agent"]'
+      'button[data-sidebar="group-action"][aria-label="Add agent"]'
     );
   }
 
@@ -105,16 +110,5 @@ export class DashboardSidebarPage {
     }
     await this.page.mouse.move(endX, endY);
     await this.page.mouse.up();
-  }
-
-  /** Delete a group via its "…" menu, confirming the AlertDialog when it has members. */
-  async deleteGroup(name: string) {
-    await this.page.getByRole('button', { name: `${name} group actions` }).click();
-    await this.page.getByRole('menuitem', { name: /delete group/i }).click();
-    const confirmButton = this.page.getByRole('button', { name: 'Delete group', exact: true });
-    if (await confirmButton.isVisible().catch(() => false)) {
-      await confirmButton.click();
-    }
-    await this.groupHeader(name).waitFor({ state: 'hidden' });
   }
 }
