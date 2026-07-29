@@ -4,7 +4,7 @@
  * @module entities/room/ui/RoomAvatar
  */
 import { cva } from 'class-variance-authority';
-import { Hash, MessagesSquare } from 'lucide-react';
+import { Hash } from 'lucide-react';
 import type { AuthorRef, Room } from '@dorkos/shared/room-schemas';
 import { cn, initialOf, type AgentVisual } from '@/layers/shared/lib';
 import { IdentityAvatar } from '@/layers/shared/ui';
@@ -21,14 +21,14 @@ type RoomAvatarSize = 'xs' | 'sm' | 'md';
  * The size every room mark falls back to. Declared once and applied in the
  * component's own signature rather than in either variant table's
  * `defaultVariants`, because a room's mark is drawn by two different things —
- * a lucide glyph for a channel or thread, the shared identity disc for a DM —
- * and those two carry their own, different defaults. Left to them, an
- * unspecified size silently gave a channel a 14px glyph and a DM a 28px disc
- * in the same sidebar row.
+ * a lucide glyph for a channel, the shared identity disc for a DM — and those
+ * two carry their own, different defaults. Left to them, an unspecified size
+ * silently gave a channel a 14px glyph and a DM a 28px disc in the same
+ * sidebar row.
  */
 const DEFAULT_SIZE: RoomAvatarSize = 'xs';
 
-/** The channel/thread glyph scales with `size` too, so it reads at the same
+/** The channel glyph scales with `size` too, so it reads at the same
  * visual weight as the disc it stands in for at that size. */
 const roomAvatarIconVariants = cva('text-muted-foreground shrink-0', {
   variants: {
@@ -81,11 +81,10 @@ export interface RoomAvatarProps {
 }
 
 /**
- * A room's mark: `#` for a channel, a branch glyph for a thread, and for a
- * direct message the agent it is with — the same emoji and colour that agent
- * carries everywhere else in the cockpit. A conversation with several agents in
- * it draws them as a stack, so a group reads as a group before you read its
- * name.
+ * A room's mark: `#` for a channel, and for a direct message the agent it is
+ * with — the same emoji and colour that agent carries everywhere else in the
+ * cockpit. A conversation with several agents in it draws them as a stack, so a
+ * group reads as a group before you read its name.
  *
  * A DM whose faces the caller has not resolved falls back to a letter disc
  * tinted from the room's own id. That is stable and honest: guessing an agent
@@ -102,19 +101,14 @@ export function RoomAvatar({
   size = DEFAULT_SIZE,
   className,
 }: RoomAvatarProps) {
-  if (room.kind === 'channel') {
+  // Everything that is not a direct message is a place, and a place is drawn
+  // `#`. Written as "not a DM" rather than "is a channel" so a `kind='thread'`
+  // row left on an install from before threads became a relation between
+  // entries (ADR 260728-022013) still reads as a place, instead of falling
+  // through to the identity disc and being given somebody's face.
+  if (room.kind !== 'dm') {
     return (
       <Hash
-        aria-hidden
-        data-slot="room-avatar"
-        className={cn(roomAvatarIconVariants({ size }), className)}
-      />
-    );
-  }
-
-  if (room.kind === 'thread') {
-    return (
-      <MessagesSquare
         aria-hidden
         data-slot="room-avatar"
         className={cn(roomAvatarIconVariants({ size }), className)}

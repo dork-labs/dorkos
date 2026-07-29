@@ -34,11 +34,8 @@ export type { PaletteRooms } from './model/use-palette-rooms';
 export {
   compareRoomsForPalette,
   sortRoomsForPalette,
-  paletteRoomTarget,
   paletteRoomKeywords,
-  threadParentLabel,
 } from './model/palette-rooms';
-export type { PaletteRoomTarget } from './model/palette-rooms';
 export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
 export { usePaletteActions } from './model/use-palette-actions';

@@ -8,8 +8,8 @@ export interface SearchableItem {
   name: string;
   /**
    * Which list this item belongs to. Rooms are split in two because the two
-   * prefixes address them differently (spec `rooms` §13.2): `room` is a channel
-   * or a thread, reached with `#` because a room is named; `dm` is a direct
+   * prefixes address them differently (spec `rooms` §13.2): `room` is a
+   * channel, reached with `#` because a room is named; `dm` is a direct
    * message, reached with `@` because a DM is addressed by who is in it.
    */
   type: 'agent' | 'feature' | 'command' | 'quick-action' | 'suggestion' | 'room' | 'dm';
@@ -53,7 +53,7 @@ const FUSE_OPTIONS: IFuseOptions<SearchableItem> = {
 /**
  * Fuse.js-powered fuzzy search with category prefix detection.
  *
- * Prefix `#` filters channels and threads. Prefix `@` filters agents and direct
+ * Prefix `#` filters channels. Prefix `@` filters agents and direct
  * messages — a DM is addressed by who is in it, so `@ana` offers the
  * conversation with Ana beside Ana herself (spec `rooms` §13.2). Prefix `>`
  * filters commands only. No prefix searches all categories.

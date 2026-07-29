@@ -11,6 +11,12 @@ interface RoomEntryRowProps {
   author: MessageAuthor;
   /** Where this entry sits in its author group. */
   grouping: MessageGrouping;
+  /**
+   * True when this is a reply the timeline could not place, because the entry
+   * heading its thread is older than the history loaded. It renders in the
+   * room's flow, so it has to say that it is answering something.
+   */
+  orphanedReply?: boolean;
 }
 
 /**
@@ -32,8 +38,13 @@ function formatTime(timestamp: string): string {
  * it. A `notice` is the room speaking about itself, so it renders as a quiet
  * full-width line with no author beside it: attributing "Ana stopped replying
  * here" to a person would be a lie about who said it.
+ *
+ * `orphanedReply` adds one quiet line saying the row is answering something
+ * out of view. Without it a reply whose thread head has scrolled out of the
+ * loaded history is indistinguishable from a new remark, which is a small lie
+ * the reader has no way to catch.
  */
-export function RoomEntryRow({ entry, author, grouping }: RoomEntryRowProps) {
+export function RoomEntryRow({ entry, author, grouping, orphanedReply }: RoomEntryRowProps) {
   const time = formatTime(entry.createdAt);
 
   if (entry.kind === 'notice') {
@@ -76,6 +87,11 @@ export function RoomEntryRow({ entry, author, grouping }: RoomEntryRowProps) {
               <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
             )}
           </div>
+        )}
+        {orphanedReply === true && (
+          <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
+            Replying to an earlier message
+          </p>
         )}
         <div data-slot="message-content" className={styles.content()}>
           <MarkdownContent content={entry.body.text} linkSafety />

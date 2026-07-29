@@ -100,20 +100,21 @@ describe('useRoomDocumentTitle', () => {
     await waitFor(() => expect(result.current.roomTitle).toBe('#general'));
   });
 
-  it('reads a thread over the room it hangs off, as ChannelsPage does', async () => {
+  it('ignores a stale ?thread= and names the room in the URL, as ChannelsPage does', async () => {
+    // A bookmark from when a thread was a room of its own. `?thread=` used to
+    // win over `?id=`; a thread is now a relation between entries inside one
+    // room's log (ADR 260728-022013), so the old link opens the room it names
+    // rather than a room that no longer exists.
     pathname = '/channels';
     search = { id: 'room-1', thread: 'thread-1' };
-    const getRoom = vi
-      .fn()
-      .mockResolvedValue(
-        withRoster({ id: 'thread-1', kind: 'thread', slug: null, title: 'Side note' })
-      );
+    const getRoom = vi.fn().mockResolvedValue(withRoster());
     const transport = createMockTransport({ getRoom, listRooms: vi.fn().mockResolvedValue([]) });
 
     const { result } = renderHook(() => useRoomDocumentTitle(), { wrapper: wrapperFor(transport) });
 
-    await waitFor(() => expect(result.current.roomTitle).toBe('Side note'));
-    expect(getRoom).toHaveBeenCalledWith('thread-1');
+    await waitFor(() => expect(result.current.roomTitle).toBe('#general'));
+    expect(getRoom).toHaveBeenCalledWith('room-1');
+    expect(getRoom).not.toHaveBeenCalledWith('thread-1');
   });
 
   it('names no room anywhere but /channels, even with a stale id in the URL', async () => {

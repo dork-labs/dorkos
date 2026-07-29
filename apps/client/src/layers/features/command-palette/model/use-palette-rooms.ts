@@ -1,10 +1,9 @@
 /**
  * The rooms the command palette offers (spec `rooms` §13.2).
  *
- * `#` addresses a channel or a thread — a room is named — and `@` addresses a
- * direct message alongside the agents, because a DM is addressed by who is in
- * it. That split is the whole reason this hook hands back two lists rather than
- * one.
+ * `#` addresses a channel — a room is named — and `@` addresses a direct
+ * message alongside the agents, because a DM is addressed by who is in it. That
+ * split is the whole reason this hook hands back two lists rather than one.
  *
  * Read-only, like the sidebar's own use. `useRoomListStream` is called once,
  * from something always mounted (`use-room-list-stream.ts` says so itself);
@@ -19,7 +18,7 @@ import { sortRoomsForPalette } from './palette-rooms';
 
 /** The room list, split the way the palette's two prefixes address it. */
 export interface PaletteRooms {
-  /** What `#` addresses: channels and the threads hanging off them. */
+  /** What `#` addresses: channels. */
   channels: RoomSummary[];
   /** What `@` addresses beside the agents: direct messages. */
   dms: RoomSummary[];
@@ -28,8 +27,6 @@ export interface PaletteRooms {
    * shows before anything is typed.
    */
   unread: RoomSummary[];
-  /** Every room the palette holds, keyed by id, for resolving a thread's parent. */
-  byId: Map<string, RoomSummary>;
   /** Whether the room list is still on its way. */
   isLoading: boolean;
   /** Whether the room list failed to load. */
@@ -48,11 +45,22 @@ export function usePaletteRooms(): PaletteRooms {
 
   return useMemo(() => {
     const rooms = data ?? [];
+    // `=== 'channel'`, the same predicate the sidebar's `useRoomsByKind` uses,
+    // so the two room lists cannot disagree. It used to be `!== 'dm'` so that
+    // threads came along; a thread is now a relation between entries and never
+    // a row in a room list (ADR 260728-022013), which leaves a legacy
+    // `kind='thread'` row out of both.
+    const channels = sortRoomsForPalette(rooms.filter((r) => r.kind === 'channel'));
+    const dms = sortRoomsForPalette(rooms.filter((r) => r.kind === 'dm'));
     return {
-      channels: sortRoomsForPalette(rooms.filter((r) => r.kind !== 'dm')),
-      dms: sortRoomsForPalette(rooms.filter((r) => r.kind === 'dm')),
-      unread: sortRoomsForPalette(rooms.filter(hasUnread)),
-      byId: new Map(rooms.map((room) => [room.id, room])),
+      channels,
+      dms,
+      // Built from the two addressable lists rather than from `rooms` again, so
+      // a room can only be badged here if it is somewhere a person can also
+      // find it. Filtering `rooms` directly was a second, parallel predicate,
+      // and it let a legacy `kind='thread'` row back into the palette through
+      // the Unread group after `channels` had shut the front door on it.
+      unread: sortRoomsForPalette([...channels, ...dms].filter(hasUnread)),
       isLoading,
       isError,
     };

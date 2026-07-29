@@ -41,8 +41,7 @@ export interface RoomDocumentTitle {
  * member", which is not zero, so a room the operator has only ever looked at is
  * never counted (spec `rooms` §13.1).
  *
- * `thread` wins over `id` when both are in the URL, matching `ChannelsPage`: a
- * thread is a room in its own right and is what renders. The count is read on
+ * `id` is the whole address, matching `ChannelsPage`. The count is read on
  * every route, because a tab you have left is exactly the one that needs to say
  * a room is waiting.
  *
@@ -61,8 +60,8 @@ export function useRoomDocumentTitle(): RoomDocumentTitle {
   useRoomListStream();
 
   const pathname = useSafePathname();
-  const search = useSafeSearch() as { id?: string; thread?: string };
-  const roomId = pathname === ROOMS_PATHNAME ? (search.thread ?? search.id ?? null) : null;
+  const search = useSafeSearch() as { id?: string };
+  const roomId = pathname === ROOMS_PATHNAME ? (search.id ?? null) : null;
 
   const { data: room } = useRoom(roomId);
   const { data: rooms } = useRooms();

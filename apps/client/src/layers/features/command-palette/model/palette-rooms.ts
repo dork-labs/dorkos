@@ -8,15 +8,7 @@
  *
  * @module features/command-palette/model/palette-rooms
  */
-import { hasUnread, roomDisplayTitle, type RoomSummary } from '@/layers/entities/room';
-
-/** Where a room opens: the `/channels` search params that address it. */
-export interface PaletteRoomTarget {
-  /** The top-level room. For a thread this is the room it hangs off. */
-  id: string;
-  /** Set only for a thread — the child room that renders. */
-  thread?: string;
-}
+import { hasUnread, type RoomSummary } from '@/layers/entities/room';
 
 /**
  * How two rooms compare in the palette: anything unread first, then whichever
@@ -51,48 +43,6 @@ export function compareRoomsForPalette(a: RoomSummary, b: RoomSummary): number {
  */
 export function sortRoomsForPalette(rooms: readonly RoomSummary[]): RoomSummary[] {
   return [...rooms].sort(compareRoomsForPalette);
-}
-
-/**
- * Where selecting a room in the palette navigates to.
- *
- * A room's identity travels as a `/channels` search param (`channelsSearchSchema`).
- * A thread carries both: its parent stays in `id` so leaving the thread returns
- * to the room it hangs off, exactly as the route documents.
- *
- * A thread whose `parentId` is missing — which the schema says cannot happen,
- * but a hand-written payload can — addresses itself rather than navigating
- * nowhere.
- *
- * @param room - The room the operator picked.
- */
-export function paletteRoomTarget(room: RoomSummary): PaletteRoomTarget {
-  if (room.kind === 'thread' && room.parentId) {
-    return { id: room.parentId, thread: room.id };
-  }
-  return { id: room.id };
-}
-
-/**
- * The breadcrumb a thread row shows in front of its own name — the room it
- * hangs off, written the way people say it, so a thread reads as
- * `#general › Deploy fallout` rather than as a title with no home.
- *
- * Answers `null` for anything that is not a thread, and for a thread whose
- * parent is not in the list the palette can see (an archived room, or one this
- * operator cannot read). A missing parent drops the breadcrumb rather than
- * inventing one.
- *
- * @param room - The room being rendered.
- * @param byId - Every room the palette holds, keyed by id.
- */
-export function threadParentLabel(
-  room: RoomSummary,
-  byId: ReadonlyMap<string, RoomSummary>
-): string | null {
-  if (room.kind !== 'thread' || !room.parentId) return null;
-  const parent = byId.get(room.parentId);
-  return parent ? roomDisplayTitle(parent) : null;
 }
 
 /**
