@@ -58,6 +58,34 @@ name: operating-skills-version-check
 # that auto-merge will drive straight past. The "Decide whether the seeded pack
 # content changed" step below does the precise scoping instead and short-circuits
 # both later steps, so the cost on an unrelated pull request is one checkout.
+#
+# THAT SCOPING IS NOT FILE-GRANULAR, and the difference is the point. It used to
+# be one `git diff --quiet` over both paths, which cannot tell a comment from
+# skill text. DOR-671 rewrote the paragraph of `pack.ts` TSDoc that said the
+# re-seed gap was still open — the gap that very pull request closed — and this
+# job demanded a version bump for it. Nothing an agent reads had moved, and
+# bumping to satisfy the guard would have rewritten all six seeded files in every
+# workspace with byte-identical bodies and required a History entry describing a
+# comment edit, devaluing the version trail the whole ratchet argument rests on.
+# So the scoping now matches what this header already claimed: a pull request
+# that does not change what gets seeded is not required to bump.
+#
+# The two paths are scoped DIFFERENTLY, and that asymmetry is deliberate:
+#
+#   PACK_FILE  — comment and blank lines are ignored. The file is mostly prose
+#                ABOUT the pack (a ~90-line docblock, then the constant and the
+#                array); none of it is seeded anywhere.
+#   SKILLS_DIR — byte-granular, unchanged. A comment inside a skill body IS
+#                seeded text: the bodies are template literals written for a
+#                model to read, and `seed.ts` hashes them verbatim. Do not
+#                soften this side to match the other.
+#
+# The decision itself lives in `scripts/seeded-pack-changed.sh` rather than
+# inline here, for the reason `scripts/should-arm-automerge.sh` and
+# `scripts/assert-tests-executed.sh` do: inline workflow bash cannot be tested,
+# and a scoping rule that quietly stops matching turns a required check into a
+# decoration without anything going red. Both directions are pinned by
+# `scripts/test-seeded-pack-changed.sh`, including the DOR-509 shape above.
 
 on:
   pull_request:
@@ -133,20 +161,24 @@ jobs:
       # the reason in the header — so it carries the whole job: it runs on every
       # pull request and short-circuits the two steps below on all but the few that
       # touch seeded content. Editing seed.ts, the tests, or the package README
-      # changes no agent's skill text and owes no new version. Scoped to the fork
-      # point, because this asks what the branch did, not what the base branch did
+      # changes no agent's skill text and owes no new version, and neither does
+      # editing the prose in pack.ts's own docblock. Scoped to the fork point,
+      # because this asks what the branch did, not what the base branch did
       # meanwhile.
+      #
+      # The script reads PACK_FILE and SKILLS_DIR from this job's env, so the two
+      # paths are declared once above and cannot drift between this step and the
+      # two that read the version out of the same file. It exits 2 rather than
+      # guessing if a ref will not resolve, which under the runner's default
+      # `bash -e` fails this step loudly instead of scoping the whole job away.
       - name: Decide whether the seeded pack content changed
         id: scope
         run: |
-          fork_point="${{ steps.base.outputs.fork_point }}"
-          if git diff --quiet "$fork_point..HEAD" -- "$PACK_FILE" "$SKILLS_DIR"; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Neither $PACK_FILE nor $SKILLS_DIR changed; no version bump is owed."
-          else
+          verdict="$(./scripts/seeded-pack-changed.sh "${{ steps.base.outputs.fork_point }}")"
+          if [ "$verdict" = "changed" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Seeded pack content changed:"
-            git diff --name-only "$fork_point..HEAD" -- "$PACK_FILE" "$SKILLS_DIR" | sed 's/^/  /'
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       # Both sides are read from git rather than the working tree, so the base

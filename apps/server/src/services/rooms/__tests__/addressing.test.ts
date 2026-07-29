@@ -2,6 +2,9 @@
  * The full addressing matrix from spec `rooms` §5: every `responseMode` in
  * every room kind, mentioned and not. This is the whole rule, so the whole
  * rule is enumerated rather than sampled.
+ *
+ * Two kinds, not three. A thread is a position inside a channel rather than a
+ * room (ADR 260728-022013), so a reply there is addressed by the channel's row.
  */
 import { describe, it, expect } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
@@ -9,7 +12,7 @@ import type { RoomKind } from '@dorkos/shared/room-schemas';
 import { respondsTo, selectTriggerTargets, type AddressingMember } from '../addressing.js';
 
 const MODES: ResponseMode[] = ['always', 'direct-only', 'mention-only', 'silent'];
-const KINDS: RoomKind[] = ['channel', 'dm', 'thread'];
+const KINDS: RoomKind[] = ['channel', 'dm'];
 
 /**
  * The expected answer for every (mode, kind, mentioned) triple, written out
@@ -20,22 +23,18 @@ const EXPECTED: Record<ResponseMode, Record<RoomKind, { plain: boolean; mentione
   always: {
     channel: { plain: true, mentioned: true },
     dm: { plain: true, mentioned: true },
-    thread: { plain: true, mentioned: true },
   },
   'direct-only': {
     channel: { plain: false, mentioned: true },
     dm: { plain: true, mentioned: true },
-    thread: { plain: false, mentioned: true },
   },
   'mention-only': {
     channel: { plain: false, mentioned: true },
     dm: { plain: false, mentioned: true },
-    thread: { plain: false, mentioned: true },
   },
   silent: {
     channel: { plain: false, mentioned: false },
     dm: { plain: false, mentioned: false },
-    thread: { plain: false, mentioned: false },
   },
 };
 

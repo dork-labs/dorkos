@@ -265,12 +265,10 @@ export class RoomService {
     const draft: NewRoom = {
       id: ulid(),
       kind: request.kind,
-      parentId: null,
       slug,
       title: request.title ?? `#${slug ?? ''}`,
       topic: request.topic ?? null,
       workspaceId: request.workspaceId ?? null,
-      rootEntryId: null,
       createdAt: new Date().toISOString(),
     };
 

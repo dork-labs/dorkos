@@ -248,7 +248,12 @@ function revealTrigger(page: Page): Locator {
   return page.locator('[data-testid="status-line"] [data-testid="status-reveal"]');
 }
 
-test.describe('Chat — status line fits its row @integration', () => {
+// Deliberately NOT `@integration`, which it used to carry. That tag means "needs
+// a real model", and it is now what keeps a spec out of CI — so wearing it
+// without needing it costs coverage for nothing. Nothing below sends a message,
+// sets a scenario, or waits on a turn: the file opens the composer and measures
+// where the status line paints. It passes with no credentials of any kind.
+test.describe('Chat — status line fits its row', () => {
   test.beforeAll(async ({ request }) => {
     // A fresh DORK_HOME has no completed onboarding steps, so the wizard would sit
     // in front of the cockpit. Same dismissal chat-mock.spec.ts uses.

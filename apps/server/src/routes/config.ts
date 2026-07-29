@@ -8,6 +8,7 @@ import {
   SHAPE_USER_PREFS_DEFAULTS,
   STATUS_BAR_PREFS_DEFAULTS,
   USER_CONFIG_DEFAULTS,
+  USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
 import {
@@ -134,6 +135,9 @@ router.get('/', async (_req, res) => {
           };
     })(),
     tours: configManager.get('tours') ?? { seen: [], declined: [] },
+    // Who the user is, in their own words (spec user-profile-onboarding).
+    // Local-only; the fallback covers the pre-migration read window.
+    profile: configManager.get('profile') ?? USER_PROFILE_DEFAULTS,
     agentContext: configManager.get('agentContext') ?? {
       relayTools: true,
       meshTools: true,

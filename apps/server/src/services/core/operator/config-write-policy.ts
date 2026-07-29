@@ -225,6 +225,16 @@ export const CONFIG_WRITE_POLICY = {
   'tours.seen': 'agent-writable',
   'tours.declined': 'agent-writable',
 
+  // The user profile (spec user-profile-onboarding). Agent-writability is
+  // deliberate: DorkBot saves "call me Dorian" or "I also use Figma" via
+  // config_patch mid-conversation — that is how tools and displayName get
+  // populated after onboarding. Changing a profile field removes or widens no
+  // security control; the profile never leaves the machine (tested invariant).
+  'profile.roles': 'agent-writable',
+  'profile.tools': 'agent-writable',
+  'profile.displayName': 'agent-writable',
+  'profile.rolePromptDismissedAt': 'agent-writable',
+
   'agentContext.relayTools': 'agent-writable',
   'agentContext.meshTools': 'agent-writable',
   'agentContext.adapterTools': 'agent-writable',

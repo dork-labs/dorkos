@@ -1201,6 +1201,26 @@ export function scrubRetiredOnboardingSteps(store: {
 }
 
 /**
+ * Migration body: backfill the `profile` section (who the user is — roles,
+ * tools, display name; spec `user-profile-onboarding`) for configs persisted
+ * before it existed. Additive + idempotent: only writes when the key is absent;
+ * conf's top-level defaults-merge also yields this object on read, so this is a
+ * no-op anchor that writes the key through on the upgrade where it lands. Seeds
+ * everything empty/null: DorkOS knows nothing about the person until they say.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillProfileDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  if (store.get('profile') == null) {
+    store.set('profile', { roles: [], tools: [], displayName: null, rolePromptDismissedAt: null });
+  }
+}
+
+/**
  * @internal Exported for testing only — lets the migration-key invariant test
  * assert the newest key is always ahead of the current release (the DOR-339
  * "0.54.0 shipped mid-flight" class of bug: a key equal to or behind an
@@ -1400,10 +1420,18 @@ export const CONFIG_MIGRATIONS = {
     // after the sidebar backfills above so it sees the same `ui.sidebar` object
     // (order is otherwise immaterial — they touch disjoint fields).
     migrateSidebarMembersToItemRefs(store);
+    // The `profile` section (who the user is; spec user-profile-onboarding).
+    // Added-with-defaults, so this is a no-op anchor: conf's defaults-merge
+    // supplies the block on read, and this writes it through on the upgrade
+    // where it lands. Composed into this same next-unreleased key per
+    // .claude/rules/safe-defaults.md (a fresh key above the release that ships
+    // the schema would never run).
+    backfillProfileDefaults(store);
     // The `connectors` section (`rawMcpServers`, connector-completion spec):
     // the remote MCP servers the raw-MCP connector offers as connectable
     // services. Additive + idempotent; seeds the list EMPTY, so an upgrade
-    // never grants a tool endpoint nobody configured.
+    // never grants a tool endpoint nobody configured. Independent of the
+    // profile backfill above — disjoint fields, order-immaterial.
     backfillConnectorsDefaults(store);
   },
 } as const;

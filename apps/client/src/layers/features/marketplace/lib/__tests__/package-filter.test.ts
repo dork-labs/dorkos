@@ -80,6 +80,38 @@ describe('filterPackages — type filter', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Connector filter (refinement of the adapter facet)
+// ---------------------------------------------------------------------------
+
+describe('filterPackages — connector filter', () => {
+  const CONNECTOR = pkg({ name: 'composio-gateway', type: 'adapter', adapterType: 'connector' });
+  const PLAIN_ADAPTER = pkg({ name: 'slack-adapter', type: 'adapter', adapterType: 'slack' });
+  const UNTYPED_ADAPTER = pkg({ name: 'bare-adapter', type: 'adapter' });
+  // adapterType without type: 'adapter' — must NOT read as a connector.
+  const MISLABELED = pkg({ name: 'mislabeled-plugin', type: 'plugin', adapterType: 'connector' });
+  const POOL = [CONNECTOR, PLAIN_ADAPTER, UNTYPED_ADAPTER, MISLABELED, AGENT_A];
+
+  it('narrows to adapters whose adapterType is the connector value', () => {
+    const result = filterPackages(POOL, { type: 'connector', categories: [], search: '' });
+    expect(result.map((p) => p.name)).toEqual(['composio-gateway']);
+  });
+
+  it('keeps connector adapters inside the generic adapter filter', () => {
+    const result = filterPackages(POOL, { type: 'adapter', categories: [], search: '' });
+    expect(result.map((p) => p.name)).toEqual([
+      'composio-gateway',
+      'slack-adapter',
+      'bare-adapter',
+    ]);
+  });
+
+  it('ignores adapterType on non-adapter packages', () => {
+    const result = filterPackages([MISLABELED], { type: 'connector', categories: [], search: '' });
+    expect(result).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Category filter
 // ---------------------------------------------------------------------------
 

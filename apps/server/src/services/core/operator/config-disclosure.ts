@@ -184,6 +184,16 @@ export const CONFIG_DISCLOSURE = {
   'tours.seen': 'expose',
   'tours.declined': 'expose',
 
+  // The user profile (spec user-profile-onboarding). Exposing it to agents IS
+  // the feature: agents know who they work for, and nothing here is a
+  // credential or names where one lives. Local-only — structurally excluded
+  // from every telemetry payload; disclosure to the user's OWN agents is a
+  // different question from disclosure off the machine.
+  'profile.roles': 'expose',
+  'profile.tools': 'expose',
+  'profile.displayName': 'expose',
+  'profile.rolePromptDismissedAt': 'expose',
+
   'agentContext.relayTools': 'expose',
   'agentContext.meshTools': 'expose',
   'agentContext.adapterTools': 'expose',

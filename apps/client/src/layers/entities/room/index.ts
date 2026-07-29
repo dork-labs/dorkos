@@ -1,7 +1,8 @@
 /**
- * Room entity — channels, direct messages and threads (spec `rooms`, ADR
+ * Room entity — channels and direct messages (spec `rooms`, ADR
  * 260726-170125). A room is a membership-scoped durable stream: a roster of
- * authors and an append-only log of entries.
+ * authors and an append-only log of entries. A thread is a relation between
+ * entries in one such log, not a third kind of room (ADR 260728-022013).
  *
  * Every read goes through the `Transport` port, never `fetch`.
  *

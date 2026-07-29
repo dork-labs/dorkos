@@ -1,0 +1,228 @@
+name: browser-test
+
+# Runs the Playwright browser suite (apps/e2e) on every PR, on push to main, and
+# on merge groups.
+#
+# Before this workflow existed, NOTHING in CI ran it. `grep -rlE
+# 'playwright|e2e|browser' .github/workflows/` returned nothing across sixteen
+# workflows, while apps/e2e declared `"e2e": "playwright test"` and 92 tests sat
+# in 22 spec files that no gate ever executed. A change could break every browser
+# test and merge green — and did. That is DOR-656. The suite itself was repaired
+# to green in #605 (89 passed, 0 failed, 3 skipped); this workflow is the gate
+# that keeps it that way.
+#
+# FULL MONOREPO TRIGGER, NO `paths:` FILTER. Two independent reasons, and either
+# alone would be enough.
+#
+#   1. A path filter would not have caught the regression this ticket cites. That
+#      one was a changed placeholder STRING in apps/client which broke a
+#      Playwright locator in apps/e2e. A filter scoped to `apps/e2e/**` misses it
+#      by construction, and "scope asserted from where you happen to be working"
+#      is a named recurring defect here. An honest filter would have to list
+#      apps/client, apps/server, apps/site and most of packages/ — i.e. nearly
+#      the whole tree — which buys a rounding error of runner time for a
+#      permanent correctness hole.
+#   2. A path-filtered workflow can never become a required check. GitHub's
+#      troubleshooting-required-status-checks doc is explicit: "A workflow is
+#      skipped by path filtering, branch filtering, or a commit message →
+#      Associated checks stay in a 'Pending' state and block merging → Avoid
+#      requiring workflows that can be skipped." A skipped JOB reports success; a
+#      skipped WORKFLOW reports nothing at all, and under the merge queue
+#      (ADR 260728-112203) a required check that never reports blocks the queue
+#      until `check_response_timeout_minutes` (60) expires. So the filter and the
+#      option of ever making this required are mutually exclusive.
+#
+# The trade this accepts, stated plainly: a docs-only or changelog-only PR pays
+# for a browser run it cannot possibly break. The `concurrency` block below
+# cancels superseded PR runs, which is what keeps that from compounding.
+#
+# `merge_group` IS in the trigger list even though this check is NOT required
+# today (see the note on required-ness below). ADR 260728-112203 makes reporting
+# on `merge_group` a hard prerequisite for any required check, and says it should
+# land first and separately. Doing that here means the day somebody decides this
+# should be required, it is a branch-protection toggle rather than a code change
+# — and cannot deadlock the queue on the way in. It is also the only trigger that
+# can catch the two-PR interaction class (two PRs each green alone against the
+# base they branched from, red once combined), which is precisely the shape of
+# the regression that reached main.
+#
+# THIS IS NOT A REQUIRED CHECK, and adding it to the required contexts is
+# deliberately NOT part of the change that adds this file. Branch protection is
+# settings, not files, and "reports on merge_group" is a claim to verify rather
+# than assume: a required check that never reports blocks the queue until
+# `check_response_timeout_minutes` (60) expires, on every merge, for everybody.
+# So the trigger lands first, it runs green on a few real PRs and a real merge
+# group, and the branch-protection change is a separate deliberate act after
+# that. It is enforced-in-practice sooner: merge-tail.yml's arming gate
+# (scripts/should-arm-automerge.sh) refuses to arm auto-merge while ANY check on
+# the PR is failing, required or not — the same path scripts-test took.
+#
+# ONE LIVE EXTERNAL DEPENDENCY, STATED SO NOBODY DISCOVERS IT MID-INCIDENT. The
+# site leg's /marketplace pages fetch the dork-labs/marketplace registry from
+# raw.githubusercontent.com SERVER-side on every run, and the marketplace specs
+# need that registry reachable and NON-EMPTY to find a card. A bad push to that
+# OTHER repository — or the registry going empty — reds this check on every PR
+# here, and if this check is ever made required, blocks this repo's merges on a
+# file it does not contain. That coupling is accepted: the specs' whole point is
+# that the live pages work, GitHub runners reaching GitHub is the one network
+# assumption CI already makes everywhere, and the failure is legible (the
+# marketplace spec's header says exactly what an empty-registry red looks like
+# and where to go). If it ever fires in anger, the decision to revisit is
+# "pin a fixture registry for CI", not "delete the specs".
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+# Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
+# hard cutoff for the Node 20 runtime (matches the other workflows here).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# Cancel superseded runs on the same ref for PRs only. For push events, group by
+# SHA instead of ref: GitHub only lets one run per group be *pending* at a time,
+# so several quick merges to main sharing a `browser-test-refs/heads/main` group
+# would cancel each other's queued runs and only the final push would be tested.
+#
+# Deliberately IDENTICAL in form to test.yml and typecheck.yml, which arrived at
+# this after #543 (DOR-517) found real merges whose runs were cancelled before
+# they started. CI workflows with different concurrency semantics is the kind of
+# divergence nobody notices until a run goes missing — keep them in step.
+concurrency:
+  group: browser-test-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  browser-test:
+    runs-on: ubuntu-latest
+    # The suite boots five webServer legs (Express API, Vite client, a second
+    # Express+Vite pair for the TestModeRuntime project, and the Next.js
+    # marketing site) and then runs ~90 tests serially (`workers: 1` under CI).
+    # Generous headroom for a cold 4-core runner, and low enough that a leg
+    # which never comes up fails the job rather than burning an hour.
+    timeout-minutes: 45
+    env:
+      # Pins the server's data directory inside the checkout, on purpose.
+      # `resolveDorkHome()` (apps/server/src/lib/dork-home.ts) falls back to the
+      # runner's real `~/.dork` ONLY when NODE_ENV === 'production'; declaring
+      # development means no future change to the runner image can silently
+      # redirect the suite at a real home directory. The cockpit leg resolves to
+      # apps/server/.temp/.dork inside the ephemeral checkout; the test-mode leg
+      # sets its own throwaway DORK_HOME, port-keyed and wiped per run. The
+      # cockpit boundary needs no wiring here — playwright.config.ts scopes
+      # DORKOS_BOUNDARY to the checkout itself, wherever it lives.
+      NODE_ENV: development
+      # Boot the marketing-site leg and run the two specs that target it
+      # (marketplace.spec.ts, features.spec.ts). The config already defaults
+      # this on under CI; setting it explicitly means the suite's coverage does
+      # not depend on a conditional that a future edit could invert. It also
+      # keeps the invariant the assert step checks simple: every spec file runs
+      # except the two named, self-policing exemptions the assert script pins
+      # (the opt-in auth spec, and the @integration spec — which needs real
+      # model credentials this runner does not have and spends real money, so
+      # it stays out of CI; E2E_INTEGRATION is never set here).
+      E2E_SITE: '1'
+      # RETRIES: the suite runs with ONE retry in CI (playwright.config.ts,
+      # `retries: CI ? 1 : 0`) — a decision, not a default, so here is the
+      # reasoning. Zero would be the principled choice (test.yml deliberately
+      # refuses VITEST_RETRY in CI), but the suite carries one TRACKED,
+      # test-side readiness flake — DOR-698, mention-picker's combobox, ~6% in
+      # isolation and rarer in full runs — and a gate that goes red on a known
+      # ticket trains people to route around it (test.yml's header has the
+      # receipts on that). One retry, not two: a single retry absorbs exactly
+      # the tracked flake class, while the old `retries: 2` was wide enough to
+      # hide a real product race behind two coincidences — the outcome the
+      # review that cleared this suite for CI named as the dangerous one (that
+      # race, DOR-697, is since fixed). The budget is visible, not silent:
+      # every test that passes only on a retry is NAMED in the job log by the
+      # assert step's flaky warning. A test that keeps appearing there gets
+      # fixed, or the budget goes to zero.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `--with-deps` installs the OS libraries headless Chromium needs, which
+      # ubuntu-latest does not ship in full. Without it the browser is present
+      # but fails to launch, and a launch failure is an error rather than a skip
+      # — but only if the binary was fetched at all, so this step failing is
+      # meant to fail the job.
+      - name: Install the Chromium browser Playwright drives
+        run: pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium
+
+      # Warm the turbo cache with everything the webServer legs need, OUTSIDE
+      # their readiness timeouts. The two Express legs each run
+      # `turbo run build --filter=@dorkos/server` before booting, the Vite legs'
+      # `turbo dev` pulls `^build`, and the site leg imports @dorkos/icons and
+      # @dorkos/marketplace dists — all inside webServer timeouts sized for a
+      # warm tree. Building here turns the in-leg builds into cache replays, so
+      # a slow cold build fails THIS step with a build error instead of failing
+      # five legs later as an opaque readiness timeout.
+      - name: Build what the webServer legs boot from
+        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client^... --filter=@dorkos/site^...
+
+      # No `--reporter` flag, deliberately: passing one REPLACES the config's
+      # reporter list rather than adding to it, and the json reporter is what the
+      # next step reads. A run invoked with `--reporter=list` writes no
+      # results.json and the proof step has nothing to check.
+      #
+      # KNOWN, HARMLESS HERE: apps/e2e/reporters/manifest-reporter.ts rewrites
+      # the TRACKED file apps/e2e/manifest.json after every run that executes at
+      # least one test (`--list` and empty runs no longer touch it). So this
+      # step leaves the checkout dirty. On an ephemeral runner that costs
+      # nothing and no later step reads it, but do not add a "the tree is clean"
+      # assertion to this job without dealing with that first: it would fail
+      # every time, for a reason unrelated to the code under test.
+      - name: Run the browser suite
+        run: pnpm --filter @dorkos/e2e run e2e
+
+      # THE POINT OF THIS STEP. Playwright exits 0 in more ways than it fails.
+      # A `testIgnore` glob widened by accident drops a whole spec file from the
+      # run while it still prints "N passed" and exits 0 (verified against
+      # 1.59.1 on a two-spec tree). A spec whose tests all skip is green. A spec
+      # moved out of testDir is simply never collected. None of that is visible
+      # in the exit code, so this reads the JSON report and asserts against the
+      # FILESYSTEM that every spec file in apps/e2e actually executed something.
+      # See scripts/assert-browser-tests-executed.sh for the full argument and
+      # scripts/test-assert-browser-tests-executed.sh for its fixtures.
+      #
+      # The `[ -f ]` guard is not decoration. A workflow definition is evaluated
+      # from a different ref than the tree it checks out, so on a branch that
+      # predates the script this step would otherwise die with a bare `exit 127`
+      # that names neither the file nor the fix — a required check has already
+      # failed exactly that way on an unrelated PR (2026-07-29). The guard turns
+      # that into a message naming the cause.
+      #
+      # It runs only when the previous step succeeded (default `if: success()`),
+      # which is right — a red suite is already a red job, and "did anything
+      # actually run" only matters when the answer looks like yes.
+      - name: Prove the browser suite actually executed
+        run: |
+          if [ ! -f scripts/assert-browser-tests-executed.sh ]; then
+            echo "::error::scripts/assert-browser-tests-executed.sh is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."
+            exit 1
+          fi
+          bash scripts/assert-browser-tests-executed.sh
+
+      # The report is the only way to read a browser failure after the fact: it
+      # carries the trace, the screenshot and the video the config captures on
+      # failure. Uploaded on failure only, because a green run's report is 100MB
+      # of things nobody opens.
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/e2e/playwright-report/
+          retention-days: 7

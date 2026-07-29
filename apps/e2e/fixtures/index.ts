@@ -4,12 +4,12 @@ import { DashboardSidebarPage } from '../pages/DashboardSidebarPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { BasePage } from '../pages/BasePage';
 import { TasksPage } from '../pages/TasksPage';
-import { MeshPage } from '../pages/MeshPage';
 import { RelayPage } from '../pages/RelayPage';
 import { AuthPage } from '../pages/AuthPage';
 import { RightPanelPage } from '../pages/RightPanelPage';
 import { RoomsPage } from '../pages/RoomsPage';
 import { RoomsApi } from './rooms-api';
+import { TasksApi } from './tasks-api';
 
 type DorkOSFixtures = {
   basePage: BasePage;
@@ -17,12 +17,12 @@ type DorkOSFixtures = {
   dashboardSidebar: DashboardSidebarPage;
   settingsPage: SettingsPage;
   tasksPage: TasksPage;
-  meshPage: MeshPage;
   relayPage: RelayPage;
   authPage: AuthPage;
   rightPanel: RightPanelPage;
   roomsPage: RoomsPage;
   roomsApi: RoomsApi;
+  tasksApi: TasksApi;
 };
 
 export const test = base.extend<DorkOSFixtures>({
@@ -43,9 +43,6 @@ export const test = base.extend<DorkOSFixtures>({
   tasksPage: async ({ page }, use) => {
     await use(new TasksPage(page));
   },
-  meshPage: async ({ page }, use) => {
-    await use(new MeshPage(page));
-  },
   relayPage: async ({ page }, use) => {
     await use(new RelayPage(page));
   },
@@ -62,6 +59,12 @@ export const test = base.extend<DorkOSFixtures>({
   // shares one server, so nothing may outlive the test that made it.
   roomsApi: async ({ request }, use) => {
     const api = new RoomsApi(request);
+    await use(api);
+    await api.cleanup();
+  },
+  // Seeds this test's schedules and deletes them again — same reason as above.
+  tasksApi: async ({ request }, use) => {
+    const api = new TasksApi(request);
     await use(api);
     await api.cleanup();
   },

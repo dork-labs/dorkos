@@ -44,6 +44,18 @@ vi.mock('../model/use-onboarding', () => ({
   }),
 }));
 
+/** The roles write — must stay untouched when the profile beat is skipped. */
+const mockSaveRoles = vi.fn().mockResolvedValue(undefined);
+vi.mock('../model/use-profile', () => ({
+  useProfile: () => ({
+    roles: [],
+    rolePromptDismissedAt: null,
+    isLoading: false,
+    saveRoles: mockSaveRoles,
+    dismissRolePrompt: vi.fn(),
+  }),
+}));
+
 /** The traits write — must stay untouched when the personality beat is skipped. */
 const mockSaveTraits = vi.fn().mockResolvedValue({});
 vi.mock('@/layers/entities/agent', () => ({
@@ -160,15 +172,15 @@ describe('onboarding skip semantics (DOR-472)', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => cleanup());
 
-  it('skipping the personality beat lands on the discovery beat, flow still mounted', async () => {
+  it('skipping the personality beat lands on the profile beat, flow still mounted', async () => {
     const { onComplete, readStage } = await renderFlow('/?onboarding=conversation');
     await screen.findByTestId('skip-personality');
 
     fireEvent.click(screen.getByTestId('skip-personality'));
 
-    // The next beat is what is on screen: discovery's consent chips.
-    expect(await screen.findByText('Sure, look around')).toBeTruthy();
-    expect(screen.getByText('Not now')).toBeTruthy();
+    // The next beat is what is on screen: the role question's chips.
+    expect(await screen.findByTestId('confirm-profile')).toBeTruthy();
+    expect(screen.getByTestId('skip-profile')).toBeTruthy();
     // The beat that was skipped is gone, and the flow around it is not.
     expect(screen.queryByTestId('skip-personality')).toBeNull();
     expectFlowStillMounted();
@@ -185,6 +197,7 @@ describe('onboarding skip semantics (DOR-472)', () => {
     await screen.findByTestId('skip-personality');
 
     fireEvent.click(screen.getByTestId('skip-personality'));
+    fireEvent.click(await screen.findByTestId('skip-profile'));
     fireEvent.click(await screen.findByText('Not now'));
 
     // Last beat: the live composer, reached without ever leaving onboarding.
@@ -197,13 +210,17 @@ describe('onboarding skip semantics (DOR-472)', () => {
     // a person who skipped every beat still gets the getting-started card.
     expect(mockCompleteOnboarding).toHaveBeenCalledTimes(1);
     expect(mockSkipStep).toHaveBeenCalledWith('meet-dorkbot');
+    expect(mockSkipStep).toHaveBeenCalledWith('profile');
     expect(mockSkipStep).toHaveBeenCalledWith('discovery');
+    // Skipping the profile beat wrote nothing to the profile.
+    expect(mockSaveRoles).not.toHaveBeenCalled();
   });
 
   it('a skipped beat can be taken again: Back then Continue restarts the conversation', async () => {
     await renderFlow('/?onboarding=conversation');
     await screen.findByTestId('skip-personality');
     fireEvent.click(screen.getByTestId('skip-personality'));
+    fireEvent.click(await screen.findByTestId('skip-profile'));
     await screen.findByText('Sure, look around');
 
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));

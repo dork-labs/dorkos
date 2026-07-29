@@ -34,13 +34,10 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * post triggers nobody.
  */
 test.describe('Rooms — posting, switching and staying live @smoke', () => {
-  // Only the config write happens here. Rooms are seeded inside each test and
-  // BEFORE the cockpit loads, so the sidebar's first read of the room list
-  // already holds them — seeding after the page was up made the test depend on
-  // catching a live `room_created` signal, a race it does not exist to exercise.
-  test.beforeEach(async ({ roomsApi }) => {
-    await roomsApi.dismissOnboarding();
-  });
+  // Rooms are seeded inside each test and BEFORE the cockpit loads, so the
+  // sidebar's first read of the room list already holds them — seeding after the
+  // page was up made the test depend on catching a live `room_created` signal, a
+  // race it does not exist to exercise.
 
   test('create a channel from the sidebar, post to it, and read the post back', async ({
     page,

@@ -25,8 +25,8 @@ export interface RoomTitleProps {
  * elements rather than an `aria-label` on the span, because ARIA prohibits
  * `aria-label` on an element with no role and a browser may drop it.
  *
- * A room whose name carries no mark — a DM, a thread — renders as one text node,
- * because there is nothing for the two forms to disagree about.
+ * A room whose name carries no mark — a DM — renders as one text node, because
+ * there is nothing for the two forms to disagree about.
  */
 export function RoomTitle({ room, className }: RoomTitleProps) {
   const spoken = roomDisplayTitle(room);

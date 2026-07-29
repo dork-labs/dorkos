@@ -191,8 +191,8 @@ A room is a conversation more than one agent can be in. When you post, every age
   leave **Require login** off, which is the default, DorkOS cannot tell you apart from a program
   running on your own computer — so a program that does not say it is an agent counts as you, and
   can reset that limit. The hourly limits are the ones that hold either way, because they never ask
-  who is calling — and the *total* one is the real ceiling, since rooms and threads are free to
-  make. Turn on **Require login** to close the gap.
+  who is calling — and the *total* one is the real ceiling, since rooms are free to make. Turn on
+  **Require login** to close the gap.
 </Callout>
 
 ### Connectors
@@ -443,6 +443,39 @@ Uploaded files (from chat, workbench, or anywhere else you attach a file) are st
         'File types allowed for upload, as MIME type patterns. `["*/*"]` allows everything.',
       type: 'string[]',
       default: '["*/*"]',
+    },
+  }}
+/>
+
+### Your profile
+
+Tell DorkBot what kind of work you do, and every agent on this machine knows who it works for. DorkBot asks once during setup. Your answer is saved here and shared only with your own agents. It is local-only; never included in any telemetry payload.
+
+<TypeTable
+  type={{
+    'profile.roles': {
+      description:
+        'What kind of work you do (for example "hiring" or "software-development"). Up to 10 entries. Local-only; never included in any telemetry payload.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'profile.tools': {
+      description:
+        'Tools and services you work with, like "Gmail" or "Linear". DorkBot can add these for you when you mention them. Local-only; never included in any telemetry payload.',
+      type: 'string[]',
+      default: '[]',
+    },
+    'profile.displayName': {
+      description:
+        'What you like to be called. Optional. Local-only; never included in any telemetry payload.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'profile.rolePromptDismissedAt': {
+      description:
+        'When you told DorkBot "don\'t ask again" about your work. Set automatically; you never edit it. Local-only; never included in any telemetry payload.',
+      type: 'string | null',
+      default: 'null',
     },
   }}
 />

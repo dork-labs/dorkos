@@ -31,12 +31,14 @@ import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { useUpdateAgent } from '@/layers/entities/agent';
 import { useOnboarding } from '../model/use-onboarding';
+import { useProfile } from '../model/use-profile';
 import {
   useOnboardingConversation,
   type OnboardingConversationPorts,
 } from '../model/use-onboarding-conversation';
 import { ConversationDiscoveryBeat } from './ConversationDiscoveryBeat';
 import { OnboardingWidgetCard } from './OnboardingWidgetCard';
+import { ProfileRolePicker } from './ProfileRolePicker';
 
 /** How long the first-light arrival lingers before DorkBot speaks (ms). */
 const FIRST_LIGHT_MS = 1500;
@@ -65,6 +67,8 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   const { defaultAgentDir } = useDefaultAgentSession();
 
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
+  const [profileRoles, setProfileRoles] = useState<string[]>([]);
+  const { saveRoles } = useProfile();
   const [composerValue, setComposerValue] = useState('');
   // One-way latch so a double Enter during the exit never double-dissolves.
   const dissolvedRef = useRef(false);
@@ -87,6 +91,8 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
           // offers a retry — the right outcome for "we do not know where DorkBot
           // lives yet", and strictly better than writing somewhere we guessed.
           Promise.reject(new Error('DorkBot’s location is still loading — try again in a moment.')),
+    // The same deep-merge write path as tours: PATCH { profile: { roles } }.
+    saveProfile: (roles) => saveRoles(roles),
     completeStep,
     skipStep,
     completeOnboarding,
@@ -212,6 +218,13 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
     confirmLabel = 'Try again';
   }
 
+  let profileConfirmLabel = "That's us";
+  if (convo.saving) {
+    profileConfirmLabel = 'Saving…';
+  } else if (convo.saveError) {
+    profileConfirmLabel = 'Try again';
+  }
+
   return (
     <div className="mx-auto flex h-full w-full max-w-2xl flex-col">
       {/* Message area: while lines are still revealing, tap/click or press Enter
@@ -282,6 +295,23 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
                   </Button>
                 </div>
               </div>
+            </OnboardingWidgetCard>
+          </div>
+        )}
+
+        {convo.activeWidget === 'profile' && (
+          <div className="mt-3 px-1">
+            <OnboardingWidgetCard>
+              <ProfileRolePicker
+                selected={profileRoles}
+                onChange={setProfileRoles}
+                onConfirm={() => convo.confirmProfile(profileRoles)}
+                confirmLabel={profileConfirmLabel}
+                onSkip={convo.skipProfile}
+                skipLabel="Skip this"
+                busy={convo.saving}
+                error={convo.saveError ? DORKBOT_ONBOARDING_LINES.saveError : null}
+              />
             </OnboardingWidgetCard>
           </div>
         )}

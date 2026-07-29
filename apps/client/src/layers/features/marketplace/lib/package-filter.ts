@@ -4,7 +4,7 @@
  * @module features/marketplace/lib/package-filter
  */
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
-import { matchesMarketplaceSearch } from '@dorkos/marketplace';
+import { CONNECTOR_ADAPTER_TYPE, matchesMarketplaceSearch } from '@dorkos/marketplace';
 import type { MarketplaceTypeFilter } from '../model/marketplace-search';
 
 // ---------------------------------------------------------------------------
@@ -32,7 +32,10 @@ export interface FilterCriteria {
  * Return `true` when the package matches the active type filter.
  *
  * Packages whose `type` field is absent are treated as `'plugin'` (the
- * default declared in the AggregatedPackage JSDoc).
+ * default declared in the AggregatedPackage JSDoc). The `'connector'` filter
+ * is a refinement of `'adapter'`: it matches only adapter packages whose
+ * `adapterType` is the well-known connector value, while the plain
+ * `'adapter'` filter still includes them.
  *
  * @param pkg - Package to check.
  * @param typeFilter - Active type filter from the Marketplace store.
@@ -40,6 +43,9 @@ export interface FilterCriteria {
 function matchesType(pkg: AggregatedPackage, typeFilter: MarketplaceTypeFilter): boolean {
   if (typeFilter === 'all') return true;
   const effectiveType = pkg.type ?? 'plugin';
+  if (typeFilter === CONNECTOR_ADAPTER_TYPE) {
+    return effectiveType === 'adapter' && pkg.adapterType === CONNECTOR_ADAPTER_TYPE;
+  }
   return effectiveType === typeFilter;
 }
 

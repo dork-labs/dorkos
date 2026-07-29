@@ -95,6 +95,7 @@ vi.mock('@/layers/features/onboarding', () => ({
   useClearOnboardingStageWhenDone: () => {},
   OnboardingFlow: () => null,
   ProgressCard: () => null,
+  ProfilePromptCard: () => null,
 }));
 
 // ── Mock entity hooks ──

@@ -1,16 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockReadFile = vi.fn();
-const mockWriteFile = vi.fn().mockResolvedValue(undefined);
-const mockMkdir = vi.fn().mockResolvedValue(undefined);
-
-vi.mock('fs/promises', () => ({
-  default: {
-    readFile: (...args: unknown[]) => mockReadFile(...args),
-    writeFile: (...args: unknown[]) => mockWriteFile(...args),
-    mkdir: (...args: unknown[]) => mockMkdir(...args),
-  },
-}));
+/**
+ * Template route tests run against a real temp directory rather than a mocked
+ * `fs/promises`. The old mock pinned the write internals (which `writeFile`
+ * call carried which JSON), and a mocked filesystem cannot lose a concurrent
+ * update — the very defect DOR-697 fixed here. Asserting the catalog file's
+ * actual content covers both.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -18,9 +13,13 @@ vi.mock('../../lib/logger.js', () => ({
 
 import request from 'supertest';
 import express from 'express';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import { createTemplateRouter } from '../templates.js';
 
-const DORK_HOME = '/tmp/dork-test';
+let DORK_HOME: string;
 
 function createApp(): express.Express {
   const app = express();
@@ -29,29 +28,43 @@ function createApp(): express.Express {
   return app;
 }
 
-/** Helper to make mockReadFile return a user catalog JSON string. */
-function setUserCatalog(
-  templates: Array<{
-    id: string;
-    name: string;
-    description: string;
-    source: string;
-    category: string;
-    builtin: boolean;
-    tags: string[];
-  }>
-): void {
-  mockReadFile.mockResolvedValue(JSON.stringify({ version: 1, templates }));
+function catalogPath(): string {
+  return path.join(DORK_HOME, 'agent-templates.json');
 }
+
+/** Write a user catalog to disk the way the route persists it. */
+async function seedUserCatalog(templates: Array<Partial<TemplateEntry> & { id: string }>) {
+  await fs.writeFile(catalogPath(), JSON.stringify({ version: 1, templates }, null, 2), 'utf-8');
+}
+
+/** Read the persisted catalog back; fails the test if it is missing or torn. */
+async function readCatalog(): Promise<{ version: number; templates: TemplateEntry[] }> {
+  return JSON.parse(await fs.readFile(catalogPath(), 'utf-8')) as {
+    version: number;
+    templates: TemplateEntry[];
+  };
+}
+
+const USER_TEMPLATE: Omit<TemplateEntry, 'id'> = {
+  name: 'My Custom',
+  description: 'A custom template',
+  source: 'github:me/my-template',
+  category: 'custom',
+  builtin: false,
+  tags: ['custom'],
+};
 
 describe('Template Routes', () => {
   let app: express.Express;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    // Default: file not found (no user catalog)
-    mockReadFile.mockRejectedValue(new Error('ENOENT'));
+    DORK_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'templates-routes-'));
     app = createApp();
+  });
+
+  afterEach(async () => {
+    await fs.rm(DORK_HOME, { recursive: true, force: true });
   });
 
   describe('GET /api/templates', () => {
@@ -65,17 +78,7 @@ describe('Template Routes', () => {
     });
 
     it('returns merged list with user templates when file exists', async () => {
-      setUserCatalog([
-        {
-          id: 'my-custom',
-          name: 'My Custom',
-          description: 'A custom template',
-          source: 'github:me/my-template',
-          category: 'custom',
-          builtin: false,
-          tags: ['custom'],
-        },
-      ]);
+      await seedUserCatalog([{ id: 'my-custom', ...USER_TEMPLATE }]);
 
       const res = await request(app).get('/api/templates');
 
@@ -85,7 +88,7 @@ describe('Template Routes', () => {
     });
 
     it('handles malformed catalog file gracefully', async () => {
-      mockReadFile.mockResolvedValue('{ not valid json !!!');
+      await fs.writeFile(catalogPath(), '{ not valid json !!!', 'utf-8');
 
       const res = await request(app).get('/api/templates');
 
@@ -94,7 +97,7 @@ describe('Template Routes', () => {
     });
 
     it('handles catalog with invalid schema gracefully', async () => {
-      mockReadFile.mockResolvedValue(JSON.stringify({ bad: 'data' }));
+      await fs.writeFile(catalogPath(), JSON.stringify({ bad: 'data' }), 'utf-8');
 
       const res = await request(app).get('/api/templates');
 
@@ -121,11 +124,9 @@ describe('Template Routes', () => {
       expect(res.body.id).toBe('my-new');
       expect(res.body.builtin).toBe(false);
 
-      // Verify writeFile was called with the template
-      expect(mockWriteFile).toHaveBeenCalledOnce();
-      const written = JSON.parse(mockWriteFile.mock.calls[0][1] as string);
+      const written = await readCatalog();
       expect(written.templates).toHaveLength(1);
-      expect(written.templates[0].builtin).toBe(false);
+      expect(written.templates[0]!.builtin).toBe(false);
     });
 
     it('returns 400 on missing required fields', async () => {
@@ -161,17 +162,7 @@ describe('Template Routes', () => {
     });
 
     it('returns 409 on ID conflict with existing user template', async () => {
-      setUserCatalog([
-        {
-          id: 'existing',
-          name: 'Existing',
-          description: 'Already exists',
-          source: 'github:me/existing',
-          category: 'custom',
-          builtin: false,
-          tags: [],
-        },
-      ]);
+      await seedUserCatalog([{ id: 'existing', ...USER_TEMPLATE }]);
 
       const res = await request(app).post('/api/templates').send({
         id: 'existing',
@@ -198,30 +189,71 @@ describe('Template Routes', () => {
       expect(res.body.tags).toEqual([]);
       expect(res.body.builtin).toBe(false);
     });
+
+    // DOR-697. Both POST and DELETE read the catalog, mutate, and write it
+    // back — a read-modify-write over one file — and the old write was a plain
+    // truncating `writeFile`, so a reader could catch the mid-truncation state,
+    // parse-fail to `[]`, and the next write would erase the whole catalog.
+    // Concurrency is the reproduction; sequentially these cannot fail.
+    describe('concurrent requests', () => {
+      it('keeps every template when many POSTs land at once', async () => {
+        const N = 10;
+
+        const responses = await Promise.all(
+          Array.from({ length: N }, (_, i) =>
+            request(app)
+              .post('/api/templates')
+              .send({
+                id: `tpl-${i}`,
+                name: `Template ${i}`,
+                description: 'Concurrent write test',
+                source: `github:me/tpl-${i}`,
+                category: 'custom',
+              })
+          )
+        );
+
+        expect(responses.map((r) => r.status)).toEqual(Array.from({ length: N }, () => 201));
+
+        // Every 201 must be durable: a lost update also returns 201.
+        const written = await readCatalog();
+        expect(written.templates.map((t) => t.id).sort()).toEqual(
+          Array.from({ length: N }, (_, i) => `tpl-${i}`).sort()
+        );
+      });
+
+      it('a concurrent DELETE and POST both survive', async () => {
+        await seedUserCatalog([{ id: 'doomed', ...USER_TEMPLATE }]);
+
+        const [del, post] = await Promise.all([
+          request(app).delete('/api/templates/doomed'),
+          request(app).post('/api/templates').send({
+            id: 'fresh',
+            name: 'Fresh',
+            description: 'Added during delete',
+            source: 'github:me/fresh',
+            category: 'custom',
+          }),
+        ]);
+
+        expect(del.status).toBe(200);
+        expect(post.status).toBe(201);
+        const ids = (await readCatalog()).templates.map((t) => t.id);
+        expect(ids).toEqual(['fresh']);
+      });
+    });
   });
 
   describe('DELETE /api/templates/:id', () => {
     it('removes user template', async () => {
-      setUserCatalog([
-        {
-          id: 'to-delete',
-          name: 'Delete Me',
-          description: 'Will be deleted',
-          source: 'github:me/delete',
-          category: 'custom',
-          builtin: false,
-          tags: [],
-        },
-      ]);
+      await seedUserCatalog([{ id: 'to-delete', ...USER_TEMPLATE }]);
 
       const res = await request(app).delete('/api/templates/to-delete');
 
       expect(res.status).toBe(200);
       expect(res.body.deleted).toBe('to-delete');
 
-      // Verify writeFile was called with empty templates array
-      expect(mockWriteFile).toHaveBeenCalledOnce();
-      const written = JSON.parse(mockWriteFile.mock.calls[0][1] as string);
+      const written = await readCatalog();
       expect(written.templates).toHaveLength(0);
     });
 

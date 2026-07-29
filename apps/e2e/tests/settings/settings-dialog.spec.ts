@@ -58,14 +58,17 @@ test.describe('Settings — Dialog @smoke', () => {
     await settingsPage.open();
     await settingsPage.switchTab('Preferences');
 
-    // Should have 9 preference switches
-    const switchCount = await settingsPage.switches.count();
-    expect(switchCount).toBe(9);
+    // `toHaveCount` retries; `count()` does not, and sampling this mid-animation
+    // is what once made this read 16 for a tab that has 8.
+    await expect(settingsPage.switches).toHaveCount(8);
 
-    // Verify some specific preferences exist
-    await expect(settingsPage.activePanel.getByText('Show timestamps')).toBeVisible();
-    await expect(settingsPage.activePanel.getByText('Task celebrations')).toBeVisible();
-    await expect(settingsPage.activePanel.getByText('Notification sound')).toBeVisible();
+    // Named, not just counted — a count alone passes on a tab that swapped every
+    // preference for a different one. The name is the switch's `aria-label`; the
+    // control itself carries no text.
+    const panel = settingsPage.activePanel;
+    await expect(panel.getByRole('switch', { name: 'Show timestamps' })).toBeVisible();
+    await expect(panel.getByRole('switch', { name: 'Task celebrations' })).toBeVisible();
+    await expect(panel.getByRole('switch', { name: 'Notification sound' })).toBeVisible();
   });
 
   // What the status line shows is no longer a Settings concern: items promote when
@@ -79,9 +82,14 @@ test.describe('Settings — Dialog @smoke', () => {
     await settingsPage.open();
     await settingsPage.switchTab('Server');
 
-    await expect(settingsPage.portInfo).toBeVisible();
+    // The address carries the port, which stopped being a row of its own in
+    // DOR-539. Asserting its shape keeps this a test of what is displayed rather
+    // than of which port the run happened to pick.
+    await expect(settingsPage.addressInfo).toHaveText(/^http:\/\/localhost:\d+$/);
     await expect(settingsPage.nodeInfo).toBeVisible();
-    await expect(settingsPage.activePanel.getByText('Uptime')).toBeVisible();
-    await expect(settingsPage.activePanel.getByText('Working Directory')).toBeVisible();
+
+    const panel = settingsPage.activePanel;
+    await expect(panel.getByRole('button', { name: /^uptime/i })).toBeVisible();
+    await expect(panel.getByRole('button', { name: /^working directory/i })).toBeVisible();
   });
 });

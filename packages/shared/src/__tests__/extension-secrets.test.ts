@@ -317,4 +317,75 @@ describe('ExtensionSecretStore', () => {
       expect(result).toBe('persistent-value');
     });
   });
+
+  // DOR-697. Callers construct a store per request, so `set`/`delete` are a
+  // read-modify-write over one shared file. Concurrency is the reproduction:
+  // sequentially these cannot fail.
+  describe('concurrent writes', () => {
+    it('keeps every key when separate instances write at once', async () => {
+      const dorkHome = await makeTempDir();
+      const N = 25;
+
+      await Promise.all(
+        Array.from({ length: N }, (_, i) =>
+          new ExtensionSecretStore('test-ext', dorkHome).set(`key-${i}`, `value-${i}`)
+        )
+      );
+
+      const reader = new ExtensionSecretStore('test-ext', dorkHome);
+      const values = await Promise.all(Array.from({ length: N }, (_, i) => reader.get(`key-${i}`)));
+
+      expect(values).toEqual(Array.from({ length: N }, (_, i) => `value-${i}`));
+    });
+
+    it('keeps the file parseable and free of leftover temp files', async () => {
+      const dorkHome = await makeTempDir();
+
+      await Promise.all(
+        Array.from({ length: 20 }, (_, i) =>
+          new ExtensionSecretStore('test-ext', dorkHome).set(`key-${i}`, `value-${i}`)
+        )
+      );
+
+      const dir = path.join(dorkHome, 'extension-secrets');
+      expect((await fs.readdir(dir)).sort()).toEqual(['test-ext.json']);
+      const parsed = JSON.parse(await fs.readFile(path.join(dir, 'test-ext.json'), 'utf-8'));
+      expect(Object.keys(parsed as Record<string, string>)).toHaveLength(20);
+    });
+
+    it('does not let a concurrent write resurrect a deleted key', async () => {
+      const dorkHome = await makeTempDir();
+      const seed = new ExtensionSecretStore('test-ext', dorkHome);
+      await seed.set('doomed', 'value');
+      await seed.set('other', 'value');
+
+      await Promise.all([
+        new ExtensionSecretStore('test-ext', dorkHome).delete('doomed'),
+        new ExtensionSecretStore('test-ext', dorkHome).set('fresh', 'value'),
+      ]);
+
+      const reader = new ExtensionSecretStore('test-ext', dorkHome);
+      expect(await reader.has('doomed')).toBe(false);
+      expect(await reader.has('other')).toBe(true);
+      expect(await reader.has('fresh')).toBe(true);
+    });
+
+    it('writes for different extensions do not block each other', async () => {
+      const dorkHome = await makeTempDir();
+
+      await Promise.all(
+        Array.from({ length: 10 }, (_, i) =>
+          new ExtensionSecretStore(`ext-${i}`, dorkHome).set('key', `value-${i}`)
+        )
+      );
+
+      const values = await Promise.all(
+        Array.from({ length: 10 }, (_, i) =>
+          new ExtensionSecretStore(`ext-${i}`, dorkHome).get('key')
+        )
+      );
+
+      expect(values).toEqual(Array.from({ length: 10 }, (_, i) => `value-${i}`));
+    });
+  });
 });

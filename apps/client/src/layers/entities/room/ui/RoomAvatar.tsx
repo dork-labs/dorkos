@@ -102,10 +102,10 @@ export function RoomAvatar({
   className,
 }: RoomAvatarProps) {
   // Everything that is not a direct message is a place, and a place is drawn
-  // `#`. Written as "not a DM" rather than "is a channel" so a `kind='thread'`
-  // row left on an install from before threads became a relation between
-  // entries (ADR 260728-022013) still reads as a place, instead of falling
-  // through to the identity disc and being given somebody's face.
+  // `#`. Written as "not a DM" rather than "is a channel" because the fallback
+  // matters more than the match: a DM's mark is a person's face, and the one
+  // outcome worth ruling out is a room being handed somebody's face because its
+  // kind was not the one this branch expected.
   if (room.kind !== 'dm') {
     return (
       <Hash

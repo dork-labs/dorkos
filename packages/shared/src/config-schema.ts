@@ -100,14 +100,17 @@ export function parseCredentialReference(
 }
 
 /**
- * The guided onboarding steps a first-time user walks through. Trimmed to the
- * two that survive the shorter first-run flow: meeting DorkBot and importing
- * projects. The former `'tasks'` and `'adapters'` values were retired (task
- * scheduling moved out of onboarding; the adapters step never shipped) — a
+ * The guided onboarding steps a first-time user walks through: meeting DorkBot
+ * (personality), telling it what kind of work you do (`'profile'`, the role
+ * beat from spec `user-profile-onboarding`), and importing projects
+ * (`'discovery'`). The former `'tasks'` and `'adapters'` values were retired
+ * (task scheduling moved out of onboarding; the adapters step never shipped) — a
  * config migration scrubs them from any persisted `completedSteps`/`skippedSteps`
- * so a narrowed enum never fails to parse an upgraded config.
+ * so a narrowed enum never fails to parse an upgraded config. Adding `'profile'`
+ * is the opposite move: widening is additive, old stored arrays still parse, and
+ * no scrub migration is needed.
  */
-export const ONBOARDING_STEPS = ['meet-dorkbot', 'discovery'] as const;
+export const ONBOARDING_STEPS = ['meet-dorkbot', 'profile', 'discovery'] as const;
 
 export const OnboardingStepSchema = z.enum(ONBOARDING_STEPS);
 export type OnboardingStep = z.infer<typeof OnboardingStepSchema>;
@@ -146,6 +149,46 @@ export type ToursState = z.infer<typeof ToursStateSchema>;
 
 /** Frozen defaults for the {@link ToursStateSchema} block (empty on a fresh install). */
 export const TOURS_DEFAULTS: ToursState = ToursStateSchema.parse({});
+
+/**
+ * What the user has told DorkOS about themselves (spec `user-profile-onboarding`).
+ *
+ * **Local-only by tested invariant, not by promise:** the telemetry heartbeat
+ * and usage-event payloads are strict allowlists that never carry any of these
+ * fields, and sentinel-value exclusion tests keep it that way. The profile is
+ * used in exactly two places: a short factual `<user_profile>` block projected
+ * into every session's agent context, and the pure role → recommendations
+ * mapping in `@dorkos/shared/profile-recommendations`.
+ *
+ * All four leaves are `expose` + `agent-writable` on purpose: agents knowing
+ * and updating the profile IS the feature (DorkBot saves "call me Dorian" or
+ * "I also use Figma" via `config_patch` mid-conversation).
+ */
+export const UserProfileSchema = z.object({
+  /** What kind of work the user does. Free-form, but onboarding offers ROLE_CANON. */
+  roles: z
+    .array(z.string().trim().min(1).max(60))
+    .max(10)
+    .default(() => []),
+  /** Tools/services the user works with (e.g. "Gmail", "Linear"). Not asked in onboarding v1. */
+  tools: z
+    .array(z.string().trim().min(1).max(60))
+    .max(50)
+    .default(() => []),
+  /** What the user likes to be called. Optional; never required. */
+  displayName: z.string().trim().min(1).max(80).nullable().default(null),
+  /**
+   * ISO timestamp when the one-time existing-user prompt was dismissed
+   * ("don't ask again"). Machine-managed; null = never dismissed.
+   */
+  rolePromptDismissedAt: z.string().nullable().default(null),
+});
+
+/** What the user has told DorkOS about themselves (see {@link UserProfileSchema}). */
+export type UserProfile = z.infer<typeof UserProfileSchema>;
+
+/** Frozen defaults for the {@link UserProfileSchema} block (empty on a fresh install). */
+export const USER_PROFILE_DEFAULTS: UserProfile = UserProfileSchema.parse({});
 
 /**
  * A section's per-agent display filter (agent-list-settings, DOR-339): `all`
@@ -732,6 +775,13 @@ export const UserConfigSchema = z.object({
     completedAt: null,
   })),
   tours: ToursStateSchema.default(() => ({ seen: [], declined: [] })),
+  /** Who the user is, in their own words. Local-only — see {@link UserProfileSchema}. */
+  profile: UserProfileSchema.default(() => ({
+    roles: [],
+    tools: [],
+    displayName: null,
+    rolePromptDismissedAt: null,
+  })),
   agentContext: z
     .object({
       relayTools: z.boolean().default(true),

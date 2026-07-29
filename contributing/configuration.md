@@ -263,6 +263,15 @@ The `onboarding` section tracks first-time setup state (`completedSteps`, `skipp
 
 The `tours` section tracks the DorkBot living tour (`seen`, `declined`) so a subsystem tour never re-offers itself once the user has run or declined it. It is managed automatically by the client and should not be edited manually.
 
+The `profile` section is what the user has told DorkOS about themselves (spec `user-profile-onboarding`). It is projected into every session's agent context as a `<user_profile>` block and feeds the role → recommendations mapping in `@dorkos/shared/profile-recommendations`. Every field is local-only; never included in any telemetry payload (pinned by sentinel-exclusion tests on the heartbeat and usage-event catalogs). All four leaves are `expose` + `agent-writable` on purpose — agents knowing and updating the profile is the feature.
+
+| Key                             | Type                       | Default | Description                                                                                                                                                       |
+| ------------------------------- | -------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile.roles`                 | string[] (≤10, ≤60 chars)  | `[]`    | What kind of work the user does. Free-form; onboarding offers the `ROLE_CANON` chips. Local-only; never included in any telemetry payload                         |
+| `profile.tools`                 | string[] (≤50, ≤60 chars)  | `[]`    | Tools/services the user works with (e.g. `Gmail`, `Linear`). Not asked in onboarding v1; DorkBot fills it via `config_patch`. Local-only; never in telemetry      |
+| `profile.displayName`           | string (≤80 chars) \| null | `null`  | What the user likes to be called. Optional; never required. Local-only; never included in any telemetry payload                                                   |
+| `profile.rolePromptDismissedAt` | string \| null             | `null`  | ISO timestamp when the one-time existing-user role prompt was dismissed ("don't ask again"). Machine-managed. Local-only; never included in any telemetry payload |
+
 The following settings are controlled exclusively by environment variables and have no corresponding config file key:
 
 | Environment Variable      | Default                            | Description                                                                                                                                                                                                                                                         |
@@ -641,7 +650,9 @@ Two rolling caps on automatic turns, and the **only** spend bounds that do not d
 
 These caps do not ask. They count every automatic turn a room starts, refuse past the number, and write a `budget_reached` notice once per exhaustion.
 
-**Both exist because only one of them bounds spend.** The per-room cap bounds a _room_, and rooms are free — a caller multiplies its allowance by creating them (measured: 2/room bought 16 turns across 8 channels, and 12 across 5 threads off one parent, since a thread inherits the parent's roster). The total cap is the ceiling. The per-room cap stays because it stops a single busy room eating the whole allowance and starving the others.
+**Both exist because only one of them bounds spend.** The per-room cap bounds a _room_, and rooms are free — a caller multiplies its allowance by creating them (measured: 2/room bought 16 turns across 8 channels). The total cap is the ceiling. The per-room cap stays because it stops a single busy room eating the whole allowance and starving the others.
+
+Threads used to be the cheaper version of that lever and are not any more. While a thread was a child room it carried a window of its own and five threads off one parent bought 12 turns against a cap of 2; under ADR `260728-022013` a thread reply is an entry in its channel, so one window covers a channel and everything threaded inside it.
 
 Set either to `0` to stop automatic replies entirely.
 

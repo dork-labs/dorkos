@@ -22,6 +22,23 @@ describe('DorkosEntrySchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts an adapter entry carrying adapterType (connector discovery)', () => {
+    const result = DorkosEntrySchema.safeParse({ type: 'adapter', adapterType: 'connector' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.adapterType).toBe('connector');
+  });
+
+  it('leaves adapterType undefined when absent', () => {
+    const result = DorkosEntrySchema.safeParse({ type: 'adapter' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.adapterType).toBeUndefined();
+  });
+
+  it('rejects an empty adapterType', () => {
+    const result = DorkosEntrySchema.safeParse({ type: 'adapter', adapterType: '' });
+    expect(result.success).toBe(false);
+  });
+
   it('accepts all valid layer enum values', () => {
     const layers = [
       'skills',

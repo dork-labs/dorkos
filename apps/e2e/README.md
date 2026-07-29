@@ -35,9 +35,10 @@ the site specs need it: `marketplace.spec.ts` and `features.spec.ts` (the
 marketing site instead of the cockpit. The leg boots only when `E2E_SITE=1`. When
 it is off, those specs are skipped so they never hang on an unreachable site.
 
-No workflow runs this browser suite in CI today. The config also turns the leg on
-by default when `CI` is set (unless `E2E_SITE=0`) — a forward-looking default so
-that if the suite is ever CI-wired, the site specs keep running there.
+In CI the leg is on: the config defaults it on whenever `CI` is set (unless
+`E2E_SITE=0`), and the gate that runs this suite —
+`.github/workflows/browser-test.yml` — also sets `E2E_SITE=1` explicitly so its
+coverage does not ride the conditional.
 
 If you add another spec that targets the site, add it to `SITE_SPECS`. Grep
 `tests/` for `6244` and `SITE_BASE_URL` to keep the list complete.
@@ -60,6 +61,33 @@ E2E_SITE=1 WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=1 pnpm --filter @dorkos/e2
 `apps/site/next.config.ts` also pins `turbopack.root` to the monorepo root, so a
 nested-worktree checkout no longer watches the entire outer repo tree.
 
+## Tests that need real model credentials are off by default (`E2E_INTEGRATION`)
+
+Specs tagged `@integration` start a real agent turn and wait for a model to
+answer. They need model credentials, and they spend real money per run. A PR
+runner has neither, so **they never run unless you ask for them** — in CI or on
+your machine:
+
+```bash
+E2E_INTEGRATION=1 pnpm --filter @dorkos/e2e e2e --project chromium
+```
+
+Off by default everywhere, not just in CI. Forgetting the flag costs you a
+skipped test; forgetting the opposite default costs you money.
+
+Tag a spec `@integration` whenever it cannot pass without a live model. If you
+can express it against `TestModeRuntime` instead, add it to `chat-mock.spec.ts`
+and it runs everywhere.
+
+## The suite turns on the features it tests
+
+`DORKOS_TASKS_ENABLED` and `DORKOS_RELAY_ENABLED` are off by default in the
+server, and the Tasks and Relay dialogs render a "start DorkOS with…"
+placeholder instead of the real panel when they are. The `Express API` leg sets
+both, so the specs assert the real thing. Do not rely on your own `.env` for
+this — it is untracked, so it would make "does this spec pass" a property of
+your machine.
+
 ## Isolated run recipe
 
 To run the cockpit suite (or one spec) on a machine whose default ports are busy
@@ -71,23 +99,53 @@ server at a throwaway `DORK_HOME`. `E2E_SITE` stays unset, so no site leg boots.
 env -u E2E_SITE \
   DORKOS_PORT=4252 VITE_PORT=4251 \
   DORKOS_MOCK_PORT=4253 DORKOS_MOCK_VITE_PORT=4258 \
-  DORK_HOME="$PWD/../../.temp/dork-e2e-iso" \
+  DORK_HOME=/tmp/dork-e2e-iso \
   pnpm exec playwright test tests/smoke/app-loads.spec.ts --project chromium
 ```
 
 Notes:
 
 - Override the mock ports too (`DORKOS_MOCK_PORT` / `DORKOS_MOCK_VITE_PORT`).
-  `reuseExistingServer` is on outside CI, so a mock leg left on its default port
-  would silently attach to another run's server. Fresh ports keep the run yours.
-- Use a fresh `DORK_HOME` so the run never touches your real `~/.dork` data.
+  No run adopts a server it did not start, so a leg whose port is already busy
+  is a **startup error naming that port** — not, as it once was, a silent
+  attachment to whatever was answering. Fresh ports are what let this run
+  alongside a live cockpit; without them you get a loud refusal instead of a
+  quiet one. The mock leg also deletes its `DORK_HOME` on boot, and that
+  directory is keyed by `DORKOS_MOCK_PORT`, so overriding the port is also what
+  keeps two concurrent runs from wiping each other's.
+- Use a fresh `DORK_HOME` so the run never touches your real `~/.dork` data. Any
+  path works, including one inside the checkout — the API legs no longer run
+  under a file watcher, so a `DORK_HOME` the server writes to on boot can no
+  longer restart it (see "Why the API legs do not watch" below).
+- A never-onboarded `DORK_HOME` opens on the first-run wizard, which renders
+  _instead of_ the app shell — so every spec would time out waiting for
+  `[data-testid="app-shell"]`. `global-setup.ts` dismisses it on every API leg
+  before the first spec runs, which is what makes a throwaway `DORK_HOME` usable
+  at all.
 - `--project chromium` runs the cockpit project; add `-g "<title>"` to run a
   single test by name.
+
+## Why the API legs do not watch
+
+Both Express legs boot with `turbo run build` + a plain `tsx` — never
+`turbo dev`, which is `tsx watch`.
+
+On boot the server compiles each core extension to
+`DORK_HOME/cache/extensions/server/_run/<id>.js` and `require()`s it. `tsx watch`
+watches everything the process requires, so it treats that write as a source
+change and restarts, which rewrites the file, which restarts again: a measured
+~23 restarts in 45 seconds until the run dies.
+
+The default `DORK_HOME` (`apps/server/.temp/.dork`) hides this by accident,
+because `tsx` ignores dot-directories under its own cwd. Point `DORK_HOME`
+anywhere else and the loop is back — which is why the isolated recipe above used
+to be unrunnable. Tests never edit source, so nothing is lost by not watching.
+
 - Moving the site leg to another port takes two env vars, not one.
-  `DORKOS_SITE_PORT` relocates the leg, but `marketplace.spec.ts` hardcodes
-  `http://localhost:6244` and `features.spec.ts` falls back to it. Only
-  `features.spec.ts` reads `SITE_BASE_URL`, so set `DORKOS_SITE_PORT` and
-  `SITE_BASE_URL` together (and leave `marketplace.spec.ts` on 6244).
+  `DORKOS_SITE_PORT` relocates the leg, and both site specs
+  (`marketplace.spec.ts`, `features.spec.ts`) default their base URL to
+  `http://localhost:6244` unless `SITE_BASE_URL` says otherwise — so set
+  `DORKOS_SITE_PORT` and `SITE_BASE_URL` together.
 
 ## Common commands
 

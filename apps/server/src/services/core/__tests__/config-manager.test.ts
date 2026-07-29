@@ -37,6 +37,7 @@ import {
   backfillTelemetryLinkAnalyticsToAccount,
   backfillTelemetryAiMetadataChannel,
   scrubRetiredOnboardingSteps,
+  backfillProfileDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import fs from 'fs';
@@ -308,6 +309,78 @@ describe('ConfigManager', () => {
     // Existing user data survives untouched.
     expect(configManager.getDot('server.port')).toBe(5000);
     expect(configManager.getDot('runtimes.default')).toBe('claude-code');
+  });
+
+  it('a stale pre-profile config gains the profile block with defaults (user-profile-onboarding)', () => {
+    // A real config.json persisted before the profile block existed.
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 5000, cwd: null, boundary: null, open: true },
+      }),
+      'utf-8'
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('profile')).toEqual({
+      roles: [],
+      tools: [],
+      displayName: null,
+      rolePromptDismissedAt: null,
+    });
+    // Existing user data survives the upgrade untouched.
+    expect(configManager.getDot('server.port')).toBe(5000);
+  });
+
+  it('a config with explicit profile values keeps them across a reload', () => {
+    const explicit = {
+      roles: ['hiring', 'business-ops'],
+      tools: ['Gmail', 'Greenhouse'],
+      displayName: 'Dorian',
+      rolePromptDismissedAt: '2026-07-29T00:00:00.000Z',
+    };
+    fs.mkdirSync(testDir, { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        profile: explicit,
+      }),
+      'utf-8'
+    );
+
+    const configManager = initConfigManager(testDir);
+    expect(configManager.get('profile')).toEqual(explicit);
+    // And a second manager over the same file still reads the same values.
+    const second = new ConfigManager(testDir);
+    expect(second.get('profile')).toEqual(explicit);
+  });
+});
+
+describe('backfillProfileDefaults migration', () => {
+  it('backfills the profile section with empty defaults when absent', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillProfileDefaults(store);
+    expect(store.data.profile).toEqual({
+      roles: [],
+      tools: [],
+      displayName: null,
+      rolePromptDismissedAt: null,
+    });
+  });
+
+  it('is idempotent (leaves an existing profile untouched)', () => {
+    const existing = {
+      roles: ['hiring'],
+      tools: [],
+      displayName: 'Dorian',
+      rolePromptDismissedAt: null,
+    };
+    const store = createMockStore({ profile: existing });
+    backfillProfileDefaults(store);
+    expect(store.data.profile).toBe(existing);
   });
 });
 

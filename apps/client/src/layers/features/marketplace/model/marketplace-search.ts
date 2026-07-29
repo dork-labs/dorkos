@@ -10,16 +10,19 @@
  * @module features/marketplace/model/marketplace-search
  */
 import { z } from 'zod';
-import { PackageTypeSchema } from '@dorkos/marketplace';
+import { CONNECTOR_ADAPTER_TYPE, PackageTypeSchema } from '@dorkos/marketplace';
 import type { MarketplacePackageType } from '@dorkos/shared/marketplace-schemas';
 
 /**
  * Type filter for the Marketplace browse grid.
  *
- * `'all'` disables type filtering; the rest correspond directly to
- * `MarketplacePackageType` values so the filter stays in sync with the schema.
+ * `'all'` disables type filtering; the five package types correspond directly
+ * to `MarketplacePackageType` values so the filter stays in sync with the
+ * schema. `'connector'` is a refinement of `'adapter'`: it narrows to adapter
+ * packages whose `adapterType` is the well-known connector value, while the
+ * generic adapter facet still includes them.
  */
-export type MarketplaceTypeFilter = 'all' | MarketplacePackageType;
+export type MarketplaceTypeFilter = 'all' | MarketplacePackageType | typeof CONNECTOR_ADAPTER_TYPE;
 
 /**
  * Sort order for the Marketplace browse grid.
@@ -62,9 +65,10 @@ export type MarketplaceView = 'browse' | 'installed';
 export const marketplaceSearchSchema = z.object({
   view: z.enum(['browse', 'installed']).optional(),
   // Derive the type facet from the package taxonomy so a future 6th type can't
-  // go stale here the way `shape` once did — `'all'` plus every PackageType.
+  // go stale here the way `shape` once did — `'all'` plus every PackageType,
+  // plus the connector refinement of the adapter facet.
   type: z
-    .enum(['all', ...PackageTypeSchema.options])
+    .enum(['all', ...PackageTypeSchema.options, CONNECTOR_ADAPTER_TYPE])
     .optional()
     .catch(undefined),
   sort: z.enum(['featured', 'name', 'popular', 'recent']).optional().catch(undefined),

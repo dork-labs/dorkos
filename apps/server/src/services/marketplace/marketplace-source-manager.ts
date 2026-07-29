@@ -8,8 +8,9 @@
  *
  * @module services/marketplace/marketplace-source-manager
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { withFileLock } from '@dorkos/shared/atomic-write';
 import { z } from 'zod';
 import type { MarketplaceSource } from './types.js';
 
@@ -115,7 +116,9 @@ export class MarketplaceSourceManager {
    * invalid data.
    */
   async list(): Promise<MarketplaceSource[]> {
-    const file = await this.readFileOrSeed();
+    // The lock covers the read because a first-run read seeds the file and a
+    // legacy read migrates it — both writes that must not race a mutator.
+    const file = await withFileLock(this.filePath, (write) => this.readFileOrSeed(write));
     return file.sources;
   }
 
@@ -142,19 +145,24 @@ export class MarketplaceSourceManager {
     source: string;
     enabled?: boolean;
   }): Promise<MarketplaceSource> {
-    const file = await this.readFileOrSeed();
-    if (file.sources.some((s) => s.name === input.name)) {
-      throw new Error(`Marketplace source '${input.name}' already exists`);
-    }
-    const created: MarketplaceSource = {
-      name: input.name,
-      source: input.source,
-      enabled: input.enabled ?? true,
-      addedAt: new Date().toISOString(),
-    };
-    file.sources.push(created);
-    await this.writeFile(file);
-    return created;
+    // Read-modify-write: the read must sit inside the lock (DOR-697). With
+    // only the write serialised, two mutators both read the same starting
+    // state and the second write silently drops the first one's change.
+    return withFileLock(this.filePath, async (write) => {
+      const file = await this.readFileOrSeed(write);
+      if (file.sources.some((s) => s.name === input.name)) {
+        throw new Error(`Marketplace source '${input.name}' already exists`);
+      }
+      const created: MarketplaceSource = {
+        name: input.name,
+        source: input.source,
+        enabled: input.enabled ?? true,
+        addedAt: new Date().toISOString(),
+      };
+      file.sources.push(created);
+      await this.serialize(write, file);
+      return created;
+    });
   }
 
   /**
@@ -163,12 +171,14 @@ export class MarketplaceSourceManager {
    * @param name - The user-chosen identifier of the source to remove
    */
   async remove(name: string): Promise<void> {
-    const file = await this.readFileOrSeed();
-    const next = file.sources.filter((s) => s.name !== name);
-    if (next.length === file.sources.length) {
-      return;
-    }
-    await this.writeFile({ version: 1, sources: next });
+    await withFileLock(this.filePath, async (write) => {
+      const file = await this.readFileOrSeed(write);
+      const next = file.sources.filter((s) => s.name !== name);
+      if (next.length === file.sources.length) {
+        return;
+      }
+      await this.serialize(write, { version: 1, sources: next });
+    });
   }
 
   /**
@@ -180,28 +190,37 @@ export class MarketplaceSourceManager {
    * @throws Error when no source with the given name exists
    */
   async setEnabled(name: string, enabled: boolean): Promise<MarketplaceSource> {
-    const file = await this.readFileOrSeed();
-    const target = file.sources.find((s) => s.name === name);
-    if (!target) {
-      throw new Error(`Marketplace source '${name}' not found`);
-    }
-    target.enabled = enabled;
-    await this.writeFile(file);
-    return target;
+    return withFileLock(this.filePath, async (write) => {
+      const file = await this.readFileOrSeed(write);
+      const target = file.sources.find((s) => s.name === name);
+      if (!target) {
+        throw new Error(`Marketplace source '${name}' not found`);
+      }
+      target.enabled = enabled;
+      await this.serialize(write, file);
+      return target;
+    });
   }
 
   /**
    * Read the marketplaces file from disk, seeding defaults on first run.
    * Throws a descriptive error when the file exists but is malformed.
+   *
+   * Must be called inside `withFileLock` on {@link filePath} — the first-run
+   * seed and the legacy-URL migration below both write, and `write` is the
+   * lock's own writer, so calling this unlocked would let those writes race a
+   * concurrent mutator.
+   *
+   * @param write - The atomic writer supplied by the enclosing `withFileLock`.
    */
-  private async readFileOrSeed(): Promise<MarketplacesFile> {
+  private async readFileOrSeed(write: (data: string) => Promise<void>): Promise<MarketplacesFile> {
     let raw: string;
     try {
       raw = await readFile(this.filePath, 'utf-8');
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         const seeded: MarketplacesFile = { version: 1, sources: buildDefaultSources() };
-        await this.writeFile(seeded);
+        await this.serialize(write, seeded);
         return seeded;
       }
       throw err;
@@ -227,21 +246,23 @@ export class MarketplaceSourceManager {
     // changed to avoid churn on every read.
     const rewrites = migrateKnownBadSources(parsed.data.sources);
     if (rewrites > 0) {
-      await this.writeFile(parsed.data);
+      await this.serialize(write, parsed.data);
     }
 
     return parsed.data;
   }
 
   /**
-   * Atomically write the marketplaces file to disk via tmp + rename so a
-   * crash mid-write never corrupts the canonical file.
+   * Serialize `file` through the enclosing lock's writer: atomic (tmp +
+   * rename), and mutual-exclusive with every other mutator of this file.
+   *
+   * @param write - The atomic writer supplied by the enclosing `withFileLock`.
+   * @param file - The marketplaces file to persist.
    */
-  private async writeFile(file: MarketplacesFile): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    const tmpPath = `${this.filePath}.tmp`;
-    const serialized = `${JSON.stringify(file, null, 2)}\n`;
-    await writeFile(tmpPath, serialized, 'utf-8');
-    await rename(tmpPath, this.filePath);
+  private async serialize(
+    write: (data: string) => Promise<void>,
+    file: MarketplacesFile
+  ): Promise<void> {
+    await write(`${JSON.stringify(file, null, 2)}\n`);
   }
 }
