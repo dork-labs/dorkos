@@ -117,8 +117,15 @@ export class RoomsPage {
    * @param spokenName - The room's spoken name.
    */
   rowIn(section: Locator, spokenName: string): Locator {
+    // Descendant, not direct child. The row's button used to be an immediate
+    // child of the menu item; DOR-572 wrapped it in a context-menu trigger
+    // (`SidebarMenuItem > div > button`), and the `>` combinator kept here
+    // silently stopped matching any room at all. The `has` filter is what makes
+    // the row unique — the only other button in the item is its "… actions"
+    // trigger, which holds no room title — so the looser combinator costs
+    // nothing and stops one more wrapper from doing this again.
     return section
-      .locator('[data-slot="sidebar-menu-item"] > button')
+      .locator('[data-slot="sidebar-menu-item"] button')
       .filter({ has: this.page.locator(`[data-slot="room-title"][title="${spokenName}"]`) });
   }
 

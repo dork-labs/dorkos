@@ -69,10 +69,6 @@ async function announcedNameAmong(page: Page, composer: Locator, names: string[]
  * its memberships to `mention-only`, so nothing here triggers a turn.
  */
 test.describe('Rooms — the @ mention picker @smoke', () => {
-  test.beforeEach(async ({ roomsApi }) => {
-    await roomsApi.dismissOnboarding();
-  });
-
   test('announces the row it inserts, and addresses that agent for real', async ({
     page,
     roomsApi,

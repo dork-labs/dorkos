@@ -1,4 +1,5 @@
 import type { Page, Locator } from '@playwright/test';
+import { openFromCommandPalette } from './command-palette';
 
 /**
  * Page Object Model for the local-login (Better Auth) surface:
@@ -16,11 +17,9 @@ export class AuthPage {
     this.settingsDialog = page.getByRole('dialog', { name: /settings/i });
   }
 
-  /** Open Settings (JS click due to overlay) and switch to the Security tab. */
+  /** Open Settings from the command palette and switch to the Security tab. */
   async openSecurityTab() {
-    await this.page.evaluate(() => {
-      (document.querySelector('button[aria-label="Settings"]') as HTMLElement)?.click();
-    });
+    await openFromCommandPalette(this.page, 'Settings');
     await this.settingsDialog.waitFor({ state: 'visible' });
     await this.settingsDialog.getByRole('tab', { name: /security/i }).click();
   }
