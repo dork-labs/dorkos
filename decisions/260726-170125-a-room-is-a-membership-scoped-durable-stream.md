@@ -42,7 +42,7 @@ The shape below was settled by `research/20260724_multi-user-communities.md` and
 
 We will model a **room** as a membership-scoped durable stream.
 
-**Structure.** A room has an id, a `kind` (`channel` | `dm` | `thread`), a roster of **memberships**, an optional parent room, and a durable append-only log. A **thread is a child room** — the same entity with a parent, one level deep — so threads need no second model, and the "N replies" summary row is a projection of the child's log rather than a new storage concept.
+**Structure.** A room has an id, a `kind` (`channel` | `dm` | ~~`thread`~~), a roster of **memberships**, ~~an optional parent room,~~ and a durable append-only log. ~~A **thread is a child room** — the same entity with a parent, one level deep — so threads need no second model, and the "N replies" summary row is a projection of the child's log rather than a new storage concept.~~ **[Retired by [260728-022013](260728-022013-a-thread-is-a-relation-between-entries.md); struck through here rather than only in the Status above, because the Status note's own recorded risk was that this sentence would be quoted without it. A thread is a set of entries in one room pointing at a common root; `rooms.parent_id` and `rooms.root_entry_id` were dropped in migration 0038.]**
 
 **A room is not a session; sessions post into it.** Three agents in a room are three sessions on one stream. Each session keeps its own runtime binding, working directory, context window and lifecycle; the room owns only the shared stream and the roster. This is what makes a mixed-runtime room possible at all, and it means a room can survive every session in it ending.
 

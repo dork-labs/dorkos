@@ -45,10 +45,6 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * opened here triggers nobody.
  */
 test.describe('Rooms — starting a direct message @smoke', () => {
-  test.beforeEach(async ({ roomsApi }) => {
-    await roomsApi.dismissOnboarding();
-  });
-
   test('picking one agent opens a one-to-one wearing that agent', async ({
     page,
     roomsApi,
@@ -122,15 +118,22 @@ test.describe('Rooms — starting a direct message @smoke', () => {
       expect(await visibleText(disc)).toBe(agent.emoji);
     }
 
-    // A group's mark is the first agent on its roster — read from the roster
-    // itself rather than assumed from the order they were picked in.
+    // A group's mark stacks its agents' faces rather than standing in for them
+    // with one, in roster order. Read the expected faces from the roster itself
+    // rather than assuming the order they were picked in.
+    //
+    // `RoomAvatar` stacks at most three (`MAX_STACKED_FACES`), so joining every
+    // agent on the roster is only the right expectation while this DM has three
+    // or fewer — it seeds two. A fourth agent here would need the cap applied.
     const roster = await roomsApi.getRoom(roomId);
-    const firstAgentEmoji = roster.members.find((m) => m.author.kind === 'agent')?.author.emoji;
-    expect(firstAgentEmoji, "the roster's first agent carries an emoji").toBeTruthy();
+    const agentEmoji = roster.members
+      .filter((m) => m.author.kind === 'agent')
+      .map((m) => m.author.emoji);
+    expect(agentEmoji.every(Boolean), 'every agent on the roster carries an emoji').toBe(true);
     await expect(roomsPage.rowIn(roomsPage.directMessages, title)).toHaveCount(1, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.rowMark(title)).toHaveText(firstAgentEmoji ?? '');
+    await expect(roomsPage.rowMark(title)).toHaveText(agentEmoji.join(''));
   });
 
   test('a query nobody matches does not open the half-assembled conversation', async ({

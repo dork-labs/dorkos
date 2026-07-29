@@ -16,12 +16,10 @@ function room(overrides: Partial<RoomSummary> = {}): RoomSummary {
   return {
     id: 'room-1',
     kind: 'channel',
-    parentId: null,
     slug: 'general',
     title: '#general',
     topic: null,
     workspaceId: null,
-    rootEntryId: null,
     archived: false,
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
@@ -74,12 +72,11 @@ describe('useRooms', () => {
 });
 
 describe('useRoomsByKind', () => {
-  it('splits channels from direct messages and drops threads', () => {
+  it('splits channels from direct messages', () => {
     const { result } = renderHook(() =>
       useRoomsByKind([
         room({ id: 'a', kind: 'channel' }),
         room({ id: 'b', kind: 'dm', slug: null, title: 'Ana' }),
-        room({ id: 'c', kind: 'thread', parentId: 'a', slug: null, title: 'Side note' }),
       ])
     );
     expect(result.current.channels.map((r) => r.id)).toEqual(['a']);

@@ -42,12 +42,10 @@ function author(overrides: Partial<AuthorRef> & Pick<AuthorRef, 'id'>): AuthorRe
 
 function room(overrides: Partial<RoomSummary> & Pick<RoomSummary, 'id' | 'kind'>): RoomSummary {
   return {
-    parentId: null,
     slug: null,
     title: 'Untitled',
     topic: null,
     workspaceId: null,
-    rootEntryId: null,
     archived: false,
     createdAt: '2026-07-01T00:00:00.000Z',
     lastActivityAt: '2026-07-20T10:00:00.000Z',
@@ -139,12 +137,6 @@ describe('roomSidebarItem', () => {
     expect(item.name).toBe('#general');
     expect(item.visual).toEqual({ kind: 'sigil' });
     expect(sidebarItemFaces(item.visual)).toEqual([]);
-  });
-
-  it('gives a thread the sigil too — a thread hangs off a room, not off a participant', () => {
-    expect(build(room({ id: 't1', kind: 'thread', title: 'Deploy fallout' })).visual).toEqual({
-      kind: 'sigil',
-    });
   });
 
   it("draws a one-to-one DM with the SAME face the agent's own row draws (DOR-582)", () => {

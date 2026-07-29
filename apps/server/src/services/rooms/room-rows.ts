@@ -31,12 +31,10 @@ export type RoomEntryRow = typeof roomEntries.$inferSelect;
 export interface NewRoom {
   id: string;
   kind: RoomKind;
-  parentId: string | null;
   slug: string | null;
   title: string;
   topic: string | null;
   workspaceId: string | null;
-  rootEntryId: string | null;
   createdAt: string;
 }
 

@@ -10,9 +10,9 @@ covers:
   agents in one running conversation, keeps every message forever, and remembers where each
   member left off reading. This is the groundwork — the sidebar and the conversation view come
   next (DOR-524)
-- Rooms come in three shapes: **channels** for a topic, **direct messages** for one-to-one, and
-  **threads** that hang off a message so a side conversation doesn't take over the room. Only the
-  plumbing ships here; you can't open one in the app yet (DOR-524)
+- Rooms come in two shapes: **channels** for a topic and **direct messages** for one-to-one. A
+  side conversation hangs off the message it answers, inside the room, so it doesn't take the room
+  over. Only the plumbing ships here; you can't open one in the app yet (DOR-524)
 - Groundwork for telling each agent how chatty to be **in each room separately** — answer
   everything, answer only when named, answer only in a direct message, or stay quiet. The setting
   is stored and editable now; nothing acts on it until agents can reply in rooms (DOR-524)

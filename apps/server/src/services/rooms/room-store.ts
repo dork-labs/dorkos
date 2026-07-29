@@ -599,12 +599,13 @@ export class RoomStore {
    * you have not seen", which stays true and stays clearable. The grouping
    * belongs in the render.
    *
-   * Two callers, two meanings, so a change here is never local. `RoomService.listRooms`
-   * reads it for the sidebar badge — that is the one this predicate is written
-   * for. `legacyChildRoomFrame` (`room-context.ts`) reuses it as a plain row
-   * count, which is sound only because every entry in a child-room thread is a
-   * reply; that caller and the room kind behind it both retire in PR 3 of
-   * DOR-634. Nothing new may take the second reading.
+   * One caller, one meaning, and it is worth keeping it that way:
+   * `RoomService.listRooms` reads it for the sidebar badge, which is what this
+   * predicate is written for. It briefly had a second reader that took it as a
+   * plain row count for a thread's `replyCount`, sound only while a thread had a
+   * room to itself; that reader and the room kind behind it retired together
+   * (ADR 260728-022013), and `countThreadReplies` is where a reply count comes
+   * from now.
    *
    * @param roomId - The room.
    * @param lastReadSeq - The member's read cursor.

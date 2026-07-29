@@ -28,10 +28,13 @@ extendZodWithOpenApi(z);
 // === Enums ===
 
 /**
- * The three shapes a room takes. A `thread` is the same entity with a parent —
- * one level deep, never a thread of a thread (ADR 260726-170125).
+ * The two shapes a room takes.
+ *
+ * There is no `thread` member and there is not going to be one: a thread is a
+ * relation between entries in one room's log, carried by `RoomEntry.parentEntryId`
+ * / `threadRootEntryId`, and a room list never contains one (ADR 260728-022013).
  */
-export const RoomKindSchema = z.enum(['channel', 'dm', 'thread']).openapi('RoomKind');
+export const RoomKindSchema = z.enum(['channel', 'dm']).openapi('RoomKind');
 
 export type RoomKind = z.infer<typeof RoomKindSchema>;
 
@@ -157,7 +160,6 @@ export const RoomSchema = z
   .object({
     id: z.string().min(1),
     kind: RoomKindSchema,
-    parentId: z.string().nullable().describe('Non-null exactly when kind is "thread".'),
     slug: z.string().nullable().describe('Channels only. Unique among non-archived channels.'),
     title: z.string().min(1),
     topic: z.string().nullable(),
@@ -165,10 +167,6 @@ export const RoomSchema = z
       .string()
       .nullable()
       .describe('Optional workspace reference. How it resolves a cwd is out of scope for v1.'),
-    rootEntryId: z
-      .string()
-      .nullable()
-      .describe('Threads only: the parent entry this thread hangs off.'),
     archived: z.boolean(),
     createdAt: z.string(),
     lastActivityAt: z.string(),
@@ -195,7 +193,7 @@ export const RoomSummarySchema = RoomSchema.extend({
     .array(AuthorRefSchema)
     .nullable()
     .describe(
-      "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel or a thread, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; a DM's roster is whoever one person assembled by hand, which is small enough to ride along on every list. A channel reads as `#slug` and a thread as its own glyph, so their rosters would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
+      "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; a DM's roster is whoever one person assembled by hand, which is small enough to ride along on every list. A channel reads as `#slug`, so its roster would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
     ),
 }).openapi('RoomSummary');
 
@@ -213,7 +211,7 @@ export const RoomMemberSchema = z
     roomId: z.string().min(1),
     authorId: z.string().min(1),
     responseMode: ResponseModeSchema.describe(
-      'Per-room override, written explicitly at join time. Seeded from the manifest for a DM, "mention-only" for a channel, inherited from the parent for a thread.'
+      'Per-room override, written explicitly at join time. Seeded from the manifest for a DM and "mention-only" for a channel. A thread is a position inside a channel rather than a room of its own, so a reply there reads the channel\'s value.'
     ),
     joinedAt: z.string(),
     lastReadSeq: z.number().int().min(0).describe('The (member, room) read cursor.'),

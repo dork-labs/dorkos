@@ -640,7 +640,9 @@ Two rolling caps on automatic turns, and the **only** spend bounds that do not d
 
 These caps do not ask. They count every automatic turn a room starts, refuse past the number, and write a `budget_reached` notice once per exhaustion.
 
-**Both exist because only one of them bounds spend.** The per-room cap bounds a _room_, and rooms are free — a caller multiplies its allowance by creating them (measured: 2/room bought 16 turns across 8 channels, and 12 across 5 threads off one parent, since a thread inherits the parent's roster). The total cap is the ceiling. The per-room cap stays because it stops a single busy room eating the whole allowance and starving the others.
+**Both exist because only one of them bounds spend.** The per-room cap bounds a _room_, and rooms are free — a caller multiplies its allowance by creating them (measured: 2/room bought 16 turns across 8 channels). The total cap is the ceiling. The per-room cap stays because it stops a single busy room eating the whole allowance and starving the others.
+
+Threads used to be the cheaper version of that lever and are not any more. While a thread was a child room it carried a window of its own and five threads off one parent bought 12 turns against a cap of 2; under ADR `260728-022013` a thread reply is an entry in its channel, so one window covers a channel and everything threaded inside it.
 
 Set either to `0` to stop automatic replies entirely.
 

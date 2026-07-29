@@ -117,7 +117,7 @@ import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
-import { backfillAgentWorkspaceProjections } from './services/harness/project-agent-workspace.js';
+import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
@@ -164,6 +164,7 @@ import { acquireInstanceLock } from './lib/instance-lock.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
+import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
@@ -222,6 +223,7 @@ let meshCore: MeshCore | undefined;
 let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
+let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
@@ -712,6 +714,14 @@ async function start() {
   setRoomService(roomService);
   logger.info('[Rooms] RoomService registered');
 
+  // Message search (ADR 260728-214214) — a derived index over what was said,
+  // rebuilt from the sources it reads and owning nothing. Unconditional and
+  // cheap: the sweep is one GROUP BY per source plus a read of whatever is new,
+  // and an install with nothing in it does no work at all. Nothing a person can
+  // reach queries these rows yet.
+  searchIndexer = new SearchIndexer(db);
+  searchIndexer.start();
+
   // Initialize Tasks scheduler if enabled
   const schedulerConfig = configManager.get('scheduler');
 
@@ -832,23 +842,30 @@ async function start() {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
 
-    // Repair the agent workspaces whose seeded `.agents/skills/` never reached
-    // `.claude/skills/`, so Claude Code could not see them (DOR-659). Runs on
-    // every boot, not once: the projection is idempotent and self-healing, so
-    // re-running is how a workspace that lost its links gets them back. Runs after
-    // startup reconciliation has populated the registry from disk, so it sees
-    // every agent; `dorkHome` scopes it to the homes DorkOS owns, because a
-    // registered agent can point at a person's own repository and a boot is not
-    // permission to write into one. Fire-and-forget: it yields between
-    // workspaces and never throws, so it repairs in the background instead of
-    // delaying boot.
+    // Bring every agent workspace DorkOS owns up to the current Operating DorkOS
+    // skill pack, and link it where Claude Code reads it. Two repairs in one
+    // pass: agents seeded once at creation never saw a later pack version, so
+    // they are still being taught corrections that were retracted versions ago
+    // (DOR-671), and agents seeded before the projection existed had their
+    // skills on disk but invisible to their runtime (DOR-659). Seeding runs
+    // before the projection, which is what makes a skill usable on THIS boot
+    // rather than the next one.
+    //
+    // Runs on every boot, not once: both halves are idempotent and self-healing,
+    // so re-running is how a workspace that lost its links or fell behind the
+    // pack catches up. Runs after startup reconciliation has populated the
+    // registry from disk, so it sees every agent; `dorkHome` scopes it to the
+    // homes DorkOS owns, because a registered agent can point at a person's own
+    // repository and a boot is not permission to write into one.
+    // Fire-and-forget: it yields between workspaces and never throws, so it
+    // repairs in the background instead of delaying boot.
     try {
       const workspaces = meshCore.listWithPaths().map((agent) => agent.projectPath);
-      backfillAgentWorkspaceProjections(workspaces, dorkHome).catch((err: unknown) => {
-        logger.warn('[Mesh] Agent workspace projection backfill failed', logError(err));
+      backfillAgentWorkspaceSkills(workspaces, dorkHome).catch((err: unknown) => {
+        logger.warn('[Mesh] Agent workspace skill backfill failed', logError(err));
       });
     } catch (err) {
-      logger.warn('[Mesh] Failed to start agent workspace projection backfill', logError(err));
+      logger.warn('[Mesh] Failed to start agent workspace skill backfill', logError(err));
     }
 
     // Tick the Pulse attention badge on a real liveness transition (an agent
@@ -1998,6 +2015,9 @@ async function shutdownServices() {
   }
   if (taskReconciler) {
     taskReconciler.stop();
+  }
+  if (searchIndexer) {
+    searchIndexer.stop();
   }
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();

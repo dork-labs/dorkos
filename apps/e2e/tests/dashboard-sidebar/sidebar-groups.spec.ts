@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { test, expect } from '../../fixtures';
 
 /**
@@ -18,19 +16,17 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
   const runId = randomUUID().slice(0, 8);
   const agentName = `E2E Sidebar Agent ${runId}`;
   const groupName = `E2E Group ${runId}`;
-  const agentDir = join(homedir(), '.dork-e2e-fixtures', `sidebar-dnd-${randomUUID()}`);
-  let agentId: string | undefined;
   /** The path the server canonicalized on registration — what `items` stores. */
-  let agentProjectPath: string | undefined;
+  let agentProjectPath: string;
 
-  test.beforeEach(async ({ request, basePage, dashboardSidebar }) => {
-    const res = await request.post('/api/mesh/agents', {
-      data: { path: agentDir, overrides: { name: agentName, runtime: 'claude-code' } },
-    });
-    expect(res.ok(), await res.text()).toBeTruthy();
-    const manifest = (await res.json()) as { id: string; projectPath: string };
-    agentId = manifest.id;
-    agentProjectPath = manifest.projectPath;
+  // Seeded through `roomsApi` rather than by hand: it registers the agent under
+  // a directory the run owns and deletes that directory again in teardown. The
+  // hand-rolled version put it under `~/.dork-e2e-fixtures` and only ever
+  // unregistered it, which removes `<path>/.dork` and leaves the directory —
+  // one more orphan in the operator's home per run, forever.
+  test.beforeEach(async ({ roomsApi, basePage, dashboardSidebar }) => {
+    const agent = await roomsApi.registerAgent(agentName, '🧩', '#8b5cf6');
+    agentProjectPath = agent.projectPath;
 
     await basePage.goto();
     await basePage.waitForAppReady();
@@ -38,21 +34,23 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     await expect(dashboardSidebar.agentRow(agentName)).toBeVisible();
   });
 
-  test.afterEach(async ({ request, dashboardSidebar }) => {
-    // Drop the group first (moves the member back to Agents) so no orphaned
-    // group with a dangling member path survives in the shared dev DORK_HOME
-    // this suite reuses (this project is not CI-isolated).
-    if (
-      await dashboardSidebar
-        .groupHeader(groupName)
-        .isVisible()
-        .catch(() => false)
-    ) {
-      await dashboardSidebar.deleteGroup(groupName);
-    }
-    if (agentId) {
-      await request.delete(`/api/mesh/agents/${agentId}/data`);
-    }
+  test.afterEach(async ({ request }) => {
+    // Drop the group over the API rather than by clicking its "…" menu. Groups
+    // live in `ui.sidebar.groups`, so removing one is a config write — and
+    // driving that through a hover-revealed menu inside a list that crossfades
+    // made teardown the least reliable part of this spec: it failed on a strict
+    // match against the two mounted copies of a row mid-animation, and again by
+    // timing out on the menu item after the test itself had already passed.
+    // Teardown should not be able to fail a test whose assertions all held.
+    // The agent is `roomsApi`'s to put away.
+    const res = await request.get('/api/config');
+    if (!res.ok()) return;
+    const config = (await res.json()) as {
+      ui: { sidebar: { groups: { name: string }[] } };
+    };
+    const groups = config.ui.sidebar.groups.filter((g) => g.name !== groupName);
+    if (groups.length === config.ui.sidebar.groups.length) return;
+    await request.patch('/api/config', { data: { ui: { sidebar: { groups } } } }).catch(() => {});
   });
 
   test('creates a group, drags an agent into it, and persists across reload', async ({

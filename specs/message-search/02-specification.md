@@ -304,6 +304,8 @@ CTX's change-signal taxonomy — reviewed at source by the operator during desig
 
 **The reconciler runs at 300,000 ms**, matching the three that already exist (`mesh-core.ts:391`, `task-reconciler.ts:16`, `workspace-reconciler.ts:15`), plus a startup sweep, plus an immediate write-through on the room path where DorkOS already owns the write. ADR-0043's accepted trade-off — up to five minutes of staleness — is inherited deliberately.
 
+**[Amended 2026-07-29 (DOR-680) — the write-through was not built, and is deferred rather than dropped. The reconciler and the startup sweep shipped. See Amendment 6.]**
+
 ### 6. Query, ranking, and prune
 
 #### 6.1 The query
@@ -719,3 +721,21 @@ This document states in three places that `search_room_history` becomes a caller
 **RP7 additionally needs `joinedSeq`, which does not exist.** Re-verified 2026-07-29: `grep joined_seq` across `packages/db/` and `apps/server/src/` returns nothing, and `room_members` carries only `joined_at` and `last_read_seq`. **RP3 lands it.** An index-backed `search_room_history` shipped before then would hand an agent a fast, ranked reader of everything said in its rooms before it joined — §7 already says this, and it is the reason the dependency is real rather than bookkeeping.
 
 **G5 as written is therefore not a goal this ticket can meet**, and no task in `03-tasks.json` claims it. What DOR-684 owes RP7 is a query service whose visible-set join is a parameter rather than an assumption, so that RP7 can pass a member-scoped room set without the service needing to know why.
+
+## Amendment 6 — the room write-through is deferred, and the reconciler is the only path in v1 (DOR-680)
+
+**Amends §5's reconciler paragraph.**
+
+§5 promises three things and DOR-680 shipped two: the 300,000 ms reconciler and the startup sweep are in `apps/server/src/services/search/indexer.ts`. **The immediate write-through on the room path is not built.** This amendment exists because a scope removal that lives only in a ticket is exactly the failure Amendment 5 was written to prevent — a reader reaches §5 long before they reach a Linear issue, and §5 as written would have them looking for code that is not there.
+
+**Why it was not built, in the order the reasons actually weigh.**
+
+1. **It cannot be observed yet.** Nothing a person can reach queries these rows in v1 — the route is DOR-684 and the palette is DOR-685 — so the five-minute lag has no surface on which to be visible. Building the mechanism now would mean writing coupling to serve a user-visible property that does not exist.
+2. **The only correct seam is in a file being rewritten.** Every committed entry passes through exactly one place, `RoomService.publishEntry`, and that is the one hook a write-through can hang off without missing the agent-reply path (an entry posted by a turn runner never touches a route). `apps/server/src/services/rooms/` was under active edit by the DOR-634 thread-retirement work throughout, and `03-tasks.md` §2.1 already told this task to coordinate before modifying it.
+3. **There is no in-process seam on the global stream.** `eventFanOut.broadcast('room_activity', …)` does fire on every committed entry, which looks like a zero-edit hook, but `EventFanOut` writes to Express `Response` objects and has no in-process listener API. Adding one would put a cross-cutting change into `services/core/` on behalf of a single consumer, and invert the dependency so the indexer subscribes to an SSE broadcaster.
+
+**What this costs, stated precisely.** A message said in a room is findable up to five minutes later rather than immediately. That is ADR-0043's accepted staleness, applied to a source where DorkOS happens to be able to do better and chose not to yet.
+
+**What it will take to land.** One call in `RoomService.publishEntry` to an indexer method that sweeps a single container, and one wiring line where the room subsystem is constructed. It belongs to whichever ticket can safely edit `services/rooms/` after DOR-634 lands — most naturally DOR-684, which is the first task with a surface that makes the latency visible.
+
+**One thing this amendment does not do is soften §5.** The write-through remains the right design. It is deferred on sequencing and observability, not reconsidered on merit, and a v1 that ships the query surface without it should be read as carrying a known five-minute lag rather than as having settled the question.

@@ -77,11 +77,7 @@ async function readRoomFully(
  * silent, so nothing here can trigger an agent turn.
  */
 test.describe('Rooms in the command palette @smoke', () => {
-  test.beforeEach(async ({ roomsApi }) => {
-    await roomsApi.dismissOnboarding();
-  });
-
-  test('leads with the unread channel, and names it once', async ({
+  test('surfaces an unread channel without typing, and names it once', async ({
     page,
     request,
     basePage,
@@ -103,29 +99,45 @@ test.describe('Rooms in the command palette @smoke', () => {
 
     const palette = await openPalette(page);
 
-    // 1. The very first row of the palette is something unread — not an agent,
-    //    not a feature, not a suggestion. This is what makes Cmd+K then Enter
-    //    mean "go to the thing that needs me".
-    await expect(palette.options.first()).toHaveAccessibleName(/ \d+ unread$/, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
-
-    // 2. And this channel is one of them, named once, with its count. The whole
-    //    announced name, not a substring: `toContainText` would be satisfied by
-    //    "#slug 2 unread in #slug", which is the defect (DOR-583).
+    // 1. An unread channel surfaces in the untyped palette, and this one does.
+    //
+    //    This used to assert `palette.options.first()` — that the palette LEADS
+    //    with something unread. That is a claim about every room on the server,
+    //    and the suite runs its specs against one: any neighbour holding an
+    //    unread room falsified it. Worse, step 4's Enter then opened that
+    //    neighbour's room, and arriving at a room marks it read — this test was
+    //    silently clearing another spec's unread badge, which is what made
+    //    `room-identity`'s unread test fail about half the time.
+    //
+    //    Scoped to the rooms this test seeded, the surviving claim is the one it
+    //    can own: waiting work reaches an untyped palette without being asked
+    //    for. Which row is globally first is not assertable here.
     const unreadRow = palette.options.filter({ hasText: unreadSlug }).first();
+    await expect(unreadRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+
+    // 2. Named once, with its count. The whole announced name, not a substring:
+    //    `toContainText` would be satisfied by "#slug 2 unread in #slug", which
+    //    is the defect (DOR-583).
     await expect(unreadRow).toHaveAccessibleName(`#${unreadSlug} 2 unread`);
     // The `#` is drawn as a mark, so the visible run of text must not repeat it.
     expect(await visibleText(unreadRow)).toBe(`${unreadSlug} 2`);
 
-    // 3. The read channel is absent, even though it spoke more recently. An
-    //    untyped palette shows what is waiting, not the whole room list.
+    // 3. This test's read channel is absent, even though it spoke more recently.
+    //    An untyped palette shows what is waiting, not the whole room list.
+    //    Already local — it names the slug it seeded rather than counting rows.
     await expect(palette.options.filter({ hasText: readSlug })).toHaveCount(0);
 
-    // 4. And the whole point: Enter goes there. Being drawn first and being
-    //    what Enter opens are different claims — cmdk's selection is its own
-    //    state, and a first row that is not the selected one would satisfy
-    //    every assertion above and still send `Cmd+K → Enter` somewhere else.
+    // 4. And the whole point: Enter goes to the row cmdk has selected, not
+    //    merely to the row drawn first — they are different claims, and a
+    //    selection that lags the list would satisfy everything above and still
+    //    send `Cmd+K → Enter` somewhere else.
+    //
+    //    Typing this run's prefix narrows the palette to rooms this test made,
+    //    so the selected row is deterministically ours. Without it, Enter went
+    //    wherever the shared server's first unread row happened to be — which is
+    //    both unassertable and how this test perturbed its neighbours.
+    await palette.input.fill(`#pal-unread-${roomsApi.runId}`);
+    await expect(palette.options.filter({ hasText: unreadSlug }).first()).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`/channels\\?.*id=${unread.id}`), {
       timeout: SERVER_ROUND_TRIP_MS,
@@ -160,9 +172,16 @@ test.describe('Rooms in the command palette @smoke', () => {
     // The ordering claim itself, measured as painted position rather than as
     // DOM order — the two agree here, and only one of them is what a person
     // sees. The read channel spoke last, so recency alone would invert this.
-    const unreadTop = (await unreadRow.boundingBox())!.y;
-    const readTop = (await readRow.boundingBox())!.y;
-    expect(unreadTop).toBeLessThan(readTop);
+    //
+    // Both tops come out of ONE evaluate. As two awaited `boundingBox()` calls,
+    // a palette re-render between them could measure the rows against different
+    // layouts and invert the comparison — seen once as a flake. One trip reads
+    // both from the same layout, whichever layout that is.
+    const [unreadTop, readTop] = await unreadRow.evaluate(
+      (unreadEl, readEl) => [unreadEl.getBoundingClientRect().y, readEl!.getBoundingClientRect().y],
+      await readRow.elementHandle()
+    );
+    expect(unreadTop).toBeLessThan(readTop!);
 
     // `#` is a scope: no features, no quick actions, no agents.
     await expect(palette.options.filter({ hasText: 'Settings' })).toHaveCount(0);

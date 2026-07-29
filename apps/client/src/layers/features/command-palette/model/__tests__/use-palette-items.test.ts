@@ -164,12 +164,10 @@ const agentF = makeAgent({ id: 'agent-f', name: 'Agent F', projectPath: '/projec
 const makeRoom = (overrides: Partial<RoomSummary> = {}): RoomSummary => ({
   id: 'room-default',
   kind: 'channel',
-  parentId: null,
   slug: 'default',
   title: 'Default',
   topic: null,
   workspaceId: null,
-  rootEntryId: null,
   archived: false,
   createdAt: '2026-07-26T10:00:00.000Z',
   lastActivityAt: '2026-07-26T10:00:00.000Z',

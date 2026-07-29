@@ -2,6 +2,22 @@
   "version": 1,
   "specs": [
     {
+      "id": "260729-134840",
+      "slug": "user-profile-onboarding",
+      "title": "User profile + onboarding role beat",
+      "created": "2026-07-29",
+      "status": "specified",
+      "project": "Connector Gateway Completion"
+    },
+    {
+      "id": "260729-134839",
+      "slug": "connector-completion",
+      "title": "Connector completion — the user-facing half of the connector gateway",
+      "created": "2026-07-29",
+      "status": "specified",
+      "project": "Connector Gateway Completion"
+    },
+    {
       "id": "260728-225135",
       "slug": "handles",
       "title": "Handles — one addressable name for every author in a room",

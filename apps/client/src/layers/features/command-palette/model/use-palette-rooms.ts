@@ -46,10 +46,9 @@ export function usePaletteRooms(): PaletteRooms {
   return useMemo(() => {
     const rooms = data ?? [];
     // `=== 'channel'`, the same predicate the sidebar's `useRoomsByKind` uses,
-    // so the two room lists cannot disagree. It used to be `!== 'dm'` so that
-    // threads came along; a thread is now a relation between entries and never
-    // a row in a room list (ADR 260728-022013), which leaves a legacy
-    // `kind='thread'` row out of both.
+    // so the two room lists cannot disagree. This was `!== 'dm'` while a thread
+    // was a room and the palette carried them; a thread is a relation between
+    // entries now and never a row in a room list (ADR 260728-022013).
     const channels = sortRoomsForPalette(rooms.filter((r) => r.kind === 'channel'));
     const dms = sortRoomsForPalette(rooms.filter((r) => r.kind === 'dm'));
     return {
@@ -57,9 +56,9 @@ export function usePaletteRooms(): PaletteRooms {
       dms,
       // Built from the two addressable lists rather than from `rooms` again, so
       // a room can only be badged here if it is somewhere a person can also
-      // find it. Filtering `rooms` directly was a second, parallel predicate,
-      // and it let a legacy `kind='thread'` row back into the palette through
-      // the Unread group after `channels` had shut the front door on it.
+      // find it. Filtering `rooms` directly would be a second, parallel
+      // predicate — the shape that once let a row the `#` list had excluded
+      // back in through the Unread group.
       unread: sortRoomsForPalette([...channels, ...dms].filter(hasUnread)),
       isLoading,
       isError,

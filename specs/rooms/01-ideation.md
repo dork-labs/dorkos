@@ -66,7 +66,11 @@ Both collapse and persist like `recentsCollapsed` does today.
 
 **Threads** open as a child room — the same entity with a parent — surfaced by a "N replies" summary row in the parent, exactly as `01-ideation.md` of `multi-participant-message-list` proposed.
 
+> **Superseded 2026-07-28 (ADR `260728-022013`, shipped as DOR-634).** A thread is a relation between entries in one room's log, not a child room. Left as written because this is what was thought at the time; `02-specification.md` carries the amended model.
+
 ## A′-policy — thread write intent
+
+> **Amended 2026-07-29 (ADR `260728-022013`, shipped as DOR-634).** A thread is no longer a room, so "shares the parent's working directory" is not a property it has to be given — a reply is an entry in the channel and runs in the channel's own session. The write-intent _policy_ below survives the change unaltered, because it was always about intent rather than about the container; "promoting a thread to a branch" would now promote a set of entries, and the resource-keyed lock it defers to was never thread-gated anyway.
 
 Threads share the parent room's working directory and are **read-oriented by default**: a thread is for asking why, comparing options, and reviewing what happened, and its agents inherit the parent's `cwd` without any promise of exclusive access to it. Promoting a thread to a branch is the escalation — it forks the conversation, allocates a worktree, and the thread becomes a peer room with its own tree. This is a policy, not an enforcement mechanism: nothing in v1 stops a thread's agent from writing, and nothing should pretend otherwise, because the real protection is a resource-keyed lock (A′-mechanism) that is **not** thread-gated and is sized by DOR-500 rather than by this spec. What the policy buys is that the common case — several threads reading and reasoning off one tree — is safe by construction because nobody is writing, and the case that does write has been given a tree of its own.
 
@@ -75,7 +79,7 @@ Threads share the parent room's working directory and are **read-oriented by def
 Both are that document's own words, now falsified:
 
 1. **Line 117** proposes that the conversation-tree write lock "extends the existing `session-lock` / `X-Client-Id` machinery rather than inventing a second one." `SessionLockManager` is keyed on `sessionId` (`apps/server/src/services/session/session-lock.ts:24`) and guards several clients contending for **one session**. The hazard is one resource with **many sessions** — the orthogonal case. No cwd-, worktree-, or resource-keyed lock exists anywhere in the repo. It needs a new primitive keyed on the resolved path.
-2. **Open decision 3** ("do threads get their own runtime session, or one session multiplexed by a thread key?") is settled by runtime binding: ADR-0255 binds a session to a runtime at first write, so a multiplexed session cannot hold two runtimes. Threads get their own sessions.
+2. **Open decision 3** ("do threads get their own runtime session, or one session multiplexed by a thread key?") was settled here as "threads get their own sessions", on the grounds that ADR-0255 binds a session to a runtime at first write so a multiplexed session cannot hold two runtimes. **That reasoning was sound, and the question it answered is now moot** (ADR `260728-022013`). It was a real choice while a thread was a room: `room_sessions` is keyed `(roomId, authorId)`, so a thread had a session row of its own, and the runtime-binding argument genuinely decided between the two options on offer. A thread is no longer a room, so there is no second session to choose between — a thread reply runs in the CHANNEL's session and carries the channel's context instead of starting cold. The argument is not overturned; there is nothing left for it to settle.
 
 ## Out of scope
 

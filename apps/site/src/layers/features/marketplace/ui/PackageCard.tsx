@@ -12,6 +12,7 @@ import Link from 'next/link';
 import {
   asMarketplaceCategory,
   CATEGORY_LABELS,
+  CONNECTOR_ADAPTER_TYPE,
   primaryCategory,
   type MergedMarketplaceEntry,
 } from '@dorkos/marketplace';
@@ -36,7 +37,12 @@ interface PackageCardProps {
  */
 export function PackageCard({ package: pkg, installCount }: PackageCardProps) {
   const icon = pkg.dorkos?.icon ?? '📦';
-  const kind = pkg.dorkos?.type ?? 'plugin';
+  // The site has no badge component (unlike the cockpit's PackageTypeBadge) —
+  // the kind renders as a plain uppercase label, so a connector adapter names
+  // itself "connector" the same way the cockpit's CONNECTOR badge does.
+  const isConnector =
+    pkg.dorkos?.type === 'adapter' && pkg.dorkos.adapterType === CONNECTOR_ADAPTER_TYPE;
+  const kind = isConnector ? 'connector' : (pkg.dorkos?.type ?? 'plugin');
   const primary = primaryCategory(pkg.dorkos?.categories, pkg.category);
   const knownCategory = primary ? asMarketplaceCategory(primary) : undefined;
 
