@@ -27,6 +27,17 @@
  * accented or padded with invisible characters. The test that pins this asserts
  * the preamble contains no `<` or `>` at all, whatever a member types.
  *
+ * **An `@` in front of a name is a claim that typing it works**, and keeping
+ * that claim takes two things, not one. The string has to be a name
+ * `resolveMentions` returns for that exact author — the server's job, checked
+ * again here by {@link addressableHandle} because sanitizing can change it. And
+ * the characters this file puts AROUND it have to end the token where the name
+ * ends: `.`, `-` and `_` are inside the mention grammar, so a handle at the end
+ * of a sentence is a different token from the handle itself. Everybody with no
+ * such name is named without an `@`, and told so — a model given a name it
+ * cannot be addressed by has no way to find out, which is why the honest absence
+ * beats the plausible string.
+ *
  * **The fence holds everything ANOTHER MEMBER wrote** — message bodies, and the
  * message a thread was opened on. Its markers carry a per-turn nonce, so a
  * member cannot end the block early by typing its closing line into a message:
@@ -64,6 +75,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   CONTEXT_TAG,
+  type RoomContextAuthor,
   type RoomContextData,
   type RoomContextEntry,
   type RoomContextMember,
@@ -86,6 +98,14 @@ const TOPIC_MAX_LENGTH = 200;
 
 /** Prefix for a label that sanitized away to nothing — a name of only tag syntax. */
 const UNNAMEABLE = 'unnamed';
+
+/**
+ * What a name with no address is marked with, so a bare name is never read as
+ * one. Written inside the parenthetical a member or a message line already
+ * carries, rather than as a line of its own: it rides every turn, and it
+ * disappears entirely once every author has a handle (`specs/handles` Phase 2).
+ */
+const NO_HANDLE_NOTE = ', cannot be mentioned';
 
 /** Tags that mean something to a runtime and must not survive in member text. */
 const SYSTEM_TAGS = [...Object.values(CONTEXT_TAG), 'system-reminder'];
@@ -129,6 +149,65 @@ function discriminator(value: string): string {
     hash = Math.imul(hash ^ value.charCodeAt(i), 0x01000193);
   }
   return (hash >>> 0).toString(16).padStart(8, '0').slice(0, 4);
+}
+
+/**
+ * The handle to print for an author, or `null` when printing one would lie.
+ *
+ * The server has already refused to supply a handle that `resolveMentions`
+ * would not return for this author (`rooms/author-handles.ts`). What is left is
+ * the two ways this file could break that on its own, and this function covers
+ * one of them: {@link label} caps at 80 characters and collapses whitespace, so
+ * a handle longer than the cap would be printed truncated — a string that
+ * reaches nobody, in front of an `@` that says it reaches somebody. The printed
+ * form is therefore compared against the resolved one, and anything sanitizing
+ * changed stops being an address.
+ *
+ * **The other way is not visible from here**, because it is not a property of
+ * the handle at all: a handle printed next to `.`, `-` or `_` fuses with it into
+ * a longer token. That one is owned by the call sites, which all put a space or
+ * a bracket after the name — see {@link selfIdentity}, which did not, and was
+ * the one place this promise was broken while this function returned the right
+ * answer.
+ *
+ * @param author - The member, entry author or working agent being named.
+ */
+function addressableHandle(author: RoomContextAuthor): string | null {
+  if (!author.handle) return null;
+  const printable = label(author.handle);
+  return printable === author.handle ? printable : null;
+}
+
+/**
+ * How one author is named in a line DorkOS wrote: `@handle` when a mention
+ * reaches them, their plain name when nothing does.
+ *
+ * **The `@` is a promise**, and this is where it is kept. An agent told it can
+ * reach `@Art Blocks Analytics` writes exactly that, the mention grammar
+ * truncates it at the first space, and the message reaches nobody — or reaches
+ * whoever answers to `Art`, which is worse, because then the wrong member
+ * replies and the intended one stays silent (`meta/agent-etiquette.md` E1).
+ *
+ * A name printed without an `@` is still the author's name and still attributes
+ * the line; it simply does not claim to be typeable. Two members with the same
+ * display name and no handle do read identically here — that is display names
+ * not being unique, which is the thing `specs/handles` Phase 2 removes.
+ *
+ * @param author - The member, entry author or working agent being named.
+ */
+function named(author: RoomContextAuthor): string {
+  const handle = addressableHandle(author);
+  return handle ? `@${handle}` : label(author.displayName);
+}
+
+/**
+ * {@link NO_HANDLE_NOTE} for an author no string reaches, and nothing at all for
+ * everybody else.
+ *
+ * @param author - The member or entry author being named.
+ */
+function addressNote(author: RoomContextAuthor): string {
+  return addressableHandle(author) ? '' : NO_HANDLE_NOTE;
 }
 
 /**
@@ -178,13 +257,14 @@ function respondsSentence(mode: ResponseMode): string {
  * @param member - The roster row.
  */
 function memberLine(member: RoomContextMember): string {
-  const handle = `@${label(member.handle)}`;
-  if (member.isSelf) return `${handle} (you)`;
-  if (member.isPerson) return `${handle} (person)`;
-  if (!member.responseMode) return `${handle} (the room itself)`;
+  const who = named(member);
+  const note = addressNote(member);
+  if (member.isSelf) return `${who} (you${note})`;
+  if (member.isPerson) return `${who} (person${note})`;
+  if (!member.responseMode) return `${who} (the room itself${note})`;
   return member.responseMode === 'silent'
-    ? `${handle} (agent, set not to reply here)`
-    : `${handle} (agent)`;
+    ? `${who} (agent, set not to reply here${note})`
+    : `${who} (agent${note})`;
 }
 
 /**
@@ -198,13 +278,57 @@ function memberLine(member: RoomContextMember): string {
  * another chat line, and though the fence bounds the damage, a forged line is
  * still a lie about who said what.
  *
+ * The author of an old message is the case where no handle is the common answer
+ * rather than the odd one: they may have left the room, and nothing typed
+ * reaches somebody who is not on the roster any more. So the line names them and
+ * says the name is not an address.
+ *
  * @param entry - The flattened room entry.
  */
 function entryLine(entry: RoomContextEntry): string {
-  const who = entry.kind === 'notice' ? 'the room' : `@${label(entry.authorHandle)}`;
-  const what = entry.kind === 'notice' ? '' : entry.authorIsPerson ? ' (person)' : ' (agent)';
+  const author = { handle: entry.authorHandle, displayName: entry.authorDisplayName };
+  const who = entry.kind === 'notice' ? 'the room' : named(author);
+  const what =
+    entry.kind === 'notice'
+      ? ''
+      : ` (${entry.authorIsPerson ? 'person' : 'agent'}${addressNote(author)})`;
   const mention = entry.mentionsMe ? ' [mentions you]' : '';
   return `[${clock(entry.at)}] ${who}${what}${mention}: ${body(entry.text)}`;
+}
+
+/**
+ * How the agent is told who it is here.
+ *
+ * The one place a wrong handle does the most damage, because an agent signs its
+ * own messages with the name it was given: told it is `@Art Blocks Analytics`,
+ * it writes that at the bottom of a reply and every reader who copies it reaches
+ * nobody. So an agent no string reaches is told its name AND told that nothing
+ * addresses it — which is the truth, and which it can say out loud rather than
+ * silently mis-signing.
+ *
+ * **The handle must not end the sentence, and this is not a style choice.** It
+ * read `You are @ana.` until a review caught what that is to the mention
+ * grammar: `.` is inside {@link MENTION_PATTERN}'s character class, so the token
+ * in that line is `ana.` — and `resolveMentions` looks the exact token up
+ * BEFORE shaving any trailing punctuation. With a member called `ana.` on the
+ * roster, the sentence telling an agent who it is addressed somebody else, and
+ * every reader who copied the name out of it reached that somebody else too.
+ * `advertisedHandle` now refuses to offer such a name, and this line no longer
+ * puts a handle next to punctuation the grammar would swallow — two independent
+ * guards, because the failure was silent from both sides. Every other rendered
+ * handle is already followed by a space or a bracket.
+ *
+ * `here` rather than `in this room`, and that is not a synonym: the line above
+ * this one says whether the conversation is a channel or a direct message, and
+ * a DM is not a room in anything the product says to anybody. `here` is true of
+ * both, which is what a sentence riding every turn in both has to be.
+ *
+ * @param self - The roster row for the agent whose turn this is.
+ */
+function selfIdentity(self: RoomContextMember): string {
+  const handle = addressableHandle(self);
+  if (handle) return `You are @${handle} here.`;
+  return `You are ${label(self.displayName)}, and nobody here can mention you by name.`;
 }
 
 /**
@@ -225,7 +349,7 @@ function preamble(data: RoomContextData, where: string): string[] {
       (data.room.topic ? ` Topic: ${label(data.room.topic, TOPIC_MAX_LENGTH)}` : ''),
   ];
 
-  const identity = self ? `You are @${label(self.handle)}.` : 'You are a member here.';
+  const identity = self ? selfIdentity(self) : 'You are a member here.';
   const addressed = data.addressing.addressedNow ? ' This message mentions you.' : '';
   lines.push(`${identity} ${respondsSentence(data.addressing.responseMode)}${addressed}`);
   if (data.addressing.engagedUntil) {
@@ -252,8 +376,13 @@ function preamble(data: RoomContextData, where: string): string[] {
   if (data.working.length > 0) {
     // Presence, never arbitration: it says somebody is already on it, and orders
     // nobody. Do not turn this into a queue.
+    //
+    // No `cannot be mentioned` note here, and it is not an oversight: every
+    // agent holding a claim in this room is on the `Members:` line above, where
+    // its addressability is already stated. Saying it twice would buy nothing
+    // and cost a line on every turn.
     const working = data.working
-      .map((agent) => `@${label(agent.handle)}, since ${clock(agent.since)}`)
+      .map((agent) => `${named(agent)}, since ${clock(agent.since)}`)
       .join('; ');
     lines.push(`Working right now: ${working}.`);
   }

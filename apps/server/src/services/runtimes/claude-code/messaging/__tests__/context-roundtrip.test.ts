@@ -110,6 +110,7 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       pending: [
         {
           authorHandle: 'dorian',
+          authorDisplayName: 'You',
           authorIsPerson: true,
           kind: 'post',
           at: '2026-07-28T14:01:00.000Z',

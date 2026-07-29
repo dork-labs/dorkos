@@ -120,17 +120,44 @@ export interface RelayContextData {
 }
 
 /**
+ * How one author is named to a model: the address that reaches them, and the
+ * name they render under.
+ *
+ * **`handle` is a promise, and `null` is how it is kept.** Every `@handle`
+ * rendered from this shape must resolve — through the same resolver a posted
+ * message runs through, against the same roster — to exactly this author. Three
+ * ordinary names break that promise: one with a space in it, which the mention
+ * grammar truncates at the space; one an earlier member of the same roster
+ * already answers to; and one ending in `.`, `-` or `_`, which the resolver
+ * matches exactly before it shaves anything, so it quietly takes the
+ * sentence-ending mentions of the member without the punctuation. So `null` is
+ * not "we did not look it up", it is "nothing anyone can type reaches this
+ * author", and a renderer must say that rather than print the name with an `@`
+ * in front of it.
+ *
+ * Getting it wrong is not a cosmetic bug. A handle that reaches nobody invites a
+ * message that reaches nobody; a handle that reaches somebody ELSE is worse,
+ * because the wrong member answers and the intended one stays silent, which from
+ * inside the room is indistinguishable from a broken agent
+ * (`meta/agent-etiquette.md` E1). An agent handed a name it cannot be addressed
+ * by has no way to notice, the way a person would.
+ */
+export interface RoomContextAuthor {
+  /** What an `@mention` resolves to this author, or `null` when nothing does. */
+  handle: string | null;
+  /** The name this author renders under. Always present, and never an address. */
+  displayName: string;
+}
+
+/**
  * One member of a room, as the agent sees them.
  *
- * No `authorId`. The ULIDs are opaque and useless to a model; the handle is what
- * an `@mention` resolves against, so leaving ids out saves tokens and removes a
- * value the model could hallucinate into a message body.
+ * No `authorId`. The ULIDs are opaque and useless to a model; what a model needs
+ * is the name it can address this member by, which {@link RoomContextAuthor}
+ * carries — so leaving ids out saves tokens and removes a value the model could
+ * hallucinate into a message body.
  */
-export interface RoomContextMember {
-  /** What an `@mention` resolves against — an agent's handle, or a person's name. */
-  handle: string;
-  /** The name this member renders under. */
-  displayName: string;
+export interface RoomContextMember extends RoomContextAuthor {
   /**
    * A person, or a machine. THE field of this whole entry: an agent that cannot
    * tell a colleague from a bot cannot follow any of the room-etiquette rules
@@ -150,15 +177,25 @@ export interface RoomContextMember {
 
 /** One room entry, flattened for the model. */
 export interface RoomContextEntry {
-  /** The author's handle, as {@link RoomContextMember.handle} renders it. */
-  authorHandle: string;
+  /**
+   * What an `@mention` resolves to this entry's author, or `null` when nothing
+   * does — see {@link RoomContextAuthor.handle}.
+   *
+   * `null` far more often than for a member, and for one extra reason: the
+   * author of an old message may have LEFT the room. Mentions resolve against
+   * the room's current roster, so no string reaches somebody who is no longer on
+   * it, whatever they used to be called here.
+   */
+  authorHandle: string | null;
+  /** The name the author renders under — how a handle-less author is named. */
+  authorDisplayName: string;
   /** Whether a person wrote this, or a machine did. */
   authorIsPerson: boolean;
   /** Someone talking (`post`) or the room reporting on itself (`notice`). */
   kind: 'post' | 'notice';
   /** ISO timestamp the entry was written. */
   at: string;
-  /** The entry body — UNTRUSTED text when `authorHandle` is not the agent itself. */
+  /** The entry body — UNTRUSTED text when the author is not the agent itself. */
   text: string;
   /** True when this entry mentioned the agent receiving the context. */
   mentionsMe: boolean;
@@ -197,7 +234,7 @@ export interface RoomContextData {
    * decides nothing (ADR 260726-170125 — no referee, no speaker election, no
    * room-scoped turn lock). Excludes the agent reading it.
    */
-  working: Array<{ handle: string; since: string }>;
+  working: Array<RoomContextAuthor & { since: string }>;
   /** Entries this membership has not read, oldest first, excluding its own. */
   pending: RoomContextEntry[];
   /** True when `pending` was capped and older entries were dropped. */
@@ -317,10 +354,14 @@ export const RelayContextDataSchema = z.object({
   replyTo: z.string().optional(),
 });
 
-/** Zod schema for {@link RoomContextMember}. */
-export const RoomContextMemberSchema = z.object({
-  handle: z.string(),
+/** Zod schema for {@link RoomContextAuthor}. */
+export const RoomContextAuthorSchema = z.object({
+  handle: z.string().nullable(),
   displayName: z.string(),
+});
+
+/** Zod schema for {@link RoomContextMember}. */
+export const RoomContextMemberSchema = RoomContextAuthorSchema.extend({
   isPerson: z.boolean(),
   isSelf: z.boolean(),
   responseMode: ResponseModeSchema.optional(),
@@ -328,7 +369,8 @@ export const RoomContextMemberSchema = z.object({
 
 /** Zod schema for {@link RoomContextEntry}. */
 export const RoomContextEntrySchema = z.object({
-  authorHandle: z.string(),
+  authorHandle: z.string().nullable(),
+  authorDisplayName: z.string(),
   authorIsPerson: z.boolean(),
   kind: z.enum(['post', 'notice']),
   at: z.string(),
@@ -352,7 +394,7 @@ export const RoomContextDataSchema = z.object({
     })
     .nullable(),
   members: z.array(RoomContextMemberSchema),
-  working: z.array(z.object({ handle: z.string(), since: z.string() })),
+  working: z.array(RoomContextAuthorSchema.extend({ since: z.string() })),
   pending: z.array(RoomContextEntrySchema),
   pendingTruncated: z.boolean(),
   ownRecent: z.array(RoomContextEntrySchema),

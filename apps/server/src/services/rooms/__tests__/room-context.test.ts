@@ -120,7 +120,7 @@ describe('the room context a trigger derives', () => {
       open({ agentPaths: ['/agents/ana', '/agents/bo'] });
       await say('is the build green?');
 
-      const self = (authorId: string): string | undefined =>
+      const self = (authorId: string): string | null | undefined =>
         contextFor(authorId).members.find((member) => member.isSelf)?.handle;
       expect(self(ana)).toBe('ana');
       expect(self(bo)).toBe('bo');
@@ -162,7 +162,14 @@ describe('the room context a trigger derives', () => {
 
       const theirs = contextFor(ana).pending.find((entry) => entry.text === 'the deploy is stuck');
       expect(theirs?.authorIsPerson).toBe(true);
-      expect(theirs?.authorHandle).toBe('Priya');
+      // Named, but not addressable. Mentions resolve against the room's CURRENT
+      // roster, so `@Priya` reaches nobody now that she has left — and the name
+      // she answered to may since have been claimed by somebody still here, in
+      // which case it would reach the wrong person. The name keeps the
+      // attribution; the absent handle is what stops the agent writing to a
+      // member who is gone.
+      expect(theirs?.authorDisplayName).toBe('Priya');
+      expect(theirs?.authorHandle).toBeNull();
     });
 
     it('carries no author ids, so nothing opaque reaches the model', async () => {

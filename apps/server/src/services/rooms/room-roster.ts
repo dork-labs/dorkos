@@ -12,8 +12,9 @@
  */
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { AuthorRef, Room, RoomMember, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import { advertisedHandles, mentionCandidatesFrom } from './author-handles.js';
 import { toAuthorRef, type AuthorRecord, type AuthorRegistry } from './author-registry.js';
-import { advertisedHandle, claimNames, type MentionCandidate } from './mentions.js';
+import type { MentionCandidate } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
@@ -120,20 +121,15 @@ export class RoomRoster {
   list(roomId: string): RoomRosterEntry[] {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
-    // Ownership is computed over the SAME candidate sequence `mentionCandidates`
-    // hands `resolveMentions`, so a handle is advertised to a member only when
-    // that member is the one it would actually reach. Deriving it per member in
-    // isolation cannot see a name an earlier member claimed but never
-    // advertised, and silently offers a handle that addresses somebody else.
-    const claims = claimNames(this.candidatesFrom(members, authors));
+    // Ownership comes from `author-handles.ts`, over the SAME candidate sequence
+    // `mentionCandidates` hands `resolveMentions` — so a handle is advertised to
+    // a member only when that member is the one it would actually reach, and the
+    // roster an agent reads cannot disagree with the roster a picker reads.
+    const handles = advertisedHandles(mentionCandidatesFrom(members, authors, this.agents));
     return members.map((member) => {
       const author = authors.get(member.authorId);
       if (!author) return { ...member, author: unknownAuthor(member.authorId) };
-      const handle = advertisedHandle(
-        { authorId: author.id, names: this.namesFor(author) },
-        claims
-      );
-      return { ...member, author: toAuthorRef(author, handle) };
+      return { ...member, author: toAuthorRef(author, handles.get(member.authorId)) };
     });
   }
 
@@ -170,48 +166,7 @@ export class RoomRoster {
   mentionCandidates(roomId: string): MentionCandidate[] {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
-    return this.candidatesFrom(members, authors);
-  }
-
-  /**
-   * Project already-read memberships onto the mention-candidate sequence.
-   *
-   * Shared by {@link RoomRoster.mentionCandidates} and {@link RoomRoster.list}
-   * so both walk members in the same order — the order that decides which
-   * member wins a contested name. Takes what the caller has already fetched
-   * rather than re-querying, so advertising handles costs `list` no extra reads.
-   *
-   * @param members - The room's memberships, in store order.
-   * @param authors - The resolved authors, keyed by id.
-   */
-  private candidatesFrom(
-    members: readonly RoomMember[],
-    authors: ReadonlyMap<string, AuthorRecord>
-  ): MentionCandidate[] {
-    const candidates: MentionCandidate[] = [];
-    for (const member of members) {
-      const author = authors.get(member.authorId);
-      if (!author) continue;
-      candidates.push({ authorId: author.id, names: this.namesFor(author) });
-    }
-    return candidates;
-  }
-
-  /**
-   * Every name an author answers to after an `@`, most preferred first: an
-   * agent's handle, then whatever it renders as.
-   *
-   * The single definition behind BOTH halves of the contract — what
-   * {@link RoomRoster.mentionCandidates} resolves at write time, and what
-   * {@link RoomRoster.list} advertises to a mention picker. Two derivations of
-   * "the name this author answers to" is how a picker starts offering a handle
-   * the resolver does not accept.
-   *
-   * @param author - The stored author.
-   */
-  private namesFor(author: AuthorRecord): string[] {
-    const handle = author.kind === 'agent' ? this.agents.byPath(author.naturalKey)?.name : null;
-    return handle ? [handle, author.displayName] : [author.displayName];
+    return mentionCandidatesFrom(members, authors, this.agents);
   }
 
   /**

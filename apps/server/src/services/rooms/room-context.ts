@@ -20,6 +20,11 @@
  * - **It is server-derived.** `ClientContext` is parsed off the wire; a roster a
  *   caller could supply is a roster a caller could forge, so nothing here reads
  *   anything a client sent.
+ * - **Every handle in it is one the resolver would return.** Ownership is read
+ *   from `author-handles.ts` — the same computation, over the same candidate
+ *   sequence, that `resolveMentions` runs when a message is written. An author
+ *   no string reaches gets `null` rather than a name that looks like an address,
+ *   because a model handed a name it cannot be reached by cannot tell.
  *
  * Pure over the store, the roster, the dispatcher's live claims and the budget:
  * no runtime, no clock beyond the entries' own timestamps, no model. Assembling
@@ -28,9 +33,14 @@
  *
  * @module server/services/rooms/room-context
  */
-import type { RoomContextData, RoomContextEntry } from '@dorkos/shared/additional-context';
+import type {
+  RoomContextAuthor,
+  RoomContextData,
+  RoomContextEntry,
+} from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
+import { advertisedHandles, mentionCandidatesFrom } from './author-handles.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
@@ -53,17 +63,19 @@ const OWN_RECENT_MAX_ENTRIES = 5;
 const THREAD_EXCERPT_CHARS = 200;
 
 /**
- * Handle for an author whose row has vanished. Rendering something honest beats
+ * Name for an author whose row has vanished. Rendering something honest beats
  * dropping the line: a message with no attribution is still a message that was
- * said, and hiding it would leave the agent reading half a conversation.
+ * said, and hiding it would leave the agent reading half a conversation. The
+ * same word `RoomRoster` uses for the same state, so one absent author does not
+ * read as two different people on two surfaces.
  */
-const UNKNOWN_HANDLE = 'unknown';
+const UNKNOWN_DISPLAY_NAME = 'Unknown';
 
 /** The data this module reads. Everything is synchronous (`better-sqlite3`). */
 export interface RoomContextDeps {
   store: RoomStore;
   authors: AuthorRegistry;
-  /** Resolves an agent's handle from its directory — what an `@mention` matches. */
+  /** Resolves an agent's handle from its directory — one name an `@` may match. */
   agents: RoomAgentLookup;
 }
 
@@ -140,21 +152,48 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     ...ownRecent.map((entry) => entry.authorId),
     ...input.working.map((claim) => claim.authorId),
   ]);
-  const handles = new Map<string, string>();
   const people = new Set<string>();
-  for (const [id, record] of records) {
-    handles.set(id, handleFor(deps, record));
-    if (record.kind === 'human') people.add(id);
-  }
+  for (const [id, record] of records) if (record.kind === 'human') people.add(id);
+  // The SAME ownership computation the mention picker runs, over the SAME
+  // candidate sequence `resolveMentions` is handed at write time (`RoomService`
+  // → `RoomRoster.mentionCandidates`). Not a second rule that happens to agree:
+  // the defect this replaced was exactly that, one function returning
+  // `agents.name` unfiltered while the picker refused the same string.
+  const handles = advertisedHandles(mentionCandidatesFrom(members, records, deps.agents));
 
-  const flatten = (entry: RoomEntry): RoomContextEntry => ({
-    authorHandle: handles.get(entry.authorId) ?? UNKNOWN_HANDLE,
-    authorIsPerson: people.has(entry.authorId),
-    kind: entry.kind,
-    at: entry.createdAt,
-    text: entry.body.text,
-    mentionsMe: entry.mentions.includes(input.agentAuthorId),
-  });
+  const flatten = (entry: RoomEntry): RoomContextEntry => {
+    const author = nameOf(entry.authorId);
+    return {
+      authorHandle: author.handle,
+      authorDisplayName: author.displayName,
+      authorIsPerson: people.has(entry.authorId),
+      kind: entry.kind,
+      at: entry.createdAt,
+      text: entry.body.text,
+      mentionsMe: entry.mentions.includes(input.agentAuthorId),
+    };
+  };
+
+  /**
+   * The address that reaches an author here, and the name they render under.
+   *
+   * **The handle comes from the roster's ownership map and nowhere else**, so an
+   * author who is not on the roster gets `null` even though a perfectly good
+   * name of their own is sitting right there in `records`. That is the point.
+   * `removeMember` is a real path and an entry outlives its author's
+   * membership, but mentions resolve against the room's CURRENT roster
+   * (`RoomService.post`), so nothing anyone types reaches somebody who has left.
+   * Printing their name back with an `@` would be inert at best — and at worst a
+   * mis-address, because the name a departed member answered to may now be
+   * claimed by somebody still in the room. The name without the `@` keeps the
+   * attribution and claims nothing.
+   */
+  function nameOf(authorId: string): RoomContextAuthor {
+    return {
+      handle: handles.get(authorId) ?? null,
+      displayName: records.get(authorId)?.displayName ?? UNKNOWN_DISPLAY_NAME,
+    };
+  }
 
   return {
     room: frame.room,
@@ -162,8 +201,7 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     members: members.map((member) => {
       const record = records.get(member.authorId);
       return {
-        handle: handles.get(member.authorId) ?? UNKNOWN_HANDLE,
-        displayName: record?.displayName ?? 'Unknown',
+        ...nameOf(member.authorId),
         isPerson: record?.kind === 'human',
         isSelf: member.authorId === input.agentAuthorId,
         ...(record?.kind === 'agent' ? { responseMode: member.responseMode } : {}),
@@ -171,10 +209,7 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     }),
     working: input.working
       .filter((claim) => claim.authorId !== input.agentAuthorId)
-      .map((claim) => ({
-        handle: handles.get(claim.authorId) ?? UNKNOWN_HANDLE,
-        since: claim.since,
-      })),
+      .map((claim) => ({ ...nameOf(claim.authorId), since: claim.since })),
     pending: missed.map(flatten),
     pendingTruncated,
     ownRecent: ownRecent.map(flatten),
@@ -281,19 +316,6 @@ function frameOf(room: Room, kind: 'channel' | 'dm'): RoomContextData['room'] {
     name: roomName(room),
     ...(room.topic ? { topic: room.topic } : {}),
   };
-}
-
-/**
- * What an `@mention` resolves this author against: an agent's handle, or the
- * name a person renders under.
- *
- * Kept in step with `RoomRoster.mentionCandidates`, which resolves `@name` the
- * same way at write time. A handle the agent cannot be addressed by would be
- * worse than no handle: it invites a message that reaches nobody.
- */
-function handleFor(deps: RoomContextDeps, record: AuthorRecord): string {
-  if (record.kind !== 'agent') return record.displayName;
-  return deps.agents.byPath(record.naturalKey)?.name ?? record.displayName;
 }
 
 /**
