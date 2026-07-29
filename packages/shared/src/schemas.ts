@@ -2129,6 +2129,38 @@ export const ServerConfigSchema = z
     runtimes: z.array(z.string()).openapi({
       description: 'Agent runtimes configured on the host, e.g. ["claude-code", "codex"]',
     }),
+    claudeCode: z
+      .object({
+        resolvedAccount: z.string().openapi({
+          description:
+            "The Claude config directory a NEW session will run and bill on, already resolved. The client cannot compute this: it is the configured account, else the server process's inherited $CLAUDE_CONFIG_DIR, else ~/.claude",
+        }),
+        inherited: z.boolean().openapi({
+          description:
+            'True when resolvedAccount was INHERITED (from $CLAUDE_CONFIG_DIR, else ~/.claude) because no account is configured; false when a person chose it. Lets the UI show the resolved default instead of an empty field',
+        }),
+        accounts: z
+          .array(
+            z.object({
+              path: z.string().openapi({
+                description: "Absolute path of the account's Claude config directory",
+              }),
+              label: z.string().nullable().openapi({
+                description: 'What the operator calls this account, or null if unnamed',
+              }),
+              exists: z.boolean().openapi({
+                description:
+                  'Whether DorkOS can currently find a Claude account here — the directory exists and holds a `projects/` directory (the structural check, spec claude-code-accounts D4). False means it contributes no sessions',
+              }),
+            })
+          )
+          .openapi({ description: 'The Claude accounts the operator has registered' }),
+      })
+      .optional()
+      .openapi({
+        description:
+          'Which Claude Code account new work runs on, and the accounts registered here (spec claude-code-accounts)',
+      }),
     claudeCliPath: z.string().nullable(),
     tunnel: TunnelStatusSchema,
     tasks: z

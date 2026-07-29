@@ -262,6 +262,8 @@ Your answer lives in `extensions.approvedToRun`. Your agents can read it but can
 
 DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode. The `runtimes` block in `~/.dork/config.json` controls which ones are available and how their binaries are found. Running multiple runtimes side by side is shipped, but still getting real-world mileage, so treat multi-runtime setups as an area to watch rather than a fully settled feature. See the [Runtimes guide](/docs/guides/runtimes) for connecting and choosing runtimes.
 
+**If you have more than one Claude account**, the `runtimes.claudeCode` settings say which one your work runs on. A Claude account is a folder — usually `~/.claude`, and a second one might be `~/.claude2` — holding that account's chat history and its own sign-in. Point `activeAccount` at a folder and your next session runs and bills there. Leave it `null` and nothing changes: DorkOS uses whatever your shell already set, or `~/.claude`. List your accounts under `accounts` and give each one a name you'll recognise, like the client you bill it to. Nothing outside DorkOS changes either way — your shell, your aliases, and a plain `claude` all keep working exactly as before.
+
 <TypeTable
   type={{
     'runtimes.default': {
@@ -269,6 +271,18 @@ DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode
         'Runtime for new sessions that don’t specify one (explicit session picks and per-agent runtimes take precedence).',
       type: 'string',
       default: '"claude-code"',
+    },
+    'runtimes.claudeCode.activeAccount': {
+      description:
+        'The Claude account new sessions run and bill on, as the full path to its Claude folder (for example `/Users/you/.claude2`). When `null`, DorkOS uses whichever folder your shell already points at, or `~/.claude`.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.claudeCode.accounts': {
+      description:
+        'The Claude accounts you have told DorkOS about, each with a path and a name you choose (or `null` for no name). DorkOS never goes looking for accounts on its own.',
+      type: 'Array<{ path: string; label: string | null }>',
+      default: '[]',
     },
     'runtimes.opencode.enabled': {
       description: 'Register the OpenCode runtime on server startup.',

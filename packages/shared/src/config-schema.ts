@@ -578,6 +578,26 @@ export const RawMcpServerConfigSchema = z.object({
 /** One configured remote MCP server. See {@link RawMcpServerConfigSchema}. */
 export type RawMcpServerConfig = z.infer<typeof RawMcpServerConfigSchema>;
 
+/**
+ * One Claude Code account DorkOS knows about — a Claude config directory holding
+ * its own `projects/` transcripts and its own sign-in
+ * (`runtimes.claudeCode.accounts`, spec `claude-code-accounts` D1).
+ *
+ * The **path is the identity**: it is literally what `CLAUDE_CONFIG_DIR` takes,
+ * so there is no id to generate, migrate, or keep in step with anything. The
+ * label exists because the operator's real question is _which client_ a session
+ * belongs to, and `~/.claude2` does not answer that while "Acme Corp" does.
+ */
+export const ClaudeCodeAccountSchema = z.object({
+  /** Absolute path of the Claude config directory this account lives in. */
+  path: z.string().min(1),
+  /** What the operator calls this account; `null` when they have not named it. */
+  label: z.string().nullable(),
+});
+
+/** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
+export type ClaudeCodeAccount = z.infer<typeof ClaudeCodeAccountSchema>;
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -1065,6 +1085,31 @@ export const UserConfigSchema = z.object({
     .object({
       /** Runtime id the registry selects as its default at boot. */
       default: z.string().default('claude-code'),
+      claudeCode: z
+        .object({
+          /**
+           * Absolute path of the Claude config directory a NEW session runs and
+           * bills on. `null` inherits whatever the process already has —
+           * `$CLAUDE_CONFIG_DIR`, else `~/.claude` — which is byte-for-byte the
+           * behavior before this field existed.
+           *
+           * An explicit path OVERRIDES an inherited `CLAUDE_CONFIG_DIR`, so which
+           * account runs the work stops depending on which terminal happened to
+           * launch DorkOS. Stored as a path, never an index into
+           * {@link ClaudeCodeAccountSchema} entries, so removing an account can
+           * never silently repoint the selection at a different client
+           * (spec `claude-code-accounts` D1/D2).
+           */
+          activeAccount: z.string().nullable().default(null),
+          /**
+           * The Claude accounts DorkOS knows about — what lets it show which
+           * client a session belongs to. The operator registers these: DorkOS
+           * never globs `~/.claude*`, because that guess sweeps up directories
+           * that are not accounts at all (D4).
+           */
+          accounts: z.array(ClaudeCodeAccountSchema).default(() => []),
+        })
+        .default(() => ({ activeAccount: null, accounts: [] })),
       opencode: z
         .object({
           enabled: z.boolean().default(true),
@@ -1108,6 +1153,7 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({
       default: 'claude-code',
+      claudeCode: { activeAccount: null, accounts: [] },
       opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
       codex: { enabled: true, binaryPath: null, credentialRef: null },
     })),
