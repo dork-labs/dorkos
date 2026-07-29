@@ -9,6 +9,13 @@
       "status": "specified"
     },
     {
+      "id": "260728-213721",
+      "slug": "message-search",
+      "title": "Search every message you have ever sent or received",
+      "created": "2026-07-28",
+      "status": "specified"
+    },
+    {
       "id": "260727-231058",
       "slug": "room-participation",
       "title": "How an agent participates in a room",

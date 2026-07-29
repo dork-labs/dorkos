@@ -1,0 +1,267 @@
+---
+slug: message-search
+id: 260728-213721
+created: 2026-07-28
+status: ideation
+linearIssue: DOR-672
+---
+
+# Search every message you have ever sent or received
+
+- **Slug:** message-search
+- **Id:** 260728-213721
+- **Date:** 2026-07-28
+- **Status:** ideation
+- **Author:** Claude (directed by Dorian), IDEATE stage
+- **Tracker:** [DOR-672](https://linear.app/dorkian/issue/DOR-672)
+- **Anchor:** `origin/main` @ `042f89dae`, 2026-07-28. **Byte sizes written `MB` are binary megabytes (bytes ÷ 1048576, i.e. MiB)** — one convention throughout, so figures here are directly comparable with each other but read ~5% smaller than the same bytes in decimal MB. Every `file:line` below was opened at that commit; every measurement was taken on the operator's own machine on 2026-07-28 and is attributed where it was not taken by this document.
+
+---
+
+## 1) Intent & Assumptions
+
+**Task brief.** Recall every message you have ever sent or received, on any surface, from one search box. You half-remember a conversation with an agent about dogs. You type `dogs`. You get every matching message — DorkOS rooms, Claude Code sessions, Codex, OpenCode, including sessions you ran from the bare CLI outside DorkOS — ranked, in one list. You click one and land where it was said.
+
+**Two things in that brief did not survive discovery, and both are stated here rather than quietly dropped.** **OpenCode is deferred** — ADR-0308:24 forbids reading its store, and the SDK alternative fails on four counts of its own (§5.4, §6 D5). And **"sessions you ran from the bare CLI" has to be claimed per runtime, not in general** — it holds for Claude Code and for Codex, whose CLIs both write transcripts to a stable on-disk location this index reads (§5.2, §5.3), and it does not hold for OpenCode at all, because OpenCode is not indexed. A search box that silently covers less for one runtime than another is the failure mode this project refuses, so the coverage is stated in the product and not only here. Everything else in the brief holds.
+
+**There is no full-text search anywhere in the product today, and that is verified rather than assumed.** `grep -rniI "fts5|bm25|snippet\(|VIRTUAL TABLE"` across `apps/` and `packages/` returns zero production hits; no SQLite virtual table exists in any of the 37 migrations under `packages/db/drizzle/`; and there is no `LIKE`-based search either — grep for `like(` or `search` across `apps/server/src/services/rooms/` and `apps/server/src/routes/rooms.ts` returns nothing. The only `fts5` mentions in the repo are research prose that decided against it (`research/20260224_mesh_core_library.md:405-451`, "Skip FTS5 in v1").
+
+**Assumptions carried in, each with its check:**
+
+- **A derived index is a shipped pattern here, not a new one.** ADR-0043 established file-canonical truth plus a derived SQLite cache plus a reconciler for `agents` (`decisions/0043-file-canonical-source-of-truth-for-mesh-registry.md:22`), with "delete the DB and let reconciliation rebuild it from files" as its recovery story (`:31`) and a 5-minute sweep (`:35`). Three implementations of that pattern already run at `300_000` ms: `packages/mesh/src/mesh-core.ts:391`, `apps/server/src/services/tasks/task-reconciler.ts:16`, `apps/server/src/services/workspace/workspace-reconciler.ts:15`.
+- **No new dependency.** `better-sqlite3` is pinned at `12.11.1` (`packages/db/package.json:26`, lockfile `pnpm-lock.yaml:8662`) and reports `sqlite_version() = 3.53.2` at runtime, with `ENABLE_FTS5` in `pragma compile_options`. Verified by running it.
+- **The index is a reader, never a writer.** It never writes to any runtime's store, so ADR-0310's "session storage stays runtime-owned" is not touched. What it _does_ touch is a different line of that ADR, and §6 D6 deals with it honestly.
+- **The operator is the only human.** DorkOS today is a single-operator install; `auth.enabled` is off by default and `resolveCaller` falls back to the install owner. Multi-human search is the community program's problem, not this one's.
+
+**Out of scope:**
+
+- Code search. Identifiers only match under a trigram tokenizer, and the file on disk is the truth where a transcript copy is stale. Code search belongs in file search over agent working directories.
+- Semantic / embedding search. A different index, a different cost model, a model dependency, and a different failure mode (plausible-but-wrong recall). Lexical first; if lexical is measurably insufficient, that is evidence for the next thing.
+- Agent memory. DOR-632 ("An agent re-learns the operator from scratch in every room") is recall _for an agent_; this is recall _for a human_. §6 D9 keeps them apart deliberately.
+- Any MCP tool in v1, and any cross-community/remote search. §6 D7 and D8.
+
+---
+
+## 2) Pre-reading Log
+
+| Read                                                                                                          | Takeaway                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `decisions/0310-…md`, Decision + Consequences → Negative (cited by clause text; this change edits that file)  | The Decision is that storage is runtime-owned and there is no unified transcript store. `:35` is a **Negative consequence** that names this feature by name: _"Cross-runtime features (global search, unified export) must fan out per runtime rather than query one store."_ That sentence, not the Decision, is what this work must answer. |
+| `decisions/0308-opencode-adapter-managed-server-sidecar.md:18,24,37`                                          | _"OpenCode's SQLite store is treated as opaque runtime-owned storage — never read or written directly … session listing/history are read via the SDK."_ A hard constraint, with its reason at `:18`: DorkOS "must not take a write-dependency on another product's private database schema."                                                  |
+| `decisions/0263-runtime-neutral-session-snapshot-event-contract.md:18,22`                                     | Coins the governing phrase _"own the boundary, not the bytes"_, and frames the pre-0263 state as the problem: _"DorkOS read Claude Code JSONL directly for session history … This did not generalize to future runtimes."_                                                                                                                    |
+| `decisions/0043-file-canonical-source-of-truth-for-mesh-registry.md:22,31,35`                                 | The precedent this design follows. Caveat noticed: 0043's derived index is over files **DorkOS itself writes**; ours would derive from files a third-party SDK writes, so 0043's "users can safely edit the file directly" property (`:30`) does not carry over. The rebuild property does.                                                   |
+| `specs/room-participation/02-specification.md:627-650`                                                        | RP7 specs `search_room_history` as a substring scan and states the premise this work retires, at `:646`. Its three access rules (`:640-642`) survive unchanged.                                                                                                                                                                               |
+| `specs/rooms/02-specification.md:517`                                                                         | _"We have no message index, and building one to satisfy a palette would be the tail wagging the dog."_ The origin of the premise; `room-participation:646` cites it by line number.                                                                                                                                                           |
+| `specs/community-adapter/02-specification.md:84,554,681-686`                                                  | Non-Goals exclude search with a reasoning that expires when this ships; §5's `'not-admitted'` rule is the obligation communities hand us; §Data model changes schedules the `room_entries` re-scoping.                                                                                                                                        |
+| `apps/server/src/services/runtimes/claude-code/sessions/transcript-parser.ts:263-560`                         | The shipped JSONL parser. Four line-type branches only (`:282`, `:420`, `:535`, `:548`); everything else silently dropped. This is the projection's model, not its replacement.                                                                                                                                                               |
+| `apps/server/src/services/runtimes/codex/codex-runtime.ts:13-22,732`                                          | _"No byte-addressable transcript exists — rollout files are SDK-internal."_ And: history is served from DorkOS's own EventLog, because _"The Codex SDK exposes NO thread listing or reading API."_                                                                                                                                            |
+| `apps/server/src/services/core/mcp-server.ts:81-84` + `runtimes/claude-code/mcp-tools/relay-helpers.ts:11,56` | Every external MCP caller's **Relay sender identity** collapses to one principal, `EXTERNAL_MCP_SENDER = 'relay.external.mcp'`. DOR-514.                                                                                                                                                                                                      |
+| `apps/server/src/routes/room-caller.ts:27-30,55,70` and `services/rooms/room-service.ts:797-816`              | A caller that omits `X-DorkOS-Agent` resolves to the install owner — and _"the owner may see every room."_ The DOR-505 residual, with universal room visibility attached.                                                                                                                                                                     |
+| `apps/server/src/middleware/agent-identity.ts:11-17,63-99`                                                    | _"This middleware never rejects a request … identity is attribution, not authorization."_                                                                                                                                                                                                                                                     |
+| `packages/db/src/schema/rooms.ts:134-149,187-249`                                                             | `room_members` has `joined_at` (text) and `last_read_seq` — **no `joinedSeq`**. `room_entries` PK is `(roomId, seq)` with `uniqueIndex(roomId, id)`.                                                                                                                                                                                          |
+
+---
+
+## 3) Codebase Map
+
+**Primary components this touches**
+
+| Path                                                                                   | Role                                                                                                            |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `packages/db/src/schema/` (new file) + `packages/db/drizzle/00NN_*.sql` (hand-written) | The `messages` table, the FTS5 external-content table and its triggers, and the `search_sources` frontier table |
+| `packages/db/drizzle.config.ts:4-22`                                                   | A new schema file must be listed here **twice** (barrel + config) or drizzle-kit never sees it                  |
+| `apps/server/src/services/search/` (new domain)                                        | Projections, the scanner/reconciler, the query service                                                          |
+| `apps/server/src/routes/`                                                              | One new route                                                                                                   |
+| `apps/client/src/layers/features/command-palette/`                                     | Where a person types the query (`specs/rooms/02-specification.md:505-517` designed the surface)                 |
+
+**Shared dependencies:** `lib/dork-home.ts:15-21` (the only data-directory resolver; the db file is `dork.db` directly in it — `apps/server/src/index.ts:306`, `harness-boot.ts:69`). `packages/db/src/index.ts:27-30` sets WAL, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`.
+
+**Data flow:** runtime store or `room_entries` → per-source projection (pure function) → `messages` row → FTS5 external-content index by trigger → ranked query with `bm25()` + `snippet()` → result rows carrying the coordinates to navigate back.
+
+**Blast radius:** three specs carry "there is no message index" as a load-bearing premise, and they are chained — `rooms:517` is the origin, `room-participation:646` cites it _by line number_, and `community-adapter:84` states it independently as a port Non-Goal. Amending one without the others leaves a cited claim pointing at changed text.
+
+---
+
+## 4) Measurements
+
+Two sets. The first is the operator's, taken 2026-07-28 at load < 8 on 14 cores. The second is this document's own, taken independently over the same corpus later the same day; where they differ, the difference is stated rather than smoothed.
+
+### 4.1 The operator's measurements (carried verbatim)
+
+|                                                          |                                          |
+| -------------------------------------------------------- | ---------------------------------------- |
+| Full cold rebuild (2,470 files, 2,911 MB, 450,398 lines) | **8.25 s** → 49,606 messages, 108 MB     |
+| Query, top-20 ranked, 500k messages                      | **3.3 ms** (**1.9 ms** with `snippet()`) |
+| Steady-state incremental append at 494k rows             | p50 **0.07 ms**, p95 0.55 ms             |
+| External-content vs storing the text twice               | **43% smaller**, identical query time    |
+
+The rebuild number is the load-bearing one: **delete-and-rebuild is the cheapest correctness mechanism available**, so it is the first answer to drift, not the last.
+
+### 4.2 This document's independent measurements
+
+Scanned `~/.claude/projects` on 2026-07-28: **2,458 files, 2,771.2 MB, 448,857 lines.** (Line counts in §4.2 below come from an earlier pass the same day and read 448,770; the corpus grows continuously and the two differ by 0.02%.) (The operator's 2,470 / 2,911 MB / 450,398 was taken earlier the same day against a corpus that grows; the two are the same corpus at two moments. The operator's compaction sample says "28 of 2,458 files", which is exactly this file count.)
+
+| Measurement                                                           | Value                                                              |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Indexable messages (`user`/`assistant` lines carrying non-empty text) | **50,631**                                                         |
+| Their text                                                            | **42.85 MB**                                                       |
+| Share of transcript **lines**                                         | **11.28%**                                                         |
+| Share of transcript **bytes**                                         | **1.55%**                                                          |
+| `tool_result` content blocks                                          | 981.3 MB                                                           |
+| Top-level `toolUseResult` payloads                                    | 998.9 MB                                                           |
+| `tool_use` call blocks                                                | 96.5 MB                                                            |
+| `thinking` blocks                                                     | **57,375**                                                         |
+| …their `thinking` **text**                                            | **0.19 MB total**                                                  |
+| …their `signature` fields                                             | **161.5 MB**                                                       |
+| `file-history-snapshot` lines                                         | **16.0 MB** (2,551 lines)                                          |
+| `attachment` lines                                                    | 153.6 MB (largest subtype `skill_listing`, 72.5 MB)                |
+| Files carrying `isCompactSummary` markers                             | **28**, all 28 with content after the last marker; 74 marker lines |
+| Lines of `type: 'relocated'`                                          | **543**                                                            |
+| Lines with no `type` field                                            | 3,804                                                              |
+| Lines that fail `JSON.parse` outright                                 | **64**                                                             |
+
+### 4.3 Where the two disagree, and what is true
+
+- **Compaction: exact agreement.** 28 files, every one with content after the marker, and the largest carries 16 markers across 25,361 lines with 156 lines after the last one. Zero files end at a marker. Compaction is append-only, measured, twice.
+- **`relocated`: exact agreement.** 543, and it is a top-level _line type_ recording a cwd change inside a growing file, not a file move. Confirmed by reading the type census, not by inferring from the name.
+- **Thinking blocks: the count agrees, the implication does not.** 57,375 blocks against the operator's 57,357 — the same number on a growing corpus. But **56,923 of them (99.2%) carry an empty `thinking` string**; total reasoning text across the entire corpus is **0.19 MB**, while their `signature` fields total 161.5 MB. Excluding assistant reasoning therefore costs almost nothing, because there is almost none on disk. Stating "we exclude 57,357 thinking blocks" without that is technically true and reads as a much bigger sacrifice than it is.
+- **Tool output: the number is in the right neighbourhood, and the shape is more interesting than the number.** The brief says 2,158 MB. This scan finds 981.3 MB of `tool_result` content blocks **plus** 998.9 MB of top-level `toolUseResult` payloads — Claude Code writes each tool result **twice, in two encodings, in the same file** — for 1,980 MB, or 2,076 MB counting the 96.5 MB of `tool_use` call blocks. Either way tool traffic is ~75% of the corpus and the largest single reason the index is small.
+- **File snapshots: 177 MB does not reproduce.** `file-history-snapshot` lines total **16.0 MB**. The nearest bucket to 177 MB is `attachment` + `file-history-snapshot` = 169.6 MB; separately, `tool_result` blocks in _main-session_ files alone come to exactly 177 MB, which is the likelier origin of the figure. The honest statement is 16.0 MB of file snapshots, and the exclusion still holds for a different reason: a snapshot is a copy of a file whose current version is on disk.
+- **Scope percentages: 11.28% / 1.55% here against 10.8% / 1.38% in the brief.** Same order, same denominator — the whole corpus, subagent transcripts included. **But §6 D3 changes the denominator**, and it changes it downward: excluding subagent transcripts, v1 indexes 18,113 messages and 16.83 MB, which is **9.32% of the lines and 2.50% of the bytes it reads**, or **4.04% of lines and 0.61% of bytes of everything on disk**. The brief’s figure is the larger-sounding one and it is not this design’s; `02-specification.md` §1.1 carries both framings side by side so neither can be quoted alone.
+
+### 4.4 The finding neither measurement anticipated
+
+**87% of the transcript files are subagent transcripts, and they are nested where a one-level glob cannot see them.**
+
+| Category                                                                                          | Files     | Bytes          |
+| ------------------------------------------------------------------------------------------------- | --------- | -------------- |
+| Main sessions — `<slug>/<sessionId>.jsonl` (of which 37 are eval sandboxes, excluded)             | **278**   | **673.8 MB**   |
+| Subagent transcripts — `<slug>/<sessionId>/subagents/**.jsonl`, up to `subagents/workflows/<wf>/` | **2,142** | **2,096.0 MB** |
+| Plugin artifacts — `<slug>/vercel-plugin/skill-injections.jsonl`                                  | 38        | 1.2 MB         |
+
+A `projects/*/*.jsonl` glob sees 11% of the files and 24% of the bytes. A recursive walk sees everything — including 2,142 conversations the operator never had. That is not a bug to fix; it is a scoping decision that had not been made, and §6 D3 makes it.
+
+### 4.5 A rebuild measured against the actual v1 scope
+
+The operator's 8.25 s covers the whole corpus. §6 D3 cuts subagent transcripts, so v1 reads 24% of it, and the honest thing is to measure that rather than scale the number down on paper. Built for real — a `messages` table, an FTS5 external-content table with `tokenize='porter unicode61'`, an `AFTER INSERT` trigger, WAL, `synchronous=NORMAL`, batched one transaction per file:
+
+|                                                  |                                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------- |
+| Corpus read                                      | 241 files, 671.5 MB, 192,856 lines (main sessions, less eval sandboxes)   |
+| **Rebuild**                                      | **2.69 s** → **17,953 messages**, **29.2 MB**                             |
+| Top-20 ranked query (`bm25()`), p50 over 25 runs | **0.02 ms** (1 hit) · **0.49 ms** (1,374 hits) · **0.67 ms** (2,051 hits) |
+| Same query with `snippet()`, p50                 | 0.21 ms · **4.55 ms** · 3.64 ms                                           |
+| Single append at ~18k rows, own transaction      | 1.29 ms                                                                   |
+
+Two things this settles.
+
+**It corroborates the 8.25 s.** 8.25 s over 2,911 MB is 2.83 MB/ms of the same shape; 2.69 s over 671.5 MB is 4.01 MB/ms on a smaller working set. Two independent runs, same order, and the v1 rebuild is comfortably inside the "just rebuild it" budget that D1 rests on.
+
+**It corrects the `snippet()` claim, and the sign is backwards.** The brief says top-20 is 3.3 ms and **1.9 ms with `snippet()`** — faster with it. It cannot be: `snippet()` re-reads each returned row's body out of the content table and scans it for the match window, which is strictly more work than returning ids. Measured here it is **5–9× slower** on the queries with real hit counts (0.49 → 4.55 ms; 0.67 → 3.64 ms), and never faster on any of the three. The absolute numbers are still tiny and the design is unaffected — but a spec that says snippets are free would send someone looking for a regression when their search takes 4 ms instead of 0.5 ms.
+
+**And it confirms external content.** Building the same 18,114 rows both ways: external content **29.1 MB**, storing the text twice **48.4 MB** — **39.9% smaller**, against the operator's 43% on the larger corpus — with query time indistinguishable (p50 **0.681 ms** vs **0.702 ms**). Two runs, two corpus sizes, same conclusion.
+
+---
+
+## 5) Research — what the code says about each candidate source
+
+### 5.1 DorkOS rooms
+
+`room_entries` (`packages/db/src/schema/rooms.ts:187-249`) has PK `(roomId, seq)`, `uniqueIndex('room_entries_room_id_entry_id_unique').on(roomId, id)`, and a `body` column. A per-room monotonic `seq` allocated in an IMMEDIATE transaction is exactly the frontier a watermark wants. This is the easy source and the only one where DorkOS owns the write.
+
+### 5.2 Claude Code
+
+`resolveClaudeConfigDir()` is `$CLAUDE_CONFIG_DIR ?? ~/.claude` (`apps/server/src/services/runtimes/claude-code/claude-config-dir.ts:31-33`) — **not** a hardcoded `~/.claude`; its TSDoc says hardcoding "silently split-brains" (DOR-250). `getProjectsRoot()` appends `projects` (`sessions/transcript-reader.ts:60-62`). The slug is `cwd.replace(/[^a-zA-Z0-9-]/g, '-')` (`:51-53`) — **lossy and non-invertible**; the codebase already compensates by reading the true cwd from the JSONL head rather than the slug (`:104-106`), and an index must do the same.
+
+Files are append-only JSONL. `parseTranscript` (`transcript-parser.ts:263`) handles four line types and drops the rest; `tool_result` is folded into its `tool_use` rather than becoming a message (`:307-315`), and a user record containing a `tool_result` has its sibling `text` blocks suppressed as SDK-internal (`:321-331`). This is the only runtime whose bare-CLI sessions land in a stable, documented, DorkOS-readable location.
+
+### 5.3 Codex
+
+The adapter is explicit that rollout files are not ours: `codex-runtime.ts:732` — _"No byte-addressable transcript exists — rollout files are SDK-internal."_ Nothing in the repo reads them; grep for `.codex/sessions` / `rollout-` across `apps`, `packages`, `scripts`, `docs` returns one hit, in `NOTES.md`. On disk they are `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<ISO-8601>-<uuid>.jsonl` plus a sibling `archived_sessions/`.
+
+The adapter serves history from **DorkOS's own event log** instead (`codex-runtime.ts:13-16`, `:661-671`), because _"The Codex SDK exposes NO thread listing or reading API."_ That log is the tempting second candidate and §5.5 rejects it on its own numbers, which leaves the rollout files as the only source that has codex history in it.
+
+**And no ADR forbids reading them, which had to be checked rather than assumed.** ADR-0309 (the codex adapter's own ADR) mentions the path at `:18` and says the SDK cannot list or read threads (`:20`, `:24`), and frames thread resume as continuity _"without DorkOS owning transcript storage"_ (`:31`) — every line is about SDK incapacity or storage ownership, none about whether the files may be read. Grep of all of `decisions/` for `rollout` returns two hits, both about deployment rollouts. **The phrase "never read or written directly" occurs exactly once in the entire decisions corpus, and it is ADR-0308:24, about OpenCode.** So `codex-runtime.ts:732` is a TSDoc on one stub method explaining why it returns `{content:'', newOffset:0}` — no rationale, no enforcement — and it is a different tier from an accepted Decision line with an ESLint rule behind it. Absence of a prohibition is not authorization, which is why the coupling is recorded in ADR `260728-214214` rather than assumed.
+
+**Census of the rollout corpus, structure only** — 16 files, 6.93 MB (12 under `sessions/`, 4 under the flat `archived_sessions/`), 2,114 JSON lines, **0 malformed**. Line types: `response_item` 1,151, `event_msg` 882, `turn_context` 60, `session_meta` 16, `world_state` 4, `compacted` 1. Four properties make a ~20-line projection trivial:
+
+- **Whole messages, no deltas.** Zero delta-named event types in 2,114 lines. Role is `payload.role`, text is `payload.content[].text`, and the timestamp is a top-level `timestamp` present on **2,114 of 2,114 lines** — the exact inverse of `session_events` (§5.5).
+- **Append-only, one file per session.** Exactly one `session_meta`, always line 1; 16 distinct session ids, none appearing in two files; timestamps monotonic within every file; **file mtime equals the last record's timestamp on 16/16**, so `(size, mtime)` is an exact watermark.
+- **The cwd is recoverable** from `session_meta.payload.cwd` (16/16) and per-turn from `turn_context.payload.cwd`.
+- **One trap:** the same messages appear in two families — `response_item` (144 assistant / 79 user) and `event_msg` (144 `agent_message` / 59 `user_message`). **Index one family or double-count.**
+
+The corpus is small — **223 indexable messages against Claude Code's 17,953** — so codex costs one projection and adds ~1.2% more rows. That is the honest case for including it: not volume, but that the cockpit's multi-runtime claim should not have a search box that covers one runtime.
+
+### 5.4 OpenCode
+
+ADR-0308 forecloses the obvious option: _"OpenCode's SQLite store is treated as opaque runtime-owned storage — never read or written directly"_ (`:24`). The adapter honours it — every read goes through the SDK (`session-mapper.ts:465,477-480`), and `grep better-sqlite3|Database(|fs.readFile` across `opencode/*.ts` returns zero.
+
+Three independent reasons that ban is right, found by looking at the file:
+
+1. `/Users/doriancollier/.local/share/opencode/opencode.db` holds `account.access_token`, `account.refresh_token` and `credential.value` — all `text NOT NULL`, all in the same database as the messages. A generic indexer over that file writes live OAuth tokens into a searchable table.
+2. Message text is not in typed columns. `message.data`, `part.data` and `session_message.data` are each an opaque JSON blob. Indexing it means parsing OpenCode's private JSON shape — the exact "private database schema" dependency `:18` rules out.
+3. The file is in WAL mode (`-shm`/`-wal` present), so a second reader is a concurrency question against a store with, per `:37`, known upstream reliability issues.
+
+**So the SDK path was evaluated on its merits, and it fails on four counts of its own.** This matters because "read it through the SDK the adapter already uses" is the obvious rescue, and it does not work:
+
+1. **A background read must spawn someone else's agent server.** The sidecar is not always-on — nothing boots it at startup (`apps/server/src/index.ts:626-654`, "The sidecar spawns lazily on first use"), and `check-dependencies.ts:12-14` refuses even to probe because _"a cold probe would spawn a server as a side effect."_ The adapter has two accessors precisely for this: `peekClient()` never boots and returns `null` when cold, `getClient()` boots (`session-mapper.ts:59-76`). A reconciler on a timer would therefore either spawn a child process every N minutes purely to read — a 15 s startup budget, a six-attempt restart ladder, one cached instance per directory with no idle eviction (`server-manager.ts:53-66`, `NOTES.md:38-43`) — or throw every N minutes. On this machine `opencode` is not even installed, so `boot()` throws at `server-manager.ts:204-206`. **Every other source in this design reads bytes already at rest.**
+2. **The corpus is 24 messages.** Measured on a copy of the db opened read-only, counts only: `session` 6, `message` 24, `part` 73. Against 17,953 from Claude Code.
+3. **The pinned v1 SDK is stale against the server it drives.** The server supports `before` (message keyset), `start` (sessions-updated-since) and `scope: 'project'`; none is in the pinned v1 types. Two live adapter bugs fall out of the same gap and deserve their own tickets regardless of search: `session.list` has a **server-side default cap of 100** that DorkOS never overrides, and its directory filter is **exact string equality**, so a session started in `<repo>/apps/server` is invisible to `listSessions('<repo>')`.
+4. **It would be the third mechanism.** An SDK poll has no resumption primitive — `session.messages` pages backwards from newest, so "what is new" is not expressible and you re-read and diff — and it carries a precondition the other two lack. Under D12 that promotes the whole shape to a port. **For 24 messages, that is the tail wagging the dog**, which makes deferral principled rather than merely convenient.
+
+One thing worth recording for the follow-up ticket: `Session.time.updated` is **stamped at turn start**, not on message write (`prompt.ts:1160-1161` in the local OpenCode snapshot — an earlier note cited `:1058`, which is version drift, not a different fact; `updateMessage`/`updatePart` never patch it). A naive `updated > lastSeen` poll would miss the assistant half of any turn in flight, so the watermark must be `>=` plus a forced re-read of any session last seen non-idle. The projection itself is already written and reusable (`session-mapper.ts:201-246`).
+
+### 5.5 The DorkOS session event log — evaluated and rejected
+
+`packages/db/src/schema/session-events.ts` is DorkOS-owned, which makes it the tempting answer for codex and opencode: no third-party format, no ADR to argue with. **It does not survive contact with its own numbers**, and the rejection is recorded here because it is the option a reader will otherwise propose.
+
+- **Coverage.** 455 rows across **2 sessions**, against 160 registered sessions and 2,458 Claude Code transcripts on the same machine. Claude Code does not write to it at all (`session-events.ts:4-5`).
+- **It is trimmed, and the trim is permanent.** `EVENT_LOG_MAX_EVENTS = 5000` per session. JSONL can be trimmed too, but there the original is still on disk to re-read; here the original is the trimmed table. An index built on it would lose history the index exists to preserve, and a rebuild would not bring it back.
+- **The shape is wrong for a pure projection.** Assistant text is stored as raw `text_delta` fragments — 256 rows for 9 turns — so extraction is a **stateful fold**, not the ~20-line per-row function every other source gets.
+- **No usable timestamp.** Payloads carry none; `created_at` is flush time, stamped once per turn.
+
+Any one of these would be a caveat; together they disqualify it. **No source in this design reads `session_events`.**
+
+### 5.6 CTX — evaluated and declined
+
+`github.com/ctxrs/ctx`, **reviewed at source by the operator during design; not independently opened by this document.** **Do not adopt.** Its FTS index stores a 2,048-character preview and never indexes tool or command output at all (`crates/ctx-history-store/src/search/projections/encoding.rs:20-27`, the operator's citation). It is built to hand an _agent_ a few cheap cited leads; this feature hands a _human_ exhaustive recall of what was said. Worth stealing rather than adopting: its change-signal taxonomy and its normalized import schema. Its eight change signals collapse to two here, because six of them have zero observed instances in the measured corpus (§4.3).
+
+### 5.7 Tokenizer
+
+Measured, not assumed. Against a corpus containing "dog" / "dogs" / "DOGGED":
+
+```
+tokenize='unicode61'         MATCH 'dogs'  hits = 1
+tokenize='porter unicode61'  MATCH 'dogs'  hits = 3
+```
+
+**Stemming is what makes the journey work**, and it is the whole tokenizer decision: with `porter unicode61` there is one index and no trigram, because code identifiers — the only thing trigram buys — are out of scope by §1.
+
+One trap found while verifying, which a naive test does not catch: with `content='<table>'` external content, **the FTS5 column names must equal the content table's column names.** Get it wrong and `MATCH` and `bm25()` keep working while `snippet()` fails at runtime with `SQL logic error`.
+
+---
+
+## 6) Decisions
+
+| #       | Decision                | Choice                                                                                              | Rationale                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------- | ----------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D1**  | Store or index?         | **A derived index, rebuildable and disposable**                                                     | ADR-0310 keeps transcript storage runtime-owned so we never become the second writer of someone else's truth. ADR-0043 is the shipped shape for exactly this: file-canonical truth, derived SQLite cache, reconciler. An 8.25 s rebuild makes "delete it and rebuild" the first answer to drift rather than the last.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **D2**  | Schema shape            | **One `messages` table + FTS5 external-content + one `search_sources` frontier table**              | External content is **43% smaller than storing the text twice with identical query time** (measured). One frontier table replaces per-source bookkeeping. No new dependency: FTS5, `bm25()`, `snippet()` and `porter unicode61` all verified present in `better-sqlite3@12.11.1` / SQLite 3.53.2.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **D3**  | Which Claude Code files | **Main sessions only. Subagent transcripts AND eval-harness sandboxes are excluded in v1**          | 2,142 of 2,458 files and 2,096 MB of 2,771 MB are subagent transcripts (§4.4) — conversations the _human_ never had. The user story is "every message you have ever sent or received"; an agent's working notes are neither. The shipped adapter already drops sidechain transcripts at list level (`transcript-reader.ts:310-325,438`), so this follows precedent rather than inventing one. Recursive discovery is still required — to find them and skip them deliberately rather than by accident of glob depth. **Amended after review:** the same test excludes 37 eval-harness sandboxes — `pnpm evals:local` writes its runs into the operator's own `~/.claude/projects`, and a machine-generated conversation in a `dorkos-evals-*` tmpdir is as much "a conversation the human never had" as a subagent transcript is. Detected on the head-record `cwd` against `SANDBOX_PREFIX` (`packages/evals/src/runner/sandbox.ts:23,59`), never on the lossy slug.                                                                                                                                |
+| **D4**  | Codex source            | **The rollout files. `session_events` is rejected**                                                 | §5.5 disqualifies the event log on four counts. That leaves the rollout files as the only place codex history exists, and **no ADR forbids reading them**: `codex-runtime.ts:732`'s "SDK-internal" is a TSDoc on one stub method explaining why it returns nothing, with no rationale and no enforcement — a different tier entirely from ADR-0308:24, which is a Decision line with an ESLint rule behind it. Grep of all of `decisions/` for `rollout` returns two hits, both about deployment rollouts. They are **append-only JSONL with whole messages**, so they are the same mechanism as Claude Code and cost one more ~20-line projection. Absence of a prohibition is not authorization, which is why ADR `260728-214214` records the coupling rather than assuming it.                                                                                                                                                                                                                                                                                                                    |
+| **D5**  | OpenCode source         | **Deferred from v1. `opencode.db` is never opened, and the SDK path is not taken either**           | ADR-0308:24 forbids the direct read outright — the security instinct and the ADR converge and the ADR got there first. The SDK path was then evaluated on its merits and rejected on four: a background read must **spawn someone else's agent server** (`peekClient()` returns `null` when cold, `getClient()` is a 15 s-budget spawn with a six-attempt restart ladder), the corpus is **24 messages**, the pinned v1 SDK is provably stale against the server it drives, and it would be the **third mechanism** — which under D12 promotes the whole shape to a port, for 24 messages.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **D6**  | ADR-0310                | **Partially superseded, named honestly**                                                            | The _Decision_ is untouched — this is a reader, it writes nothing, storage stays runtime-owned. What is retired is one **Negative consequence**, `:35`: _"Cross-runtime features (global search, unified export) must fan out per runtime rather than query one store."_ This design does query one store. Per `writing-adrs`, that is a partial supersession: 0310 keeps `status: accepted`, names the retired clause, and the new ADR carries `supersedes`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **D7**  | Access model            | **Owner sees everything; an agent over MCP sees member-scoped room history and no sessions at all** | Sessions are owner-only because `resolveCaller` needs an Express `Response` and MCP handlers never receive one (`room-caller.ts:55`), and because a caller omitting `X-DorkOS-Agent` resolves to the owner — who _"may see every room"_ (`room-service.ts:797-816`). Absence is never consent (ADR `260727-181825:54`; DOR-604). Visibility is a **join, not a column**: resolve the caller's visible container set, then `source_id = 'rooms' AND origin_key IN (...)`. Materializing the ACL as index tokens would force re-indexing a whole room on every join.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **D8**  | Remote communities      | **v1 searches the local cache only. No `search` on the `CommunityAdapter` port**                    | Searching a remote community means a server you do not control ranks results you cannot verify — a different trust model and a different decision. Cached community messages are indexed for free by the room projection; that is a consequence of caching, not a port capability.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **D9**  | Relationship to DOR-632 | **Deliberately separate**                                                                           | Search is recall for a **human**; memory is recall for an **agent**. They want different corpora, different ranking, different access rules and different latency budgets. Conflating them drags a shippable feature into a harder problem.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **D10** | Security                | **Never traverse generically**                                                                      | Every projection selects explicit fields. No `SELECT *`, no "index all text columns", no recursive JSON walk. The counter-example is concrete and verified: `opencode.db` holds `account.access_token`, `account.refresh_token` and `credential.value` beside its message tables. D5 removes that file from reach entirely; the rule stands for every other source.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **D11** | Column discipline       | **In a table rebuildable in 8 seconds, no column ships without a consumer**                         | Widening later costs one projection change plus a rebuild — eight seconds, not a migration. The rule cut two columns during review, including one the reviewer had proposed themselves. Same reasoning that cut the one-valued `resume` flag from the `CommunityAdapter` port (`specs/community-adapter/02-specification.md:808`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **D12** | Port or not?            | **No port. Two mechanisms, three pure projections, one registry array — and the trigger is armed**  | Only the _projection_ varies per source; discovery, change detection and incremental read are identical within two groups — **append-only JSONL tailed at a byte offset** (claude-code, codex) and **SQLite rows above a monotonic watermark** (rooms). Adding a source inside an existing mechanism is one function and one row. **The brief's reasoning for this was wrong and the conclusion survives anyway**: it held that SDK-mediated reads would keep OpenCode inside mechanism 2. They would not — an SDK poll has no resumption primitive (`session.messages` pages backwards from newest, so "what is new" is not expressible; you re-read and diff) and it carries a precondition the other two lack (a child process must be alive). That is a third mechanism, and under the rule it would promote the shape to a port. **The reason there is no port is D5, not the SDK**: the source that would have introduced the third mechanism is deferred. **The day OpenCode is indexed, the promotion fires** — written down so the next author inherits a trigger rather than an accretion. |
+
+**No ambiguity was left unresolved.** Every open question the brief carried was either settled by a measurement in §4 or by a source reading in §5; where the source disagreed with the brief, §4.3 and §6 D4/D5 record the disagreement and follow the source.
+
+---
+
+## 7) Recommended next step
+
+**SPECIFY.** The design is settled, the measurements are taken, and three neighbouring specs carry a premise this work retires — which is amendment work that belongs in the same change, not a follow-up. `specs/message-search/02-specification.md`.

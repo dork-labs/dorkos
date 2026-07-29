@@ -1,0 +1,503 @@
+---
+slug: message-search
+id: 260728-213721
+created: 2026-07-28
+status: specified
+linearIssue: DOR-672
+---
+
+# Message search — one box over every message you have ever sent or received
+
+**Status:** Specified (frozen for DECOMPOSE)
+**Author:** Claude (directed by Dorian), SPECIFY stage
+**Date:** 2026-07-28
+**Tracker:** DOR-672 · the cockpit's first recall surface
+**Ideation:** `specs/message-search/01-ideation.md`
+**Decision:** ADR `260728-214214` (a derived, rebuildable index; partially supersedes one clause of ADR-0310 — the "must fan out per runtime rather than query one store" bullet)
+**Anchor:** `origin/main` @ `042f89dae`, 2026-07-28. **Byte sizes written `MB` are binary megabytes (bytes ÷ 1048576, i.e. MiB)** — one convention throughout, so figures here are directly comparable with each other but read ~5% smaller than the same bytes in decimal MB. Every `file:line` below was opened at that commit. Measurements are labelled **[measured]** where this document took them and **[operator]** where they were taken during design; where the two disagree, §1.4 says so.
+
+## Overview
+
+You half-remember a conversation with an agent about dogs. You type `dogs`. You get every matching message — DorkOS rooms, Claude Code sessions and Codex sessions, including ones you ran from the bare CLI outside DorkOS — ranked, in one list. You click one and land where it was said. **OpenCode is not in that list**, and §2.3 is why; a search box that silently covers less for one runtime than another is the failure this project refuses, so the gap is stated in the product and not only here.
+
+This spec builds that as a **derived index, not a second store**: canonical truth stays where each runtime put it, and DorkOS keeps a rebuildable SQLite cache beside it. That is ADR-0043's shipped shape with runtimes' stores in the role `.dork/agent.json` plays for `agents`.
+
+```
+ runtime store / room log ──projection──▶ messages ──trigger──▶ messages_fts (external content)
+   (canonical, never written)   (~20 lines,      (derived,        (porter unicode61, bm25)
+                                 pure)            disposable)
+                                     ▲
+                              search_sources ── the frontier: what we have already read
+```
+
+Three things this is not. It is **not** a transcript store — no runtime reads it, and deleting it is a supported recovery. It is **not** a search over everything that happened — it indexes what was _said_ — **about 4% of transcript lines and under 1% of transcript bytes** — and §1 states exactly which questions therefore return nothing. And it is **not** agent memory; DOR-632 is that, and §9.4 keeps them apart.
+
+## Background / Problem Statement
+
+**There is no full-text search anywhere in DorkOS, verified rather than assumed.** `grep -rniI "fts5|bm25|snippet\(|VIRTUAL TABLE"` across `apps/` and `packages/` returns zero production hits. No SQLite virtual table exists in any of the 37 migrations under `packages/db/drizzle/`. There is no `LIKE` fallback either — grep for `like(` or `search` across `apps/server/src/services/rooms/` and `apps/server/src/routes/rooms.ts` returns nothing. The only `fts5` mentions in the repo are research prose that decided against it (`research/20260224_mesh_core_library.md:405-409`, weighing it; `:451`, "Skip FTS5 in v1").
+
+**Two prior decisions asked for this, and this spec answers both.**
+
+- `specs/room-participation/02-specification.md:646` refused to build an index for its own tool and wrote its own invitation: _"If it becomes slow, that is evidence for an index, and evidence is what should buy one."_
+- `decisions/260717-001410-recent-sessions-fanout-endpoint.md:28` names this work in its first Positive — _"One reusable cross-agent session primitive (future global search/export can build on it) with a single server-side implementation"_ — and records at `:34` what fan-out alone would cost: _"O(agents × runtimes) reads per request; acceptable at tens of agents with 30s client staleTime, but fleets of hundreds will need a server-side cache."_ **This index is that cache.** Read adversarially, `:28` anticipates search building on the fan-out **primitive**, not on a separate store — it is an invitation, not a licence for this shape. The line that forces the shape is `:34`, with the 2 s-per-runtime timeout that endpoint inherits (`:22`): a fan-out search is partial by construction, and a person searching their own history cannot be told "some of your runtimes timed out" on every keystroke.
+
+So the framing is an anticipated need arriving on schedule, not a change of mind. There is exactly **one** supersession in the whole change, it is an ADR-level one, and it is named in ADR `260728-214214`. The three changes to neighbouring specs are amendments, not supersessions, and §References lists them.
+
+**Two constraints bound every option.** ADR-0310 keeps transcript storage runtime-owned so DorkOS never becomes the second writer of someone else's truth. ADR-0308:24 goes further for one runtime — _"OpenCode's SQLite store is treated as opaque runtime-owned storage — never read or written directly"_ — and the file itself is the argument: it holds `account.access_token`, `account.refresh_token` and `credential.value` in the same database as its messages. The security instinct and the ADR converge, and **the ADR got there first**; the credentials are evidence it was right, not grounds for an exception.
+
+## Decisions (LOCKED — settled in IDEATE, do not relitigate)
+
+`specs/message-search/01-ideation.md` §6, D1–D12, in full. The five that bind hardest here:
+
+1. **D1 — a derived index, not a store.** Rebuildable in seconds, disposable, never written to by any runtime.
+2. **D2 — one `messages` table, FTS5 external content, one `search_sources` frontier table.** No new dependency.
+3. **D10 — never traverse generically.** Every projection selects explicit fields. No `SELECT *`, no "index all text columns", no recursive JSON walk.
+4. **D11 — in a table rebuildable in seconds, no column ships without a consumer.**
+5. **D12 — no port while there are two mechanisms**, and a written-down trigger for when that stops being true. §3 records what the trigger did.
+
+## Goals
+
+- **G1** — One query box answers "where did we talk about X" across rooms, Claude Code and Codex — bare-CLI sessions included — ranked, in one list, fast enough to feel like typing.
+- **G2** — The index is **derived**: `DELETE FROM messages` plus a rebuild is a complete, supported recovery, and no runtime can tell it exists.
+- **G3** — **Per-source degradation.** One source that fails to project contributes zero rows and one warning — never a failed search, never a blank list. ADR-0310's "partial list + warning, never a blank screen" shape, inherited rather than reinvented.
+- **G4** — **The scope is stated in the product**, not only here. A person must be able to learn what search does not cover without reading a spec.
+- **G5** — `search_room_history` becomes a caller of this index, so there is exactly one search path over the room log.
+- **G6** — An access model where **visibility is a join**, the owner path is explicit, and no agent reaches session history.
+
+## Non-Goals
+
+- **Not** code search. Identifiers only match under a trigram tokenizer, and adding one doubles the index to answer a question file search answers better — against files that are current, where a transcript copy is stale.
+- **Not** semantic or embedding search. A different index, a model dependency, and a failure mode (plausible-but-wrong recall) that a recall tool can least afford. Lexical first; if lexical is measurably insufficient, that is evidence for the next thing, exactly as RP7 reasoned about this one.
+- **Not** an MCP tool of its own in v1. The one agent-facing surface is RP7's existing `search_room_history` (§8), which is a tool that already exists rather than a new one.
+- **Not** search across a remote community. §9.3.
+- **Not** agent memory (DOR-632). §9.4.
+- **Not** ranking beyond `bm25()` plus recency. No learned ranking, no click feedback, no personalization — all three need data this feature has to ship to collect.
+- **Not** a new UI surface. The entry point is the existing command palette's own search, and `specs/rooms/02-specification.md:517`'s separation of navigation from message search still holds — §8 says how both are true.
+
+## Technical Dependencies
+
+- **`better-sqlite3` / SQLite 3.53.2** — already a dependency: `packages/db/package.json:21` declares the **range** `^12.11.1` (not a pin), resolving today to 12.11.1 (`pnpm-lock.yaml:8662`) as a singleton across the monorepo. A range means a minor bump can arrive without a commit here, so the FTS5 assertions in §Testing Strategy are what hold the guarantee, not the manifest. `pragma compile_options` includes `ENABLE_FTS5`; `bm25()`, `snippet()`, `highlight()` and `porter unicode61` all verified by running them. **[measured]**
+- **`@dorkos/db`** — a new schema file, registered in **two** places for **two different reasons**, which an earlier draft conflated into one. `drizzle-kit` reads only the `schema` array in `packages/db/drizzle.config.ts:4-21`, so **that** registration is what makes generation see the file; omit it and `db:generate` silently ignores the table. The barrel (`packages/db/src/schema/index.ts:10-25`) is what gives `createDb()` its type inference — omit it and generation still works while every typed query against the new table fails to compile. Both are required; they fail differently.
+- **A hand-written migration.** Drizzle cannot express an FTS5 virtual table — `drizzle-orm@0.45.2/sqlite-core` exports no virtual-table builder, and its only `virtual` token is generated-column mode. Raw SQL in `packages/db/drizzle/00NN_*.sql` is required. The precedent is thinner than an earlier draft implied and rests on **one** file: `0011_tasks_system_redesign.sql:1-5` is genuinely hand-authored; `0012` and `0013` are byte-identical to generated output and prove nothing.
+- **`apps/server`** — a new service domain `services/search/`. Warranted under `.claude/rules/server-structure.md`: a cohesive area with several related services, not an orphan file.
+- **`lib/dork-home.ts:15-21`** — the only data-directory resolver. The database is `dork.db` directly in it (`apps/server/src/index.ts:306`, `harness-boot.ts:69`). `os.homedir()` is banned.
+- **No new external dependency.**
+
+## Detailed Design
+
+### 1. Stated scope — what is indexed, and the questions that return nothing
+
+This section is first because it is the one a person can be surprised by, and a surprise here reads as a broken product.
+
+#### 1.1 What is indexed
+
+**What was said, by a person or by an agent, in prose.** One row per user or assistant message carrying non-empty text. Everything else in a transcript is deliberately absent.
+
+**Two framings, because one of them alone would mislead.** §2.1 excludes subagent transcripts and eval-harness sandboxes, so the corpus this reads is a subset of the corpus on disk, and the share depends on which denominator you use. All figures are one snapshot, 2026-07-28; the corpus grows continuously, so they drift by tenths within a day.
+
+|                                                 | Messages   | Text         | Share of **files v1 reads** (241 files, 671.5 MB, 192,856 lines) | Share of **everything on disk** (2,458 files, 2,771.2 MB, 448,857 lines) |
+| ----------------------------------------------- | ---------- | ------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **What v1 indexes**                             | **17,953** | **16.80 MB** | **9.31% of lines · 2.50% of bytes**                              | **4.00% of lines · 0.61% of bytes**                                      |
+| If subagent transcripts and evals were kept too | 50,631     | 42.85 MB     | —                                                                | 11.28% of lines · 1.55% of bytes                                         |
+
+**[operator]** reported 10.8% and 1.38%, which is the bottom row's framing — everything on disk, subagents included. **That is the number the brief carried, and it is not this design's number.** Excluding subagent transcripts and eval sandboxes makes the honest figure _smaller_, not larger: **v1 indexes 4.00% of transcript lines and 0.61% of transcript bytes.** The larger-sounding figure is the one to avoid quoting, and §1.3 is the part that actually matters to a person either way.
+
+Everything in §1.2 below is measured over the **whole** corpus, because that is where the composition is clearest; the same proportions hold in the subset, and the per-subset figures are given where they differ materially. **Watch the denominator in every one of them** — §2.1 records a place where losing it produced a false claim in an earlier draft of this document.
+
+#### 1.2 What is excluded, with the real numbers
+
+| Excluded                                                                                              | Size **[measured]**                        | Why                                                                                                                                                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tool results — `tool_result` blocks (981.3 MB) **plus** top-level `toolUseResult` payloads (998.9 MB) | **1,980 MB**                               | Claude Code writes each tool result **twice, in two encodings, in the same file**. This is ~71% of the corpus on its own and the single largest reason the index is small. Its content is command and file output, which file search answers against files that are current. |
+| Tool calls — `tool_use` blocks                                                                        | 96.5 MB                                    | Arguments, not speech.                                                                                                                                                                                                                                                       |
+| Assistant reasoning — `thinking` blocks                                                               | **57,375 blocks**, but **0.19 MB of text** | See below — this exclusion is nearly free, and saying otherwise overstates it.                                                                                                                                                                                               |
+| File snapshots — `file-history-snapshot` lines                                                        | **16.0 MB** (2,551 lines)                  | A copy of a file whose current version is on disk.                                                                                                                                                                                                                           |
+| `attachment` lines                                                                                    | 153.6 MB                                   | Harness plumbing: `skill_listing` (72.5 MB), `deferred_tools_delta` (29.4 MB), `hook_success` (26.3 MB). Nobody said any of it.                                                                                                                                              |
+
+**The thinking exclusion is much cheaper than it sounds, and the spec should not take credit for a sacrifice it is not making.** The block count is right — 57,375 here against the operator's 57,357, the same number on a growing corpus. But **56,923 of them (99.2%) carry an empty `thinking` string.** Total reasoning text across the entire corpus is **0.19 MB**; what those blocks actually carry is **161.5 MB of `signature`**. So "we exclude 57,357 thinking blocks" is true and reads as a large deliberate loss; the honest form is that there is almost no reasoning text on disk to exclude.
+
+**One number from the brief does not reproduce and is corrected here.** "177 MB of file snapshots" — `file-history-snapshot` lines total **16.0 MB**. The nearest bucket to 177 MB is `attachment` + `file-history-snapshot` = 169.6 MB; separately, `tool_result` blocks in main-session files alone come to exactly 177 MB, which is the likelier origin. The exclusion stands either way, for the reason in the table.
+
+#### 1.3 The queries that will return nothing
+
+Stated plainly, and repeated in user-facing copy (§Documentation, and **G4**):
+
+- _"the error the agent showed me"_ — that was tool output.
+- _"that stack trace about the port binding"_ — tool output.
+- _"the diff where we changed X"_ — tool output, and the file is on disk.
+- _"what the agent was thinking when it chose that"_ — reasoning, and there is almost none on disk to index even if we wanted it.
+
+What **does** work is the thing the feature is for: what you asked, what an agent answered you in prose, and what was said in a room.
+
+#### 1.4 Two more corrections to the brief's measurements, since they change what a reader should expect
+
+- **`snippet()` is slower than a plain ranked query, not faster.** The brief says top-20 is 3.3 ms and 1.9 ms _with_ `snippet()`. It cannot be: `snippet()` re-reads each returned row's body from the content table and scans it for a match window, which is strictly more work than returning ids. **[measured]** at ~18k rows it is 5–9× slower on queries with real hit counts (0.49 ms → 4.55 ms; 0.67 ms → 3.64 ms) and never faster on any query tried. The absolute numbers are tiny and nothing in the design changes — but §6.3 budgets for it rather than assuming snippets are free.
+- **External content is confirmed.** Building the same 18,114 rows both ways: external content **29.1 MB** vs storing the text twice **48.4 MB** — **39.9% smaller**, against the operator's 43% on the larger corpus — with query time indistinguishable (p50 **0.681 ms** vs **0.702 ms**). Two corpus sizes, two runs, same conclusion. **[measured]**
+
+### 2. The sources, and the one that is deferred
+
+**Three sources ship. One is deferred, and the deferral is the reason the design keeps its shape.**
+
+| Source         | Reads                                                                                                        | Mechanism                                          | Corpus **[measured]**                    |
+| -------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- | ---------------------------------------- |
+| `rooms`        | `room_entries` rows above a per-room `seq` watermark                                                         | **M2** — SQLite rows above a monotonic watermark   | live install                             |
+| `claude-code`  | `${CLAUDE_CONFIG_DIR ?? ~/.claude}/projects/<slug>/<sessionId>.jsonl`                                        | **M1** — append-only JSONL tailed at a byte offset | 241 files, 671.5 MB, **17,953 messages** |
+| `codex`        | `${CODEX_HOME ?? ~/.codex}/sessions/YYYY/MM/DD/rollout-<ISO>-<uuid>.jsonl` and the flat `archived_sessions/` | **M1**                                             | 16 files, 6.93 MB, **223 messages**      |
+| ~~`opencode`~~ | —                                                                                                            | —                                                  | deferred; 24 messages exist              |
+
+#### 2.1 `claude-code` — main sessions only, and discovery must recurse to skip the rest
+
+The projects root is **`$CLAUDE_CONFIG_DIR ?? ~/.claude`** (`apps/server/src/services/runtimes/claude-code/claude-config-dir.ts:31-33`), not a hardcoded `~/.claude`; that file's TSDoc says hardcoding "silently split-brains" (DOR-250), and an index that hardcodes it reintroduces the same bug. `getProjectsRoot()` appends `projects` (`sessions/transcript-reader.ts:60-62`).
+
+**The directory slug is lossy and must never be used to recover a path.** `cwd.replace(/[^a-zA-Z0-9-]/g, '-')` (`transcript-reader.ts:51-53`) collapses `/`, `.` and `_` all to `-`, so it is non-invertible. The shipped reader already compensates by taking the true working directory from the JSONL head record (`:104-106`) and the projection does the same.
+
+**Discovery recurses; indexing does not.** **[measured]**, the corpus is not flat:
+
+| Category                                                                                                      | Files   | Bytes        | Indexed? |
+| ------------------------------------------------------------------------------------------------------------- | ------- | ------------ | -------- |
+| Main sessions — `<slug>/<sessionId>.jsonl`, minus the eval sandboxes below                                    | **241** | **671.5 MB** | **yes**  |
+| Subagent transcripts — `<slug>/<sessionId>/subagents/**.jsonl`, nested as deep as `subagents/workflows/<wf>/` | 2,142   | 2,096.0 MB   | no       |
+| **Eval-harness sandboxes** — main-session files whose `cwd` is a `dorkos-evals-*` tmpdir                      | **37**  | **2.5 MB**   | **no**   |
+| Plugin artifacts — `<slug>/vercel-plugin/skill-injections.jsonl`                                              | 38      | 1.2 MB       | no       |
+
+**Subagent transcripts are 87% of the files and 76% of the bytes, and they are excluded.** They are conversations the human never had — an agent's working notes, in which the "user" turn is another agent's prompt. The user story is "every message you have ever _sent or received_", and neither applies. The shipped adapter already drops sidechain transcripts at list level (`transcript-reader.ts:310-325,438`), so this follows precedent. Discovery still walks the tree rather than globbing `projects/*/*.jsonl`, because **a one-level glob would exclude them by accident of depth rather than by decision** — and the day someone wants them, the change is a predicate, not a rewrite.
+
+**Eval-harness sandboxes are excluded on the same test, and they were nearly missed.** `pnpm evals:local` runs suites against a real model in a throwaway directory, and those runs write transcripts into the operator's own `~/.claude/projects` like any other session — 37 files on this machine. They are machine-generated conversations with a model in a directory that no longer exists; **by §2.1's own test, "conversations the human never had", they are the same category as the 2,142 subagent transcripts** and it would be incoherent to exclude those and keep these. A box promising "every message _you_ have ever sent or received" must not return them.
+
+**Detection is exact, and it is the repo's own constant, not a heuristic.** The eval runner creates its sandbox as `mkdtemp(path.join(tmpdir(), SANDBOX_PREFIX))` where `SANDBOX_PREFIX = 'dorkos-evals-'` (`packages/evals/src/runner/sandbox.ts:23,59`), then `realpath`s it. So a main-session file is an eval sandbox iff its **head-record `cwd`** contains a path segment beginning `dorkos-evals-`. It must be tested against the `cwd`, never the directory slug, for the reason two paragraphs up: the slug is lossy and non-invertible. The residual is stated rather than hidden — 9 further files (17 messages) sit in other throwaway temp directories that carry no such marker, and no rule that does not guess can catch them.
+
+**The projection must survive dirty input — but the corpus is cleaner than an earlier draft of this document claimed, and the correction is worth more than the claim was.** That draft reported "64 lines fail `JSON.parse` and 3,804 carry no `type` field" under a heading that says **main sessions only**. Both numbers were the whole corpus. Re-measured against the 241 files v1 actually reads: **0 malformed lines and 0 type-less lines.** All 3,804 type-less lines are in the 38 plugin-artifact files v1 never opens. This is the same denominator error §1.1 exists to prevent, committed in the document that establishes the rule.
+
+**The 64 did not reproduce either, and why they did not is the useful part.** A second pass hours later found **0 malformed lines in the entire corpus**, main and subagent alike. The first pass was reading files that live agents were appending to at that moment, so what it caught was **truncated final lines in flight** — not corruption. That is direct empirical evidence for §5's partial-line rule: a reader can and does observe an incomplete last line, so retaining the trailing partial and advancing the offset only past the last complete line is not defensive programming, it is the observed case.
+
+The projection is still written to survive a line that does not parse — skipped, counted, never aborting the file — because one bad line must not cost a session. What changes is the justification: it guards a live-append race, not a dirty corpus.
+
+#### 2.2 `codex` — the rollout files, and why no ADR is being broken
+
+`codex-runtime.ts:732` says _"No byte-addressable transcript exists — rollout files are SDK-internal."_ That is a TSDoc on one stub method explaining why it returns nothing. It carries no rationale and no enforcement, and it is **a different tier from ADR-0308:24** — a Decision line with an ESLint rule behind it. ADR-0309, the codex adapter's own ADR, mentions the path (`:18`) and the SDK's inability to list or read threads (`:20`, `:24`), and frames resume as continuity _"without DorkOS owning transcript storage"_ (`:31`); every line is about SDK incapacity or ownership, none about reading. **The phrase "never read or written directly" occurs exactly once in the whole decisions corpus, and it is about OpenCode.**
+
+**Absence of a prohibition is not authorization**, which is why the coupling is a recorded decision (ADR `260728-214214`) rather than an assumption. What makes it cheap is the format, **[measured]** over 2,114 lines with **zero malformed**:
+
+- **Whole messages, no deltas.** Role at `payload.role`, text at `payload.content[].text`, and a top-level `timestamp` on **2,114 of 2,114 lines**. No stateful fold — the exact inverse of §2.4's rejected candidate.
+- **Append-only, one file per session.** One `session_meta`, always line 1; 16 session ids, none in two files; timestamps monotonic within every file; **file mtime equals the last record's timestamp on 16 of 16 files.**
+- **Working directory** from `session_meta.payload.cwd` (16/16), and per-turn from `turn_context.payload.cwd`.
+- **One trap, named so it is not discovered:** the same messages appear in **two families** — `response_item` (144 assistant, 79 user) and `event_msg` (144 `agent_message`, 59 `user_message`). The projection reads `response_item` **only**. Reading both double-counts every message.
+
+Codex adds 223 messages to 17,953 — about 1.2%. **The case for it is not volume.** The multi-runtime cockpit is the product's headline differentiator, and a search box that covers one runtime undercuts the claim the product leads with. One ~20-line projection inside an existing mechanism is the whole cost.
+
+#### 2.3 `opencode` — deferred, on four counts
+
+ADR-0308:24 forbids the direct read: _"OpenCode's SQLite store is treated as opaque runtime-owned storage — never read or written directly."_ **The security rule in §9.1 and that ADR converge, and the ADR got there first** — `opencode.db` holding `account.access_token`, `account.refresh_token` and `credential.value` beside its message tables is evidence the ADR was right, not grounds for an exception. Two further facts make the direct read wrong on its own terms: message text lives in opaque JSON `data` blobs on `message`, `part` and `session_message`, so indexing means parsing a private schema; and the file is in WAL mode against a store `:37` records as having upstream reliability issues.
+
+So the SDK path was evaluated, because "read it the way the adapter already does" is the obvious rescue. **It fails on four counts of its own:**
+
+1. **A background read has to spawn someone else's agent server.** Nothing boots the sidecar at startup (`apps/server/src/index.ts:626-654`, "The sidecar spawns lazily on first use"), and `check-dependencies.ts:12-14` refuses even to probe because _"a cold probe would spawn a server as a side effect."_ The adapter has two accessors for exactly this distinction: `peekClient()` never boots and returns `null` when cold; `getClient()` boots (`session-mapper.ts:59-76`). A reconciler on a timer must therefore spawn a child process purely to read — 15 s startup budget, six-attempt restart ladder, one cached instance per directory with no idle eviction (`server-manager.ts:53-66`; `NOTES.md:38-43`) — or throw on every tick. On this machine the binary is not installed, so `boot()` throws at `server-manager.ts:204-206`. **Every other source in this design reads bytes already at rest.**
+2. **The corpus is 24 messages.** Counts only, from a copy opened read-only: `session` 6, `message` 24, `part` 73.
+3. **The pinned v1 SDK is stale against the server it drives.** The server supports `before` (message keyset), `start` (sessions-updated-since) and `scope: 'project'`; none is in the pinned v1 types, so (a) would get whole-session re-reads and exact-directory-only listing. Fixing that means revisiting ADR-0308's "build on v1", which is a larger decision than this feature should be making.
+4. **It would be the third mechanism** (§3), which under D12 promotes the whole shape to a port. Doing that for 24 messages is the tail wagging the dog.
+
+**Two live adapter bugs surfaced while establishing this, and they are search-independent** — they deserve their own tickets: `client.session.list` has a **server-side default cap of 100** that DorkOS never overrides, so an install with more than 100 OpenCode sessions in one project silently loses the oldest from the session list; and its directory filter is **exact string equality**, so a session started in `<repo>/apps/server` is invisible to `listSessions('<repo>')`.
+
+**What the follow-up ticket inherits.** The SDK-surface decision (widen v1 types, adopt the v2 types against the same URL, or wait for `/experimental/session`) blocks everything else. Whether the reconciler may boot the sidecar or is `peekClient()`-gated is a product decision, not an implementation one — a `peekClient()`-only indexer is cheap and safe but makes coverage nondeterministic, which is the wrong trade for a feature promising recall. And one caveat must be written down before anyone polls: **`Session.time.updated` is stamped at turn start, not on message write** (`prompt.ts:1160-1161` in the local OpenCode snapshot; `updateMessage`/`updatePart` never patch it — the line is version-drifted, the behaviour is not), so a naive `updated > lastSeen` poll misses the assistant half of any turn in flight. The watermark must be `>=`, plus a forced re-read of any session last seen non-idle. The projection itself is already written (`session-mapper.ts:201-246`).
+
+#### 2.4 The DorkOS event log — rejected, recorded so it is not re-proposed
+
+`packages/db/src/schema/session-events.ts` is DorkOS-owned, which makes it the tempting answer for codex. It fails on four counts and the rejection is recorded because it is the option a reader will otherwise propose:
+
+- **Coverage.** 455 rows across **2 sessions**, from one afternoon, against 2,458 Claude Code transcripts on the same machine. The dev database has **0 rows**. Claude Code never writes there at all (`session-events.ts:3-5`).
+- **It is trimmed, permanently.** `EVENT_LOG_MAX_EVENTS = 5000` per session (`event-log.ts:26`), applied inside `appendTurn` (`session-event-store.ts:91`, `:167-182`). JSONL can be trimmed too, but there the original is still on disk to re-read; here the trimmed table **is** the original. An index over it would lose exactly the history the index exists to preserve, and a rebuild would not bring it back.
+- **The shape is wrong for a per-row projection.** Assistant text arrives as `text_delta` fragments carrying no message identity (`session-stream.ts:206`; `schemas.ts:517-521`), folded by `event-log-history.ts:126-128` — **256 of 455 production rows**. A row in isolation is not a searchable unit.
+- **No usable timestamp.** `created_at` is computed once per `appendTurn` (`session-event-store.ts:83`), so 455 rows carry **9 distinct values** — turn flush time, not message time. No payload carries one.
+
+### 3. Two mechanisms, one registry array, and a trigger that is now armed
+
+**M1 — append-only JSONL tailed at a byte offset.** Discovery walks a root; change is `(size, mtime)` against the frontier; incremental read resumes at the stored byte offset. `claude-code` and `codex` share it.
+
+**M2 — SQLite rows above a monotonic watermark.** Discovery is the container list; change is `max(seq) > frontier`; incremental read is `WHERE seq > ?`. `rooms` uses it, and any future DorkOS-owned table would.
+
+**A source is one row in a registry array plus one pure projection.** The registry row names the source id, its mechanism, its root resolver and its projection; nothing else varies. That is why there is no `TranscriptSource` port: a port abstracting two mechanisms and three functions is a class hierarchy standing where a record would do.
+
+**The trigger fired once during SPECIFY, and the design survived for a different reason than expected.** IDEATE's D12 held that SDK-mediated reads would keep OpenCode inside M2. **That was wrong.** Take the three axes the two mechanisms share and add the one they both take for granted:
+
+|                      | M1 (JSONL tail)       | M2 (SQLite watermark) | OpenCode SDK poll                                  |
+| -------------------- | --------------------- | --------------------- | -------------------------------------------------- |
+| unit                 | file                  | row                   | session                                            |
+| change signal        | `(size, mtime)`       | monotonic column      | `time.updated`, advisory and stamped at turn start |
+| **incremental read** | resume at byte offset | `WHERE seq > ?`       | **re-fetch a bounded tail and dedupe by id**       |
+| **precondition**     | none                  | none                  | **a child process must be alive**                  |
+
+Both shipping mechanisms have a **resumption primitive**: a position handed back to the source, which returns only what is past it. An SDK poll has none — `session.messages` pages backwards from newest, so "what is new" is not expressible; you re-read and diff, which makes per-poll cost a function of session length rather than of new content. And "can I read?" becomes a lifecycle question rather than a filesystem one. That is a third mechanism.
+
+**So the reason there is no port is §2.3, not the SDK.** The source that would have introduced the third mechanism is deferred. **The day OpenCode is indexed, the promotion fires** — that is not a caveat, it is the trigger the design named, and it is written here so the next author inherits a decision rather than an accretion.
+
+### 4. Data model
+
+Two tables and one virtual table. One migration, hand-written, because Drizzle cannot express an FTS5 virtual table.
+
+```sql
+CREATE TABLE messages (
+  id          INTEGER PRIMARY KEY,          -- FTS5 external-content rowid
+  source_id   TEXT    NOT NULL,             -- 'rooms' | 'claude-code' | 'codex'
+  origin_key  TEXT    NOT NULL,             -- OPAQUE. The container, composed by the projection.
+  ordinal     INTEGER NOT NULL,             -- position within the container, monotonic
+  role        TEXT    NOT NULL,             -- 'user' | 'assistant'
+  created_at  TEXT,                         -- ISO-8601, nullable: not every source has one
+  body        TEXT    NOT NULL,
+  UNIQUE (source_id, origin_key, ordinal)
+);
+
+CREATE VIRTUAL TABLE messages_fts USING fts5(
+  body,                                     -- MUST be named `body` — see below
+  content='messages', content_rowid='id',
+  tokenize='porter unicode61'
+);
+```
+
+**`origin_key` is a single opaque string the projection composes, never a foreign key and never parsed by the index.** This is the one design property that has to be defended, because it is what lets the schema survive changes it cannot see coming. The room projection sets `origin_key = roomId` today; when `communityRef` lands it composes `` `${communityRef}:${roomId}` `` and nothing else changes — not the schema, not the query, not the ranking, not the frontier. `specs/community-adapter/02-specification.md` requires `room_entries`' `(roomId, seq)` primary key to be re-scoped and **never states the target shape**, so an index that depended on the shape would be betting on a decision nobody has made. The two tempting alternatives both fail: a separate indexed `community_ref` column is a second thing to keep in sync and re-indexes a whole community on rename; leaving `origin_key = roomId` assumes room ids are globally unique, which is exactly the assumption that re-scoping exists to retire.
+
+**`origin_key`, `ordinal` and the container path, defined for every source — not just for rooms.** An earlier draft defined the composition only for `rooms`, which left Phase 3 and Phase 5 to invent it for the two runtimes under implementation pressure. It is settled here:
+
+| Source        | `origin_key`                                       | `ordinal`                                    | Container path (on `search_sources`)                     |
+| ------------- | -------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------- |
+| `rooms`       | `roomId` — later `` `${communityRef}:${roomId}` `` | `room_entries.seq`                           | `NULL`. A room is not a directory.                       |
+| `claude-code` | the session id (the JSONL filename stem)           | index of the message within the file         | the head record's `cwd` (`transcript-reader.ts:104-106`) |
+| `codex`       | the session id from `session_meta`                 | index of the `response_item` within the file | `session_meta.payload.cwd`                               |
+
+**The container path lives on `search_sources`, one row per container, and deliberately not on `messages`.** Opening a session hit needs a working directory, and the slug cannot supply one (§2.1) — so the path has to be stored. But it is a per-container constant, and repeating it on all 17,953 message rows to save one join is the denormalization that later disagrees with itself. `search_sources` is already keyed `(source_id, origin_key)`, which is exactly the container, so the column costs nothing new. This is also why D11 is not violated: **no column is added to `messages`.** The same reasoning `specs/community-adapter/02-specification.md` §1 used to put `label` on `CommunityDescriptor` rather than on every `CommunityRoom`.
+
+**The FTS5 column must be named `body`, matching the content table's column.** With `content='messages'`, FTS5 re-reads the original text from the content table **by column name**. Get it wrong and `MATCH` and `bm25()` keep working while `snippet()` and `highlight()` fail at runtime with `SQL logic error` — a failure a MATCH-only test passes straight through. **[measured]** deliberately, against a mismatched name.
+
+**No column ships without a consumer** (D11). `role` is rendered and filtered; `created_at` orders and displays; `source_id` labels a result and scopes the frontier; `origin_key` and `ordinal` are the navigation coordinates, resolved to a directory through `search_sources.container_path`. Two columns proposed during design were cut under this rule. Widening later is one projection change and a rebuild — **2.69 s** over the v1 corpus **[measured]** — not a migration.
+
+```sql
+CREATE TABLE search_sources (
+  source_id      TEXT NOT NULL,
+  origin_key     TEXT NOT NULL,
+  byte_offset    INTEGER,        -- M1 only
+  size_bytes     INTEGER,        -- M1: shrink detection
+  mtime_ms       INTEGER,        -- M1: cheap change signal
+  last_ordinal   INTEGER,        -- M2: the watermark
+  container_path TEXT,           -- the cwd a hit opens in; NULL for sources with no directory
+  last_indexed_at TEXT NOT NULL,
+  last_error     TEXT,           -- makes "produced nothing" visible, not silent
+  PRIMARY KEY (source_id, origin_key)
+);
+```
+
+`last_error` is not decoration. ADR `260728-214214`'s sharpest recorded negative is that a projection broken by an upstream format change **fails silently** — a source that stops contributing rows is indistinguishable from a source with nothing new. This column is what makes the difference observable, and §Testing Strategy asserts it.
+
+### 5. Change detection, and why there are two signals rather than eight
+
+CTX's change-signal taxonomy — reviewed at source by the operator during design, and worth stealing where the tool itself was declined (`01-ideation.md` §5.6) — has eight members. **Six have zero observed instances in the measured corpus**, so this design carries two: **a file grew** (`size` increased) and **a file appeared**. Everything else is a rebuild.
+
+**Compaction is append-only, measured twice.** **[measured]**: 28 of 2,458 files carry `isCompactSummary` markers, 74 marker lines in total, and **all 28 have content after the last marker** — zero files end at one. The largest carries 16 markers across 25,361 lines with 156 lines still after the last. So a compact boundary is a line in a growing file, not a rewrite, and the byte offset survives it. **[operator]** measured the same 28-of-2,458 independently.
+
+**`relocated` is a line, not a file move.** **[measured]** 543 lines of `type: 'relocated'`, matching the operator's 543 exactly. It records a working-directory change _inside_ the file. Reading it as a move — which the name invites — would trigger a spurious re-index of a file that never went anywhere.
+
+**Shrink means rebuild that file.** A file smaller than its recorded `size_bytes` has been truncated or replaced; the frontier row is reset and the file re-read from zero. This costs milliseconds and is the only correct answer, since a byte offset into a rewritten file points at the middle of a line.
+
+**Line boundaries are the reader's problem, and the shipped `readFromOffset` does not solve them.** It advances `newOffset` to `stat.size` unconditionally (`transcript-reader.ts:599-611`), so a read landing mid-line returns a truncated final record _and consumes its bytes_. It is also claude-path-shaped — `getTranscriptsDir(vaultRoot) + '/' + sessionId + '.jsonl'` (`:65-67`) cannot express a codex rollout path, where the id is inside a filename behind a date prefix — allocates the whole delta into one buffer, and **has no production consumer at all**. What transfers is the `(mtimeMs, size)` idea from `getTranscriptETag` (`:507`), which is two lines. The JSONL frontier reader is new code: it retains any trailing partial line and advances the offset only past the last complete one.
+
+**The reconciler runs at 300,000 ms**, matching the three that already exist (`mesh-core.ts:391`, `task-reconciler.ts:16`, `workspace-reconciler.ts:15`), plus a startup sweep, plus an immediate write-through on the room path where DorkOS already owns the write. ADR-0043's accepted trade-off — up to five minutes of staleness — is inherited deliberately.
+
+### 6. Query, ranking, and prune
+
+#### 6.1 The query
+
+```sql
+SELECT m.id, m.source_id, m.origin_key, m.ordinal, m.role, m.created_at,
+       snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12) AS excerpt
+FROM messages_fts f
+JOIN messages m ON m.id = f.rowid
+WHERE messages_fts MATCH ?
+  -- Owner path: this whole clause is omitted rather than filled with everything.
+  -- Agent path: sources are enumerated explicitly, never defaulted.
+  AND m.source_id = 'rooms'
+  AND m.origin_key IN (/* the caller's visible room keys, §7 */)
+ORDER BY bm25(messages_fts)
+LIMIT 20;
+```
+
+**The visibility clause is scoped by `source_id` as well as `origin_key`, and that is not cosmetic.** `origin_key` is opaque and composed per source (§4), so it is unique _within_ a source and carries no guarantee across sources — a bare `origin_key IN (...)` would let a room key collide with a session key and leak a session row to an agent. The agent path therefore names its source explicitly. **The owner path omits the clause entirely** rather than building a set of every container: a filter that has to enumerate everything is a filter that silently starts excluding things the day enumeration misses one.
+
+Ranking is `bm25()` alone in v1, with recency available as a tiebreak. Learned ranking and click feedback need data this feature has to ship to collect.
+
+#### 6.2 What the tokenizer buys and costs
+
+`porter unicode61`, one index, no trigram. **[measured]**: `dogs` returns **1** hit under `unicode61` and **3** under `porter unicode61` against a corpus containing "dog", "dogs" and "DOGGED". Stemming is what makes the user story work — a person types the word they remember, not the form that was written.
+
+The cost is precise and belongs in the user-facing copy §Documentation requires: **a fragment that is not a word finds nothing.** `ogs` matched `dogs` under RP7's substring scan; it does not here. Prefix (`dog*`), phrase (`"pack of dogs"`), boolean and `NEAR` all work.
+
+#### 6.3 Latency budget
+
+**[measured]** at ~18k rows: top-20 ranked **0.02–0.67 ms** p50; **with `snippet()` 0.21–4.55 ms**. **[operator]** at 500k rows: **3.3 ms**. Snippets cost 5–9× on queries with real hit counts (§1.4), so the budget is set from the `snippet()` column, not the bare one. Both are far inside a keystroke, and the design has headroom of more than an order of magnitude before anything needs revisiting.
+
+#### 6.4 Prune — two different things that a single word hides
+
+**Prune is not optional**, but the rule the brief carried conflates two cases that must be handled differently.
+
+- **The source file is gone.** Its frontier row and its `messages` rows are deleted. Otherwise the index serves messages from a transcript that no longer exists, and — worse — an incremental index and a rebuilt one silently disagree, which is exactly the drift ADR-0043's reconciler exists to catch.
+- **The source file is intact but its working directory is gone.** **These must not be pruned.** The conversation happened, the transcript is on disk, and "what did we decide in that worktree" is precisely the question this feature exists to answer. What changes is not the row but the _result_: the hit is still returned and still readable, and its open action reports that the directory is gone instead of failing on a path. That is what `search_sources.container_path` (§4) is for.
+
+**The measured distribution, restated — an earlier draft of this paragraph was wrong in both of its headline claims, and the rule survives anyway.** That draft said "70 of 278 sessions — 25% — and every one of them is a removed worktree." Neither half held. Within the 241 files v1 indexes, **33 have a vanished `cwd`**, and they are not one thing:
+
+| Where the vanished `cwd` pointed                                   | Files  | Indexed messages |
+| ------------------------------------------------------------------ | ------ | ---------------- |
+| Legacy `.claude/worktrees/` in two repos                           | 12     | 209              |
+| `~/.dork/workspaces/…` — the path the draft named as _all_ of them | 12     | 62               |
+| Other throwaway temp directories and fixtures                      | 9      | 17               |
+| **Total**                                                          | **33** | **288**          |
+
+Two corrections, and the second is the one that matters. Removed worktrees are **12 of 33**, not all of them — and the largest group is a _legacy_ worktree layout that has since been replaced, which is a different fact with a different lifetime. And "a quarter of the operator's history" was 25% of **files**; by messages it is **288 of 17,953 — 1.60%**, an order of magnitude smaller on the dimension the sentence was actually about. (The draft's 70 files included the 37 eval sandboxes §2.1 now excludes outright, which is why the count moved as well.)
+
+**So the argument is no longer "this would delete a quarter of your history."** It is smaller and it is sufficient: pruning on a missing directory would silently delete 288 real messages the operator can still read on disk, to tidy up a navigation edge case that a nullable column already handles. A rule that deletes recoverable data to avoid rendering a caveat is the wrong trade at any percentage — which is the form the argument should have taken in the first place, instead of resting on a number that turned out to be wrong.
+
+### Code structure & file organization
+
+```
+packages/db/src/schema/search.ts                 # messages, search_sources (Drizzle)
+packages/db/src/schema/index.ts                  # + barrel export
+packages/db/drizzle.config.ts                    # + the same file again, or generate never sees it
+packages/db/drizzle/00NN_message_search.sql      # hand-written: FTS5 virtual table + triggers
+apps/server/src/services/search/
+  index.ts                                       # barrel + factory
+  registry.ts                                    # the source array: id, mechanism, root, projection
+  jsonl-frontier.ts                              # M1: line-boundary-safe tail, shrink detection
+  row-frontier.ts                                # M2: rows above a watermark
+  projections/
+    rooms.ts  claude-code.ts  codex.ts           # ~20 lines each, pure
+  indexer.ts                                     # the reconciler + startup sweep
+  search-service.ts                              # query, ranking, the visible-set join
+  __tests__/
+apps/server/src/routes/search.ts                 # one route
+```
+
+Projections are **pure functions with no filesystem and no database access** — they take parsed input and return rows. That is what makes them table-testable, and it is the property that keeps "adding a source" honest at one function.
+
+### API changes
+
+**One route.** `GET /api/search?q=<query>&limit=<n>&source=<id>` returns `{ results: SearchHit[], warnings: SourceWarning[] }`. `warnings[]` is ADR-0310's envelope, reused rather than reinvented: a source whose projection failed contributes zero hits and one warning naming it, never a failed request and never a blank list.
+
+No existing route changes. `search_room_history` is an MCP tool, not a route, and it is `specs/room-participation` §10.3's to land.
+
+### Data model changes
+
+Two new tables and one virtual table, all in §4. **No existing table is altered** — every source is read where it already lives, and the room source reads `room_entries` without touching its schema. This is the property that makes the index deletable.
+
+## User Experience
+
+### 7. The access model — visibility is a join, never a token
+
+| Caller                       | Rooms                                | Sessions (including bare-CLI) |
+| ---------------------------- | ------------------------------------ | ----------------------------- |
+| The operator, in the cockpit | all                                  | all                           |
+| An agent, over MCP           | member-only, at or after `joinedSeq` | **none**                      |
+
+**Visibility is resolved to a set of containers and applied as a join** — `source_id = 'rooms' AND origin_key IN (...)`, source-scoped for the reason §6.1 gives. The owner path skips the clause entirely rather than building a set of everything. **Materializing the ACL into the index as facet tokens was considered and rejected**: it would force re-indexing every message in a room each time somebody joined it, which turns a membership change into an O(room) write.
+
+**Sessions are owner-only in v1, and the evidence is two open tickets.**
+
+- **DOR-514** — `apps/server/src/services/core/mcp-server.ts:81-84` resolves one Relay sender identity for the whole external MCP surface, and `runtimes/claude-code/mcp-tools/relay-helpers.ts:11,56` shows what it resolves to: `EXTERNAL_MCP_SENDER = 'relay.external.mcp'`. **Correction to the brief:** the lines are `81-84`, not `82-85`, the literal lives in `relay-helpers.ts` rather than `mcp-server.ts`, and the collapse is **Relay-specific** — an external caller presenting `X-DorkOS-Agent` _is_ individually attributed for tool gating and capability invocation (`mcp-server.ts:73,90,110`; `routes/mcp.ts:33`). The hole is narrower than the brief said and still disqualifying for session history.
+- **The DOR-505 residual** — `middleware/agent-identity.ts:11-17` states the posture: _"This middleware never rejects a request … identity is attribution, not authorization."_ A caller omitting the header falls through every branch to `next()` and resolves at `routes/room-caller.ts:70` to the install owner. **And the owner sees everything**: `services/rooms/room-service.ts:797-816` — _"the owner may see every room."_ So on the default login-off posture, a local program that simply omits a header would get an exhaustive, ranked, cross-runtime reader of the operator's entire history. **Absence is never consent** (ADR `260727-181825:54`; DOR-604 is the sweep that applied it, and both are cited because the maxim is the ADR's).
+
+**Structurally, `resolveCaller` cannot serve an MCP tool at all.** It takes an Express `Response` (`room-caller.ts:55`) and MCP handlers never receive one — `createExternalMcpServer` is handed an `AgentIdentity`. There are also **no room tools on any MCP surface today**, so RP7's `search_room_history` will be the first, arriving with no `resolveCaller` equivalent.
+
+**The precondition for unlocking session search is written down rather than left to be discovered:** `resolveCaller` becomes MCP-aware **and** session membership becomes a defined concept. Until both, this is a decision with a stated trigger, not an omission.
+
+**One access rule this index depends on does not exist yet.** **Correction to the brief:** `joinedSeq` is **specced, not shipped** — `room_members` has `joined_at` (text) and `last_read_seq` (`packages/db/src/schema/rooms.ts:134-149`), and no `joined_seq` column appears in any migration under `packages/db/drizzle/`. RP7's §8.3 specs it and RP3 lands it. The consequence is recorded in `specs/room-participation/02-specification.md` §10.3 and in its phasing table: **RP7 now depends on RP3 as well as on this index**, because an index-backed `search_room_history` shipped before `joinedSeq` exists would hand an agent a fast, ranked reader of everything said in its rooms before it joined.
+
+### 8. Surfaces
+
+**The entry point is the command palette's existing search, and `specs/rooms/02-specification.md:517` still holds.** That paragraph carried two independent arguments; the amendment to that spec's §13.2 separates them. The UX-separation argument — Slack keeps `Cmd+K` and `Cmd+F` apart, Teams merged them and is the cautionary example — is untouched and load-bearing. Only the cost argument ("we have no message index") expires. **Navigation and message search remain different surfaces**; this feature is the second one, not an addition to the first.
+
+**`search_room_history` becomes a caller** (`specs/room-participation/02-specification.md` §10.3). There is exactly one search path over the room log, because two paths over the same rows that answer differently is the tolerated legacy pattern AGENTS.md refuses. The substring scan is never written, so the conversion is never a follow-up.
+
+**A result carries what it needs to be opened**: source, container, ordinal, role, timestamp, and a `snippet()` excerpt with the match marked. A result whose working directory no longer exists is still shown, and says so (§6.4).
+
+## Testing Strategy
+
+- **Unit — projections.** Each is a pure function over parsed lines or rows, so each gets a table-driven test: a well-formed message, an empty-text message (skipped), a `tool_result`-bearing user record (its sibling text suppressed, per `transcript-parser.ts:321-331`), a `thinking` block (skipped), a malformed line (skipped and counted, file continues), and — for codex — **a fixture containing both `response_item` and `event_msg` for the same message, asserting exactly one row**. That last one is the double-count trap in §2.2 and it is the test most likely to catch a real regression.
+- **Unit — the frontier.** A file that grew (resume at offset, no duplicates); a file that grew by half a line (the partial is retained, the offset advances only past the last complete line); a file that shrank (row reset, full re-read); a file that vanished (rows deleted); a file whose cwd vanished but which is intact (**rows kept** — the §6.4 asymmetry, and the one a well-meaning cleanup would get wrong).
+- **Unit — compaction.** A fixture with a compact-summary marker followed by content, asserting the marker is not treated as a truncation and post-marker messages are indexed.
+- **Integration — rebuild equals incremental.** Index a fixture corpus incrementally in several passes, then rebuild from scratch, and assert the two `messages` tables are identical. This is the single highest-value test in the suite: it is what makes "delete and rebuild" a trustworthy recovery rather than a hope.
+- **Integration — FTS5 behaviour that a naive test misses.** Assert `snippet()` returns text (the §4 column-name trap passes a MATCH-only test); assert `dogs` matches `dog`/`dogs`/`DOGGED`; assert the trigger keeps the index in sync across `UPDATE` and `DELETE`; assert `PRAGMA integrity-check` after mutations.
+- **Integration — access.** The owner sees every room; a member sees only theirs; a non-member searching a room's content gets zero results and **the same response as a room that does not exist**; no caller reaches session rows over MCP.
+- **Migration.** The hand-written migration applies through the real Drizzle migrator, and `bash scripts/assert-migrations-current.sh` stays green. The snapshot chain is the trap: copying the previous snapshot verbatim fails with a parent-collision **and exits 0**, so the new snapshot needs a fresh `id` with `prevId` pointing at the previous one, plus a `_journal.json` entry. `.github/workflows/db-check.yml:80` is explicit that "what no gate here can check is whether a hand-written **data** migration is CORRECT." Quoted exactly, because dropping that word would widen the sentence to cover this case; a hand-written **schema** migration is if anything less checkable, so the point holds — but it holds by extension, not by quotation. The rebuild-equals-incremental test is what actually checks this one.
+- **No e2e in this spec.** The palette surface is where a browser test earns its place, and it lands with that work.
+
+## Performance Considerations
+
+- **Rebuild is the correctness mechanism, and it is affordable.** **[measured]** 2.69 s over the v1 corpus (241 files, 671.5 MB) producing 17,953 messages and 29.2 MB; **[operator]** 8.25 s over the full 2,911 MB corpus. Both are inside the budget that makes "delete it and rebuild" the first answer to drift rather than the last.
+- **Steady state is an append.** **[operator]** p50 0.07 ms at 494k rows inside a batch; **[measured]** 1.29 ms for a single row in its own transaction at ~18k rows — the difference is one WAL commit, which is why the reconciler batches one transaction per file rather than one per row.
+- **Query is not the constraint** (§6.3), and `snippet()` is the term to watch, not `bm25()`.
+- **Index size is small because scope is small.** 29.2 MB for 17,953 messages **[measured]**; external content is what keeps it there (§1.4).
+- **No new hot path.** Nothing here runs per turn. The room source write-through is one insert on a path that already writes a row.
+
+## Security Considerations
+
+### 9.1 Never traverse generically
+
+**Every projection selects explicit fields. No `SELECT *`, no "index all text columns", no recursive JSON walk.** The counter-example is concrete: `opencode.db` holds `account.access_token`, `account.refresh_token` and `credential.value` in the same database as its messages, so a generic indexer over it would write live OAuth tokens into a searchable table. §2.3 removes that file from reach entirely — **the strongest form of the rule is not opening the file** — and the rule still governs every source that is read.
+
+### 9.2 A community that ejects you must not remain searchable
+
+Normative, and amended into `specs/community-adapter/02-specification.md` §5: **a `'not-admitted'` connection result deletes that community's message-index rows in the same transaction as the room-cache invalidation.** Two statements instead of one leaves a searchable orphan whose room no longer exists to re-check membership against. It is worse than the failure that rule already prevents: a stale room is something the reader clicks and is refused, while a stale search result **is the message body itself**, already rendered, with a snippet around the match. The index being derived is why recovery is cheap; it is not a reason to let it lag, because a stale derived row is indistinguishable from a live one at the point of reading.
+
+### 9.3 Remote community search is a different trust model
+
+v1 searches the local cache only. **Searching a remote community means a server you do not control ranks results you cannot verify** — and a ranking is not a page of entries: what you do not find is invisible, and NIP-50's one-shot `REQ` offers no way to check what was withheld. That is a different decision from the one this spec is making, recorded as a deliberate deferral in `specs/community-adapter/02-specification.md`'s Non-Goals with the shape a future `search` capability flag would take.
+
+**Communities get search anyway, from the other direction.** Remote messages cached in `rooms` / `room_entries` are indexed by the same projection that indexes local rooms, because the index reads the cache and cannot tell where a cached row came from. That is a consequence of caching, not a port capability — and §9.2 is the obligation that arrives with it.
+
+### 9.4 Search is not memory
+
+DOR-632 ("An agent re-learns the operator from scratch in every room") is recall **for an agent**; this is recall **for a human**. They want different corpora, different ranking, different access rules and different latency budgets. Conflating them drags a shippable feature into a harder problem, and the access model is where the difference bites hardest: §7 gives an agent strictly less than it gives the operator, which is the opposite of what a memory system needs.
+
+### 9.5 A room id is still not a capability
+
+`services/rooms/room-service.ts:789-804` reports `ROOM_NOT_FOUND` identically for "no such room" and "not visible to you", so a probe cannot distinguish them. Search must not become the oracle that distinguishes them: a query scoped to a room the caller cannot see returns the same empty result as a query scoped to a room that does not exist. **A room id is not a capability, and neither is a query string.**
+
+## Documentation
+
+- **`contributing/` — a short guide on adding a source**: the registry row, the projection contract, which mechanism to pick, and the port trigger in §3. The single most valuable artifact for whoever indexes OpenCode.
+- **User-facing copy** stating the scope (§1.3) wherever search is used. This is a product commitment, not a docs task: **G4** says a person must be able to learn what search does not cover without reading a spec.
+- **`AGENTS.md`** — one line once this ships, not before. The demo-claim gate.
+- **No changelog fragment in this spec.** Nothing user-facing ships here, and the gate agrees: the fragment requirement keys on `feat` / `fix` / `refactor` / `perf` commit types (`.github/workflows/changelog-fragment-check.yml`), and `changelog_backfill.py --validate --changed-only` reports clean. The fragment lands with the implementation.
+
+## Implementation Phases
+
+- **Phase 1 — the table and the migration.** Schema file, registered in **both** the barrel and `drizzle.config.ts`; the hand-written FTS5 migration with its snapshot chain; the migration test. No projections, no reader.
+- **Phase 2 — the room source, end to end.** M2, the frontier, the reconciler, write-through, and the rebuild-equals-incremental test. Rooms first because DorkOS owns the write, so any bug here is ours and cheap to see.
+- **Phase 3 — the JSONL mechanism and `claude-code`.** M1's frontier reader (line-boundary retention, shrink detection), recursive discovery that excludes subagent transcripts by decision, the projection, and the dirty-input tests. This is where the corpus and the value are.
+- **Phase 4 — `codex`.** One registry row and one projection, plus the two-families double-count test.
+- **Phase 5 — query, access, and the surfaces.** The route, the visible-set join, the palette entry point, and `search_room_history` as a caller. RP7's own dependency on RP3 (`joinedSeq`) gates the agent-facing half.
+
+**OpenCode is not a phase here.** It is a follow-up ticket with a named blocker (§2.3), and it is the ticket that will decide whether this shape becomes a port.
+
+## Open Questions
+
+All resolved during SPECIFY; kept with their answers so the reasoning is auditable.
+
+- ~~**Should the index read codex rollout files, or DorkOS's own event log?** (RESOLVED)~~ **Answer: the rollout files.** The event log fails on coverage, permanent trimming, delta shape and timestamps (§2.4), and no ADR forbids the rollout files (§2.2). **Rationale for recording it rather than just choosing:** the event log is the answer a reader reaches for first precisely because it is DorkOS-owned, and its four disqualifiers are only visible from measurements nobody would take twice.
+- ~~**Should OpenCode ship in v1 through the SDK?** (RESOLVED)~~ **Answer: no, deferred.** §2.3. **Rationale:** this reverses a design-time ruling that all four sources ship, and it should be reversed — the positioning argument for covering every runtime is real, but an accepted ADR beats positioning, and the SDK rescue turned out to fail on four counts having nothing to do with ADR-0308. A v1 that honestly covers rooms, Claude Code and Codex and says why OpenCode is missing is better than one that quietly breaks a decision.
+- ~~**Does this design comply with ADR-0310's "must fan out per runtime rather than query one store" bullet, or contradict it?** (RESOLVED)~~ **Answer: it contradicts the letter and complies with the intent, and it is recorded as an amendment.** §Background, and ADR `260728-214214`'s Status. **Rationale:** the comfortable reading — that the bullet sits under _Negative consequences_ and is therefore descriptive — is lawyering. That ADR's Decision had already said storage stays runtime-owned; if the bullet merely restated it, it would be redundant. It is the only mechanism prohibition in the whole Consequences block and it names global search by name. Claiming compliance would leave a reviewer holding both documents and a contradiction. **Anchored by clause text rather than by line throughout this change, because this same commit edits that file** and every line number in it moves.
+- ~~**Are subagent transcripts in scope?** (RESOLVED)~~ **Answer: no, and discovery still recurses.** §2.1. **Rationale:** they are 87% of files and 76% of bytes, and they are conversations the human never had; excluding them by decision rather than by glob depth is what makes the choice reversible.
+- ~~**Does `snippet()` need its own budget?** (RESOLVED)~~ **Answer: yes.** §1.4, §6.3.
+
+## Related ADRs
+
+- **ADR `260728-214214`** — this spec's decision. Partially supersedes ADR-0310's "must fan out per runtime rather than query one store" bullet.
+- **ADR-0310** — runtime-owned session storage with registry-aggregated listing. Governs, minus one clause; its per-runtime degradation consequence ("a slow/failed runtime must degrade gracefully") is inherited by the index.
+- **ADR-0308** — the OpenCode adapter's managed sidecar, and the reason `opencode.db` is never opened.
+- **ADR-0043** — file-canonical truth with a derived cache and a reconciler. The shape this follows.
+- **ADR-0263** — "own the boundary, not the bytes."
+- **ADR `260717-001410`** — the recent-sessions fan-out endpoint that predicted this cache.
+- **ADR `260727-181825`** — user-safe defaults; §1, "Absence is not consent."
+- **ADR `260726-170125`** — a room is a membership-scoped durable stream.
+
+## References
+
+- `specs/message-search/01-ideation.md` — the measurements and the twelve decisions
+- `specs/room-participation/02-specification.md` §10.3 — RP7, amended by this change
+- `specs/rooms/02-specification.md` §13.2 — the command palette, amended by this change
+- `specs/community-adapter/02-specification.md` — Non-Goals, §5 and §Data model changes, all amended by this change
