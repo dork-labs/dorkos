@@ -200,6 +200,61 @@ describe('DefaultCredentialProvider', () => {
       expect(configJson).not.toContain(SECRET);
     });
   });
+
+  // DOR-697. `runtime-credentials.json` is a single file behind a store that is
+  // constructed fresh per call, so two concurrent writes used to read the same
+  // state and each save its own view — silently dropping the other's secret.
+  // These must stay concurrent: run sequentially they cannot fail.
+  describe('concurrent credential writes', () => {
+    it('keeps every secret when many are stored at once', async () => {
+      const N = 25;
+
+      await Promise.all(
+        Array.from({ length: N }, (_, i) =>
+          new EncryptedFileCredentialStore(dorkHome).put(`provider-${i}`, `${SECRET}-${i}`)
+        )
+      );
+
+      const reader = new EncryptedFileCredentialStore(dorkHome);
+      const resolved = await Promise.all(
+        Array.from({ length: N }, (_, i) => reader.get(`provider-${i}`))
+      );
+
+      expect(resolved).toEqual(Array.from({ length: N }, (_, i) => `${SECRET}-${i}`));
+    });
+
+    it('never leaves the store file unreadable or half-written', async () => {
+      const storePath = join(dorkHome, 'extension-secrets', 'runtime-credentials.json');
+
+      await Promise.all(
+        Array.from({ length: 20 }, (_, i) =>
+          new EncryptedFileCredentialStore(dorkHome).put(`k${i}`, `${SECRET}-${i}`)
+        )
+      );
+
+      // A torn write would leave JSON that does not parse — the failure mode
+      // that would lock a person out of every configured runtime at once.
+      const parsed = JSON.parse(readFileSync(storePath, 'utf-8')) as Record<string, string>;
+      expect(Object.keys(parsed)).toHaveLength(20);
+      expect(readFileSync(storePath, 'utf-8')).not.toContain(SECRET);
+    });
+
+    it('a concurrent delete and put do not resurrect or drop the other key', async () => {
+      const seed = new EncryptedFileCredentialStore(dorkHome);
+      await seed.put('keep', `${SECRET}-keep`);
+      await seed.put('drop', `${SECRET}-drop`);
+
+      await Promise.all([
+        new EncryptedFileCredentialStore(dorkHome).delete('drop'),
+        new EncryptedFileCredentialStore(dorkHome).put('added', `${SECRET}-added`),
+      ]);
+
+      const reader = new EncryptedFileCredentialStore(dorkHome);
+      expect(await reader.get('drop')).toBeNull();
+      expect(await reader.get('keep')).toBe(`${SECRET}-keep`);
+      expect(await reader.get('added')).toBe(`${SECRET}-added`);
+    });
+  });
 });
 
 describe('MacOsKeychainAccessor', () => {

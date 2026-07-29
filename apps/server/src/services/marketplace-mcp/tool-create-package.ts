@@ -20,7 +20,8 @@
  * @module services/marketplace-mcp/tool-create-package
  */
 import path from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import { withFileLock } from '@dorkos/shared/atomic-write';
 import { z } from 'zod';
 
 import { createPackage } from '@dorkos/marketplace/scaffolder';
@@ -224,28 +225,34 @@ async function registerInPersonalMarketplace(
   }
 ): Promise<void> {
   const manifestPath = path.join(personalMarketplaceRoot(dorkHome), 'marketplace.json');
-  const raw = await readFile(manifestPath, 'utf-8');
-  const json = JSON.parse(raw) as {
-    name: string;
-    owner?: { name: string };
-    metadata?: { description?: string };
-    plugins?: { name: string }[];
-  };
-  const plugins = (json.plugins ?? []) as { name: string }[];
-  if (plugins.some((p) => p.name === entry.name)) {
-    return;
-  }
-  plugins.push({
-    name: entry.name,
-    description: entry.description,
-    source: entry.source,
-  } as unknown as { name: string });
-  json.plugins = plugins;
-  // Defensively ensure the personal envelope still has the required
-  // CC-superset top-level fields. Older personal marketplaces created before
-  // the schema rewrite (Phase 1) may be missing `owner`.
-  if (!json.owner) {
-    json.owner = { name: 'local' };
-  }
-  await writeFile(manifestPath, JSON.stringify(json, null, 2) + '\n', 'utf-8');
+  // Read-modify-write over one shared file: the read sits inside the per-path
+  // lock and the write rides the lock's atomic writer (DOR-697). Two packages
+  // created at once used to each read the same plugin list, and the second
+  // plain write dropped the first registration while both reported `created`.
+  await withFileLock(manifestPath, async (write) => {
+    const raw = await readFile(manifestPath, 'utf-8');
+    const json = JSON.parse(raw) as {
+      name: string;
+      owner?: { name: string };
+      metadata?: { description?: string };
+      plugins?: { name: string }[];
+    };
+    const plugins = (json.plugins ?? []) as { name: string }[];
+    if (plugins.some((p) => p.name === entry.name)) {
+      return;
+    }
+    plugins.push({
+      name: entry.name,
+      description: entry.description,
+      source: entry.source,
+    } as unknown as { name: string });
+    json.plugins = plugins;
+    // Defensively ensure the personal envelope still has the required
+    // CC-superset top-level fields. Older personal marketplaces created before
+    // the schema rewrite (Phase 1) may be missing `owner`.
+    if (!json.owner) {
+      json.owner = { name: 'local' };
+    }
+    await write(JSON.stringify(json, null, 2) + '\n');
+  });
 }

@@ -8,9 +8,10 @@
  * @module shared/extension-secrets
  */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { withFileLock } from './atomic-write.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
@@ -42,7 +43,6 @@ export function resetKeyCache(): void {
  */
 export class ExtensionSecretStore {
   private cache: Record<string, string> | null = null;
-  private readonly secretsDir: string;
   private readonly secretsFilePath: string;
   private readonly hostKeyPath: string;
 
@@ -50,8 +50,7 @@ export class ExtensionSecretStore {
     private readonly extensionId: string,
     private readonly dorkHome: string
   ) {
-    this.secretsDir = join(dorkHome, 'extension-secrets');
-    this.secretsFilePath = join(this.secretsDir, `${extensionId}.json`);
+    this.secretsFilePath = join(dorkHome, 'extension-secrets', `${extensionId}.json`);
     this.hostKeyPath = join(dorkHome, 'host.key');
   }
 
@@ -70,18 +69,16 @@ export class ExtensionSecretStore {
 
   /** Set a secret value. Writes through to disk immediately. */
   async set(key: string, value: string): Promise<void> {
-    const secrets = await this.loadSecrets();
-    secrets[key] = this.encrypt(value);
-    this.cache = secrets;
-    await this.saveSecrets(secrets);
+    await this.mutate((secrets) => {
+      secrets[key] = this.encrypt(value);
+    });
   }
 
   /** Delete a secret. Writes through to disk immediately. */
   async delete(key: string): Promise<void> {
-    const secrets = await this.loadSecrets();
-    delete secrets[key];
-    this.cache = secrets;
-    await this.saveSecrets(secrets);
+    await this.mutate((secrets) => {
+      delete secrets[key];
+    });
   }
 
   /** Check if a secret key is set (without decrypting). */
@@ -134,20 +131,40 @@ export class ExtensionSecretStore {
 
   private async loadSecrets(): Promise<Record<string, string>> {
     if (this.cache) return this.cache;
+    this.cache = await this.readFromDisk();
+    return this.cache;
+  }
+
+  /**
+   * Read the on-disk secrets, bypassing {@link cache}. A missing or unreadable
+   * file is an empty store, matching the original read behaviour.
+   */
+  private async readFromDisk(): Promise<Record<string, string>> {
     try {
       const data = await readFile(this.secretsFilePath, 'utf-8');
-      this.cache = JSON.parse(data) as Record<string, string>;
-      return this.cache;
+      return JSON.parse(data) as Record<string, string>;
     } catch {
-      this.cache = {};
-      return this.cache;
+      return {};
     }
   }
 
-  private async saveSecrets(secrets: Record<string, string>): Promise<void> {
-    await mkdir(this.secretsDir, { recursive: true });
-    const tempPath = this.secretsFilePath + '.tmp';
-    await writeFile(tempPath, JSON.stringify(secrets, null, 2), 'utf-8');
-    await rename(tempPath, this.secretsFilePath);
+  /**
+   * Apply `change` to the secrets file as one serialised read-modify-write.
+   *
+   * Every mutation re-reads from disk inside the path lock rather than trusting
+   * {@link cache}: a store instance is constructed per request, so two callers
+   * setting different keys would otherwise each save their own view and drop
+   * the other's secret. The lock makes the read and the write one step, and
+   * `runtime-credentials.json` is the file that cannot afford a lost update.
+   *
+   * @param change - Mutates the freshly-read secrets map in place.
+   */
+  private async mutate(change: (secrets: Record<string, string>) => void): Promise<void> {
+    await withFileLock(this.secretsFilePath, async (write) => {
+      const secrets = await this.readFromDisk();
+      change(secrets);
+      this.cache = secrets;
+      await write(JSON.stringify(secrets, null, 2));
+    });
   }
 }

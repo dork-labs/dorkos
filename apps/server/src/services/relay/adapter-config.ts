@@ -6,8 +6,8 @@
  *
  * @module services/relay/adapter-config
  */
-import { readFile, writeFile, mkdir, rename, chmod, stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, chmod, stat } from 'node:fs/promises';
+import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { z } from 'zod';
 import type { AdapterConfig } from '@dorkos/relay';
@@ -333,16 +333,12 @@ export async function saveAdapterConfig(
   configPath: string,
   configs: AdapterConfig[]
 ): Promise<void> {
-  await mkdir(dirname(configPath), { recursive: true });
-  const tmpPath = `${configPath}.tmp`;
-  await writeFile(tmpPath, JSON.stringify({ adapters: configs }, null, 2), {
-    encoding: 'utf-8',
+  // `writeFileAtomic` re-asserts the mode after the rename: a pre-existing
+  // file's perms survive `rename`, and the tmp file's create mode is subject to
+  // the process umask.
+  await writeFileAtomic(configPath, JSON.stringify({ adapters: configs }, null, 2), {
     mode: ADAPTER_CONFIG_MODE,
   });
-  await rename(tmpPath, configPath);
-  // Re-assert the mode: a pre-existing file's perms survive `rename`, and the
-  // tmp file's create mode is subject to the process umask.
-  await chmod(configPath, ADAPTER_CONFIG_MODE);
 }
 
 /**
@@ -373,8 +369,11 @@ export async function ensureDefaultAdapterConfig(configPath: string): Promise<vo
         ],
       };
       try {
-        await mkdir(dirname(configPath), { recursive: true });
-        await writeFile(configPath, JSON.stringify(defaultConfig, null, 2), 'utf-8');
+        // Same atomic, serialised, owner-only path as `saveAdapterConfig`: this
+        // writes the very same file, so it must not race it or land group-readable.
+        await writeFileAtomic(configPath, JSON.stringify(defaultConfig, null, 2), {
+          mode: ADAPTER_CONFIG_MODE,
+        });
         logger.info('[AdapterConfig] Generated default adapters.json with claude-code adapter');
       } catch (writeErr) {
         logger.warn('[AdapterConfig] Failed to write default config:', writeErr);

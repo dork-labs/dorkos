@@ -122,9 +122,11 @@ describe('saveAdapterConfig — secret-file permissions', () => {
       { id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'secret-bot-token' } },
     ] as never);
 
-    // The atomic write stages to a tmp file with an owner-only create mode...
+    // The atomic write stages to a tmp file with an owner-only create mode.
+    // The tmp name is unique per write (DOR-697) and a sibling of the target,
+    // so this matches its shape rather than pinning the exact filename.
     expect(vi.mocked(writeFile)).toHaveBeenCalledWith(
-      `${CONFIG_PATH}.tmp`,
+      expect.stringMatching(/^\/mock\/\.adapters\.json\..+\.tmp$/),
       expect.any(String),
       expect.objectContaining({ mode: 0o600 })
     );

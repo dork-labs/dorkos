@@ -109,6 +109,15 @@ vi.mock('@dorkos/relay', async () => {
 });
 
 import { readFile, writeFile, rename } from 'node:fs/promises';
+
+/**
+ * The tmp path the last write staged to. `atomic-write` names it uniquely per
+ * write (DOR-697), so tests assert that the staged file is the one renamed into
+ * place rather than pinning a fixed `<target>.tmp` filename.
+ */
+function stagedTmpPath(): string {
+  return vi.mocked(writeFile).mock.calls.at(-1)?.[0] as string;
+}
 import chokidar from 'chokidar';
 
 const VALID_CONFIG = JSON.stringify({
@@ -324,11 +333,11 @@ describe('AdapterManager', () => {
       await manager.enable('wh-github');
 
       expect(writeFile).toHaveBeenCalledWith(
-        `${configPath}.tmp`,
+        expect.stringMatching(/\.tmp$/),
         expect.stringContaining('"enabled": true'),
         { encoding: 'utf-8', mode: 0o600 }
       );
-      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
+      expect(rename).toHaveBeenCalledWith(stagedTmpPath(), configPath);
       expect(registry.register).toHaveBeenCalledWith(expect.objectContaining({ id: 'wh-github' }));
     });
 
@@ -349,11 +358,11 @@ describe('AdapterManager', () => {
       await manager.disable('tg-main');
 
       expect(writeFile).toHaveBeenCalledWith(
-        `${configPath}.tmp`,
+        expect.stringMatching(/\.tmp$/),
         expect.stringContaining('"enabled": false'),
         { encoding: 'utf-8', mode: 0o600 }
       );
-      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
+      expect(rename).toHaveBeenCalledWith(stagedTmpPath(), configPath);
       expect(registry.unregister).toHaveBeenCalledWith('tg-main');
     });
 
@@ -897,11 +906,11 @@ describe('AdapterManager', () => {
       });
 
       expect(writeFile).toHaveBeenCalledWith(
-        `${configPath}.tmp`,
+        expect.stringMatching(/\.tmp$/),
         expect.stringContaining('"wh-new"'),
         { encoding: 'utf-8', mode: 0o600 }
       );
-      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
+      expect(rename).toHaveBeenCalledWith(stagedTmpPath(), configPath);
       const adapters = manager.listAdapters();
       expect(adapters).toHaveLength(1);
       expect(adapters[0].config.id).toBe('wh-new');
@@ -1513,12 +1522,12 @@ describe('AdapterManager', () => {
       });
 
       // writeFile should write to tmp path, owner-only (holds bot tokens)
-      expect(writeFile).toHaveBeenCalledWith(`${configPath}.tmp`, expect.any(String), {
+      expect(writeFile).toHaveBeenCalledWith(expect.stringMatching(/\.tmp$/), expect.any(String), {
         encoding: 'utf-8',
         mode: 0o600,
       });
       // rename should move tmp to final path
-      expect(rename).toHaveBeenCalledWith(`${configPath}.tmp`, configPath);
+      expect(rename).toHaveBeenCalledWith(stagedTmpPath(), configPath);
 
       // rename should be called after writeFile
       const writeOrder = vi.mocked(writeFile).mock.invocationCallOrder[0];

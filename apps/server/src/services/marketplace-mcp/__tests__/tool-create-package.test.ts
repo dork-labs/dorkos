@@ -368,6 +368,49 @@ describe('createCreatePackageHandler', () => {
     expect(parsed.plugins.filter((p) => p.name === 'idem-pkg')).toHaveLength(1);
   });
 
+  // DOR-697. Registration is a read-modify-write over marketplace.json, and
+  // the old write was a plain truncating `writeFile` with no lock, so two
+  // packages created at once each registered against the same starting state
+  // and one entry vanished — while both calls reported `created`. Concurrency
+  // is the reproduction; run sequentially this cannot fail.
+  it('registers every package when several are created at once', async () => {
+    const handler = createCreatePackageHandler(
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
+    );
+    const N = 6;
+
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        handler({
+          name: `concurrent-pkg-${i}`,
+          type: 'skill-pack',
+          description: `Concurrent creation test package ${i}.`,
+        })
+      )
+    );
+
+    for (const result of results) {
+      const { payload, isError } = parseResult(result);
+      expect(isError).toBe(false);
+      expect(payload.status).toBe('created');
+    }
+
+    // Every reported `created` must be durable in the manifest.
+    const manifestPath = join(personalMarketplaceRoot(dorkHome), 'marketplace.json');
+    const parsed = JSON.parse(await readFile(manifestPath, 'utf-8')) as {
+      plugins: { name: string }[];
+    };
+    const registered = parsed.plugins
+      .map((p) => p.name)
+      .filter((n) => n.startsWith('concurrent-pkg-'))
+      .sort();
+    expect(registered).toEqual(Array.from({ length: N }, (_, i) => `concurrent-pkg-${i}`).sort());
+  });
+
   it('registerInPersonalMarketplace helper is a no-op when the entry already exists', async () => {
     // Manually pre-populate marketplace.json with a `dup-pkg` entry, then
     // attempt to scaffold a package by the same name. The scaffolder

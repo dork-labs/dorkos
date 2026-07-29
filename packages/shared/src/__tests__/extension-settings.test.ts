@@ -112,4 +112,34 @@ describe('ExtensionSettingsStore', () => {
     await store.set('prefix', '');
     expect(await store.get('prefix')).toBe('');
   });
+
+  // DOR-697. `set` is a read-modify-write over one file, and the extension host
+  // builds a store per context, so two settings saved at once used to drop one.
+  describe('concurrent writes', () => {
+    it('keeps every setting when many are saved at once', async () => {
+      const N = 25;
+
+      await Promise.all(
+        Array.from({ length: N }, (_, i) =>
+          new ExtensionSettingsStore(tmpDir, 'test-ext').set(`key-${i}`, i)
+        )
+      );
+
+      const all = await new ExtensionSettingsStore(tmpDir, 'test-ext').getAll();
+      expect(Object.keys(all)).toHaveLength(N);
+    });
+
+    it('does not let a concurrent write resurrect a deleted setting', async () => {
+      const seed = new ExtensionSettingsStore(tmpDir, 'test-ext');
+      await seed.set('doomed', true);
+
+      await Promise.all([
+        new ExtensionSettingsStore(tmpDir, 'test-ext').delete('doomed'),
+        new ExtensionSettingsStore(tmpDir, 'test-ext').set('fresh', true),
+      ]);
+
+      const all = await new ExtensionSettingsStore(tmpDir, 'test-ext').getAll();
+      expect(all).toEqual({ fresh: true });
+    });
+  });
 });

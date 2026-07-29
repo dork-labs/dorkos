@@ -6,12 +6,12 @@
 import { Router } from 'express';
 import type { Response } from 'express';
 import fs from 'fs/promises';
-import path from 'path';
 import { z } from 'zod';
 import type { ExtensionManager } from '../services/extensions/extension-manager.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { logger } from '../lib/logger.js';
 import { eventFanOut } from '../services/core/event-fan-out.js';
+import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
@@ -298,13 +298,7 @@ export function createExtensionsRouter(
         return res.status(404).json({ error: `Extension '${id}' not found` });
       }
 
-      // Create directory if it doesn't exist
-      await fs.mkdir(path.dirname(dataPath), { recursive: true });
-
-      // Write atomically: write to temp file, then rename
-      const tempPath = dataPath + '.tmp';
-      await fs.writeFile(tempPath, JSON.stringify(req.body, null, 2), 'utf-8');
-      await fs.rename(tempPath, dataPath);
+      await writeFileAtomic(dataPath, JSON.stringify(req.body, null, 2));
 
       res.status(200).json({ ok: true });
     } catch (err) {
