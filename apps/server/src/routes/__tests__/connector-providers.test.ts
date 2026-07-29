@@ -13,11 +13,36 @@ import {
   TEST_CONNECTOR_PROVIDER_TYPE,
 } from '../../services/connectors/bootstrap.js';
 import { NangoProxyMcp } from '../../services/connectors/providers/nango-proxy-mcp.js';
+import type { ComposioHttpClient } from '../../services/connectors/providers/composio-client.js';
+import type { NangoHttpClient } from '../../services/connectors/providers/nango-client.js';
 import { SessionConnectorService } from '../../services/connectors/session-exposure.js';
 import { createConnectorProvidersRouter } from '../connector-providers.js';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 
 const SECRET = 'ck-super-secret-composio-key';
+
+/**
+ * Hermetic vendor clients for the bootstrapper's connection check — without
+ * these the PUT-credential tests would issue a real network request.
+ */
+const hermeticClients = {
+  makeComposioClient: (): ComposioHttpClient => ({
+    listToolkits: () => Promise.resolve([]),
+    initiateConnection: () => Promise.reject(new Error('not used')),
+    getConnectionState: () => Promise.reject(new Error('not used')),
+    listConnectedAccounts: () => Promise.resolve([]),
+    deleteConnectedAccount: () => Promise.resolve(),
+    mcpSessionForAccount: () => Promise.resolve(null),
+  }),
+  makeNangoClient: (): NangoHttpClient => ({
+    listIntegrations: () => Promise.resolve([]),
+    initiateConnection: () => Promise.reject(new Error('not used')),
+    getConnectionState: () => Promise.reject(new Error('not used')),
+    listConnections: () => Promise.resolve([]),
+    deleteConnection: () => Promise.resolve(),
+    proxyRequest: () => Promise.resolve({ status: 200, body: '' }),
+  }),
+};
 
 /** In-memory CredentialStore + CredentialProvider over one shared map. */
 function fakeCredentialBackend() {
@@ -70,6 +95,7 @@ describe('connector-providers router', () => {
       nangoEnv: opts?.nangoEnv ?? (() => ({})),
       nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
       rawMcpServers: () => [],
+      ...hermeticClients,
       ...(opts?.testConnector && { testConnector: { create: async () => null } }),
     });
     const app = express();
@@ -192,6 +218,7 @@ describe('connector-providers router', () => {
       nangoEnv: () => ({}),
       nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
       rawMcpServers: () => [],
+      ...hermeticClients,
       onUnregistered: (providerType) => sessionConnectors.invalidateProvider(providerType),
     });
     const app = express();

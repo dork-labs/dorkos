@@ -195,11 +195,13 @@ export interface NangoConnectorProviderOpts {
  * independently-addressable {@link ConnectedAccountId}, disambiguated by a label
  * carried as a Nango tag.
  *
- * **Throw-free contract** (a Nango API call can fail — a stale key's 401, a 5xx,
+ * **Degrade contract** (a Nango API call can fail — a stale key's 401, a 5xx,
  * a `fetch` timeout — so each method declares how it degrades):
  *
- * - `listToolkits`, `listAccounts` — throw-free; a transport failure degrades to
- *   an empty list (logged). The registry aggregation records a warning upstream.
+ * - `listToolkits`, `listAccounts` — a transport failure PROPAGATES: the
+ *   registry's aggregation paths turn a rejection into an honest per-provider
+ *   `warnings[]` entry (ADR-0310). An empty success and a failure must never be
+ *   indistinguishable (the composio silent-401 lesson, DOR-703).
  * - `pollConnect` — throw-free; maps a transport failure to a failure-typed
  *   `{ status: 'failed' }`.
  * - `disconnect` — idempotent: the client swallows a 404 (an unknown/already-
@@ -245,23 +247,14 @@ export class NangoConnectorProvider implements ConnectorProvider {
   }
 
   async listToolkits(): Promise<ConnectorToolkit[]> {
-    try {
-      const integrations = await this._client.listIntegrations();
-      return integrations.map((it) => ({
-        slug: it.uniqueKey,
-        displayName: it.displayName ?? it.provider ?? it.uniqueKey,
-        authKind: toAuthKind(it.authMode),
-      }));
-    } catch (err) {
-      // Throw-free: a transport failure degrades to an empty list. The registry
-      // aggregation still records a warning upstream (it also races each provider
-      // under a timeout), but the adapter itself must not throw through the port.
-      if (isTransportError(err)) {
-        logger.warn(`[Connectors] nango listToolkits degraded: ${errText(err)}`);
-        return [];
-      }
-      throw err;
-    }
+    // A failure propagates on purpose: the registry aggregation converts it to
+    // a per-provider warning the client renders (never a silent empty list).
+    const integrations = await this._client.listIntegrations();
+    return integrations.map((it) => ({
+      slug: it.uniqueKey,
+      displayName: it.displayName ?? it.provider ?? it.uniqueKey,
+      authKind: toAuthKind(it.authMode),
+    }));
   }
 
   async startConnect(toolkit: string, opts?: { label?: string }): Promise<ConnectStart> {
@@ -306,19 +299,11 @@ export class NangoConnectorProvider implements ConnectorProvider {
   }
 
   async listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
-    try {
-      const connections = await this._client.listConnections(
-        opts?.toolkit ? { integration: opts.toolkit } : undefined
-      );
-      return connections.map((connection) => this._toPortAccount(connection));
-    } catch (err) {
-      // Throw-free: a transport failure degrades to an empty list (see listToolkits).
-      if (isTransportError(err)) {
-        logger.warn(`[Connectors] nango listAccounts degraded: ${errText(err)}`);
-        return [];
-      }
-      throw err;
-    }
+    // Propagates on failure — see listToolkits.
+    const connections = await this._client.listConnections(
+      opts?.toolkit ? { integration: opts.toolkit } : undefined
+    );
+    return connections.map((connection) => this._toPortAccount(connection));
   }
 
   async disconnect(accountId: ConnectedAccountId): Promise<void> {

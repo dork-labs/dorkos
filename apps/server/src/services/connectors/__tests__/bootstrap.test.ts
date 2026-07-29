@@ -11,12 +11,43 @@ import {
 } from '../bootstrap.js';
 import { MANAGED_CUSTODY_CANONICAL_SENTENCE } from '../custody-disclosure.js';
 import { COMPOSIO_API_KEY_REF } from '../providers/composio.js';
+import { ComposioApiError, type ComposioHttpClient } from '../providers/composio-client.js';
 import { NANGO_SECRET_KEY_REF } from '../providers/nango.js';
+import type { NangoHttpClient } from '../providers/nango-client.js';
 import { NangoProxyMcp } from '../providers/nango-proxy-mcp.js';
 import type { RawMcpServerDescriptor } from '../providers/raw-mcp.js';
 
 /** A valid 256-bit key written in base64 (32 zero bytes) for the enforced gate. */
 const VALID_ENCRYPTION_KEY = Buffer.alloc(32).toString('base64');
+
+/**
+ * A hermetic Composio client for the bootstrapper's connection check. The
+ * probe calls `listConnectedAccounts`; `failProbeWith` drives the wrong-key
+ * (401) branch. No method touches the network.
+ */
+function fakeComposioClient(failProbeWith?: Error): ComposioHttpClient {
+  return {
+    listToolkits: () => Promise.resolve([]),
+    initiateConnection: () => Promise.reject(new Error('not used')),
+    getConnectionState: () => Promise.reject(new Error('not used')),
+    listConnectedAccounts: () =>
+      failProbeWith ? Promise.reject(failProbeWith) : Promise.resolve([]),
+    deleteConnectedAccount: () => Promise.resolve(),
+    mcpSessionForAccount: () => Promise.resolve(null),
+  };
+}
+
+/** The Nango counterpart of {@link fakeComposioClient}. */
+function fakeNangoClient(): NangoHttpClient {
+  return {
+    listIntegrations: () => Promise.resolve([]),
+    initiateConnection: () => Promise.reject(new Error('not used')),
+    getConnectionState: () => Promise.reject(new Error('not used')),
+    listConnections: () => Promise.resolve([]),
+    deleteConnection: () => Promise.resolve(),
+    proxyRequest: () => Promise.resolve({ status: 200, body: '' }),
+  };
+}
 
 /** A mutable credential fake: `store` writes stand in for the credential routes. */
 function fakeCredentials(store: Map<string, string>): CredentialProvider {
@@ -48,6 +79,8 @@ describe('ConnectorProviderBootstrapper', () => {
     rawMcpServers?: () => RawMcpServerDescriptor[];
     testConnector?: ConstructorParameters<typeof ConnectorProviderBootstrapper>[0]['testConnector'];
     onUnregistered?: (providerType: string) => void;
+    /** Error the Composio connection check rejects with (the wrong-key branch). */
+    composioProbeError?: Error;
   }) {
     return new ConnectorProviderBootstrapper({
       registry,
@@ -55,6 +88,10 @@ describe('ConnectorProviderBootstrapper', () => {
       nangoEnv: opts?.nangoEnv ?? (() => ({})),
       nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
       rawMcpServers: opts?.rawMcpServers ?? (() => []),
+      // Hermetic vendor clients: without these the post-registration connection
+      // check would issue a real network request from the test suite.
+      makeComposioClient: () => fakeComposioClient(opts?.composioProbeError),
+      makeNangoClient: () => fakeNangoClient(),
       ...(opts?.testConnector && { testConnector: opts.testConnector }),
       ...(opts?.onUnregistered && { onUnregistered: opts.onUnregistered }),
     });
@@ -171,6 +208,47 @@ describe('ConnectorProviderBootstrapper', () => {
       const healthy = await bootstrapper.reload('nango');
       expect(healthy.registered).toBe(true);
       expect(healthy.error).toBeUndefined();
+    });
+
+    it('a key that fails the connection check never registers — the founder-401 case', async () => {
+      // The exact first-contact failure (DOR-703): a stored key the credential
+      // gate accepts, that Composio 401s on every call. "Registered" must mean
+      // "actually answers", and the API's own message must reach the status.
+      secrets.set(COMPOSIO_API_KEY_REF, 'uak-wrong-kind-of-key');
+      const bootstrapper = makeBootstrapper({
+        composioProbeError: new ComposioApiError(
+          401,
+          'Composio request failed (401): Invalid API key: uak**SGn9 Please check you are using a valid API key.'
+        ),
+      });
+
+      const status = await bootstrapper.reload('composio');
+      expect(status).toMatchObject({ type: 'composio', configured: true, registered: false });
+      expect(status.error).toMatch(/401/);
+      expect(status.error).toMatch(/valid API key/);
+      // Unregistered: the toolkit aggregation never even asks it.
+      expect(registry.resolveProvider('composio')).toBeUndefined();
+    });
+
+    it('a probe failure on re-save of a live provider revokes it (onUnregistered fires)', async () => {
+      const unregistered: string[] = [];
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-good');
+      const good = makeBootstrapper({
+        onUnregistered: (providerType) => unregistered.push(providerType),
+      });
+      await good.registerBootProviders();
+      expect(registry.resolveProvider('composio')).toBeDefined();
+
+      // Same registry, new bootstrapper whose probe fails — models re-saving a
+      // broken key over a working one.
+      const broken = makeBootstrapper({
+        composioProbeError: new ComposioApiError(401, 'unauthorized'),
+        onUnregistered: (providerType) => unregistered.push(providerType),
+      });
+      const status = await broken.reload('composio');
+      expect(status.registered).toBe(false);
+      expect(registry.resolveProvider('composio')).toBeUndefined();
+      expect(unregistered).toEqual(['composio']);
     });
 
     it('fires onUnregistered exactly when a swap takes a live provider away', async () => {
