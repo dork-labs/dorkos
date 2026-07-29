@@ -11345,6 +11345,232 @@
         }
       }
     },
+    "/api/connectors/providers": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "List connector provider setup statuses",
+        "description": "Reference-free setup state per credential-gated provider: configured/registered booleans, the custody stance with its plain-language disclosure, and — when a configured provider refused to register — the honest error text. Never carries a secret or a credential reference.",
+        "responses": {
+          "200": {
+            "description": "Provider setup statuses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "configured": {
+                            "type": "boolean"
+                          },
+                          "registered": {
+                            "type": "boolean"
+                          },
+                          "custody": {
+                            "type": "string",
+                            "enum": [
+                              "managed",
+                              "self-host",
+                              "external"
+                            ]
+                          },
+                          "disclosure": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "configured",
+                          "registered",
+                          "custody",
+                          "disclosure"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "providers"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/providers/{provider}/credential": {
+      "put": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Store a provider vendor key and register the provider live",
+        "description": "Stores the key in the encrypted credential store and reloads the provider — no restart. The secret is never echoed; the response is the fresh provider status.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "secret": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "secret"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The provider status after the reload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "registered": {
+                      "type": "boolean"
+                    },
+                    "custody": {
+                      "type": "string",
+                      "enum": [
+                        "managed",
+                        "self-host",
+                        "external"
+                      ]
+                    },
+                    "disclosure": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "configured",
+                    "registered",
+                    "custody",
+                    "disclosure"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown provider or empty secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Remove a provider vendor key (idempotent) and unregister the provider",
+        "description": "Deletes the stored key and reloads the provider, which unregisters it. Idempotent — a missing key still answers 200 with the (unconfigured) status.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "provider",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider status after the reload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "configured": {
+                      "type": "boolean"
+                    },
+                    "registered": {
+                      "type": "boolean"
+                    },
+                    "custody": {
+                      "type": "string",
+                      "enum": [
+                        "managed",
+                        "self-host",
+                        "external"
+                      ]
+                    },
+                    "disclosure": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "configured",
+                    "registered",
+                    "custody",
+                    "disclosure"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/toolkits": {
       "get": {
         "tags": [
