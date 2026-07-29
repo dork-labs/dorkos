@@ -185,10 +185,10 @@
       "specFile": "tests/connections/marketplace-connectors.spec.ts",
       "feature": "connections",
       "description": "shows the CONNECTOR badge and narrows the grid with the Connectors facet",
-      "lastRun": "2026-07-29T21:33:47.473Z",
+      "lastRun": "2026-07-29T22:37:53.760Z",
       "lastStatus": "passed",
-      "runCount": 6,
-      "passCount": 6,
+      "runCount": 7,
+      "passCount": 7,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -197,10 +197,10 @@
       "specFile": "tests/connections/connections.spec.ts",
       "feature": "connections",
       "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
-      "lastRun": "2026-07-29T21:33:47.473Z",
+      "lastRun": "2026-07-29T22:37:53.760Z",
       "lastStatus": "passed",
-      "runCount": 6,
-      "passCount": 4,
+      "runCount": 7,
+      "passCount": 5,
       "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
@@ -521,6 +521,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 56280
+    },
+    {
+      "id": "2026-07-29T22-37-53",
+      "timestamp": "2026-07-29T22:37:53.760Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 46086
     }
   ]
 }
