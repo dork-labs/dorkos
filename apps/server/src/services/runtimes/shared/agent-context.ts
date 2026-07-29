@@ -78,6 +78,20 @@ Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
 }
 
 /**
+ * Flatten one stored profile value onto a single line and strip anything that
+ * could end the block early. The profile is `agent-writable` and `config_patch`
+ * is reachable from the external `/mcp` endpoint, so "the operator wrote this"
+ * is not the only possible author: a value carrying a newline or the literal
+ * closing tag could otherwise break out of the block and read as trusted text.
+ */
+function sanitizeProfileValue(value: string): string {
+  return value
+    .replace(/<\/?user_profile>/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Build the `<user_profile>` block from the stored profile (spec
  * `user-profile-onboarding` §Agent context): a short, factual statement of who
  * the agent works for, framed as context rather than instructions.
@@ -85,16 +99,16 @@ Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
  * Pure. Every empty line is omitted (`Name:` only when `displayName` is set,
  * and so on), and a profile with nothing in it returns `''` so the whole block
  * disappears. Values are schema-capped (60/80 chars, ≤10 roles, ≤50 tools) so
- * the block is bounded; there is no untrusted-text wrapper because the operator
- * wrote these values about themselves on their own machine — the closing
- * sentence plus the caps are the proportionate guard.
+ * the block is bounded, and {@link sanitizeProfileValue} keeps any single value
+ * from ending the block early; the closing sentence plus those two guards are
+ * the proportionate protection — no heavier untrusted-text wrapper is used.
  *
  * @param profile - The stored `config.profile` block, or nothing at all.
  */
 function buildUserProfileBlock(profile: Partial<UserProfile> | null | undefined): string {
-  const roles = (profile?.roles ?? []).map((r) => r.trim()).filter((r) => r.length > 0);
-  const tools = (profile?.tools ?? []).map((t) => t.trim()).filter((t) => t.length > 0);
-  const name = profile?.displayName?.trim() || null;
+  const roles = (profile?.roles ?? []).map(sanitizeProfileValue).filter((r) => r.length > 0);
+  const tools = (profile?.tools ?? []).map(sanitizeProfileValue).filter((t) => t.length > 0);
+  const name = profile?.displayName ? sanitizeProfileValue(profile.displayName) || null : null;
   if (!name && roles.length === 0 && tools.length === 0) return '';
 
   const lines = ['You work for one person. What they have told DorkOS about themselves:'];

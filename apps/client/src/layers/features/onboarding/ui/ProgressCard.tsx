@@ -52,14 +52,15 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const { open: openSettings } = useSettingsDeepLink();
   const requestTour = useAppStore((s) => s.requestTour);
   const { startSession } = useDefaultAgentSession();
-  const { roles, rolePromptDismissedAt, saveRoles } = useProfile();
+  const { roles, rolePromptDismissedAt, isLoading, saveRoles } = useProfile();
 
   const [profilePhase, setProfilePhase] = useState<ProfileRowPhase>('closed');
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
 
   // Only while nothing is saved and the one-time prompt was not waved off; the
-  // row disappears on its own once roles exist.
-  const showProfileRow = roles.length === 0 && rolePromptDismissedAt === null;
+  // row disappears on its own once roles exist. Gated on the config query so a
+  // user who HAS roles never sees the row flash while it loads.
+  const showProfileRow = !isLoading && roles.length === 0 && rolePromptDismissedAt === null;
 
   const handleProfileSave = () => {
     setProfilePhase('saving');

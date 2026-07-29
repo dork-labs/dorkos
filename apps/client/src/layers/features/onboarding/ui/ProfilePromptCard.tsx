@@ -41,12 +41,15 @@ export function ProfilePromptCard() {
   const [selected, setSelected] = useState<string[]>([]);
   const [phase, setPhase] = useState<CardPhase>('ask');
 
-  // The thanks line lingers briefly, then the card collapses for good.
+  // The thanks line lingers briefly, then the card collapses for good. The
+  // linger stays at full length under reduced motion: that preference means
+  // less animation, not less feedback — collapsing instantly would swallow
+  // the only confirmation the person gets.
   useEffect(() => {
     if (phase !== 'saved') return;
-    const t = setTimeout(() => setPhase('done'), reducedMotion ? 0 : SAVED_LINGER_MS);
+    const t = setTimeout(() => setPhase('done'), SAVED_LINGER_MS);
     return () => clearTimeout(t);
-  }, [phase, reducedMotion]);
+  }, [phase]);
 
   // Show condition (spec §Existing users) — every clause must hold:
   const onboardingOver = state.completedAt !== null || state.dismissedAt !== null;

@@ -71,11 +71,14 @@ export function ProfileRolePicker({
   const chips = ROLE_CANON.slice(0, ONBOARDING_ROLE_CHIP_COUNT);
   // Free-form roles the user typed (anything selected that is not a canon id).
   const customRoles = selected.filter((r) => !chips.some((c) => c.id === r));
+  // At the schema cap, adding is visibly off (chips disable, a hint appears)
+  // rather than silently ignored; deselecting always works.
+  const atCap = selected.length >= MAX_ROLES;
 
   const toggleRole = (id: string) => {
     if (hasRole(selected, id)) {
       onChange(selected.filter((r) => r !== id));
-    } else if (selected.length < MAX_ROLES) {
+    } else if (!atCap) {
       onChange([...selected, id]);
     }
   };
@@ -102,9 +105,10 @@ export function ProfileRolePicker({
               key={role.id}
               type="button"
               aria-pressed={active}
+              disabled={atCap && !active}
               onClick={() => toggleRole(role.id)}
               className={cn(
-                'focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none',
+                'focus-visible:ring-ring rounded-md border px-2.5 py-1 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50',
                 active
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-input bg-background text-foreground hover:bg-accent'
@@ -128,19 +132,26 @@ export function ProfileRolePicker({
         {!customOpen && (
           <button
             type="button"
+            disabled={atCap}
             onClick={() => {
               setCustomOpen(true);
               // Focus after the input mounts.
               setTimeout(() => customInputRef.current?.focus(), 0);
             }}
-            className="border-input text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring rounded-md border border-dashed px-2.5 py-1 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none"
+            className="border-input text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring rounded-md border border-dashed px-2.5 py-1 text-xs transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"
           >
             Something else
           </button>
         )}
       </div>
 
-      {customOpen && (
+      {atCap && (
+        <p className="text-muted-foreground text-xs" data-testid="profile-role-cap-hint">
+          Ten roles is the limit. Remove one to add another.
+        </p>
+      )}
+
+      {customOpen && !atCap && (
         <Input
           ref={customInputRef}
           value={customValue}

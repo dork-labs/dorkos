@@ -198,10 +198,13 @@ describe('heartbeat-reporter', () => {
     // The profile never leaves the machine (spec user-profile-onboarding
     // §Privacy invariant). HeartbeatPayload is a closed interface with no
     // profile field; this pins that a config carrying a fully-populated
-    // profile still contributes nothing profile-shaped to the wire body. It
-    // goes red if anyone threads a profile field into HeartbeatInput/
-    // HeartbeatPayload and derives it from config the way the boot wiring
-    // (index.ts registerHeartbeat) derives every other config-read input.
+    // profile still contributes nothing profile-shaped to the wire body when
+    // the inputs are derived from it the way the boot wiring does. What it
+    // proves is exactly that: the sentinel values and the key `profile` are
+    // absent from THIS body. A new payload field that reads the profile
+    // through some other route is caught by the exact-shape pin in
+    // `buildHeartbeatPayload emits exactly the allow-listed shape` below, not
+    // by this test alone.
     it('a fully-populated profile never reaches the heartbeat wire body', async () => {
       const SENTINELS = [
         'SENTINEL-ROLE-hiring',
@@ -255,6 +258,30 @@ describe('heartbeat-reporter', () => {
       expect(payload.tunnelEnabled).toBe(true);
       expect(payload.cloudLinked).toBe(true);
       expect(payload.instanceId).toBe('id-1');
+    });
+
+    // The exact-shape pin behind the privacy tests above: `toStrictEqual`
+    // fails on ANY extra key, including one whose value happens to be
+    // undefined — which JSON.stringify would silently drop from the wire
+    // body, so the string-based sentinel checks alone could not see it.
+    it('emits exactly the allow-listed shape, nothing more', () => {
+      const payload = buildHeartbeatPayload({
+        instanceId: 'id-1',
+        dorkosVersion: DORKOS_VERSION,
+        runtimesConfigured: ['claude-code'],
+        tunnelEnabled: false,
+        cloudLinked: false,
+        counts,
+      });
+      expect(payload).toStrictEqual({
+        instanceId: 'id-1',
+        dorkosVersion: DORKOS_VERSION,
+        os: `${process.platform}-${process.arch}`,
+        runtimesConfigured: ['claude-code'],
+        tunnelEnabled: false,
+        cloudLinked: false,
+        counts,
+      });
     });
   });
 });

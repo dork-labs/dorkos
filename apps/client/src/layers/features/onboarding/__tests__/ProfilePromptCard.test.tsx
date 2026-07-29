@@ -74,8 +74,11 @@ async function renderCard(overrides: CardConfigOverrides = {}) {
       </TransportProvider>
     </QueryClientProvider>
   );
-  // Let the config query settle either way before asserting presence/absence.
-  await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
+  // Wait until every query has SETTLED, not merely started: the card renders
+  // null while loading, so a negative assertion made against the loading state
+  // would pass no matter what the show condition says (it did — the whole
+  // matrix stayed green with the condition gutted to the loading check).
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
 }
 
 describe('ProfilePromptCard', () => {
