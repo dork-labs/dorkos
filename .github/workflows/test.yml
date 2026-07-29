@@ -39,10 +39,22 @@ name: test
 # failure into a green check. Flake that shows up here should be fixed, not
 # retried. (This does mean the same commit can pass one gate and fail the other
 # — the retry setting is the reason, and it is intentional.)
+# `merge_group` is what lets this become a REQUIRED check. Until now the full
+# suite ran on every pull request and could block nothing, which is the exact
+# inversion the repo had: the cheapest policy checks gated `main` while its most
+# expensive and most valuable signal was advisory. A required check must report
+# on merge groups or the queue blocks forever, so the trigger comes first and the
+# branch-protection change follows it.
+#
+# The queue run is not redundant with the pull-request run. A pull request only
+# ever tests its own diff against the base it branched from; the merge group
+# tests `main` plus everything ahead of it in the queue plus this pull request.
+# That difference is the #488/#489 class — two changes green apart, red together.
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for the Node 20 runtime (matches the other workflows here).

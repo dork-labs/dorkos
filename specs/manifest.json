@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260728-225135",
+      "slug": "handles",
+      "title": "Handles — one addressable name for every author in a room",
+      "created": "2026-07-28",
+      "status": "specified"
+    },
+    {
       "id": "260728-213721",
       "slug": "message-search",
       "title": "Search every message you have ever sent or received",
