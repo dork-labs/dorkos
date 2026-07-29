@@ -1,8 +1,8 @@
 /**
- * Static configuration for the OpenCode runtime — capability flags and turn
- * timing. Values are the task 3.2 verification verdicts (NOTES.md §2),
- * derived from the pinned `@opencode-ai/sdk@1.17.13` and the upstream server
- * source at that tag.
+ * Static configuration for the OpenCode runtime — capability flags, turn
+ * timing, and the session-listing ceiling. Values are the task 3.2
+ * verification verdicts (NOTES.md §2), derived from the pinned
+ * `@opencode-ai/sdk@1.17.13` and the upstream server source at that tag.
  *
  * @module services/runtimes/opencode/runtime-constants
  */
@@ -81,3 +81,39 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
  * upstream (at worst, cumulative part snapshots self-heal missed deltas).
  */
 export const STREAM_LIVE_TIMEOUT_MS = 2_000;
+
+/**
+ * How many ROOT sessions one `GET /session` may return before the adapter
+ * treats the read as truncated.
+ *
+ * Sent with no `limit`, the sidecar answers with its own default page — 100
+ * most-recently-updated at v1.17.13 — dropping the rest silently, with no
+ * error and no marker. Sending an explicit `limit` lifts that; the server
+ * applies no clamp of its own (verified live: 1,000,000 is accepted, and a
+ * request for 1001 against 1001 sessions returns all 1001). That default is
+ * deliberately NOT encoded here: it belongs to the sidecar and can move
+ * between builds, so the adapter proves `limit` is honoured by behaviour
+ * instead of recognising any particular page size (`assertLimitHonoured` in
+ * `session-mapper.ts`).
+ *
+ * 1000 is high enough that no real project reaches it — the busiest measured
+ * here holds 49 — while still bounding the work one listing can ask of the
+ * sidecar inside the 2s per-runtime aggregation budget
+ * (`aggregate-session-list.ts`).
+ *
+ * The adapter requests one MORE than this and treats only a genuine overflow
+ * as truncation, so a project holding exactly this many is served normally
+ * rather than rejected — see `listSessions` in `session-mapper.ts`.
+ */
+export const SESSION_LIST_LIMIT = 1000;
+
+/**
+ * The same ceiling for the id-binding rebuild in `getMessageHistory`, which
+ * lists roots AND children (it must be able to bind a child session's id).
+ *
+ * Doubled deliberately: {@link SESSION_LIST_LIMIT} is a budget of ROOTS, and
+ * child (subtask) sessions measured ~50% of rows in a driven project, so an
+ * equal number here would cover only about half as many roots as the list
+ * itself shows. A session visible in the list must stay openable.
+ */
+export const SESSION_REBUILD_LIMIT = SESSION_LIST_LIMIT * 2;
