@@ -15,7 +15,8 @@
       "size": "md",
       "priority": "high",
       "dependencies": [],
-      "parallelWith": []
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "1.2",
@@ -26,10 +27,9 @@
       "activeForm": "Adding the connectorConformance suite and FakeConnectorProvider",
       "size": "md",
       "priority": "high",
-      "dependencies": [
-        "1.1"
-      ],
-      "parallelWith": []
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "1.3",
@@ -40,11 +40,9 @@
       "activeForm": "Implementing the raw-MCP baseline adapter",
       "size": "md",
       "priority": "high",
-      "dependencies": [
-        "1.1",
-        "1.2"
-      ],
-      "parallelWith": []
+      "dependencies": ["1.1", "1.2"],
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "2.1",
@@ -55,12 +53,9 @@
       "activeForm": "Building the custody-disclosure copy module",
       "size": "sm",
       "priority": "high",
-      "dependencies": [
-        "1.1"
-      ],
-      "parallelWith": [
-        "1.3"
-      ]
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.3"],
+      "status": "completed"
     },
     {
       "id": "3.1",
@@ -71,13 +66,9 @@
       "activeForm": "Adding the connected_accounts table and migration",
       "size": "sm",
       "priority": "high",
-      "dependencies": [
-        "1.1"
-      ],
-      "parallelWith": [
-        "1.3",
-        "2.1"
-      ]
+      "dependencies": ["1.1"],
+      "parallelWith": ["1.3", "2.1"],
+      "status": "completed"
     },
     {
       "id": "3.2",
@@ -88,11 +79,9 @@
       "activeForm": "Building the ConnectorRegistry and account routing",
       "size": "md",
       "priority": "high",
-      "dependencies": [
-        "1.1",
-        "3.1"
-      ],
-      "parallelWith": []
+      "dependencies": ["1.1", "3.1"],
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "3.3",
@@ -103,10 +92,9 @@
       "activeForm": "Building the recommendConnector routing surface",
       "size": "md",
       "priority": "high",
-      "dependencies": [
-        "3.2"
-      ],
-      "parallelWith": []
+      "dependencies": ["3.2"],
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "3.4",
@@ -117,12 +105,9 @@
       "activeForm": "Adding the /api/connectors REST routes",
       "size": "md",
       "priority": "high",
-      "dependencies": [
-        "3.2",
-        "3.3",
-        "2.1"
-      ],
-      "parallelWith": []
+      "dependencies": ["3.2", "3.3", "2.1"],
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "4.1",
@@ -133,11 +118,9 @@
       "activeForm": "Wiring session tool exposure and the consent binding",
       "size": "lg",
       "priority": "high",
-      "dependencies": [
-        "3.2",
-        "3.4"
-      ],
-      "parallelWith": []
+      "dependencies": ["3.2", "3.4"],
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "5.1",
@@ -148,12 +131,9 @@
       "activeForm": "Implementing the Composio managed adapter",
       "size": "lg",
       "priority": "high",
-      "dependencies": [
-        "1.2",
-        "3.2",
-        "4.1"
-      ],
-      "parallelWith": []
+      "dependencies": ["1.2", "3.2", "4.1"],
+      "parallelWith": [],
+      "status": "completed"
     },
     {
       "id": "6.1",
@@ -164,12 +144,9 @@
       "activeForm": "Establishing connector distribution and docs",
       "size": "md",
       "priority": "medium",
-      "dependencies": [
-        "5.1"
-      ],
-      "parallelWith": [
-        "6.2"
-      ]
+      "dependencies": ["5.1"],
+      "parallelWith": ["6.2"],
+      "status": "completed"
     },
     {
       "id": "6.2",
@@ -180,14 +157,9 @@
       "activeForm": "Wiring the two W4 connector evals",
       "size": "md",
       "priority": "high",
-      "dependencies": [
-        "3.3",
-        "4.1",
-        "5.1"
-      ],
-      "parallelWith": [
-        "6.1"
-      ]
+      "dependencies": ["3.3", "4.1", "5.1"],
+      "parallelWith": ["6.1"],
+      "status": "completed"
     },
     {
       "id": "7.1",
@@ -198,13 +170,9 @@
       "activeForm": "Building the Nango self-host adapter after the re-check",
       "size": "lg",
       "priority": "medium",
-      "dependencies": [
-        "1.2",
-        "4.1",
-        "5.1",
-        "6.2"
-      ],
-      "parallelWith": []
+      "dependencies": ["1.2", "4.1", "5.1", "6.2"],
+      "parallelWith": [],
+      "status": "completed"
     }
   ]
 }
