@@ -13,7 +13,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import {
   DORKBOT_ONBOARDING_LINES,
   dorkbotDiscoveryFoundLine,
+  dorkbotProfileSuggestionLine,
 } from '@dorkos/shared/dorkbot-templates';
+import { recommendForRoles } from '@dorkos/shared/profile-recommendations';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import type { OnboardingStep } from '@dorkos/shared/config-schema';
 import type { ChatMessage, MessageGrouping } from '@/layers/shared/model';
@@ -39,6 +41,8 @@ export interface OnboardingConversationPorts {
   reducedMotion: boolean;
   /** Persist DorkBot's chosen traits. Resolves on success, rejects on failure. */
   saveTraits: (traits: Traits) => Promise<void>;
+  /** Persist the user's roles (`{ profile: { roles } }`). Resolves on success, rejects on failure. */
+  saveProfile: (roles: string[]) => Promise<void>;
   /** Mark an onboarding step complete. */
   completeStep: (step: OnboardingStep) => void;
   /** Mark an onboarding step skipped. */
@@ -156,7 +160,7 @@ export interface OnboardingConversation {
   /** Whether DorkBot is still revealing queued lines (typing or lines pending). */
   isRevealing: boolean;
   beatId: BeatId;
-  activeWidget: 'personality' | 'discovery' | null;
+  activeWidget: 'personality' | 'profile' | 'discovery' | null;
   composerEnabled: boolean;
   discoveryPhase: DiscoveryPhase;
   saving: boolean;
@@ -169,9 +173,19 @@ export interface OnboardingConversation {
   confirmPersonality: (traits: Traits) => void;
   /**
    * Skip the personality beat: keep DorkBot's default voice (no traits are
-   * written) and advance one beat, to discovery.
+   * written) and advance one beat, to the profile question.
    */
   skipPersonality: () => void;
+  /**
+   * Save the chosen roles and advance to discovery, speaking one authored
+   * suggestion line when the mapping has one; surfaces `saveError` on failure.
+   */
+  confirmProfile: (roles: string[]) => void;
+  /**
+   * Skip the profile beat. Nothing is written to `profile`; the step is
+   * recorded as skipped, which counts as "asked" forever (spec D2).
+   */
+  skipProfile: () => void;
   /** Consent to the discovery scan (the caller starts the actual scan). */
   consentDiscovery: () => void;
   /** Decline the scan and move on. */
@@ -248,7 +262,7 @@ export function useOnboardingConversation(
       .saveTraits(traits)
       .then(() => {
         portsRef.current.completeStep('meet-dorkbot');
-        dispatch({ type: 'goto-beat', beatId: 'discovery', extraLines: [] });
+        dispatch({ type: 'goto-beat', beatId: 'profile', extraLines: [] });
       })
       .catch(() => dispatch({ type: 'save-error' }));
   }, []);
@@ -261,8 +275,39 @@ export function useOnboardingConversation(
     portsRef.current.skipStep('meet-dorkbot');
     dispatch({
       type: 'goto-beat',
-      beatId: 'discovery',
+      beatId: 'profile',
       extraLines: [DORKBOT_ONBOARDING_LINES.personalitySkip],
+    });
+  }, []);
+
+  // Mirrors the personality beat's save/error/advance shape: the beat never
+  // advances on a failed save (retry stays available), and a successful save
+  // speaks at most ONE authored suggestion line before discovery opens. The
+  // line is informational, so nothing waits on it (spec D4).
+  const confirmProfile = useCallback((roles: string[]) => {
+    dispatch({ type: 'saving' });
+    portsRef.current
+      .saveProfile(roles)
+      .then(() => {
+        portsRef.current.completeStep('profile');
+        const suggestion = dorkbotProfileSuggestionLine(recommendForRoles(roles));
+        dispatch({
+          type: 'goto-beat',
+          beatId: 'discovery',
+          extraLines: suggestion ? [suggestion] : [],
+        });
+      })
+      .catch(() => dispatch({ type: 'save-error' }));
+  }, []);
+
+  // Skip is an answer (spec D2): the step is recorded as skipped, nothing is
+  // written to `profile`, and nobody is ever asked again.
+  const skipProfile = useCallback(() => {
+    portsRef.current.skipStep('profile');
+    dispatch({
+      type: 'goto-beat',
+      beatId: 'discovery',
+      extraLines: [DORKBOT_ONBOARDING_LINES.profileSkip],
     });
   }, []);
 
@@ -328,6 +373,8 @@ export function useOnboardingConversation(
     fastForward,
     confirmPersonality,
     skipPersonality,
+    confirmProfile,
+    skipProfile,
     consentDiscovery,
     declineDiscovery,
     reportDiscoveryResults,

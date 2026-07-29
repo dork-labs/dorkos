@@ -2232,6 +2232,28 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'DorkBot living-tour state (DOR-419)' }),
+    profile: z
+      .object({
+        roles: z
+          .array(z.string())
+          .openapi({ description: 'What kind of work the user does (free-form; canon suggested)' }),
+        tools: z
+          .array(z.string())
+          .openapi({ description: 'Tools/services the user works with (e.g. "Gmail")' }),
+        displayName: z
+          .string()
+          .nullable()
+          .openapi({ description: 'What the user likes to be called, or null' }),
+        rolePromptDismissedAt: z.string().nullable().openapi({
+          description:
+            'ISO timestamp when the one-time existing-user role prompt was dismissed, or null',
+        }),
+      })
+      .optional()
+      .openapi({
+        description:
+          'What the user told DorkOS about themselves (spec user-profile-onboarding). Local-only; never included in any telemetry payload.',
+      }),
     agentContext: z
       .object({
         relayTools: z

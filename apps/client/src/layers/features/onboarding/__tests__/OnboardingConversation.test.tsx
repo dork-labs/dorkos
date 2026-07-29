@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
+import { ROLE_CANON } from '@dorkos/shared/profile-recommendations';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
 
 // Instant reveals so the scripted lines land synchronously.
@@ -41,6 +42,17 @@ vi.mock('../model/use-onboarding', () => ({
     completeStep: mockCompleteStep,
     skipStep: mockSkipStep,
     completeOnboarding: mockCompleteOnboarding,
+  }),
+}));
+
+const mockSaveRoles = vi.fn().mockResolvedValue(undefined);
+vi.mock('../model/use-profile', () => ({
+  useProfile: () => ({
+    roles: [],
+    rolePromptDismissedAt: null,
+    isLoading: false,
+    saveRoles: mockSaveRoles,
+    dismissRolePrompt: vi.fn(),
   }),
 }));
 
@@ -116,10 +128,17 @@ vi.mock('@/layers/shared/lib', async (importActual) => ({
 
 import { OnboardingConversation } from '../ui/OnboardingConversation';
 
-/** Advance from first light through the personality beat into discovery. */
-async function reachDiscovery() {
+/** Advance from first light through the personality beat into the profile beat. */
+async function reachProfile() {
   await screen.findByTestId('pick-personality');
   fireEvent.click(screen.getByTestId('confirm-personality'));
+  await screen.findByTestId('confirm-profile');
+}
+
+/** Advance from first light through personality and profile into discovery. */
+async function reachDiscovery() {
+  await reachProfile();
+  fireEvent.click(screen.getByTestId('skip-profile'));
   await screen.findByText('Sure, look around');
 }
 
@@ -181,21 +200,79 @@ describe('OnboardingConversation', () => {
     expect(mockCompleteStep).not.toHaveBeenCalled();
   });
 
-  it('"Skip this step" moves past personality into discovery, saving nothing', async () => {
+  it('"Skip this step" moves past personality into the profile beat, saving nothing', async () => {
     const onComplete = vi.fn();
     render(<OnboardingConversation onComplete={onComplete} />);
     await screen.findByTestId('pick-personality');
 
     fireEvent.click(screen.getByTestId('skip-personality'));
 
-    // The discovery beat is on screen; the personality card is gone.
-    expect(await screen.findByText('Sure, look around')).toBeTruthy();
+    // The profile beat is on screen; the personality card is gone.
+    expect(await screen.findByTestId('confirm-profile')).toBeTruthy();
     expect(screen.queryByTestId('pick-personality')).toBeNull();
     expect(screen.getByText(DORKBOT_ONBOARDING_LINES.personalitySkip)).toBeTruthy();
     // No traits were written, and the conversation was not ended.
     expect(mockMutateAsync).not.toHaveBeenCalled();
     expect(mockSkipStep).toHaveBeenCalledWith('meet-dorkbot');
     expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('the profile beat shows the canon chips, the question, and the privacy line', async () => {
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await reachProfile();
+
+    // Both authored lines landed in the same beat.
+    expect(
+      screen.getByText((text) => text.includes('what kind of work will we be doing together'))
+    ).toBeTruthy();
+    expect(screen.getByText((text) => text.includes('stays on this machine'))).toBeTruthy();
+    // The first six canon roles render as chips.
+    for (const label of ROLE_CANON.slice(0, 6).map((r) => r.label)) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    }
+    // Nothing selected yet, so the confirm chip waits.
+    expect(screen.getByTestId('confirm-profile')).toHaveProperty('disabled', true);
+  });
+
+  it(`"That's us" saves the picked roles as { profile: { roles } } and moves to discovery`, async () => {
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await reachProfile();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hiring people' }));
+    fireEvent.click(screen.getByTestId('confirm-profile'));
+
+    await waitFor(() => expect(mockSaveRoles).toHaveBeenCalledWith(['hiring']));
+    expect(mockCompleteStep).toHaveBeenCalledWith('profile');
+    // DorkBot speaks one authored suggestion line for hiring, then discovery opens.
+    expect(await screen.findByText('Sure, look around')).toBeTruthy();
+    expect(screen.getByText((text) => text.includes('Gmail and Greenhouse'))).toBeTruthy();
+  });
+
+  it('free text adds a role via "Something else"', async () => {
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await reachProfile();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Something else' }));
+    const input = screen.getByLabelText('Something else: describe your work');
+    fireEvent.change(input, { target: { value: 'beekeeping' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // The typed role appears as a selected chip and enables the confirm chip.
+    expect(screen.getByRole('button', { name: 'beekeeping' })).toBeTruthy();
+    fireEvent.click(screen.getByTestId('confirm-profile'));
+    await waitFor(() => expect(mockSaveRoles).toHaveBeenCalledWith(['beekeeping']));
+  });
+
+  it('"Skip this" writes nothing and records the skip forever', async () => {
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await reachProfile();
+
+    fireEvent.click(screen.getByTestId('skip-profile'));
+
+    expect(await screen.findByText('Sure, look around')).toBeTruthy();
+    expect(mockSaveRoles).not.toHaveBeenCalled();
+    expect(mockSkipStep).toHaveBeenCalledWith('profile');
+    expect(screen.getByText(DORKBOT_ONBOARDING_LINES.profileSkip)).toBeTruthy();
   });
 
   it('does not scan before consent, and starts the scan on consent', async () => {

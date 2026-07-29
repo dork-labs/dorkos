@@ -13,8 +13,8 @@ function msg(id: string, role: 'user' | 'assistant'): ChatMessage {
 }
 
 describe('onboarding-script', () => {
-  it('orders the beats arrival -> personality -> discovery -> handoff', () => {
-    expect([...BEAT_ORDER]).toEqual(['arrival', 'personality', 'discovery', 'handoff']);
+  it('orders the beats arrival -> personality -> profile -> discovery -> handoff', () => {
+    expect([...BEAT_ORDER]).toEqual(['arrival', 'personality', 'profile', 'discovery', 'handoff']);
     expect(ONBOARDING_BEATS.map((b) => b.id)).toEqual([...BEAT_ORDER]);
   });
 
@@ -24,11 +24,18 @@ describe('onboarding-script', () => {
     }
   });
 
-  it('shows the personality widget on the personality beat and discovery on discovery', () => {
+  it('shows one widget per interactive beat (personality, profile, discovery)', () => {
     expect(getBeat('personality').widget).toBe('personality');
+    expect(getBeat('profile').widget).toBe('profile');
     expect(getBeat('discovery').widget).toBe('discovery');
     expect(getBeat('arrival').widget).toBeUndefined();
     expect(getBeat('handoff').widget).toBeUndefined();
+  });
+
+  it('the profile beat asks the question and the privacy fact in the same beat', () => {
+    expect(getBeat('profile').lines).toHaveLength(2);
+    expect(getBeat('profile').lines[0]).toContain('what kind of work');
+    expect(getBeat('profile').lines[1]).toContain('stays on this machine');
   });
 
   it('throws on an unknown beat id', () => {

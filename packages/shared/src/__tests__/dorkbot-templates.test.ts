@@ -4,8 +4,10 @@ import {
   DORKBOT_TOUR_LINES,
   dorkbotClaudeMdTemplate,
   dorkbotDiscoveryFoundLine,
+  dorkbotProfileSuggestionLine,
   generateVoiceSample,
 } from '../dorkbot-templates.js';
+import { recommendForRoles } from '../profile-recommendations.js';
 import type { Traits } from '../mesh-schemas.js';
 
 function makeTraits(overrides: Partial<Traits> = {}): Traits {
@@ -44,6 +46,11 @@ describe('dorkbot-templates', () => {
         DORKBOT_ONBOARDING_LINES.composerSetupPlaceholder,
         DORKBOT_ONBOARDING_LINES.personalityPrompt,
         DORKBOT_ONBOARDING_LINES.saveError,
+        DORKBOT_ONBOARDING_LINES.personalitySkip,
+        ...DORKBOT_ONBOARDING_LINES.profilePrompt,
+        DORKBOT_ONBOARDING_LINES.profileSkip,
+        DORKBOT_ONBOARDING_LINES.profileSaved,
+        DORKBOT_ONBOARDING_LINES.profileCardPrompt,
         DORKBOT_ONBOARDING_LINES.discoveryPrompt,
         DORKBOT_ONBOARDING_LINES.scanning,
         DORKBOT_ONBOARDING_LINES.discoveryZero,
@@ -52,11 +59,58 @@ describe('dorkbot-templates', () => {
         DORKBOT_ONBOARDING_LINES.handoffPrompt,
         DORKBOT_ONBOARDING_LINES.composerHandoffPlaceholder,
         dorkbotDiscoveryFoundLine(3),
+        dorkbotProfileSuggestionLine(recommendForRoles(['hiring'])),
         ...(['terse', 'balanced', 'warm', 'playful', 'bold', 'inventive'] as const).map(() =>
           generateVoiceSample(makeTraits())
         ),
       ].join(' ');
       expect(allCopy).not.toContain('—');
+    });
+
+    it('asks the role question and says the privacy fact in the same beat', () => {
+      expect(DORKBOT_ONBOARDING_LINES.profilePrompt).toHaveLength(2);
+      expect(DORKBOT_ONBOARDING_LINES.profilePrompt[0]).toContain('what kind of work');
+      expect(DORKBOT_ONBOARDING_LINES.profilePrompt[1]).toContain('stays on this machine');
+      expect(DORKBOT_ONBOARDING_LINES.profileSkip.length).toBeGreaterThan(0);
+      expect(DORKBOT_ONBOARDING_LINES.profileSaved.length).toBeGreaterThan(0);
+      expect(DORKBOT_ONBOARDING_LINES.profileCardPrompt).toContain('stays on this machine');
+    });
+  });
+
+  describe('dorkbotProfileSuggestionLine', () => {
+    it('speaks the authored hiring line from the spec', () => {
+      expect(dorkbotProfileSuggestionLine(recommendForRoles(['hiring']))).toBe(
+        'People who hire usually connect Gmail and Greenhouse, so their agents can work the inbox and the pipeline. You can set those up any time.'
+      );
+    });
+
+    it('returns the empty string for no recommendations (beat advances silently)', () => {
+      expect(dorkbotProfileSuggestionLine([])).toBe('');
+    });
+
+    it('names at most three services', () => {
+      const recs = recommendForRoles(['hiring', 'design', 'software-development']);
+      const line = dorkbotProfileSuggestionLine(recs);
+      const named = Object.values({
+        gmail: 'Gmail',
+        greenhouse: 'Greenhouse',
+        figma: 'Figma',
+        slack: 'Slack',
+        github: 'GitHub',
+        linear: 'Linear',
+      }).filter((name) => line.includes(name));
+      expect(named.length).toBeLessThanOrEqual(3);
+      expect(named.length).toBeGreaterThan(0);
+    });
+
+    it('never claims anything is set up or configured (demo-claim gate)', () => {
+      for (const roles of [['hiring'], ['design'], ['writing', 'sales']]) {
+        const line = dorkbotProfileSuggestionLine(recommendForRoles(roles)).toLowerCase();
+        expect(line).not.toContain('set up for you');
+        expect(line).not.toContain('configured');
+        expect(line).not.toContain('connections page');
+        expect(line.endsWith('any time.')).toBe(true);
+      }
     });
   });
 
