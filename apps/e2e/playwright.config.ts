@@ -66,10 +66,10 @@ const SITE_PORT = port('DORKOS_SITE_PORT', '6244');
 // cockpit-only runs wastes minutes and, under file-descriptor pressure (many
 // recursive watchers → EMFILE), stalls its 180s readiness gate so no spec can
 // run — exactly what blocked isolated runs in DOR-407. So the site leg (and its
-// specs) are opt-in: set `E2E_SITE=1` to include them. No workflow runs this
-// browser suite in CI today; the CI default-on below is a forward-looking
-// mechanism so that if/when the suite is CI-wired, the site legs stay on unless
-// `E2E_SITE=0` forces them off.
+// specs) are opt-in: set `E2E_SITE=1` to include them. Under CI the leg
+// defaults ON (unless `E2E_SITE=0` forces it off), and the CI gate
+// (.github/workflows/browser-test.yml) also sets E2E_SITE=1 explicitly so its
+// coverage does not ride this conditional.
 const INCLUDE_SITE = process.env.E2E_SITE === '1' || (CI && process.env.E2E_SITE !== '0');
 
 // `@integration`-tagged specs drive a REAL agent runtime — they start a turn and
@@ -151,7 +151,13 @@ export default defineConfig({
   globalSetup: './global-setup.ts',
   fullyParallel: true,
   forbidOnly: CI,
-  retries: CI ? 2 : 0,
+  // One retry in CI, zero locally — a decision, not a default. The full
+  // argument lives in .github/workflows/browser-test.yml; the short form: one
+  // retry absorbs the suite's single tracked test-side flake (DOR-698) without
+  // being wide enough to hide a product race behind two coincidences, and
+  // every pass-on-retry is named in the CI log by the assert step's flaky
+  // warning, so nothing is absorbed silently.
+  retries: CI ? 1 : 0,
   workers: CI ? 1 : undefined,
   timeout: 30_000,
 
@@ -246,8 +252,11 @@ export default defineConfig({
     },
     // Marketing site (Next.js) — hosts the public /marketplace and /features
     // pages exercised by the SITE_SPECS (marketplace.spec.ts, features.spec.ts).
-    // The marketplace test mocks the upstream GitHub registry fetch so the dev
-    // server does not need network access.
+    // The /marketplace pages fetch the LIVE dork-labs/marketplace registry
+    // SERVER-side (a page.route mock can never intercept that), so this leg
+    // needs network access to raw.githubusercontent.com and the marketplace
+    // specs depend on that registry being reachable and non-empty. The trade
+    // is stated in .github/workflows/browser-test.yml's header.
     // Opt-in via E2E_SITE (see INCLUDE_SITE) — omitted for cockpit-only runs.
     //
     // Wrapped in `dotenv --` to mirror the other legs: when Playwright is run

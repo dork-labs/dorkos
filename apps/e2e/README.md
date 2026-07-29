@@ -35,9 +35,10 @@ the site specs need it: `marketplace.spec.ts` and `features.spec.ts` (the
 marketing site instead of the cockpit. The leg boots only when `E2E_SITE=1`. When
 it is off, those specs are skipped so they never hang on an unreachable site.
 
-No workflow runs this browser suite in CI today. The config also turns the leg on
-by default when `CI` is set (unless `E2E_SITE=0`) — a forward-looking default so
-that if the suite is ever CI-wired, the site specs keep running there.
+In CI the leg is on: the config defaults it on whenever `CI` is set (unless
+`E2E_SITE=0`), and the gate that runs this suite —
+`.github/workflows/browser-test.yml` — also sets `E2E_SITE=1` explicitly so its
+coverage does not ride the conditional.
 
 If you add another spec that targets the site, add it to `SITE_SPECS`. Grep
 `tests/` for `6244` and `SITE_BASE_URL` to keep the list complete.
@@ -141,10 +142,10 @@ anywhere else and the loop is back — which is why the isolated recipe above us
 to be unrunnable. Tests never edit source, so nothing is lost by not watching.
 
 - Moving the site leg to another port takes two env vars, not one.
-  `DORKOS_SITE_PORT` relocates the leg, but `marketplace.spec.ts` hardcodes
-  `http://localhost:6244` and `features.spec.ts` falls back to it. Only
-  `features.spec.ts` reads `SITE_BASE_URL`, so set `DORKOS_SITE_PORT` and
-  `SITE_BASE_URL` together (and leave `marketplace.spec.ts` on 6244).
+  `DORKOS_SITE_PORT` relocates the leg, and both site specs
+  (`marketplace.spec.ts`, `features.spec.ts`) default their base URL to
+  `http://localhost:6244` unless `SITE_BASE_URL` says otherwise — so set
+  `DORKOS_SITE_PORT` and `SITE_BASE_URL` together.
 
 ## Common commands
 
