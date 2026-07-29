@@ -135,6 +135,53 @@ gh pr ready <number>        # marking ready fires exactly one full review
 A draft gets no automatic review, so you can push to it freely; marking ready
 triggers one review of the final state.
 
+### A merged PR closes the ticket it names — from the title, the branch, or a magic word
+
+Linear's GitHub integration moves an issue on PR lifecycle: In Progress on open,
+Done on merge. It never reads the diff to check whether the work is actually
+finished. There are three ways a PR names a ticket and they do not behave alike:
+
+| Where the identifier appears                                           | On merge               |
+| ---------------------------------------------------------------------- | ---------------------- |
+| A bare id in the **title** or the **branch name**                      | **Closes** the ticket  |
+| A **magic word** anywhere, body included — `Closes`/`Fixes`/`Resolves` | **Closes** the ticket  |
+| A **bare id in the body**, or `Refs DOR-634`                           | Links only, stays open |
+
+So **match what you write to the truth — say "closes" only when the PR completes
+the ticket.** A PR that advances a ticket without finishing it keeps the bare
+identifier out of the title _and_ the branch name, and refers to it from the body in
+a form that does not close: a bare id, or `Refs DOR-634`.
+
+**The body is not automatically safe, and this repo's own habit is the trap.** House
+style for a PR body is a closing magic word — 15 of the last 60 merged PRs use one,
+including #589, whose body opens `Closes DOR-661.` So an author who dutifully moves
+the identifier out of the title and then writes the body sentence everyone else
+writes reproduces the exact failure this rule exists to prevent, while believing
+they followed it.
+
+The split is visible in the repo's own history: the magic-word PRs above all closed
+their tickets, while every ticket referenced by a **bare** id in a merged body is
+still open (DOR-592, DOR-666, DOR-668, DOR-669, DOR-671).
+
+Two tickets were closed by their titles on 2026-07-28, and both had to be reopened
+by hand with the cause recorded on the ticket:
+
+- **DOR-591** is a **code** ticket — the CommunityAdapter interface and its
+  conformance suite. A PR titled `docs(spec): … (DOR-591)` delivered only the
+  _specification_, and still moved it to In Progress on open and Done on merge.
+  It was the **second** time that ticket had been closed this way.
+- **DOR-634** was closed outright by the first PR to carry it, titled
+  `feat(rooms): … (DOR-634)`, which delivered only the server half while the client
+  and migration work was still unwritten.
+
+The corollary matters as much: when the PR genuinely completes the ticket, the
+identifier in the title is doing exactly what you want and saves you the
+transition. The rule is about what you write telling the truth, not about avoiding
+identifiers.
+
+Branch names carry the same force, so the choice is made before the PR exists — see
+`working-in-worktrees` → **Create the worktree**.
+
 ## How the automated review behaves
 
 The `claude-code-review` workflow reviews **on-demand, not on every push**:
@@ -350,6 +397,12 @@ gh label create re-review    --description "Request another automated review pas
   never touches `CHANGELOG.md`). For changes that should not land in the user-facing
   changelog, `touch .claude/.changelog-populator.lock` before committing (the lock is
   gitignored) and delete any fragment it already wrote.
+- **A new Linear issue lands in Triage, not the backlog.** `issueCreate` without an
+  explicit `stateId` leaves the issue in the team's triage queue, where it is easy to
+  miss; two issues created on 2026-07-28 had to be moved by hand. Normally this is not
+  yours to get right — all tracker I/O routes through the `/flow` `linear-adapter`
+  skill (`AGENTS.md`), which sets state for you. Pass `stateId` yourself only as a
+  stopgap, when you are calling the API directly because the adapter is unreachable.
 - **The review is non-blocking.** It posts comments, and it is not one of the
   branch's required checks, so nothing waits on it. That is not the same as being
   free to merge: branch protection still gates the merge on the checks it does
