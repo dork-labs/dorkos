@@ -35,7 +35,7 @@ import type { FuseResultMatch } from 'fuse.js';
  * Uses ResponsiveDialog (Dialog on desktop, Drawer on mobile).
  * Content powered by usePaletteItems() which assembles all groups.
  *
- * Three prefixes narrow it: `#` to channels and threads, `@` to agents and the
+ * Three prefixes narrow it: `#` to channels, `@` to agents and the
  * direct messages they are in, `>` to slash commands. Each hides every group it
  * does not name.
  */

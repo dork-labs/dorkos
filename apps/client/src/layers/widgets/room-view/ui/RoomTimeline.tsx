@@ -1,15 +1,20 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import { MessagesSquare } from 'lucide-react';
 import { buildTimelineRows } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { Button, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
-import { authorsById, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
+import { authorsById, groupByThread, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
 import { RoomEntryRow } from './RoomEntryRow';
+import { RoomThreadReplies } from './RoomThreadReplies';
 
 interface RoomTimelineProps {
-  /** The room's history, oldest first. */
+  /**
+   * The room's whole history, oldest first — including thread replies. It
+   * arrives unfiltered on purpose: the same array reaches `useMarkRoomRead`,
+   * and {@link groupByThread} is the only thing allowed to leave a reply out.
+   */
   entries: RoomEntry[];
   /** The room's roster — the only place an author's name comes from. */
   members: RoomRosterEntry[];
@@ -34,6 +39,12 @@ const SKELETON_ROWS = 4;
  * boundaries, and the rule marking where you left off — with more than two
  * people in them.
  *
+ * A reply hangs under the entry that heads its thread rather than landing in
+ * the room's flow, because a thread is a relation between entries and not a
+ * room of its own (ADR 260728-022013). A reply whose thread head is older than
+ * the loaded history renders in the flow and says that it is answering
+ * something out of view.
+ *
  * The unread rule reads the membership cursor rather than anything in this
  * browser, so where you left off is the same on every device you open.
  */
@@ -49,17 +60,18 @@ export function RoomTimeline({
   // Ticked rather than read at render, so "Today" becomes "Yesterday" on its own
   // for a room left open across midnight.
   const now = useNow();
+  const { topLevel, repliesByRoot, orphaned } = useMemo(() => groupByThread(entries), [entries]);
   const rows = useMemo(() => {
-    const unread = unreadPlacement(entries, lastReadSeq);
+    const unread = unreadPlacement(topLevel, lastReadSeq);
     return buildTimelineRows(
-      entries.map((entry) => ({
+      topLevel.map((entry) => ({
         id: entry.id,
         authorId: entry.authorId,
         timestamp: entry.createdAt,
       })),
       { now, lastSeenId: unread.lastSeenId, unreadFromStart: unread.fromStart }
     );
-  }, [entries, lastReadSeq, now]);
+  }, [topLevel, lastReadSeq, now]);
 
   if (isLoading) {
     return (
@@ -119,14 +131,18 @@ export function RoomTimeline({
       {rows.map((row) => {
         if (row.kind === 'day-divider') return <DayDivider key={row.key} label={row.label} />;
         if (row.kind === 'unread-divider') return <UnreadDivider key={row.key} />;
-        const entry = entries[row.index]!;
+        const entry = topLevel[row.index]!;
+        const replies = repliesByRoot.get(entry.id);
         return (
-          <RoomEntryRow
-            key={entry.id}
-            entry={entry}
-            author={toMessageAuthor(entry.authorId, authors)}
-            grouping={row.grouping}
-          />
+          <Fragment key={entry.id}>
+            <RoomEntryRow
+              entry={entry}
+              author={toMessageAuthor(entry.authorId, authors)}
+              grouping={row.grouping}
+              orphanedReply={orphaned.has(entry.id)}
+            />
+            {replies && <RoomThreadReplies replies={replies} authors={authors} now={now} />}
+          </Fragment>
         );
       })}
     </div>

@@ -13,13 +13,13 @@ import { RoomTimeline } from './RoomTimeline';
 /**
  * The `/channels` page — one room's history, addressed by search param.
  *
- * `?thread=` wins over `?id=` when both are present: a thread is a room in its
- * own right, and the parent's id stays in the URL so leaving the thread returns
- * to the room it hangs off.
+ * `?id=` is the whole address. A thread is a relation between entries in this
+ * room's log rather than a room of its own (ADR 260728-022013), so it renders
+ * inside the timeline and never changes what the URL points at.
  */
 export function ChannelsPage() {
-  const { id, thread } = useSearch({ from: '/_shell/channels' });
-  const roomId = thread ?? id ?? null;
+  const { id } = useSearch({ from: '/_shell/channels' });
+  const roomId = id ?? null;
 
   const roomQuery = useRoom(roomId);
   const entriesQuery = useRoomEntries(roomId);
@@ -49,6 +49,11 @@ export function ChannelsPage() {
   // stood when the room opened, then the real cursor catches up — so you still
   // see where you left off, and the sidebar badge does not sit there claiming
   // you have not.
+  //
+  // `entries` reaches BOTH of these whole, and that is the invariant: the
+  // timeline leaves thread replies out of the flow it draws, but the cursor is
+  // moved to the room's true newest `seq` (`groupByThread` explains why any
+  // earlier filter breaks the badge, and what it costs to do it this way).
   const frozenReadSeq = useFrozenReadCursor(roomId, lastReadSeq);
   useMarkRoomRead(room, entries);
 

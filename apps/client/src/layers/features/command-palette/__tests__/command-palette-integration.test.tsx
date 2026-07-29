@@ -180,7 +180,6 @@ vi.mock('../model/use-palette-items', () => ({
         channels: [],
         dms: [],
         unread: [],
-        byId: new Map(),
         isLoading: false,
         isError: false,
       },

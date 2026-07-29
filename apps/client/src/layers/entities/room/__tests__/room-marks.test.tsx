@@ -217,16 +217,23 @@ describe('RoomAvatar', () => {
     expect(dm.querySelector('[data-slot="room-avatar"]')).toHaveClass('size-7');
   });
 
-  it('keeps the # for a channel and the branch glyph for a thread', () => {
+  it('keeps the # for a channel, and gives a legacy thread row the same mark', () => {
+    // A thread is a relation between entries now, so nothing creates a
+    // `kind='thread'` ROOM any more (ADR 260728-022013) — but the enum member
+    // survives until the schema retirement, so an old install can still hold
+    // one. It has to read as a place. The branch glyph is gone; what this pins
+    // is that the row does NOT fall through to the DM path, where `participants`
+    // would put Ana's face on a room she does not own.
     const { container: channel } = render(
       <RoomAvatar room={{ id: 'c-1', kind: 'channel', title: '#general' }} participants={[ANA]} />
     );
-    const { container: thread } = render(
+    const { container: legacyThread } = render(
       <RoomAvatar room={{ id: 't-1', kind: 'thread', title: 'A thread' }} participants={[ANA]} />
     );
 
     expect(channel.querySelector('svg.lucide-hash')).not.toBeNull();
-    expect(thread.querySelector('svg.lucide-messages-square')).not.toBeNull();
+    expect(legacyThread.querySelector('svg.lucide-hash')).not.toBeNull();
+    expect(legacyThread.querySelector('svg.lucide-messages-square')).toBeNull();
   });
 });
 

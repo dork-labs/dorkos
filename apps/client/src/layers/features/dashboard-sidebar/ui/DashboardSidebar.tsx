@@ -143,9 +143,8 @@ export function DashboardSidebar() {
     () => Object.fromEntries((roomsQuery.data ?? []).map((r) => [r.id, roomDisplayTitle(r)])),
     [roomsQuery.data]
   );
-  const channelsSearch = useSearch({ strict: false }) as { id?: string; thread?: string };
-  const activeRoomId =
-    pathname === '/channels' ? (channelsSearch.thread ?? channelsSearch.id ?? null) : null;
+  const channelsSearch = useSearch({ strict: false }) as { id?: string };
+  const activeRoomId = pathname === '/channels' ? (channelsSearch.id ?? null) : null;
   const handleSelectRoom = useCallback(
     (room: RoomSummary) => {
       navigate({ to: '/channels', search: { id: room.id } });

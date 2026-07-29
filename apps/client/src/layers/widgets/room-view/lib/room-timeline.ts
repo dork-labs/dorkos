@@ -47,6 +47,118 @@ export function toMessageAuthor(
   };
 }
 
+/** A room's log split into the rows the timeline draws and what hangs off them. */
+export interface ThreadedEntries {
+  /** The room's own flow, oldest first: every entry that answers nothing. */
+  topLevel: RoomEntry[];
+  /** Replies keyed by the entry at the head of their thread, each oldest first. */
+  repliesByRoot: Map<string, RoomEntry[]>;
+  /**
+   * Ids of entries in {@link ThreadedEntries.topLevel} that ARE replies but
+   * could not be placed, because the entry heading their thread is not in this
+   * page. They render in the flow, and say so.
+   */
+  orphaned: Set<string>;
+}
+
+/**
+ * The entry a reply belongs under, or null when it is not a reply.
+ *
+ * `threadRootEntryId` is the SCOPE and `parentEntryId` is the RELATION; PR 1
+ * added both deliberately. Grouping on the scope is what keeps this display
+ * rule independent of the server's depth policy: `threadPointers` refuses a
+ * reply-to-a-reply today, but its own doc says opening a second level is one
+ * `if` and that "nothing else in the schema has an opinion". Grouping on the
+ * relation would have quietly made that false — a depth-two reply would key
+ * under another reply, and nothing ever reads that key back out.
+ *
+ * The fallback is not decoration. The two pointers are written together and
+ * are pinned equal by a test, but that invariant is not yet a `CHECK`
+ * constraint (PR 3 adds it while it rebuilds the table), so a hand-written row
+ * can still carry one without the other.
+ *
+ * @param entry - The entry to place.
+ */
+function threadRootOf(entry: RoomEntry): string | null {
+  return entry.threadRootEntryId ?? entry.parentEntryId;
+}
+
+/**
+ * Split a room's log into its own flow and the replies hanging off it.
+ *
+ * A thread is a relation between entries, not a room (ADR 260728-022013): a
+ * reply is an ordinary entry in this room carrying a pointer at the entry that
+ * heads its thread, so the timeline's default flow is every entry with no such
+ * pointer, and a reply renders under the entry it belongs to.
+ *
+ * **Nothing may be lost, and that is structural here rather than hoped for.**
+ * The first pass collects the ids that will actually render in the flow; the
+ * second only groups a reply under one of those. Every other case — a root
+ * paged out of this window, a pointer at another reply, a pointer at itself —
+ * falls into the flow and is marked {@link ThreadedEntries.orphaned}, so it is
+ * shown in the wrong place rather than written into a map nobody reads. A room
+ * is never allowed to drop a line, least of all one it has already marked read.
+ *
+ * **This is the ONLY place a thread reply is filtered out of anything, and that
+ * is a decision, not an accident.** The array this receives is the same array
+ * `useMarkRoomRead` is handed, and it must stay whole all the way there:
+ *
+ * - Filtering inside `listEntries` would strand the sidebar's "Mark as read",
+ *   which reads `{ limit: 1 }` and would stop at the newest TOP-LEVEL entry —
+ *   leaving a badge on a room the reader has open with nothing in the product
+ *   able to move it (`use-mark-room-read.ts` says exactly why that is
+ *   forbidden). It would also disagree with the resume path: `snapshot()` takes
+ *   its cursor from the last visible entry and the live stream dedupes against
+ *   it, while `entriesAfter` is unfiltered — so a reply would be missing on a
+ *   cold connect and appear on reconnect.
+ * - Filtering `entriesQuery.data` before `useMarkRoomRead` would do the same
+ *   thing one layer up, freezing the cursor below any reply that arrives after
+ *   the newest top-level entry.
+ *
+ * **The cost we accept, stated rather than hidden: opening a room marks its
+ * threads read.** That is a real loss against Slack. With one `(member, room)`
+ * cursor, "a badge computed on what you have read" and "a badge that survives
+ * opening the room" cannot both be true; this picks the first and stays
+ * consistent everywhere. Surfacing thread unreads separately stays available
+ * later as a purely additive change. It is also why replies RENDER here rather
+ * than collapsing into a bare count: marking something read that the reader was
+ * never shown would be the dishonest half of the trade.
+ *
+ * @param entries - The room's whole history, oldest first.
+ */
+export function groupByThread(entries: readonly RoomEntry[]): ThreadedEntries {
+  // Pass 1: the entries that will render in the room's own flow. A reply may
+  // hang off one of these and nothing else — a key that is not in here is a key
+  // no render pass ever reads.
+  const flowIds = new Set<string>();
+  for (const entry of entries) {
+    if (threadRootOf(entry) === null) flowIds.add(entry.id);
+  }
+
+  const topLevel: RoomEntry[] = [];
+  const repliesByRoot = new Map<string, RoomEntry[]>();
+  const orphaned = new Set<string>();
+
+  // Pass 2: place each entry, defaulting to the flow whenever it cannot be hung.
+  for (const entry of entries) {
+    const rootId = threadRootOf(entry);
+    if (rootId === null) {
+      topLevel.push(entry);
+      continue;
+    }
+    if (!flowIds.has(rootId)) {
+      topLevel.push(entry);
+      orphaned.add(entry.id);
+      continue;
+    }
+    const siblings = repliesByRoot.get(rootId);
+    if (siblings) siblings.push(entry);
+    else repliesByRoot.set(rootId, [entry]);
+  }
+
+  return { topLevel, repliesByRoot, orphaned };
+}
+
 /** Where the "New messages" rule goes, if anywhere. */
 export interface UnreadPlacement {
   /** Id of the newest entry already read; the rule goes just after it. */
@@ -66,6 +178,11 @@ const NO_RULE: UnreadPlacement = { lastSeenId: null, fromStart: false };
  * things the old `seq → id` shape collapsed into one `null`: not a member (no
  * rule), caught up (no rule), and a member who has read nothing (rule at the
  * top, because the sidebar is badging that room and the two must agree).
+ *
+ * Fed the room's own flow rather than its whole log, so the rule lands between
+ * two rows the reader can actually see. A thread reply is above the cursor and
+ * off the flow, which is the same thing {@link groupByThread} accepts when it
+ * says opening a room marks its threads read.
  *
  * @param entries - The rendered history, oldest first.
  * @param lastReadSeq - The reader's `(member, room)` cursor, or null when they

@@ -31,7 +31,7 @@ vi.mock('sonner', () => ({ toast: { error: toastError } }));
 /** The `?id=` the page reads, swapped between renders to change rooms. */
 let openRoomId = 'room-1';
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => ({ id: openRoomId, thread: undefined }),
+  useSearch: () => ({ id: openRoomId }),
   useNavigate: () => () => {},
 }));
 
@@ -481,5 +481,108 @@ describe('ChannelsPage — whose unread rule is this', () => {
     );
 
     expect(await screen.findByTestId('unread-divider')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The one rule the thread change had to not break (ADR 260728-022013).
+ *
+ * The timeline leaves a reply out of the room's flow and draws it under the
+ * message it answers. The read cursor must still reach the room's true newest
+ * `seq` — so the array handed to `useMarkRoomRead` has to arrive whole. Move
+ * that filter one step earlier (into `listEntries`, or onto `entriesQuery.data`
+ * before this page passes it on) and the badge on the open room freezes below
+ * the reply with nothing in the product able to move it.
+ */
+describe('ChannelsPage — a thread reply still clears the badge', () => {
+  /** A reply to `entry-1`, and the newest thing in the room. */
+  const reply: RoomEntry = {
+    roomId: 'room-1',
+    seq: 2,
+    id: 'entry-2',
+    authorId: 'ana',
+    kind: 'post',
+    body: { text: 'answering in a thread' },
+    mentions: [],
+    sessionId: null,
+    cascadeRoot: 'entry-1',
+    cascadeDepth: 1,
+    parentEntryId: 'entry-1',
+    threadRootEntryId: 'entry-1',
+    signature: null,
+    createdAt: '2026-07-26T10:01:00.000Z',
+  };
+
+  /** The entry it answers, at the room's top level. */
+  const root: RoomEntry = {
+    ...reply,
+    seq: 1,
+    id: 'entry-1',
+    authorId: 'dorian',
+    body: { text: 'the message it hangs off' },
+    cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
+    createdAt: '2026-07-26T10:00:00.000Z',
+  };
+
+  /** The viewer, a member who has read nothing. */
+  function readNothing(): RoomWithRoster {
+    return {
+      ...roomWith('room-1', 'backend'),
+      members: [
+        {
+          roomId: 'room-1',
+          authorId: 'you',
+          responseMode: 'always',
+          joinedAt: '2026-07-26T09:00:00.000Z',
+          lastReadSeq: 0,
+          author: { id: 'you', kind: 'human', displayName: 'You' },
+        },
+      ],
+      viewerAuthorId: 'you',
+    };
+  }
+
+  function renderRoom() {
+    const transport = createMockTransport({
+      getRoom: vi.fn(() => Promise.resolve(readNothing())),
+      listRoomEntries: vi.fn(() => Promise.resolve([root, reply])),
+      subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+        staysOpen(signal)
+      ),
+    });
+    render(
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            <ChannelsPage />
+          </TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  it("moves the cursor to the reply's seq, not to the newest entry on screen", async () => {
+    const transport = renderRoom();
+
+    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 2));
+  });
+
+  it('draws the reply under the message it answers rather than in the room’s flow', async () => {
+    renderRoom();
+
+    // The room's flow holds the root and nothing else...
+    await screen.findByText('the message it hangs off');
+    const timeline = screen.getByTestId('room-timeline');
+    const flow = Array.from(timeline.children).filter(
+      (child) => child.getAttribute('data-testid') === 'room-entry'
+    );
+    expect(flow).toHaveLength(1);
+
+    // ...and the reply is inside the thread group, which names itself.
+    const thread = screen.getByRole('group', { name: '1 reply' });
+    expect(within(thread).getByText('answering in a thread')).toBeInTheDocument();
   });
 });

@@ -230,7 +230,7 @@ const tasksRoute = createRoute({
   component: TasksPage,
 });
 
-// ── Channels, DMs and threads at /channels ───────────────────
+// ── Channels and DMs at /channels ────────────────────────────
 
 /**
  * Search params for the `/channels` route.
@@ -240,16 +240,17 @@ const tasksRoute = createRoute({
  * addresses a DM the same way, so `/channels?id=<dmId>` is precedented rather
  * than odd.
  *
- * `thread` names a child room of `id`. When both are set the thread is what
- * renders, and `id` stays in the URL so leaving the thread returns to the room
- * it hangs off.
+ * One param, because there is one thing to address. A thread used to be a room
+ * and needed a second (`?thread=`); it is now a relation between entries in one
+ * room's log and renders inside it (ADR 260728-022013). An old link carrying
+ * `?thread=` still opens the room in `id` — zod drops the key it no longer
+ * knows rather than refusing the route.
  *
  * @internal Exported for testing only.
  */
 export const channelsSearchSchema = mergeDialogSearch(
   z.object({
     id: z.string().optional(),
-    thread: z.string().optional(),
   })
 );
 

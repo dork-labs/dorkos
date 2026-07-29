@@ -6,7 +6,6 @@ import { AgentCommandItem } from './AgentCommandItem';
 import { RoomCommandItem } from './RoomCommandItem';
 import { PalettePrefixLegend } from './PalettePrefixLegend';
 import { ICON_MAP, EASE_OUT, listVariants, itemVariants } from './palette-constants';
-import { threadParentLabel } from '../model/palette-rooms';
 import type { PaletteRooms } from '../model/use-palette-rooms';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { FuseResultMatch } from 'fuse.js';
@@ -34,9 +33,9 @@ interface PaletteRootPageProps {
   searchFeatures: FeatureItem[];
   searchCommands: CommandItemData[];
   searchQuickActions: QuickActionItem[];
-  /** The whole room list, for its load state and for resolving a thread's parent. */
+  /** The whole room list, for its load state and its unread rows. */
   rooms: PaletteRooms;
-  /** Channels and threads matching the current query. */
+  /** Channels matching the current query. */
   searchChannels: RoomSummary[];
   /** Direct messages matching the current query. */
   searchDms: RoomSummary[];
@@ -103,11 +102,7 @@ export function PaletteRootPage({
         <CommandGroup heading="Unread">
           {rooms.unread.map((room, index) => (
             <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
-              <RoomCommandItem
-                room={room}
-                parentLabel={threadParentLabel(room, rooms.byId)}
-                onSelect={() => onRoomSelect(room)}
-              />
+              <RoomCommandItem room={room} onSelect={() => onRoomSelect(room)} />
             </motion.div>
           ))}
         </CommandGroup>
@@ -193,18 +188,14 @@ export function PaletteRootPage({
         </CommandGroup>
       )}
 
-      {/* Channels and threads — what `#` addresses, and what a plain query finds beside everything else */}
+      {/* Channels — what `#` addresses, and what a plain query finds beside everything else */}
       {!isZeroQuery && searchChannels.length > 0 && (
         <>
           <CommandSeparator />
           <CommandGroup heading="Channels">
             {searchChannels.map((room, index) => (
               <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
-                <RoomCommandItem
-                  room={room}
-                  parentLabel={threadParentLabel(room, rooms.byId)}
-                  onSelect={() => onRoomSelect(room)}
-                />
+                <RoomCommandItem room={room} onSelect={() => onRoomSelect(room)} />
               </motion.div>
             ))}
           </CommandGroup>

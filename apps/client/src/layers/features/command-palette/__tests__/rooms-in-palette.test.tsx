@@ -108,17 +108,59 @@ const dmWithQuietPartner = makeRoom({
   ],
 });
 
-const thread = makeRoom({
+/**
+ * A direct message with something waiting.
+ *
+ * **Separate from {@link dmWithAna} on purpose.** The Unread group is built
+ * FROM the channel and DM lists rather than by re-filtering every room, and
+ * that derivation has two halves. Every other DM fixture here is caught up, so
+ * without this one, dropping DMs from the derivation entirely passes the whole
+ * file — the same blind spot the legacy thread row had at `unreadCount: 0`.
+ *
+ * Flipping `dmWithAna` instead would have done it, at the cost of breaking
+ * `opens a direct message`: the badge changes that row's accessible name, and
+ * that test matches it exactly.
+ *
+ * It spoke earlier than every other unread room, so it cannot disturb the
+ * unread-first ordering `leads with the unread room` pins.
+ */
+const dmWithBo = makeRoom({
+  id: 'room-dm-bo',
+  kind: 'dm',
+  slug: null,
+  title: 'Bo',
+  lastActivityAt: '2026-07-26T04:00:00.000Z',
+  unreadCount: 2,
+  participants: [{ id: 'author-bo', kind: 'agent', displayName: 'Bo', agentRef: 'bo' }],
+});
+
+/**
+ * A `kind='thread'` row from before threads became a relation between entries
+ * (ADR 260728-022013). The enum member survives until the schema retirement, so
+ * an install can still hold one — and the palette must not offer it as a room.
+ */
+const legacyThreadRoom = makeRoom({
   id: 'room-thread',
   kind: 'thread',
   slug: null,
   parentId: 'room-quiet',
   title: 'Deploy fallout',
   lastActivityAt: '2026-07-26T07:00:00.000Z',
-  unreadCount: 0,
+  // Deliberately unread. At `0` this fixture cannot reach the Unread group at
+  // all, so it would certify the `#` list while leaving the second way into the
+  // palette — `hasUnread` over the whole room list — completely uncovered.
+  unreadCount: 3,
 });
 
-const ALL_ROOMS = [urgent, quiet, outsider, dmWithAna, dmWithQuietPartner, thread];
+const ALL_ROOMS = [
+  urgent,
+  quiet,
+  outsider,
+  dmWithAna,
+  dmWithQuietPartner,
+  dmWithBo,
+  legacyThreadRoom,
+];
 
 // --- Transport ---
 
@@ -343,10 +385,28 @@ describe('rooms in the command palette', () => {
       render(<CommandPaletteDialog />);
       await screen.findByText('#urgent');
 
-      // `Quiet` is a member room with `unreadCount: 0` and `Deploy fallout` is a
-      // thread with nothing waiting. Neither needs the operator.
+      // `Quiet` is a member room with `unreadCount: 0`. It does not need the
+      // operator, so it is not in a list of what does.
       expect(screen.queryByText('#quiet')).not.toBeInTheDocument();
-      expect(screen.queryByText('Deploy fallout')).not.toBeInTheDocument();
+    });
+
+    it('badges an unread direct message here too, not only channels', async () => {
+      // The other half of the Unread group's derivation. It is built from the
+      // channel list AND the DM list — which is what keeps a legacy thread out
+      // of it — so the half that says DMs belong needs pinning as well, or
+      // dropping them silently passes.
+      //
+      // Zero-query is what makes this unambiguous: `searchDms` renders only
+      // once something is typed, so the ONLY way a DM reaches the screen here
+      // is through the Unread group.
+      render(<CommandPaletteDialog />);
+      await screen.findByText('#urgent');
+
+      const row = await optionFor('Message Bo');
+      expect(within(row).getByLabelText('2 unread')).toHaveTextContent('2');
+      // ...and a caught-up DM is still absent, so this is the badge selecting
+      // it rather than every DM arriving.
+      expect(screen.queryByText('Message Ana')).not.toBeInTheDocument();
     });
 
     it('does not treat a room the reader is not in as unread', async () => {
@@ -374,18 +434,41 @@ describe('rooms in the command palette', () => {
   });
 
   describe('the # prefix', () => {
-    it('lists every channel and thread, and nothing that is not a room', async () => {
+    it('lists every channel, and nothing that is not a room', async () => {
       render(<CommandPaletteDialog />);
       await screen.findByText('#urgent');
       type('#');
 
       await waitFor(() => expect(screen.getByText('#quiet')).toBeInTheDocument());
       expect(screen.getByText('#urgent')).toBeInTheDocument();
-      expect(screen.getByText('Deploy fallout')).toBeInTheDocument();
       // Not rooms: the agent, the feature, the quick action.
       expect(screen.queryByText('Ana')).not.toBeInTheDocument();
       expect(screen.queryByText('Settings')).not.toBeInTheDocument();
       expect(screen.queryByText('Toggle Theme')).not.toBeInTheDocument();
+    });
+
+    it('keeps a legacy thread out of the Unread group, the palette’s other front door', async () => {
+      // `legacyThreadRoom` carries `unreadCount: 3`, so it is exactly what the
+      // zero-query Unread list selects for. Scoping only the `#` list would
+      // leave it reachable — and openable — from the first thing the palette
+      // shows before anything is typed.
+      render(<CommandPaletteDialog />);
+      await screen.findByText('#urgent');
+
+      expect(screen.queryByText('Deploy fallout')).not.toBeInTheDocument();
+    });
+
+    it('does not offer a legacy thread as a room', async () => {
+      render(<CommandPaletteDialog />);
+      await screen.findByText('#urgent');
+      // Its own title, so this cannot pass by the query simply missing it: the
+      // same string finds the room while `#` is scoping the list to channels.
+      type('#deploy');
+
+      // Waiting on a channel the query DOES reach, so the list has demonstrably
+      // re-run before the absence is asserted.
+      await waitFor(() => expect(screen.getByText('No results found.')).toBeInTheDocument());
+      expect(screen.queryByText('Deploy fallout')).not.toBeInTheDocument();
     });
 
     it('draws no badge for a channel the reader is not a member of', async () => {
@@ -418,7 +501,7 @@ describe('rooms in the command palette', () => {
 
     // NOTE: this case pins NARROWING, not the prefix. `#urgent` does not match
     // `#qui` with or without `#` stripped, so it stays green if `parsePrefix`
-    // loses `#`. What pins the prefix is `lists every channel and thread`,
+    // loses `#`. What pins the prefix is `lists every channel`,
     // `leaves direct messages out`, and the three status-row cases below.
     it('narrows to the matching channel as the query gets longer', async () => {
       render(<CommandPaletteDialog />);
@@ -436,15 +519,6 @@ describe('rooms in the command palette', () => {
 
       await waitFor(() => expect(screen.getByText('#quiet')).toBeInTheDocument());
       expect(rowNames()[0]).toContain('#urgent');
-    });
-
-    it('reads a thread as the room it hangs off, then its own name', async () => {
-      render(<CommandPaletteDialog />);
-      await screen.findByText('#urgent');
-      type('#deploy');
-
-      const row = await screen.findByRole('option', { name: /Deploy fallout/ });
-      expect(row).toHaveTextContent('#quiet');
     });
   });
 
@@ -478,19 +552,6 @@ describe('rooms in the command palette', () => {
       expect(mockNavigate).toHaveBeenCalledWith({
         to: '/channels',
         search: { id: 'room-urgent' },
-      });
-    });
-
-    it('keeps a thread’s parent in the URL, so leaving the thread returns to it', async () => {
-      render(<CommandPaletteDialog />);
-      await screen.findByText('#urgent');
-      type('#deploy');
-
-      fireEvent.click(await screen.findByRole('option', { name: /Deploy fallout/ }));
-
-      expect(mockNavigate).toHaveBeenCalledWith({
-        to: '/channels',
-        search: { id: 'room-quiet', thread: 'room-thread' },
       });
     });
 

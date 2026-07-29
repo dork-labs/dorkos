@@ -216,7 +216,6 @@ const noRooms = {
   channels: [],
   dms: [],
   unread: [],
-  byId: new Map(),
   isLoading: false,
   isError: false,
 };
