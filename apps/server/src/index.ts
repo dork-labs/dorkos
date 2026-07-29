@@ -1095,8 +1095,9 @@ async function start() {
   // the server still boots. The credential routes call `reload()` after a key
   // write/delete, so saving a vendor key registers its provider live, no
   // restart required. In test mode the `test-connector` spec joins so e2e can
-  // exercise the save-key step; its scripted provider arrives with Slice E —
-  // until then the factory resolves null (key saved, nothing registered).
+  // exercise the save-key step; its scripted provider is dynamic-imported
+  // inside the factory (same pattern as TestModeRuntime above) so the
+  // production module graph never loads it.
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
     registry: connectorRegistry,
     credentials: credentialProvider,
@@ -1111,7 +1112,18 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
-    ...(env.DORKOS_TEST_RUNTIME && { testConnector: { create: async () => null } }),
+    ...(env.DORKOS_TEST_RUNTIME && {
+      testConnector: {
+        create: async () => {
+          const { maybeCreateTestModeConnectorProvider } =
+            await import('./services/connectors/providers/test-mode.js');
+          return maybeCreateTestModeConnectorProvider({
+            credentials: credentialProvider,
+            localOrigin: `http://127.0.0.1:${PORT}`,
+          });
+        },
+      },
+    }),
     // Deleting a key (or a reload that refuses) revokes LIVE surfaces too:
     // cached session attachments stop injecting the provider's tool servers,
     // and the Nango proxy forgets its per-account tokens so the endpoint 401s.
