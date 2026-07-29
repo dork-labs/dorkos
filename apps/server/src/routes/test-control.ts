@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import os from 'os';
 import path from 'path';
 import { z } from 'zod';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { getBoundary } from '../lib/boundary.js';
 import { scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 
@@ -44,8 +44,10 @@ testControlRouter.post('/reset', async (_req, res) => {
   // Dynamic import keeps TestModeRuntime out of production module graphs:
   // app.ts mounts this router conditionally but imports it statically, so a
   // static class import here would defeat the index.ts env-var gating. The
-  // try/catch matters because this is an async Express 4 handler — an import
-  // rejection would otherwise hang the request instead of responding.
+  // try/catch shapes an import failure into this route's own 500 with the real
+  // message. It is not what keeps the request from hanging: Express 5 forwards a
+  // rejected handler promise to the error handler on its own (Express 4, which
+  // this comment used to name, did not — there the catch was load-bearing).
   try {
     const { TestModeRuntime } = await import('../services/runtimes/test-mode/test-mode-runtime.js');
     // Reset EVERY test-mode instance, not just the default 'test-mode' type —
@@ -62,11 +64,32 @@ testControlRouter.post('/reset', async (_req, res) => {
   res.json({ ok: true });
 });
 
-// Fixed agent directory within the home directory (always within the default boundary).
-const E2E_AGENT_DIR = path.join(os.homedir(), 'tmp', 'dorkos-e2e-agent');
+/**
+ * Fixture directory for the seeded test agent, derived from the RESOLVED
+ * directory boundary so it is in-bounds by construction.
+ *
+ * It used to be spelled `os.homedir()/tmp/dorkos-e2e-agent`, which was in-bounds
+ * only by coincidence: an unconfigured boundary happens to default to the home
+ * directory. Under a configured `DORKOS_BOUNDARY` (the Docker deployment) that
+ * seeded an agent outside the boundary, which every cockpit surface would then
+ * refuse — and it reached into the operator's real home to do it, which
+ * `os.homedir()` is banned in server code for (Hard Rule 3).
+ *
+ * `getBoundary()` returns a realpath-resolved root, so the path handed back is
+ * already canonical — the same form `validateBoundary()` normalizes to before
+ * it checks containment. Under an unconfigured boundary that need not be the
+ * literal `~/...` string the old constant produced (a symlinked home resolves
+ * through), but it names the same directory and is the more robust of the two.
+ *
+ * Resolved per request rather than at module load: `app.ts` imports this router
+ * statically, which runs before `initBoundary()` does at startup.
+ */
+function e2eAgentDir(): string {
+  return path.join(getBoundary(), 'tmp', 'dorkos-e2e-agent');
+}
 
 /**
- * Seed a test agent at a fixed path within the home directory boundary.
+ * Seed a test agent at a fixed path inside the directory boundary.
  * Overwrites any existing manifest so tests always start with a clean agent.
  * Returns { agentDir } so the test can navigate to /?dir=<agentDir>.
  */
@@ -84,6 +107,7 @@ testControlRouter.post('/seed-agent', async (_req, res) => {
     isSystem: false,
     enabledToolGroups: {},
   };
-  await writeManifest(E2E_AGENT_DIR, manifest);
-  res.json({ ok: true, agentDir: E2E_AGENT_DIR });
+  const agentDir = e2eAgentDir();
+  await writeManifest(agentDir, manifest);
+  res.json({ ok: true, agentDir });
 });
