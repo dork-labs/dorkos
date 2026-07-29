@@ -123,7 +123,11 @@ export function PackageCard({
       <h3 className="mb-1 text-sm leading-tight font-semibold">{packageDisplayLabel(pkg)}</h3>
 
       {/* Type badge */}
-      <PackageTypeBadge type={packageType} className="mb-3 self-start" />
+      <PackageTypeBadge
+        type={packageType}
+        adapterType={pkg.adapterType}
+        className="mb-3 self-start"
+      />
 
       {/* Description */}
       {pkg.description && (

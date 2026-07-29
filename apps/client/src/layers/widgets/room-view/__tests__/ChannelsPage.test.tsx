@@ -61,12 +61,10 @@ function roomWith(id: string, slug: string): RoomWithRoster {
   return {
     id,
     kind: 'channel',
-    parentId: null,
     slug,
     title: `#${slug}`,
     topic: null,
     workspaceId: null,
-    rootEntryId: null,
     archived: false,
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',

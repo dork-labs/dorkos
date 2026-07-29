@@ -61,7 +61,7 @@
 
 ## Sequencing against open work
 
-- **DOR-634 PR 3** (not started) performs a **seq reallocation** while rebuilding `room_entries`. It must delete the `rooms` rows from `search_sources` in the same migration — one statement — or task 2.1's watermark leaves orphaned rows under retired room ids. Only the PR-3-lands-second ordering carries the hazard.
+- **DOR-634 PR 3 has landed** (migration `0038`), and it handled this. It deletes both the `messages` rows and the `search_sources` rows of every room it retires, scoped to those rooms rather than to `source_id = 'rooms'` wholesale — so rooms that keep their entries keep their watermark, and a parent that received appended entries picks them up on the next sweep because they landed above it. Task 2.1 has nothing to work around.
 - **DOR-673 / DOR-674** (OpenCode adapter: a silent 100-session cap, and sessions in subdirectories never listed) block **6.3**. An indexer over a session list that silently truncates inherits the truncation.
 - `apps/server/src/services/rooms/`, `apps/e2e/` and `apps/client/` are under active edit by other agents as of 2026-07-28. Tasks 2.1 and 5.2 note the overlap.
 
@@ -156,10 +156,10 @@ Four assertions, each written so it goes red when the mechanism is deleted:
 ## Dependencies
 
 - **Blocked by 1.1** (the tables must exist).
-- **Sequences against DOR-634 PR 3, which is not started and is the riskiest migration in the repo.** PR 3 retires `rooms.parentId` / `rooms.rootEntryId` / the `thread` room kind and performs a **seq reallocation** — its own sequencing comment names the hazards as "append rather than interleave, clamp member cursors to the new max". That directly touches what this task uses as both `ordinal` and the M2 watermark. Two consequences the implementer of EITHER side must know:
+- **Sequenced against DOR-634 PR 3, which has since landed as migration `0038`.** It retired `rooms.parentId` / `rooms.rootEntryId` / the `thread` room kind and reallocated seqs, which is what this task uses as both `ordinal` and the M2 watermark. Recorded because the shape recurs, not because anything is outstanding:
   - Rows moved out of a retired thread room reappear under the parent room's `roomId` with a NEW `seq`. Their old `messages` rows, keyed on the old `origin_key`, become orphans that no watermark will ever revisit.
-  - The fix is cheap and is the ADR-0043 recovery story: **PR 3 must delete the `rooms` rows from `search_sources` in the same migration**, after which the next sweep rebuilds them. One statement, not a data migration.
-  - If PR 3 lands BEFORE this task, there is nothing to invalidate and no action is needed. Only the PR-3-lands-second ordering carries the hazard.
+  - The fix is cheap and is the ADR-0043 recovery story, but it is **two** statements rather than the one this bullet originally called for. Deleting the `search_sources` row alone resets the watermark and leaves the indexed `messages` copies behind for good, because the next sweep writes rows for rooms that exist and never revisits one that does not. `0038` deletes from `messages` first — as a plain statement, so the `messages_fts_ad` trigger retracts the text from FTS5 — and from `search_sources` second.
+  - Had PR 3 landed BEFORE this task there would have been nothing to invalidate. It landed after the tables shipped in `0037` and before any indexer ran, so in practice both statements matched zero rows; they are there for the install where they would not.
 - `apps/server/src/services/rooms/` is under active edit by another agent as of 2026-07-28. This task adds a new domain and should not need to modify `services/rooms/` at all; if it does, coordinate first.
 
 ### Task 3.1: Your Claude Code conversations become findable, including ones you ran from the bare CLI

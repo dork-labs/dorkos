@@ -75,6 +75,13 @@ class ManifestReporter implements Reporter {
   }
 
   onEnd(_result: FullResult) {
+    // Nothing ran, so there is nothing to record. Playwright builds custom
+    // reporters for `--list` too, and calls `onEnd` there without ever calling
+    // `onTestEnd` — so without this guard, merely listing the suite rewrites
+    // this tracked file and dirties the repo. A `-g` that matches no test takes
+    // the same path, and for the same reason should leave the manifest alone.
+    if (this.runResults.length === 0) return;
+
     const now = new Date();
     const runId = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
 

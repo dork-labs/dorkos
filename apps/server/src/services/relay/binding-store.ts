@@ -8,8 +8,9 @@
  *
  * @module services/relay/binding-store
  */
-import { readFile, writeFile, mkdir, rename, stat } from 'node:fs/promises';
-import { dirname, join as pathJoin } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { join as pathJoin } from 'node:path';
+import { withFileLock } from '@dorkos/shared/atomic-write';
 import { randomUUID } from 'node:crypto';
 import chokidar, { type FSWatcher } from 'chokidar';
 import {
@@ -237,15 +238,16 @@ export class BindingStore {
 
   private async save(): Promise<void> {
     const data = { bindings: this.getAll() };
-    await mkdir(dirname(this.filePath), { recursive: true });
-    // Atomic write: temp file + rename
-    const tmpPath = `${this.filePath}.tmp`;
-    await writeFile(tmpPath, JSON.stringify(data, null, 2), 'utf-8');
-    await rename(tmpPath, this.filePath);
-    // Record the mtime of our own write so the chokidar handler can
-    // distinguish it from an external change.
-    const fileStat = await stat(this.filePath);
-    this.lastWriteMtime = fileStat.mtimeMs;
+    // The stat stays inside the lock: if a second save landed between our
+    // rename and our stat, we would record its mtime as our own and then treat
+    // that external change as self-inflicted.
+    await withFileLock(this.filePath, async (write) => {
+      await write(JSON.stringify(data, null, 2));
+      // Record the mtime of our own write so the chokidar handler can
+      // distinguish it from an external change.
+      const fileStat = await stat(this.filePath);
+      this.lastWriteMtime = fileStat.mtimeMs;
+    });
   }
 
   private watch(): void {

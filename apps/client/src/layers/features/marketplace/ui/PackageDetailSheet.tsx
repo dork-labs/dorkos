@@ -412,7 +412,11 @@ export function PackageDetailSheet() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
                     <SheetTitle className="text-lg">{packageDisplayLabel(pkg)}</SheetTitle>
-                    <PackageTypeBadge type={pkg.type ?? 'plugin'} className="shrink-0" />
+                    <PackageTypeBadge
+                      type={pkg.type ?? 'plugin'}
+                      adapterType={pkg.adapterType}
+                      className="shrink-0"
+                    />
                   </div>
                   {pkg.description && (
                     <SheetDescription className="mt-1.5 line-clamp-3 text-sm">

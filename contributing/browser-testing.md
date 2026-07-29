@@ -26,7 +26,7 @@ cd apps/e2e && PWDEBUG=1 npx playwright test tests/chat/send-message.spec.ts
 **Prerequisites:**
 
 - Chromium browser installed: `cd apps/e2e && npx playwright install chromium`
-- For `@integration` tests: `ANTHROPIC_API_KEY` must be set in `.env`
+- `@integration` tests need real model credentials AND are excluded by default — opt in with `E2E_INTEGRATION=1` (see `apps/e2e/README.md`)
 - Dev servers running (auto-started if not): `pnpm dev`
 
 ## Architecture
@@ -45,26 +45,33 @@ apps/e2e/
 ├── manifest.json              # Test registry + run history (AI health tracking)
 ├── GOTCHAS.md                 # Known anti-patterns and hard-won lessons
 ├── BROWSER_TEST_PLAN.md       # Manual + automated test coverage checklist
+├── global-setup.ts            # Dismisses first-run onboarding on every API leg
 ├── fixtures/
-│   └── index.ts               # Extended test with DorkOS fixtures
+│   ├── index.ts               # Extended test with DorkOS fixtures
+│   ├── rooms-api.ts           # Seeds/cleans rooms and agents over REST
+│   └── tasks-api.ts           # Seeds/cleans scheduled tasks over REST
 ├── pages/                     # Page Object Models
 │   ├── BasePage.ts            # Common navigation helpers
 │   ├── ChatPage.ts            # Chat interactions
-│   ├── SessionSidebarPage.ts  # Session sidebar (tabs, sessions, schedules, connections)
+│   ├── command-palette.ts     # Shared opener every dialog POM uses
+│   ├── DashboardSidebarPage.ts # Sidebar roster, groups, drag-and-drop
+│   ├── RightPanelPage.ts      # Right panel tabs (Pulse, Agent Profile)
+│   ├── RoomsPage.ts           # Channels and DMs
 │   ├── SettingsPage.ts        # Settings dialog
-│   ├── PulsePage.ts           # Pulse scheduler dialog
-│   ├── MeshPage.ts            # Mesh agent discovery dialog
-│   └── RelayPage.ts           # Relay messaging dialog
+│   ├── TasksPage.ts           # Tasks Scheduler dialog
+│   └── RelayPage.ts           # Relay "Connections" dialog
 ├── reporters/
 │   └── manifest-reporter.ts   # Custom reporter updating manifest.json
 └── tests/                     # Test specs organized by feature
     ├── smoke/                 # @smoke — critical path, no SDK
-    ├── chat/                  # @integration — requires ANTHROPIC_API_KEY
-    ├── session-list/
+    ├── agents/                # The /agents fleet page (replaced mesh/)
+    ├── chat/                  # send-message is @integration; status-line-fit is not
+    ├── dashboard-sidebar/     # Roster groups and drag-and-drop
+    ├── pulse/                 # Pulse panel tests
+    ├── relay/                 # Relay "Connections" dialog + adapter wizard
+    ├── rooms/                 # Channels, DMs, mentions, palette
     ├── settings/
-    ├── pulse/                 # Pulse scheduler tests
-    ├── mesh/                  # Mesh discovery tests
-    └── relay/                 # Relay messaging tests
+    └── tasks/                 # Tasks Scheduler dialog
 ```
 
 ## Writing Tests
@@ -77,17 +84,24 @@ Always import `test` and `expect` from the custom fixtures, never directly from 
 import { test, expect } from '../../fixtures';
 ```
 
-The fixture file (`fixtures/index.ts`) provides seven pre-instantiated Page Objects:
+The fixture file (`fixtures/index.ts`) provides these pre-instantiated Page Objects,
+plus two seeding helpers:
 
-| Fixture          | Class                | Auto-navigates?                                                      |
-| ---------------- | -------------------- | -------------------------------------------------------------------- |
-| `basePage`       | `BasePage`           | No                                                                   |
-| `chatPage`       | `ChatPage`           | Yes — calls `goto()` which navigates and ensures a session is active |
-| `sessionSidebar` | `SessionSidebarPage` | No                                                                   |
-| `settingsPage`   | `SettingsPage`       | No                                                                   |
-| `pulsePage`      | `PulsePage`          | No — call `pulsePage.open()` to open the dialog                      |
-| `meshPage`       | `MeshPage`           | No — call `meshPage.open()` to open the dialog                       |
-| `relayPage`      | `RelayPage`          | No — call `relayPage.open()` to open the dialog                      |
+| Fixture            | Class                  | Auto-navigates?                                                      |
+| ------------------ | ---------------------- | -------------------------------------------------------------------- |
+| `basePage`         | `BasePage`             | No                                                                   |
+| `chatPage`         | `ChatPage`             | Yes — calls `goto()` which navigates and ensures a session is active |
+| `dashboardSidebar` | `DashboardSidebarPage` | No                                                                   |
+| `roomsPage`        | `RoomsPage`            | No                                                                   |
+| `rightPanel`       | `RightPanelPage`       | No                                                                   |
+| `settingsPage`     | `SettingsPage`         | No — call `settingsPage.open()` to open the dialog                   |
+| `tasksPage`        | `TasksPage`            | No — call `tasksPage.open()` to open the dialog                      |
+| `relayPage`        | `RelayPage`            | No — call `relayPage.open()` to open the dialog                      |
+| `authPage`         | `AuthPage`             | No                                                                   |
+| `roomsApi`         | `RoomsApi`             | Seeds rooms/agents over REST; cleans up in teardown                  |
+| `tasksApi`         | `TasksApi`             | Seeds schedules over REST; cleans up in teardown                     |
+
+There is no `meshPage`: the Mesh dialog was replaced by the `/agents` page.
 
 ### Use Page Object Models
 
@@ -103,18 +117,34 @@ test('sends a message', async ({ chatPage }) => {
 });
 ```
 
-For panel-based features (Pulse, Mesh, Relay), call `open()` first:
+For dialog-based features (Settings, Tasks, Relay), call `open()` first:
 
 ```typescript
-test('pulse dialog opens @smoke', async ({ basePage, pulsePage }) => {
+test('tasks dialog opens @smoke', async ({ basePage, tasksPage }) => {
   await basePage.goto();
-  await pulsePage.open();
-  await expect(pulsePage.heading).toBeVisible();
-  await pulsePage.close();
+  await basePage.waitForAppReady();
+  await tasksPage.open();
+  await expect(tasksPage.heading).toBeVisible();
+  await tasksPage.close();
 });
 ```
 
-**Panel open caveat**: The sidebar footer buttons (Settings, Relay, Mesh, Pulse, Theme) are intercepted by the main content area's pointer events in some viewport configurations. The `PulsePage`, `MeshPage`, and `RelayPage` `open()` methods work around this by using `page.evaluate()` to dispatch a JS click directly on the button element. Do not replace this with a standard `click()` call.
+**Opening a dialog**: go through the command palette — `openFromCommandPalette(page, 'Tasks Scheduler')` — which is what every dialog page object's `open()` now does.
+
+These used to dispatch a JS click instead:
+
+```ts
+// Do NOT do this.
+page.evaluate(() => {
+  (document.querySelector('button[aria-label="Mesh agent discovery"]') as HTMLElement)?.click();
+});
+```
+
+The advice it was written for (pointer interception by the main content area) had stopped being true, and by the time anyone checked, none of those `aria-label`s existed in the client at all. The `?.` is what made that survivable and therefore invisible: a missing button is a silent no-op, so the dialog never opens and the test spends its full 30s timeout waiting for it. **Thirty-two failures presented as timeouts, which read like flake, and were nothing of the kind.**
+
+A real locator still waits out its timeout — what you get back is a diagnosis instead of a mystery: `waiting for getByRole('option', { name: 'Tasks Scheduler' })` names the control that is missing, where the old failure named a dialog nobody had asked to open.
+
+If a click is genuinely intercepted, fix the interception or `await expect(button).toBeVisible()` first — never reach past the DOM with `evaluate`, and never with optional chaining.
 
 ### Selector Strategy
 
@@ -137,7 +167,9 @@ Priority order:
 ### Test Tagging
 
 - `@smoke` — Critical path, no SDK dependency, fast (<5s). Run with `--grep @smoke`
-- `@integration` — SDK-dependent, requires `ANTHROPIC_API_KEY`, slower (10-60s). Run with `--grep @integration`
+- `@integration` — needs a real model turn and real credentials, slower (10-60s). **Excluded from every run by default**; opt in with `E2E_INTEGRATION=1`.
+
+Tag `@integration` only when a test genuinely cannot pass without a live model — the tag now decides what CI runs, so wearing it needlessly silently drops coverage. `status-line-fit.spec.ts` carried it for a long time while only measuring layout, which kept five working tests out of the suite for nothing.
 
 Add tags to `test.describe()` titles:
 

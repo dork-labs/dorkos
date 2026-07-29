@@ -41,14 +41,10 @@ test.describe.configure({ mode: 'default', timeout: 90_000 });
  * `silent`, so nothing here can trigger an agent turn.
  */
 test.describe('Rooms — how a room names itself @smoke', () => {
-  // Only the config write happens here. Every room is seeded inside the test
-  // and BEFORE the cockpit loads, so the sidebar's first read of the room list
-  // already contains it. Seeding after the page was up made each test depend on
-  // catching a live `room_created` event, which is a race the test does not
-  // exist to exercise.
-  test.beforeEach(async ({ roomsApi }) => {
-    await roomsApi.dismissOnboarding();
-  });
+  // Every room is seeded inside the test and BEFORE the cockpit loads, so the
+  // sidebar's first read of the room list already contains it. Seeding after the
+  // page was up made each test depend on catching a live `room_created` event,
+  // which is a race the test does not exist to exercise.
 
   test('a channel wears its # as a mark, and spells it out only to a screen reader', async ({
     page,
@@ -90,6 +86,9 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     // at 0 until something moves it, and reading the room is the only thing
     // that does. Three is the number asserted below — not "some".
     await roomsApi.postEntries(room.id, ['first', 'second', 'third']);
+    // The badge is read from the room LIST, which lags the entry write. Waiting
+    // for it here keeps a slow projection from being reported as a missing badge.
+    await roomsApi.waitForUnread(room.id, 3);
     await openCockpit(basePage);
 
     const row = roomsPage.rowIn(roomsPage.channels, `#${slug}`);

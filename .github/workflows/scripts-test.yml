@@ -65,6 +65,14 @@ name: scripts-test
 ### must trigger the suite that pins it — otherwise the guard can be removed
 ### without anything going red, which is the exact history that suite exists for
 ### (DOR-668).
+###
+### operating-skills-version-check.yml is in the filter for the same reason:
+### test-seeded-pack-changed.sh asserts that seeded-pack-changed.sh's default
+### PACK_FILE and SKILLS_DIR match that workflow's job `env:`, which is where
+### they come from in CI. Drift is invisible from either side alone — the
+### fixtures would keep passing against the script defaults while the job scoped
+### on something else — so a change to those env values has to trigger the suite
+### that pins them.
 on:
   pull_request:
     paths:
@@ -77,6 +85,7 @@ on:
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
       - '.github/workflows/merge-tail.yml'
+      - '.github/workflows/operating-skills-version-check.yml'
   push:
     branches: [main]
     paths:
@@ -89,6 +98,7 @@ on:
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
       - '.github/workflows/merge-tail.yml'
+      - '.github/workflows/operating-skills-version-check.yml'
 
 # Opt into Node 24 for JavaScript-based actions (checkout) ahead of GitHub's
 # Sept 2026 cutoff for the Node 20 runtime.
@@ -148,6 +158,16 @@ jobs:
 
       - name: Auto-merge arming-gate fixtures
         run: bash scripts/test-should-arm-automerge.sh
+
+      # seeded-pack-changed.sh is the only scoping the `version-outranks-base`
+      # required check has, so it can fail in two directions and both are quiet.
+      # Too broad demands a version bump nobody owes, and the cheap way out is a
+      # bump with no content behind it. Too narrow waves a real pack edit through
+      # and the correction reaches no existing agent — that is DOR-509, and the
+      # check goes green while it happens. Hermetic (throwaway git repos in a
+      # temp dir), so it never reads this repo's history.
+      - name: Seeded-pack scoping fixtures
+        run: bash scripts/test-seeded-pack-changed.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

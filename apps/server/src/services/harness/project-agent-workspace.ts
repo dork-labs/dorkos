@@ -1,19 +1,42 @@
 /**
- * Project an agent workspace's own `.agents/` assets to its harnesses (DOR-659).
+ * Give every agent workspace DorkOS owns the current Operating DorkOS skill pack,
+ * in the layout its harness reads (DOR-659, DOR-671).
  *
- * DorkOS seeds the Operating DorkOS skill pack into every agent workspace at
- * `<agentDir>/.agents/skills/` (`@dorkos/operating-skills`). Codex and OpenCode
- * read that directory natively, but Claude Code — the DEFAULT runtime — does
- * not: it only sees skills under `.claude/skills/`. Without a projection pass
- * the whole self-use skill pack is invisible to the runtime most agents run on,
- * including DorkBot's.
+ * Two halves, and an agent needs both to be able to use a skill:
  *
- * The Harness Sync engine already knows how to bridge that gap (a relative
- * symlink per skill, `plan/projector.ts`); nothing was calling it on an agent
- * workspace. This module is that call — the *only* new code path, deliberately:
- * it owns no symlink logic of its own.
+ * 1. **Seed** — write the pack into `<agentDir>/.agents/skills/`
+ *    (`seedOperatingSkills`, `@dorkos/operating-skills`). Idempotent and
+ *    version-stamped: absent files are written, DorkOS's own unmodified older
+ *    copies are rewritten, and anything a person edited or authored is left
+ *    alone.
+ * 2. **Project** — link `.agents/` into the layout each harness reads. Codex and
+ *    OpenCode read `.agents/skills/` natively, but Claude Code — the DEFAULT
+ *    runtime — only sees skills under `.claude/skills/`, so without this the
+ *    whole self-use pack is invisible to the runtime most agents run on,
+ *    including DorkBot's. The Harness Sync engine already knows how to bridge
+ *    that gap (a relative symlink per skill, `plan/projector.ts`); nothing was
+ *    calling it on an agent workspace. {@link projectAgentWorkspace} is that
+ *    call — deliberately the *only* new code path: it owns no symlink logic of
+ *    its own.
  *
- * Four properties matter here:
+ * **Seed before project, always.** {@link projectAgentWorkspace} returns early
+ * when `.agents/skills/` does not exist. Run it first and a workspace that has
+ * never been seeded is skipped before anything exists to link; seeding then
+ * writes the pack, and the links do not appear until the NEXT boot. Same
+ * one-boot lag for a newly added pack skill in an already-seeded workspace. The
+ * order is the difference between "repaired" and "repaired next time", so it is
+ * asserted by test rather than only written down here.
+ *
+ * The two halves are separate exports rather than one, because the third caller
+ * cannot use them fused: `agent-creator` needs the `SeedResult` itself to note
+ * created files on its rollback ledger, and deliberately runs the projection
+ * OUTSIDE that ledger's protection (a symlink the ledger cannot remove would
+ * survive a rollback and strand a half-built workspace). So
+ * {@link backfillAgentWorkspaceSkills} and `ensureDorkBot` pair the halves,
+ * `agent-creator` interleaves them with its own bookkeeping, and
+ * {@link projectAgentWorkspace} stays exactly one thing.
+ *
+ * Four properties matter for the projection half:
  *
  * - **Best-effort.** A projection failure must never block agent creation or
  *   server boot, so every failure is caught and logged. This is also what makes
@@ -51,6 +74,7 @@
  */
 import { applyPlan, project, scaffoldManifest, HARNESS_MANIFEST_PATH } from '@dorkos/harness';
 import type { HarnessId } from '@dorkos/harness';
+import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { existsSync, realpathSync } from 'node:fs';
 import { join, relative, resolve, isAbsolute } from 'node:path';
 import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
@@ -138,18 +162,79 @@ export interface AgentWorkspaceProjection {
   scaffoldedManifest: boolean;
 }
 
-/** Aggregate outcome of {@link backfillAgentWorkspaceProjections}. */
+/** Aggregate outcome of {@link backfillAgentWorkspaceSkills}. */
 export interface AgentWorkspaceBackfillSummary {
   /** Workspaces considered. */
   total: number;
-  /** Workspaces the engine ran against. */
+  /**
+   * Workspaces where seeding wrote at least one skill file — a pack skill the
+   * workspace never had, or DorkOS's own unmodified copy of an older one
+   * rewritten at the current pack version. Zero on a steady-state boot, which
+   * is the healthy reading: every owned workspace is already current.
+   */
+  seeded: number;
+  /** Workspaces whose seeding threw (already logged, non-fatal). */
+  seedFailed: number;
+  /** Workspaces the projection engine ran against. */
   projected: number;
-  /** Workspaces inside dork home with nothing to project. */
+  /**
+   * Workspaces that reached the projection with nothing to link.
+   *
+   * Nearly unreachable now that seeding runs first: seeding creates
+   * `.agents/skills/`, and its existence is the only thing the projection
+   * checks before bailing. What is left are the two shapes that fail without
+   * throwing — seeding could not write at all, so the directory is still
+   * absent (`seedFailed` is non-zero alongside it), or the harness manifest
+   * scaffold did not land and {@link projectAgentWorkspace} bailed cleanly
+   * rather than letting `project()` fail on an ENOENT. Kept for exactly that:
+   * it is the honest way to say "this workspace ended the pass with nothing
+   * linked, and the projection is not what went wrong".
+   */
   skipped: number;
   /** Workspaces whose projection threw (already logged, non-fatal). */
   failed: number;
   /** Workspaces left alone because they are not DorkOS's to write into. */
   outsideDorkHome: number;
+}
+
+/** What seeding did to one workspace, collapsed to what the summary counts. */
+type SeedStatus = 'wrote' | 'unchanged' | 'failed';
+
+/**
+ * Seed the Operating DorkOS skill pack into one workspace, best-effort.
+ *
+ * Wraps `seedOperatingSkills` in the same swallow-and-log contract
+ * {@link projectAgentWorkspace} keeps, for the same reason: this runs at boot,
+ * and a workspace DorkOS cannot write into must not stop the ones it can, nor
+ * stop this workspace's own projection from being attempted — a pack seeded on
+ * an earlier boot still needs its links.
+ *
+ * @param agentDir - Absolute path to the agent's workspace root.
+ * @returns `wrote` when at least one skill file was created or upgraded,
+ *   `unchanged` when every skill was already current or is the person's own,
+ *   `failed` when the seeder threw.
+ */
+async function seedAgentWorkspace(agentDir: string): Promise<SeedStatus> {
+  try {
+    const { outcomes } = await seedOperatingSkills(agentDir);
+    const created = outcomes.filter((o) => o.action === 'created').length;
+    const upgraded = outcomes.filter((o) => o.action === 'upgraded').length;
+    if (created + upgraded === 0) return 'unchanged';
+
+    logger.debug('[HarnessSync] Seeded Operating DorkOS pack into agent workspace', {
+      agentDir,
+      created,
+      upgraded,
+      preserved: outcomes.filter((o) => o.action === 'preserved').length,
+    });
+    return 'wrote';
+  } catch (err) {
+    logger.warn('[HarnessSync] Agent workspace skill seeding failed (non-fatal)', {
+      agentDir,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return 'failed';
+  }
 }
 
 /**
@@ -229,8 +314,22 @@ export function projectAgentWorkspace(agentDir: string): AgentWorkspaceProjectio
 }
 
 /**
- * Run {@link projectAgentWorkspace} over the agent workspaces DorkOS owns,
- * repairing the ones created before this projection existed.
+ * Re-seed the Operating DorkOS skill pack into every agent workspace DorkOS
+ * owns and link it where the harness reads it, so an agent created months ago
+ * runs on the same pack as one created today.
+ *
+ * The gap this closes: `seedOperatingSkills` was called at agent creation and,
+ * for DorkBot, on every boot — nowhere else. So a bump to
+ * `OPERATING_SKILLS_VERSION` reached DorkBot and brand-new agents and no one
+ * else, and every other agent kept the pack it was born with forever. That is
+ * not cosmetic. Pack bumps have carried safety corrections: v4 retracted the
+ * claim that `dorkos uninstall` was "the person's ungated path", and v6
+ * retracted the claim that `tasks_delete` "carries no gate of its own", which
+ * had agents deleting without warning anybody and reading a refusal as a
+ * malfunction. An agent stuck on v3 is still being told both (DOR-671).
+ *
+ * Seeding runs BEFORE the projection for each workspace — see the module docs
+ * for why the order is load-bearing rather than incidental.
  *
  * Only workspaces under `<dorkHome>/agents/` are touched. A registered agent can
  * point anywhere — a person's own git repository, a work checkout — and this pass
@@ -257,18 +356,23 @@ export function projectAgentWorkspace(agentDir: string): AgentWorkspaceProjectio
  * get to hide at info level), repaired some but not all (warn, naming both
  * counts), or clean (info). They are kept distinct because a line claiming a
  * total failure that did not happen sends whoever reads it hunting for the
- * wrong problem.
+ * wrong problem. "Repaired nothing" therefore weighs BOTH halves: a pass whose
+ * seeding delivered a corrected pack to every workspace and whose projections
+ * all failed did real work, and saying otherwise points the reader at the wrong
+ * half of a two-half pass.
  *
  * @param workspaces - Absolute paths to every registered agent workspace.
  * @param dorkHome - Resolved DorkOS data directory (see `lib/dork-home.ts`).
  * @returns One summary of the whole pass, also logged as a single line.
  */
-export async function backfillAgentWorkspaceProjections(
+export async function backfillAgentWorkspaceSkills(
   workspaces: readonly string[],
   dorkHome: string
 ): Promise<AgentWorkspaceBackfillSummary> {
   const summary: AgentWorkspaceBackfillSummary = {
     total: workspaces.length,
+    seeded: 0,
+    seedFailed: 0,
     projected: 0,
     skipped: 0,
     failed: 0,
@@ -281,24 +385,42 @@ export async function backfillAgentWorkspaceProjections(
       summary.outsideDorkHome += 1;
       continue;
     }
+
+    // Seed first, then project. Reversed, a skill written on this boot is not
+    // linked until the next one, and a workspace with no `.agents/skills/` at
+    // all gets nothing linked at all — the projection returns early on exactly
+    // that check. See the module docs.
+    const seedStatus = await seedAgentWorkspace(agentDir);
+    if (seedStatus === 'wrote') summary.seeded += 1;
+    else if (seedStatus === 'failed') summary.seedFailed += 1;
+
     const { status } = projectAgentWorkspace(agentDir);
     if (status === 'projected') summary.projected += 1;
     else if (status === 'skipped') summary.skipped += 1;
     else summary.failed += 1;
   }
 
-  if (summary.total > 0 && summary.projected === 0) {
-    logger.warn('[HarnessSync] Agent workspace skill projection backfill repaired nothing', {
+  const repairedSomething = summary.seeded > 0 || summary.projected > 0;
+  const failures = summary.seedFailed + summary.failed;
+
+  if (summary.total > 0 && !repairedSomething) {
+    logger.warn('[HarnessSync] Agent workspace skill backfill repaired nothing', {
       ...summary,
-      hint: 'Registered agents were found but none had their skills linked. Run `dorkos harness sync --fix` in the agent workspace to see why.',
+      hint: 'Registered agents were found but none had their skills seeded or linked. Run `dorkos harness sync --fix` in the agent workspace to see why.',
     });
-  } else if (summary.failed > 0) {
-    logger.warn('[HarnessSync] Agent workspace skill projection backfill partly failed', {
+  } else if (failures > 0) {
+    logger.warn('[HarnessSync] Agent workspace skill backfill partly failed', {
       ...summary,
-      hint: `Linked ${summary.projected} agent workspace(s); ${summary.failed} failed. Each failure was logged above with its workspace path — run \`dorkos harness sync --fix\` in those to see why.`,
+      // The two counts are reported side by side, never one nested inside the
+      // other. `seeded` and `projected` are independent: the corrupt-manifest,
+      // unparseable-settings and Windows-EPERM cases all seed fine and fail to
+      // link, which produces `seeded: 1, projected: 0` — and a phrasing like
+      // "N linked, M of them newly seeded" then claims 1 of 0. This branch
+      // exists so a log line does not send its reader after the wrong problem.
+      hint: `Seeded ${summary.seeded} agent workspace(s), linked ${summary.projected}; ${summary.seedFailed} failed to seed and ${summary.failed} failed to link. Each failure was logged above with its workspace path — run \`dorkos harness sync --fix\` in those to see why.`,
     });
   } else {
-    logger.info('[HarnessSync] Agent workspace skill projection backfill complete', summary);
+    logger.info('[HarnessSync] Agent workspace skill backfill complete', summary);
   }
   return summary;
 }

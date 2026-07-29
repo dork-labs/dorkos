@@ -12,7 +12,8 @@
  * @module services/relay/agent-session-store
  */
 import { join } from 'node:path';
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { logger } from '../../lib/logger.js';
 
 export interface AgentSessionRecord {
@@ -42,8 +43,13 @@ export interface AgentSessionStoreLike {
 export class AgentSessionStore implements AgentSessionStoreLike {
   private readonly filePath: string;
   private sessions: Map<string, AgentSessionRecord> = new Map();
-  /** Serializes persist calls to prevent concurrent tmp+rename races. */
-  private writeLock: Promise<void> = Promise.resolve();
+  /**
+   * The most recently enqueued persist. Serialisation is handled by the shared
+   * per-path lock; this is kept only so {@link shutdown} can await the tail of
+   * the queue. Because writes are queued in call order, awaiting the last one
+   * also awaits every write enqueued before it.
+   */
+  private lastPersist: Promise<void> = Promise.resolve();
 
   constructor(relayDir: string) {
     this.filePath = join(relayDir, 'agent-sessions.json');
@@ -127,32 +133,19 @@ export class AgentSessionStore implements AgentSessionStoreLike {
    */
   async shutdown(): Promise<void> {
     try {
-      await this.writeLock;
+      await this.lastPersist;
     } catch {
       // Errors already logged by set/delete .catch() handlers
     }
   }
 
-  /** Enqueue an atomic persist, serialized to prevent concurrent tmp+rename races. */
+  /** Enqueue an atomic persist, serialized against every in-process writer of this path. */
   private persist(): Promise<void> {
-    this.writeLock = this.writeLock.then(
-      () => this.doPersist(),
-      () => this.doPersist()
-    );
-    return this.writeLock;
-  }
-
-  /** Atomic tmp+rename write. Must be serialized via writeLock. */
-  private async doPersist(): Promise<void> {
-    const dir = join(this.filePath, '..');
-    await mkdir(dir, { recursive: true });
     const data: Record<string, AgentSessionRecord> = {};
     for (const [agentId, record] of this.sessions) {
       data[agentId] = record;
     }
-    const json = JSON.stringify(data, null, 2);
-    const tmp = `${this.filePath}.tmp`;
-    await writeFile(tmp, json, 'utf-8');
-    await rename(tmp, this.filePath);
+    this.lastPersist = writeFileAtomic(this.filePath, JSON.stringify(data, null, 2));
+    return this.lastPersist;
   }
 }

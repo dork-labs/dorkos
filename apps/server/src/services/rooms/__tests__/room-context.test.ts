@@ -14,7 +14,6 @@ import { describe, it, expect, vi } from 'vitest';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { formatRoomContext } from '../../runtimes/shared/room-context-block.js';
-import type { Db } from '@dorkos/db';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
@@ -43,7 +42,6 @@ const agents = agentLookupFor({
 });
 
 describe('the room context a trigger derives', () => {
-  let db: Db;
   let service: RoomService;
   let authors: AuthorRegistry;
   let runner: ScriptedTurnRunner;
@@ -68,7 +66,7 @@ describe('the room context a trigger derives', () => {
     } = {}
   ): void {
     const agentPaths = opts.agentPaths ?? ['/agents/ana'];
-    ({ db, service, authors, runner, human } = createRoomHarness({
+    ({ service, authors, runner, human } = createRoomHarness({
       agents,
       runner: opts.runner ?? scriptedRunner(() => null),
       maxAgentDepth: MAX_AGENT_DEPTH,
@@ -494,57 +492,6 @@ describe('the room context a trigger derives', () => {
       expect(block.trimEnd().endsWith(`--- END UNTRUSTED ROOM MESSAGES ${FENCE_NONCE} ---`)).toBe(
         true
       );
-    });
-
-    it('still frames a thread that is stored as a child room', async () => {
-      // `RoomService` no longer mints this shape, so it only reaches an install
-      // that opened a thread before DOR-634 — but it does still reach one, and
-      // `legacyChildRoomFrame` is the whole of what keeps telling such a turn it
-      // is inside a thread. Without this, deleting that branch breaks nothing
-      // until an operator with a legacy row notices. PR 3 retires the branch and
-      // this test together.
-      open({ runner: outcomeRunner(() => ({ text: null })) });
-      const root = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
-      await service.triggersIdle();
-
-      // Written straight through the store, which still takes the old shape.
-      const joinedAt = '2026-07-27T10:00:00.000Z';
-      const legacy = new RoomStore(db).createRoom(
-        {
-          id: 'legacy-thread',
-          kind: 'thread',
-          parentId: room.id,
-          slug: null,
-          title: 'the deploy is stuck',
-          topic: null,
-          workspaceId: null,
-          rootEntryId: root.id,
-          createdAt: joinedAt,
-        },
-        [
-          { authorId: human, responseMode: 'always', joinedAt },
-          { authorId: ana, responseMode: 'always', joinedAt },
-        ]
-      );
-      runner.turns.length = 0;
-
-      service.post(legacy.id, { authorId: human, text: 'still stuck?' });
-      await service.triggersIdle();
-
-      const context = contextFor(ana);
-      // The frame is the PARENT channel, never the thread room's own title —
-      // that is the branch under test, and the thing a `room.kind === 'thread'`
-      // turn would lose if it fell through to the entry-relation path.
-      expect(context.room.id).toBe(room.id);
-      expect(context.room.name).toBe('#backend');
-      expect(context.room.kind).toBe('channel');
-      expect(context.room.topic).toBe('shipping v1');
-      // And the position still comes off the ROOM, because the triggering entry
-      // in a legacy thread carries no pointer of its own.
-      expect(context.thread?.rootEntryId).toBe(root.id);
-      expect(context.thread?.rootExcerpt).toBe('the deploy is stuck');
-      // Every entry in a child-room thread is a reply, so its whole log is the count.
-      expect(context.thread?.replyCount).toBe(1);
     });
 
     it('reads a thread turn history from the whole channel, thread replies included', async () => {

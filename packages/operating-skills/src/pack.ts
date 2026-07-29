@@ -80,14 +80,18 @@ export interface OperatingSkill {
  *   names the new sibling, and an already-seeded file is only rewritten on a
  *   strictly higher stamp.
  *
- *   Be precise about who that reaches, because the History above reads as though a
- *   bump reaches every agent and it does not. `seedOperatingSkills` is called from
- *   exactly two places: `ensureDorkBot` on every boot, and `agent-creator` when an
- *   agent is created. So a bump reaches DorkBot's workspace and nothing else that
- *   already exists; a user's own agent, seeded once at creation, is never re-seeded
- *   and keeps the pack version it was born with. New agents get the current pack
- *   because they are new, not because of the stamp. DOR-671 tracks that gap; do not
- *   close it here.
+ *   Be precise about who a bump reaches, because it is narrower than the History
+ *   above makes it sound. Until DOR-671 it was DorkBot and nobody else:
+ *   `seedOperatingSkills` ran from `ensureDorkBot` on every boot and from
+ *   `agent-creator` at creation, so an agent seeded once at creation kept the pack
+ *   version it was born with forever. The server now re-seeds at boot as well
+ *   (`services/harness/project-agent-workspace.ts`), so a bump reaches every
+ *   REGISTERED agent whose workspace lives under `<dorkHome>/agents/` on their next
+ *   boot — the pass walks `meshCore.listWithPaths()`, so living under that path is
+ *   necessary but not sufficient; an unregistered directory there is never visited.
+ *   It still does NOT reach an agent registered at a path of the person's own — a
+ *   boot is not permission to write into somebody's repository, and a user-initiated
+ *   repair for those is DOR-664.
  */
 export const OPERATING_SKILLS_VERSION = 7;
 

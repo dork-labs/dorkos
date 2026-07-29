@@ -79,15 +79,15 @@ export interface RoomsByKind {
  * Split a room list into channels and direct messages, each in the order its
  * own kind wants: channels by name, direct messages by recency.
  *
- * Threads are deliberately dropped: a thread belongs to the room it hangs off
- * and is reached from there, never from a top-level sidebar section.
+ * There is no third section and no row to drop: a thread is a relation between
+ * entries inside a room's own log (ADR 260728-022013), reached by opening that
+ * room rather than from a top-level sidebar section.
  *
  * **Why the order is decided here and not in the query.** `GET /api/rooms`
  * answers with every kind in one list, and a SQL `ORDER BY` can only impose one
  * total order on that — so "channels by name, DMs by recency" would have to
  * become a synthetic sort key that also groups the kinds, an ordering no caller
- * asked for and one more thing to keep in step when threads (R4, DOR-527) arrive
- * as a third kind with a third answer. The kinds are already told apart here,
+ * asked for. The kinds are already told apart here,
  * once; the server keeps the single honest contract it documents (recency), and
  * ordering stays a presentation choice — which it has to be, since the command
  * palette will want the same rooms unread-first (spec `rooms` §13.2).

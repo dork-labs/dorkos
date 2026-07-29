@@ -124,12 +124,46 @@ decides; it does not implement.
   room-creating operation.
 - **There is no data to move.** On the operator's live install, measured read-only on 2026-07-28,
   `rooms` holds 6 channels, 2 DMs and 0 threads. That is one install on one day, not a claim about
-  every install, but it is the install that exists.
+  every install, but it is the install that exists. _(Confirmed 2026-07-29: migration `0038` run
+  against a copy of that database moved nothing, renumbered nothing and changed no read cursor. The
+  migration was still written and tested as though there were data, because "the install that
+  exists" is not the only install that will ever run it.)_
 
-**The full surface, re-derived from a fresh search rather than accumulated.** This list is the main
-thing DOR-634 inherits from this ADR, so it is exhaustive by intent. `L` marks live code that
-behaves differently after the change; `P` marks prose or a type that only has to stop saying the
-retired thing.
+**The surface as it was inventoried on 2026-07-28. It was not exhaustive, and this paragraph is the
+correction.**
+
+> **Amended 2026-07-29, after DOR-634 shipped.** This table originally ended the sentence above with
+> "so it is exhaustive by intent." It was not, and saying so invited three separate reviewers to use
+> it as a checklist. Across the ticket's three PRs it was found wrong in **fifteen** places, so the
+> claim is withdrawn rather than patched: **a fresh search beats this table, and any future
+> inventory should say what it looked at rather than that it found everything.** What it missed, kept
+> because the pattern is more useful than the list —
+>
+> - **The largest live omission was `room-context.ts`'s `resolveFrame`**, the only consumer of the
+>   thread relation in the agent path — a rewrite, not a deletion. With it went
+>   `room-context-block.ts`, `additional-context.ts`'s `RoomContextData.thread` contract,
+>   `openapi-registry.ts` (CI-gated), `room-rows.ts`'s `NewRoom`, and `room-service.ts`'s room draft.
+> - **`palette-rooms.ts` is absent because it did not exist yet** — PR #575 created it about five
+>   hours after this ADR was written — and it held `paletteRoomTarget`, **the only thing in the client
+>   that ever wrote `?thread=`.** The sentence below claiming "nothing in the client ever writes" it
+>   was true when written and false a day later. An inventory of a moving codebase has a shelf life.
+> - **Tests were left out of the table entirely**, which is where most of the actual work turned out
+>   to be: the `responseMode × roomKind` matrix in `addressing.test.ts` enumerated `thread` as a room
+>   kind, `sidebar-item.test.ts` and `room-marks.test.tsx` each pinned a legacy row's mark, and 40
+>   `parentId: null` / `rootEntryId: null` fixture lines were spread across 18 files.
+> - **Two rows were wrong rather than missing.** `room-roster.ts` is cited for an `inheritedFrom`
+>   symbol that does not exist in the file — the thread branch lived in `seedResponseMode` alone. And
+>   `message-variants.ts` is not a thread-room surface at all: it is the session chat's message
+>   toolbar, whose "reply-in-thread lands here later" note is still true and still untouched.
+> - **Line ranges rotted within the day** (`RoomAvatar.tsx` 86-94 → 105-123, `DashboardSidebar.tsx`
+>   131-133 → 146,148, via PR #580), and the prose sweep missed its own `spec:` target,
+>   `specs/rooms/02-specification.md`.
+>
+> The table stands below as the inventory that was made, which is still useful as evidence of how the
+> change was scoped. It is not a checklist and never was one.
+
+`L` marks live code that behaves differently after the change; `P` marks prose or a type that only
+has to stop saying the retired thing.
 
 | Where                                                                                          | What                                                                         |     |
 | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | --- |
@@ -206,6 +240,19 @@ retired thing.
   first, because unread should mean unread in what the reader is looking at, but that is a lean and
   not a decision. **The old model had this for free** (a thread was a room, with its own cursor and
   its own count), and giving that up is what buys everything above.
+
+  **Resolved 2026-07-28, and the lean above was overturned: neither shape, but a third.** The
+  visibility predicate went in exactly one place — the render — and neither the cursor path nor the
+  count moved. `countUnread`, `listEntries` and `useMarkRoomRead` are untouched, because
+  `useMarkRoomRead` already advances to the room's true max (the array it is handed is unfiltered),
+  so the second shape was a constraint to preserve rather than work to do. The first shape was
+  refused on evidence: a visible-only `newestSeq` short-circuits `use-mark-room-read.ts`, leaving a
+  badge that clears only when an unrelated top-level entry arrives — the exact "lie the reader cannot
+  correct" that file's own module doc forbids. The paragraph above also under-counts the callers:
+  `countUnread` had **two**, and the second computed a thread's `replyCount` in the agent context
+  path, so editing the predicate would have silently changed a value nothing named. That caller
+  retired with the child room, and `countThreadReplies` answers it now.
+
 - **A thread can no longer have its own membership subset.** Under the child-room shape you could in
   principle add somebody to a thread without adding them to the parent, or drop somebody from one
   branch. That capability is now gone. It was never reachable (`createThread` inherits the parent's

@@ -213,4 +213,63 @@ describe('MarketplaceSourceManager', () => {
       'https://github.com/dork-labs/marketplace'
     );
   });
+
+  // DOR-697. `add`/`remove`/`setEnabled` are read-modify-write over one file,
+  // reachable concurrently from two cockpit tabs or a tab plus any marketplace
+  // MCP tool. Serialising only the write is not enough: two mutators that both
+  // read before either writes still each persist their own view and drop the
+  // other's change. These must stay concurrent — sequentially they cannot fail.
+  describe('concurrent mutations', () => {
+    it('keeps every source when many add() calls land at once', async () => {
+      await manager.list(); // Seed defaults first
+      const N = 10;
+
+      await Promise.all(
+        Array.from({ length: N }, (_, i) =>
+          manager.add({ name: `src-${i}`, source: `https://github.com/me/m${i}` })
+        )
+      );
+
+      const sources = await manager.list();
+      expect(sources.filter((s) => s.name.startsWith('src-'))).toHaveLength(N);
+    });
+
+    it('a concurrent add() and setEnabled() both survive', async () => {
+      await manager.list();
+      await manager.add({ name: 'existing', source: 'https://github.com/me/existing' });
+
+      await Promise.all([
+        manager.setEnabled('existing', false),
+        manager.add({ name: 'newcomer', source: 'https://github.com/me/newcomer' }),
+      ]);
+
+      const sources = await manager.list();
+      expect(sources.find((s) => s.name === 'existing')?.enabled).toBe(false);
+      expect(sources.find((s) => s.name === 'newcomer')).toBeDefined();
+    });
+
+    it('a concurrent remove() and add() both survive', async () => {
+      await manager.list();
+      await manager.add({ name: 'doomed', source: 'https://github.com/me/doomed' });
+
+      await Promise.all([
+        manager.remove('doomed'),
+        manager.add({ name: 'fresh', source: 'https://github.com/me/fresh' }),
+      ]);
+
+      const sources = await manager.list();
+      expect(sources.find((s) => s.name === 'doomed')).toBeUndefined();
+      expect(sources.find((s) => s.name === 'fresh')).toBeDefined();
+    });
+
+    it('concurrent first-run list() calls seed exactly one valid file', async () => {
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () => new MarketplaceSourceManager(dorkHome).list())
+      );
+
+      for (const sources of results) expect(sources).toHaveLength(2);
+      const raw = await readFile(join(dorkHome, 'marketplaces.json'), 'utf-8');
+      expect((JSON.parse(raw) as { sources: unknown[] }).sources).toHaveLength(2);
+    });
+  });
 });

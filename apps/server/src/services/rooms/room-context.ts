@@ -240,17 +240,15 @@ interface ContextFrame {
  *
  * An agent answering in a thread is inside the channel the thread hangs off, so
  * the frame is that channel's name and topic and the thread is carried as a
- * POSITION within it — `RoomContextData.room.kind` has no `thread` member on
- * purpose. Under the entry relation (ADR 260728-022013) the frame needs no
- * lookup at all: `room` already IS the channel, and the position comes off the
- * triggering entry's own pointer.
+ * POSITION within it. There is no lookup to do: `room` already IS the channel,
+ * and the position comes off the triggering entry's own pointer
+ * (ADR 260728-022013).
  *
  * @param room - The room the turn was triggered in.
  * @param entry - The entry that triggered it; its thread pointer is the position.
  */
 function resolveFrame(deps: RoomContextDeps, room: Room, entry: RoomEntry): ContextFrame {
-  if (room.kind === 'thread') return legacyChildRoomFrame(deps, room);
-  return { room: frameOf(room, room.kind), thread: threadOf(deps, room, entry) };
+  return { room: frameOf(room), thread: threadOf(deps, room, entry) };
 }
 
 /**
@@ -276,43 +274,11 @@ function threadOf(deps: RoomContextDeps, room: Room, entry: RoomEntry): RoomCont
   };
 }
 
-/**
- * The frame for a thread that is still stored as a child room.
- *
- * **Transitional, and deliberately unreachable for anything created from now
- * on.** `RoomService` no longer mints a `kind: 'thread'` room, so this serves
- * rows that predate DOR-634 and nothing else. It is here rather than deleted
- * because deleting it would silently stop telling an agent it is in a thread for
- * any install that has one; PR 3 of DOR-634 drops the `thread` room kind and
- * this function with it.
- *
- * Frames the PARENT's name and topic, and reads the thread's replies out of the
- * child room's own log — which for such a room is every entry in it, since the
- * entry it hangs off lives in the parent.
- */
-function legacyChildRoomFrame(deps: RoomContextDeps, room: Room): ContextFrame {
-  const parent = room.parentId ? deps.store.getRoom(room.parentId) : null;
-  const root =
-    parent && room.rootEntryId ? deps.store.getEntryById(parent.id, room.rootEntryId) : null;
-  const thread = room.rootEntryId
-    ? {
-        rootEntryId: room.rootEntryId,
-        rootExcerpt: (root?.body.text ?? '').slice(0, THREAD_EXCERPT_CHARS),
-        replyCount: deps.store.countUnread(room.id, 0),
-      }
-    : null;
-
-  // A thread whose parent has vanished frames itself, because a conversation
-  // with a stale name beats an agent with no idea where it is.
-  if (!parent || parent.kind === 'thread') return { room: frameOf(room, 'channel'), thread };
-  return { room: frameOf(parent, parent.kind), thread };
-}
-
-/** Project a room onto the frame shape, whose `kind` excludes `thread`. */
-function frameOf(room: Room, kind: 'channel' | 'dm'): RoomContextData['room'] {
+/** Project a room onto the frame shape. */
+function frameOf(room: Room): RoomContextData['room'] {
   return {
     id: room.id,
-    kind,
+    kind: room.kind,
     name: roomName(room),
     ...(room.topic ? { topic: room.topic } : {}),
   };

@@ -97,8 +97,8 @@ export function directMessageTitle(names: readonly string[]): string {
  * server-side render cache that is empty for any agent without a stored one.
  *
  * @param participants - The DM's roster, as `RoomSummary.participants` carries
- *   it. `null` (a channel, a thread, or a payload that predates the field) and
- *   a roster with no agent on it both answer `null`, which is the caller's cue
+ *   it. `null` (a channel, or a payload that predates the field) and a roster
+ *   with no agent on it both answer `null`, which is the caller's cue
  *   to fall back to the room itself.
  */
 export function dmCounterpart(

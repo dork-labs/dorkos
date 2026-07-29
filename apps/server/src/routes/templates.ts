@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
+import { withFileLock } from '@dorkos/shared/atomic-write';
 import {
   DEFAULT_TEMPLATES,
   TemplateCatalogSchema,
@@ -55,12 +56,23 @@ async function readUserTemplates(catalogPath: string): Promise<TemplateEntry[]> 
 }
 
 /**
- * Write user templates to disk, creating the file if it doesn't exist.
+ * Serialize user templates through the enclosing lock's writer.
+ *
+ * The write must be atomic as well as serialised (DOR-697): the old plain
+ * `fs.writeFile` truncated in place, so a reader catching the mid-truncation
+ * state parse-failed to `[]` — and because {@link readUserTemplates} treats
+ * every read failure as an empty catalog, the *next* write would then silently
+ * erase every user template.
+ *
+ * @param write - The atomic writer supplied by the enclosing `withFileLock`.
+ * @param templates - The user templates to persist.
  */
-async function writeUserTemplates(catalogPath: string, templates: TemplateEntry[]): Promise<void> {
+async function writeUserTemplates(
+  write: (data: string) => Promise<void>,
+  templates: TemplateEntry[]
+): Promise<void> {
   const catalog: TemplateCatalog = { version: 1, templates };
-  await fs.mkdir(path.dirname(catalogPath), { recursive: true });
-  await fs.writeFile(catalogPath, JSON.stringify(catalog, null, 2), 'utf-8');
+  await write(JSON.stringify(catalog, null, 2));
 }
 
 /**
@@ -105,15 +117,23 @@ export function createTemplateRouter(dorkHome: string): Router {
           .json({ error: `Template ID '${entry.id}' conflicts with a built-in template` });
       }
 
-      // Check for ID conflict with existing user templates
-      const userTemplates = await readUserTemplates(catalogPath);
-      const userConflict = userTemplates.find((t) => t.id === entry.id);
-      if (userConflict) {
+      // Read-modify-write: the conflict check reads the same file the write
+      // mutates, so both sit inside the per-path lock (DOR-697). Two POSTs
+      // landing at once used to each read the old catalog and the second
+      // write silently dropped the first template while both returned 201.
+      const added = await withFileLock(catalogPath, async (write) => {
+        const userTemplates = await readUserTemplates(catalogPath);
+        if (userTemplates.some((t) => t.id === entry.id)) {
+          return false;
+        }
+        userTemplates.push(entry);
+        await writeUserTemplates(write, userTemplates);
+        return true;
+      });
+
+      if (!added) {
         return res.status(409).json({ error: `Template ID '${entry.id}' already exists` });
       }
-
-      userTemplates.push(entry);
-      await writeUserTemplates(catalogPath, userTemplates);
 
       return res.status(201).json(entry);
     } catch (err) {
@@ -133,14 +153,22 @@ export function createTemplateRouter(dorkHome: string): Router {
         return res.status(403).json({ error: `Cannot delete built-in template '${id}'` });
       }
 
-      const userTemplates = await readUserTemplates(catalogPath);
-      const index = userTemplates.findIndex((t) => t.id === id);
-      if (index === -1) {
+      // Same read-modify-write shape as POST: lookup and removal must be one
+      // critical section against the same catalog file (DOR-697).
+      const removed = await withFileLock(catalogPath, async (write) => {
+        const userTemplates = await readUserTemplates(catalogPath);
+        const index = userTemplates.findIndex((t) => t.id === id);
+        if (index === -1) {
+          return false;
+        }
+        userTemplates.splice(index, 1);
+        await writeUserTemplates(write, userTemplates);
+        return true;
+      });
+
+      if (!removed) {
         return res.status(404).json({ error: `Template '${id}' not found` });
       }
-
-      userTemplates.splice(index, 1);
-      await writeUserTemplates(catalogPath, userTemplates);
 
       return res.json({ deleted: id });
     } catch (err) {
