@@ -1,15 +1,15 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { PublicConnectedAccount } from '@dorkos/shared/connector-provider';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useConnectFlow } from '../index';
+import { useConnectFlow, useConnectFlowStore } from '../index';
 
 const startResponse = {
   flowId: 'flow-1',
@@ -45,7 +45,15 @@ function createWrapper(transport: Transport) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The flow lives in an app-wide store precisely so it can outlive unmounts —
+  // which means each test must put the world back itself.
+  useConnectFlowStore.getState().reset();
 });
+
+// No vitest globals here, so RTL cannot auto-clean — without this, the
+// previous test's still-mounted hook shares the app-wide store and polls with
+// ITS transport (an unmocked vi.fn) the moment a later test reaches `waiting`.
+afterEach(cleanup);
 
 describe('useConnectFlow', () => {
   it('starts idle with no URL and no disclosure', () => {
@@ -163,6 +171,35 @@ describe('useConnectFlow', () => {
     });
     expect(result.current.state.step).toBe('idle');
     expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
+  });
+
+  it('survives unmount mid-grant and resumes polling on remount (no orphaned grant)', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
+    vi.mocked(transport.pollConnectorFlow).mockResolvedValue({
+      status: 'connected',
+      account: connectedAccount,
+    });
+    const { wrapper } = createWrapper(transport);
+
+    // First surface (a dialog): start and open the sign-in page…
+    const first = renderHook(() => useConnectFlow(), { wrapper });
+    act(() => {
+      first.result.current.start({ provider: 'composio', toolkit: 'gmail' });
+    });
+    await waitFor(() => expect(first.result.current.state.step).toBe('disclosure'));
+    act(() => {
+      first.result.current.authOpened();
+    });
+    // …then the surface goes away entirely (dialog closed, component gone).
+    first.unmount();
+    expect(useConnectFlowStore.getState().step).toBe('waiting');
+
+    // Any other mounted surface picks the same flow up and finishes it.
+    const second = renderHook(() => useConnectFlow(), { wrapper });
+    expect(second.result.current.state.step).toBe('waiting');
+    await waitFor(() => expect(second.result.current.state.step).toBe('connected'));
+    expect(second.result.current.state.account).toEqual(connectedAccount);
   });
 
   it('reset returns the machine to idle', async () => {

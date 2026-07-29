@@ -137,7 +137,7 @@ describe('useConnectorAccounts', () => {
 });
 
 describe('useSaveConnectorCredential', () => {
-  it('saves the key and refetches providers, toolkits, and accounts', async () => {
+  it('saves the key and sweeps the whole connector cache', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.putConnectorCredential).mockResolvedValue({
       ...providerStatus,
@@ -153,9 +153,10 @@ describe('useSaveConnectorCredential', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.putConnectorCredential).toHaveBeenCalledWith('composio', 'sk-test');
     expect(result.current.data?.registered).toBe(true);
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors', 'providers'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors', 'toolkits'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors', 'accounts'] });
+    // The whole domain prefix: a newly registered provider changes providers,
+    // toolkits, accounts, AND cached recommendations (a stale recommendation
+    // naming a gone provider would 404 the next Connect).
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors'] });
   });
 });
 
@@ -171,7 +172,7 @@ describe('useDeleteConnectorCredential', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.deleteConnectorCredential).toHaveBeenCalledWith('composio');
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors', 'providers'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['connectors'] });
   });
 });
 

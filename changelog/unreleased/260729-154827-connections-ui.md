@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(connections): a Connections screen and session attach for connected accounts (DOR-708)'
+---
+
 ### Added
 
 - A new Connections screen lets you link Gmail, Slack, and other services to DorkOS. Paste your provider key once, click Connect on a service, sign in, and the account appears with a plain sentence about where your sign-in lives. You can hold two accounts of the same service — "Gmail (work)" and "Gmail (personal)" — and disconnect any of them anytime (DOR-708)

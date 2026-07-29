@@ -1614,8 +1614,10 @@ export interface Transport extends RoomTransport {
   ): Promise<ConnectorConnectStartResponse>;
 
   /**
-   * Poll a connect flow until it settles. Failure is typed on the result
-   * (`status: 'failed'` with `error`), never thrown.
+   * Poll a connect flow until it settles. A FLOW failure is typed on the
+   * result (`status: 'failed'` with `error`); the request itself can still
+   * reject — an unknown or already-released flow id answers 404 — and callers
+   * treat that rejection as terminal too.
    *
    * @param flowId - The opaque flow id from {@link startConnectorFlow}.
    */

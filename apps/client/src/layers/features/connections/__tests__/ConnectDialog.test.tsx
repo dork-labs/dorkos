@@ -15,6 +15,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorToolkit, PublicConnectedAccount } from '@dorkos/shared/connector-provider';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { useConnectFlowStore } from '@/layers/entities/connectors';
 import { ConnectDialog } from '../ui/ConnectDialog';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -24,6 +25,8 @@ vi.mock('@tanstack/react-router', () => ({
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
+  // The flow store is app-wide (it must outlive the dialog); each test resets it.
+  useConnectFlowStore.getState().reset();
 });
 
 const gmail: ConnectorToolkit = { slug: 'gmail', displayName: 'Gmail', authKind: 'oauth2' };
@@ -63,19 +66,24 @@ function renderDialog(transport: Transport, onClose = vi.fn()) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
-  render(
+  const ui = (service: typeof gmail | null) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <ConnectDialog service={gmail} onClose={onClose} />
+        <ConnectDialog service={service} onClose={onClose} />
       </TransportProvider>
     </QueryClientProvider>
   );
-  return onClose;
+  const view = render(ui(gmail));
+  // Re-render with the parent's `service` value (the parent owns open state),
+  // keeping the same QueryClient so in-flight polling is observable.
+  const setService = (service: typeof gmail | null) => view.rerender(ui(service));
+  return { onClose, setService };
 }
 
 describe('ConnectDialog', () => {
   it('shows the custody disclosure BEFORE the auth URL can be opened, and polls only after', async () => {
     const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, 'open');
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
     vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
@@ -86,8 +94,11 @@ describe('ConnectDialog', () => {
 
     renderDialog(transport);
 
-    // Step 1: label form. No disclosure, no sign-in link anywhere yet.
-    await user.click(await screen.findByRole('button', { name: 'Continue' }));
+    // Step 1: the label form. No sign-in link exists anywhere in this step —
+    // a link rendered here would be a URL reachable before the disclosure.
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /open the sign-in page/i })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
 
     // Step 2: the disclosure step. The server's sentence is rendered…
     const disclosure = await screen.findByTestId('connect-disclosure');
@@ -106,6 +117,11 @@ describe('ConnectDialog', () => {
     // Step 4: connected, named, and disclosed.
     expect(await screen.findByText('Gmail (work) is connected.')).toBeInTheDocument();
     expect(screen.getByText(connectedAccount.disclosure)).toBeInTheDocument();
+
+    // Across the whole flow, nothing ever called window.open — the person's
+    // click on the anchor is the only way the vendor page opens.
+    expect(openSpy).not.toHaveBeenCalled();
+    openSpy.mockRestore();
   });
 
   it('suggests the "personal" label when a first account of the service exists', async () => {
@@ -154,6 +170,60 @@ describe('ConnectDialog', () => {
     const transport = createMockTransport();
     renderDialog(transport);
     expect(await screen.findByText(/nothing can connect gmail yet/i)).toBeInTheDocument();
+  });
+
+  it('keeps a mid-grant flow polling after the dialog closes, and records the account', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
+    vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
+    // Still pending when the person closes the dialog; the grant completes after.
+    vi.mocked(transport.pollConnectorFlow)
+      .mockResolvedValueOnce({ status: 'pending' })
+      .mockResolvedValue({ status: 'connected', account: connectedAccount });
+
+    const { onClose, setService } = renderDialog(transport);
+
+    await user.click(await screen.findByRole('button', { name: 'Continue' }));
+    await user.click(await screen.findByRole('link', { name: /open the sign-in page/i }));
+    await waitFor(() => expect(transport.pollConnectorFlow).toHaveBeenCalled());
+
+    // The waiting step says closing is safe, and DISMISSING the dialog (Escape,
+    // overlay, X — the paths that run handleOpenChange) does not abandon the
+    // flow. The in-step "Close window" button exists too but calls onClose
+    // directly, so Escape is the path that discriminates the close guard.
+    expect(screen.getByText(/you can close this window/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close window' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+    expect(useConnectFlowStore.getState().step).toBe('waiting');
+
+    // Parent closes the dialog; the hook stays mounted with the page and the
+    // poll keeps running until the vendor confirms — the account is recorded
+    // (accounts invalidation fires), never an orphaned grant.
+    setService(null);
+    await waitFor(() => expect(useConnectFlowStore.getState().step).toBe('connected'), {
+      timeout: 5_000,
+    });
+    expect(useConnectFlowStore.getState().account).toEqual(connectedAccount);
+  });
+
+  it('abandons an un-consented flow when the dialog closes during disclosure', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorRecommendation).mockResolvedValue(gatewayRecommendation);
+    vi.mocked(transport.startConnectorFlow).mockResolvedValue(startResponse);
+
+    const { onClose } = renderDialog(transport);
+
+    await user.click(await screen.findByRole('button', { name: 'Continue' }));
+    await screen.findByTestId('connect-disclosure');
+
+    // Nothing has been granted yet — Escape abandons cleanly.
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+    expect(useConnectFlowStore.getState().step).toBe('idle');
+    expect(transport.pollConnectorFlow).not.toHaveBeenCalled();
   });
 
   it('surfaces a failed flow verbatim with a way back', async () => {

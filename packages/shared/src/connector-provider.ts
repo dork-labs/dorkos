@@ -375,7 +375,7 @@ export type ConnectorConnectStartResponse = z.infer<typeof ConnectorConnectStart
  */
 export const ConnectorConnectPollResponseSchema = z.object({
   /** `'pending'` while awaiting consent; terminal `'connected'` or `'failed'`. */
-  status: z.enum(['pending', 'connected', 'failed']),
+  status: ConnectPollSchema.shape.status,
   /** The new account, present once `status === 'connected'`. */
   account: PublicConnectedAccountSchema.optional(),
   /** Failure detail, present on `status === 'failed'` — failure-typed, never thrown. */

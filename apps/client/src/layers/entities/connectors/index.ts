@@ -21,6 +21,10 @@ export { useSessionConnectors } from './model/use-session-connectors';
 // --- The connect flow state machine ---
 export { useConnectFlow } from './model/use-connect-flow';
 export type { ConnectFlow, ConnectFlowState, ConnectFlowStep } from './model/use-connect-flow';
+// The app-wide flow store itself: surfaces normally consume `useConnectFlow`;
+// the store is exported for coordination reads (e.g. asserting a closed
+// dialog left a waiting flow alive) and test resets.
+export { useConnectFlowStore } from './model/connect-flow-store';
 
 // --- Mutation hooks ---
 export {

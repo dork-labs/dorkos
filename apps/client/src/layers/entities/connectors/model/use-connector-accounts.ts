@@ -28,6 +28,7 @@ export function useDisconnectConnectorAccount() {
 
   return useMutation<void, Error, { accountId: string }>({
     mutationFn: ({ accountId }) => transport.disconnectConnectorAccount(accountId),
+    meta: { errorLabel: "Couldn't disconnect the account" },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: connectorKeys.accounts() });
       void queryClient.invalidateQueries({ queryKey: connectorKeys.sessions() });

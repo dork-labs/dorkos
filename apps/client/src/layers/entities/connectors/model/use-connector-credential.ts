@@ -22,6 +22,7 @@ export function useSaveConnectorCredential() {
 
   return useMutation<ConnectorProviderStatus, Error, SaveConnectorCredentialArgs>({
     mutationFn: ({ provider, secret }) => transport.putConnectorCredential(provider, secret),
+    meta: { errorLabel: "Couldn't save the provider key" },
     onSuccess: () => invalidateProviderScope(queryClient),
   });
 }
@@ -36,13 +37,17 @@ export function useDeleteConnectorCredential() {
 
   return useMutation<ConnectorProviderStatus, Error, { provider: string }>({
     mutationFn: ({ provider }) => transport.deleteConnectorCredential(provider),
+    meta: { errorLabel: "Couldn't remove the provider key" },
     onSuccess: () => invalidateProviderScope(queryClient),
   });
 }
 
-/** A provider (un)registered: providers, toolkits, and accounts all changed. */
+/**
+ * A provider (un)registered: every connector read — providers, toolkits,
+ * accounts, cached recommendations, session surfaces — may now answer
+ * differently, so the whole domain prefix is swept (a cached recommendation
+ * naming a just-deleted provider would 404 the next Connect).
+ */
 function invalidateProviderScope(queryClient: ReturnType<typeof useQueryClient>): void {
-  void queryClient.invalidateQueries({ queryKey: connectorKeys.providers() });
-  void queryClient.invalidateQueries({ queryKey: connectorKeys.toolkits() });
-  void queryClient.invalidateQueries({ queryKey: connectorKeys.accounts() });
+  void queryClient.invalidateQueries({ queryKey: connectorKeys.all });
 }

@@ -50,7 +50,12 @@ export function ConnectDialog({ service, onClose }: ConnectDialogProps) {
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
-      flow.reset();
+      // Mid-grant (`waiting`), the vendor tab may still complete the sign-in:
+      // keep the flow tracked and polling (the store outlives this dialog, and
+      // this hook stays mounted with the page) so the account is recorded even
+      // when the person closes the dialog before finishing. Every other step
+      // is safe to abandon — nothing has been granted yet, or it is terminal.
+      if (flow.state.step !== 'waiting') flow.reset();
       onClose();
     }
   };
@@ -75,26 +80,33 @@ function ConnectDialogBody({
   onClose: () => void;
 }) {
   const { state } = flow;
+  // The store holds ONE app-wide flow; show its steps only when it belongs to
+  // this service. Opening the dialog for slack while a gmail flow still waits
+  // in the background starts fresh (and starting replaces the old tracking).
+  const flowOwnsService =
+    state.toolkit === service.slug && state.step !== 'idle' && state.step !== 'starting';
   return (
     <>
       <ResponsiveDialogHeader>
         <ResponsiveDialogTitle>Connect {service.displayName}</ResponsiveDialogTitle>
         <ResponsiveDialogDescription>
-          {state.step === 'connected'
+          {flowOwnsService && state.step === 'connected'
             ? 'Connected and ready to use.'
             : `Link a ${service.displayName} account so your agents can act for you.`}
         </ResponsiveDialogDescription>
       </ResponsiveDialogHeader>
       <ResponsiveDialogBody className="pb-4">
-        {(state.step === 'idle' || state.step === 'starting') && (
-          <ConnectSetupStep service={service} flow={flow} onClose={onClose} />
+        {!flowOwnsService && <ConnectSetupStep service={service} flow={flow} onClose={onClose} />}
+        {flowOwnsService && state.step === 'disclosure' && <ConnectDisclosureStep flow={flow} />}
+        {flowOwnsService && state.step === 'waiting' && (
+          <ConnectWaitingStep service={service} onClose={onClose} />
         )}
-        {state.step === 'disclosure' && <ConnectDisclosureStep flow={flow} />}
-        {state.step === 'waiting' && <ConnectWaitingStep flow={flow} />}
-        {state.step === 'connected' && (
+        {flowOwnsService && state.step === 'connected' && (
           <ConnectConnectedStep service={service} flow={flow} onClose={onClose} />
         )}
-        {state.step === 'failed' && <ConnectFailedStep flow={flow} onClose={onClose} />}
+        {flowOwnsService && state.step === 'failed' && (
+          <ConnectFailedStep flow={flow} onClose={onClose} />
+        )}
       </ResponsiveDialogBody>
     </>
   );
@@ -261,8 +273,20 @@ function ConnectDisclosureStep({ flow }: { flow: ReturnType<typeof useConnectFlo
   );
 }
 
-/** The polling step: the flow is checked until the vendor confirms or refuses. */
-function ConnectWaitingStep({ flow }: { flow: ReturnType<typeof useConnectFlow> }) {
+/**
+ * The polling step: the flow is checked until the vendor confirms or refuses.
+ * Deliberately no Cancel — the sign-in may already be completing in the vendor
+ * tab, and abandoning tracking here is how a live grant goes unrecorded.
+ * Closing merely hides the dialog; the flow keeps polling and the account
+ * lands in the list either way (disconnect is always available afterwards).
+ */
+function ConnectWaitingStep({
+  service,
+  onClose,
+}: {
+  service: ConnectorToolkit;
+  onClose: () => void;
+}) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -272,8 +296,12 @@ function ConnectWaitingStep({ flow }: { flow: ReturnType<typeof useConnectFlow> 
         />
         <p className="text-sm">Waiting for you to finish signing in…</p>
       </div>
-      <Button variant="ghost" size="sm" onClick={() => flow.reset()}>
-        Cancel
+      <p className="text-muted-foreground text-xs">
+        You can close this window — we keep checking, and {service.displayName} will appear in your
+        accounts once the sign-in finishes.
+      </p>
+      <Button variant="ghost" size="sm" onClick={onClose}>
+        Close window
       </Button>
     </div>
   );

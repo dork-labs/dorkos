@@ -127,17 +127,6 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
           </Button>
         </form>
       )}
-
-      {save.isError && (
-        <p role="alert" className="text-destructive mt-2 text-xs">
-          {save.error.message}
-        </p>
-      )}
-      {remove.isError && (
-        <p role="alert" className="text-destructive mt-2 text-xs">
-          {remove.error.message}
-        </p>
-      )}
     </div>
   );
 }

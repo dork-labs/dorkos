@@ -34,6 +34,7 @@ export function useAttachSessionConnector() {
     {
       mutationFn: ({ sessionId, accountId }) =>
         transport.attachSessionConnector(sessionId, accountId),
+      meta: { errorLabel: "Couldn't attach the account" },
       onSuccess: (_result, { sessionId }) => {
         void queryClient.invalidateQueries({ queryKey: connectorKeys.session(sessionId) });
       },
@@ -52,6 +53,7 @@ export function useDetachSessionConnector() {
   return useMutation<void, Error, { sessionId: string; accountId: string }>({
     mutationFn: ({ sessionId, accountId }) =>
       transport.detachSessionConnector(sessionId, accountId),
+    meta: { errorLabel: "Couldn't detach the account" },
     onSuccess: (_result, { sessionId }) => {
       void queryClient.invalidateQueries({ queryKey: connectorKeys.session(sessionId) });
     },

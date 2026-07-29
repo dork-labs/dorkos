@@ -192,11 +192,6 @@ function AttachPopover({
             <p data-testid="attach-disclosure" className="text-xs leading-relaxed">
               {candidate.disclosure}
             </p>
-            {attach.isError && (
-              <p role="alert" className="text-destructive text-xs">
-                {attach.error.message}
-              </p>
-            )}
             {attach.data?.warning && (
               <p role="alert" className="text-destructive text-xs">
                 Attached, but {WARNING_COPY[attach.data.warning.reason]}.

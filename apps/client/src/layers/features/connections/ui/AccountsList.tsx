@@ -148,11 +148,6 @@ export function AccountRow({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {disconnect.isError && (
-        <p role="alert" className="text-destructive text-xs">
-          {disconnect.error.message}
-        </p>
-      )}
     </li>
   );
 }
