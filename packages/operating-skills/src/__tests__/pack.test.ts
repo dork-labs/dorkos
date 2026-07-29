@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
@@ -116,12 +117,13 @@ describe('the pack teaches the world as it actually is', () => {
     // and "the fix shipped" the same event: the corrected body cannot land
     // without the bump that delivers it.
     //
-    // How far "already-seeded" actually reaches, since the phrase oversells it:
-    // `seedOperatingSkills` runs from `ensureDorkBot` (every boot) and from
-    // `agent-creator` (at creation). DorkBot's workspace is therefore the only
-    // existing one a bump ever upgrades. A user's own agent is seeded once and
-    // never re-seeded, so it keeps the pack version it was born with whatever
-    // this constant says (DOR-671).
+    // How far "already-seeded" reaches, since it is narrower than it sounds. The
+    // server re-seeds on every boot (`services/harness/project-agent-workspace.ts`,
+    // DOR-671), so a bump reaches every REGISTERED agent whose workspace lives
+    // under `<dorkHome>/agents/`. That pass walks `meshCore.listWithPaths()`, so
+    // the path is necessary but not sufficient. It still does not reach an agent
+    // registered at a path of the person's own: a boot is not permission to write
+    // into somebody's repository, and repairing those is DOR-664.
     //
     // KNOWN LIMIT of the floor, and it is the one that actually bit. A floor
     // cannot see "equal to what `main` already ships". DOR-502 and DOR-509 were
@@ -136,10 +138,59 @@ describe('the pack teaches the world as it actually is', () => {
     // So it is closed in CI instead, by
     // `.github/workflows/operating-skills-version-check.yml`, which checks out with
     // `fetch-depth: 0` and requires this constant to be strictly greater than the
-    // base branch's whenever the seeded pack content changes (DOR-546). This floor
-    // stays as the local half: it fails the moment you edit a skill body without
-    // bumping, without waiting for a push.
+    // base branch's whenever the seeded pack content changes (DOR-546).
+    //
+    // Be exact about what this floor is, because the sentence here used to
+    // oversell it: it is a RATCHET, not a link between a body edit and a bump.
+    // It fails when the constant is lowered past 7 or deleted — which is what a
+    // botched conflict resolution on this line does — and nothing else. Editing
+    // a skill body cannot move a constant, so no local assertion can notice that
+    // edit shipping without a bump. Tying those two together is the CI guard's
+    // job alone.
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(7);
+  });
+
+  it('keeps every seeded skill out of pack.ts, which the CI guard depends on', () => {
+    // The CI guard above scopes `pack.ts` by IGNORING comment lines, because the
+    // file is prose about the pack rather than pack content. That is only safe
+    // while no seeded text lives here: a body line beginning with `* `, `//` or
+    // `/*` — ordinary in markdown written for a model — would be edited and the
+    // guard would report nothing changed, which is the DOR-509 failure by a new
+    // route. Nothing enforced that, so this does.
+    //
+    // Asserted as import membership rather than "pack.ts contains no backtick",
+    // which was the first suggestion and is simply false: the docblock uses 34 of
+    // them for markdown code spans. Every entry resolving to a `./skills/` import
+    // is the airtight form of the same claim, and it does not care how any body
+    // is quoted or escaped.
+    const source = readFileSync(new URL('../pack.ts', import.meta.url), 'utf-8');
+
+    const importedFromSkills = new Set(
+      [...source.matchAll(/import\s*\{\s*([\w$]+)\s*\}\s*from\s*'\.\/skills\/[^']+\.js';/g)].map(
+        (m) => m[1]!
+      )
+    );
+    const arrayLiteral =
+      /OPERATING_SKILLS_PACK:\s*readonly\s+OperatingSkill\[\]\s*=\s*\[([^\]]*)\]/.exec(source)?.[1];
+    if (arrayLiteral === undefined) {
+      throw new Error(
+        'Could not find the OPERATING_SKILLS_PACK array literal in pack.ts. This ' +
+          'guard reads it textually, so a reformat fails loudly here rather than ' +
+          'quietly checking an empty list.'
+      );
+    }
+    const entries = arrayLiteral
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    // Both counts pinned against the real pack, so a regex that silently stops
+    // matching cannot leave this asserting over an empty set.
+    expect(importedFromSkills.size).toBe(OPERATING_SKILLS_PACK.length);
+    expect(entries).toHaveLength(OPERATING_SKILLS_PACK.length);
+    for (const entry of entries) {
+      expect(importedFromSkills).toContain(entry);
+    }
   });
 
   it('no longer tells agents that `dorkos uninstall` skips the approval gate', () => {

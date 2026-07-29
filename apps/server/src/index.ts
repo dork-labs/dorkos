@@ -117,7 +117,7 @@ import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
-import { backfillAgentWorkspaceProjections } from './services/harness/project-agent-workspace.js';
+import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
@@ -832,23 +832,30 @@ async function start() {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
 
-    // Repair the agent workspaces whose seeded `.agents/skills/` never reached
-    // `.claude/skills/`, so Claude Code could not see them (DOR-659). Runs on
-    // every boot, not once: the projection is idempotent and self-healing, so
-    // re-running is how a workspace that lost its links gets them back. Runs after
-    // startup reconciliation has populated the registry from disk, so it sees
-    // every agent; `dorkHome` scopes it to the homes DorkOS owns, because a
-    // registered agent can point at a person's own repository and a boot is not
-    // permission to write into one. Fire-and-forget: it yields between
-    // workspaces and never throws, so it repairs in the background instead of
-    // delaying boot.
+    // Bring every agent workspace DorkOS owns up to the current Operating DorkOS
+    // skill pack, and link it where Claude Code reads it. Two repairs in one
+    // pass: agents seeded once at creation never saw a later pack version, so
+    // they are still being taught corrections that were retracted versions ago
+    // (DOR-671), and agents seeded before the projection existed had their
+    // skills on disk but invisible to their runtime (DOR-659). Seeding runs
+    // before the projection, which is what makes a skill usable on THIS boot
+    // rather than the next one.
+    //
+    // Runs on every boot, not once: both halves are idempotent and self-healing,
+    // so re-running is how a workspace that lost its links or fell behind the
+    // pack catches up. Runs after startup reconciliation has populated the
+    // registry from disk, so it sees every agent; `dorkHome` scopes it to the
+    // homes DorkOS owns, because a registered agent can point at a person's own
+    // repository and a boot is not permission to write into one.
+    // Fire-and-forget: it yields between workspaces and never throws, so it
+    // repairs in the background instead of delaying boot.
     try {
       const workspaces = meshCore.listWithPaths().map((agent) => agent.projectPath);
-      backfillAgentWorkspaceProjections(workspaces, dorkHome).catch((err: unknown) => {
-        logger.warn('[Mesh] Agent workspace projection backfill failed', logError(err));
+      backfillAgentWorkspaceSkills(workspaces, dorkHome).catch((err: unknown) => {
+        logger.warn('[Mesh] Agent workspace skill backfill failed', logError(err));
       });
     } catch (err) {
-      logger.warn('[Mesh] Failed to start agent workspace projection backfill', logError(err));
+      logger.warn('[Mesh] Failed to start agent workspace skill backfill', logError(err));
     }
 
     // Tick the Pulse attention badge on a real liveness transition (an agent
