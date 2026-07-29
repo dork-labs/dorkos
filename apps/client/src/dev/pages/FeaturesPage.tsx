@@ -10,6 +10,7 @@ import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
+import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
 
 /** Feature component showcase page for the dev playground. */
 export function FeaturesPage() {
@@ -29,6 +30,7 @@ export function FeaturesPage() {
       <TasksShowcases />
       <PipPanelShowcases />
       <ApprovalsShowcases />
+      <ConnectionsShowcases />
     </PlaygroundPageLayout>
   );
 }

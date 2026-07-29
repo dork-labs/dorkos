@@ -111,10 +111,12 @@ import {
   ConnectorToolkitSchema,
   ConnectorRecommendationSchema,
   ConnectorProviderStatusSchema,
-  ConnectStartSchema,
-  ConnectPollSchema,
-  ConnectedAccountSchema,
-  ConnectedAccountStatusSchema,
+  ConnectorConnectStartResponseSchema,
+  ConnectorConnectPollResponseSchema,
+  ConnectorWarningSchema,
+  PublicConnectedAccountSchema,
+  SessionConnectorStatusSchema,
+  SessionConnectorAttachResultSchema,
 } from '@dorkos/shared/connector-provider';
 import { z } from 'zod';
 
@@ -2295,19 +2297,9 @@ registry.registerPath({
 });
 
 // --- Connectors ---
-
-/** A per-provider degradation notice from a cross-provider aggregation (ADR-0310). */
-const ConnectorWarningSchema = z.object({
-  provider: z.string(),
-  message: z.string(),
-});
-
-/**
- * The session-facing connected-account shape — the server-only `provider` field
- * is stripped before an account crosses to the client (spec §Security
- * Considerations), so it is absent here by design.
- */
-const PublicConnectedAccountSchema = ConnectedAccountSchema.omit({ provider: true });
+// Response shapes come straight from `@dorkos/shared/connector-provider` — the
+// same schemas the Transport methods and client hooks are typed with, so the
+// documented API cannot drift from the one the client consumes.
 
 registry.registerPath({
   method: 'get',
@@ -2453,8 +2445,10 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'Connect started; carries the authorize URL and a pollable flow id',
-      content: { 'application/json': { schema: ConnectStartSchema } },
+      description:
+        'Connect started; carries the authorize URL, a pollable flow id, and the custody ' +
+        'disclosure to show BEFORE the URL is opened',
+      content: { 'application/json': { schema: ConnectorConnectStartResponseSchema } },
     },
     400: {
       description: 'Validation error, unknown toolkit, or a duplicate single-account connect',
@@ -2480,8 +2474,10 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'The pollable connect state (pending | connected | failed)',
-      content: { 'application/json': { schema: ConnectPollSchema } },
+      description:
+        'The pollable connect state (pending | connected | failed); on connected the account ' +
+        'is public-shaped (provider stripped, custody sentence attached)',
+      content: { 'application/json': { schema: ConnectorConnectPollResponseSchema } },
     },
     404: {
       description: 'Unknown connect flow',
@@ -2534,23 +2530,6 @@ registry.registerPath({
 
 // --- Session ↔ connector attach/detach (the consent binding) ---
 
-/** A per-account notice that an attached account could not be exposed right now. */
-const SessionConnectorWarningSchema = z.object({
-  accountId: z.string(),
-  label: z.string(),
-  reason: z.enum(['expired', 'revoked', 'unavailable']),
-});
-
-/** One attached account's status in a session's connector surface. */
-const SessionConnectorAccountSchema = z.object({
-  accountId: z.string(),
-  toolkit: z.string(),
-  label: z.string(),
-  status: ConnectedAccountStatusSchema,
-  serverName: z.string().optional(),
-  exposed: z.boolean(),
-});
-
 registry.registerPath({
   method: 'get',
   path: '/api/sessions/{id}/connectors',
@@ -2566,14 +2545,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Attached accounts and per-account degradation warnings',
-      content: {
-        'application/json': {
-          schema: z.object({
-            accounts: z.array(SessionConnectorAccountSchema),
-            warnings: z.array(SessionConnectorWarningSchema),
-          }),
-        },
-      },
+      content: { 'application/json': { schema: SessionConnectorStatusSchema } },
     },
   },
 });
@@ -2595,15 +2567,7 @@ registry.registerPath({
     200: {
       description:
         'The account attached; carries its status, the custody disclosure, and any warning',
-      content: {
-        'application/json': {
-          schema: z.object({
-            account: SessionConnectorAccountSchema,
-            disclosure: z.string(),
-            warning: SessionConnectorWarningSchema.optional(),
-          }),
-        },
-      },
+      content: { 'application/json': { schema: SessionConnectorAttachResultSchema } },
     },
     404: {
       description: 'Unknown connected account',

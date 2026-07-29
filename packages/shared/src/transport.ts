@@ -121,6 +121,16 @@ import type {
 import type { RoomTransport } from './transport-rooms.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackSubmission } from './telemetry-events.js';
+import type {
+  ConnectorAccountsResponse,
+  ConnectorConnectPollResponse,
+  ConnectorConnectStartResponse,
+  ConnectorProviderStatus,
+  ConnectorRecommendationsResponse,
+  ConnectorToolkitsResponse,
+  SessionConnectorAttachResult,
+  SessionConnectorStatus,
+} from './connector-provider.js';
 
 /** A single entry in the adapter list — config plus live status. */
 export interface AdapterListItem {
@@ -1549,4 +1559,115 @@ export interface Transport extends RoomTransport {
    * @param submission - The user-typed `{ kind, message, contact?, route? }`.
    */
   sendFeedback(submission: FeedbackSubmission): Promise<{ ok: boolean }>;
+
+  // --- Connectors (connector-completion spec §Detailed Design 5) ---
+
+  /**
+   * Read every connector provider's setup state (configured, registered,
+   * custody stance, disclosure copy, and the honest error text when a
+   * configured provider refused to register). Reference-free by construction.
+   */
+  getConnectorProviders(): Promise<ConnectorProviderStatus[]>;
+
+  /**
+   * Store a provider's vendor key and reload the provider live — no restart.
+   * The secret travels once, into the server's encrypted store; only the fresh
+   * reference-free status comes back.
+   *
+   * @param provider - Provider type, e.g. `'composio' | 'nango'`.
+   * @param secret - The vendor key to store. Never echoed by any response.
+   */
+  putConnectorCredential(provider: string, secret: string): Promise<ConnectorProviderStatus>;
+
+  /**
+   * Delete a provider's stored key and unregister it live. Idempotent — a
+   * missing key still resolves with the (unconfigured) status.
+   *
+   * @param provider - Provider type, e.g. `'composio' | 'nango'`.
+   */
+  deleteConnectorCredential(provider: string): Promise<ConnectorProviderStatus>;
+
+  /** List the connectable services aggregated across every registered provider. */
+  getConnectorToolkits(): Promise<ConnectorToolkitsResponse>;
+
+  /**
+   * Ask how a service should be connected, best route first: a purpose-built
+   * relay adapter outranks a gateway connector, which outranks a raw MCP
+   * server. The service grid's Connect verb routes through this so the
+   * provider choice stays invisible.
+   *
+   * @param service - Service slug, e.g. `'gmail' | 'slack'`.
+   */
+  getConnectorRecommendation(service: string): Promise<ConnectorRecommendationsResponse>;
+
+  /**
+   * Begin connecting a service account through one provider. The result
+   * carries the auth URL, a pollable flow id, and the custody disclosure the
+   * UI must render BEFORE the auth URL is opened.
+   *
+   * @param provider - Provider type the flow runs through (from the recommendation).
+   * @param request - The toolkit to connect and an optional multi-account label.
+   */
+  startConnectorFlow(
+    provider: string,
+    request: { toolkit: string; label?: string }
+  ): Promise<ConnectorConnectStartResponse>;
+
+  /**
+   * Poll a connect flow until it settles. A FLOW failure is typed on the
+   * result (`status: 'failed'` with `error`); the request itself can still
+   * reject — an unknown or already-released flow id answers 404 — and callers
+   * treat that rejection as terminal too.
+   *
+   * @param flowId - The opaque flow id from {@link startConnectorFlow}.
+   */
+  pollConnectorFlow(flowId: string): Promise<ConnectorConnectPollResponse>;
+
+  /**
+   * List every connected account across providers, each row carrying its own
+   * server-composed custody sentence.
+   *
+   * @param toolkit - Optional service slug to filter to.
+   */
+  getConnectorAccounts(toolkit?: string): Promise<ConnectorAccountsResponse>;
+
+  /**
+   * Disconnect (revoke) one connected account. Idempotent — an unknown or
+   * already-removed id resolves without error.
+   *
+   * @param accountId - The opaque account id to disconnect.
+   */
+  disconnectConnectorAccount(accountId: string): Promise<void>;
+
+  /**
+   * Read a session's connector surface: the accounts attached to it, each with
+   * its exposure state, plus per-account null-branch warnings ("expired —
+   * reconnect" style) for accounts that could not be exposed.
+   *
+   * @param sessionId - The session to report on.
+   */
+  getSessionConnectors(sessionId: string): Promise<SessionConnectorStatus>;
+
+  /**
+   * Attach a connected account to a session — the consent point. The result
+   * re-shows the custody disclosure and surfaces the null-branch warning when
+   * the account attached but is not exposable right now. Rejects (404) for an
+   * unknown account id.
+   *
+   * @param sessionId - The session the account is being attached to.
+   * @param accountId - The opaque account id to attach.
+   */
+  attachSessionConnector(
+    sessionId: string,
+    accountId: string
+  ): Promise<SessionConnectorAttachResult>;
+
+  /**
+   * Detach an account from a session. Idempotent — detaching an unattached
+   * account is a no-op.
+   *
+   * @param sessionId - The session to detach from.
+   * @param accountId - The opaque account id to detach.
+   */
+  detachSessionConnector(sessionId: string, accountId: string): Promise<void>;
 }

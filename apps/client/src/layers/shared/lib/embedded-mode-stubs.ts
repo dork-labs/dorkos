@@ -56,6 +56,16 @@ import type {
   RemoveResult,
 } from '@dorkos/shared/workspace';
 import type {
+  ConnectorAccountsResponse,
+  ConnectorConnectPollResponse,
+  ConnectorConnectStartResponse,
+  ConnectorProviderStatus,
+  ConnectorRecommendationsResponse,
+  ConnectorToolkitsResponse,
+  SessionConnectorAttachResult,
+  SessionConnectorStatus,
+} from '@dorkos/shared/connector-provider';
+import type {
   TraceSpan,
   DeliveryMetrics,
   CatalogEntry,
@@ -799,3 +809,75 @@ export const roomStubs = {
 /** An empty room stream — the embed has no rooms, so nothing ever arrives. */
 // eslint-disable-next-line require-yield
 async function* emptyRoomEvents(): AsyncIterable<RoomEvent> {}
+
+/**
+ * Connector stubs — the connector gateway (provider registry, credential
+ * store, connect flows, session tool exposure) is a server-owned subsystem the
+ * in-process embed has no services for (connector-completion spec OQ4). Reads
+ * answer honestly empty, so the Connections surface renders its real empty
+ * state; credential and connect writes refuse with a clear pointer at the web
+ * cockpit — never a silent failure. Session attach reads answer "nothing
+ * attached" for the same reason.
+ */
+export const connectorStubs = {
+  async getConnectorProviders(): Promise<ConnectorProviderStatus[]> {
+    return [];
+  },
+
+  async putConnectorCredential(
+    _provider: string,
+    _secret: string
+  ): Promise<ConnectorProviderStatus> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async deleteConnectorCredential(_provider: string): Promise<ConnectorProviderStatus> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectorToolkits(): Promise<ConnectorToolkitsResponse> {
+    return { toolkits: [], warnings: [] };
+  },
+
+  async getConnectorRecommendation(_service: string): Promise<ConnectorRecommendationsResponse> {
+    return { recommendations: [], warnings: [] };
+  },
+
+  async startConnectorFlow(
+    _provider: string,
+    _request: { toolkit: string; label?: string }
+  ): Promise<ConnectorConnectStartResponse> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async pollConnectorFlow(_flowId: string): Promise<ConnectorConnectPollResponse> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getConnectorAccounts(_toolkit?: string): Promise<ConnectorAccountsResponse> {
+    return { accounts: [], warnings: [] };
+  },
+
+  async disconnectConnectorAccount(_accountId: string): Promise<void> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getSessionConnectors(_sessionId: string): Promise<SessionConnectorStatus> {
+    return { accounts: [], warnings: [] };
+  },
+
+  async attachSessionConnector(
+    _sessionId: string,
+    _accountId: string
+  ): Promise<SessionConnectorAttachResult> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async detachSessionConnector(_sessionId: string, _accountId: string): Promise<void> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+};
+
+/** The one honest notice every refused connector write carries (spec OQ4). */
+const EMBEDDED_CONNECTORS_NOTICE =
+  'Connections can only be managed from the web cockpit — open DorkOS in your browser to connect services.';

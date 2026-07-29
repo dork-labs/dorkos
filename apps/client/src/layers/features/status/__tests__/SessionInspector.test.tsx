@@ -26,6 +26,13 @@ vi.mock('../model/use-session-diagnostics', () => ({
   useSessionDiagnostics: () => mockDiagnostics(),
 }));
 
+// The Connectors group is the connections feature's component (live transport
+// + query hooks of its own, tested in features/connections); this file asserts
+// the READOUT, so the slot renders empty here.
+vi.mock('@/layers/features/connections', () => ({
+  SessionConnectorsGroup: () => null,
+}));
+
 import { useAppStore } from '@/layers/shared/model';
 import { SessionInspector } from '../ui/SessionInspector';
 

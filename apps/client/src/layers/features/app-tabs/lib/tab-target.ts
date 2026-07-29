@@ -28,6 +28,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/': 'Dashboard',
   '/activity': 'Activity',
   '/agents': 'Agents',
+  '/connections': 'Connections',
   '/marketplace': 'Marketplace',
   '/marketplace/sources': 'Marketplace sources',
   '/tasks': 'Tasks',

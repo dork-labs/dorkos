@@ -4,6 +4,9 @@ import { Badge, Separator } from '@/layers/shared/ui';
 import { cn, formatDuration } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useSessionId } from '@/layers/entities/session';
+// UI composition (allowed cross-feature): the session's connector surface is
+// the connections feature's component; this readout only hosts it.
+import { SessionConnectorsGroup } from '@/layers/features/connections';
 import { useSessionDiagnostics } from '../model/use-session-diagnostics';
 import {
   cacheHitPercent,
@@ -53,7 +56,13 @@ export function SessionInspector() {
     );
   }
 
-  return <SessionReadout diagnostics={diagnostics} live={visible} />;
+  return (
+    <SessionReadout
+      diagnostics={diagnostics}
+      live={visible}
+      connectors={<SessionConnectorsGroup sessionId={sessionId} />}
+    />
+  );
 }
 
 /**
@@ -65,13 +74,18 @@ export function SessionInspector() {
  * @param props.live - Whether the readout is visible, gating the one-second age
  *   tick. Defaults to `true` for static hosts (the playground) that only ever
  *   render it when it is on screen.
+ * @param props.connectors - The session's connector surface (attached
+ *   accounts, attach/detach), injected as a slot so this layout stays
+ *   renderable against a mock snapshot (playground) with no live queries.
  */
 export function SessionReadout({
   diagnostics,
   live = true,
+  connectors,
 }: {
   diagnostics: SessionDiagnostics;
   live?: boolean;
+  connectors?: ReactNode;
 }) {
   return (
     <div
@@ -82,6 +96,7 @@ export function SessionReadout({
       <ResolvedGroup diagnostics={diagnostics} />
       <UsageGroup diagnostics={diagnostics} />
       <SubagentsGroup diagnostics={diagnostics} />
+      {connectors}
       <div className="mt-auto pt-2">
         <Separator className="mb-2" />
         <CopyDiagnosticsButton diagnostics={diagnostics} className="w-full justify-center" />

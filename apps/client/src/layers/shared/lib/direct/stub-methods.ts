@@ -22,6 +22,7 @@ import {
   workspaceStubs,
   roomStubs,
   cloudStubs,
+  connectorStubs,
 } from '../embedded-mode-stubs';
 
 /** Create the stubbed Transport surface for server-only subsystems. */
@@ -40,5 +41,6 @@ export function createEmbeddedStubMethods() {
     ...workspaceStubs,
     ...roomStubs,
     ...cloudStubs,
+    ...connectorStubs,
   };
 }

@@ -32,7 +32,7 @@ import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
-import { custodyDisclosure, disclosureForAccount } from './custody-disclosure.js';
+import { custodyDisclosure } from './custody-disclosure.js';
 import { recommendConnector, type RelayAdapterCatalog } from './routing.js';
 import { toPublicAccount } from './public-account.js';
 import type { ConnectorFlowBindings } from './flow-bindings.js';
@@ -196,13 +196,9 @@ export const connectorDomain: CapabilityDomain = {
         const { accounts, warnings } = await registry.listAccounts(
           input.toolkit ? { toolkit: input.toolkit } : undefined
         );
-        return {
-          accounts: accounts.map((account) => ({
-            ...toPublicAccount(account),
-            disclosure: disclosureForAccount(account),
-          })),
-          warnings,
-        };
+        // toPublicAccount strips the server-only provider field AND attaches
+        // the per-account custody sentence — one shape for routes and agents.
+        return { accounts: accounts.map(toPublicAccount), warnings };
       },
     }),
 
@@ -325,12 +321,7 @@ export const connectorDomain: CapabilityDomain = {
         }
         return {
           status: poll.status,
-          ...(poll.account && {
-            account: {
-              ...toPublicAccount(poll.account),
-              disclosure: disclosureForAccount(poll.account),
-            },
-          }),
+          ...(poll.account && { account: toPublicAccount(poll.account) }),
           ...(poll.error && { error: poll.error }),
         };
       },

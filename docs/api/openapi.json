@@ -11794,7 +11794,7 @@
         },
         "responses": {
           "200": {
-            "description": "Connect started; carries the authorize URL and a pollable flow id",
+            "description": "Connect started; carries the authorize URL, a pollable flow id, and the custody disclosure to show BEFORE the URL is opened",
             "content": {
               "application/json": {
                 "schema": {
@@ -11807,11 +11807,15 @@
                     "flowId": {
                       "type": "string",
                       "minLength": 1
+                    },
+                    "disclosure": {
+                      "type": "string"
                     }
                   },
                   "required": [
                     "authorizeUrl",
-                    "flowId"
+                    "flowId",
+                    "disclosure"
                   ]
                 }
               }
@@ -11859,7 +11863,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The pollable connect state (pending | connected | failed)",
+            "description": "The pollable connect state (pending | connected | failed); on connected the account is public-shaped (provider stripped, custody sentence attached)",
             "content": {
               "application/json": {
                 "schema": {
@@ -11879,9 +11883,6 @@
                         "id": {
                           "type": "string",
                           "minLength": 1
-                        },
-                        "provider": {
-                          "type": "string"
                         },
                         "toolkit": {
                           "type": "string"
@@ -11905,15 +11906,18 @@
                             "self-host",
                             "external"
                           ]
+                        },
+                        "disclosure": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "id",
-                        "provider",
                         "toolkit",
                         "label",
                         "status",
-                        "custody"
+                        "custody",
+                        "disclosure"
                       ]
                     },
                     "error": {
@@ -11996,6 +12000,9 @@
                               "self-host",
                               "external"
                             ]
+                          },
+                          "disclosure": {
+                            "type": "string"
                           }
                         },
                         "required": [
@@ -12003,7 +12010,8 @@
                           "toolkit",
                           "label",
                           "status",
-                          "custody"
+                          "custody",
+                          "disclosure"
                         ]
                       }
                     },
@@ -12092,7 +12100,8 @@
                         "type": "object",
                         "properties": {
                           "accountId": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "toolkit": {
                             "type": "string"
@@ -12131,7 +12140,8 @@
                         "type": "object",
                         "properties": {
                           "accountId": {
-                            "type": "string"
+                            "type": "string",
+                            "minLength": 1
                           },
                           "label": {
                             "type": "string"
@@ -12201,7 +12211,8 @@
                       "type": "object",
                       "properties": {
                         "accountId": {
-                          "type": "string"
+                          "type": "string",
+                          "minLength": 1
                         },
                         "toolkit": {
                           "type": "string"
@@ -12240,7 +12251,8 @@
                       "type": "object",
                       "properties": {
                         "accountId": {
-                          "type": "string"
+                          "type": "string",
+                          "minLength": 1
                         },
                         "label": {
                           "type": "string"

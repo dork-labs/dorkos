@@ -1,5 +1,14 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import { Activity, FolderGit2, LayoutDashboard, Search, Store, Users, Zap } from 'lucide-react';
+import {
+  Activity,
+  Cable,
+  FolderGit2,
+  LayoutDashboard,
+  Search,
+  Store,
+  Users,
+  Zap,
+} from 'lucide-react';
 import {
   SidebarHeader,
   SidebarMenu,
@@ -56,6 +65,12 @@ export function SidebarNavHeader() {
           label="Workspaces"
           isActive={pathname === '/workspaces'}
           onClick={() => navigate({ to: '/workspaces' })}
+        />
+        <NavButton
+          icon={Cable}
+          label="Connections"
+          isActive={pathname === '/connections'}
+          onClick={() => navigate({ to: '/connections' })}
         />
         <NavButton
           icon={Store}

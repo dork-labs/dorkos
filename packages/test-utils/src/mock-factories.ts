@@ -567,6 +567,21 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ linked: false, accountLabel: null, lastHeartbeatAt: null }),
     sendFeedback: vi.fn().mockResolvedValue({ ok: true }),
+    // Connectors (connector-completion spec §Detailed Design 5). Reads default
+    // to honest-empty; writes default to unstubbed vi.fn() so a test that
+    // exercises them must state what the server would answer.
+    getConnectorProviders: vi.fn().mockResolvedValue([]),
+    putConnectorCredential: vi.fn(),
+    deleteConnectorCredential: vi.fn(),
+    getConnectorToolkits: vi.fn().mockResolvedValue({ toolkits: [], warnings: [] }),
+    getConnectorRecommendation: vi.fn().mockResolvedValue({ recommendations: [], warnings: [] }),
+    startConnectorFlow: vi.fn(),
+    pollConnectorFlow: vi.fn(),
+    getConnectorAccounts: vi.fn().mockResolvedValue({ accounts: [], warnings: [] }),
+    disconnectConnectorAccount: vi.fn().mockResolvedValue(undefined),
+    getSessionConnectors: vi.fn().mockResolvedValue({ accounts: [], warnings: [] }),
+    attachSessionConnector: vi.fn(),
+    detachSessionConnector: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
