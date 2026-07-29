@@ -269,8 +269,12 @@ Omit `until` only for finite mocked `subscribeSession` sources — a real projec
 ## Running Tests
 
 ```bash
-pnpm test                         # Run all tests via Turborepo
-pnpm test -- --run                # Single run (no watch)
-pnpm vitest run path/to/test.ts   # Run a specific test file
-pnpm vitest --watch               # Watch mode
+pnpm test                          # Run all tests via Turborepo
+pnpm test -- --run                 # Single run (no watch)
+pnpm vitest run path/to/test.ts    # One test file — the inner loop
+pnpm vitest watch path/to/test.ts  # Watch that file
 ```
+
+The targeted forms take a path and work for every package: the root `vitest.config.ts` registers every workspace package that has tests, plus repo-root `scripts/`. "No test files found, exiting with code 1" means the path is wrong, not that the package is unreachable.
+
+Never run bare `pnpm vitest run` or `pnpm vitest watch` over the whole workspace. `pnpm test` is `dotenv -- turbo test`, so it loads `.env` and gives each package its own environment; bare vitest does neither, and whole-workspace bare runs have falsely failed tests in the dev environment. Full runs go through turbo (`pnpm test -- --run`); bare vitest is for scoped paths only.

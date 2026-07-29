@@ -67,12 +67,17 @@ pnpm evals:sweep       # Clear eval sandboxes/containers an interrupted run left
 **Targeted verification (prefer these — full runs waste minutes):**
 
 ```bash
-pnpm vitest run <path>                  # One test file (~1-2s)
+pnpm vitest run <path>                  # One test file (~1-2s). Works for EVERY package
 pnpm test -- --run                      # Full suite via turbo. NEVER bare `pnpm vitest run`
-                                        #   for full runs — it falsely fails 2 tests in dev env
+                                        #   for full runs — it skips the per-package env turbo
+                                        #   sets up, and has falsely failed tests in dev
 pnpm --filter @dorkos/server typecheck  # One package (~4s vs ~28s full)
 pnpm --filter @dorkos/server lint       # One package (~4s)
 ```
+
+The targeted run only reaches a package the root `vitest.config.ts` registers as a project, and it lists all of them, `packages/evals` included. `pnpm vitest run <path>` answering "No test files found, exiting with code 1" means your path is wrong, never that the package is unreachable (DOR-670, when it meant both). `scripts/__tests__/vitest-projects.test.ts` fails if that list and the workspace drift apart.
+
+**One test in the repo spends real money**: `packages/evals/src/runner/__tests__/harness-server.test.ts` boots a server and drives a live turn. It runs only when you set `DORKOS_EVALS_CREDENTIALED=1` alongside an `ANTHROPIC_API_KEY`, and skips otherwise. A key you happen to have exported is deliberately not enough, because having one is not the same as deciding to spend. Two things follow. Turbo strips the key, so `pnpm test`, `pnpm verify`, pre-push and CI were never exposed; bare vitest does not strip it, so on this branch the flag is what protects you. And a fake key is not a safe way to run that file: the test server inherits your `claude` sign-in and bills that instead, which was measured with a deliberately invalid key.
 
 Gotchas: after pulling, rebuild `@dorkos/shared` if imports resolve stale (`pnpm --filter @dorkos/shared build`) — stale dists cause false-red type errors. If a typecheck red starts with `TS6053` on a `@dorkos/typescript-config` extends, `node_modules` is stale — run `pnpm install` (tsc otherwise falls back to ES5/non-strict defaults and sprays phantom errors across dependency sources). Ports: dev uses 6xxx (from `.env`), production defaults 4xxx, tests pin 4242/4241.
 

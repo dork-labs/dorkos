@@ -12,7 +12,12 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    // `__tests__/vitest-projects.test.ts` imports the root `vitest.config.ts` by
+    // path so it asserts against the real project list rather than a copy of it.
+    // Safe with `noEmit`: nothing is written, so there is no emitted specifier
+    // left pointing at a `.ts` file.
+    "allowImportingTsExtensions": true
   },
-  "include": ["q3-contention/**/*.ts", "vitest.config.ts"]
+  "include": ["q3-contention/**/*.ts", "__tests__/**/*.ts", "vitest.config.ts"]
 }
