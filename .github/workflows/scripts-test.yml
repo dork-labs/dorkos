@@ -38,7 +38,9 @@ name: scripts-test
 # TWO JOBS, on purpose. `fixtures` needs only bash, jq, iconv and Node, so
 # skipping the pnpm toolchain keeps it a few seconds, which is worth preserving
 # for the reviewer scripts it guards. `harness` covers the TypeScript under
-# scripts/ (the Q3 contention harness, DOR-500), which does need pnpm. Splitting
+# scripts/ (the Q3 contention harness, DOR-500) plus the one bash suite that
+# needs a node_modules (the os.homedir() ban fixtures), both of which want pnpm.
+# Splitting
 # them keeps the fast signal fast instead of putting a minute of install in front
 # of it.
 #
@@ -56,6 +58,13 @@ name: scripts-test
 ###
 ### `.claude/hooks/**` is in the filter for the `fixtures` job, which tests the
 ### git-guard hook that lives there rather than under scripts/.
+### The ESLint configs are in the filter for the same reason as
+### claude-code-review.yml: test-homedir-guard.sh asserts against them. The
+### os.homedir() ban lives in apps/server/eslint.config.js and its severity
+### depends on packages/eslint-config/, so a PR that deletes or loosens the guard
+### must trigger the suite that pins it — otherwise the guard can be removed
+### without anything going red, which is the exact history that suite exists for
+### (DOR-668).
 on:
   pull_request:
     paths:
@@ -63,6 +72,8 @@ on:
       - 'package.json'
       - 'vitest.config.ts'
       - '.claude/hooks/**'
+      - 'apps/server/eslint.config.js'
+      - 'packages/eslint-config/**'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
       - '.github/workflows/merge-tail.yml'
@@ -73,6 +84,8 @@ on:
       - 'package.json'
       - 'vitest.config.ts'
       - '.claude/hooks/**'
+      - 'apps/server/eslint.config.js'
+      - 'packages/eslint-config/**'
       - '.github/workflows/scripts-test.yml'
       - '.github/workflows/claude-code-review.yml'
       - '.github/workflows/merge-tail.yml'
@@ -163,6 +176,15 @@ jobs:
 
       - name: Lint
         run: pnpm exec eslint scripts/
+
+      # In `harness` rather than `fixtures` because it is the only job with a
+      # node_modules: the suite lints fixture text through the REAL server ESLint
+      # config, which is the only way to test the thing that actually broke — the
+      # per-directory files/ignores globs, not the presence of config text. The
+      # ban it pins spent its whole life matching nothing, and a lint rule that
+      # stops matching exits 0 rather than crashing (DOR-668).
+      - name: os.homedir() ban fixtures
+        run: bash scripts/test-homedir-guard.sh
 
       - name: Unit tests
         run: pnpm exec vitest run --config scripts/vitest.config.ts

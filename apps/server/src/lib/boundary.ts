@@ -27,20 +27,18 @@ import { resolveDorkHome } from './dork-home.js';
  *   Docker deployment). Never reach for it from a raw file surface — that would
  *   widen file access into the credential store.
  *
- * ## The `os.homedir()` calls here, and the argument for them
+ * ## The `os.homedir()` calls here (a declared carve-out)
  *
  * `os.homedir()` is banned in server code (Hard Rule 3) because DorkOS's own
  * data directory is `resolveDorkHome()`, which is NOT the home directory
- * whenever `DORK_HOME` is redirected. **This module is not a granted carve-out.**
- * AGENTS.md names `lib/dork-home.ts` as the sole one, `.claude/rules/dork-home.md`
- * says the same, and `eslint.config.js` ignores only that file — and none of
- * that was amended by the change that wrote this comment (DOR-662), which found
- * these calls rather than added them. They survive lint today only because the
- * rule is a `no-restricted-imports` ban on the NAMED import (`importNames:
- * ['homedir']`), and this file uses `import os from 'os'`.
+ * whenever `DORK_HOME` is redirected. This module is one of the rule's declared
+ * carve-outs, listed with the others in `.claude/rules/dork-home.md`. It is the
+ * only one granted per CALL SITE rather than per file: the two calls below carry
+ * inline disables, so a third one added anywhere else in this file is still a
+ * lint error.
  *
- * So this is the argument, offered for review, not a permission slip. Two calls
- * mean *the person's home*, and reaching them for dork-home would be its own bug:
+ * Both calls mean *the person's home*, and reaching them for dork-home would be
+ * its own bug:
  *
  * - {@link initBoundary}'s default root — with no boundary configured, DorkOS
  *   may reach anywhere under the home directory of whoever ran it. Confining
@@ -49,16 +47,18 @@ import { resolveDorkHome } from './dork-home.js';
  *   Resolving it anywhere else would silently redirect a directory they chose
  *   for themselves.
  *
- * The argument stops there, and this is the part that had actually gone wrong:
+ * The carve-out stops there, and this is the part that had actually gone wrong:
  * it does not extend to DorkOS's own defaults. A default that merely SPELLS a
  * DorkOS directory with a `~` (`agents.defaultDirectory`) must be resolved
  * against dork-home, through `lib/agents-home.ts`. Putting that one through
  * {@link expandTilde} wrote newly created agents into an operator's real
- * `~/.dork/agents` from a dev tree.
+ * `~/.dork/agents` from a dev tree (DOR-662).
  *
- * If you are here to decide whether the rule should record this exception, or to
- * close the lint gap that let these calls through, that is DOR-668 — do not read
- * this comment as either having been decided.
+ * One gap worth knowing, since this header argues at length about "the person's
+ * home": the lint guard covers `os.homedir()`, not the env vars underneath it.
+ * `process.env.HOME` and `process.env.USERPROFILE` reach the same directory and
+ * are only a `no-restricted-syntax` WARNING (the general process.env rule), so
+ * they would slip past. Nothing in the server reads them today.
  *
  * @module lib/boundary
  */
@@ -85,6 +85,7 @@ let resolvedBoundary: string | null = null;
  * @returns The resolved canonical boundary path
  */
 export async function initBoundary(boundary?: string | null): Promise<string> {
+  // eslint-disable-next-line no-restricted-properties -- declared carve-out (see module header): with no boundary configured, the reachable area IS the operator's home, not dork-home
   const raw = boundary ?? os.homedir();
   resolvedBoundary = await fs.realpath(raw);
   return resolvedBoundary;
@@ -120,9 +121,10 @@ export function getBoundary(): string {
  * @returns Path with tilde expanded to `os.homedir()`
  */
 export function expandTilde(userPath: string): string {
-  if (userPath === '~') return os.homedir();
-  if (userPath.startsWith('~/')) return path.join(os.homedir(), userPath.slice(2));
-  return userPath;
+  if (userPath !== '~' && !userPath.startsWith('~/')) return userPath;
+  // eslint-disable-next-line no-restricted-properties -- declared carve-out (see module header): a `~` a PERSON typed means their home, not dork-home
+  const home = os.homedir();
+  return userPath === '~' ? home : path.join(home, userPath.slice(2));
 }
 
 /**
