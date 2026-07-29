@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -7,11 +8,15 @@ import {
   Plus,
   Clock,
   Server,
+  UserRound,
   X,
   type LucideIcon,
 } from 'lucide-react';
+import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useAgentCreationStore, useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
 import { useDefaultAgentSession } from '@/layers/entities/config';
+import { useProfile } from '../model/use-profile';
+import { ProfileRolePicker } from './ProfileRolePicker';
 
 interface ProgressCardProps {
   /** Called when the user dismisses the getting-started card permanently. */
@@ -24,12 +29,22 @@ interface GettingStartedItem {
   onClick: () => void;
 }
 
+/** Where the inline role picker is in its closed → open → saving arc. */
+type ProfileRowPhase = 'closed' | 'open' | 'saving' | 'error';
+
 /**
  * Compact sidebar "Getting started" card. The first row starts a conversation
  * with the default agent (DorkBot on a fresh install); the rest are deep links
  * into the real surface for each task — creating an agent, scheduling a task,
  * connecting more runtimes — rather than a replay of onboarding steps. Shown
  * after the first-run flow finishes, until the user dismisses it.
+ *
+ * While the profile is still empty, a "Tell DorkBot about your work" row sits
+ * right after "Talk to DorkBot" and expands the shared role picker inline
+ * (spec `user-profile-onboarding` §ProgressCard items). A "Connect a service"
+ * row is deliberately NOT here yet: the Connections page it would deep-link to
+ * ships in `specs/connector-completion`, and until that route exists the row
+ * would be a dead link.
  */
 export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
@@ -37,6 +52,28 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const { open: openSettings } = useSettingsDeepLink();
   const requestTour = useAppStore((s) => s.requestTour);
   const { startSession } = useDefaultAgentSession();
+  const { roles, rolePromptDismissedAt, saveRoles } = useProfile();
+
+  const [profilePhase, setProfilePhase] = useState<ProfileRowPhase>('closed');
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+
+  // Only while nothing is saved and the one-time prompt was not waved off; the
+  // row disappears on its own once roles exist.
+  const showProfileRow = roles.length === 0 && rolePromptDismissedAt === null;
+
+  const handleProfileSave = () => {
+    setProfilePhase('saving');
+    saveRoles(selectedRoles)
+      .then(() => setProfilePhase('closed'))
+      .catch(() => setProfilePhase('error'));
+  };
+
+  let profileConfirmLabel = 'Save';
+  if (profilePhase === 'saving') {
+    profileConfirmLabel = 'Saving…';
+  } else if (profilePhase === 'error') {
+    profileConfirmLabel = 'Try again';
+  }
 
   const items: GettingStartedItem[] = [
     {
@@ -44,6 +81,15 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
       label: 'Talk to DorkBot',
       onClick: startSession,
     },
+    ...(showProfileRow
+      ? [
+          {
+            icon: UserRound,
+            label: 'Tell DorkBot about your work',
+            onClick: () => setProfilePhase((phase) => (phase === 'closed' ? 'open' : 'closed')),
+          },
+        ]
+      : []),
     {
       icon: Compass,
       label: 'Show me around',
@@ -89,11 +135,26 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
             <button
               onClick={onClick}
               className="hover:bg-accent group flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors duration-150"
+              aria-expanded={
+                label === 'Tell DorkBot about your work' ? profilePhase !== 'closed' : undefined
+              }
             >
               <Icon className="text-muted-foreground size-3.5 shrink-0" />
               <span className="text-foreground flex-1 text-xs">{label}</span>
               <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground size-3.5 shrink-0 transition-colors" />
             </button>
+            {label === 'Tell DorkBot about your work' && profilePhase !== 'closed' && (
+              <div className="px-1.5 py-2" data-testid="progress-card-profile-picker">
+                <ProfileRolePicker
+                  selected={selectedRoles}
+                  onChange={setSelectedRoles}
+                  onConfirm={handleProfileSave}
+                  confirmLabel={profileConfirmLabel}
+                  busy={profilePhase === 'saving'}
+                  error={profilePhase === 'error' ? DORKBOT_ONBOARDING_LINES.saveError : null}
+                />
+              </div>
+            )}
           </li>
         ))}
       </ul>

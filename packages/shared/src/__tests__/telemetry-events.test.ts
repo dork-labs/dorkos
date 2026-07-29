@@ -299,4 +299,50 @@ describe('telemetry event registry', () => {
       ).toBe(false);
     });
   });
+
+  // The profile never leaves the machine (spec user-profile-onboarding
+  // §Privacy invariant). The usage catalog is a strict allowlist; these pin
+  // that no event schema accepts a `profile` property and that no catalog
+  // payload names a profile field, so a future event silently carrying the
+  // profile is a red build, not a policy violation nobody noticed.
+  describe('profile exclusion (user-profile-onboarding privacy invariant)', () => {
+    const PROFILE_PAYLOAD = { roles: ['hiring'], displayName: 'Dorian' };
+
+    it('no event schema accepts a `profile` property (strict allowlist holds)', () => {
+      for (const valid of [APP_STARTED, SESSION_CREATED]) {
+        expect(
+          TelemetryEventSchema.safeParse({
+            ...valid,
+            properties: { ...valid.properties, profile: PROFILE_PAYLOAD },
+          }).success
+        ).toBe(false);
+        expect(TelemetryEventSchema.safeParse({ ...valid, profile: PROFILE_PAYLOAD }).success).toBe(
+          false
+        );
+      }
+    });
+
+    it('no catalog property is named after a profile field', async () => {
+      // Introspect every property allowlist in the module: any z.object export
+      // whose name ends in Properties (usage, feedback, exception, AI carve-outs).
+      const registry = await import('../telemetry-events.js');
+      const bannedKeys = ['profile', 'roles', 'displayName', 'rolePromptDismissedAt'];
+      const propertySchemas = Object.entries(registry).filter(
+        ([name, value]) =>
+          /Properties(Schema)?$/.test(name) &&
+          typeof value === 'object' &&
+          value !== null &&
+          'shape' in value
+      );
+      // The registry currently carries six property allowlists; if this count
+      // drops, the introspection stopped seeing schemas and the test is lying.
+      expect(propertySchemas.length).toBeGreaterThanOrEqual(6);
+      for (const [, schema] of propertySchemas) {
+        const keys = Object.keys((schema as { shape: Record<string, unknown> }).shape);
+        for (const banned of bannedKeys) {
+          expect(keys).not.toContain(banned);
+        }
+      }
+    });
+  });
 });

@@ -70,6 +70,7 @@ describe('UserConfigSchema', () => {
         completedAt: null,
       },
       tours: { seen: [], declined: [] },
+      profile: { roles: [], tools: [], displayName: null, rolePromptDismissedAt: null },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -376,6 +377,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         completedAt: null,
       },
       tours: { seen: [], declined: [] },
+      profile: { roles: [], tools: [], displayName: null, rolePromptDismissedAt: null },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
       agents: { defaultDirectory: '~/.dork/agents', defaultAgent: 'dorkbot' },
@@ -552,7 +554,7 @@ describe('ONBOARDING_STEPS', () => {
   });
 
   it('contains all expected steps', () => {
-    expect(ONBOARDING_STEPS).toEqual(['meet-dorkbot', 'discovery']);
+    expect(ONBOARDING_STEPS).toEqual(['meet-dorkbot', 'profile', 'discovery']);
   });
 });
 

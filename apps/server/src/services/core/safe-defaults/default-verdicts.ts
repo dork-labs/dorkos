@@ -133,6 +133,15 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'onboarding.completedAt',
   'tours.seen',
   'tours.declined',
+  // The user profile (spec user-profile-onboarding): empty/null defaults send
+  // nothing, grant nothing, and relax no bound. No PROTECTIVE_CARRYOVERS rule:
+  // no leaf has a "more protective" direction — losing a profile to a config
+  // wipe loses a preference, not a protection, and `rolePromptDismissedAt`
+  // resetting merely re-shows one dismissible card.
+  'profile.roles',
+  'profile.tools',
+  'profile.displayName',
+  'profile.rolePromptDismissedAt',
   'agents.defaultDirectory',
   'agents.defaultAgent',
   'workspace.enabled',

@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import os from 'node:os';
+import { UserConfigSchema } from '@dorkos/shared/config-schema';
 
 const { mockReadFile, mockWriteFile, mockMkdir } = vi.hoisted(() => ({
   mockReadFile: vi.fn(),
@@ -192,6 +193,51 @@ describe('heartbeat-reporter', () => {
       expect(bodyString).not.toContain(username);
       expect(bodyString).not.toContain(cwd);
       expect(bodyString).not.toMatch(/"\/(?:Users|home|var|etc|opt)/);
+    });
+
+    // The profile never leaves the machine (spec user-profile-onboarding
+    // §Privacy invariant). HeartbeatPayload is a closed interface with no
+    // profile field; this pins that a config carrying a fully-populated
+    // profile still contributes nothing profile-shaped to the wire body. It
+    // goes red if anyone threads a profile field into HeartbeatInput/
+    // HeartbeatPayload and derives it from config the way the boot wiring
+    // (index.ts registerHeartbeat) derives every other config-read input.
+    it('a fully-populated profile never reaches the heartbeat wire body', async () => {
+      const SENTINELS = [
+        'SENTINEL-ROLE-hiring',
+        'SENTINEL-TOOL-greenhouse',
+        'SENTINEL-NAME-dorian',
+      ];
+      const config = UserConfigSchema.parse({
+        version: 1,
+        profile: {
+          roles: [SENTINELS[0]],
+          tools: [SENTINELS[1]],
+          displayName: SENTINELS[2],
+          rolePromptDismissedAt: '2026-07-29T00:00:00.000Z',
+        },
+        telemetry: { heartbeat: true, userHasDecided: true },
+      });
+
+      // Mirror the boot wiring: every heartbeat input that reads config is
+      // derived from THIS config, so anything the payload could carry from a
+      // profile-bearing config would show up here.
+      await maybeSendHeartbeat(
+        makeOptions({
+          runtimesConfigured: ['claude-code'],
+          tunnelEnabled: config.tunnel.enabled,
+          cloudLinked: config.cloud.instanceToken != null,
+        })
+      );
+
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const bodyString = init.body as string;
+      for (const sentinel of SENTINELS) {
+        expect(bodyString).not.toContain(sentinel);
+      }
+      const body = JSON.parse(bodyString) as Record<string, unknown>;
+      expect(Object.keys(body)).not.toContain('profile');
+      expect(bodyString.toLowerCase()).not.toContain('"profile"');
     });
   });
 

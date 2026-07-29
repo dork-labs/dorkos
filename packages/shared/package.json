@@ -41,6 +41,10 @@
       "types": "./src/config-schema.ts",
       "default": "./dist/config-schema.js"
     },
+    "./profile-recommendations": {
+      "types": "./src/profile-recommendations.ts",
+      "default": "./dist/profile-recommendations.js"
+    },
     "./error-report": {
       "types": "./src/error-report.ts",
       "default": "./dist/error-report.js"

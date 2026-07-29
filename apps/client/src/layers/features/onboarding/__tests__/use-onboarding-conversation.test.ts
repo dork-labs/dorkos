@@ -23,6 +23,7 @@ function makePorts(
   return {
     reducedMotion: true,
     saveTraits: vi.fn().mockResolvedValue(undefined),
+    saveProfile: vi.fn().mockResolvedValue(undefined),
     completeStep: vi.fn(),
     skipStep: vi.fn(),
     completeOnboarding: vi.fn(),
@@ -54,7 +55,7 @@ describe('useOnboardingConversation', () => {
     expect(result.current.composerEnabled).toBe(false);
   });
 
-  it('confirming personality saves traits, completes the step, and advances to discovery', async () => {
+  it('confirming personality saves traits, completes the step, and advances to the profile beat', async () => {
     const ports = makePorts();
     const { result } = renderHook(() => useOnboardingConversation(ports));
     act(() => result.current.beginConversation());
@@ -62,14 +63,14 @@ describe('useOnboardingConversation', () => {
 
     act(() => result.current.confirmPersonality({ ...TRAITS, humor: 5 }));
 
-    await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
+    await waitFor(() => expect(result.current.activeWidget).toBe('profile'));
     expect(ports.saveTraits).toHaveBeenCalledWith({ ...TRAITS, humor: 5 });
     expect(ports.completeStep).toHaveBeenCalledWith('meet-dorkbot');
-    expect(result.current.discoveryPhase).toBe('unasked');
-    expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.discoveryPrompt);
+    expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.profilePrompt[0]);
+    expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.profilePrompt[1]);
   });
 
-  it('skipping personality advances one beat without writing traits (DOR-472)', async () => {
+  it('skipping personality advances one beat, to the profile question, without writing traits (DOR-472)', async () => {
     const ports = makePorts();
     const { result } = renderHook(() => useOnboardingConversation(ports));
     act(() => result.current.beginConversation());
@@ -78,24 +79,26 @@ describe('useOnboardingConversation', () => {
     act(() => result.current.skipPersonality());
 
     // One beat forward, not out of the conversation.
-    await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
-    expect(result.current.beatId).toBe('discovery');
+    await waitFor(() => expect(result.current.activeWidget).toBe('profile'));
+    expect(result.current.beatId).toBe('profile');
     expect(ports.saveTraits).not.toHaveBeenCalled();
     expect(ports.completeStep).not.toHaveBeenCalled();
     expect(ports.skipStep).toHaveBeenCalledWith('meet-dorkbot');
     expect(ports.completeOnboarding).not.toHaveBeenCalled();
     expect(ports.onDissolve).not.toHaveBeenCalled();
     expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.personalitySkip);
-    expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.discoveryPrompt);
+    expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.profilePrompt[0]);
   });
 
-  it('skipping both beats in turn reaches the handoff (never an exit)', async () => {
+  it('skipping every beat in turn reaches the handoff (never an exit)', async () => {
     const ports = makePorts();
     const { result } = renderHook(() => useOnboardingConversation(ports));
     act(() => result.current.beginConversation());
     await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
 
     act(() => result.current.skipPersonality());
+    await waitFor(() => expect(result.current.activeWidget).toBe('profile'));
+    act(() => result.current.skipProfile());
     await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
     act(() => result.current.declineDiscovery());
 
@@ -103,6 +106,81 @@ describe('useOnboardingConversation', () => {
     expect(result.current.composerEnabled).toBe(true);
     expect(ports.completeOnboarding).toHaveBeenCalledTimes(1);
     expect(ports.onDissolve).not.toHaveBeenCalled();
+  });
+
+  describe('profile beat', () => {
+    /** Advance a fresh conversation to the profile widget. */
+    async function reachProfile(ports: OnboardingConversationPorts) {
+      const rendered = renderHook(() => useOnboardingConversation(ports));
+      act(() => rendered.result.current.beginConversation());
+      await waitFor(() => expect(rendered.result.current.activeWidget).toBe('personality'));
+      act(() => rendered.result.current.confirmPersonality(TRAITS));
+      await waitFor(() => expect(rendered.result.current.activeWidget).toBe('profile'));
+      return rendered;
+    }
+
+    it('confirm saves the roles, completes the step, and advances to discovery', async () => {
+      const ports = makePorts();
+      const { result } = await reachProfile(ports);
+
+      act(() => result.current.confirmProfile(['hiring']));
+
+      await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
+      expect(ports.saveProfile).toHaveBeenCalledWith(['hiring']);
+      expect(ports.completeStep).toHaveBeenCalledWith('profile');
+      expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.discoveryPrompt);
+    });
+
+    it('speaks exactly one suggestion line when the mapping matches the roles', async () => {
+      const ports = makePorts();
+      const { result } = await reachProfile(ports);
+
+      act(() => result.current.confirmProfile(['hiring']));
+
+      await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
+      const suggestionLines = contents(result.current.messages).filter((c) =>
+        c.includes('usually connect')
+      );
+      expect(suggestionLines).toHaveLength(1);
+      expect(suggestionLines[0]).toContain('Gmail');
+      expect(suggestionLines[0]).toContain('Greenhouse');
+    });
+
+    it('speaks no suggestion line for a free-form role with no alias match', async () => {
+      const ports = makePorts();
+      const { result } = await reachProfile(ports);
+
+      act(() => result.current.confirmProfile(['beekeeper']));
+
+      await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
+      expect(contents(result.current.messages).some((c) => c.includes('usually connect'))).toBe(
+        false
+      );
+      expect(ports.completeStep).toHaveBeenCalledWith('profile');
+    });
+
+    it('a failed save shows the retry state and never advances the beat', async () => {
+      const ports = makePorts({ saveProfile: vi.fn().mockRejectedValue(new Error('nope')) });
+      const { result } = await reachProfile(ports);
+
+      act(() => result.current.confirmProfile(['hiring']));
+
+      await waitFor(() => expect(result.current.saveError).toBe(true));
+      expect(result.current.activeWidget).toBe('profile');
+      expect(ports.completeStep).not.toHaveBeenCalledWith('profile');
+    });
+
+    it('skip records skipStep("profile"), writes nothing, and advances with the skip line', async () => {
+      const ports = makePorts();
+      const { result } = await reachProfile(ports);
+
+      act(() => result.current.skipProfile());
+
+      await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
+      expect(ports.saveProfile).not.toHaveBeenCalled();
+      expect(ports.skipStep).toHaveBeenCalledWith('profile');
+      expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.profileSkip);
+    });
   });
 
   it('surfaces a save error and does not advance when saving fails', async () => {
@@ -124,6 +202,8 @@ describe('useOnboardingConversation', () => {
     act(() => result.current.beginConversation());
     await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
     act(() => result.current.confirmPersonality(TRAITS));
+    await waitFor(() => expect(result.current.activeWidget).toBe('profile'));
+    act(() => result.current.skipProfile());
     await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
 
     act(() => result.current.consentDiscovery());
@@ -136,6 +216,8 @@ describe('useOnboardingConversation', () => {
     act(() => result.current.beginConversation());
     await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
     act(() => result.current.confirmPersonality(TRAITS));
+    await waitFor(() => expect(result.current.activeWidget).toBe('profile'));
+    act(() => result.current.skipProfile());
     await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
 
     act(() => result.current.declineDiscovery());
@@ -154,6 +236,8 @@ describe('useOnboardingConversation', () => {
     act(() => result.current.beginConversation());
     await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
     act(() => result.current.confirmPersonality(TRAITS));
+    await waitFor(() => expect(result.current.activeWidget).toBe('profile'));
+    act(() => result.current.skipProfile());
     await waitFor(() => expect(result.current.activeWidget).toBe('discovery'));
 
     act(() => result.current.reportDiscoveryResults(3));
@@ -171,6 +255,8 @@ describe('useOnboardingConversation', () => {
     act(() => zero.result.current.beginConversation());
     await waitFor(() => expect(zero.result.current.activeWidget).toBe('personality'));
     act(() => zero.result.current.confirmPersonality(TRAITS));
+    await waitFor(() => expect(zero.result.current.activeWidget).toBe('profile'));
+    act(() => zero.result.current.skipProfile());
     await waitFor(() => expect(zero.result.current.activeWidget).toBe('discovery'));
     act(() => zero.result.current.reportDiscoveryZero());
     await waitFor(() => expect(zero.result.current.beatId).toBe('handoff'));
@@ -184,6 +270,8 @@ describe('useOnboardingConversation', () => {
     act(() => to.result.current.beginConversation());
     await waitFor(() => expect(to.result.current.activeWidget).toBe('personality'));
     act(() => to.result.current.confirmPersonality(TRAITS));
+    await waitFor(() => expect(to.result.current.activeWidget).toBe('profile'));
+    act(() => to.result.current.skipProfile());
     await waitFor(() => expect(to.result.current.activeWidget).toBe('discovery'));
     act(() => to.result.current.reportDiscoveryTimeout());
     await waitFor(() => expect(to.result.current.beatId).toBe('handoff'));

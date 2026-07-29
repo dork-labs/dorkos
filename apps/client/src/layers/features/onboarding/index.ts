@@ -18,3 +18,4 @@ export { WelcomeStep } from './ui/WelcomeStep';
 export { OnboardingConversation } from './ui/OnboardingConversation';
 export { OnboardingNavBar } from './ui/OnboardingNavBar';
 export { ProgressCard } from './ui/ProgressCard';
+export { ProfilePromptCard } from './ui/ProfilePromptCard';

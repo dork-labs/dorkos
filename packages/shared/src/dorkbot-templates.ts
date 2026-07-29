@@ -9,6 +9,7 @@
  */
 
 import type { Traits } from './mesh-schemas.js';
+import type { ProfileRecommendation } from './profile-recommendations.js';
 
 /**
  * Generate a AGENTS.md template for the DorkBot agent.
@@ -69,6 +70,27 @@ export const DORKBOT_ONBOARDING_LINES = {
   /** Reply when the user skips the personality step without picking one (Beat 1). */
   personalitySkip:
     'Sticking with my default voice then. You can change it any time in my settings.',
+  /**
+   * The role-beat question (spec `user-profile-onboarding`). Two lines, revealed
+   * one after the other: the question, then the privacy fact in the same breath.
+   * The privacy line describes tested behavior (the profile is structurally
+   * excluded from every telemetry payload), not marketing.
+   */
+  profilePrompt: [
+    "Now I know how to sound. Here's one for you: what kind of work will we be doing together?",
+    "Your answer stays on this machine. It's for me and your other agents, so we know who we work for. Nobody else sees it.",
+  ],
+  /** Reply when the user skips the role beat. Skipping counts as asked, forever. */
+  profileSkip: 'No problem. Tell me any time.',
+  /** Thanks line after roles are saved from the existing-user prompt card. */
+  profileSaved: 'Noted. Your agents know now.',
+  /**
+   * The one-time existing-user prompt (sidebar card, never a modal). Users who
+   * onboarded before the role beat existed hear the same question once, with the
+   * same privacy fact in the same breath.
+   */
+  profileCardPrompt:
+    'I work better knowing who I work for. What kind of work do you do? Your answer stays on this machine, for your agents only.',
   /** Consent question before any filesystem scan runs (Beat 2). */
   discoveryPrompt: 'Want me to look around this machine for projects and agents you already have?',
   /** Shown while the consented scan is running (Beat 2). */
@@ -142,6 +164,76 @@ export const DORKBOT_TOUR_LINES = {
 export function dorkbotDiscoveryFoundLine(count: number): string {
   const noun = count === 1 ? 'one' : `${count}`;
   return `Found ${noun}. Want them in your fleet?`;
+}
+
+/**
+ * The authored who/why phrasing behind {@link dorkbotProfileSuggestionLine},
+ * one pair per canon role. Plain language, no em dashes, no hype.
+ */
+const PROFILE_SUGGESTION_PHRASES: Record<string, { who: string; why: string }> = {
+  'software-development': {
+    who: 'People who build software',
+    why: 'so their agents can watch the code and the tickets',
+  },
+  hiring: {
+    who: 'People who hire',
+    why: 'so their agents can work the inbox and the pipeline',
+  },
+  marketing: {
+    who: 'People who do marketing',
+    why: 'so their agents can keep up with the campaigns and the channels',
+  },
+  writing: {
+    who: 'People who write',
+    why: 'so their agents can reach the drafts and the notes',
+  },
+  research: {
+    who: 'People who do research',
+    why: 'so their agents can gather sources and keep notes',
+  },
+  'business-ops': {
+    who: 'People who run a business',
+    why: 'so their agents can keep the inbox and the day-to-day moving',
+  },
+  design: {
+    who: 'People who design',
+    why: 'so their agents can stay close to the files and the feedback',
+  },
+  sales: {
+    who: 'People in sales',
+    why: 'so their agents can watch the pipeline and the follow-ups',
+  },
+};
+
+/** Join up to three service names as spoken prose ("Gmail and Greenhouse"). */
+function joinServiceNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+/**
+ * DorkBot's one authored suggestion line after the role beat saves
+ * (spec `user-profile-onboarding` §The role beat).
+ *
+ * Names at most three services and never claims anything is set up or
+ * configured — mid-onboarding OAuth is a non-goal. The copy deliberately ends
+ * at "any time" rather than naming the Connections page: that page ships in
+ * `specs/connector-completion`, and the demo-claim gate says nothing speaks of
+ * a surface that does not exist yet. Once that spec lands, this is the line to
+ * upgrade to "the Connections page has these waiting".
+ *
+ * @param recs - Suggestions from `recommendForRoles`; an empty array returns
+ *   `''` (the beat advances silently instead of speaking).
+ */
+export function dorkbotProfileSuggestionLine(recs: readonly ProfileRecommendation[]): string {
+  if (recs.length === 0) return '';
+  const phrase = PROFILE_SUGGESTION_PHRASES[recs[0].role] ?? {
+    who: 'People who do your kind of work',
+    why: 'so their agents can meet them where the work happens',
+  };
+  const names = joinServiceNames(recs.slice(0, 3).map((r) => r.name));
+  return `${phrase.who} usually connect ${names}, ${phrase.why}. You can set those up any time.`;
 }
 
 /**

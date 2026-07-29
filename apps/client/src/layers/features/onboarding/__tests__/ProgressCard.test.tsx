@@ -12,7 +12,9 @@ import {
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
-import { mergeDialogSearch } from '@/layers/shared/model';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
+import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 
 vi.mock('motion/react', () => ({
   motion: {
@@ -46,6 +48,12 @@ vi.mock('@/layers/entities/config', () => ({
 
 import { ProgressCard } from '../ui/ProgressCard';
 
+/** The profile fragment of the config the card's `useProfile` reads. */
+interface ProfileOverrides {
+  roles?: string[];
+  rolePromptDismissedAt?: string | null;
+}
+
 // ── Router harness ───────────────────────────────────────────
 //
 // The card's deep links are URL navigations, so it renders inside a real
@@ -55,7 +63,19 @@ import { ProgressCard } from '../ui/ProgressCard';
 
 const searchSchema = mergeDialogSearch(z.object({}));
 
-async function renderCard(onDismiss = vi.fn()) {
+async function renderCard(onDismiss = vi.fn(), profile: ProfileOverrides = {}) {
+  const mockTransport = createMockTransport();
+  vi.mocked(mockTransport.getConfig).mockResolvedValue({
+    profile: {
+      roles: profile.roles ?? [],
+      tools: [],
+      displayName: null,
+      rolePromptDismissedAt: profile.rolePromptDismissedAt ?? null,
+    },
+  } as unknown as Awaited<ReturnType<typeof mockTransport.getConfig>>);
+  vi.mocked(mockTransport.updateConfig).mockResolvedValue(undefined);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
   const rootRoute = createRootRoute();
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -74,12 +94,21 @@ async function renderCard(onDismiss = vi.fn()) {
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
 
-  render(<RouterProvider router={router} />);
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={mockTransport}>
+        <RouterProvider router={router} />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
   await waitFor(() => expect(router.state.status).toBe('idle'));
+  // Let the config query settle so the profile row's visibility is decided.
+  await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
 
   return {
     router,
     onDismiss,
+    mockTransport,
     readSettingsTab: () => (router.state.location.search as { settings?: string }).settings,
   };
 }
@@ -152,6 +181,53 @@ describe('ProgressCard', () => {
     // Asserting the row merely fired an action is what let it silently land on
     // Appearance for as long as it did (DOR-484).
     await waitFor(() => expect(harness.readSettingsTab()).toBe('runtimes'));
+  });
+
+  describe('"Tell DorkBot about your work" row (user-profile-onboarding)', () => {
+    it('appears while roles are empty, right after Talk to DorkBot', async () => {
+      await renderCard();
+
+      const row = await screen.findByText('Tell DorkBot about your work');
+      expect(row).toBeTruthy();
+      const rows = screen.getAllByRole('button').map((b) => b.textContent);
+      const talkIdx = rows.findIndex((r) => r?.includes('Talk to DorkBot'));
+      const workIdx = rows.findIndex((r) => r?.includes('Tell DorkBot about your work'));
+      expect(workIdx).toBe(talkIdx + 1);
+    });
+
+    it('is absent once roles exist', async () => {
+      await renderCard(vi.fn(), { roles: ['hiring'] });
+      expect(screen.queryByText('Tell DorkBot about your work')).toBeNull();
+    });
+
+    it('is absent after the one-time prompt was dismissed', async () => {
+      await renderCard(vi.fn(), { rolePromptDismissedAt: '2026-01-03T00:00:00.000Z' });
+      expect(screen.queryByText('Tell DorkBot about your work')).toBeNull();
+    });
+
+    it('expands the inline picker and writes { profile: { roles } } on Save', async () => {
+      const harness = await renderCard();
+      await screen.findByText('Tell DorkBot about your work');
+
+      fireEvent.click(screen.getByText('Tell DorkBot about your work'));
+      expect(await screen.findByTestId('progress-card-profile-picker')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Hiring people' }));
+      fireEvent.click(screen.getByTestId('confirm-profile'));
+
+      await waitFor(() =>
+        expect(harness.mockTransport.updateConfig).toHaveBeenCalledWith({
+          profile: { roles: ['hiring'] },
+        })
+      );
+    });
+
+    it('has no "Connect a service" row until the Connections route exists (never a dead link)', async () => {
+      // specs/connector-completion ships that surface; this goes red if the row
+      // lands before the route it deep-links to.
+      await renderCard();
+      expect(screen.queryByText('Connect a service')).toBeNull();
+    });
   });
 
   it('dismiss button calls onDismiss', async () => {

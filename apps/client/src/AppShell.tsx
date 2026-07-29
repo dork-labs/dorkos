@@ -37,6 +37,7 @@ import {
   useClearOnboardingStageWhenDone,
   OnboardingFlow,
   ProgressCard,
+  ProfilePromptCard,
 } from '@/layers/features/onboarding';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
@@ -442,6 +443,12 @@ export function AppShell() {
                           <ProgressCard onDismiss={dismissOnboarding} />
                         </div>
                       )}
+                      {/* One-time role prompt for users who onboarded before the
+                          profile beat existed. Self-gating (renders null unless
+                          its whole show condition holds, including "ProgressCard
+                          is not visible"), so mounting it unconditionally is
+                          safe — never two cards. */}
+                      <ProfilePromptCard />
                       <SidebarFooterBar />
                     </SidebarFooter>
                     <SidebarRail />
