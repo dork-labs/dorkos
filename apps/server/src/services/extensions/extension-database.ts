@@ -1,9 +1,10 @@
 /**
  * Per-extension SQLite connection management.
  *
- * Each extension owns a single `store.db` file, opened with the same house
- * pragmas as `@dorkos/db` (`createDb`) — WAL journaling, NORMAL sync, a 5s busy
- * timeout, and foreign-key enforcement. Unlike `@dorkos/db`, this layer bundles
+ * Each extension owns a single `store.db` file, opened with four house pragmas:
+ * WAL journaling, NORMAL sync, a 5s busy timeout, and foreign-key enforcement.
+ * Deliberately NOT `recursive_triggers`, which `@dorkos/db`'s `createDb` also
+ * sets — see {@link openExtensionDb}. Unlike `@dorkos/db`, this layer bundles
  * no Drizzle schema: the schema is extension-owned and declared as manifest
  * migrations, so we open the raw `better-sqlite3` handle directly.
  *
@@ -27,9 +28,21 @@ const DEFAULT_MAX_CONNECTIONS = 32;
 /**
  * Open (or create) an extension's SQLite database with the DorkOS house pragmas.
  *
- * Mirrors `@dorkos/db`'s `createDb`: WAL journaling, `synchronous = NORMAL`, a
- * 5-second busy timeout, and foreign-key enforcement. The caller owns the
- * returned handle's lifecycle (close it, or hand it to {@link ExtensionDbCache}).
+ * Applies four of `createDb`'s five pragmas: WAL journaling,
+ * `synchronous = NORMAL`, a 5-second busy timeout, and foreign-key enforcement.
+ *
+ * **Deliberately not `recursive_triggers`, and do not "re-sync" the two.** An
+ * extension migration is the one place in DorkOS where third-party `CREATE
+ * TRIGGER` is allowed (`packages/extension-api/src/manifest-schema.ts`), so
+ * these databases can hold triggers nobody here has read. `recursive_triggers`
+ * changes when a trigger fires — it makes DELETE triggers run for rows that
+ * `REPLACE` removes, and lets triggers fire each other — so turning it on would
+ * silently give an extension's trigger behaviour it was never written for.
+ * `createDb` sets it because the message-search index needs it and `@dorkos/db`
+ * owns every trigger in that database; neither is true here.
+ *
+ * The caller owns the returned handle's lifecycle (close it, or hand it to
+ * {@link ExtensionDbCache}).
  *
  * @param dbPath - Absolute path to `store.db`, or `':memory:'` for tests
  */
