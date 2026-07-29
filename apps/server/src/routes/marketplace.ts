@@ -900,6 +900,7 @@ function flattenMergedEntry(
     category: primaryCategory(entry.dorkos?.categories, entry.category),
     tags: entry.tags,
     type: entry.dorkos?.type,
+    adapterType: entry.dorkos?.adapterType,
     icon: entry.dorkos?.icon,
     featured: entry.dorkos?.featured,
     marketplace,

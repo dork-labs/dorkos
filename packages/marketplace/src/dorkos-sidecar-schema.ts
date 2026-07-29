@@ -42,6 +42,16 @@ export const DorkosEntrySchema = z.object({
   /** DorkOS package type discriminator. Defaults to `plugin` when absent. */
   type: z.enum(['agent', 'plugin', 'skill-pack', 'adapter', 'shape']).optional(),
   /**
+   * Adapter type identifier, mirroring the package manifest's `adapterType`
+   * (see `AdapterManifestSchema` in `manifest-schema.ts`). Browse aggregation
+   * reads only `marketplace.json` + this sidecar — it never clones the package
+   * to parse its manifest — so an adapter package that wants to be
+   * discoverable by its adapter type (notably connectors, the well-known
+   * `CONNECTOR_ADAPTER_TYPE` value) must repeat it here. Meaningful only when
+   * `type` is `adapter`; ignored otherwise.
+   */
+  adapterType: z.string().min(1).max(64).optional(),
+  /**
    * Human-readable display name shown in browse and creation UIs. Absent → the
    * UI humanizes the kebab-case `name`, so an agent package never presents its
    * raw slug on a card.

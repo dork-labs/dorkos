@@ -73,6 +73,14 @@ export interface AggregatedPackage {
   keywords?: string[];
   /** DorkOS extension: package type (defaults to `plugin` when absent). */
   type?: MarketplacePackageType;
+  /**
+   * DorkOS extension: adapter type identifier from the sidecar, mirroring the
+   * package manifest's `adapterType` (e.g. `'slack'`, or the well-known
+   * `'connector'` marking a connector-gateway package — `CONNECTOR_ADAPTER_TYPE`
+   * in `@dorkos/marketplace`). Present only for adapter packages whose sidecar
+   * declares it; absent for every other package type.
+   */
+  adapterType?: string;
   /** DorkOS extension: browsing category (primary — equals `categories[0]` when present). */
   category?: string;
   /** DorkOS extension: controlled multi-membership categories (ADR-0236 sidecar). */
