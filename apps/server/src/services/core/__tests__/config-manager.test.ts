@@ -16,6 +16,7 @@ import {
   backfillSidebarSettingsDefaults,
   backfillSidebarRoomSections,
   backfillRoomsDefaults,
+  backfillConnectorsDefaults,
   backfillSmartGroupKindDefaults,
   migrateSidebarMembersToItemRefs,
   CONFIG_MIGRATIONS,
@@ -61,6 +62,7 @@ function createMockStore(initial: Record<string, unknown>) {
   return {
     data,
     get: (key: string) => data[key],
+    has: (key: string) => data[key] !== undefined,
     set: (key: string, value: unknown) => {
       data[key] = value;
     },
@@ -1141,6 +1143,54 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
       trustWindowMinutes: 480,
       standingGrantsVoidBefore: null,
     });
+    // The connector-completion `connectors` backfill rides the same composite.
+    expect(store.data.connectors).toEqual({ rawMcpServers: [] });
+  });
+});
+
+describe('backfillConnectorsDefaults migration (connector-completion, raw-MCP config)', () => {
+  it('seeds an empty rawMcpServers list for a config persisted before the section existed', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillConnectorsDefaults(store);
+    expect(store.data.connectors).toEqual({ rawMcpServers: [] });
+  });
+
+  it('is idempotent and never overwrites a configured server list', () => {
+    const configured = {
+      rawMcpServers: [
+        {
+          slug: 'notion',
+          displayName: 'Notion',
+          url: 'https://mcp.notion.example',
+          transport: 'http',
+        },
+      ],
+    };
+    const store = createMockStore({ connectors: configured });
+    backfillConnectorsDefaults(store);
+    backfillConnectorsDefaults(store);
+    expect(store.data.connectors).toEqual(configured);
+  });
+
+  it('migrates a real pre-0.57.0 config file through a real ConfigManager', () => {
+    // A real `conf` store over a real file — the mock never crosses the
+    // conf/Ajv seam (`.claude/rules/safe-defaults.md`).
+    const dir = path.join(os.tmpdir(), 'test-dork-connectors-mig-' + Date.now());
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'config.json'),
+        JSON.stringify({
+          ...USER_CONFIG_DEFAULTS,
+          connectors: undefined,
+          __internal__: { migrations: { version: '0.56.0' } },
+        })
+      );
+      const manager = initConfigManager(dir);
+      expect(manager.get('connectors')).toEqual({ rawMcpServers: [] });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

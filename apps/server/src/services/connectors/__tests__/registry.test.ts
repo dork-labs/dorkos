@@ -119,6 +119,40 @@ describe('ConnectorRegistry', () => {
     expect(() => registry.recordDisconnect(account.id)).not.toThrow();
   });
 
+  it('unregister removes a provider; re-registering the same type works again', () => {
+    const composio = new FakeConnectorProvider({ type: 'composio' });
+    registry.register(composio);
+    registry.unregister('composio');
+
+    expect(registry.resolveProvider('composio')).toBeUndefined();
+    expect(registry.listProviders()).toEqual([]);
+    // Unregistering an absent type is a no-op, not a throw (reload calls it
+    // unconditionally before re-creating a provider).
+    expect(() => registry.unregister('composio')).not.toThrow();
+
+    const fresh = new FakeConnectorProvider({ type: 'composio' });
+    registry.register(fresh);
+    expect(registry.resolveProvider('composio')).toBe(fresh);
+  });
+
+  it('degrades gracefully for accounts whose provider was unregistered', async () => {
+    const composio = new FakeConnectorProvider({ type: 'composio' });
+    registry.register(composio);
+    const account = await connectOne(composio, 'gmail', 'personal');
+    registry.recordConnect(account);
+
+    registry.unregister('composio');
+
+    // The binding row survives (re-registering restores routing), but routing
+    // resolves to nothing rather than throwing.
+    expect(registry.accountBinding(account.id)).toMatchObject({ provider: 'composio' });
+    expect(registry.providerForAccount(account.id)).toBeUndefined();
+    // Aggregation simply no longer includes the unregistered backend.
+    const { accounts, warnings } = await registry.listAccounts();
+    expect(accounts).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
   it('aggregates accounts across providers', async () => {
     const composio = new FakeConnectorProvider({ type: 'composio' });
     const nango = new FakeConnectorProvider({ type: 'nango' });

@@ -218,6 +218,16 @@ export function createDorkOsToolServer(
   // One resolver for both halves of the tool surface, so the session's identity is
   // looked up once and the two paths cannot disagree about who is calling.
   const resolveContext = createInSessionContextResolver(session?.cwd);
+  // Registry capabilities additionally learn WHICH session is calling, read per
+  // tool call (the live session's canonical `sdkSessionId` over the trigger id,
+  // mirroring the DevTools read-time resolution) so session-scoped capabilities
+  // — connector attach/detach — can default to the invoking session.
+  const resolveCapabilityContext = async () => {
+    const base = await resolveContext();
+    const invokingSessionId = session?.sdkSessionId || sessionId;
+    if (!invokingSessionId) return base;
+    return { ...(base ?? {}), sessionId: invokingSessionId };
+  };
   const server = createSdkMcpServer({
     name: 'dorkos',
     version: '1.0.0',
@@ -227,7 +237,7 @@ export function createDorkOsToolServer(
         ...(sessionId ? { sessionId } : {}),
         resolveContext,
       }),
-      ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveContext),
+      ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext),
     ],
   });
 

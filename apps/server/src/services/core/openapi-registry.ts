@@ -110,6 +110,7 @@ import { composeCapabilityRegistryForDocs } from './self-description/dorkos-regi
 import {
   ConnectorToolkitSchema,
   ConnectorRecommendationSchema,
+  ConnectorProviderStatusSchema,
   ConnectStartSchema,
   ConnectPollSchema,
   ConnectedAccountSchema,
@@ -2307,6 +2308,76 @@ const ConnectorWarningSchema = z.object({
  * Considerations), so it is absent here by design.
  */
 const PublicConnectedAccountSchema = ConnectedAccountSchema.omit({ provider: true });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/providers',
+  tags: ['Connectors'],
+  summary: 'List connector provider setup statuses',
+  description:
+    'Reference-free setup state per credential-gated provider: configured/registered booleans, ' +
+    'the custody stance with its plain-language disclosure, and — when a configured provider ' +
+    'refused to register — the honest error text. Never carries a secret or a credential reference.',
+  responses: {
+    200: {
+      description: 'Provider setup statuses',
+      content: {
+        'application/json': {
+          schema: z.object({ providers: z.array(ConnectorProviderStatusSchema) }),
+        },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/connectors/providers/{provider}/credential',
+  tags: ['Connectors'],
+  summary: 'Store a provider vendor key and register the provider live',
+  description:
+    'Stores the key in the encrypted credential store and reloads the provider — no restart. ' +
+    'The secret is never echoed; the response is the fresh provider status.',
+  request: {
+    params: z.object({ provider: z.string() }),
+    body: {
+      content: { 'application/json': { schema: z.object({ secret: z.string().min(1) }) } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The provider status after the reload',
+      content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
+    },
+    400: {
+      description: 'Unknown provider or empty secret',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/connectors/providers/{provider}/credential',
+  tags: ['Connectors'],
+  summary: 'Remove a provider vendor key (idempotent) and unregister the provider',
+  description:
+    'Deletes the stored key and reloads the provider, which unregisters it. Idempotent — a ' +
+    'missing key still answers 200 with the (unconfigured) status.',
+  request: {
+    params: z.object({ provider: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The provider status after the reload',
+      content: { 'application/json': { schema: ConnectorProviderStatusSchema } },
+    },
+    400: {
+      description: 'Unknown provider',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
 
 registry.registerPath({
   method: 'get',

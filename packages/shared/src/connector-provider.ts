@@ -226,6 +226,32 @@ export interface ConnectorProvider {
 }
 
 /**
+ * One credential-gated provider's setup state, as reported by
+ * `GET /api/connectors/providers` (connector-completion spec §Detailed Design 1).
+ *
+ * Deliberately reference-free: no field may carry a secret OR a credential
+ * reference — the DTO is booleans, the custody stance, its plain-language
+ * disclosure line, and (when a configured provider refused to register) the
+ * honest error text, e.g. the Nango encryption-key refusal.
+ */
+export const ConnectorProviderStatusSchema = z.object({
+  /** Backend type identifier, e.g. `'composio' | 'nango'`. */
+  type: z.string(),
+  /** Whether the provider's credential (and any required env) is present. */
+  configured: z.boolean(),
+  /** Whether the provider is currently registered and serving. */
+  registered: z.boolean(),
+  /** Custody stance — drives the setup card's disclosure line. */
+  custody: ConnectorCustodySchema,
+  /** Plain-language custody disclosure for this provider (server-owned copy). */
+  disclosure: z.string(),
+  /** Why a configured provider is not registered (secret-free), when it isn't. */
+  error: z.string().optional(),
+});
+/** One provider's setup state. See {@link ConnectorProviderStatusSchema}. */
+export type ConnectorProviderStatus = z.infer<typeof ConnectorProviderStatusSchema>;
+
+/**
  * How a service should be connected, in precedence order — the output kind of
  * `recommendConnector` (spec §Detailed Design 5).
  *

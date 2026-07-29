@@ -208,6 +208,7 @@ export async function invokeCapabilityAsMcpResult(
     // marker, because everything arriving here arrived over the wire.
     const data = await registry.invoke(id, input, {
       ...(context?.identity ? { identity: context.identity } : {}),
+      ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
       ...(approvalToken ? { approvalToken } : {}),
       retryChannel: 'mcp-argument',
     });

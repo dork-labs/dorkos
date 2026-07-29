@@ -344,6 +344,15 @@ export const CONFIG_WRITE_POLICY = {
   'cloud.instanceName': 'operator-only',
   'cloud.linkedAccountLabel': 'operator-only',
 
+  // A configured raw-MCP server becomes a tool endpoint sessions can attach —
+  // an agent writing one grants itself a capability, which is exactly the line
+  // this module holds (same reasoning as `mesh.scanRoots` and the approved
+  // lists). A person adds servers through config or the UI.
+  'connectors.rawMcpServers[].slug': 'operator-only',
+  'connectors.rawMcpServers[].displayName': 'operator-only',
+  'connectors.rawMcpServers[].url': 'operator-only',
+  'connectors.rawMcpServers[].transport': 'operator-only',
+
   // Per-provider credential references (ADR-0315).
   providers: 'operator-only',
 } as const satisfies Record<string, ConfigWriteAccess>;

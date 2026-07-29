@@ -108,6 +108,7 @@ describe('UserConfigSchema', () => {
       auth: { enabled: false },
       approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      connectors: { rawMcpServers: [] },
       providers: {},
     });
   });
@@ -415,6 +416,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       auth: { enabled: false },
       approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
       cloud: { instanceToken: null, instanceName: null, linkedAccountLabel: null },
+      connectors: { rawMcpServers: [] },
       providers: {},
     });
   });

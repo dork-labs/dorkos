@@ -16,8 +16,9 @@
  *
  * The set has two sources, unioned here:
  *
- * - Registry capabilities (operator + marketplace, spec `capability-registry`)
- *   contribute their carve-out tool names by DERIVATION — a capability opts in
+ * - Registry capabilities (operator + marketplace + connector, spec
+ *   `capability-registry`) contribute their carve-out tool names by DERIVATION —
+ *   a capability opts in
  *   with `surfaces.mcp.readOnlyCarveOut: true`, and
  *   {@link readOnlyCarveOutToolNames} reads that flag. There is no second place
  *   to keep in sync.
@@ -31,6 +32,7 @@
 import { readOnlyCarveOutToolNames } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
+import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { capabilitiesDomain } from '../self-description/capabilities-domain.js';
 
 /**
@@ -106,6 +108,7 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   ...readOnlyCarveOutToolNames([
     ...operatorDomain.capabilities,
     ...marketplaceDomain.capabilities,
+    ...connectorDomain.capabilities,
     ...capabilitiesDomain.capabilities,
   ]),
 ]);

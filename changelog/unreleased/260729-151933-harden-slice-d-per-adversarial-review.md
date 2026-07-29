@@ -1,6 +1,6 @@
 ---
 covers:
-  - "fix(onboarding,profile): harden Slice D per adversarial review"
+  - 'fix(onboarding,profile): harden Slice D per adversarial review'
 ---
 
 ### Fixed

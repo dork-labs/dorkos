@@ -80,6 +80,15 @@ export interface CapabilityInvocationContext {
    * way to set.
    */
   retryChannel?: ApprovalRetryChannel;
+  /**
+   * The session the call was made FROM, when the surface has one — the
+   * in-session `dorkos` server sets it from the live session (connector
+   * capabilities default their session-scoped actions to it). The external
+   * `/mcp` and HTTP surfaces have no invoking session and leave it absent, so a
+   * handler that needs one must then be told explicitly. An adapter fact like
+   * {@link identity}: informational, never an authorization.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -109,6 +118,13 @@ export interface CapabilityHandlerContext {
    * whose consent that flow would go and fetch is the one already calling.
    */
   trusted?: TrustedCaller;
+  /**
+   * The invoking session, when the call arrived through a surface that has one
+   * (the in-session `dorkos` server). Session-scoped capabilities (connector
+   * attach/detach) default to it; absent on the external `/mcp` and HTTP
+   * surfaces, where the caller must name a session explicitly.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -374,11 +390,16 @@ export function composeRegistry(
       const parsed = capability.input.parse(input);
 
       // Always a real object, so a handler can read `context.approval` without
-      // guarding for an absent context on every call site.
+      // guarding for an absent context on every call site. The invoking session
+      // id is an adapter fact that rides through on either branch.
       const invocationContext: CapabilityHandlerContext = supplied.trusted
-        ? { trusted: supplied.trusted }
+        ? {
+            trusted: supplied.trusted,
+            ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
+          }
         : {
             ...(supplied.identity ? { identity: supplied.identity } : {}),
+            ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
           };
 
       // The gate. A trusted caller skips it, having already proved it may decide

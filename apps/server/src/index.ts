@@ -25,7 +25,11 @@ import {
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { initConfigManager, configManager } from './services/core/config-manager.js';
-import { credentialProvider, initCredentialProvider } from './services/core/credential-provider.js';
+import {
+  credentialProvider,
+  credentialStore,
+  initCredentialProvider,
+} from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
@@ -50,13 +54,13 @@ import {
 } from '@dorkos/relay';
 import { createRelayRouter } from './routes/relay.js';
 import { createConnectorsRouter } from './routes/connectors.js';
+import { createConnectorProvidersRouter } from './routes/connector-providers.js';
 import { createSessionConnectorsRouter } from './routes/session-connectors.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
-import { maybeCreateComposioProvider } from './services/connectors/providers/composio.js';
-import {
-  maybeCreateNangoProvider,
-  NangoEncryptionKeyError,
-} from './services/connectors/providers/nango.js';
+import { ConnectorFlowBindings } from './services/connectors/flow-bindings.js';
+import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
+import { NangoProxyMcp } from './services/connectors/providers/nango-proxy-mcp.js';
+import { NANGO_PROVIDER_TYPE } from './services/connectors/providers/nango.js';
 import { SessionConnectorService } from './services/connectors/session-exposure.js';
 import { toSdkMcpServers } from './services/runtimes/claude-code/mcp-server-config.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
@@ -1072,38 +1076,51 @@ async function start() {
   // The `/api/connectors` and attach/detach routes are mounted later, once the
   // relay adapter catalog is available.
   const connectorRegistry = new ConnectorRegistry({ db });
-  // Register the Composio managed-custody backend ONLY when its API key is
-  // configured (resolved through the credential machinery). An install without a
-  // Composio key keeps the registry as-is — no `composio` provider, no crash
-  // (connector-gateway spec §Detailed Design 1, DOR-371 P5).
-  const composioProvider = await maybeCreateComposioProvider({ credentials: credentialProvider });
-  if (composioProvider) {
-    connectorRegistry.register(composioProvider);
-    logger.info('[Connectors] Composio managed backend registered');
-  }
-  // Register the Nango self-host backend ONLY when it is configured (secret key +
-  // base URL). When configured but NANGO_ENCRYPTION_KEY is unset/invalid, the
-  // adapter refuses loudly (spec §Detailed Design 4, DOR-371 P7): log the refusal
-  // and skip registration so the connector will not run unencrypted while the
-  // server still boots.
-  try {
-    const nangoProvider = await maybeCreateNangoProvider({
-      credentials: credentialProvider,
+  // ONE flow → provider binding map for the whole process, shared by the REST
+  // router and the agent-facing connector capabilities so a connect flow
+  // started on either surface can be polled on the other.
+  const connectorFlowBindings = new ConnectorFlowBindings();
+  // The Nango Proxy→MCP wrapper (DOR-415): per-account bearer-gated MCP
+  // endpoints over Nango's credentialed proxy, mounted below beside the
+  // connector routes. Created before the bootstrapper because every Nango
+  // provider instance (boot and reload alike) exposes tools through it.
+  const nangoProxyMcp = new NangoProxyMcp({ localOrigin: `http://127.0.0.1:${PORT}` });
+  // Created before the bootstrapper so its unregister hook can revoke cached
+  // session attachments the moment a credential is deleted.
+  const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
+  // Provider lifecycle is owned by ONE place (connector-completion spec §1):
+  // boot registers raw-MCP always (from `connectors.rawMcpServers` config; the
+  // empty list is valid) plus Composio/Nango when configured — silent-null when
+  // unconfigured, loud NangoEncryptionKeyError refusal logged-and-skipped while
+  // the server still boots. The credential routes call `reload()` after a key
+  // write/delete, so saving a vendor key registers its provider live, no
+  // restart required. In test mode the `test-connector` spec joins so e2e can
+  // exercise the save-key step; its scripted provider arrives with Slice E —
+  // until then the factory resolves null (key saved, nothing registered).
+  const connectorBootstrapper = new ConnectorProviderBootstrapper({
+    registry: connectorRegistry,
+    credentials: credentialProvider,
+    nangoEnv: () => ({
       ...(env.NANGO_BASE_URL !== undefined && { baseUrl: env.NANGO_BASE_URL }),
       ...(env.NANGO_ENCRYPTION_KEY !== undefined && { encryptionKey: env.NANGO_ENCRYPTION_KEY }),
-    });
-    if (nangoProvider) {
-      connectorRegistry.register(nangoProvider);
-      logger.info('[Connectors] Nango self-host backend registered');
-    }
-  } catch (err) {
-    if (err instanceof NangoEncryptionKeyError) {
-      logger.error(`[Connectors] Nango self-host backend refused: ${err.message}`);
-    } else {
-      throw err;
-    }
-  }
-  const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
+    }),
+    nangoProxy: nangoProxyMcp,
+    rawMcpServers: () =>
+      configManager.get('connectors').rawMcpServers.map((server) => ({
+        slug: server.slug,
+        displayName: server.displayName,
+        connection: { transport: server.transport, url: server.url },
+      })),
+    ...(env.DORKOS_TEST_RUNTIME && { testConnector: { create: async () => null } }),
+    // Deleting a key (or a reload that refuses) revokes LIVE surfaces too:
+    // cached session attachments stop injecting the provider's tool servers,
+    // and the Nango proxy forgets its per-account tokens so the endpoint 401s.
+    onUnregistered: (providerType) => {
+      sessionConnectorService.invalidateProvider(providerType);
+      if (providerType === NANGO_PROVIDER_TYPE) nangoProxyMcp.clear();
+    },
+  });
+  await connectorBootstrapper.registerBootProviders();
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
   // request id are not stranded on the pre-remap id (mirrors the projector +
@@ -1272,10 +1289,27 @@ async function start() {
   // relay adapter catalog (relay-adapter-first), and the aggregate endpoints
   // return empty until a provider is registered. `adapterManager` satisfies the
   // routing catalog structurally via its public `getManifest` accessor.
+  // Provider credential + status routes, mounted BEFORE the generic connectors
+  // router: saving a vendor key here reloads its provider live (no restart).
+  app.use(
+    '/api/connectors/providers',
+    createConnectorProvidersRouter({
+      bootstrapper: connectorBootstrapper,
+      credentialStore,
+    })
+  );
+  // The Nango Proxy→MCP endpoint (DOR-415): stateless MCP per request, gated by
+  // per-account process-scoped bearer tokens minted at toolServerForAccount
+  // time. Origin validation rides in front for the same DNS-rebinding posture
+  // as /mcp; a dedicated rate limiter is deliberately omitted — the endpoint is
+  // unreachable without a minted bearer, so its callers are DorkOS's own
+  // runtimes, not the open network.
+  app.use('/api/connectors/nango/mcp', validateMcpOrigin, nangoProxyMcp.createRouter());
   app.use(
     '/api/connectors',
     createConnectorsRouter({
       registry: connectorRegistry,
+      flowBindings: connectorFlowBindings,
       ...(adapterManager && { relay: adapterManager }),
     })
   );
@@ -1774,6 +1808,15 @@ async function start() {
       logger,
       ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
       ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
+      // The connector domain (connector-completion spec §2): seven agent-facing
+      // tools over the always-constructed connector services. The flow bindings
+      // are the SAME instance the REST router holds — one map, both surfaces.
+      connectorDeps: {
+        registry: connectorRegistry,
+        sessionConnectors: sessionConnectorService,
+        flowBindings: connectorFlowBindings,
+        ...(adapterManager && { relay: adapterManager }),
+      },
     },
     createCapabilityAttributionObserver(activityService)
   );

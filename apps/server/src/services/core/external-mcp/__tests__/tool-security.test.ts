@@ -3,10 +3,10 @@
  *
  * READ_ONLY_MCP_TOOL_NAMES must stay in exact lock-step with the tools the live
  * server advertises as `readOnlyHint: true`. This test stands up the real
- * `createExternalMcpServer` (with marketplace deps so all 28 read-only tools
- * register), issues a `tools/list`, and asserts the constant equals the live set
- * in BOTH directions — so the carve-out can never silently drift from the
- * annotations it mirrors.
+ * `createExternalMcpServer` (with marketplace + connector deps so all 31
+ * read-only tools register), issues a `tools/list`, and asserts the constant
+ * equals the live set in BOTH directions — so the carve-out can never silently
+ * drift from the annotations it mirrors.
  *
  * @vitest-environment node
  */
@@ -48,7 +48,10 @@ import { READ_ONLY_MCP_TOOL_NAMES } from '../tool-security.js';
 import { readOnlyCarveOutToolNames } from '../../capabilities/index.js';
 import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
+import { connectorDomain } from '../../../connectors/connector-capabilities.js';
+import type { ConnectorCapabilityDeps } from '../../../connectors/connector-capabilities.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
+import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
 
@@ -83,7 +86,19 @@ function createStatelessTestApp() {
 
   app.post('/mcp', async (req, res) => {
     try {
-      const server = createExternalMcpServer(createMinimalDeps(), createMarketplaceDeps());
+      // Compose the registry with all three domain bundles (stubs are enough:
+      // tools/list registers, never invokes), exactly as boot does — without
+      // `connectorDeps` the live server would omit the connector tools while
+      // the constant lists them.
+      const deps = createMinimalDeps();
+      const marketplaceDeps = createMarketplaceDeps();
+      const registry = composeDorkOsCapabilityRegistry({
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as never,
+        operatorDeps: deps,
+        marketplaceDeps,
+        connectorDeps: {} as ConnectorCapabilityDeps,
+      });
+      const server = createExternalMcpServer(deps, marketplaceDeps, registry);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
@@ -126,13 +141,13 @@ async function fetchLiveTools(): Promise<ToolListEntry[]> {
 }
 
 describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
-  it('has exactly 28 members (the audited read-only set)', () => {
+  it('has exactly 31 members (the audited read-only set)', () => {
     // A hard count anchors the constant against silent additions/removals.
-    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 10 registry-derived carve-outs:
-    // 4 operator, 5 marketplace, plus `list_capabilities` from the
+    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 13 registry-derived carve-outs:
+    // 4 operator, 5 marketplace, 3 connector, plus `list_capabilities` from the
     // self-description domain. A carve-out only counts when its tool reaches the
     // `external` server, which is what `readOnlyCarveOutToolNames` checks.
-    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(28);
+    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(31);
   });
 
   it('every live tool with readOnlyHint === true is in the constant', async () => {
@@ -178,6 +193,7 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
     const migratedCapabilities = [
       ...operatorDomain.capabilities,
       ...marketplaceDomain.capabilities,
+      ...connectorDomain.capabilities,
       ...capabilitiesDomain.capabilities,
     ];
     const derived = readOnlyCarveOutToolNames(migratedCapabilities);

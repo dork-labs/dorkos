@@ -134,6 +134,21 @@ export class ConnectorRegistry {
     this._providers.set(provider.type, provider);
   }
 
+  /**
+   * Remove a backend registration. Idempotent — unregistering an absent type is
+   * a no-op, so a credential-delete reload can call it unconditionally.
+   *
+   * Account bindings in `connected_accounts` survive: `providerForAccount`
+   * already tolerates a missing provider (returns `undefined`) and every route
+   * degrades rather than throws, so re-registering the type later restores
+   * routing for the same accounts.
+   *
+   * @param type - The backend type to remove, e.g. `'composio'`.
+   */
+  unregister(type: string): void {
+    this._providers.delete(type);
+  }
+
   /** Every registered provider, in registration order. */
   listProviders(): ConnectorProvider[] {
     return [...this._providers.values()];

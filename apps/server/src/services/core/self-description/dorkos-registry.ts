@@ -29,6 +29,7 @@ import {
 } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
+import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 
 /**
@@ -36,9 +37,9 @@ import { capabilitiesDomain } from './capabilities-domain.js';
  * enables, then back-write it onto `deps` for the self-description capability.
  *
  * @param deps - The boot-time dependency bag. `operatorDeps` includes the
- *   operator domain; `marketplaceDeps` includes the marketplace domain; the
- *   self-description domain is always included. The composed registry is written
- *   back onto `deps.registry`.
+ *   operator domain; `marketplaceDeps` the marketplace domain; `connectorDeps`
+ *   the connector domain; the self-description domain is always included. The
+ *   composed registry is written back onto `deps.registry`.
  * @param onInvocation - Optional observer called after every invocation. Boot
  *   passes the Activity attribution observer so an identified agent's calls are
  *   recorded in the feed (spec `agent-trust` §3.1); omitted in unit tests.
@@ -51,6 +52,7 @@ export function composeDorkOsCapabilityRegistry(
   const domains: CapabilityDomain[] = [];
   if (deps.operatorDeps) domains.push(operatorDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
+  if (deps.connectorDeps) domains.push(connectorDomain);
   domains.push(capabilitiesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
@@ -77,11 +79,17 @@ export function composeDorkOsCapabilityRegistry(
  * @returns The frozen registry over all domains, for documentation projection only.
  */
 export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
-  const domains: CapabilityDomain[] = [operatorDomain, marketplaceDomain, capabilitiesDomain];
+  const domains: CapabilityDomain[] = [
+    operatorDomain,
+    marketplaceDomain,
+    connectorDomain,
+    capabilitiesDomain,
+  ];
   const deps: CapabilityDeps = {
     logger: noopLogger,
     operatorDeps: {} as CapabilityDeps['operatorDeps'],
     marketplaceDeps: {} as CapabilityDeps['marketplaceDeps'],
+    connectorDeps: {} as CapabilityDeps['connectorDeps'],
   };
   return composeRegistry(domains, deps);
 }
