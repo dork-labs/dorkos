@@ -29,10 +29,16 @@ Project skills, instructions, hooks, and commands from the canonical
 Subcommands:
   sync [options]    Report or apply the cross-harness projection plan
 
+Sync acts on the folder you run it in, reading its manifest at
+\`.agents/harness.manifest.json\` — so run it from your project root. If that
+file is missing, --check stops and tells you where it looked, and --fix
+writes a default one there.
+
 Options (sync):
-      --check            Report drift without touching disk (default)
+      --check            Report drift. Never writes anything (default)
       --fix              Realize the plan on disk
-      --harness <id>     Narrow to one harness (claude-code|codex|cursor|gemini|copilot)
+      --harness <id>     Narrow to one harness
+                         (claude-code|codex|cursor|gemini|copilot|opencode)
 
 Examples:
   dorkos harness sync

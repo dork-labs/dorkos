@@ -11,6 +11,7 @@ import {
   project,
   scaffoldManifest,
   HARNESS_IDS,
+  HARNESS_MANIFEST_PATH,
   type HarnessId,
   type ProjectionAction,
   type ProjectionPlan,
@@ -203,12 +204,15 @@ function reportFix(repoRoot: string, plan: ProjectionPlan, sweepOrphans: boolean
  * Implements `dorkos harness sync` — drives the `@dorkos/harness` projection
  * engine offline.
  *
- * Resolves the repository root from `process.cwd()`. When no
- * `.agents/harness.manifest.json` is present it scaffolds a default, editable one
- * (detecting the harnesses already in use) and continues rather than bailing out.
- * Builds the projection plan, then either reports drift (`--check`, the default)
- * or realizes it on disk (`--fix`). An optional `--harness <id>` narrows the plan
- * to one target.
+ * Resolves the repository root from `process.cwd()`, builds the projection plan,
+ * then either reports drift (`--check`, the default) or realizes it on disk
+ * (`--fix`). An optional `--harness <id>` narrows the plan to one target.
+ *
+ * **`--check` never writes** (DOR-678). Every argument is validated before disk is
+ * touched, and a missing `.agents/harness.manifest.json` is a non-zero exit naming
+ * the directory that was searched — not a silent scaffold into whatever directory
+ * the command happened to be invoked from. Only `--fix`, which the user runs to
+ * change disk, bootstraps a default manifest when none exists.
  *
  * Returns an exit code rather than calling `process.exit` — exit-code policy
  * lives in the dispatcher in `cli.ts`.
@@ -223,14 +227,40 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
     return { exitCode: 1 };
   }
 
+  // Validate --harness BEFORE anything reads or writes: a rejected argument must
+  // never leave a scaffolded manifest behind as its only lasting effect.
+  let harnessFilter: HarnessId | undefined;
+  if (args.harness !== undefined) {
+    if (!(HARNESS_IDS as readonly string[]).includes(args.harness)) {
+      console.error(
+        `Unknown harness: '${args.harness}'. Known harnesses: ${HARNESS_IDS.join(', ')}`
+      );
+      return { exitCode: 1 };
+    }
+    harnessFilter = args.harness as HarnessId;
+  }
+
   const repoRoot = process.cwd();
-  const manifestPath = join(repoRoot, '.agents', 'harness.manifest.json');
-  if (!existsSync(manifestPath)) {
-    // First sync in a repo with no manifest: scaffold a default, visible, editable
-    // manifest (detecting the harnesses already in use), then continue to project
-    // rather than bailing out. The scaffolded file lands on disk even in --check
-    // mode (it is a one-time bootstrap, not a projection), so the subsequent drift
-    // report is honest about what the projection would do next.
+  if (!existsSync(join(repoRoot, HARNESS_MANIFEST_PATH))) {
+    // No manifest here. `--fix` is the write mode, so it bootstraps a default,
+    // visible, editable one (detecting the harnesses already in use) and carries
+    // on. `--check` reports and nothing else, so it stops and says where it looked
+    // — a missing manifest usually means the command is running in the wrong
+    // directory, and creating one there would plant a stray file in a tree the
+    // person never meant to change.
+    if (!args.fix) {
+      console.error(`No harness manifest in ${repoRoot}`);
+      console.error(`  looked for: ${HARNESS_MANIFEST_PATH}`);
+      console.error('');
+      console.error(
+        'Harness sync works on the folder you run it in, and --check only reports — it never writes.'
+      );
+      console.error(
+        'Run it again from your project root, or create a manifest here with `dorkos harness sync --fix`.'
+      );
+      return { exitCode: 1 };
+    }
+
     const scaffold = scaffoldManifest(repoRoot);
     const setSource = scaffold.detected ? 'detected harnesses' : 'default harness set';
     console.log(
@@ -245,20 +275,13 @@ export async function runHarnessSync(args: HarnessSyncArgs): Promise<{ exitCode:
   // resolved dork home additionally projects global-scope installs.
   let plan = project(repoRoot, { dorkHome: resolveDorkHome() });
 
-  const harnessFiltered = args.harness !== undefined;
-  if (harnessFiltered) {
-    if (!(HARNESS_IDS as readonly string[]).includes(args.harness as string)) {
-      console.error(
-        `Unknown harness: '${args.harness}'. Known harnesses: ${HARNESS_IDS.join(', ')}`
-      );
-      return { exitCode: 1 };
-    }
-    plan = filterPlanToHarness(plan, args.harness as HarnessId);
+  if (harnessFilter !== undefined) {
+    plan = filterPlanToHarness(plan, harnessFilter);
   }
 
   // Orphan sweep only runs on a full (unfiltered) plan — see reportFix.
   const exitCode = args.fix
-    ? reportFix(repoRoot, plan, !harnessFiltered)
+    ? reportFix(repoRoot, plan, harnessFilter === undefined)
     : reportCheck(repoRoot, plan);
   return { exitCode };
 }

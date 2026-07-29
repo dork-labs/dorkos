@@ -10,7 +10,7 @@ description: Keeps skill definitions aligned between Claude Code and Codex. Use 
 This skill maintains the repo's dual-harness skill strategy:
 
 - **Shared skills** live canonically in `.agents/skills/`
-- **The projection engine** (`@dorkos/harness`, driven by `dorkos harness sync`) projects the canonical layer to every enabled harness — Claude Code, Codex, Cursor, Gemini, Copilot
+- **The projection engine** (`@dorkos/harness`, driven by `dorkos harness sync`) projects the canonical layer to every enabled harness — Claude Code, Codex, Cursor, Gemini, Copilot, OpenCode
 - **`.agents/harness.manifest.json`** declares the exceptions: Claude-only skills, tool-specific wrappers, command mappings, and instruction/hook projections
 - **Claude Code** consumes shared skills through per-skill symlinks in `.claude/skills/`; **Codex** discovers them directly from `.agents/skills/`
 
@@ -21,13 +21,14 @@ The goal is to keep shared expertise in one place and let the engine, not by-han
 The engine is the source of truth for projection mechanics. Run it from the repo root:
 
 ```bash
-dorkos harness sync                      # report drift, touch nothing (same as --check)
+dorkos harness sync                      # report drift, write nothing (same as --check)
 dorkos harness sync --fix                # realize the plan on disk (symlinks, scaffolds, generated files)
-dorkos harness sync --check --harness codex   # narrow to one harness (claude-code|codex|cursor|gemini|copilot)
+dorkos harness sync --check --harness codex   # narrow to one harness (claude-code|codex|cursor|gemini|copilot|opencode)
 ```
 
-- `--check` (the default) prints the per-harness projection plan and exits `1` on drift — safe to run any time, ideal after creating/renaming/moving a skill
+- `--check` (the default) prints the per-harness projection plan and exits `1` on drift. It writes nothing, ever — safe to run any time, ideal after creating/renaming/moving a skill
 - `--fix` applies the plan: creates missing symlinks, scaffolds wrappers, regenerates projected files, and reports anything it dropped
+- **Sync acts on the directory you run it in, so run it from the repo root.** Both modes need `.agents/harness.manifest.json` there. Without one, `--check` exits `1` and names the directory it searched; `--fix` creates a default manifest in that directory — which is a real write into wherever you happened to be standing, so check where you are before reaching for it
 - The engine runs fully offline (no server, no `~/.dork` needed for repo-scope work); it lives in `packages/harness`, with the CLI entry in `packages/cli/src/harness-sync-command.ts`
 
 **Typical loop when touching skills:**

@@ -3,6 +3,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { HARNESS_MANIFEST_PATH } from '@dorkos/harness';
+
 import { runHarnessSync, parseHarnessSyncArgs } from '../harness-sync-command.js';
 import { runHarnessDispatcher } from '../commands/harness-dispatcher.js';
 
@@ -36,9 +38,34 @@ function writeFixtureRepo(root: string): void {
 }
 
 /**
+ * The sorted set of every path under `root`.
+ *
+ * This measures the tree's SHAPE — which paths exist — and nothing else: not file
+ * contents, not mtimes. So it catches any *new* path a read-only mode leaves
+ * behind (a manifest, a dotdir, a projected symlink) anywhere under the root,
+ * which is the failure this suite exists to catch, but an in-place rewrite of a
+ * file that already existed would pass it. No check-mode path can reach such a
+ * rewrite today; if one ever can, this helper has to start hashing contents.
+ */
+function snapshotTree(root: string): string[] {
+  const walk = (dir: string, prefix: string): string[] =>
+    fs
+      .readdirSync(dir, { withFileTypes: true })
+      .flatMap((entry) => {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        // Never follow symlinks: a projected link is itself the change under test.
+        return entry.isDirectory() && !entry.isSymbolicLink()
+          ? [rel, ...walk(path.join(dir, entry.name), rel)]
+          : [rel];
+      })
+      .sort();
+  return walk(root, '');
+}
+
+/**
  * Like {@link writeFixtureRepo} but WITHOUT the hand-authored manifest, so the
- * missing-manifest auto-scaffold path is exercised. The skill, settings, and
- * AGENTS.md still give the projection real drift to report after scaffolding.
+ * missing-manifest path is exercised. The skill, settings, and AGENTS.md still
+ * give the projection real drift to report once a manifest exists.
  */
 function writeFixtureRepoWithoutManifest(root: string): void {
   fs.mkdirSync(path.join(root, '.agents', 'skills', 'demo'), { recursive: true });
@@ -137,26 +164,87 @@ describe('runHarnessSync', () => {
     fs.rmSync(homeDir, { recursive: true, force: true });
   });
 
-  it('auto-scaffolds a default manifest when none exists, then projects (--check)', async () => {
+  // DOR-678: `--check` is the mode documented as safe to run any time. It used to
+  // scaffold `.agents/harness.manifest.json` into whatever directory it was invoked
+  // from, so a drift check run from the wrong folder silently created a file there.
+  // These compare the whole path set before and after (see `snapshotTree`) rather
+  // than the exit code — an exit-code-only test passed throughout the life of the
+  // bug, and so did one that probed only the manifest path.
+  describe('--check is read-only', () => {
+    it('adds no path to the directory and exits 1 when no manifest exists', async () => {
+      writeFixtureRepoWithoutManifest(tmpDir);
+      process.chdir(tmpDir);
+      const before = snapshotTree(tmpDir);
+
+      const result = await runHarnessSync({ check: true, fix: false });
+
+      expect(snapshotTree(tmpDir)).toEqual(before);
+      expect(fs.existsSync(path.join(tmpDir, '.agents', 'harness.manifest.json'))).toBe(false);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('names the directory it searched so a wrong-folder run is obvious', async () => {
+      writeFixtureRepoWithoutManifest(tmpDir);
+      process.chdir(tmpDir);
+
+      await runHarnessSync({ check: true, fix: false });
+
+      // fs.realpath: macOS temp dirs are symlinked (/var -> /private/var), and the
+      // command reports the cwd Node resolved.
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(fs.realpathSync(tmpDir)));
+      // The exported constant, not a literal: it is built with `join()`, so the
+      // separator is a backslash on Windows.
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(HARNESS_MANIFEST_PATH));
+    });
+
+    it('is read-only in the default (bare, no-flag) mode too', async () => {
+      writeFixtureRepoWithoutManifest(tmpDir);
+      process.chdir(tmpDir);
+      const before = snapshotTree(tmpDir);
+
+      const result = await runHarnessSync({ check: false, fix: false });
+
+      expect(snapshotTree(tmpDir)).toEqual(before);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('is read-only when narrowed with --harness', async () => {
+      writeFixtureRepoWithoutManifest(tmpDir);
+      process.chdir(tmpDir);
+      const before = snapshotTree(tmpDir);
+
+      // Previously exited 0 here — a "clean" report that had just written a file.
+      const result = await runHarnessSync({ check: true, fix: false, harness: 'codex' });
+
+      expect(snapshotTree(tmpDir)).toEqual(before);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('reports drift without writing when a manifest IS present', async () => {
+      writeFixtureRepo(tmpDir);
+      process.chdir(tmpDir);
+      const before = snapshotTree(tmpDir);
+
+      const result = await runHarnessSync({ check: true, fix: false });
+
+      expect(snapshotTree(tmpDir)).toEqual(before);
+      expect(result.exitCode).toBe(1);
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Drift detected'));
+    });
+  });
+
+  it('rejects an unknown --harness without writing anything', async () => {
+    // A rejected argument must not leave a scaffolded manifest as its only lasting
+    // effect: validation runs before disk is touched.
     writeFixtureRepoWithoutManifest(tmpDir);
     process.chdir(tmpDir);
-    const result = await runHarnessSync({ check: true, fix: false });
+    const before = snapshotTree(tmpDir);
 
-    // A default manifest was written (visible, editable) instead of bailing out,
-    // and it detected the harnesses already present (.claude + AGENTS.md).
-    const manifestPath = path.join(tmpDir, '.agents', 'harness.manifest.json');
-    expect(fs.existsSync(manifestPath)).toBe(true);
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    expect(manifest.version).toBe(1);
-    expect(manifest.harnesses).toEqual(['claude-code', 'codex']);
+    const result = await runHarnessSync({ check: false, fix: true, harness: 'bogus' });
 
-    // The user is told what happened, and the run proceeds to a drift report
-    // (exit 1, the demo skill isn't projected yet) rather than erroring out.
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining('No manifest found; wrote a default')
-    );
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Projection summary'));
+    expect(snapshotTree(tmpDir)).toEqual(before);
     expect(result.exitCode).toBe(1);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown harness'));
   });
 
   it('auto-scaffolds then realizes the projection on --fix', async () => {
