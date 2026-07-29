@@ -164,6 +164,7 @@ import { acquireInstanceLock } from './lib/instance-lock.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
+import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
@@ -222,6 +223,7 @@ let meshCore: MeshCore | undefined;
 let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
+let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
@@ -711,6 +713,14 @@ async function start() {
   const { service: roomService } = createRoomSubsystem({ db });
   setRoomService(roomService);
   logger.info('[Rooms] RoomService registered');
+
+  // Message search (ADR 260728-214214) — a derived index over what was said,
+  // rebuilt from the sources it reads and owning nothing. Unconditional and
+  // cheap: the sweep is one GROUP BY per source plus a read of whatever is new,
+  // and an install with nothing in it does no work at all. Nothing a person can
+  // reach queries these rows yet.
+  searchIndexer = new SearchIndexer(db);
+  searchIndexer.start();
 
   // Initialize Tasks scheduler if enabled
   const schedulerConfig = configManager.get('scheduler');
@@ -1998,6 +2008,9 @@ async function shutdownServices() {
   }
   if (taskReconciler) {
     taskReconciler.stop();
+  }
+  if (searchIndexer) {
+    searchIndexer.stop();
   }
   if (meshCore) {
     meshCore.stopPeriodicReconciliation();
