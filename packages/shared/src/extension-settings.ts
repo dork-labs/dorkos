@@ -7,8 +7,9 @@
  *
  * @module shared/extension-settings
  */
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { withFileLock } from './atomic-write.js';
 
 /**
  * Plaintext per-extension settings store using JSON files.
@@ -34,16 +35,16 @@ export class ExtensionSettingsStore {
 
   /** Set a setting value. Writes through to disk immediately. */
   async set(key: string, value: string | number | boolean): Promise<void> {
-    const data = await this.loadAll();
-    data[key] = value;
-    await this.saveAll(data);
+    await this.mutate((data) => {
+      data[key] = value;
+    });
   }
 
   /** Delete a setting value. Writes through to disk immediately. */
   async delete(key: string): Promise<void> {
-    const data = await this.loadAll();
-    delete data[key];
-    await this.saveAll(data);
+    await this.mutate((data) => {
+      delete data[key];
+    });
   }
 
   /** Get all stored settings as a key-value record. */
@@ -60,11 +61,20 @@ export class ExtensionSettingsStore {
     }
   }
 
-  private async saveAll(data: Record<string, string | number | boolean>): Promise<void> {
-    const dir = dirname(this.filePath);
-    await mkdir(dir, { recursive: true });
-    const tmp = this.filePath + '.tmp';
-    await writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8');
-    await rename(tmp, this.filePath);
+  /**
+   * Apply `change` to the settings file as one serialised read-modify-write, so
+   * two callers setting different keys cannot each save their own view and drop
+   * the other's setting.
+   *
+   * @param change - Mutates the freshly-read settings map in place.
+   */
+  private async mutate(
+    change: (data: Record<string, string | number | boolean>) => void
+  ): Promise<void> {
+    await withFileLock(this.filePath, async (write) => {
+      const data = await this.loadAll();
+      change(data);
+      await write(JSON.stringify(data, null, 2));
+    });
   }
 }

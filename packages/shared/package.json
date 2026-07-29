@@ -33,6 +33,10 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./atomic-write": {
+      "types": "./src/atomic-write.ts",
+      "default": "./dist/atomic-write.js"
+    },
     "./feedback": {
       "types": "./src/feedback.ts",
       "default": "./dist/feedback.js"

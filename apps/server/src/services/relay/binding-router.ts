@@ -17,7 +17,8 @@
  * @module services/relay/binding-router
  */
 import { join as pathJoin } from 'node:path';
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
+import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { BindingTestResult } from '@dorkos/shared/relay-schemas';
@@ -109,8 +110,6 @@ export class BindingRouter {
   private inFlight = new Map<string, Promise<string>>();
   private readonly sessionMapPath: string;
   private unsubscribe?: Unsubscribe;
-  /** Serializes saveSessionMap calls to prevent concurrent tmp+rename races. */
-  private writeLock: Promise<void> = Promise.resolve();
   /** Guards against concurrent shutdown calls corrupting session data. */
   private isShutdown = false;
 
@@ -513,21 +512,12 @@ export class BindingRouter {
     }
   }
 
+  /** Atomic write of the session map, serialized against every in-process writer of this path. */
   private saveSessionMap(): Promise<void> {
-    this.writeLock = this.writeLock.then(
-      () => this.doSaveSessionMap(),
-      () => this.doSaveSessionMap()
+    return writeFileAtomic(
+      this.sessionMapPath,
+      JSON.stringify(Array.from(this.sessionMap.entries()))
     );
-    return this.writeLock;
-  }
-
-  /** Atomic tmp+rename write of the session map. Must be serialized via writeLock. */
-  private async doSaveSessionMap(): Promise<void> {
-    await mkdir(this.deps.relayDir, { recursive: true });
-    const data = JSON.stringify(Array.from(this.sessionMap.entries()));
-    const tmpPath = `${this.sessionMapPath}.tmp`;
-    await writeFile(tmpPath, data, 'utf-8');
-    await rename(tmpPath, this.sessionMapPath);
   }
 
   /** Save session map, unsubscribe, and clear state. Idempotent — safe to call multiple times. */

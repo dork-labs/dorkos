@@ -1,18 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-const mockReadFile = vi.fn();
-const mockWriteFile = vi.fn().mockResolvedValue(undefined);
-const mockMkdir = vi.fn().mockResolvedValue(undefined);
-const mockRename = vi.fn().mockResolvedValue(undefined);
-
-vi.mock('fs/promises', () => ({
-  default: {
-    readFile: (...args: unknown[]) => mockReadFile(...args),
-    writeFile: (...args: unknown[]) => mockWriteFile(...args),
-    mkdir: (...args: unknown[]) => mockMkdir(...args),
-    rename: (...args: unknown[]) => mockRename(...args),
-  },
-}));
+/**
+ * The data routes run against a real temp directory rather than a mocked
+ * `fs/promises`. They used to assert the write internals (`writeFile` to a
+ * `.tmp` path, then `rename`), which pinned the very fixed-temp-name pattern
+ * that DOR-697 had to remove. Asserting the file's actual content instead lets
+ * the route change how it writes, and lets the concurrency cases below say
+ * something a mock never could.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -20,11 +14,14 @@ vi.mock('../../lib/logger.js', () => ({
 
 import request from 'supertest';
 import express from 'express';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { createExtensionsRouter } from '../extensions.js';
 
-const DORK_HOME = '/tmp/dork-test';
-const TEST_CWD = '/tmp/test-project';
+let DORK_HOME: string;
+let TEST_CWD: string;
 
 /** Minimal mock matching the ExtensionManager public interface. */
 function createMockManager() {
@@ -120,11 +117,23 @@ describe('Extension Routes', () => {
   let app: express.Express;
   let manager: MockManager;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    DORK_HOME = await fs.mkdtemp(path.join(os.tmpdir(), 'ext-routes-home-'));
+    TEST_CWD = await fs.mkdtemp(path.join(os.tmpdir(), 'ext-routes-cwd-'));
     manager = createMockManager();
     app = createApp(manager);
   });
+
+  afterEach(async () => {
+    await fs.rm(DORK_HOME, { recursive: true, force: true });
+    await fs.rm(TEST_CWD, { recursive: true, force: true });
+  });
+
+  /** Absolute path the routes resolve for a global-scope extension's data blob. */
+  function globalBlobPath(id = 'test-ext'): string {
+    return path.join(DORK_HOME, 'extension-data', id, 'data.json');
+  }
 
   describe('GET /api/extensions', () => {
     it('returns array of extension records', async () => {
@@ -262,24 +271,18 @@ describe('Extension Routes', () => {
 
   describe('GET /api/extensions/:id/data', () => {
     it('returns JSON data when file exists', async () => {
-      const record = stubRecord({ scope: 'global' });
-      manager.get.mockReturnValue(record);
-      mockReadFile.mockResolvedValue(JSON.stringify({ theme: 'dark' }));
+      manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
+      await fs.mkdir(path.dirname(globalBlobPath()), { recursive: true });
+      await fs.writeFile(globalBlobPath(), JSON.stringify({ theme: 'dark' }));
 
       const res = await request(app).get('/api/extensions/test-ext/data');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ theme: 'dark' });
-      expect(mockReadFile).toHaveBeenCalledWith(
-        `${DORK_HOME}/extension-data/test-ext/data.json`,
-        'utf-8'
-      );
     });
 
     it('returns 204 when no data file exists', async () => {
-      const record = stubRecord({ scope: 'global' });
-      manager.get.mockReturnValue(record);
-      mockReadFile.mockRejectedValue(new Error('ENOENT'));
+      manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
 
       const res = await request(app).get('/api/extensions/test-ext/data');
 
@@ -295,59 +298,37 @@ describe('Extension Routes', () => {
     });
 
     it('resolves local extension data path from cwd', async () => {
-      const record = stubRecord({ scope: 'local' });
-      manager.get.mockReturnValue(record);
-      mockReadFile.mockResolvedValue(JSON.stringify({ setting: true }));
+      manager.get.mockReturnValue(stubRecord({ scope: 'local' }));
+      const localPath = path.join(TEST_CWD, '.dork', 'extension-data', 'test-ext', 'data.json');
+      await fs.mkdir(path.dirname(localPath), { recursive: true });
+      await fs.writeFile(localPath, JSON.stringify({ setting: true }));
 
       const res = await request(app).get('/api/extensions/test-ext/data');
 
       expect(res.status).toBe(200);
-      expect(mockReadFile).toHaveBeenCalledWith(
-        `${TEST_CWD}/.dork/extension-data/test-ext/data.json`,
-        'utf-8'
-      );
+      expect(res.body).toEqual({ setting: true });
     });
   });
 
   describe('PUT /api/extensions/:id/data', () => {
     it('writes JSON and returns success', async () => {
-      const record = stubRecord({ scope: 'global' });
-      manager.get.mockReturnValue(record);
+      manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
 
       const payload = { theme: 'dark', fontSize: 14 };
       const res = await request(app).put('/api/extensions/test-ext/data').send(payload);
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
+      expect(JSON.parse(await fs.readFile(globalBlobPath(), 'utf-8'))).toEqual(payload);
     });
 
-    it('creates directory before writing', async () => {
-      const record = stubRecord({ scope: 'global' });
-      manager.get.mockReturnValue(record);
+    it('creates the data directory when it does not exist yet', async () => {
+      manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
 
-      await request(app).put('/api/extensions/test-ext/data').send({ key: 'value' });
+      const res = await request(app).put('/api/extensions/test-ext/data').send({ key: 'value' });
 
-      expect(mockMkdir).toHaveBeenCalledWith(`${DORK_HOME}/extension-data/test-ext`, {
-        recursive: true,
-      });
-    });
-
-    it('uses atomic write (temp file renamed to final path)', async () => {
-      const record = stubRecord({ scope: 'global' });
-      manager.get.mockReturnValue(record);
-      const payload = { key: 'value' };
-
-      await request(app).put('/api/extensions/test-ext/data').send(payload);
-
-      const expectedPath = `${DORK_HOME}/extension-data/test-ext/data.json`;
-      const expectedTmp = `${expectedPath}.tmp`;
-
-      expect(mockWriteFile).toHaveBeenCalledWith(
-        expectedTmp,
-        JSON.stringify(payload, null, 2),
-        'utf-8'
-      );
-      expect(mockRename).toHaveBeenCalledWith(expectedTmp, expectedPath);
+      expect(res.status).toBe(200);
+      expect(JSON.parse(await fs.readFile(globalBlobPath(), 'utf-8'))).toEqual({ key: 'value' });
     });
 
     it('returns 404 when extension not found', async () => {
@@ -356,6 +337,60 @@ describe('Extension Routes', () => {
       const res = await request(app).put('/api/extensions/missing/data').send({ key: 'value' });
 
       expect(res.status).toBe(404);
+    });
+
+    // DOR-697: a person with two cockpit tabs open can race the same path.
+    // These must stay concurrent — issued sequentially they cannot fail.
+    describe('concurrent saves to one extension', () => {
+      it('never 500s when many saves land at once', async () => {
+        manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
+        const N = 20;
+
+        const responses = await Promise.all(
+          Array.from({ length: N }, (_, i) =>
+            request(app)
+              .put('/api/extensions/test-ext/data')
+              .send({ writer: i, pad: 'x'.repeat(i * 64) })
+          )
+        );
+
+        expect(responses.map((r) => r.status)).toEqual(Array.from({ length: N }, () => 200));
+      });
+
+      it('leaves one writer payload on disk, never a blend of two', async () => {
+        manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
+        const N = 20;
+
+        // Status alone is blind to the case that matters: a crossed write also
+        // returns 200. Only the file's content shows whether the bytes that
+        // landed belong to a single writer.
+        await Promise.all(
+          Array.from({ length: N }, (_, i) =>
+            request(app)
+              .put('/api/extensions/test-ext/data')
+              .send({ writer: i, pad: 'x'.repeat(i * 64) })
+          )
+        );
+
+        const parsed = JSON.parse(await fs.readFile(globalBlobPath(), 'utf-8')) as {
+          writer: number;
+          pad: string;
+        };
+        expect(parsed.pad).toBe('x'.repeat(parsed.writer * 64));
+      });
+
+      it('leaves no temp files in the extension data directory', async () => {
+        manager.get.mockReturnValue(stubRecord({ scope: 'global' }));
+
+        await Promise.all(
+          Array.from({ length: 20 }, (_, i) =>
+            request(app).put('/api/extensions/test-ext/data').send({ writer: i })
+          )
+        );
+
+        const entries = await fs.readdir(path.dirname(globalBlobPath()));
+        expect(entries).toEqual(['data.json']);
+      });
     });
   });
 

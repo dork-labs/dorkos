@@ -12,6 +12,7 @@
  * @module relay/access-control
  */
 import chokidar, { type FSWatcher } from 'chokidar';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { matchesPattern } from './subject-matcher.js';
@@ -192,14 +193,25 @@ export class AccessControl {
   /**
    * Atomically persist the current rules to disk.
    *
-   * Writes to a temporary file first, then renames to the target path.
-   * This prevents partial writes from corrupting the rules file.
+   * Writes to a temporary file first, then renames to the target path, so a
+   * partial write can never corrupt the rules file.
+   *
+   * No path lock is needed here, unlike the async stores that share
+   * `@dorkos/shared/atomic-write`: these calls are synchronous, so the event
+   * loop cannot run another writer between the write and the rename. The temp
+   * name is still unique per call so that a writer in a *different* process
+   * cannot clobber this one's temp file.
    */
   private persistRules(): void {
-    const tmpPath = this.rulesPath + '.tmp';
+    const tmpPath = `${this.rulesPath}.${process.pid}.${randomUUID()}.tmp`;
     const json = JSON.stringify(this.rules, null, 2);
-    fs.writeFileSync(tmpPath, json, 'utf-8');
-    fs.renameSync(tmpPath, this.rulesPath);
+    try {
+      fs.writeFileSync(tmpPath, json, 'utf-8');
+      fs.renameSync(tmpPath, this.rulesPath);
+    } catch (err) {
+      fs.rmSync(tmpPath, { force: true });
+      throw err;
+    }
   }
 
   /**

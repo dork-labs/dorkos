@@ -7,6 +7,7 @@
  * @module services/extensions/extension-server-api-factory
  */
 import type { DataProviderContext } from '@dorkos/extension-api/server';
+import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { eventFanOut } from '../core/event-fan-out.js';
@@ -58,10 +59,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
       }
     },
     async saveData<T = unknown>(data: T): Promise<void> {
-      await fs.mkdir(path.dirname(dataPath), { recursive: true });
-      const tempPath = dataPath + '.tmp';
-      await fs.writeFile(tempPath, JSON.stringify(data, null, 2), 'utf-8');
-      await fs.rename(tempPath, dataPath);
+      await writeFileAtomic(dataPath, JSON.stringify(data, null, 2));
     },
   };
 
