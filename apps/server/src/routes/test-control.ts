@@ -65,6 +65,23 @@ testControlRouter.post('/reset', async (_req, res) => {
 });
 
 /**
+ * The local no-op "sign-in" page the test-mode connector provider's authorize
+ * URLs point at (`services/connectors/providers/test-mode.ts`). A real vendor
+ * consent screen is exactly what the e2e must NOT depend on, but the browser
+ * still clicks a real link that opens a real tab — this page is where it lands.
+ * Connect flows in test mode succeed on poll regardless; nothing here records
+ * anything.
+ */
+testControlRouter.get('/connect-approved', (_req, res) => {
+  res
+    .type('html')
+    .send(
+      '<!doctype html><html><head><title>Signed in</title></head>' +
+        '<body><main><h1>Signed in</h1><p>You can close this tab and go back to DorkOS.</p></main></body></html>'
+    );
+});
+
+/**
  * Fixture directory for the seeded test agent, derived from the RESOLVED
  * directory boundary so it is in-bounds by construction.
  *

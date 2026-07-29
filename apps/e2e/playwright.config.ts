@@ -288,7 +288,14 @@ export default defineConfig({
       // they would hang on an unreachable http://localhost:6244.
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: ['**/chat-mock.spec.ts', ...(INCLUDE_SITE ? [] : SITE_SPECS)],
+      // tests/connections/ needs the test-mode server (the scripted
+      // `test-connector` provider exists only under DORKOS_TEST_RUNTIME), so it
+      // runs in chromium-connections below, never against the real cockpit leg.
+      testIgnore: [
+        '**/chat-mock.spec.ts',
+        '**/connections/**',
+        ...(INCLUDE_SITE ? [] : SITE_SPECS),
+      ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
       ...(INCLUDE_INTEGRATION ? {} : { grepInvert: /@integration/ }),
     },
@@ -307,6 +314,28 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/chat-mock.spec.ts'],
+    },
+    {
+      // Connector-gateway specs — also against the test-mode server, whose
+      // DORKOS_TEST_RUNTIME gate is what makes the scripted `test-connector`
+      // provider exist. A separate project rather than more chat-mock suites
+      // because these specs share none of chat-mock's scenario/reset choreography.
+      //
+      // connections.spec.ts is a SINGLE serial file for the same reason
+      // chat-mock is: the provider credential and its accounts are server-global
+      // state. marketplace-connectors.spec.ts may run beside it freely — it
+      // touches only the marketplace source list. chat-mock's global
+      // `POST /api/test/reset` clears runtime sessions and scenarios, neither of
+      // which these specs' assertions depend on (the session-attach spec uses
+      // its session only as an id; the attach surface is connector-service
+      // state, not runtime state). Verified empirically 2026-07-29: both
+      // projects run concurrently against one test-mode server, 18/18 passed.
+      name: 'chromium-connections',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/connections/**/*.spec.ts'],
     },
   ],
 });

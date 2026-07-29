@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "plugins": {
+    "e2e-gmail-connector": {
+      "type": "adapter",
+      "adapterType": "connector",
+      "layers": ["adapters"],
+      "icon": "📧",
+      "pricing": { "model": "free" }
+    },
+    "e2e-plain-adapter": {
+      "type": "adapter",
+      "layers": ["adapters"],
+      "icon": "🔌",
+      "pricing": { "model": "free" }
+    }
+  }
+}
