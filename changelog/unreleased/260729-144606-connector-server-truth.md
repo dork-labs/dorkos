@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(connectors): server truth — live credential seam, agent tools, Nango Proxy→MCP (DOR-371, DOR-415)'
+  - 'fix(connectors): revoke live sessions on credential delete + review nits'
 ---
 
 ### Added
