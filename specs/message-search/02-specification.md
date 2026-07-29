@@ -61,7 +61,7 @@ So the framing is an anticipated need arriving on schedule, not a change of mind
 - **G2** — The index is **derived**: `DELETE FROM messages` plus a rebuild is a complete, supported recovery, and no runtime can tell it exists.
 - **G3** — **Per-source degradation.** One source that fails to project contributes zero rows and one warning — never a failed search, never a blank list. ADR-0310's "partial list + warning, never a blank screen" shape, inherited rather than reinvented.
 - **G4** — **The scope is stated in the product**, not only here. A person must be able to learn what search does not cover without reading a spec.
-- **G5** — `search_room_history` becomes a caller of this index, so there is exactly one search path over the room log.
+- **G5** — `search_room_history` becomes a caller of this index, so there is exactly one search path over the room log. **[Amended 2026-07-29 (DOR-672 DECOMPOSE) — `search_room_history` is RP7's to build, not this ticket's. See Amendment 5.]**
 - **G6** — An access model where **visibility is a join**, the owner path is explicit, and no agent reaches session history.
 
 ## Non-Goals
@@ -149,6 +149,8 @@ What **does** work is the thing the feature is for: what you asked, what an agen
 
 The projects root is **`$CLAUDE_CONFIG_DIR ?? ~/.claude`** (`apps/server/src/services/runtimes/claude-code/claude-config-dir.ts:31-33`), not a hardcoded `~/.claude`; that file's TSDoc says hardcoding "silently split-brains" (DOR-250), and an index that hardcodes it reintroduces the same bug. `getProjectsRoot()` appends `projects` (`sessions/transcript-reader.ts:60-62`).
 
+**[Amended 2026-07-29 (DOR-672 DECOMPOSE, DOR-682) — resolving THE root is right for the existing caller and wrong for this index, which must enumerate roots instead. On the operator's own machine a single root covers at most 67% of their Claude Code history, and 3.5% under the environment this decomposition ran in. See Amendment 2.]**
+
 **The directory slug is lossy and must never be used to recover a path.** `cwd.replace(/[^a-zA-Z0-9-]/g, '-')` (`transcript-reader.ts:51-53`) collapses `/`, `.` and `_` all to `-`, so it is non-invertible. The shipped reader already compensates by taking the true working directory from the JSONL head record (`:104-106`) and the projection does the same.
 
 **Discovery recurses; indexing does not.** **[measured]**, the corpus is not flat:
@@ -171,6 +173,8 @@ The projects root is **`$CLAUDE_CONFIG_DIR ?? ~/.claude`** (`apps/server/src/ser
 **The 64 did not reproduce either, and why they did not is the useful part.** A second pass hours later found **0 malformed lines in the entire corpus**, main and subagent alike. The first pass was reading files that live agents were appending to at that moment, so what it caught was **truncated final lines in flight** — not corruption. That is direct empirical evidence for §5's partial-line rule: a reader can and does observe an incomplete last line, so retaining the trailing partial and advancing the offset only past the last complete line is not defensive programming, it is the observed case.
 
 The projection is still written to survive a line that does not parse — skipped, counted, never aborting the file — because one bad line must not cost a session. What changes is the justification: it guards a live-append race, not a dirty corpus.
+
+**[Amended 2026-07-29 (DOR-672 DECOMPOSE, DOR-681) — the conclusion "0 malformed" is right and BOTH stated reasons are wrong. The 64 reproduce exactly, they are not in-flight truncations, and they are not on disk at all: they are an artifact of splitting lines with Node's `readline`, which also breaks on U+2028 and U+2029. This turns a reassuring paragraph into a concrete implementation constraint. See Amendment 3.]**
 
 #### 2.2 `codex` — the rollout files, and why no ADR is being broken
 
@@ -332,6 +336,8 @@ The cost is precise and belongs in the user-facing copy §Documentation requires
 
 **[measured]** at ~18k rows: top-20 ranked **0.02–0.67 ms** p50; **with `snippet()` 0.21–4.55 ms**. **[operator]** at 500k rows: **3.3 ms**. Snippets cost 5–9× on queries with real hit counts (§1.4), so the budget is set from the `snippet()` column, not the bare one. Both are far inside a keystroke, and the design has headroom of more than an order of magnitude before anything needs revisiting.
 
+**[Amended 2026-07-29 (DOR-672 DECOMPOSE, DOR-684) — the last sentence is wrong, and the figures above are a best case rather than a budget. `ORDER BY bm25()` is O(hits), not O(limit). See Amendment 1.]**
+
 #### 6.4 Prune — two different things that a single word hides
 
 **Prune is not optional**, but the rule the brief carried conflates two cases that must be handled differently.
@@ -410,7 +416,7 @@ Two new tables and one virtual table, all in §4. **No existing table is altered
 
 **The entry point is the command palette's existing search, and `specs/rooms/02-specification.md:517` still holds.** That paragraph carried two independent arguments; the amendment to that spec's §13.2 separates them. The UX-separation argument — Slack keeps `Cmd+K` and `Cmd+F` apart, Teams merged them and is the cautionary example — is untouched and load-bearing. Only the cost argument ("we have no message index") expires. **Navigation and message search remain different surfaces**; this feature is the second one, not an addition to the first.
 
-**`search_room_history` becomes a caller** (`specs/room-participation/02-specification.md` §10.3). There is exactly one search path over the room log, because two paths over the same rows that answer differently is the tolerated legacy pattern AGENTS.md refuses. The substring scan is never written, so the conversion is never a follow-up.
+**`search_room_history` becomes a caller** (`specs/room-participation/02-specification.md` §10.3). There is exactly one search path over the room log, because two paths over the same rows that answer differently is the tolerated legacy pattern AGENTS.md refuses. The substring scan is never written, so the conversion is never a follow-up. **[Amended 2026-07-29 (DOR-672 DECOMPOSE) — `search_room_history` is RP7's to build, not this ticket's. See Amendment 5.]**
 
 **A result carries what it needs to be opened**: source, container, ordinal, role, timestamp, and a `snippet()` excerpt with the match marked. A result whose working directory no longer exists is still shown, and says so (§6.4).
 
@@ -429,7 +435,7 @@ Two new tables and one virtual table, all in §4. **No existing table is altered
 
 - **Rebuild is the correctness mechanism, and it is affordable.** **[measured]** 2.69 s over the v1 corpus (241 files, 671.5 MB) producing 17,953 messages and 29.2 MB; **[operator]** 8.25 s over the full 2,911 MB corpus. Both are inside the budget that makes "delete it and rebuild" the first answer to drift rather than the last.
 - **Steady state is an append.** **[operator]** p50 0.07 ms at 494k rows inside a batch; **[measured]** 1.29 ms for a single row in its own transaction at ~18k rows — the difference is one WAL commit, which is why the reconciler batches one transaction per file rather than one per row.
-- **Query is not the constraint** (§6.3), and `snippet()` is the term to watch, not `bm25()`.
+- **Query is not the constraint** (§6.3), and `snippet()` is the term to watch, not `bm25()`. **[Amended 2026-07-29 — half right. `snippet()` is a constant multiplier; `bm25()` ordering is the term that scales with corpus size, and it is the one that will bite first. Amendment 1.]**
 - **Index size is small because scope is small.** 29.2 MB for 17,953 messages **[measured]**; external content is what keeps it there (§1.4).
 - **No new hot path.** Nothing here runs per turn. The room source write-through is one insert on a path that already writes a row.
 
@@ -470,7 +476,7 @@ DOR-632 ("An agent re-learns the operator from scratch in every room") is recall
 - **Phase 2 — the room source, end to end.** M2, the frontier, the reconciler, write-through, and the rebuild-equals-incremental test. Rooms first because DorkOS owns the write, so any bug here is ours and cheap to see.
 - **Phase 3 — the JSONL mechanism and `claude-code`.** M1's frontier reader (line-boundary retention, shrink detection), recursive discovery that excludes subagent transcripts by decision, the projection, and the dirty-input tests. This is where the corpus and the value are.
 - **Phase 4 — `codex`.** One registry row and one projection, plus the two-families double-count test.
-- **Phase 5 — query, access, and the surfaces.** The route, the visible-set join, the palette entry point, and `search_room_history` as a caller. RP7's own dependency on RP3 (`joinedSeq`) gates the agent-facing half.
+- **Phase 5 — query, access, and the surfaces.** The route, the visible-set join, the palette entry point, and `search_room_history` as a caller. RP7's own dependency on RP3 (`joinedSeq`) gates the agent-facing half. **[Amended 2026-07-29 (DOR-672 DECOMPOSE) — `search_room_history` is RP7's to build, not this ticket's. See Amendment 5.]**
 
 **OpenCode is not a phase here.** It is a follow-up ticket with a named blocker (§2.3), and it is the ticket that will decide whether this shape becomes a port.
 
@@ -501,3 +507,215 @@ All resolved during SPECIFY; kept with their answers so the reasoning is auditab
 - `specs/room-participation/02-specification.md` §10.3 — RP7, amended by this change
 - `specs/rooms/02-specification.md` §13.2 — the command palette, amended by this change
 - `specs/community-adapter/02-specification.md` — Non-Goals, §5 and §Data model changes, all amended by this change
+- `specs/message-search/03-tasks.json` — the DECOMPOSE breakdown; the per-task `issue` field is the task→issue map (DOR-679 … DOR-688)
+
+---
+
+# Amendments from DECOMPOSE (2026-07-29)
+
+**Why these are here rather than only in the tickets.** This programme's recurring failure is a claim that was true when written and cited later without re-checking — a failure this document itself commits three times and corrects twice (§1.1, §2.1, §6.4). Whoever picks up DOR-684 will read §6.3, not a ticket comment. So the corrections land at the source.
+
+**No original claim is deleted** — each is left in place with an inline marker, because a correction that erases what it corrected teaches nobody why it was needed.
+
+**Line numbers in this document have moved, and an earlier draft of this paragraph wrongly claimed they had not.** The amendment _sections_ are appended, but the inline markers are **insertions**, so every line past the first one shifts. Nothing outside this file cites it by line today — verified by grep across `specs/`, `decisions/`, `docs/` and `contributing/` — so the breakage is latent rather than actual. But the claim was false as written, and a document whose own Amendment 4 warns that line numbers move should not have asserted otherwise. **Cite this file by section heading or quoted clause text, never by line.** That is the same discipline §Background already applies to ADR-0310, and for the same reason.
+
+## Amendment 1 — the latency budget is a curve, not a number (DOR-684)
+
+**Amends §6.3 and the "Query is not the constraint" bullet under §Performance Considerations.**
+
+§6.3's figures are correct and are a **best case**. Its conclusion — "the design has headroom of more than an order of magnitude before anything needs revisiting" — does not hold, because the quantity it treats as constant is not.
+
+**The claim being made here is the SHAPE, not the numbers.** Three independent runs of this benchmark — two during DECOMPOSE, one by review — produced three different absolute figures, spanning roughly 2× in each direction, because every one was taken on a shared workstation under whatever load the other agents were generating (review measured at load 39–41 throughout). **The shape reproduced identically every time; no absolute figure reproduced at all.** So the absolutes below are one run, recorded for illustration and explicitly **machine- and load-dependent** — they are not a budget, not a regression threshold, and not quotable. Re-run the benchmark on the machine you care about; do not cite this table.
+
+**`ORDER BY bm25()` is O(hits), not O(limit).** bm25 must score every matching row before `LIMIT` can discard any, so cost is a function of how many messages match, not of how many are returned. One run, 2026-07-29, against the 18,114-row prototype index the original figures came from:
+
+| Query       | Hits   | `ORDER BY bm25()` | No `ORDER BY` | `+ snippet()` |
+| ----------- | ------ | ----------------- | ------------- | ------------- |
+| `dogs`      | 2      | 0.03 ms           | 0.012 ms      | 0.55 ms       |
+| `search`    | 295    | 0.16 ms           | 0.017 ms      | 2.79 ms       |
+| `opencode`  | 414    | 0.20 ms           | 0.016 ms      | 3.05 ms       |
+| `index`     | 806    | 0.35 ms           | 0.016 ms      | 1.64 ms       |
+| `migration` | 886    | 0.37 ms           | 0.016 ms      | 2.10 ms       |
+| `that`      | 5,139  | 2.42 ms           | 0.015 ms      | 7.35 ms       |
+| `the`       | 15,691 | **6.83 ms**       | 0.016 ms      | **19.48 ms**  |
+
+**Two structural facts, each confirmed by two independent measurements on different loads:**
+
+1. **Unordered is flat** across a four-order-of-magnitude range of hit counts — 0.012–0.017 ms here, 0.011–0.019 ms in review. The join and the match are effectively free; the ranking is the whole cost.
+2. **Ranked is linear in hits.** The slope is the load-dependent part — ~0.44 µs/row here, 0.71–1.03 µs/row in review, ~0.375 µs/row on an earlier DECOMPOSE run — but linearity itself held in all three, and the hit counts are identical across runs (`opencode` 414, `migration` 886), so the runs are measuring the same corpus and differ only in machine conditions.
+
+**Everything below follows from the shape and survives any slope in that range.**
+
+**So §6.3's 0.21–4.55 ms is the range for queries matching under ~1,000 rows, not a ceiling.** The realistic worst case at this corpus size is one to two orders of magnitude above the stated budget, depending on load. And **the operator's 3.3 ms at 500k rows cannot be a common-term figure**: at any slope in the measured range, a term matching ~400k rows costs somewhere between 150 ms and 400 ms to rank before `snippet()` is charged. That number is not evidence the design scales; it is evidence a rare word is cheap at any scale, which was never in doubt.
+
+**On "cold", stated precisely, because the earlier draft conflated two different things.** A first query measured on a fresh connection with statement preparation inside the timed call ran ~2× the warm p50 here and ~10× on the earlier run. But connection setup and statement preparation are **fixed costs that do not scale with the corpus**; only page-cache misses scale, and the two were not separated. So treat cold as "the first query of a session is materially slower for reasons that are mostly one-time", not as a second scaling term. It is a reason to warm the statement at startup, not a reason to redesign.
+
+**The consequence this document lacked: a minimum query length and a debounce are part of the calling contract, not an optimisation.** Typing `t` → `th` → `the` fires three queries whose cost _rises_ as the query becomes more specific, and the first two are simultaneously the most expensive and the least useful. G1 says "fast enough to feel like typing"; that is a property of what the caller sends, not of FTS5. Both belong in DOR-684's route contract and DOR-685's palette, and neither is a tuning knob to be discovered later under a performance bug.
+
+**Nothing in the design changes.** External content, the tokenizer, the schema and the ranking are all unaffected — this is a budget correction, not a redesign. What changes is what a reviewer should expect, and what a benchmark must assert.
+
+**Re-run it rather than trusting it.** The measurement is one script against any built index, and the methodology matters — prepare statements outside the timing loop, discard a warm-up, take p50 over 25 runs:
+
+```js
+// node bench.mjs <path-to-index.db>
+import Database from 'better-sqlite3';
+const db = new Database(process.argv[2], { readonly: true });
+const SNIP = "snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12)";
+const p50 = (fn, n = 25) => {
+  for (let i = 0; i < 5; i++) fn(); // warm-up, discarded
+  const t = [];
+  for (let i = 0; i < n; i++) {
+    const s = process.hrtime.bigint();
+    fn();
+    t.push(Number(process.hrtime.bigint() - s) / 1e6);
+  }
+  return t.sort((a, b) => a - b)[Math.floor(n / 2)];
+};
+const count = db.prepare('select count(*) c from messages_fts where messages_fts match ?');
+const ranked =
+  db.prepare(`select m.id, ${SNIP} e from messages_fts f join messages m on m.id=f.rowid
+                           where messages_fts match ? order by bm25(messages_fts) limit 20`);
+for (const q of ['dogs', 'migration', 'that', 'the'])
+  console.log(q, count.get(q).c, 'hits', p50(() => ranked.all(q)).toFixed(2), 'ms');
+```
+
+**A benchmark must assert the hit count before it asserts the latency.** An empty or broken index answers in microseconds, so a latency-only assertion passes most loudly exactly when the feature is most broken. DOR-684 carries this as a requirement.
+
+**And a regression threshold must be derived, never inherited.** Because the absolutes move ~2× with load, any budget hard-coded from this document will be either meaninglessly loose or flaky. DOR-684's benchmark establishes its threshold on the machine it runs on — measure the flat unordered baseline and the ranked slope in the same run, and assert on the **ratio and the linearity**, which are stable, rather than on a millisecond figure, which is not.
+
+## Amendment 2 — the index enumerates Claude Code roots; it does not resolve one (DOR-682)
+
+**Amends §2.1's opening paragraph, the `claude-code` row of §2's source table, and §Technical Dependencies.**
+
+§2.1 is right that the root is `$CLAUDE_CONFIG_DIR ?? ~/.claude` and right that hardcoding `~/.claude` reintroduces DOR-250. It is wrong that resolving **one** root is sufficient, and the counter-example is the machine this feature was designed on.
+
+**Measured 2026-07-29, read-only.** Three Claude Code config roots exist, and **all three were written within the last 7 days** — 143, 78 and 28 main-session files modified respectively, so none is abandoned history:
+
+| Root         | Indexed files (evals excluded) | Indexable messages |
+| ------------ | ------------------------------ | ------------------ |
+| `~/.claude`  | 236                            | 17,989             |
+| `~/.claude2` | 120                            | 7,880              |
+| `~/.claude3` | 28                             | 942                |
+| **Union**    | **384**                        | **26,811**         |
+
+A single-root index sees at most **17,989 of 26,811 — 67%**. The failure is not bounded there: the environment this decomposition ran in had `CLAUDE_CONFIG_DIR=~/.claude3` inherited from its shell, and a server launched the same way indexes **942 of 26,811 — 3.5%** while reporting nothing wrong, because a short result list is indistinguishable from a complete one.
+
+**That is this document's own G4 failure, in a form §2.1 did not anticipate.** G4 refuses a box that "silently covers less for one runtime than another"; this covers less for the _same_ runtime depending on an environment variable.
+
+**Why the mistake is a reasonable one, stated because the fix should not read as a rebuke of `resolveClaudeConfigDir()`.** That function is exactly right for its existing caller, which reads back a transcript for a session DorkOS itself just ran and therefore MUST resolve the identical directory the SDK wrote to. The index asks a different question — _where does this person's history live?_ — and inherited the answer to the first. Two legitimate questions, one resolver, and only one of them is served by it.
+
+**The amendment.** The `claude-code` registry row's root resolver returns a **set**. The default set is `$CLAUDE_CONFIG_DIR` when set, **union** `~/.claude` — those being the only two paths the SDK itself can have written to in a given process, so the union is free and provably complete for that process. Further roots are user configuration (a Zod field, a semver-keyed migration, default `[]`), because a third profile is an operator fact DorkOS cannot infer. **Auto-globbing `~/.claude*` is not the answer**: on this machine it sweeps up `.claude-worktrees` and `.claudekit`, neither of which is a config dir.
+
+A root that does not exist is skipped silently; a root that exists and fails to read contributes one `search_sources.last_error` and zero rows, per G3. Session ids are UUIDs so cross-root `origin_key` collision is not a practical risk — but `search_sources` is keyed `(source_id, origin_key)`, so a collision would silently overwrite a frontier rather than fail, and DOR-682 asserts distinctness rather than assuming it.
+
+**Consequence for every corpus figure in this document, not only §2's table.** The `claude-code` figures throughout describe `~/.claude` alone. The real v1 corpus on this machine is roughly **1.5× larger** than every count in **§1, §2 and §5**, and the share-of-disk percentages are correspondingly understated. **§5's change-signal figures are single-root too** — the 28-of-2,458 compaction sample, its 74 marker lines and the 543 `relocated` lines are all counted over `~/.claude` only, so each grows with the root set even though the conclusions they support (compaction is append-only; `relocated` is a line and not a file move) are structural and do not. The design is unaffected — the numbers are.
+
+## Amendment 3 — the corpus is clean; the reader was not (DOR-681)
+
+**Amends §2.1's two paragraphs on malformed lines.**
+
+§2.1 reaches the right conclusion — the corpus is clean — through two explanations that are both wrong, and the true explanation is a concrete implementation constraint that would otherwise have shipped as a bug.
+
+**What §2.1 says:** a first pass found 64 malformed lines; a second pass hours later found 0; therefore the 64 were "truncated final lines in flight", evidence of a live-append race.
+
+**What re-measurement on 2026-07-29 found:**
+
+- **64 malformed lines — the original count, exactly.** Not 0.
+- **0 of the 64 are the final line of their file.** Every one is mid-file, so the in-flight-truncation story cannot be right.
+- **An immediate re-scan of the same files returns 64 again.** Perfectly stable; there is no race.
+- They are confined to **5 files** carrying a tearing separator, **1 of them a main session**.
+
+**The cause — and exactly which characters are responsible, because an earlier draft of this amendment got that wrong.** On Node **v24.14.1**, the version this repo runs, `readline` breaks on **LF (U+000A), CR (U+000D), U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR — and nothing else.** Measured directly, one separator per file, counting the lines the interface emits:
+
+| Character             | `readline` |
+| --------------------- | ---------- |
+| LF U+000A · CR U+000D | splits     |
+| U+2028 LS · U+2029 PS | **splits** |
+| **U+0085 NEL**        | **inert**  |
+| VT U+000B · FF U+000C | inert      |
+
+`JSON.stringify` escapes none of LS/PS/NEL and all three are legal raw inside a JSON string, so a runtime writing whole records emits them as-is. But only LS and PS tear a record apart.
+
+**The arithmetic closes exactly, and it closes without NEL.** Across the corpus: **34 × U+2028 and 12 × U+2029 spread over 19 records** produce `46 + 19 = 65` fragments, of which **1 is empty** (two adjacent separators) and is skipped as a blank line — leaving **64** unparseable fragments, the observed number. The **44 × U+0085 NEL**, which occur in 7 records including one main-session file carrying 2 NEL and no LS/PS, contribute **zero**: that file yields 0 malformed lines, where an amendment blaming NEL predicts 4.
+
+Splitting the identical bytes on `\n` alone:
+
+```
+malformed when split with Node readline : 64
+malformed when split on \n only         : 0
+```
+
+**So the corpus has never had a malformed line. Both measurements were measuring their own reader.**
+
+**The implementation constraint, which is the part that matters.** §5 already requires the JSONL frontier reader to retain a trailing partial line and advance the offset only past the last complete one. Amendment: **it must also treat `\n` as the only line terminator.** A reader using `readline`, or any splitter honouring Unicode line terminators, silently destroys real messages — 64 of them on this machine today — and does so in the least visible way available, since each fragment is discarded as unparseable by the very error handling meant to make the reader robust. The skip-and-count rule then converts data loss into a log line nobody reads.
+
+**A record can be torn into more than two pieces.** A record holding _k_ tearing separators becomes _k+1_ fragments, so an assertion written for "two halves" is wrong for the general case and wrong for the fixture DOR-681 mandates. Count fragments as _k+1_, and count only LS and PS toward _k_.
+
+§5's partial-line rule keeps its justification on general grounds — a concurrent append genuinely can be observed mid-line — but it loses the empirical evidence §2.1 offered for it, and gains a different and sharper one.
+
+**Two notes on technique, both paid for.** The script written to test this failed to _parse_ when a literal U+2028 was pasted into its source: U+2028 is a line terminator in JavaScript source too, so the same character breaks the data reader and the tool written to study it. **Build separator fixtures with code-point arithmetic — `chr(0x2028)` / `String.fromCharCode(0x2028)` — never a literal and never an escape sequence in a shell-bound string**, because an escape renders to a literal before it reaches the file and reintroduces the failure one level up. And the first version of this amendment folded NEL into the cause by assumption rather than by measurement, which is the exact error this document's provenance table exists to prevent.
+
+## Amendment 4 — provenance: which figures were re-derived, and which were not
+
+**The rule this table exists to enforce:** a figure in this document is safe to quote only if someone has re-run it. Everything below was checked on 2026-07-29 against the live corpus unless marked otherwise. **[not re-derived]** does not mean wrong — it means unverified, and it must not be cited as measured without re-running first.
+
+**Re-derived and holding** (2026-07-29):
+
+| Claim                                                                                           | §            | Result                                                                                                                            |
+| ----------------------------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Whole corpus 2,458 files / 2,771.2 MB / 448,857 lines                                           | §1.1         | 2,451 / 2,771 MB / 448,925 — holds                                                                                                |
+| Subagent+eval corpus 50,631 messages / 42.85 MB                                                 | §1.1         | 50,626 / 42.9 MB — holds                                                                                                          |
+| Subagent transcripts 2,142 files / 2,096.0 MB                                                   | §2.1         | 2,140 / 2,095.4 MB — holds                                                                                                        |
+| Eval sandboxes 37; plugin artifacts 38 / 1.2 MB                                                 | §2.1         | 37; 38 / 1.2 MB — **exact**                                                                                                       |
+| `thinking` 57,375 blocks, 99.2% empty, 0.19 MB text, 161.5 MB signature                         | §1.2         | 57,408 / 99.21% / 0.19 MB / 161.7 MB — holds                                                                                      |
+| `file-history-snapshot` 16.0 MB, 2,551 lines                                                    | §1.2         | 16.0 MB, 2,551 lines — **exact**                                                                                                  |
+| `attachment` 153.6 MB; `skill_listing` 72.5 / `deferred_tools_delta` 29.4 / `hook_success` 26.3 | §1.2         | 153.4; 72.2 / 29.4 / 26.3 — holds                                                                                                 |
+| Tool output ~1,980 MB across two encodings                                                      | §1.2         | 969.3 + 995.6 = 1,964.9 MB — holds                                                                                                |
+| Compaction: 28 files, 74 markers, zero ending at a marker                                       | §5           | 28 / 74 / 0 — **exact**                                                                                                           |
+| `relocated` 543 lines                                                                           | §5           | 543 — **exact**                                                                                                                   |
+| Type-less lines 3,804, all outside the files v1 reads                                           | §2.1         | 3,804 corpus-wide, 0 in main sessions — **exact**                                                                                 |
+| Vanished-`cwd` 33 files / 288 messages                                                          | §6.4         | 33 / 288 — **exact**                                                                                                              |
+| Codex 16 files, 2,114 lines, 0 malformed, timestamps 2,114/2,114                                | §2.2         | all four — **exact**                                                                                                              |
+| Codex two families: `response_item` vs `event_msg` double-count                                 | §2.2         | 223 vs 203 — the trap is real                                                                                                     |
+| External content 29.1 MB vs 48.4 MB duplicated (39.9% smaller)                                  | §1.4         | `cmp-external.db` 29.14 MB vs `cmp-duplicate.db` 48.44 MB = **39.84%** — **exact**, corroborated by both surviving artifacts      |
+| Index SIZE 29.2 MB over the v1 corpus                                                           | §Performance | `idx.db` and `final.db` are each **30,621,696 bytes = 29.20 MB** — **exact**, corroborated by two independent surviving artifacts |
+| FTS5 / `bm25()` / `snippet()` / SQLite 3.53.2 present                                           | §Tech deps   | verified by running                                                                                                               |
+| `porter unicode61` gives 3 hits where `unicode61` gives 1                                       | §6.2         | verified by running                                                                                                               |
+| FTS5 column-name trap: `snippet()` fails, `MATCH` survives                                      | §4           | verified by running against a deliberate mismatch                                                                                 |
+| `better-sqlite3` declared as the RANGE `^12.11.1`                                               | §Tech deps   | `packages/db/package.json:21` — exact                                                                                             |
+| 37 migrations, zero FTS5 anywhere in `apps/` or `packages/`                                     | §Background  | verified                                                                                                                          |
+| `joinedSeq` does not exist in any migration                                                     | §7           | verified — `room_members` has only `joined_at`, `last_read_seq`                                                                   |
+| `readFromOffset` advances to `stat.size` unconditionally                                        | §5           | verified, and it has no production consumer                                                                                       |
+
+**Corrected by Amendments 1–3 and 5:** §6.3's latency headroom · §2.1's single root · §2.1's malformed-line explanation · G5/§8/Phase 5's claim on `search_room_history`.
+
+**Corrected during review of this amendment block, and recorded because the provenance rule applies to the corrections too:**
+
+- **U+0085 NEL was blamed for tearing records and does not tear.** Amendment 3's first draft named LS, PS and NEL as the cause; measured on Node v24.14.1, `readline` splits on LF, CR, U+2028 and U+2029 only, and NEL/VT/FF are inert. The arithmetic closes exactly without NEL (46 tearing separators over 19 records → 65 fragments − 1 empty = 64). NEL was folded in by assumption rather than measurement — the exact failure this table exists to prevent, committed inside the table's own commit.
+- **Amendment 1's absolute latency figures do not reproduce and are no longer presented as if they might.** Three runs, three answers, one shape. See Amendment 1's opening paragraph.
+
+**[not re-derived] — do not quote as measured:**
+
+- **Rebuild TIMINGS: 2.69 s over the v1 corpus, and [operator] 8.25 s over 2,911 MB** (§Performance, §1.4). No rebuild was run during DECOMPOSE, and **no artifact on disk can evidence a duration** — which is why the timings sit here while the index SIZE they produced sits in the confirmed table above. That split is deliberate: the two are different kinds of claim with different kinds of evidence. DOR-681's corpus bench is what will confirm the timings, and it asserts `rebuildMs <= 30000` rather than 2.69 s, precisely because the figure is unverified.
+- **[operator]'s "108 MB" full-corpus index** (§4.1 of the ideation, carried into §Performance's framing). The surviving `rebuild.db` artifact is **108,126,208 bytes**, which is 103.12 MiB — so the figure is corroborated as a **decimal** MB, and is the one place the document's stated "MB means MiB throughout" convention does not hold. Minor, but it is exactly the kind of unit slip that turns into a false comparison later.
+- **Steady-state append: [operator] p50 0.07 ms at 494k rows; [measured] 1.29 ms single-row at ~18k** (§Performance). Not re-run.
+- **[operator] top-20 at 500k rows = 3.3 ms** (§1.4, §6.3). Not re-run, and Amendment 1 argues it cannot be a common-term figure.
+- **§1.4's "snippet() is 5–9× slower"** (§1.4). The direction is confirmed and the ratio is not: re-measured spreads span roughly 3–18× depending on hit count, and at 2 hits it is ~18×. Treat "slower" as established and the multiple as query-dependent.
+- **OpenCode's 24 messages / `session` 6 / `part` 73** (§2.3). Not re-derived — the store was deliberately not opened, which is the rule working as intended. Inherited by DOR-688.
+- **§6.4's breakdown of the 33 vanished-`cwd` files** into 12 legacy worktrees / 12 `~/.dork/workspaces` / 9 other (§6.4). The totals are exact; the three-way split was not re-derived.
+- **§2.2's per-role Codex splits** (144 assistant / 79 user; 144 `agent_message` / 59 `user_message`) and the mtime-equals-last-timestamp claim on 16/16 files. The aggregate counts are exact; these breakdowns were not re-run.
+- **Every `file:line` citation into other specs and into `apps/server/`** beyond the handful named as verified above. Line numbers move; several in this document already did.
+
+## Amendment 5 — `search_room_history` is RP7's to build, not this ticket's (DOR-684)
+
+**Amends G5, §8's "becomes a caller" paragraph, and Phase 5 of §Implementation Phases.**
+
+This document states in three places that `search_room_history` becomes a caller of the index **as part of this work**. It is the one correction in this set that _removes_ scope, and it was the one that initially landed only in the tickets — which is precisely the failure this amendment block exists to prevent, since a reader reaches §64 long before they reach a Linear issue.
+
+**`specs/room-participation/02-specification.md` owns that tool, and it says so twice.** Its §12 phasing table lists `read_room_history` and `search_room_history` under **RP7**, with dependencies **RP6, RP3 and DOR-672**. Its Amendment 1 is explicit about the ordering: _"RP7 lands after the index and lands directly as a caller"_, and _"what is forbidden is **shipping the scan and replacing it later**, not 'these two must be one PR.'"_
+
+**So the division is:** DOR-672 delivers the index and the query service. **RP7 delivers the tool**, as a caller, and never writes the substring scan. The invariant both documents care about — exactly one search path over the room log, and nobody writes a second one intending to delete it — is preserved by the ordering, not by co-location.
+
+**RP7 additionally needs `joinedSeq`, which does not exist.** Re-verified 2026-07-29: `grep joined_seq` across `packages/db/` and `apps/server/src/` returns nothing, and `room_members` carries only `joined_at` and `last_read_seq`. **RP3 lands it.** An index-backed `search_room_history` shipped before then would hand an agent a fast, ranked reader of everything said in its rooms before it joined — §7 already says this, and it is the reason the dependency is real rather than bookkeeping.
+
+**G5 as written is therefore not a goal this ticket can meet**, and no task in `03-tasks.json` claims it. What DOR-684 owes RP7 is a query service whose visible-set join is a parameter rather than an assumption, so that RP7 can pass a member-scoped room set without the service needing to know why.
