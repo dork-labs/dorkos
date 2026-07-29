@@ -263,4 +263,28 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
   },
+  // ConnectionsShowcases
+  {
+    id: 'servicetile',
+    title: 'ServiceTile',
+    page: 'features',
+    category: 'Connections',
+    keywords: ['connector', 'connections', 'service', 'connect', 'gmail', 'slack', 'tile', 'grid'],
+  },
+  {
+    id: 'accountrow',
+    title: 'AccountRow',
+    page: 'features',
+    category: 'Connections',
+    keywords: [
+      'connector',
+      'connections',
+      'account',
+      'custody',
+      'disclosure',
+      'disconnect',
+      'expired',
+      'multi-account',
+    ],
+  },
 ];

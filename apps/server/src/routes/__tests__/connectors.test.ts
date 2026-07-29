@@ -11,6 +11,7 @@ import type {
   ConnectPoll,
   ConnectStart,
 } from '@dorkos/shared/connector-provider';
+import { custodyDisclosure } from '../../services/connectors/custody-disclosure.js';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorFlowBindings } from '../../services/connectors/flow-bindings.js';
 import type { RelayAdapterCatalog } from '../../services/connectors/routing.js';
@@ -137,11 +138,20 @@ describe('connectors router', () => {
     expect(start.status).toBe(200);
     expect(start.body.flowId).toBeTruthy();
     expect(start.body.authorizeUrl).toContain('gmail');
+    // The custody sentence rides the start response so the client can render it
+    // BEFORE opening the auth URL — server-owned copy, exactly the module's.
+    expect(start.body.disclosure).toBe(custodyDisclosure('managed', { service: 'gmail' }));
 
     const poll = await request(app).get(`/api/connectors/flows/${start.body.flowId}`);
     expect(poll.status).toBe(200);
     expect(poll.body.status).toBe('connected');
     expect(poll.body.account.toolkit).toBe('gmail');
+    // Publicized before it crosses out: provider stripped, disclosure attached.
+    expect(poll.body.account.provider).toBeUndefined();
+    expect(Object.keys(poll.body.account)).not.toContain('provider');
+    expect(poll.body.account.disclosure).toBe(
+      custodyDisclosure('managed', { service: 'personal' })
+    );
   });
 
   it('POST /:provider/connect 404s for an unknown provider', async () => {
@@ -182,6 +192,9 @@ describe('connectors router', () => {
     expect(account).not.toHaveProperty('url');
     expect(account).not.toHaveProperty('command');
     expect(account).toMatchObject({ toolkit: 'gmail', label: 'personal', custody: 'managed' });
+    // Every listed account carries its own server-composed custody sentence —
+    // the client never composes disclosure copy (spec §UX).
+    expect(account.disclosure).toBe(custodyDisclosure('managed', { service: 'personal' }));
   });
 
   it('GET /accounts?toolkit filters to one service', async () => {

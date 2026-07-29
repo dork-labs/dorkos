@@ -16,6 +16,7 @@ import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
 import { ChannelsPage } from '@/layers/widgets/room-view';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
+import { ConnectionsPage } from '@/layers/widgets/connections';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
 import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
@@ -271,6 +272,16 @@ const workspacesRoute = createRoute({
   component: WorkspacesPage,
 });
 
+// ── Connections at /connections ──────────────────────────────
+// Dialog params merged so the connect flow's relay-adapter recommendation can
+// deep-link the relay dialog (`?relay=open`) without leaving the page.
+const connectionsRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/connections',
+  validateSearch: zodValidator(mergeDialogSearch(z.object({}))),
+  component: ConnectionsPage,
+});
+
 // ── Marketplace at /marketplace ─────────────────────────────────
 const marketplaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
@@ -315,6 +326,7 @@ const routeTree = rootRoute.addChildren([
     tasksRoute,
     channelsRoute,
     workspacesRoute,
+    connectionsRoute,
     activityRoute,
     marketplaceRoute,
     marketplaceSourcesRoute,

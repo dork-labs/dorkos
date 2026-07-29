@@ -67,6 +67,7 @@ export const APP_ROUTE_PATHS = [
   '/activity',
   '/agents',
   '/channels',
+  '/connections',
   '/marketplace',
   '/marketplace/sources',
   '/session',

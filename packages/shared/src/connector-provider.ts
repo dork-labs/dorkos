@@ -288,3 +288,173 @@ export const ConnectorRecommendationSchema = z.object({
 });
 /** One ranked way to connect a service. See {@link ConnectorRecommendationSchema}. */
 export type ConnectorRecommendation = z.infer<typeof ConnectorRecommendationSchema>;
+
+// ---------------------------------------------------------------------------
+// Client-facing DTOs (connector-completion spec §Detailed Design 5)
+//
+// The response shapes of the connector REST routes, shared so the Transport
+// methods, the client hooks, and the server routes agree by construction. All
+// deliberately reference-free: no secret, no credential reference, and never a
+// `McpAppServerConnection` — the client sees account metadata, statuses, and
+// server-owned disclosure copy only.
+// ---------------------------------------------------------------------------
+
+/**
+ * One provider's aggregation-degradation notice — a backend that failed or
+ * timed out while a cross-provider listing was assembled (ADR-0310 pattern).
+ */
+export const ConnectorWarningSchema = z.object({
+  /** The backend type that degraded, e.g. `'composio'`. */
+  provider: z.string(),
+  /** Human-readable reason the provider's results are missing from the aggregate. */
+  message: z.string(),
+});
+/** One provider's degradation notice. See {@link ConnectorWarningSchema}. */
+export type ConnectorWarning = z.infer<typeof ConnectorWarningSchema>;
+
+/**
+ * A connected account as it crosses ANY outward surface (client, agent tools):
+ * the server-only `provider` field stripped, and the server-composed
+ * plain-language custody sentence attached — no client or agent surface ever
+ * composes disclosure copy of its own (ADR `260718-045630`).
+ */
+export const PublicConnectedAccountSchema = ConnectedAccountSchema.omit({ provider: true }).extend({
+  /** This account's plain-language custody sentence, composed server-side. */
+  disclosure: z.string(),
+});
+/** A client/agent-facing connected account. See {@link PublicConnectedAccountSchema}. */
+export type PublicConnectedAccount = z.infer<typeof PublicConnectedAccountSchema>;
+
+/** Response of `GET /api/connectors/toolkits`. */
+export const ConnectorToolkitsResponseSchema = z.object({
+  /** Every connectable toolkit from every reachable provider, deduped by slug. */
+  toolkits: z.array(ConnectorToolkitSchema),
+  /** One entry per provider that failed or timed out (never a hard failure). */
+  warnings: z.array(ConnectorWarningSchema),
+});
+/** Aggregated toolkits + degradation warnings. See {@link ConnectorToolkitsResponseSchema}. */
+export type ConnectorToolkitsResponse = z.infer<typeof ConnectorToolkitsResponseSchema>;
+
+/** Response of `GET /api/connectors/recommend?service=…`. */
+export const ConnectorRecommendationsResponseSchema = z.object({
+  /** Applicable connection routes, sorted ascending by precedence (best first). */
+  recommendations: z.array(ConnectorRecommendationSchema),
+  /** One entry per provider that degraded during the toolkit scan. */
+  warnings: z.array(ConnectorWarningSchema),
+});
+/** Routed recommendations + warnings. See {@link ConnectorRecommendationsResponseSchema}. */
+export type ConnectorRecommendationsResponse = z.infer<
+  typeof ConnectorRecommendationsResponseSchema
+>;
+
+/** Response of `GET /api/connectors/accounts`. */
+export const ConnectorAccountsResponseSchema = z.object({
+  /** Every account from every reachable provider, each with its custody sentence. */
+  accounts: z.array(PublicConnectedAccountSchema),
+  /** One entry per provider that failed or timed out (never a hard failure). */
+  warnings: z.array(ConnectorWarningSchema),
+});
+/** Aggregated accounts + warnings. See {@link ConnectorAccountsResponseSchema}. */
+export type ConnectorAccountsResponse = z.infer<typeof ConnectorAccountsResponseSchema>;
+
+/**
+ * Response of `POST /api/connectors/:provider/connect` — the reference-shaped
+ * flow start plus the custody disclosure the UI MUST render before the auth
+ * URL is opened (disclosure-before-URL is a consent invariant, not styling).
+ */
+export const ConnectorConnectStartResponseSchema = ConnectStartSchema.extend({
+  /** The custody sentence to show BEFORE opening {@link ConnectStart.authorizeUrl}. */
+  disclosure: z.string(),
+});
+/** Flow start + pre-connect disclosure. See {@link ConnectorConnectStartResponseSchema}. */
+export type ConnectorConnectStartResponse = z.infer<typeof ConnectorConnectStartResponseSchema>;
+
+/**
+ * Response of `GET /api/connectors/flows/:flowId` — {@link ConnectPollSchema}
+ * with the account in its public (provider-stripped, disclosure-carrying) form.
+ */
+export const ConnectorConnectPollResponseSchema = z.object({
+  /** `'pending'` while awaiting consent; terminal `'connected'` or `'failed'`. */
+  status: z.enum(['pending', 'connected', 'failed']),
+  /** The new account, present once `status === 'connected'`. */
+  account: PublicConnectedAccountSchema.optional(),
+  /** Failure detail, present on `status === 'failed'` — failure-typed, never thrown. */
+  error: z.string().optional(),
+});
+/** Pollable public flow state. See {@link ConnectorConnectPollResponseSchema}. */
+export type ConnectorConnectPollResponse = z.infer<typeof ConnectorConnectPollResponseSchema>;
+
+/**
+ * Why an attached account is not currently exposed as a tool server — the
+ * surfaced form of the `toolServerForAccount` null branch (never a throw,
+ * never a silent drop).
+ */
+export const SessionConnectorUnavailableReasonSchema = z.enum([
+  'expired',
+  'revoked',
+  'unavailable',
+]);
+/** Null-branch reason. See {@link SessionConnectorUnavailableReasonSchema}. */
+export type SessionConnectorUnavailableReason = z.infer<
+  typeof SessionConnectorUnavailableReasonSchema
+>;
+
+/** A per-account notice that an attached account could not be exposed right now. */
+export const SessionConnectorWarningSchema = z.object({
+  /** The attached account this warning is about. */
+  accountId: ConnectedAccountIdSchema,
+  /** The account's user-facing label, for a "reconnect {label}" affordance. */
+  label: z.string(),
+  /** Why it is not exposed (drives the reconnect prompt copy). */
+  reason: SessionConnectorUnavailableReasonSchema,
+});
+/** One null-branch warning. See {@link SessionConnectorWarningSchema}. */
+export type SessionConnectorWarning = z.infer<typeof SessionConnectorWarningSchema>;
+
+/** One attached account's status in a session's connector surface. */
+export const SessionConnectorAccountStatusSchema = z.object({
+  /** The attached account id. */
+  accountId: ConnectedAccountIdSchema,
+  /** Service slug, e.g. `'gmail'`. */
+  toolkit: z.string(),
+  /** User-facing label, e.g. `'work'`. */
+  label: z.string(),
+  /** Lifecycle status echoed from the routing binding. */
+  status: ConnectedAccountStatusSchema,
+  /** The provider-neutral MCP server name this account is exposed under, when exposed. */
+  serverName: z.string().optional(),
+  /** Whether the account is currently exposed as a tool server. */
+  exposed: z.boolean(),
+});
+/** One attached account's session status. See {@link SessionConnectorAccountStatusSchema}. */
+export type SessionConnectorAccountStatus = z.infer<typeof SessionConnectorAccountStatusSchema>;
+
+/**
+ * Response of `GET /api/sessions/:id/connectors` — the session's connector
+ * surface: what is attached, and what degraded.
+ */
+export const SessionConnectorStatusSchema = z.object({
+  /** Every account attached to this session, each with its exposure state. */
+  accounts: z.array(SessionConnectorAccountStatusSchema),
+  /** Per-account warnings for attached accounts that could not be exposed. */
+  warnings: z.array(SessionConnectorWarningSchema),
+});
+/** One session's connector surface. See {@link SessionConnectorStatusSchema}. */
+export type SessionConnectorStatus = z.infer<typeof SessionConnectorStatusSchema>;
+
+/**
+ * Response of `POST /api/sessions/:id/connectors/:accountId` — the consent
+ * point's receipt: the attached account's row, the custody disclosure re-shown
+ * at attach, and the null-branch warning when the account attached but is not
+ * exposable right now.
+ */
+export const SessionConnectorAttachResultSchema = z.object({
+  /** The attached account's session-facing status row. */
+  account: SessionConnectorAccountStatusSchema,
+  /** The custody disclosure to re-show at the consent point. */
+  disclosure: z.string(),
+  /** Present when the account attached but is not exposable right now (null branch). */
+  warning: SessionConnectorWarningSchema.optional(),
+});
+/** The attach receipt. See {@link SessionConnectorAttachResultSchema}. */
+export type SessionConnectorAttachResult = z.infer<typeof SessionConnectorAttachResultSchema>;

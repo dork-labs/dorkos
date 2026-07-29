@@ -27,6 +27,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { ConnectedAccountId } from '@dorkos/shared/connector-provider';
 import { parseBody } from '../lib/route-utils.js';
+import { custodyDisclosure } from '../services/connectors/custody-disclosure.js';
 import { recommendConnector, type RelayAdapterCatalog } from '../services/connectors/routing.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
 import type { ConnectorFlowBindings } from '../services/connectors/flow-bindings.js';
@@ -94,7 +95,13 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
         body.label ? { label: body.label } : undefined
       );
       flowBindings.record(start.flowId, providerType);
-      res.json(start);
+      // The custody sentence rides the start response so the client can render
+      // it BEFORE opening the auth URL — server-owned copy, never composed
+      // client-side (connector-completion spec §Detailed Design 5).
+      const disclosure = custodyDisclosure(provider.getCapabilities().custody, {
+        service: body.toolkit,
+      });
+      res.json({ ...start, disclosure });
     } catch (err) {
       // A rejected startConnect is a bad request (unknown toolkit, or a second
       // connect on a single-account backend) — surfaced, never a 500.
@@ -122,7 +129,13 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
     if (poll.status === 'connected' || poll.status === 'failed') {
       flowBindings.release(flowId);
     }
-    res.json(poll);
+    // The provider's poll result carries the FULL account (including the
+    // server-only `provider` field) — publicize it before it crosses out.
+    res.json({
+      status: poll.status,
+      ...(poll.account && { account: toPublicAccount(poll.account) }),
+      ...(poll.error && { error: poll.error }),
+    });
   });
 
   router.get('/accounts', async (req, res) => {
