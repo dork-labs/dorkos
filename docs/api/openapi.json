@@ -4965,7 +4965,7 @@
                 "items": {
                   "$ref": "#/components/schemas/AuthorRef"
                 },
-                "description": "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel or a thread, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; a DM's roster is whoever one person assembled by hand, which is small enough to ride along on every list. A channel reads as `#slug` and a thread as its own glyph, so their rosters would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
+                "description": "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; a DM's roster is whoever one person assembled by hand, which is small enough to ride along on every list. A channel reads as `#slug`, so its roster would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
               }
             },
             "required": [
@@ -4979,8 +4979,7 @@
         "type": "string",
         "enum": [
           "channel",
-          "dm",
-          "thread"
+          "dm"
         ]
       },
       "AuthorRef": {
@@ -5039,13 +5038,6 @@
           "kind": {
             "$ref": "#/components/schemas/RoomKind"
           },
-          "parentId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Non-null exactly when kind is \"thread\"."
-          },
           "slug": {
             "type": [
               "string",
@@ -5070,13 +5062,6 @@
             ],
             "description": "Optional workspace reference. How it resolves a cwd is out of scope for v1."
           },
-          "rootEntryId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Threads only: the parent entry this thread hangs off."
-          },
           "archived": {
             "type": "boolean"
           },
@@ -5090,12 +5075,10 @@
         "required": [
           "id",
           "kind",
-          "parentId",
           "slug",
           "title",
           "topic",
           "workspaceId",
-          "rootEntryId",
           "archived",
           "createdAt",
           "lastActivityAt"
@@ -5165,7 +5148,7 @@
               "mention-only",
               "silent"
             ],
-            "description": "Per-room override, written explicitly at join time. Seeded from the manifest for a DM, \"mention-only\" for a channel, inherited from the parent for a thread."
+            "description": "Per-room override, written explicitly at join time. Seeded from the manifest for a DM and \"mention-only\" for a channel. A thread is a position inside a channel rather than a room of its own, so a reply there reads the channel's value."
           },
           "joinedAt": {
             "type": "string"

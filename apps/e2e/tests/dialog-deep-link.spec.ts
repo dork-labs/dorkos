@@ -46,21 +46,33 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     await expect(page).toHaveURL(/[?&]settings=open/);
   });
 
-  test('navigating to ?agent=identity&agentPath=... opens Agent dialog on a fresh tab', async ({
+  test('navigating to ?panel=agent-hub opens the agent hub on a fresh tab', async ({
     page,
+    rightPanel,
+    roomsApi,
   }) => {
-    // Regression lock for the AgentDialogWrapper short-circuit fix: with a
-    // fresh tab (no in-app opener populating `useAgentDialog.projectPath`),
-    // the wrapper must read `agentPath` from the URL via
-    // `useAgentDialogDeepLink` to avoid dropping the deep link before
-    // `selectedCwd` hydrates.
-    await page.goto('/?agent=identity&agentPath=/tmp/dorkos-deep-link-test');
+    // This was `?agent=identity&agentPath=…`, a regression lock on a dialog
+    // wrapper that no longer exists: nothing contributes an `agent` dialog and
+    // `DialogHost` has no `agent` case, so that link is inert and the test was
+    // pinning a dead contract. `dialog-search-schema.ts` names the successor —
+    // "Agent dialog (legacy — use panel=agent-hub for new links)".
+    //
+    // The intent is worth keeping, and it is specifically a browser-level one:
+    // the hub's deep link has unit coverage, but only a real fresh tab proves it
+    // survives with no in-app opener having populated the store first.
+    //
+    // On `/session`, where the Agent Profile tab is registered unconditionally,
+    // Pulse is the default tab — so selecting the hub instead is the deep link's
+    // doing and nothing else's. (On `/` the tab is `visibleWhen` an agent was
+    // explicitly chosen, and an `agentPath` in the URL is not by itself that
+    // choice, so the tab never appears there at all.)
+    const agent = await roomsApi.registerAgent(`E2E Hub ${roomsApi.runId}`, '🛠️', '#22c55e');
+    await page.goto(
+      `/session?panel=agent-hub&hubTab=sessions&dir=${encodeURIComponent(agent.projectPath)}`
+    );
     await page.waitForSelector('[data-testid="app-shell"]');
-    // The test path is not a registered agent, so `NoAgentFallback`
-    // renders with the "No agent registered" copy. Seeing that copy proves
-    // the wrapper did NOT short-circuit — it mounted AgentDialog, which
-    // then branched into the fallback. Before the wrapper fix, the deep
-    // link would have been dropped and nothing would render at all.
-    await expect(page.getByText('No agent registered')).toBeVisible();
+
+    await expect(rightPanel.header).toBeVisible();
+    await expect(rightPanel.agentProfileTab).toHaveAttribute('aria-selected', 'true');
   });
 });

@@ -31,12 +31,10 @@ function makeRoom(overrides: Partial<RoomSummary> = {}): RoomSummary {
   return {
     id: 'room-default',
     kind: 'channel',
-    parentId: null,
     slug: 'default',
     title: 'Default',
     topic: null,
     workspaceId: null,
-    rootEntryId: null,
     archived: false,
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
@@ -115,7 +113,7 @@ const dmWithQuietPartner = makeRoom({
  * FROM the channel and DM lists rather than by re-filtering every room, and
  * that derivation has two halves. Every other DM fixture here is caught up, so
  * without this one, dropping DMs from the derivation entirely passes the whole
- * file — the same blind spot the legacy thread row had at `unreadCount: 0`.
+ * file.
  *
  * Flipping `dmWithAna` instead would have done it, at the cost of breaking
  * `opens a direct message`: the badge changes that row's accessible name, and
@@ -134,33 +132,7 @@ const dmWithBo = makeRoom({
   participants: [{ id: 'author-bo', kind: 'agent', displayName: 'Bo', agentRef: 'bo' }],
 });
 
-/**
- * A `kind='thread'` row from before threads became a relation between entries
- * (ADR 260728-022013). The enum member survives until the schema retirement, so
- * an install can still hold one — and the palette must not offer it as a room.
- */
-const legacyThreadRoom = makeRoom({
-  id: 'room-thread',
-  kind: 'thread',
-  slug: null,
-  parentId: 'room-quiet',
-  title: 'Deploy fallout',
-  lastActivityAt: '2026-07-26T07:00:00.000Z',
-  // Deliberately unread. At `0` this fixture cannot reach the Unread group at
-  // all, so it would certify the `#` list while leaving the second way into the
-  // palette — `hasUnread` over the whole room list — completely uncovered.
-  unreadCount: 3,
-});
-
-const ALL_ROOMS = [
-  urgent,
-  quiet,
-  outsider,
-  dmWithAna,
-  dmWithQuietPartner,
-  dmWithBo,
-  legacyThreadRoom,
-];
+const ALL_ROOMS = [urgent, quiet, outsider, dmWithAna, dmWithQuietPartner, dmWithBo];
 
 // --- Transport ---
 
@@ -392,9 +364,8 @@ describe('rooms in the command palette', () => {
 
     it('badges an unread direct message here too, not only channels', async () => {
       // The other half of the Unread group's derivation. It is built from the
-      // channel list AND the DM list — which is what keeps a legacy thread out
-      // of it — so the half that says DMs belong needs pinning as well, or
-      // dropping them silently passes.
+      // channel list AND the DM list, so the half that says DMs belong needs
+      // pinning as well, or dropping them silently passes.
       //
       // Zero-query is what makes this unambiguous: `searchDms` renders only
       // once something is typed, so the ONLY way a DM reaches the screen here
@@ -445,30 +416,6 @@ describe('rooms in the command palette', () => {
       expect(screen.queryByText('Ana')).not.toBeInTheDocument();
       expect(screen.queryByText('Settings')).not.toBeInTheDocument();
       expect(screen.queryByText('Toggle Theme')).not.toBeInTheDocument();
-    });
-
-    it('keeps a legacy thread out of the Unread group, the palette’s other front door', async () => {
-      // `legacyThreadRoom` carries `unreadCount: 3`, so it is exactly what the
-      // zero-query Unread list selects for. Scoping only the `#` list would
-      // leave it reachable — and openable — from the first thing the palette
-      // shows before anything is typed.
-      render(<CommandPaletteDialog />);
-      await screen.findByText('#urgent');
-
-      expect(screen.queryByText('Deploy fallout')).not.toBeInTheDocument();
-    });
-
-    it('does not offer a legacy thread as a room', async () => {
-      render(<CommandPaletteDialog />);
-      await screen.findByText('#urgent');
-      // Its own title, so this cannot pass by the query simply missing it: the
-      // same string finds the room while `#` is scoping the list to channels.
-      type('#deploy');
-
-      // Waiting on a channel the query DOES reach, so the list has demonstrably
-      // re-run before the absence is asserted.
-      await waitFor(() => expect(screen.getByText('No results found.')).toBeInTheDocument());
-      expect(screen.queryByText('Deploy fallout')).not.toBeInTheDocument();
     });
 
     it('draws no badge for a channel the reader is not a member of', async () => {

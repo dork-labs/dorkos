@@ -65,13 +65,14 @@ export const authors = sqliteTable(
 );
 
 /**
- * A membership-scoped durable stream: a channel, a DM, or a thread
- * (ADR 260726-170125).
+ * A membership-scoped durable stream: a channel or a DM (ADR 260726-170125).
  *
- * A thread is a room with a `parent_id`, one level only — creating a thread off
- * a thread is refused at the service boundary rather than silently flattened,
- * so the "N replies" summary row is a projection of a child room's log and not
- * a second conversation model.
+ * **There is no third kind, and there is no room hierarchy.** A thread is a
+ * relation between entries in ONE room's log, carried by
+ * `room_entries.parent_entry_id` / `thread_root_entry_id`
+ * (ADR 260728-022013) — never a child room. `parent_id`, `root_entry_id` and
+ * `idx_rooms_parent_id` were the child-room shape and retired in migration
+ * 0038, which moved any surviving thread room's entries into its parent.
  *
  * A room is not a session. Three agents in a room are three sessions posting
  * onto one stream, each keeping its own runtime binding (ADR-0255), which is
@@ -83,11 +84,8 @@ export const rooms = sqliteTable(
     /** ULID. */
     id: text('id').primaryKey(),
 
-    /** `'channel' | 'dm' | 'thread'`. */
+    /** `'channel' | 'dm'`. */
     kind: text('kind').notNull(),
-
-    /** Non-null exactly when `kind = 'thread'`. */
-    parentId: text('parent_id'),
 
     /** Channels only. Unique among non-archived channels. */
     slug: text('slug'),
@@ -101,9 +99,6 @@ export const rooms = sqliteTable(
      */
     workspaceId: text('workspace_id'),
 
-    /** Threads only: the parent entry this thread hangs off. */
-    rootEntryId: text('root_entry_id'),
-
     archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
     createdAt: text('created_at').notNull(),
     lastActivityAt: text('last_activity_at').notNull(),
@@ -115,7 +110,6 @@ export const rooms = sqliteTable(
     uniqueIndex('rooms_channel_slug_unique')
       .on(table.slug)
       .where(sql`"kind" = 'channel' AND "archived" = 0`),
-    index('idx_rooms_parent_id').on(table.parentId),
   ]
 );
 
@@ -127,9 +121,10 @@ export const rooms = sqliteTable(
  *
  * `response_mode` is the per-room override of the agent manifest's default
  * (`AgentBehaviorSchema.responseMode`). It is always written explicitly at join
- * time — seeded from the manifest for a DM, `'mention-only'` for a channel,
- * inherited from the parent for a thread — so the stored value is inspectable
- * and there is no dynamic rule to reason about later.
+ * time — seeded from the manifest for a DM and `'mention-only'` for a channel —
+ * so the stored value is inspectable and there is no dynamic rule to reason
+ * about later. There is no third seed: a thread is a position inside a channel,
+ * so a reply there reads the channel's row (ADR 260728-022013).
  */
 export const roomMembers = sqliteTable(
   'room_members',

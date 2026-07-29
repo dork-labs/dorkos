@@ -13,9 +13,38 @@
  * @module fixtures/rooms-api
  */
 import { randomUUID } from 'node:crypto';
-import { homedir } from 'node:os';
+import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { APIRequestContext } from '@playwright/test';
+
+/**
+ * Where every seeded agent directory lives, and the scan root they are all
+ * registered against.
+ *
+ * Inside the repo's gitignored `.temp`, deliberately. Registering an agent hands
+ * the server a path and the server creates it, so this choice has to satisfy
+ * three constraints at once:
+ *
+ * - **In the boundary.** The server refuses an agent path outside
+ *   `DORKOS_BOUNDARY`, which defaults to the home directory. A root under the
+ *   checkout is therefore only in bounds while the checkout itself sits under
+ *   `$HOME` — which is why `playwright.config.ts` points the cockpit leg's
+ *   boundary at the checkout rather than leaving it to chance. Stating that
+ *   constraint and relying on it held is what made the suite fail 14 ways from
+ *   a worktree in `/private/tmp`.
+ * - **In the boundary for *deletion* too.** `DELETE /api/mesh/agents/:id/data`
+ *   re-checks the path without the dork-home allowance, so `{dorkHome}/agents`
+ *   would register fine and then refuse to unregister, silting up the mesh.
+ * - **Ours to delete.** The previous home, `~/.dork-e2e-fixtures`, was in
+ *   bounds but nobody's to sweep: unregistering removes only `<path>/.dork`, so
+ *   the directory the server created stayed behind. It had reached 546 of them.
+ *
+ * A path under the checkout satisfies all three and is disposable by
+ * construction. It doubles as the `scanRoot`, which is what gives every agent in
+ * one run the same namespace — agents in different namespaces cannot address
+ * each other, which the mention and DM specs depend on.
+ */
+const FIXTURE_AGENT_ROOT = join(import.meta.dirname, '..', '.temp', 'fixtures');
 
 /** An agent this helper registered, as the tests need to refer to it. */
 export interface SeededAgent {
@@ -23,6 +52,15 @@ export interface SeededAgent {
   id: string;
   /** The agent's directory — how rooms address it (`agentPaths`). */
   path: string;
+  /**
+   * The path as the server canonicalized it, which is what config and rosters
+   * store. Read back from the registry rather than assumed: registration
+   * realpath-resolves what it is given, so on a machine where any segment is a
+   * symlink this differs from {@link SeededAgent.path}, and an assertion
+   * comparing against the sent path would fail for a reason that has nothing to
+   * do with the behaviour under test.
+   */
+  projectPath: string;
   /** What the cockpit calls it: the DM picker's label and a DM's title. */
   name: string;
   /** The emoji every avatar of this agent must draw. */
@@ -87,36 +125,17 @@ export class RoomsApi {
   /** A short id, unique per instance, for naming fixtures apart. */
   readonly runId = randomUUID().slice(0, 8);
 
+  /**
+   * This instance's own directory under {@link FIXTURE_AGENT_ROOT}.
+   *
+   * One root per instance means {@link RoomsApi.cleanup} removes the whole tree
+   * in a single call and cannot miss a subdirectory the server added, and it
+   * makes this run's namespace (`run-<runId>`) distinct from every other run's.
+   */
+  private readonly agentRoot = join(FIXTURE_AGENT_ROOT, `run-${this.runId}`);
+
   constructor(request: APIRequestContext) {
     this.request = request;
-  }
-
-  /**
-   * Put the onboarding wizard away so the app shell renders.
-   *
-   * A `DORK_HOME` that has never been onboarded — a fresh worktree, a throwaway
-   * data dir — opens on the wizard instead of the cockpit, and no sidebar test
-   * can run against that.
-   *
-   * Reads before it writes, so a run only ever writes config once. The config
-   * store is one file behind a read-modify-write, and every test in a fully
-   * parallel suite calling this would have them clobbering each other for a
-   * value that is already set.
-   */
-  async dismissOnboarding(): Promise<void> {
-    const current = await this.request.get('/api/config');
-    if (!current.ok()) {
-      throw new Error(`Could not read config: ${current.status()} ${await current.text()}`);
-    }
-    const { onboarding } = (await current.json()) as { onboarding?: { dismissedAt?: string } };
-    if (onboarding?.dismissedAt) return;
-
-    const res = await this.request.patch('/api/config', {
-      data: { onboarding: { dismissedAt: new Date().toISOString() } },
-    });
-    if (!res.ok()) {
-      throw new Error(`Could not dismiss onboarding: ${res.status()} ${await res.text()}`);
-    }
   }
 
   /**
@@ -132,17 +151,49 @@ export class RoomsApi {
    * @param color - The identity colour its disc is tinted from.
    */
   async registerAgent(name: string, emoji: string, color: string): Promise<SeededAgent> {
-    const path = join(homedir(), '.dork-e2e-fixtures', `room-agent-${randomUUID()}`);
+    const path = join(this.agentRoot, `room-agent-${randomUUID()}`);
+    // Make the tree ours before the server writes into it, so both paths below
+    // resolve through the same real directory rather than one of them being
+    // resolved speculatively while it still does not exist.
+    await mkdir(path, { recursive: true });
     const res = await this.request.post('/api/mesh/agents', {
       data: {
         path,
+        // Without this the server derives the namespace against its own default
+        // scan root, which is fine only while the agents live under it. Naming
+        // the root keeps the namespace `run-<runId>` wherever the checkout is.
+        scanRoot: FIXTURE_AGENT_ROOT,
         overrides: { name, runtime: 'claude-code', icon: emoji, color, behavior: SILENT },
       },
     });
-    if (!res.ok()) throw new Error(`Could not register ${name}: ${await res.text()}`);
+    if (!res.ok()) {
+      const body = await res.text();
+      // A 403 here is always the same thing, and the raw message does not say
+      // so: the server refuses agent paths outside `DORKOS_BOUNDARY`, and this
+      // root has to be inside it. `playwright.config.ts` points the boundary at
+      // the checkout for exactly that reason, so reaching this means something
+      // overrode it.
+      if (res.status() === 403) {
+        throw new Error(
+          `Could not register ${name}: the fixtures' root is outside the server's boundary.\n` +
+            `  root:     ${FIXTURE_AGENT_ROOT}\n` +
+            `  response: ${body}\n` +
+            `Set DORKOS_BOUNDARY to a directory containing that root (the cockpit ` +
+            `leg in playwright.config.ts sets it to the checkout).`
+        );
+      }
+      throw new Error(`Could not register ${name}: ${body}`);
+    }
     const { id } = (await res.json()) as { id: string };
     this.agentIds.push(id);
-    return { id, path, name, emoji };
+    // The register response is the manifest, which deliberately carries no
+    // `projectPath` — only the registry listing does.
+    const paths = await this.request.get('/api/mesh/agents/paths');
+    if (!paths.ok()) throw new Error(`Could not read agent paths: ${await paths.text()}`);
+    const { agents } = (await paths.json()) as { agents: { id: string; projectPath: string }[] };
+    const projectPath = agents.find((a) => a.id === id)?.projectPath;
+    if (!projectPath) throw new Error(`Registered ${name} as ${id} but it has no stored path`);
+    return { id, path, projectPath, name, emoji };
   }
 
   /**
@@ -194,10 +245,20 @@ export class RoomsApi {
   }
 
   /**
-   * Post entries into a room as the local human, oldest first.
+   * Post entries into a room as the local human, oldest first, and return once
+   * they can be read back.
    *
    * Sequential rather than concurrent: `seq` is allocated per room and the tests
    * assert on the resulting order.
+   *
+   * The wait at the end is the point. `POST /entries` is trigger-only and
+   * answers **202** — accepted, not yet stored — so returning on the last 202
+   * hands back a room whose entries may not exist yet. Every caller then loads
+   * the cockpit, whose first read of the room list is the one that decides the
+   * unread badge and the palette's ordering; if it wins that race, the room
+   * reads as having nothing in it, and the test fails describing an unread count
+   * rather than a race. Polling here rather than in each spec keeps
+   * "seed, then load" true for everyone.
    *
    * @param roomId - The room to post into.
    * @param texts - One entry per string.
@@ -208,6 +269,54 @@ export class RoomsApi {
       if (res.status() !== 202) {
         throw new Error(`Post to ${roomId} answered ${res.status()}: ${await res.text()}`);
       }
+    }
+
+    const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    for (;;) {
+      const entries = await this.listEntries(roomId);
+      if (entries.length >= texts.length) return;
+      if (Date.now() > deadline) {
+        throw new Error(
+          `Posted ${texts.length} entries to ${roomId} but only ${entries.length} were stored`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  /**
+   * Wait until the room list reports a room as carrying `count` unread.
+   *
+   * A test about the unread badge has two preconditions, not one: the entries
+   * must be stored, which {@link RoomsApi.postEntries} guarantees, and the room
+   * *list* must have caught up — and that is a separate projection, read by a
+   * separate endpoint, which is the one the sidebar actually renders from. A
+   * page loaded in between sees the room with nothing in it and the badge never
+   * appears, which reads as "unread is broken" rather than "the page was early".
+   *
+   * Polling the same endpoint the sidebar uses turns that race into a
+   * precondition: if the count never arrives, this says so in those words
+   * instead of leaving an assertion about a screen reader's output to explain it.
+   *
+   * @param roomId - The room to watch.
+   * @param count - The unread count to wait for.
+   */
+  async waitForUnread(roomId: string, count: number): Promise<void> {
+    const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    let seen: number | null | undefined;
+    for (;;) {
+      const res = await this.request.get('/api/rooms');
+      if (res.ok()) {
+        const { rooms } = (await res.json()) as {
+          rooms: { id: string; unreadCount: number | null }[];
+        };
+        seen = rooms.find((r) => r.id === roomId)?.unreadCount;
+        if (seen === count) return;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`Room ${roomId} reports ${seen ?? 'no'} unread, expected ${count}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 
@@ -233,7 +342,13 @@ export class RoomsApi {
   }
 
   /**
-   * Archive every room this instance made and unregister every agent.
+   * Archive every room this instance made, unregister every agent, and delete
+   * the agent directories off disk.
+   *
+   * Unregistering only removes the agent from the mesh; the directory the
+   * server created stays. So the last step removes this instance's whole
+   * {@link RoomsApi.agentRoot}, which is the only thing that keeps a long-lived
+   * machine from silently collecting one directory per seeded agent forever.
    *
    * Failures are swallowed on purpose: teardown runs after a test has already
    * decided its verdict, and a cleanup error reported as a test failure hides
@@ -246,6 +361,7 @@ export class RoomsApi {
     for (const id of this.agentIds) {
       await this.request.delete(`/api/mesh/agents/${id}/data`).catch(() => {});
     }
+    await rm(this.agentRoot, { recursive: true, force: true }).catch(() => {});
   }
 
   /** Create a room of any kind and remember it for teardown. */
