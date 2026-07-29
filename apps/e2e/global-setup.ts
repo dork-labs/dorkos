@@ -26,7 +26,17 @@
 import { chromium, request, type FullConfig } from '@playwright/test';
 
 /**
- * Mark onboarding dismissed on the server behind one base URL.
+ * Mark onboarding dismissed — and the follow-up role prompt with it — on the
+ * server behind one base URL.
+ *
+ * The role prompt matters for the same reason the wizard does, one notch
+ * subtler. `ProfilePromptCard` shows precisely when onboarding is dismissed
+ * but no profile role was ever saved — which is this suite's steady state by
+ * construction — and it mounts INTO THE SIDEBAR asynchronously, once the
+ * config query resolves. A card appearing mid-test shifts every sidebar row
+ * under a pointer-driven drag (sidebar-groups.spec.ts failed exactly that
+ * way when the card shipped). Suppressing it here is the shipped "Don't ask
+ * again" write, so the suite tests the settled state, not the one-time ask.
  *
  * Reads before it writes so a re-run against a persistent `DORK_HOME` is a no-op
  * rather than a redundant write.
@@ -40,11 +50,18 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
     if (!current.ok()) {
       throw new Error(`Could not read config at ${baseURL}: ${current.status()}`);
     }
-    const { onboarding } = (await current.json()) as { onboarding?: { dismissedAt?: string } };
-    if (onboarding?.dismissedAt) return;
+    const { onboarding, profile } = (await current.json()) as {
+      onboarding?: { dismissedAt?: string };
+      profile?: { rolePromptDismissedAt?: string | null };
+    };
+    if (onboarding?.dismissedAt && profile?.rolePromptDismissedAt) return;
 
+    const now = new Date().toISOString();
     const res = await context.patch('/api/config', {
-      data: { onboarding: { dismissedAt: new Date().toISOString() } },
+      data: {
+        onboarding: { dismissedAt: onboarding?.dismissedAt ?? now },
+        profile: { rolePromptDismissedAt: profile?.rolePromptDismissedAt ?? now },
+      },
     });
     if (!res.ok()) {
       throw new Error(

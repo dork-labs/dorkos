@@ -146,6 +146,16 @@ jobs:
       - name: Test-execution assertion fixtures
         run: bash scripts/test-assert-tests-executed.sh
 
+      # The same argument one runner over: assert-browser-tests-executed.sh is
+      # what stops the `browser-test` workflow certifying a run that collected
+      # nothing. Playwright exits 0 when a testIgnore glob quietly drops a spec
+      # file, so that gate is the only thing standing between "N passed" and
+      # "N passed out of a suite that used to have more in it". Hermetic like
+      # the others — synthetic trees in a temp dir, never this repo's real
+      # apps/e2e.
+      - name: Browser-test-execution assertion fixtures
+        run: bash scripts/test-assert-browser-tests-executed.sh
+
       # assert-migrations-current.sh replaced a one-liner that was green on a
       # drifted schema, and both halves of that one-liner failed OPEN: drizzle-kit
       # exits 0 when it refuses to run for want of a TTY, and `pnpm --filter
