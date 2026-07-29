@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  TRAILING_PUNCTUATION,
   advertisedHandle,
   claimNames,
   resolveMentions,
@@ -180,16 +181,24 @@ describe('advertisedHandle', () => {
 
   /**
    * The property the picker rests on: **a handle this function offers is a
-   * handle `resolveMentions` resolves, and one it withholds is one that would
-   * not have resolved.**
+   * handle `resolveMentions` resolves and that stays this member's own token,
+   * and one it withholds fails at least one of those.**
    *
    * `WHOLE_HANDLE` and `MENTION_PATTERN` are two literals in one module, and
    * nothing in the type system keeps them in step. This is what does. Without
    * it, widening one pattern and not the other ships a picker whose every
    * insertion silently posts as plain text — which is precisely the failure the
    * picker exists to remove.
+   *
+   * The second clause is the one `ana.` taught us, and it is why this is not
+   * plain "offered exactly when it resolves": `@ana.` DOES resolve, to `ana.`
+   * itself, because the resolver tries the exact token before shaving. It is
+   * withheld anyway, because the same token is what `ana` gets at the end of an
+   * ordinary sentence — so offering it would hand one member another member's
+   * mentions. Derived from the exported {@link TRAILING_PUNCTUATION} rather than
+   * spelled again here, so the two cannot drift apart.
    */
-  it.each(NAMES)('offers %o exactly when resolving @-it works', (name) => {
+  it.each(NAMES)('offers %o exactly when it resolves and stays its own token', (name) => {
     const offered = offeredTo([name]);
     // Probed with the TRIMMED name, because both sides trim: `resolveMentions`
     // keys its roster on `name.trim()`, so surrounding whitespace is not part of
@@ -198,11 +207,29 @@ describe('advertisedHandle', () => {
     // whether the member is addressable.
     const typed = name.trim();
     const resolved = resolveMentions(`@${typed}`, only([name]));
-    expect(offered !== undefined).toBe(resolved.length === 1);
+    const ownToken = typed === typed.replace(TRAILING_PUNCTUATION, '');
+    expect(offered !== undefined).toBe(resolved.length === 1 && ownToken);
     // And when it IS offered, the offered string is the one that resolves —
     // not merely some substring of the name that happens to match.
     if (offered !== undefined) {
       expect(resolveMentions(`@${offered}`, only([name]))).toEqual(['author-x']);
     }
+  });
+
+  it('withholds a name ending in punctuation from the member whose sentence it steals', () => {
+    // The concrete theft, spelled out: `ana.` is legal, typeable and resolvable,
+    // so it used to be advertised. Then `ana` joins, writes the perfectly
+    // ordinary sentence below, and reaches `ana.` instead of nobody — because
+    // the resolver looks the exact token up first.
+    const roster: MentionCandidate[] = [
+      { authorId: 'author-dotted', names: ['ana.'] },
+      { authorId: 'author-ana', names: ['ana'] },
+    ];
+    const claims = claimNames(roster);
+    expect(resolveMentions('thanks @ana.', roster)).toEqual(['author-dotted']);
+    expect(advertisedHandle(roster[0]!, claims)).toBeUndefined();
+    // `ana` is unaffected: its own token is not the contested one.
+    expect(advertisedHandle(roster[1]!, claims)).toBe('ana');
+    expect(resolveMentions('thanks @ana for that', roster)).toEqual(['author-ana']);
   });
 });

@@ -73,7 +73,7 @@ describe('the roster tells a picker what to insert', () => {
   });
 
   it('carries no handle at all for an agent no string can address', () => {
-    // `agents.name` is not always a slug — 7 of the 52 agents on the install
+    // `agents.name` is not always a slug — 7 of the 40 agents on the install
     // this was written against have a space in theirs. There is no string to
     // offer, and inventing one would invite a message that reaches nobody.
     const { lookup } = mutableLookup({
@@ -150,7 +150,7 @@ describe('what the picker inserts is what the server resolves', () => {
 describe('a handle is only advertised to the member it reaches', () => {
   /**
    * Two agents whose own handles are unusable — a space in each, which is the
-   * shape 7 of the 52 agents on the install this was written against already
+   * shape 7 of the 40 agents on the install this was written against already
    * have — and whose display names are identical.
    *
    * So the only name either could be offered is `Shared`, and `resolveMentions`
