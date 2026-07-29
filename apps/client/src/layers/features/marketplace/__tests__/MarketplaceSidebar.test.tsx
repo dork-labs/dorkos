@@ -192,6 +192,40 @@ describe('MarketplaceSidebar', () => {
     expect(mockParams.setType).toHaveBeenCalledWith('skill-pack');
   });
 
+  // -------------------------------------------------------------------------
+  // Connectors facet — refinement of Adapters
+  // -------------------------------------------------------------------------
+
+  it('renders a Connectors row counting only connector adapters', () => {
+    setPackages([
+      ...CATALOG,
+      pkg({ name: 'composio-gateway', type: 'adapter', adapterType: 'connector' }),
+      pkg({ name: 'slack-bridge', type: 'adapter', adapterType: 'slack' }),
+    ]);
+    render(<MarketplaceSidebar />);
+
+    // Both adapters count toward Adapters; only the connector one toward Connectors.
+    expect(typeRow('Adapters')).toHaveTextContent('2');
+    expect(typeRow('Connectors')).toHaveTextContent('1');
+  });
+
+  it('writes the connector filter to the URL when the Connectors row is clicked', async () => {
+    const user = userEvent.setup();
+    setPackages([pkg({ name: 'composio-gateway', type: 'adapter', adapterType: 'connector' })]);
+    render(<MarketplaceSidebar />);
+
+    await user.click(typeRow('Connectors'));
+    expect(mockParams.setType).toHaveBeenCalledWith('connector');
+  });
+
+  it('marks the Connectors row active via aria-pressed when the filter is set', () => {
+    mockParams.type = 'connector';
+    render(<MarketplaceSidebar />);
+
+    expect(typeRow('Connectors')).toHaveAttribute('aria-pressed', 'true');
+    expect(typeRow('Adapters')).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('clears the type filter when All is clicked', async () => {
     const user = userEvent.setup();
     mockParams.type = 'agent';

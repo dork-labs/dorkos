@@ -257,12 +257,14 @@ const CATEGORY_ICONS: Record<
 const STATUS_STYLES: Record<FeatureStatus, string> = {
   ga: 'bg-emerald-100/60 text-emerald-900',
   beta: 'bg-amber-100/60 text-amber-900',
+  alpha: 'bg-orange-100/60 text-orange-900',
   'coming-soon': 'bg-warm-gray/10 text-warm-gray-light',
 };
 
 const STATUS_LABELS: Record<FeatureStatus, string> = {
   ga: 'Available',
   beta: 'Beta',
+  alpha: 'Alpha',
   'coming-soon': 'Coming Soon',
 };
 

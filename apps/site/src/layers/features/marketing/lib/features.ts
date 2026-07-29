@@ -1,5 +1,11 @@
-/** Lifecycle stage — drives badge rendering and catalog filtering. */
-export type FeatureStatus = 'ga' | 'beta' | 'coming-soon';
+/**
+ * Lifecycle stage — drives badge rendering and catalog filtering.
+ *
+ * `alpha` marks a surface that is built but not yet verified by real users
+ * (the demo-claim gate, `meta/positioning-202607/09-gtm-plan.md` §2.0):
+ * earlier than `beta`, honest about it on the badge.
+ */
+export type FeatureStatus = 'ga' | 'beta' | 'alpha' | 'coming-soon';
 
 /**
  * DorkOS product subsystem — used for tab filtering on /features.
@@ -844,6 +850,27 @@ export const features: Feature[] = [
     docsUrl: '/docs/guides/cli-usage',
     relatedFeatures: ['cli', 'mcp-server', 'action-approvals', 'agent-attribution'],
     sortOrder: 4,
+  },
+  {
+    slug: 'connections',
+    name: 'Connections',
+    product: 'core',
+    category: 'integration',
+    tagline: 'Connect Gmail or Slack once, then let your agents act for you',
+    description:
+      "Your agents can't touch your email or chat until you let them. Connect a service like Gmail or Slack once, and you always see where your sign-in lives.",
+    // Alpha per the demo-claim gate (meta/positioning-202607/09-gtm-plan.md
+    // §2.0): built, not yet verified by real users — no "works" claims in copy.
+    status: 'alpha',
+    benefits: [
+      'Connect Gmail, Slack, or another service with one sign-in',
+      'See where your sign-in lives before you connect',
+      'Attach a connection to one session, not your whole system',
+      'Disconnect an account any time, from one screen',
+    ],
+    docsUrl: '/docs/connectors',
+    relatedFeatures: ['marketplace', 'mcp-server', 'relay-message-bus'],
+    sortOrder: 5,
   },
 ];
 

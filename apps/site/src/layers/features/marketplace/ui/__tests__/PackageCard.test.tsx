@@ -47,4 +47,23 @@ describe('PackageCard', () => {
     const { container } = render(<PackageCard package={pkg({ name: 'p' })} />);
     expect(container.querySelector('a[href^="/marketplace/category/"]')).toBeNull();
   });
+
+  it('labels a connector adapter "connector" instead of "adapter"', () => {
+    render(
+      <PackageCard
+        package={pkg({ name: 'p', dorkos: { type: 'adapter', adapterType: 'connector' } })}
+      />
+    );
+    expect(screen.getByText('connector')).toBeTruthy();
+    expect(screen.queryByText('adapter')).toBeNull();
+  });
+
+  it('keeps the "adapter" label for other adapter types', () => {
+    render(
+      <PackageCard
+        package={pkg({ name: 'p', dorkos: { type: 'adapter', adapterType: 'slack' } })}
+      />
+    );
+    expect(screen.getByText('adapter')).toBeTruthy();
+  });
 });

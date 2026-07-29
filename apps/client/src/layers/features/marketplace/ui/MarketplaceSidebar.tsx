@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Check, ChevronLeft } from 'lucide-react';
 import {
   CATEGORY_DESCRIPTIONS,
   CATEGORY_LABELS,
+  CONNECTOR_ADAPTER_TYPE,
   MARKETPLACE_CATEGORIES,
   PackageTypeSchema,
 } from '@dorkos/marketplace';
@@ -42,6 +43,12 @@ const TYPE_SWATCH: Record<MarketplacePackageType, string> = {
 /** Every package type in taxonomy order — derived so a new type never goes stale. */
 const TYPE_VALUES = PackageTypeSchema.options;
 
+/**
+ * Swatch for the Connectors refinement row — cyan, matching the CONNECTOR
+ * badge hue so the sidebar dot and the card badge speak the same language.
+ */
+const CONNECTOR_SWATCH = 'bg-cyan-500';
+
 /** Present categories beyond this count collapse behind a "Show all" toggle. */
 const CATEGORY_COLLAPSE_THRESHOLD = 8;
 
@@ -54,8 +61,9 @@ const CATEGORY_COLLAPSE_THRESHOLD = 8;
  * `/marketplace` routes (registered as a `sidebar.body` contribution).
  *
  * It owns the two filter axes that used to sit in the page header: a
- * single-select package-type facet (All + the five types, each with a live
- * result count and a hue swatch matching its card badge) and a multi-select,
+ * single-select package-type facet (All + the five types + a Connectors
+ * refinement of Adapters, each with a live result count and a hue swatch
+ * matching its card badge) and a multi-select,
  * OR-combined category facet (the present categories in canonical order, each
  * with a count). Both write the same URL params the browse page reads, so the
  * grid, the Featured rail, and shared links all stay in sync — the panel holds
@@ -74,17 +82,22 @@ export function MarketplaceSidebar() {
   // Type counts: mirror the filter's rule that a missing `type` reads as
   // `'plugin'`; `all` is the raw total. A package whose type is outside the
   // taxonomy counts toward `all` only (it matches no specific type facet).
+  // Connector adapters additionally count toward the Connectors refinement.
   const typeCounts = useMemo(() => {
     const byType = new Map<MarketplacePackageType, number>();
     let all = 0;
+    let connectors = 0;
     for (const pkg of packages ?? []) {
       all += 1;
       const effective = (pkg.type ?? 'plugin') as MarketplacePackageType;
       if (TYPE_VALUES.includes(effective)) {
         byType.set(effective, (byType.get(effective) ?? 0) + 1);
       }
+      if (effective === 'adapter' && pkg.adapterType === CONNECTOR_ADAPTER_TYPE) {
+        connectors += 1;
+      }
     }
-    return { all, byType };
+    return { all, byType, connectors };
   }, [packages]);
 
   // Category counts: a package that lists a slug in both `categories[]` and the
@@ -143,14 +156,28 @@ export function MarketplaceSidebar() {
               onClick={() => setType('all')}
             />
             {TYPE_VALUES.map((value) => (
-              <FacetButton
-                key={value}
-                label={TYPE_LABELS[value]}
-                swatch={TYPE_SWATCH[value]}
-                count={typeCounts.byType.get(value) ?? 0}
-                active={type === value}
-                onClick={() => setType(value)}
-              />
+              <Fragment key={value}>
+                <FacetButton
+                  label={TYPE_LABELS[value]}
+                  swatch={TYPE_SWATCH[value]}
+                  count={typeCounts.byType.get(value) ?? 0}
+                  active={type === value}
+                  onClick={() => setType(value)}
+                />
+                {/* Connectors is a refinement of Adapters (adapterType ===
+                    CONNECTOR_ADAPTER_TYPE), so it sits indented right below it;
+                    the plain Adapters facet still includes connector packages. */}
+                {value === 'adapter' && (
+                  <FacetButton
+                    label="Connectors"
+                    swatch={CONNECTOR_SWATCH}
+                    count={typeCounts.connectors}
+                    active={type === CONNECTOR_ADAPTER_TYPE}
+                    onClick={() => setType(CONNECTOR_ADAPTER_TYPE)}
+                    indent
+                  />
+                )}
+              </Fragment>
             ))}
           </div>
         </SidebarGroup>
@@ -218,6 +245,8 @@ interface FacetButtonProps {
   title?: string;
   /** Multi-select semantics — renders a check on the active row. */
   multi?: boolean;
+  /** Indents the row to read as a refinement of the facet above it. */
+  indent?: boolean;
 }
 
 /**
@@ -227,7 +256,16 @@ interface FacetButtonProps {
  * category rows; the check icon on an active multi-select row signals that a
  * second click removes it.
  */
-function FacetButton({ label, count, active, onClick, swatch, title, multi }: FacetButtonProps) {
+function FacetButton({
+  label,
+  count,
+  active,
+  onClick,
+  swatch,
+  title,
+  multi,
+  indent,
+}: FacetButtonProps) {
   return (
     <button
       type="button"
@@ -236,6 +274,7 @@ function FacetButton({ label, count, active, onClick, swatch, title, multi }: Fa
       aria-pressed={active}
       className={cn(
         'focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+        indent && 'pl-6',
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
           : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'

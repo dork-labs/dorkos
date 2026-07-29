@@ -13,6 +13,7 @@
  */
 import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { CONNECTOR_ADAPTER_TYPE } from '@dorkos/marketplace';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -139,20 +140,21 @@ function PackageCardShowcase() {
 // PackageTypeBadge showcase
 // ---------------------------------------------------------------------------
 
-/** All four package type badge variants. */
+/** All five package type badge variants, plus the connector adapter refinement. */
 function PackageTypeBadgeShowcase() {
-  const types = ['agent', 'plugin', 'skill-pack', 'adapter'] as const;
+  const types = ['agent', 'plugin', 'skill-pack', 'adapter', 'shape'] as const;
 
   return (
     <PlaygroundSection
       title="PackageTypeBadge"
-      description="Coloured pill badge for each marketplace package type."
+      description="Coloured pill badge for each marketplace package type. An adapter whose adapterType is 'connector' renders the distinct CONNECTOR variant."
     >
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-3">
           {types.map((t) => (
             <PackageTypeBadge key={t} type={t} />
           ))}
+          <PackageTypeBadge type="adapter" adapterType={CONNECTOR_ADAPTER_TYPE} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
