@@ -127,6 +127,18 @@ export class NangoProxyMcp {
   }
 
   /**
+   * Forget every registered account: their tokens die, so every previously
+   * handed-out connection 401s from the next request on. Called when the Nango
+   * provider is unregistered (credential deleted / reload refused) — the
+   * registered clients close over the old secret key and must not keep serving.
+   * A re-registered provider re-registers accounts (with fresh tokens) at the
+   * next `toolServerForAccount`.
+   */
+  clear(): void {
+    this._accounts.clear();
+  }
+
+  /**
    * The Express router serving `POST /:accountId` (stateless MCP per request;
    * GET/DELETE 405 exactly like the main `/mcp` mount). Mount at
    * `/api/connectors/nango/mcp`.

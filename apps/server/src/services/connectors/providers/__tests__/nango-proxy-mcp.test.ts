@@ -104,6 +104,19 @@ describe('NangoProxyMcp — bearer gate', () => {
     expect(second.headers.authorization).toBe(first.headers.authorization);
   });
 
+  it('clear() forgets every account, so a previously-valid token 401s (credential revoked)', async () => {
+    const { wrapper, app, path, token } = mountedAccount(() =>
+      Promise.resolve({ status: 200, body: '' })
+    );
+    const before = await rpc(app, path, token, toolCall({ method: 'GET', path: 'x' }));
+    expect(before.status).toBe(200);
+
+    wrapper.clear();
+
+    const after = await rpc(app, path, token, toolCall({ method: 'GET', path: 'x' }));
+    expect(after.status).toBe(401);
+  });
+
   it('GET is 405 — the endpoint is stateless per request', async () => {
     const { app, path, token } = mountedAccount(() => Promise.resolve({ status: 200, body: '' }));
     const res = await request(app).get(path).set('authorization', token);

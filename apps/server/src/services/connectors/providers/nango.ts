@@ -207,8 +207,8 @@ export interface NangoConnectorProviderOpts {
  * - `startConnect` — MAY throw: connect is an interactive settings action with no
  *   failure type on the port, so a transport failure or a missing authorize URL
  *   throws a clear error the UI surfaces for retry.
- * - `toolServerForAccount` — throw-free; a transport failure while resolving the
- *   account, or a non-active account, resolves `null` (the surfaced per-account
+ * - `toolServerForAccount` — a transport failure while resolving the account,
+ *   or a non-active/unknown account, resolves `null` (the surfaced per-account
  *   null branch), because its consumer (`session-exposure.attach`) awaits it
  *   unguarded and a throw would 500 the attach route.
  *

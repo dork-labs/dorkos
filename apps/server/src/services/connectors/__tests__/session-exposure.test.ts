@@ -290,6 +290,32 @@ describe('SessionConnectorService', () => {
     expect(status.warnings.map((w) => w.accountId)).toEqual([other.id]);
   });
 
+  it('invalidateProvider drops cached connections for ONE provider, surfacing warnings', async () => {
+    const other = new FakeConnectorProvider({ type: 'other-gateway', custody: 'managed' });
+    registry.register(other);
+    const revoked = await connectAndRecord(registry, provider, 'gmail', 'personal');
+    const kept = await connectAndRecord(registry, other, 'slack', 'team');
+    await service.attach('s', revoked.id);
+    await service.attach('s', kept.id);
+
+    // The provider's credential was deleted: its cached connections must stop
+    // serving, while the other provider's attachment is untouched.
+    service.invalidateProvider('fake-connector');
+
+    const { servers, warnings } = service.mcpServersForSession('s');
+    expect(Object.keys(servers)).toEqual(['slack-team']);
+    expect(warnings.map((w) => w.accountId)).toEqual([revoked.id]);
+    const status = service.status('s');
+    expect(status.accounts.find((a) => a.accountId === revoked.id)!.exposed).toBe(false);
+    expect(status.accounts.find((a) => a.accountId === kept.id)!.exposed).toBe(true);
+
+    // The attachment (consent) survives: a re-attach after the provider comes
+    // back re-resolves the connection under the SAME server name.
+    const reattached = await service.attach('s', revoked.id);
+    expect(reattached!.account.exposed).toBe(true);
+    expect(reattached!.account.serverName).toBe('gmail-personal');
+  });
+
   it('leaks no provider identity into server names or config, even for Composio', async () => {
     const composio = new CleanComposioProvider();
     registry.register(composio);

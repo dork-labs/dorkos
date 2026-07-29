@@ -60,6 +60,7 @@ import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorFlowBindings } from './services/connectors/flow-bindings.js';
 import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
 import { NangoProxyMcp } from './services/connectors/providers/nango-proxy-mcp.js';
+import { NANGO_PROVIDER_TYPE } from './services/connectors/providers/nango.js';
 import { SessionConnectorService } from './services/connectors/session-exposure.js';
 import { toSdkMcpServers } from './services/runtimes/claude-code/mcp-server-config.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
@@ -1067,6 +1068,9 @@ async function start() {
   // connector routes. Created before the bootstrapper because every Nango
   // provider instance (boot and reload alike) exposes tools through it.
   const nangoProxyMcp = new NangoProxyMcp({ localOrigin: `http://127.0.0.1:${PORT}` });
+  // Created before the bootstrapper so its unregister hook can revoke cached
+  // session attachments the moment a credential is deleted.
+  const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
   // Provider lifecycle is owned by ONE place (connector-completion spec §1):
   // boot registers raw-MCP always (from `connectors.rawMcpServers` config; the
   // empty list is valid) plus Composio/Nango when configured — silent-null when
@@ -1091,9 +1095,15 @@ async function start() {
         connection: { transport: server.transport, url: server.url },
       })),
     ...(env.DORKOS_TEST_RUNTIME && { testConnector: { create: async () => null } }),
+    // Deleting a key (or a reload that refuses) revokes LIVE surfaces too:
+    // cached session attachments stop injecting the provider's tool servers,
+    // and the Nango proxy forgets its per-account tokens so the endpoint 401s.
+    onUnregistered: (providerType) => {
+      sessionConnectorService.invalidateProvider(providerType);
+      if (providerType === NANGO_PROVIDER_TYPE) nangoProxyMcp.clear();
+    },
   });
   await connectorBootstrapper.registerBootProviders();
-  const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
   // A brand-new session is rekeyed to its canonical id mid-first-turn. Move any
   // connector attach set across the same remap so tools attached under the
   // request id are not stranded on the pre-remap id (mirrors the projector +
@@ -1272,8 +1282,12 @@ async function start() {
     })
   );
   // The Nango Proxy→MCP endpoint (DOR-415): stateless MCP per request, gated by
-  // per-account process-scoped bearer tokens minted at toolServerForAccount time.
-  app.use('/api/connectors/nango/mcp', nangoProxyMcp.createRouter());
+  // per-account process-scoped bearer tokens minted at toolServerForAccount
+  // time. Origin validation rides in front for the same DNS-rebinding posture
+  // as /mcp; a dedicated rate limiter is deliberately omitted — the endpoint is
+  // unreachable without a minted bearer, so its callers are DorkOS's own
+  // runtimes, not the open network.
+  app.use('/api/connectors/nango/mcp', validateMcpOrigin, nangoProxyMcp.createRouter());
   app.use(
     '/api/connectors',
     createConnectorsRouter({

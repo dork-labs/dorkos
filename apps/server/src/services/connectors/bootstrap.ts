@@ -72,6 +72,13 @@ export interface ConnectorProviderBootstrapperOpts {
     /** Build the test provider, or `null` while its key is unconfigured. */
     create: () => Promise<ConnectorProvider | null>;
   };
+  /**
+   * Fired when a swap takes a previously-registered provider AWAY (credential
+   * deleted, or a reload refused it). Boot wires it to drop the provider's
+   * cached session attachments and (for Nango) its proxy tokens, so a deleted
+   * key revokes live sessions too — not just new connections.
+   */
+  onUnregistered?: (providerType: string) => void;
 }
 
 /** One credential-gated provider the bootstrapper owns end to end. */
@@ -104,6 +111,7 @@ function credentialNameOf(ref: string): string {
 export class ConnectorProviderBootstrapper {
   private readonly _registry: ConnectorRegistry;
   private readonly _rawMcpServers: () => RawMcpServerDescriptor[];
+  private readonly _onUnregistered: ((providerType: string) => void) | undefined;
   private readonly _specs = new Map<string, ManagedProviderSpec>();
   /** Last refusal message per provider type, surfaced on the status DTO. */
   private readonly _lastRefusal = new Map<string, string>();
@@ -117,6 +125,7 @@ export class ConnectorProviderBootstrapper {
   constructor(opts: ConnectorProviderBootstrapperOpts) {
     this._registry = opts.registry;
     this._rawMcpServers = opts.rawMcpServers;
+    this._onUnregistered = opts.onUnregistered;
 
     const { credentials, nangoEnv, nangoProxy } = opts;
     const specs: ManagedProviderSpec[] = [
@@ -213,6 +222,7 @@ export class ConnectorProviderBootstrapper {
 
   /** Unregister → create → register-if-non-null, recording any refusal. */
   private async _swap(spec: ManagedProviderSpec): Promise<void> {
+    const wasRegistered = this._registry.resolveProvider(spec.type) !== undefined;
     this._registry.unregister(spec.type);
     this._lastRefusal.delete(spec.type);
     try {
@@ -226,9 +236,16 @@ export class ConnectorProviderBootstrapper {
         const message = err instanceof Error ? err.message : String(err);
         logger.error(`[Connectors] ${spec.logLabel} refused: ${message}`);
         this._lastRefusal.set(spec.type, message);
-        return;
+      } else {
+        throw err;
       }
-      throw err;
+    } finally {
+      // A swap that took a live provider AWAY revokes what it was serving:
+      // cached session attachments (and, for Nango, proxy tokens) must not keep
+      // running on a credential the operator just deleted.
+      if (wasRegistered && this._registry.resolveProvider(spec.type) === undefined) {
+        this._onUnregistered?.(spec.type);
+      }
     }
   }
 

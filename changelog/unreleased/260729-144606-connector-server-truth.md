@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(connectors): server truth — live credential seam, agent tools, Nango Proxy→MCP (DOR-371, DOR-415)'
+---
+
 ### Added
 
 - Saving your Composio or Nango key now turns that connector on instantly — no restart. Delete the key and it switches off the same way (DOR-371)

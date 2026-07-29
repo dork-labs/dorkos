@@ -281,6 +281,28 @@ export class SessionConnectorService {
   }
 
   /**
+   * Drop the cached tool-server connection of every attached account owned by
+   * `providerType`, across all sessions. Called when a provider is unregistered
+   * (its credential was deleted, or a reload refused it): the cached
+   * connections were resolved by the now-gone instance and must not keep
+   * serving. The attachments themselves survive — consent was given and a
+   * re-registered provider re-resolves on the next attach — but until then each
+   * account reports unexposed with the standard null-branch warning, and the
+   * MCP factory stops injecting its server.
+   *
+   * @param providerType - The backend type whose cached connections to drop.
+   */
+  invalidateProvider(providerType: string): void {
+    for (const accounts of this._sessions.values()) {
+      for (const [accountId, attached] of accounts) {
+        if (attached.binding.provider === providerType && attached.connection !== null) {
+          accounts.set(accountId, { ...attached, connection: null });
+        }
+      }
+    }
+  }
+
+  /**
    * Move a session's whole attach set from an old id to a new (canonical) id.
    * Called when the runtime rekeys a brand-new session mid-first-turn (the
    * claude-code canonical-id remap): without this, an account attached under the

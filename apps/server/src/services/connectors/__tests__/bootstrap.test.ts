@@ -47,6 +47,7 @@ describe('ConnectorProviderBootstrapper', () => {
     nangoEnv?: () => { baseUrl?: string; encryptionKey?: string };
     rawMcpServers?: () => RawMcpServerDescriptor[];
     testConnector?: ConstructorParameters<typeof ConnectorProviderBootstrapper>[0]['testConnector'];
+    onUnregistered?: (providerType: string) => void;
   }) {
     return new ConnectorProviderBootstrapper({
       registry,
@@ -55,6 +56,7 @@ describe('ConnectorProviderBootstrapper', () => {
       nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
       rawMcpServers: opts?.rawMcpServers ?? (() => []),
       ...(opts?.testConnector && { testConnector: opts.testConnector }),
+      ...(opts?.onUnregistered && { onUnregistered: opts.onUnregistered }),
     });
   }
 
@@ -169,6 +171,54 @@ describe('ConnectorProviderBootstrapper', () => {
       const healthy = await bootstrapper.reload('nango');
       expect(healthy.registered).toBe(true);
       expect(healthy.error).toBeUndefined();
+    });
+
+    it('fires onUnregistered exactly when a swap takes a live provider away', async () => {
+      const unregistered: string[] = [];
+      const bootstrapper = makeBootstrapper({
+        onUnregistered: (providerType) => unregistered.push(providerType),
+      });
+      // Boot with nothing configured: nothing was ever registered → no firing.
+      await bootstrapper.registerBootProviders();
+      expect(unregistered).toEqual([]);
+
+      // Save → registered; a reload with the key still present is a swap that
+      // keeps the provider live → no firing.
+      secrets.set(COMPOSIO_API_KEY_REF, 'ck-1');
+      await bootstrapper.reload('composio');
+      await bootstrapper.reload('composio');
+      expect(unregistered).toEqual([]);
+
+      // Delete → the swap takes the live provider away → fires once.
+      secrets.delete(COMPOSIO_API_KEY_REF);
+      await bootstrapper.reload('composio');
+      expect(unregistered).toEqual(['composio']);
+
+      // A repeated delete-reload has nothing left to take away → no re-fire.
+      await bootstrapper.reload('composio');
+      expect(unregistered).toEqual(['composio']);
+    });
+
+    it('fires onUnregistered when a reload REFUSES a previously-live provider', async () => {
+      const unregistered: string[] = [];
+      secrets.set(NANGO_SECRET_KEY_REF, 'sk-nango-test');
+      const nangoSettings: { baseUrl: string; encryptionKey?: string } = {
+        baseUrl: 'http://localhost:3003',
+        encryptionKey: VALID_ENCRYPTION_KEY,
+      };
+      const bootstrapper = makeBootstrapper({
+        nangoEnv: () => ({ ...nangoSettings }),
+        onUnregistered: (providerType) => unregistered.push(providerType),
+      });
+      await bootstrapper.registerBootProviders();
+      expect(registry.resolveProvider('nango')).toBeDefined();
+
+      // The encryption key disappears: the reload refuses, the provider is
+      // gone, and live surfaces must be revoked.
+      delete nangoSettings.encryptionKey;
+      await bootstrapper.reload('nango');
+      expect(registry.resolveProvider('nango')).toBeUndefined();
+      expect(unregistered).toEqual(['nango']);
     });
 
     it('throws for a provider type it does not own', async () => {

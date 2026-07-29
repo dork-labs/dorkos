@@ -13,7 +13,9 @@ import {
   TEST_CONNECTOR_PROVIDER_TYPE,
 } from '../../services/connectors/bootstrap.js';
 import { NangoProxyMcp } from '../../services/connectors/providers/nango-proxy-mcp.js';
+import { SessionConnectorService } from '../../services/connectors/session-exposure.js';
 import { createConnectorProvidersRouter } from '../connector-providers.js';
+import { FakeConnectorProvider } from '@dorkos/test-utils';
 
 const SECRET = 'ck-super-secret-composio-key';
 
@@ -178,6 +180,50 @@ describe('connector-providers router', () => {
       type: TEST_CONNECTOR_PROVIDER_TYPE,
       configured: true,
     });
+  });
+
+  it('deleting a credential revokes LIVE sessions: attached accounts stop being exposed', async () => {
+    // Full wiring, exactly as boot: bootstrapper + session binder + the
+    // unregister hook between them.
+    const sessionConnectors = new SessionConnectorService({ registry });
+    const bootstrapper = new ConnectorProviderBootstrapper({
+      registry,
+      credentials,
+      nangoEnv: () => ({}),
+      nangoProxy: new NangoProxyMcp({ localOrigin: 'http://127.0.0.1:4242' }),
+      rawMcpServers: () => [],
+      onUnregistered: (providerType) => sessionConnectors.invalidateProvider(providerType),
+    });
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api/connectors/providers',
+      createConnectorProvidersRouter({ bootstrapper, credentialStore: store })
+    );
+
+    // Save the key (registers the real provider), then swap a fake in under the
+    // same type so the connect flow stays hermetic — no Composio network call.
+    await request(app)
+      .put('/api/connectors/providers/composio/credential')
+      .send({ secret: SECRET });
+    expect(registry.resolveProvider('composio')).toBeDefined();
+    const provider = new FakeConnectorProvider({ type: 'composio', custody: 'managed' });
+    registry.register(provider);
+    const { flowId } = await provider.startConnect('gmail', { label: 'work' });
+    const account = (await provider.pollConnect(flowId)).account!;
+    registry.recordConnect(account);
+    const attached = await sessionConnectors.attach('session-1', account.id);
+    expect(attached!.account.exposed).toBe(true);
+
+    // Delete the key: the reload unregisters the provider AND the session's
+    // cached exposure is dropped — the account reports unexposed with a
+    // warning, and the MCP factory stops injecting its server.
+    const res = await request(app).delete('/api/connectors/providers/composio/credential');
+    expect(res.status).toBe(200);
+    const status = sessionConnectors.status('session-1');
+    expect(status.accounts[0]!.exposed).toBe(false);
+    expect(status.warnings).toHaveLength(1);
+    expect(sessionConnectors.mcpServersForSession('session-1').servers).toEqual({});
   });
 
   it('never echoes the secret in any response', async () => {
