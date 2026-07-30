@@ -58,11 +58,20 @@ export function scriptedRunner(
  * Kept separate from {@link scriptedRunner} so the common case stays a
  * one-liner, and shared with it so both mint sessions the same way.
  *
- * @param outcome - The whole turn result, minus the session id.
+ * **`sessionId` is optional, and returning one is not cosmetic.** A runtime may
+ * answer on a DIFFERENT session than the one it was asked with — Claude Code
+ * assigns its own canonical id on the first turn and writes the transcript
+ * under it. Every fake here used to echo the requested id back, so no test
+ * could see the difference between the two; supply one to model a runtime that
+ * renames the session out from under the room.
+ *
+ * @param outcome - The whole turn result; `sessionId` defaults to the requested one.
  * @param outcome.throws - Throw instead of returning, for the runtime-is-down path.
  */
 export function outcomeRunner(
-  outcome: (request: RoomTurnRequest) => Omit<RoomTurnResult, 'sessionId'> | { throws: Error }
+  outcome: (
+    request: RoomTurnRequest
+  ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error }
 ): ScriptedTurnRunner {
   const turns: RecordedTurn[] = [];
   let minted = 0;
@@ -79,9 +88,10 @@ export function outcomeRunner(
       });
       const result = outcome(request);
       if ('throws' in result) return Promise.reject(result.throws);
+      const { sessionId: ranOn, ...reply } = result;
       return Promise.resolve({
-        sessionId: request.sessionId ?? `session-${(minted += 1)}`,
-        ...result,
+        sessionId: ranOn ?? request.sessionId ?? `session-${(minted += 1)}`,
+        ...reply,
       });
     },
   };

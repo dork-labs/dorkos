@@ -565,6 +565,11 @@ export class RoomTriggerDispatcher {
       // own projector and `session_metadata` row bound to nothing, whose reply
       // was produced from an empty context. `bindRoomSession` returns the
       // WINNER, so claiming resolves the race to one session per (room, agent).
+      //
+      // The id minted here is a PLACEHOLDER on the first turn: the runtime may
+      // hand back its own, and {@link RoomStore.rebindRoomSession} in `runOne`
+      // moves the binding onto it the moment the turn reports. Racing safely and
+      // remembering correctly are two different jobs; this one is the race.
       target.sessionId = this.deps.store.bindRoomSession(
         room.id,
         target.authorId,
@@ -578,7 +583,6 @@ export class RoomTriggerDispatcher {
         cascadeRoot: entry.cascadeRoot,
         authorId: target.authorId,
         entryId: entry.id,
-        sessionId: target.sessionId,
         depth: target.depth,
         claimedAt: new Date().toISOString(),
         pastDeadline: false,
@@ -654,6 +658,16 @@ export class RoomTriggerDispatcher {
           engaged: target.engaged,
         }),
       });
+
+      // The turn ran on a session; that session is the one this agent must
+      // resume here next time. It is not always the one the room asked with —
+      // Claude Code assigns its own id on the first turn and files the
+      // transcript under it — so the binding follows the runner's answer rather
+      // than the id minted before the turn. Written before anything is
+      // delivered: a post that throws must not cost the room its memory.
+      if (result.sessionId !== target.sessionId) {
+        this.deps.store.rebindRoomSession(room.id, target.authorId, result.sessionId);
+      }
 
       // Armed BEFORE this dispatch settles, so `idle()` cannot report a room
       // quiet while an answer is still on its way to it.
@@ -1117,8 +1131,15 @@ export class RoomTriggerDispatcher {
  *    person watching the room sees. It is why `entryId` is recorded here rather
  *    than derived later: by the time a turn ends, the entry it answered is no
  *    longer in hand, and `cascadeRoot` is not a substitute for it (room-presence
- *    spec §3.1). `sessionId` is bound here for the same reason and stays
- *    server-side — the signal deliberately does not carry it (§15 there).
+ *    spec §3.1).
+ *
+ * The session the turn runs on is deliberately NOT here. A claim used to carry
+ * it, and nothing ever read it: the presence signal does not carry a session id
+ * (room-presence spec §15), and every writer that needs one — the reply post,
+ * the runtime binding — takes it from the turn's own result, which is the only
+ * place it is known to be correct. A second copy taken at claim time could only
+ * ever be the id the room GUESSED with, which is exactly the stale id that used
+ * to cost an agent its memory of a room.
  */
 interface ActiveClaim {
   roomId: string;
@@ -1130,8 +1151,6 @@ interface ActiveClaim {
    * answers a reply rather than the message that began the exchange.
    */
   entryId: string;
-  /** The `(room, agent)` session the turn runs on, bound at claim time. */
-  sessionId: string;
   depth: number;
   /** When the claim was taken — what `room_context.working` reports as `since`. */
   claimedAt: string;
