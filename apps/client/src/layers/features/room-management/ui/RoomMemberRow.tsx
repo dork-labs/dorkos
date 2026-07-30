@@ -236,14 +236,21 @@ export function RoomMemberRow({
               'text-muted-foreground hover:text-foreground focus-visible:ring-ring relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs outline-hidden transition-colors focus-visible:ring-2 md:h-6 md:px-2',
               savingRung && 'opacity-60',
               // 32px of real pill plus 6px of invisible reach each way is the
-              // 44px a thumb needs. Six, and not the twelve that would be
-              // simpler: `AgentChipPicker` learned at 390x844 that a 12px
-              // outset on a chip ate 1.9% of the input beside it at two chips
-              // and 10.6% at six. Nothing interactive sits beside this pill, so
-              // the cost of overreaching here is a wasted tap rather than a
-              // deleted agent — but the row's 12px gap is the same 12px, and
-              // leaving half of it dead is what keeps the two targets distinct.
-              'after:absolute after:-inset-1.5 md:after:hidden',
+              // 44px a thumb needs — and the number that buys it is SEVEN, not
+              // six. An absolutely positioned `::after` is inset from its
+              // containing block's PADDING box, so the pill's 1px border eats a
+              // pixel at each end: `-inset-1.5` measures 42px in a browser, not
+              // 44. It read as correct arithmetic for as long as nobody put a
+              // ruler on it, which jsdom cannot (every box there is 0×0).
+              //
+              // Seven, and not the twelve that would be simpler:
+              // `AgentChipPicker` learned at 390x844 that a 12px outset on a
+              // chip ate 1.9% of the input beside it at two chips and 10.6% at
+              // six. Nothing interactive sits beside this pill, so the cost of
+              // overreaching here is a wasted tap rather than a deleted agent —
+              // but the row's gap is 12px, and leaving most of it dead is what
+              // keeps the two targets distinct.
+              'after:absolute after:-inset-[7px] md:after:hidden',
               expanded && 'text-foreground border-brand/50'
             )}
           >

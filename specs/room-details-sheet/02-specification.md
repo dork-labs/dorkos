@@ -330,7 +330,14 @@ Three decisions taken during implementation that the draft did not anticipate:
 
 - **`LoudnessMeter` has no third size for the preview.** A taller meter says _louder_, and the preview's job is very often to report the **same** level — a room with an `Everything` agent in it does not get quieter because one other agent does. A mark that grew anyway would answer wrongly in exactly the case the preview is most worth having. Height is loudness, so nothing else may change it; that a reading is hypothetical is said in words and in the tint around them.
 - **Both renderings of the rung scale run quiet → loud.** The phone's list shipped reversed for one commit, on the argument that the meter's bars grow upward. The argument dies at a window resize: the same four options would physically turn over as the layout crossed 768px. One control, one direction.
-- **44px per rung is a sub-768 requirement, not a global one.** The phone's list rows are `min-h-12`; the desktop segments are `h-9`, which is a pointer target and not a thumb's. The pill reaches 44px on touch through an invisible `::after` outset — **which must be 7px, not 6**: an absolutely positioned pseudo-element is inset from the _padding_ box, so the pill's 1px border eats a pixel at each end. `-inset-1.5` measures 42px in a real browser. Found by measuring; jsdom reports every box as 0×0 and could never have caught it.
+- **44px per rung is a sub-768 requirement, not a global one.** The phone's list rows are `min-h-12`; the desktop segments are `h-9`, which is a pointer target and not a thumb's.
+
+**Two touch targets missed 44px, and a browser is the only thing that could have said so.** Both were arithmetic that read as correct for as long as nobody put a ruler on it, and jsdom reports every box as 0×0, so no unit test could ever have caught either.
+
+- **The loudness pill measured 42px.** Its reach comes from an invisible `::after` outset, and an absolutely positioned pseudo-element is inset from its containing block's **padding** box — so the pill's 1px border eats a pixel at each end and `-inset-1.5` buys 10px, not 12. Fixed to `-inset-[7px]`, which measures 44.
+- **The chip's remove button measured 39px.** Here the reach could not grow: the dead space between one chip's button and the next wrapped row's is 12px, so 6px each way is exactly half and two adjacent targets meet without overlapping. The 7px that would have lifted a 30px button to 44 makes them overlap by 2px — and a tap in that overlap deletes the wrong agent, which is the incident the surrounding comment already records. **So the size grew instead of the reach**: `p-2` → `p-2.5` makes the button 34px, and 34 + 6 + 6 is 46.
+
+The general lesson is the second one: when a hit area is short, the fix is the control's own size unless there is provably dead space to reach into. Reach that overlaps a neighbour is worse than a small target, because a small target is a missed tap and an overlapping one is the wrong action.
 
 **Open at this commit:**
 

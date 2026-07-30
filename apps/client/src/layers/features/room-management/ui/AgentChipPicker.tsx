@@ -318,18 +318,31 @@ export function AgentChipPicker({
                 fieldRef.current?.focus();
               }}
               className={cn(
-                'hover:bg-background focus-visible:ring-ring relative rounded-sm p-2 outline-hidden focus-visible:ring-2 md:p-0.5',
-                // Most of the touch target is real size (30px), and the
-                // invisible part is deliberately smaller than the dead space
-                // around it: 6px sideways into the 12px between this button and
-                // whatever is next (`pr-1` + the row's `gap-2`), 4px down into
-                // the 12px above the next wrapped row. An earlier version
-                // reached 12px in every direction and ate into the FIELD —
-                // sampling its box at 390x844 found 1.9% of it stolen at two
-                // chips and 10.6% at six, and a tap there focused the field and
-                // silently deleted an agent. `SidebarGroupAction` gets away with
-                // a bare outset because nothing interactive sits next to it.
-                'after:absolute after:-inset-x-1.5 after:-inset-y-1 md:after:hidden'
+                'hover:bg-background focus-visible:ring-ring relative rounded-sm p-2.5 outline-hidden focus-visible:ring-2 md:p-0.5',
+                // 34px of real button plus 6px of invisible reach each way is
+                // 46px — over the 44px bar with a pixel to spare.
+                //
+                // **The size is where the growth had to go, not the reach.**
+                // The dead space between this button and the next wrapped row's
+                // is 12px (`py-1` + the row's `gap-2`), so 6px is exactly half:
+                // two adjacent targets meet and never overlap. Reaching the 7px
+                // that would have got a 30px button to 44 makes them overlap by
+                // 2px, and a tap in that overlap deletes the wrong agent — so
+                // the button itself is bigger instead.
+                //
+                // The reach stays deliberately smaller than the space around
+                // it. An earlier version reached 12px in every direction and
+                // ate into the FIELD: sampling its box at 390x844 found 1.9% of
+                // it stolen at two chips and 10.6% at six, and a tap there
+                // focused the field and silently deleted an agent.
+                // `SidebarGroupAction` gets away with a bare outset because
+                // nothing interactive sits next to it.
+                //
+                // A pseudo-element is inset from the PADDING box, so a bordered
+                // control loses a pixel at each end to its border. This button
+                // has no border, so 6px here really is 6px — the loudness pill
+                // in `RoomMemberRow` does, and needs 7 to reach the same 44.
+                'after:absolute after:-inset-x-1.5 after:-inset-y-1.5 md:after:hidden'
               )}
             >
               <X className="size-3.5 md:size-3" />
