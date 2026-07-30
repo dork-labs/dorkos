@@ -44,6 +44,7 @@ const SAMPLE_ROOM_CONTEXT: RoomContextData = {
   pending: [],
   pendingTruncated: false,
   ownRecent: [],
+  acknowledgments: [],
   addressing: {
     responseMode: 'always',
     engagedUntil: null,

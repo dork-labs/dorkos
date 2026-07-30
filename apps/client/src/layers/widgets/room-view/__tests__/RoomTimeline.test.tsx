@@ -59,6 +59,8 @@ function entry(seq: number, overrides: Partial<RoomEntry> = {}): RoomEntry {
 function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> = {}) {
   return render(
     <RoomTimeline
+      roomId="room-1"
+      viewerAuthorId="reader"
       entries={[]}
       members={[member('ana', 'Ana')]}
       lastReadSeq={null}
@@ -232,7 +234,10 @@ describe('RoomTimeline — replies', () => {
 
     const thread = screen.getByRole('group', { name: '3 replies' });
     expect(within(thread).getAllByTestId('room-entry')).toHaveLength(3);
-    expect(within(thread).queryByRole('button')).not.toBeInTheDocument();
+    // Named by what it would say rather than "no buttons at all": every reply
+    // now carries its own action toolbar, so a bare `queryByRole('button')`
+    // would be answering a question about the toolbar and not about the count.
+    expect(within(thread).queryByRole('button', { name: /^Show / })).not.toBeInTheDocument();
   });
 
   it('names the reply group once, not twice', () => {

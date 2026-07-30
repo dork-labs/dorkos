@@ -5,10 +5,14 @@ import { toMessageAuthor } from '../lib/room-timeline';
 import { RoomEntryRow } from './RoomEntryRow';
 
 interface RoomThreadRepliesProps {
+  /** The room the thread lives in. */
+  roomId: string;
   /** The replies belonging to one entry, oldest first. Never empty. */
   replies: RoomEntry[];
   /** The room's roster, keyed by author id — the only place a name comes from. */
   authors: ReadonlyMap<string, AuthorRef>;
+  /** The reader's own author id here, passed through to each reply's actions. */
+  viewerAuthorId: string;
   /** "Now" as epoch ms, for the same reason the timeline takes one. */
   now: number;
 }
@@ -57,7 +61,13 @@ function replyLabel(count: number): string {
  * a thread is a short aside off an entry the room has already dated, and a
  * full-bleed "Today" inside a three-line group is noise.
  */
-export function RoomThreadReplies({ replies, authors, now }: RoomThreadRepliesProps) {
+export function RoomThreadReplies({
+  roomId,
+  replies,
+  authors,
+  viewerAuthorId,
+  now,
+}: RoomThreadRepliesProps) {
   const [expanded, setExpanded] = useState(false);
   const labelId = useId();
 
@@ -94,8 +104,11 @@ export function RoomThreadReplies({ replies, authors, now }: RoomThreadRepliesPr
         row.kind === 'item' ? (
           <RoomEntryRow
             key={row.key}
+            roomId={roomId}
             entry={visible[row.index]!}
             author={toMessageAuthor(visible[row.index]!.authorId, authors)}
+            authorRef={authors.get(visible[row.index]!.authorId)}
+            viewerAuthorId={viewerAuthorId}
             grouping={row.grouping}
           />
         ) : null

@@ -95,9 +95,15 @@ interface RoomPresenceActions {
   /**
    * Take in one signal off a room's stream.
    *
-   * Signals that carry no lifecycle are ignored rather than stored: `typing` has
-   * no `state`, `entryId` or `since`, and an indicator with no key to age or
-   * clear it by is one nothing could ever release.
+   * Signals that carry no COMPLETE lifecycle are ignored rather than stored, and
+   * that is two cases, not one. A `typing` signal has no `state`, `entryId` or
+   * `since` at all. A `progress` signal can also arrive PARTIAL — the community
+   * port's presence payload makes `entryId` and `since` optional, so a remote
+   * backend that can only say "somebody is working" produces one — and it is
+   * dropped for the same reason: an indicator with no key to age or clear it by
+   * is one nothing could ever release, so rendering it would strand the room
+   * with a worker who never stops. Dropping is the whole mitigation; nothing
+   * downstream re-checks.
    *
    * @param roomId - The room the signal arrived on.
    * @param event - The signal, straight off the wire.

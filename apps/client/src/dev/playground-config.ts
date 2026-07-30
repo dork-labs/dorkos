@@ -3,6 +3,7 @@ import {
   TextCursorInput,
   Component,
   MessageSquare,
+  MousePointerClick,
   Blocks,
   Play,
   Megaphone,
@@ -24,6 +25,7 @@ import {
   FORMS_SECTIONS,
   COMPONENTS_SECTIONS,
   CHAT_SECTIONS,
+  ENTRY_ACTIONS_SECTIONS,
   FEATURES_SECTIONS,
   PROMOS_SECTIONS,
   COMMAND_PALETTE_SECTIONS,
@@ -129,6 +131,16 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'session',
     sections: CHAT_SECTIONS,
     path: 'chat',
+  },
+  {
+    id: 'entry-actions',
+    label: 'Entry Actions',
+    description:
+      'The action surface every room message carries — where the capsule sits, how it arrives, its sticky rail, and how the pill holds its buttons across action counts, group positions, and both themes.',
+    icon: MousePointerClick,
+    group: 'session',
+    sections: ENTRY_ACTIONS_SECTIONS,
+    path: 'entry-actions',
   },
   {
     id: 'simulator',

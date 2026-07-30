@@ -26,6 +26,7 @@ import {
   splitTelegramHtml,
 } from '../../lib/payload-utils.js';
 import type { ApprovalData } from '../../lib/payload-utils.js';
+import { isBlockingInteractionEventType } from '@dorkos/shared/session-stream';
 import { extractChatId } from './inbound.js';
 import type { TelegramThreadIdCodec } from '../../lib/thread-id.js';
 import { sendMessageDraft } from './stream-api.js';
@@ -34,10 +35,29 @@ import { sendMessageDraft } from './stream-api.js';
 const TELEGRAM_TYPING_ACTION = 'typing' as const;
 
 /** Refresh interval for Telegram typing indicator (expires after 5s). */
-const TYPING_REFRESH_MS = 4_000;
+export const TYPING_REFRESH_MS = 4_000;
 
-/** Safety timeout for inbound-triggered typing — stop after 60s even if no response arrives. */
-export const MAX_TYPING_DURATION_MS = 60_000;
+/**
+ * How long a chat's stream may go silent before the typing loop stops itself.
+ *
+ * This is **not** the 60-second blind cap that used to run from the moment a
+ * message arrived. That one was keyed to work — it cut a turn that was still
+ * running and typed for turns that never started. This one is keyed to
+ * observation, and every event restates it: a turn that reports in is never
+ * cut, however long it takes. Only a stream that has gone dark is.
+ *
+ * It is needed because a terminal is not guaranteed. The `done` publish
+ * upstream is best-effort (a failed publish only warns), and a stalled stream
+ * may never reach the code that emits one — so without this, one lost terminal
+ * types at a chat forever. The response buffer in this same file already
+ * carries a bound for the same reason ({@link BUFFER_TTL_MS}); the indicator a
+ * person actually sees should not be the one thing left unbounded.
+ *
+ * 60s is the forgiving end of the band. The cost is honest and small: a turn
+ * that emits nothing at all for a full minute — a long silent tool call —
+ * stops showing typing, and starts again on its next event.
+ */
+export const TYPING_INACTIVITY_MS = 60_000;
 
 /** Minimum interval (ms) between sendMessageDraft calls for a single chat. */
 const DRAFT_UPDATE_INTERVAL_MS = 200;
@@ -56,10 +76,15 @@ const CALLBACK_ID_TTL_MS = 15 * 60 * 1_000;
  * fully reset on adapter stop/start cycles.
  */
 export interface TelegramOutboundState {
-  /** Active typing intervals keyed by chatId. */
+  /** Active typing loops keyed by chatId — one per chat with a live turn. */
   typingIntervals: Map<number, ReturnType<typeof setInterval>>;
-  /** Safety timeouts for inbound-triggered typing indicators, keyed by chatId. */
-  typingTimeouts: Map<number, ReturnType<typeof setTimeout>>;
+  /**
+   * When this chat's stream last said anything, keyed by chatId.
+   *
+   * The typing loop reads it to notice a stream that has gone dark
+   * ({@link TYPING_INACTIVITY_MS}); every event restates it.
+   */
+  lastEventAt: Map<number, number>;
   /** Last sendMessageDraft timestamp per chat (for throttling). */
   lastDraftUpdate: Map<number, number>;
   /**
@@ -77,7 +102,7 @@ export interface TelegramOutboundState {
 export function createTelegramOutboundState(): TelegramOutboundState {
   return {
     typingIntervals: new Map(),
-    typingTimeouts: new Map(),
+    lastEventAt: new Map(),
     lastDraftUpdate: new Map(),
     callbackIdMap: new Map(),
     pendingApprovalTimeouts: new Map(),
@@ -170,6 +195,30 @@ async function sendAndTrack(
 }
 
 /**
+ * Is this delivery an event from a turn that is still running?
+ *
+ * True for any runtime stream event that is not a terminal. A non-stream
+ * payload is a finished message, not a turn in progress, so it is false.
+ *
+ * The terminals are `done`, an `error` — classified on the event type, never
+ * on whether a message could be extracted from it, so a malformed error still
+ * ends the turn — and the three interactions that block on a person, which
+ * come from `BLOCKING_INTERACTION_EVENT_TYPES` in `@dorkos/shared` so this
+ * list cannot drift from the session projector's `blocked` lifecycle. Those
+ * three matter twice over here: `deliverMessage`'s whitelist drops question
+ * and elicitation prompts, so typing through one would show a chat that
+ * somebody is working when the turn is actually stalled on a question that
+ * chat never received.
+ *
+ * @param eventType - The detected StreamEvent type, or null for a plain payload
+ */
+function isTurnRunning(eventType: string | null): boolean {
+  if (!eventType) return false;
+  if (eventType === 'done' || eventType === 'error') return false;
+  return !isBlockingInteractionEventType(eventType);
+}
+
+/**
  * Deliver a Relay message to the Telegram chat identified by the subject.
  *
  * Extracts the chat ID from the subject, reads the payload content, and
@@ -221,11 +270,6 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     };
   }
 
-  // Stop typing indicator — first outbound event means the agent is responding.
-  // Telegram also clears it automatically on sendMessage, but clearing the
-  // interval prevents unnecessary API calls during the remaining stream.
-  clearTypingInterval(state, chatId);
-
   // Reap stale buffers to prevent unbounded memory growth. A buffer is
   // considered stale if no done/error event arrived within BUFFER_TTL_MS —
   // e.g. the agent crashed mid-stream or the session was abandoned.
@@ -242,6 +286,18 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
 
   // --- StreamEvent-aware delivery ---
   const eventType = detectStreamEventType(envelope.payload);
+
+  // The turn's lifecycle, as this adapter can observe it. A runtime event for
+  // this chat is evidence a turn is really running; `done`, an error, an
+  // interaction waiting on a person, and a plain finished reply all end that
+  // span. The message merely arriving proves nothing and drives nothing —
+  // that was the fake E16 forbids.
+  if (isTurnRunning(eventType)) {
+    state.lastEventAt.set(chatId, Date.now());
+    startTypingLoop(bot, chatId, state);
+  } else {
+    clearTypingInterval(state, chatId);
+  }
 
   if (eventType) {
     // text_delta: accumulate in buffer
@@ -341,47 +397,83 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
 }
 
 /**
- * Handle a typing signal from the Relay and forward it to Telegram.
+ * Start (or keep) the typing loop for a chat whose turn is running.
  *
- * Sends an immediate `typing` chat action and sets up an interval to
- * refresh it every 4 seconds (Telegram's indicator expires after 5s).
- * Clears the interval when the signal state changes to non-active.
+ * Sends `sendChatAction('typing')` immediately and refreshes it every
+ * {@link TYPING_REFRESH_MS} — under Telegram's 5-second expiry, so the
+ * indicator stays continuous for as long as the turn does.
+ *
+ * Idempotent by keeping, not by restarting: a turn emits many events, and
+ * restarting the loop on each one would fire a chat action per streamed chunk
+ * and keep resetting the cadence. The loop is per **chat**, not per turn — two
+ * turns racing into one chat share it, and the first terminal silences the
+ * other for one event's worth of time before its next event restarts the loop.
+ * That conflation is inherited (the whole outbound path is keyed by chat, down
+ * to the response buffer) and is documented rather than fixed here.
+ *
+ * The loop ends on a terminal, or — if the terminal never comes — after
+ * {@link TYPING_INACTIVITY_MS} of silence from the stream.
+ *
+ * @param bot - The grammy Bot instance, or null if not started
+ * @param chatId - The Telegram chat ID to show typing in
+ * @param state - The adapter's instance-scoped outbound state
+ */
+function startTypingLoop(bot: Bot | null, chatId: number, state: TelegramOutboundState): void {
+  if (!bot) return;
+  if (state.typingIntervals.has(chatId)) return;
+
+  bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {
+    // Best-effort: a chat action nobody can see is not worth failing a turn over.
+  });
+
+  const intervalId = setInterval(() => {
+    if (Date.now() - (state.lastEventAt.get(chatId) ?? 0) > TYPING_INACTIVITY_MS) {
+      clearTypingInterval(state, chatId);
+      return;
+    }
+    bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {
+      clearTypingInterval(state, chatId);
+    });
+  }, TYPING_REFRESH_MS);
+  state.typingIntervals.set(chatId, intervalId);
+}
+
+/**
+ * Handle a `typing` signal from the Relay and forward it to Telegram.
+ *
+ * This is the seam for lifecycles the adapter cannot observe in its own
+ * outbound stream. Today nothing on the relay bus emits `typing` signals, so
+ * the live driver is the turn itself (see {@link deliverMessage}); a Telegram
+ * chat bridged to a **room** would arrive here instead, mapping the room's
+ * `working`/`done` presence onto the same single loop rather than a second
+ * one. No such bridge exists yet: room presence is published to the room's
+ * own event stream (`RoomService.publishSignal`) and reaches the cockpit, not
+ * a relay adapter.
  *
  * @param bot - The grammy Bot instance, or null if not started
  * @param subject - The Relay subject the typing signal was emitted on
  * @param outboundState - The adapter's instance-scoped outbound state
  * @param signalState - The signal state ('active' | 'stopped' or other values)
+ * @param codec - The adapter's instance-scoped subject codec
  */
-export async function handleTypingSignal(
+export function handleTypingSignal(
   bot: Bot | null,
   subject: string,
   outboundState: TelegramOutboundState,
   signalState: string,
   codec: TelegramThreadIdCodec
-): Promise<void> {
+): void {
   if (!bot) return;
 
   const chatId = extractChatId(codec, subject);
   if (chatId === null) return;
 
   if (signalState === 'active') {
-    // Clear any existing interval (idempotent)
-    clearTypingInterval(outboundState, chatId);
-    // Send immediately
-    try {
-      await bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION);
-    } catch {
-      // Typing signals are best-effort
-    }
-    // Refresh every 4 seconds
-    const intervalId = setInterval(async () => {
-      try {
-        await bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION);
-      } catch {
-        clearTypingInterval(outboundState, chatId);
-      }
-    }, TYPING_REFRESH_MS);
-    outboundState.typingIntervals.set(chatId, intervalId);
+    // A signal is an observation like any other, so it restates the
+    // inactivity bound: a producer that keeps signalling keeps the indicator,
+    // and one that stops being heard from loses it.
+    outboundState.lastEventAt.set(chatId, Date.now());
+    startTypingLoop(bot, chatId, outboundState);
   } else {
     clearTypingInterval(outboundState, chatId);
   }
@@ -393,17 +485,13 @@ export async function handleTypingSignal(
  * @param state - The adapter's outbound state container
  * @param chatId - The Telegram chat ID to clear the interval for
  */
-export function clearTypingInterval(state: TelegramOutboundState, chatId: number): void {
+function clearTypingInterval(state: TelegramOutboundState, chatId: number): void {
   const existing = state.typingIntervals.get(chatId);
   if (existing !== undefined) {
     clearInterval(existing);
     state.typingIntervals.delete(chatId);
   }
-  const timeout = state.typingTimeouts.get(chatId);
-  if (timeout !== undefined) {
-    clearTimeout(timeout);
-    state.typingTimeouts.delete(chatId);
-  }
+  state.lastEventAt.delete(chatId);
 }
 
 /**
@@ -416,51 +504,8 @@ export function clearTypingInterval(state: TelegramOutboundState, chatId: number
 export function clearAllTypingIntervals(state: TelegramOutboundState): void {
   for (const interval of state.typingIntervals.values()) clearInterval(interval);
   state.typingIntervals.clear();
-  for (const timeout of state.typingTimeouts.values()) clearTimeout(timeout);
-  state.typingTimeouts.clear();
+  state.lastEventAt.clear();
   state.lastDraftUpdate.clear();
-}
-
-/**
- * Start a typing indicator for a chat after an inbound message is published.
- *
- * Sends an immediate `sendChatAction('typing')`, refreshes every 4s, and
- * auto-clears after {@link MAX_TYPING_DURATION_MS} as a safety net if no
- * outbound response arrives.
- *
- * @param bot - The grammy Bot instance, or null if not started
- * @param chatId - The Telegram chat ID to show typing in
- * @param state - The adapter's instance-scoped outbound state
- */
-export function startTypingWithTimeout(
-  bot: Bot | null,
-  chatId: number,
-  state: TelegramOutboundState
-): void {
-  if (!bot) return;
-
-  // Clear any existing interval (idempotent)
-  clearTypingInterval(state, chatId);
-
-  // Send immediately
-  bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {});
-
-  // Refresh every 4s
-  const intervalId = setInterval(() => {
-    bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {
-      clearTypingInterval(state, chatId);
-    });
-  }, TYPING_REFRESH_MS);
-  state.typingIntervals.set(chatId, intervalId);
-
-  // Safety timeout — stop typing after 60s even if no response arrives.
-  // Tracked in state so clearTypingInterval can cancel it, preventing an
-  // orphan timeout from clearing a newer typing session for the same chat.
-  const timeoutId = setTimeout(() => {
-    state.typingTimeouts.delete(chatId);
-    clearTypingInterval(state, chatId);
-  }, MAX_TYPING_DURATION_MS);
-  state.typingTimeouts.set(chatId, timeoutId);
 }
 
 // === Approval handling ===

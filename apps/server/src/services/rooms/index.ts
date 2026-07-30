@@ -15,6 +15,7 @@ import { configManager } from '../core/config-manager.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { AuthorRegistry } from './author-registry.js';
 import type { EngagedWindow } from './engagement.js';
+import { ReactionStore } from './reaction-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
@@ -157,10 +158,12 @@ export function createRoomSubsystem(opts: {
   budget?: RoomTurnBudget;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
+  const reactions = new ReactionStore(opts.db);
   const authors = new AuthorRegistry(opts.db);
   const broadcaster = new RoomBroadcaster();
   const service = new RoomService({
     store,
+    reactions,
     authors,
     broadcaster,
     agents: opts.agents ?? createAgentLookup(opts.db),

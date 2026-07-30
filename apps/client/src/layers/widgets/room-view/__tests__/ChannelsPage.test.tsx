@@ -16,6 +16,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   agentAuthorRef,
+  REACTION_FREQUENTS_DEFAULT,
   type PostToRoomResponse,
   type RoomEntry,
   type RoomEvent,
@@ -71,6 +72,7 @@ function roomWith(id: string, slug: string): RoomWithRoster {
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],
     viewerAuthorId: 'author-you',
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
   };
 }
 

@@ -1,14 +1,31 @@
+import { useRef, type KeyboardEvent } from 'react';
 import type { MessageGrouping, MessageAuthor } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { MarkdownContent } from '@/layers/shared/ui';
-import type { RoomEntry } from '@/layers/entities/room';
+import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
 import { MessageAuthorAvatar, messageItem } from '@/layers/features/chat';
+import {
+  EntryActionBar,
+  EntryActionMenu,
+  useEntryActions,
+  type EntryActionBarHandle,
+} from '@/layers/features/entry-actions';
 
 interface RoomEntryRowProps {
+  /** The room this entry belongs to, which its actions act on. */
+  roomId: string;
   /** The durable log entry to render. */
   entry: RoomEntry;
   /** Who wrote it, resolved from the room's roster. */
   author: MessageAuthor;
+  /**
+   * The same author as the ROSTER holds them, or undefined once they have left.
+   * Carries `mentionHandle`, which is the only string that reliably addresses
+   * them — a display name routinely contains spaces and reaches nobody.
+   */
+  authorRef: AuthorRef | undefined;
+  /** The reader's own author id here, so they are not offered to themselves. */
+  viewerAuthorId: string;
   /** Where this entry sits in its author group. */
   grouping: MessageGrouping;
   /**
@@ -37,15 +54,32 @@ function formatTime(timestamp: string): string {
  * the content column — so a room reads as the same surface with more people in
  * it. A `notice` is the room speaking about itself, so it renders as a quiet
  * full-width line with no author beside it: attributing "Ana stopped replying
- * here" to a person would be a lie about who said it.
+ * here" to a person would be a lie about who said it. A notice also carries no
+ * actions: there is no author to mention, and nobody said it to answer.
  *
  * `orphanedReply` adds one quiet line saying the row is answering something
  * out of view. Without it a reply whose thread head has scrolled out of the
  * loaded history is indistinguishable from a new remark, which is a small lie
  * the reader has no way to catch.
+ *
+ * **Every post carries the action surface** — a toolbar on hover or focus, the
+ * same actions on right-click, and a drawer on a long press. The row is a tab
+ * stop so the toolbar can be reached without a pointer; its buttons join the
+ * tab order only while focus is inside the row (see `EntryActionBar`).
  */
-export function RoomEntryRow({ entry, author, grouping, orphanedReply }: RoomEntryRowProps) {
+export function RoomEntryRow({
+  roomId,
+  entry,
+  author,
+  authorRef,
+  viewerAuthorId,
+  grouping,
+  orphanedReply,
+}: RoomEntryRowProps) {
   const time = formatTime(entry.createdAt);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<EntryActionBarHandle>(null);
+  const actions = useEntryActions({ roomId, entry, author: authorRef, viewerAuthorId });
 
   if (entry.kind === 'notice') {
     return (
@@ -62,41 +96,137 @@ export function RoomEntryRow({ entry, author, grouping, orphanedReply }: RoomEnt
   // hangs beneath it. Derived from `grouping.position` for the same reason
   // MessageItem derives it — two sources for one fact can only drift.
   const showAuthorHeader = grouping.position === 'first' || grouping.position === 'only';
-  const styles = messageItem({ position: grouping.position });
+  const styles = messageItem({ position: grouping.position, anchor: 'rail' });
+
+  /** From the message itself, an arrow or Enter moves into its actions. */
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowDown' && event.key !== 'Enter') return;
+    event.preventDefault();
+    barRef.current?.focusFirst();
+  };
 
   return (
-    <div data-testid="room-entry" className={styles.root()}>
-      <div className={styles.gutter()}>
-        {showAuthorHeader && <MessageAuthorAvatar author={author} />}
-        {!showAuthorHeader && time.length > 0 && (
-          <span
-            className={cn(
-              styles.avatarTimestamp(),
-              'group-hover:text-msg-timestamp text-transparent'
-            )}
-          >
-            {time}
-          </span>
+    <EntryActionMenu actions={actions}>
+      {/*
+        A message is a non-interactive container that must still be focusable and
+        must still hear an arrow key: it is the single tab stop its own actions
+        are reached FROM, which is what keeps a room one Tab per message (see
+        `EntryActionBar`). Both rules below assume the fix is to make the row
+        interactive, and that is wrong here — the row holds selectable text and
+        its own buttons, and neither may sit inside a control. Same shape as
+        `link-safety-modal.tsx`, which handles Escape on a dialog container.
+      */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- see above */}
+      <div
+        ref={rowRef}
+        data-testid="room-entry"
+        role="article"
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- see above
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        className={cn(
+          styles.root(),
+          'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
         )}
-      </div>
-      <div className={styles.body()}>
-        {showAuthorHeader && (
-          <div className={styles.header()}>
-            <span className={styles.authorName()}>{author.displayName}</span>
-            {time.length > 0 && (
-              <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
-            )}
+      >
+        <div className={styles.gutter()}>
+          {showAuthorHeader && <MessageAuthorAvatar author={author} />}
+          {!showAuthorHeader && time.length > 0 && (
+            <span
+              className={cn(
+                styles.avatarTimestamp(),
+                'group-hover:text-msg-timestamp text-transparent'
+              )}
+            >
+              {time}
+            </span>
+          )}
+        </div>
+        <div className={styles.body()}>
+          {showAuthorHeader && (
+            <div className={styles.header()}>
+              <span className={styles.authorName()}>{author.displayName}</span>
+              {time.length > 0 && (
+                <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
+              )}
+            </div>
+          )}
+          {orphanedReply === true && (
+            <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
+              Replying to an earlier message
+            </p>
+          )}
+          {/*
+            No carve-out for a right-click on a link. Under `linkSafety`, which
+            this call site passes, every link form — markdown, autolink, bare URL
+            — renders as a BUTTON that opens the link-safety modal rather than as
+            an `<a href>`, so there is no native "Copy link address" here for our
+            menu to be taking away. That is a property of this call site, not of
+            `MarkdownContent` everywhere.
+          */}
+          <div data-slot="message-content" className={styles.content()}>
+            <MarkdownContent content={entry.body.text} linkSafety />
           </div>
-        )}
-        {orphanedReply === true && (
-          <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
-            Replying to an earlier message
-          </p>
-        )}
-        <div data-slot="message-content" className={styles.content()}>
-          <MarkdownContent content={entry.body.text} linkSafety />
+          {/*
+            The rail is the strip of gutter the capsule lives in — exactly one
+            capsule tall, sitting directly ABOVE the message's first line, so the
+            capsule straddles the message block's top edge and, for as long as
+            that edge is on screen, covers no word of it (design record §1).
+            `-mt` cancels its own height, so the band costs the row no vertical
+            space and the message sits where it would have anyway: the capsule is
+            drawn in the air between messages, not in a lane carved out for it.
+
+            One rule, every grouping position. The band hangs off the message's
+            own first line, and the row's top padding already moves with the
+            grouping — so a group start (16px of padding) gets the even straddle
+            the design draws, while a tight continuation (6px) reaches further up
+            into the group's own 12px of air. That is the honest trade: a 30px
+            capsule cannot fit in 12px, and of the two things it can overlap, the
+            words of the message it ACTS ON are the ones it must never touch.
+
+            It is also `sticky`, which is what keeps it reachable on a message
+            longer than the window: it rides the message's top while that is on
+            screen and clamps to the scroller's edge once the message extends
+            above it. The clamp is unchanged by the band — `top-1` still pins the
+            band's own top, so a clamped capsule sits exactly where it always
+            did, and the handover is continuous because sticky never jumps.
+
+            The clamp is also the one place the capsule DOES cover words: with a
+            message's first line just under the scroller's edge, the pinned
+            capsule sits over it. Nothing can be done about that without giving
+            up either the clamp or the straddle, and the clamp is what makes a
+            long message's actions reachable at all. It is a narrow band —
+            roughly the capsule's own height of scroll — and off it entirely for
+            the rest of the message.
+
+            LAST in the DOM and `order-first` in the layout, deliberately. Read
+            order is what a screen reader follows, and a toolbar announced ahead
+            of the message would make every row open with "Reply in thread, Copy
+            text" before saying who spoke or what they said — which is how session
+            chat already has it, with its actions last. `order` moves the box
+            without moving the reading order, and the sticky clamp is computed on
+            the laid-out box, so it survives the move.
+
+            `items-start` is load-bearing, not tidiness. A flex row's default
+            `align-items: stretch` sizes a child to the line's cross size — which
+            once squashed the pill to a 6px capsule with its own 24px buttons
+            hanging out of it top and bottom, reading as a line ruled through the
+            icons. Session chat never hit this: its `corner` anchor is
+            `absolute`, so it is out of flow and no flex line ever sizes it.
+            Pinned by "the toolbar encloses the buttons it is drawn around" in
+            `room-entry-actions.spec.ts`.
+          */}
+          <div className="pointer-events-none sticky top-1 z-20 order-first -mt-(--msg-actions-height) flex h-(--msg-actions-height) items-start justify-end pr-2">
+            <EntryActionBar
+              ref={barRef}
+              actions={actions}
+              onExit={() => rowRef.current?.focus()}
+              className={styles.actions()}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </EntryActionMenu>
   );
 }

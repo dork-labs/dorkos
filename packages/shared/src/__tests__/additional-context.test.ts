@@ -25,6 +25,7 @@ const SAMPLE_ROOM_CONTEXT = {
   pending: [],
   pendingTruncated: false,
   ownRecent: [],
+  acknowledgments: [],
   addressing: {
     responseMode: 'always',
     engagedUntil: null,

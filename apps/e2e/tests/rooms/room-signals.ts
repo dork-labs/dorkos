@@ -27,6 +27,14 @@ import type { Page } from '@playwright/test';
  * @module tests/rooms/room-signals
  */
 
+/**
+ * How long to let a room's live stream come up before giving up on it.
+ *
+ * The same ceiling every other room wait uses — a bound on a stall, not a delay
+ * anything pays on the way through.
+ */
+const STREAM_OPEN_MS = 30_000;
+
 /** One presence publish, exactly as `RoomSignalEventSchema` describes it. */
 export interface PresenceSignal {
   /** The agent the indicator is about. */
@@ -97,6 +105,14 @@ export async function tapRoomStream(page: Page): Promise<void> {
 /**
  * Publish one presence signal onto the open room's stream.
  *
+ * **Waits for the stream to be open rather than requiring it to be.** A room
+ * hydrates its history over REST and connects its stream separately, so "the
+ * entries are on screen" does not mean "the socket is up" — it only usually
+ * does, on an unloaded machine. This used to throw the moment the two arrived
+ * in the other order, which made the presence spec pass or fail on how busy the
+ * run was rather than on anything about presence. Waiting is what every other
+ * assertion in this suite does.
+ *
  * @param page - The page holding the stream, already tapped.
  * @param signal - What the dispatcher would have said.
  */
@@ -110,21 +126,22 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
     entryId: signal.entryId,
     since: signal.since,
   };
-  // **Wait for the tap rather than demand it.** The room's stream is a RESUME:
-  // it opens only once the history read has landed, so between `goto` and the
-  // socket being live there is a window whose width is the server's response
-  // time. Throwing on the first look made that window a coin toss on a busy
-  // machine — the failure named the tap, which is not where the problem was.
-  //
-  // A readiness wait, not a sleep: it returns the instant the stream is up, and
-  // a stream that never opens still fails, with a message that says so.
-  await page.waitForFunction(
-    () =>
-      (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } }).__roomStream
-        ?.push != null,
-    undefined,
-    { timeout: 30_000 }
-  );
+  await page
+    .waitForFunction(
+      () =>
+        (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } })
+          .__roomStream?.push != null,
+      undefined,
+      { timeout: STREAM_OPEN_MS }
+    )
+    .catch(() => {
+      // A bare Playwright timeout here names `waitForFunction` and an anonymous
+      // predicate, which says nothing about which room never came up. The
+      // sentence is deliberately NOT the one the publish below throws: never
+      // opening and closing mid-flight are different failures, and reporting the
+      // same words for both sends the reader to the wrong place.
+      throw new Error('The room stream is not open yet — nothing to publish onto.');
+    });
   await page.evaluate(
     (frame) => {
       const tap = (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } })

@@ -421,9 +421,26 @@ every message in every group was the bug, not a setting anyone chose.
 
 Sends Relay envelopes as Telegram messages. Truncates content to Telegram's 4096-character limit.
 
-**Typing Signals:**
+**Typing indicator:**
 
-Subscribes to `relay.human.telegram.>` signals and forwards typing actions to Telegram via `sendChatAction('typing')`.
+Telegram's `sendChatAction('typing')` is driven by the turn, never by a message
+arriving. The first runtime event delivered for a chat starts the loop (refreshed
+every 4s, under Telegram's 5s expiry). It stops on `done`, on an `error`, on any
+of `BLOCKING_INTERACTION_EVENT_TYPES` (the same three the session projector folds
+into lifecycle `blocked` — the agent is waiting on a person, not working), and on
+a plain finished reply.
+
+There is no cap on how long a turn may type. There is a bound on how long it may
+type **unobserved**: `TYPING_INACTIVITY_MS` (60s) of stream silence stops the
+loop, because a terminal is not guaranteed (the upstream `done` publish is
+best-effort, and a stalled stream may never emit one) and one lost terminal
+would otherwise type at a chat forever. Every event restates the bound, so a
+turn that keeps reporting in is never cut (`meta/agent-etiquette.md` E16/E16a).
+
+`handleTypingSignal` keeps the adapter's `relay.human.telegram.>` signal
+subscription as the seam for lifecycles the outbound stream cannot see — a
+room-bridged chat would arrive there and drive the same single loop. Nothing on
+the relay bus emits `typing` signals today.
 
 **Modes:**
 
@@ -1626,8 +1643,11 @@ interface PlatformClient {
     prompt: string,
     actions: Array<{ label: string; value: string }>
   ): Promise<{ messageId: string }>;
-  startTyping(threadId: string): void;
-  stopTyping(threadId: string): void;
+  // Optional, and only where the indicator genuinely belongs to the client.
+  // Telegram's does not: its loop belongs to the turn, in the adapter's
+  // outbound path, so `GrammyPlatformClient` implements neither.
+  startTyping?(threadId: string): void;
+  stopTyping?(threadId: string): void;
   handleInbound(relay: RelayPublisher): void;
   destroy(): Promise<void>;
 }
@@ -1635,10 +1655,10 @@ interface PlatformClient {
 
 ### Built-in Platform Clients
 
-| Client                 | Platform | Key Features                                                          |
-| ---------------------- | -------- | --------------------------------------------------------------------- |
-| `GrammyPlatformClient` | Telegram | post/edit/delete, inline keyboards, typing indicator refresh every 4s |
-| `SlackPlatformClient`  | Slack    | post/edit/delete, hourglass emoji reactions for typing                |
+| Client                 | Platform | Key Features                                                                      |
+| ---------------------- | -------- | --------------------------------------------------------------------------------- |
+| `GrammyPlatformClient` | Telegram | post/edit/delete, inline keyboards (typing lives with the turn, in `outbound.ts`) |
+| `SlackPlatformClient`  | Slack    | post/edit/delete, hourglass emoji reactions for typing                            |
 
 Streaming delivery lives inside each adapter's own outbound path — the
 Telegram adapter throttles `sendMessageDraft` edits (200ms) and Slack posts

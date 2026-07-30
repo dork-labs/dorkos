@@ -30,25 +30,32 @@
  * | `readCursor` | `'server'` | `room_members.last_read_seq` is a server-visible integer, and `RoomStore.countUnread` computes a real unread count from it. |
  * | `responseMode` | `true` | `room_members.response_mode` is the per-room addressing override. |
  * | `threadDepth` | `1` | `RoomService.post` refuses a reply whose parent is already a reply (`NESTED_THREAD`). |
- * | `signals` | `'none'` | See below — this is the one flag whose value is about a missing field rather than a missing feature. |
+ * | `signals` | `'both'` | The room signal channel now carries a presence payload, which is what `'both'` means. See below. |
  * | `credential` | `'none'` | Nothing to hold: this is the machine the store is on. |
  *
- * **`signals: 'none'` is the honest value at this commit, and it is temporary.**
- * The room signal channel exists — `RoomService.publishSignal` and the SSE
- * `signal` frame both ship — but `RoomSignalEventSchema` carries no structured
- * payload, and Amendment 2 of the port's spec makes round-tripping one part of
- * what `'both'` means. An adapter that emitted a signal which could not say who
- * was working, on what, or since when would be declaring a capability the
- * conformance suite is right to fail. `specs/room-presence/02-specification.md`
- * §3.2 widens the room signal envelope, and its §11 scope table names this
- * adapter outright — "`publishSignal` payload amendment + C15 strengthening …
- * implements it in the local + server adapters". The flag flips to `'both'` in
- * that change, together with mapping the `signal` frame in
- * {@link LocalCommunityAdapter.subscribeRoom} rather than dropping it. Until
- * then this adapter neither emits nor observes signals — it refuses
- * `publishSignal` AND drops every `signal` frame the room broadcaster carries,
- * which is what `'none'` says and what
- * `__tests__/local-community-adapter.test.ts` pins.
+ * **`signals` flipped from `'none'` to `'both'`, ten commits after it needed
+ * to.** This adapter was written declaring `'none'` because, on the tree it was
+ * written against, `RoomSignalEventSchema` carried no structured payload, and
+ * Amendment 2 of the port's spec makes round-tripping one part of what `'both'`
+ * means — so an adapter emitting a signal that could not say who was working, on
+ * what, or since when would have been declaring a capability the conformance
+ * suite is right to fail. That argument stands, and it is why waiting was the
+ * right call rather than a timid one. **The history is worth
+ * getting right, because it is not "the envelope landed later":** `364d3a88e`
+ * (#623) widened the envelope with `state`, `entryId` and `since`, and
+ * `25aa7af15` (#624) — the commit that first shipped this file, `'none'` and all
+ * — is its direct descendant. #624 was branched before #623 merged, so `'none'`
+ * was honest **when it was written** and already stale when it landed. Nothing
+ * blocked the flip for the ten commits since; nobody had looked.
+ *
+ * Both directions are real now:
+ * `publishSignal` publishes through `RoomService`, and
+ * {@link LocalCommunityAdapter.subscribeRoom} maps every `signal` frame the room
+ * broadcaster carries onto the port's stream instead of dropping it. C15 proves
+ * the round trip through a real room, and
+ * `__tests__/local-community-adapter.test.ts` pins the half a shared suite
+ * structurally cannot reach: a signal published by the room's OWN producers —
+ * the trigger dispatcher, not this adapter — reaches a port subscriber.
  *
  * ## The `'not-admitted'` invalidation is vacuous here, and that is a statement
  *
@@ -88,6 +95,7 @@ import {
   type CommunityEntryRef,
   type CommunityInvite,
   type CommunityMember,
+  type CommunityPresencePayload,
   type CommunityRef,
   type CommunityRoom,
   type CommunityRoomClosedReason,
@@ -99,6 +107,7 @@ import {
   type UpdateCommunityRoomInput,
 } from '@dorkos/shared/community-adapter';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
+import type { SignalType } from '@dorkos/shared/relay-schemas';
 import type { Room, RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import { ROOMS } from '../../../config/constants.js';
 import { logger } from '../../../lib/logger.js';
@@ -107,7 +116,13 @@ import { RoomError } from '../../rooms/room-errors.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomStore } from '../../rooms/room-store.js';
 import { mintLocalCursor, readLocalCursor } from './local-cursor.js';
-import { toCommunityEntry, toCommunityMember, toCommunityRoom } from './local-projection.js';
+import {
+  toCommunityEntry,
+  toCommunityMember,
+  toCommunityRoom,
+  toCommunitySignal,
+  toRoomPresence,
+} from './local-projection.js';
 import { PushStream } from './push-stream.js';
 
 /** Page size when a caller does not ask for one. Matches the port's own default shape. */
@@ -127,7 +142,7 @@ const LOCAL_CAPABILITIES: CommunityCapabilities = {
   readCursor: 'server',
   responseMode: true,
   threadDepth: 1,
-  signals: 'none',
+  signals: 'both',
   credential: 'none',
   features: {},
 };
@@ -585,14 +600,65 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   // --- Ephemeral -----------------------------------------------------------
 
   /**
-   * Refused: `signals: 'none'` at this commit. The room signal channel exists,
-   * but its envelope cannot carry the presence payload the port's `'both'`
-   * requires — see this module's doc for exactly what flips it.
+   * Publish an ephemeral signal onto the room's own live channel.
+   *
+   * **The signal is attributed to `payload.memberId` when there is one**, not to
+   * the connected identity, and it has to be: the presence this backend carries
+   * is an AGENT working, while the connected identity is the person who
+   * triggered it. Attributing it to the caller would name the wrong worker in
+   * every case the feature exists for.
+   *
+   * **So the id is validated against the room's roster, and a stranger is
+   * refused rather than published.** The port leaves `memberId` unvalidated on
+   * purpose — it exists for backends whose identity model is foreign to ours,
+   * where this adapter has nothing to check against. Ours is not one of those:
+   * a `memberId` here IS a DorkOS author id in this install's own namespace, so
+   * a value naming nobody in the room is a claim about a real person or agent
+   * that this backend can see is false. It refuses loudly (`RoomError`
+   * `MEMBER_NOT_FOUND`, the same refusal {@link LocalCommunityAdapter.setResponseMode}
+   * surfaces for the same mistake) and **never falls back to the connected
+   * identity** — a silent fallback turns a caller's bad id into an indicator
+   * saying the operator is working, which is misattribution dressed as
+   * robustness. With no `memberId` at all, the emitter speaks for itself.
+   *
+   * **What this does NOT check, stated because the gap is real:** whether the
+   * named member actually holds a claim. A room member can still publish
+   * "working" about another member of the same room, and the shared suite says
+   * outright that it cannot assert who may call this. Mechanical honesty lives
+   * with the claim map, in `RoomTriggerDispatcher` — which makes this adapter a
+   * SECOND producer of presence: roster-validated, but not claim-gated. That is
+   * safe only while every caller is server-side code that already knows what it
+   * started. **Claim-gating (or an explicit refusal here) must land before this
+   * method is exposed on a route, on an MCP tool, or to any caller the server
+   * did not write.**
+   *
+   * Nothing here is written. `RoomService.publishSignal` broadcasts and returns;
+   * a signal never enters the log, so there is no persistence to opt out of.
+   *
+   * @param roomId - The room to signal in.
+   * @param signal - Which signal.
+   * @param payload - The presence lifecycle, on a `'progress'` signal.
    */
-  publishSignal(): Promise<void> {
-    return Promise.reject(
-      new CommunityUnsupportedError(this.community, 'signals', 'publishSignal')
-    );
+  publishSignal(
+    roomId: string,
+    signal: SignalType,
+    payload?: CommunityPresencePayload
+  ): Promise<void> {
+    const identity = this.identity();
+    const room = this.deps.service.getRoom(roomId, identity);
+    if (!room) {
+      // A room this identity cannot see must not become a room it can be heard
+      // in — the same collapse `subscribeRoom` makes, for the same reason.
+      return Promise.reject(new CommunityRoomNotFoundError(this.community, roomId));
+    }
+    const author = payload?.memberId ?? identity;
+    if (author !== identity && !room.members.some((member) => member.authorId === author)) {
+      return Promise.reject(
+        new RoomError('MEMBER_NOT_FOUND', `'${author}' is not a member of this room`)
+      );
+    }
+    this.deps.service.publishSignal(roomId, signal, author, payload && toRoomPresence(payload));
+    return Promise.resolve();
   }
 
   // --- Internals -----------------------------------------------------------
@@ -624,11 +690,18 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   }
 
   /**
-   * Forward committed entries onto one room's community stream.
+   * Forward committed entries and live signals onto one room's community stream.
    *
-   * Signals are dropped rather than mapped, because this backend declares
-   * `signals: 'none'` and an adapter that yields what it says it cannot is worse
-   * than one that yields nothing.
+   * Signals are mapped rather than dropped — `signals: 'both'` claims both
+   * directions, and the observing one is the direction that matters for
+   * presence: the producer is the trigger dispatcher, never a port caller, so a
+   * port subscriber that could only see what it published itself would see
+   * nothing anyone cares about. Signals carry no `seq` and are never replayed,
+   * so they bypass the watermark entirely instead of being ordered against it.
+   *
+   * Reactions are dropped, and that is not the same decision: they are DURABLE
+   * state with no shape on this port at all, so forwarding one would mean
+   * inventing a frame the port has not specified.
    *
    * The broadcaster ends a subscriber it has had to stall (its queue is bounded,
    * so a reader that stops pulling is ended rather than buffered without limit).
@@ -649,6 +722,10 @@ export class LocalCommunityAdapter implements CommunityAdapter {
         const next = await live.next();
         if (next.done || stream.closed) break;
         const event = next.value;
+        if (event.type === 'signal') {
+          stream.push(toCommunitySignal(event));
+          continue;
+        }
         if (event.type !== 'entry' || event.seq <= highestSent) continue;
         highestSent = event.seq;
         stream.push({ type: 'entry', entry: toCommunityEntry(this.community, event.entry) });

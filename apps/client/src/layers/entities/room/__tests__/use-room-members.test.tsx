@@ -14,7 +14,11 @@ import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomRosterEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import {
+  REACTION_FREQUENTS_DEFAULT,
+  type RoomRosterEntry,
+  type RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { roomKeys } from '../api/query-keys';
@@ -47,6 +51,7 @@ const ROSTER: RoomWithRoster = {
   lastActivityAt: '2026-07-26T10:00:00.000Z',
   members: [member('ana', 'mention-only'), member('bo', 'silent')],
   viewerAuthorId: 'me',
+  reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
 };
 
 /**

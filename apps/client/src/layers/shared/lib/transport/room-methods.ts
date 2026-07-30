@@ -3,11 +3,10 @@
  * `rooms`). Talks to the Express `/api/rooms/*` routes.
  *
  * Only what the cockpit performs today is here: reading a room, posting to it,
- * settling its title / topic / archived flag, editing its roster, and moving
- * the read cursor. Posting a thread reply is `POST /api/rooms/:id/threads` and
- * reaches this factory when the cockpit grows an affordance for it; nothing has
- * to be created first, since a thread is a relation between entries
- * (ADR 260728-022013), so it is a factory addition and not a protocol change.
+ * replying inside a thread, settling its title / topic / archived flag, editing
+ * its roster, and moving the read cursor. The thread reply is its own route
+ * rather than a flag on the post, because nothing has to be created first — a
+ * thread is a relation between entries (ADR 260728-022013).
  *
  * @module shared/lib/transport/room-methods
  */
@@ -17,6 +16,7 @@ import {
   type CreateRoomRequest,
   type ListRoomEntriesQuery,
   type ListRoomsQuery,
+  type PostThreadReplyRequest,
   type PostToRoomRequest,
   type PostToRoomResponse,
   type RoomEntry,
@@ -75,6 +75,18 @@ export function createRoomMethods(baseUrl: string) {
      */
     postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse> {
       return fetchJSON<PostToRoomResponse>(baseUrl, `/rooms/${id}/entries`, {
+        method: 'POST',
+        body: JSON.stringify(req),
+      });
+    },
+
+    /**
+     * Reply in the thread hanging off `req.rootEntryId`. Trigger-only, exactly
+     * as `postToRoom` is — the reply reaches this reader on `subscribeRoom`,
+     * where the timeline gathers it under its root.
+     */
+    replyInThread(id: string, req: PostThreadReplyRequest): Promise<PostToRoomResponse> {
+      return fetchJSON<PostToRoomResponse>(baseUrl, `/rooms/${id}/threads`, {
         method: 'POST',
         body: JSON.stringify(req),
       });

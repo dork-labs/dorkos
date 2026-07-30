@@ -16,14 +16,16 @@
  * 2026-07-29) after the original spike-derived assumptions failed against a
  * real account. Each shape is marked inline:
  *
- * - `VERIFIED-LIVE (2026-07-29)` — exercised against the real API. That covers
- *   the auth header (`x-api-key`), the error envelope
- *   (`{ error: { message, status, suggested_fix } }`), and the fact that a
- *   `uak_…` user-account key (what the `composio` CLI holds) is REJECTED by the
- *   REST API with a 401 — a project API key is required.
- * - `VERIFIED-DOCS (2026-07-29)` — matches the published reference verbatim but
- *   was not exercised with a working project key (the only live key available
- *   during verification was a `uak_…` CLI key, which every endpoint 401s).
+ * - `VERIFIED-LIVE (2026-07-29 / 2026-07-30)` — exercised against the real
+ *   API. That covers the error envelope
+ *   (`{ error: { message, status, suggested_fix } }`) and the TWO auth header
+ *   kinds: a project key authenticates via `x-api-key`, while a `uak_…`
+ *   user-account key (what the `composio` CLI holds) authenticates via
+ *   `x-user-api-key` (200 on `/api/v3.1/toolkits`; the same key under
+ *   `x-api-key` is 401 `APIKey_InvalidAPIKey`) with its project resolved via
+ *   `GET /api/v3/auth/session/info` and carried as `x-project-id`.
+ * - `VERIFIED-DOCS (2026-07-29)` — matches the published reference verbatim
+ *   but was exercised only with a user-account key.
  *
  * A failing call now surfaces as a thrown {@link ComposioApiError} carrying
  * Composio's own (secret-free) error message — never silently degraded — so
@@ -32,8 +34,29 @@
  * @module services/connectors/providers/composio-client
  */
 
+import type { ConnectorKeyKind } from '@dorkos/shared/connector-provider';
+
 /** Composio's API origin. `VERIFIED-LIVE (2026-07-29)`. */
 const DEFAULT_COMPOSIO_BASE_URL = 'https://backend.composio.dev';
+
+/**
+ * Prefix of Composio user-account keys — the kind the `composio` CLI holds.
+ * `VERIFIED-LIVE (2026-07-30)`: a `uak_…` key authenticates via
+ * `x-user-api-key` (200 on `/api/v3.1/toolkits`), while the same key via
+ * `x-api-key` is rejected with 401 `APIKey_InvalidAPIKey`.
+ */
+const USER_KEY_PREFIX = 'uak_';
+
+/**
+ * Resolves a user-account key's project. `VERIFIED-LIVE (2026-07-30)`:
+ * `GET /api/v3/auth/session/info` with `x-user-api-key` → 200 with
+ * `{ project: { nano_id: 'pr_…' } }`, and `x-project-id: pr_…` is accepted on
+ * v3.1 calls to scope them to that project.
+ */
+const SESSION_INFO_PATH = '/api/v3/auth/session/info';
+
+/** The header each key kind authenticates with. `VERIFIED-LIVE (2026-07-30)`. */
+type ComposioAuthHeaderKind = 'project' | 'user';
 
 /** Per-request deadline so a hung Composio call can never block an aggregation. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
@@ -115,6 +138,12 @@ export interface ComposioMcpSession {
  * verification swaps; the provider is written entirely against this interface.
  */
 export interface ComposioHttpClient {
+  /**
+   * Which credential kind the key validated as, when the client tracks it —
+   * `'unknown'` until a real call has succeeded. Surfaced on the provider
+   * status so the setup card can say what it is using.
+   */
+  keyKind?(): ConnectorKeyKind;
   /** List the toolkits (services) this Composio account can connect. */
   listToolkits(): Promise<ComposioToolkitInfo[]>;
   /**
@@ -157,10 +186,12 @@ export interface ComposioHttpClient {
 /** Construction options for {@link FetchComposioHttpClient}. */
 export interface FetchComposioHttpClientOpts {
   /**
-   * The Composio PROJECT API key (resolved from the credential store; never
-   * logged). Note the kind: the `composio` CLI's `uak_…` user-account key is
-   * rejected by the REST API — keys come from the Composio dashboard's project
-   * settings. `VERIFIED-LIVE (2026-07-29)`.
+   * The Composio API key (resolved from the credential store; never logged).
+   * EITHER kind works (`VERIFIED-LIVE 2026-07-30`): a project API key rides
+   * `x-api-key`; a `uak_…` user-account key (the `composio` CLI's kind) rides
+   * `x-user-api-key` with its project resolved via session-info. The client
+   * detects the kind by prefix and falls back to the other header once on a
+   * 401, so unknown future prefixes still find their header.
    */
   apiKey: string;
   /**
@@ -195,9 +226,14 @@ export class ComposioApiError extends Error {
 }
 
 /**
- * Default {@link ComposioHttpClient} over Composio's v3.1 REST API. The API key
- * is sent on every request as `x-api-key` (`VERIFIED-LIVE 2026-07-29`) and is
- * never logged. See the module doc for the per-shape verification status.
+ * Default {@link ComposioHttpClient} over Composio's v3.1 REST API. Composio
+ * issues TWO key kinds with different auth headers (`VERIFIED-LIVE
+ * 2026-07-30`): project keys → `x-api-key`; user-account keys (`uak_…`, what
+ * the `composio` CLI holds) → `x-user-api-key` plus `x-project-id` resolved
+ * once via session-info. The kind is guessed by prefix and, on a 401 before
+ * the key has ever validated, retried once with the other header — the honest
+ * catch-all for prefixes we have not seen (e.g. org keys). The key is never
+ * logged. See the module doc for the per-shape verification status.
  */
 export class FetchComposioHttpClient implements ComposioHttpClient {
   private readonly _apiKey: string;
@@ -205,6 +241,14 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
   private readonly _baseUrl: string;
   private readonly _fetch: typeof fetch;
   private readonly _timeoutMs: number;
+  /** The auth header currently in use (prefix-guessed until validated). */
+  private _headerKind: ComposioAuthHeaderKind;
+  /** True once any call has succeeded — locks the header kind for the instance. */
+  private _validated = false;
+  /** The `pr_…` project id resolved for a user-account key (not a secret). */
+  private _projectId: string | undefined;
+  /** Re-entrancy guard: the session-info call must not resolve itself. */
+  private _resolvingProjectId = false;
   /**
    * toolkit slug → managed auth-config id, resolved once per process. Auth
    * configs are stable per project+toolkit, so re-resolving on every connect
@@ -223,6 +267,12 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     this._baseUrl = (opts.baseUrl ?? DEFAULT_COMPOSIO_BASE_URL).replace(/\/+$/, '');
     this._fetch = opts.fetchImpl ?? fetch;
     this._timeoutMs = opts.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this._headerKind = opts.apiKey.startsWith(USER_KEY_PREFIX) ? 'user' : 'project';
+  }
+
+  keyKind(): ConnectorKeyKind {
+    // 'unknown' until a real call validates — a prefix guess is not knowledge.
+    return this._validated ? this._headerKind : 'unknown';
   }
 
   async listToolkits(): Promise<ComposioToolkitInfo[]> {
@@ -355,10 +405,10 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
       );
       const url = session.mcp?.url;
       if (!url) return null;
-      // The session url is minted per user/session; the API key rides as a
-      // header for hosts that require it. VERIFIED-DOCS: header carriage is the
-      // SDK's `session.mcp.headers` behavior.
-      return { url, headers: { 'x-api-key': this._apiKey } };
+      // The session url is minted per user/session; the key rides under
+      // whichever header kind validated for this instance. VERIFIED-DOCS:
+      // header carriage is the SDK's `session.mcp.headers` behavior.
+      return { url, headers: this._authHeaders(this._headerKind) };
     } catch (err) {
       // A 404 (no session for this account) degrades to null, not an error.
       if (err instanceof ComposioApiError && err.status === 404) return null;
@@ -410,37 +460,98 @@ export class FetchComposioHttpClient implements ComposioHttpClient {
     return id;
   }
 
+  /** The auth headers for one header kind. `VERIFIED-LIVE (2026-07-30)`. */
+  private _authHeaders(kind: ComposioAuthHeaderKind): Record<string, string> {
+    if (kind === 'user') {
+      return {
+        'x-user-api-key': this._apiKey,
+        // The project id scopes v3.1 calls for a user-account key; it is an
+        // identifier (pr_…), not a secret, and is never persisted.
+        ...(this._projectId && { 'x-project-id': this._projectId }),
+      };
+    }
+    return { 'x-api-key': this._apiKey };
+  }
+
   /**
-   * Issue one authenticated Composio request, bounded by the timeout, mapping a
-   * non-2xx to a {@link ComposioApiError} that carries Composio's own error
-   * message and suggested fix (`VERIFIED-LIVE 2026-07-29`: the error envelope is
-   * `{ error: { message, status, suggested_fix } }`, and its message is
-   * secret-free — Composio masks key material itself, e.g. `uak**…`). The API
-   * key and any response body are never logged.
+   * Resolve (once) the project a user-account key belongs to, so subsequent
+   * v3.1 calls carry `x-project-id`. Failure degrades silently: calls without
+   * the header still answer against the key's default project
+   * (`VERIFIED-LIVE 2026-07-30` — bare `x-user-api-key` returns 200s).
+   */
+  private async _ensureProjectId(): Promise<void> {
+    if (this._headerKind !== 'user' || this._projectId || this._resolvingProjectId) return;
+    this._resolvingProjectId = true;
+    try {
+      const { response, text } = await this._issue('GET', SESSION_INFO_PATH, undefined, 'user');
+      if (!response.ok) return;
+      const body = JSON.parse(text) as { project?: { nano_id?: string } };
+      this._projectId = body.project?.nano_id;
+    } catch {
+      // Unreachable session-info is not fatal — proceed without the header.
+    } finally {
+      this._resolvingProjectId = false;
+    }
+  }
+
+  /**
+   * Issue one authenticated Composio request with the retry rung: the header
+   * kind is guessed by key prefix, and a 401 BEFORE the key has ever validated
+   * retries once with the other header (`VERIFIED-LIVE 2026-07-30`: the same
+   * key answers 200 or 401 purely by which header carries it). A success locks
+   * the kind; a 401 after validation is a real revocation and fails honestly.
+   * Non-2xx maps to a {@link ComposioApiError} carrying Composio's own
+   * secret-free message + suggested fix (`VERIFIED-LIVE 2026-07-29`: the error
+   * envelope is `{ error: { message, status, suggested_fix } }`, and Composio
+   * masks key material itself, e.g. `uak**…`). The key and response bodies are
+   * never logged.
    *
    * @param method - HTTP method.
    * @param path - API path (may include a query string).
    * @param json - Optional JSON request body.
    */
   private async _request<T>(method: string, path: string, json?: unknown): Promise<T> {
+    await this._ensureProjectId();
+    let { response, text } = await this._issue(method, path, json, this._headerKind);
+
+    if (response.status === 401 && !this._validated) {
+      const alternate: ComposioAuthHeaderKind = this._headerKind === 'user' ? 'project' : 'user';
+      const retry = await this._issue(method, path, json, alternate);
+      if (retry.response.ok) {
+        this._headerKind = alternate;
+        ({ response, text } = retry);
+      }
+    }
+
+    if (!response.ok) {
+      throw new ComposioApiError(response.status, composioErrorMessage(response.status, text));
+    }
+    this._validated = true;
+    // A 204/empty body resolves to an empty object.
+    return text ? (JSON.parse(text) as T) : ({} as T);
+  }
+
+  /** One raw fetch, bounded by the timeout, under the given header kind. */
+  private async _issue(
+    method: string,
+    path: string,
+    json: unknown,
+    kind: ComposioAuthHeaderKind
+  ): Promise<{ response: Response; text: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this._timeoutMs);
     try {
       const response = await this._fetch(`${this._baseUrl}${path}`, {
         method,
         headers: {
-          'x-api-key': this._apiKey,
+          ...this._authHeaders(kind),
           ...(json !== undefined && { 'content-type': 'application/json' }),
         },
         ...(json !== undefined && { body: JSON.stringify(json) }),
         signal: controller.signal,
       });
       const text = await response.text();
-      if (!response.ok) {
-        throw new ComposioApiError(response.status, composioErrorMessage(response.status, text));
-      }
-      // A 204/empty body resolves to an empty object.
-      return text ? (JSON.parse(text) as T) : ({} as T);
+      return { response, text };
     } finally {
       clearTimeout(timer);
     }

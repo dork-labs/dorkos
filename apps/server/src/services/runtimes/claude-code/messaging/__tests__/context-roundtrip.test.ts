@@ -120,6 +120,7 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       ],
       pendingTruncated: false,
       ownRecent: [],
+      acknowledgments: [],
       addressing: {
         responseMode: 'mention-only',
         engagedUntil: null,

@@ -252,6 +252,11 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .describe(
       'The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things.'
     ),
+  reactionFrequents: z
+    .array(z.string())
+    .describe(
+      "THIS reader's most-used reaction emoji, most-used first, always exactly three — the quick row in the message capsule. Counted across every room, because a person's reaction habits are theirs and not a room's, and padded from the shipped defaults so a new install still gets a full row. It rides the room rather than a route of its own for the same reason `viewerAuthorId` does: the reader is already resolved here, the value is one aggregate query, and a capsule that had to fetch it separately would draw an empty row first."
+    ),
 }).openapi('RoomWithRoster');
 
 export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;
@@ -276,6 +281,122 @@ export const RoomEntryBodySchema = z
   .openapi('RoomEntryBody');
 
 export type RoomEntryBody = z.infer<typeof RoomEntryBodySchema>;
+
+// === Reactions ===
+
+/**
+ * The most code points one reaction emoji may carry.
+ *
+ * Sixteen, because the longest emoji anybody actually sends is a family ZWJ
+ * sequence with skin tones — four faces, four modifiers, three joiners, eleven
+ * code points — and a little headroom above it is cheaper than a cap somebody
+ * hits. It is a bound on the column, not a claim about which sequences are real.
+ */
+export const REACTION_EMOJI_MAX_CODE_POINTS = 16;
+
+/** Every code point a reaction may be built from: pictographs and their parts. */
+const REACTION_EMOJI_ONLY = /^(?:\p{Extended_Pictographic}|\p{Emoji_Component})+$/u;
+
+/**
+ * At least one code point that carries the picture. `Emoji_Component` alone
+ * includes the plain digits and `#`, so without this `0123` would qualify.
+ */
+const REACTION_EMOJI_PICTURE = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{20E3}]/u;
+
+/**
+ * Whether a string may be stored as a reaction: emoji, and nothing else.
+ *
+ * **The bar this clears is "not a text label".** A reaction row renders as a
+ * pill next to a message, so a column that accepted free text would turn the
+ * pill row into a second composer — and one nobody can delete a word from.
+ * Everything here is about that: pictographs and the pieces emoji are assembled
+ * from (joiners, variation selectors, skin-tone modifiers, regional indicators,
+ * keycaps), a length bound, and nothing else.
+ *
+ * **It deliberately is NOT `\p{RGI_Emoji}`**, which would be the exact set an
+ * emoji picker offers. That property needs the `v` regex flag, and the flag is a
+ * `SyntaxError` — thrown while the module loads, taking every importer with it —
+ * on any engine below Chrome 112 / Safari 17 / Firefox 116. This package loads in
+ * the browser, and the client builds for Vite's baseline target, which is below
+ * all three. A validator that can brick the app it validates for is not a better
+ * validator.
+ *
+ * What it gives up in exchange is precision at the edges: `👍👍` passes, because
+ * telling one grapheme cluster from two needs `Intl.Segmenter`, whose support
+ * floor is the same problem. Be exact about how much that gives up — the cap is
+ * sixteen CODE POINTS, and a plain emoji is one, so the widest thing that slips
+ * through is a run of about sixteen of them. That is a silly pill on a row of
+ * pills, not a text field: it cannot hold a word, a tag, or a sentence, which is
+ * the whole property the column needs.
+ *
+ * @param value - The candidate reaction, exactly as it arrived.
+ * @returns Whether it may be stored.
+ */
+export function isReactionEmoji(value: string): boolean {
+  const codePoints = [...value];
+  if (codePoints.length === 0 || codePoints.length > REACTION_EMOJI_MAX_CODE_POINTS) return false;
+  return REACTION_EMOJI_ONLY.test(value) && REACTION_EMOJI_PICTURE.test(value);
+}
+
+/** One emoji, validated. The wire type of every reaction field. */
+export const ReactionEmojiSchema = z
+  .string()
+  .refine(isReactionEmoji, { message: 'A reaction has to be a single emoji' })
+  .openapi('ReactionEmoji', {
+    description:
+      'One emoji, stored as the string that was sent — grapheme clusters, joiners, skin tones and flags all survive verbatim. There is no enum: an install that only ever accepted a fixed list would have to ship a migration to add a face.',
+    example: '👍',
+  });
+
+/**
+ * How many emoji the quick row in the message capsule holds.
+ *
+ * Three, from the approved design (`specs/room-messaging-design` §2): one hover
+ * and one click to thank an agent. The server always returns exactly this many,
+ * padding from {@link REACTION_FREQUENTS_DEFAULT}, so the row never reflows as a
+ * person's history fills in.
+ */
+export const REACTION_FREQUENTS_COUNT = 3;
+
+/**
+ * The quick row before anybody has reacted to anything.
+ *
+ * Declared here rather than in the client so both sides cannot disagree about
+ * what a new install's capsule offers. They are also the padding: somebody who
+ * has only ever used 👀 gets `['👀', '👍', '❤️']`, never a row with two gaps in it.
+ */
+export const REACTION_FREQUENTS_DEFAULT: readonly string[] = ['👍', '❤️', '🎉'];
+
+/**
+ * Everyone who left one emoji on one entry.
+ *
+ * **Ids, not names**, exactly as {@link RoomEntrySchema.mentions} carries ids: a
+ * reader already holds the roster, and a reaction from somebody who has since
+ * left the room resolves to nothing on either shape — so carrying ids keeps one
+ * resolution path instead of two and keeps the payload flat when fifty people
+ * react to one message.
+ *
+ * `firstAt` is what orders the pill row. Ordering by it means a pill appears
+ * where it appeared and stays there: sorting by count would make pills swap
+ * places under the reader's cursor every time somebody else reacted.
+ */
+export const RoomEntryReactionSchema = z
+  .object({
+    emoji: ReactionEmojiSchema,
+    authorIds: z
+      .array(z.string().min(1))
+      .describe(
+        'Who reacted with this emoji, in the order they did — and, for two that landed inside the same millisecond, by author id, so two installs holding identical rows draw identical rows rather than leaving the order to whichever index the planner picked. Match against the room roster to render names; an id that is not on it belongs to somebody who has left.'
+      ),
+    firstAt: z
+      .string()
+      .describe(
+        'When the first of these landed. The pill row is ordered by it, so a pill keeps its place as more people join it.'
+      ),
+  })
+  .openapi('RoomEntryReaction');
+
+export type RoomEntryReaction = z.infer<typeof RoomEntryReactionSchema>;
 
 /**
  * One durable item in a room's log.
@@ -317,6 +438,12 @@ export const RoomEntrySchema = z
       ),
     signature: z.string().nullable().describe('Reserved for phase 4. Always null in v1.'),
     createdAt: z.string(),
+    reactions: z
+      .array(RoomEntryReactionSchema)
+      .optional()
+      .describe(
+        "The entry's reactions right now, oldest pill first. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event, which carries `[]` because an entry a millisecond old has none. It is optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
+      ),
   })
   .openapi('RoomEntry');
 
@@ -441,6 +568,65 @@ export const PostThreadReplyRequestSchema = z
   .openapi('PostThreadReplyRequest');
 
 export type PostThreadReplyRequest = z.infer<typeof PostThreadReplyRequestSchema>;
+
+/**
+ * Toggle one emoji on one entry, or put it into a state you name.
+ *
+ * There is no `remove` verb and there is not going to be one: the pill IS the
+ * toggle (`specs/room-messaging-design` §2, behaviour 1), so a second click on a
+ * pill you already added takes it back. The server keys that on
+ * `(entry, you, emoji)` rather than on anything the request says, which is what
+ * holds at most one reaction there however many times anyone asks.
+ *
+ * `on` is the escape hatch from the one thing a toggle cannot survive, which is
+ * a retry: send a flip twice and you have undone yourself. Naming the state you
+ * want makes the call idempotent in effect, so a client that retries on a
+ * timeout — or reconciles an optimistic pill against what the stream says — has
+ * something safe to send. Omit it and the flip is what you get, which is the
+ * right default for a click.
+ */
+export const ToggleReactionRequestSchema = z
+  .object({
+    emoji: ReactionEmojiSchema,
+    on: z
+      .boolean()
+      .optional()
+      .describe(
+        'The state to land in: `true` puts the reaction there, `false` takes it away, and both are safe to send twice. Omit to flip whatever is there, which is what a click means. Sending `true` for a reaction you already have does NOT restamp it, so the pill keeps its place in a row ordered by first appearance.'
+      ),
+  })
+  .openapi('ToggleReactionRequest');
+
+export type ToggleReactionRequest = z.infer<typeof ToggleReactionRequestSchema>;
+
+/**
+ * What toggling a reaction answers with.
+ *
+ * 202 and identity-shaped, exactly like posting: the entry's new reaction set
+ * reaches every reader — this one included — over `GET /api/rooms/{id}/events`,
+ * so there is one delivery path rather than two. What the body adds is the two
+ * things a reader cannot derive from its own click: which way the toggle went,
+ * and what the quick row holds now that this reaction has been counted.
+ */
+export const ToggleReactionResponseSchema = z
+  .object({
+    accepted: z.literal(true),
+    entryId: z.string().min(1),
+    emoji: ReactionEmojiSchema,
+    reacted: z
+      .boolean()
+      .describe(
+        'The state your pill is in NOW: true when this call added the reaction, false when it took one back.'
+      ),
+    frequents: z
+      .array(z.string())
+      .describe(
+        'Your quick row, recomputed with this reaction counted. Returned so the capsule stays current without a second request.'
+      ),
+  })
+  .openapi('ToggleReactionResponse');
+
+export type ToggleReactionResponse = z.infer<typeof ToggleReactionResponseSchema>;
 
 export const ListRoomsQuerySchema = z
   .object({
@@ -578,22 +764,99 @@ export const RoomSignalEventSchema = z
   })
   .openapi('RoomSignalEvent');
 
+/**
+ * One entry's reactions, after somebody changed them.
+ *
+ * ## Why this is a third event and not an entry update
+ *
+ * A reaction is DURABLE state — unlike a typing signal, which is gone the moment
+ * nobody is looking — so a reader has to end up with the right pills after a
+ * disconnect, not merely after a lucky one. Two shapes could carry that, and the
+ * room's own stream decides between them:
+ *
+ * - **Version the entry and re-send it.** The stream has no such thing. A room
+ *   entry is immutable, replay is `WHERE seq > cursor`, and `seq` is allocated
+ *   once at insert — so a re-sent entry would either need a new `seq` (a second
+ *   copy of the message in every reader's log) or keep its old one (below the
+ *   cursor, therefore never replayed). Reactions on messages older than the
+ *   cursor are the common case, so this shape is wrong exactly where it matters.
+ * - **A reaction event carrying the entry's WHOLE current set.** That is this.
+ *
+ * ## What makes it correct across a gap
+ *
+ * Three properties, together:
+ *
+ * 1. **It is state, never a delta.** `reactions` is everything on the entry
+ *    right now, so a reader that missed five of these and caught the sixth is
+ *    correct again. A `reaction_added` / `reaction_removed` pair could not say
+ *    that — one missed frame and the pills stay wrong until a reload.
+ * 2. **It carries no `seq` and no `id:` line**, so it never moves the reader's
+ *    `Last-Event-ID`. The cursor stays what it has always been: the highest
+ *    durable ENTRY this reader holds. Giving reactions their own number would
+ *    mean two cursors in one header, and a client that got the packing wrong
+ *    would silently skip real messages.
+ * 3. **A resume re-sends them for the window it can render, EVERY entry of it.**
+ *    Replay covers entries above the cursor and each of those carries its own
+ *    reactions; a reaction that changed on an OLDER message while the reader was
+ *    away is covered by the handler emitting one of these per entry in the
+ *    trailing window, after the replay — **including entries with no reactions
+ *    at all**. Skipping the empties would look like a saving and would silently
+ *    lose every REMOVAL: take a pill back while somebody is disconnected and the
+ *    entry is unchanged, so nothing replays it, and it has no pills, so a resync
+ *    that only named entries still holding some would say nothing about it and
+ *    leave that reader showing a reaction the server no longer has. The empty
+ *    event is the correction. Beyond the window a reader holds no entries to put
+ *    pills on, and pages back through `GET /api/rooms/{id}/entries`, which
+ *    carries reactions too.
+ *
+ * So the invariant is: **every path that hands a reader an entry hands over that
+ * entry's reactions with it**, and this event keeps them fresh in between.
+ */
+export const RoomReactionEventSchema = z
+  .object({
+    type: z.literal('reaction'),
+    entryId: z.string().min(1).describe('The entry in this room whose reactions changed.'),
+    reactions: z
+      .array(RoomEntryReactionSchema)
+      .describe(
+        "The entry's COMPLETE reaction set now, not a delta — an empty array means the last pill was taken back."
+      ),
+  })
+  .openapi('RoomReactionEvent');
+
 /** Everything that travels on a room's SSE stream. */
 export const RoomEventSchema = z
-  .discriminatedUnion('type', [RoomEntryEventSchema, RoomSignalEventSchema])
+  .discriminatedUnion('type', [
+    RoomEntryEventSchema,
+    RoomSignalEventSchema,
+    RoomReactionEventSchema,
+  ])
   .openapi('RoomEvent');
 
 export type RoomEvent = z.infer<typeof RoomEventSchema>;
 export type RoomEntryEvent = z.infer<typeof RoomEntryEventSchema>;
 export type RoomSignalEvent = z.infer<typeof RoomSignalEventSchema>;
+export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
 
 /**
  * The three fields a `'progress'` signal carries on the rooms path.
  *
  * Derived from the event rather than declared beside it, so the producer cannot
  * drift from the wire. They are optional on the event — a `'typing'` signal has
- * no lifecycle — and required here, because a presence publish that omits one is
- * an indicator a client cannot key, age, or clear.
+ * no lifecycle — and required HERE because of what a partial one costs
+ * downstream: an indicator with no `entryId` cannot be keyed, and one with no
+ * `since` cannot be aged or shown an elapsed time.
+ *
+ * **Required of the producer that always knows all three, not of every caller.**
+ * `RoomTriggerDispatcher` owns the claim map, so its `publishPresence` dep takes
+ * this whole type and is held to it. `RoomService.publishSignal` accepts a
+ * `Partial` of it, because a `CommunityAdapter` caller's payload is optional
+ * field by field (a remote backend may only be able to say that somebody is
+ * working), and inventing an `entryId` to satisfy a required type would put a
+ * fabricated key on the wire. The client is what makes that safe rather than
+ * lossy: `useRoomPresenceStore.observe` DROPS any progress frame missing one of
+ * the three, so an unkeyable indicator is never rendered and never has to be
+ * cleared.
  */
 export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>>;
 

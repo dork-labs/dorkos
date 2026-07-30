@@ -94,6 +94,7 @@ function request(
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],
     viewerAuthorId: 'human',
+    reactionFrequents: ['👍', '❤️', '🎉'],
   } satisfies RoomWithRoster;
   const entry: RoomEntry = {
     roomId: room.id,
@@ -128,6 +129,7 @@ function request(
       pending: [],
       pendingTruncated: false,
       ownRecent: [],
+      acknowledgments: [],
       addressing: {
         responseMode: 'always',
         engagedUntil: null,

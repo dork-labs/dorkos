@@ -69,7 +69,7 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
 
       {status.configured ? (
         <div className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-muted-foreground text-xs">API key saved</span>
+          <span className="text-muted-foreground text-xs">{savedKeyLine(status.keyKind)}</span>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -127,8 +127,21 @@ export function ProviderSetupCard({ status }: { status: ConnectorProviderStatus 
           </Button>
         </form>
       )}
+      {!status.configured && status.type === 'composio' && (
+        <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
+          Any Composio key works — the project key from your dashboard or the account key the
+          composio CLI uses.
+        </p>
+      )}
     </div>
   );
+}
+
+/** The saved-key line, naming which key kind validated when the server knows. */
+function savedKeyLine(keyKind: ConnectorProviderStatus['keyKind']): string {
+  if (keyKind === 'user') return 'API key saved — using your account key';
+  if (keyKind === 'project') return 'API key saved — using your project key';
+  return 'API key saved';
 }
 
 /** The honest one-word state of a provider: not set up, key saved, or ready. */

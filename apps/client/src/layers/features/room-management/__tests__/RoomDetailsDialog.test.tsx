@@ -9,6 +9,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   agentAuthorRef,
+  REACTION_FREQUENTS_DEFAULT,
   type RoomRosterEntry,
   type RoomSummary,
   type RoomWithRoster,
@@ -91,7 +92,12 @@ const HUMAN: RoomRosterEntry = {
  * that answered "channel" for a direct message would quietly test a channel.
  */
 function roster(members: RoomRosterEntry[], base: RoomSummary = ROOM): RoomWithRoster {
-  return { ...base, members, viewerAuthorId: HUMAN.authorId };
+  return {
+    ...base,
+    members,
+    viewerAuthorId: HUMAN.authorId,
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
+  };
 }
 
 /**

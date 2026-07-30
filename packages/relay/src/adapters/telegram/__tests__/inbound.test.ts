@@ -106,7 +106,7 @@ beforeEach(() => {
     subscribe: vi.fn(),
     onSignal: vi.fn(),
   } as unknown as RelayPublisher;
-  callbacks = { trackInbound: vi.fn(), recordError: vi.fn(), onPublished: vi.fn() };
+  callbacks = { trackInbound: vi.fn(), recordError: vi.fn() };
 });
 
 /** Run the handler the way `bot.on('message', ...)` does. */

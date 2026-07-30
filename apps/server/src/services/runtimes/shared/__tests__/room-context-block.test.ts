@@ -75,6 +75,7 @@ function context(overrides: Partial<RoomContextData> = {}): RoomContextData {
         mentionsMe: false,
       },
     ],
+    acknowledgments: [],
     addressing: {
       responseMode: 'mention-only',
       engagedUntil: null,

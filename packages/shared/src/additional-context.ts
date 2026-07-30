@@ -202,6 +202,43 @@ export interface RoomContextEntry {
 }
 
 /**
+ * Somebody reacted to something this agent said — the costless acknowledgment
+ * (`specs/room-messaging-design` §2.5).
+ *
+ * **It arrives in a turn the agent was already taking, and never causes one.**
+ * A reaction takes no turn, writes no entry, sends no notice and starts no
+ * cascade; it lands here, on the next turn something else triggered, and that is
+ * the whole of its reach. A person can thank an agent for free, in both
+ * directions: it costs them one click and it costs the agent nothing.
+ *
+ * **It is an endpoint, not a prompt** (`meta/agent-etiquette.md` E16b). An agent
+ * never replies to one and never thanks anybody for one, which the rendered
+ * block says out loud rather than leaving to inference.
+ */
+export interface RoomContextAcknowledgment extends RoomContextAuthor {
+  /**
+   * Whether a person left it. True for every one of them today — no path lets a
+   * non-human react — and carried anyway, because the reader is an agent
+   * deciding how to treat it and "who said this" is never something to infer.
+   */
+  isPerson: boolean;
+  /** The emoji, exactly as it was sent. */
+  emoji: string;
+  /**
+   * ISO timestamp of the agent's OWN entry that was reacted to — deliberately
+   * not of the reaction. It is the clock the entry renders under in
+   * {@link RoomContextData.ownRecent}, which is how the two lines join up.
+   */
+  entryAt: string;
+  /**
+   * The opening words of that entry, so an agent holding five recent posts can
+   * tell which one this is about. The agent's own text, so it renders where
+   * `ownRecent` does — outside the untrusted fence.
+   */
+  entryExcerpt: string;
+}
+
+/**
  * Where a room turn is happening, who is in it, and what it missed.
  *
  * Structured data only — never pre-formatted prose. Each runtime adapter renders
@@ -241,6 +278,15 @@ export interface RoomContextData {
   pendingTruncated: boolean;
   /** This agent's own recent posts here, so it does not repeat itself. */
   ownRecent: RoomContextEntry[];
+  /**
+   * Reactions currently standing on those same recent posts, newest first.
+   *
+   * Scoped to {@link RoomContextData.ownRecent} on purpose, and that scope is
+   * what ages them out: once the agent has said five more things here, an old
+   * acknowledgment stops riding every turn. Empty is the common case and costs
+   * nothing to render.
+   */
+  acknowledgments: RoomContextAcknowledgment[];
   /** How this agent is addressed here, and whether it was addressed now. */
   addressing: {
     /** This room's stored override, not the agent's manifest default. */
@@ -391,6 +437,14 @@ export const RoomContextEntrySchema = z.object({
   mentionsMe: z.boolean(),
 });
 
+/** Zod schema for {@link RoomContextAcknowledgment}. */
+export const RoomContextAcknowledgmentSchema = RoomContextAuthorSchema.extend({
+  isPerson: z.boolean(),
+  emoji: z.string(),
+  entryAt: z.string(),
+  entryExcerpt: z.string(),
+});
+
 /** Zod schema for {@link RoomContextData}. */
 export const RoomContextDataSchema = z.object({
   room: z.object({
@@ -411,6 +465,7 @@ export const RoomContextDataSchema = z.object({
   pending: z.array(RoomContextEntrySchema),
   pendingTruncated: z.boolean(),
   ownRecent: z.array(RoomContextEntrySchema),
+  acknowledgments: z.array(RoomContextAcknowledgmentSchema),
   addressing: z.object({
     responseMode: ResponseModeSchema,
     engagedUntil: z.string().nullable(),

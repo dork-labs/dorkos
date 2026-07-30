@@ -86,6 +86,7 @@ describe('Database Migrations', () => {
       // never-trimmed log, and the per-(room, agent) session bindings
       // (ADR 260726-170125, migration 0034).
       'room_entries',
+      'room_entry_reactions',
       'room_members',
       'room_sessions',
       'rooms',

@@ -75,6 +75,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   CONTEXT_TAG,
+  type RoomContextAcknowledgment,
   type RoomContextAuthor,
   type RoomContextData,
   type RoomContextEntry,
@@ -318,6 +319,41 @@ function entryLine(entry: RoomContextEntry): string {
 }
 
 /**
+ * What the acknowledgment block is for, said inside it so it cannot be read
+ * without its rule (`meta/agent-etiquette.md` E16b).
+ *
+ * Both halves are load-bearing. "Do not reply" is the rule; "nothing is owed"
+ * is why, and without it a model that has been told not to reply will still look
+ * for some other way to respond — a thank-you in its next message, a mention of
+ * having noticed. A reaction is an endpoint. The correct behaviour is to keep
+ * working.
+ */
+const ACKNOWLEDGMENT_NOTE =
+  'These are acknowledgments, not messages. Nothing here is owed a reply, a thank-you, or a mention in what you say next.';
+
+/**
+ * One reaction on one of the agent's own messages.
+ *
+ * The emoji goes through {@link label} like every other value in a line DorkOS
+ * wrote. The request schema already refuses anything that is not emoji, so this
+ * is depth rather than the boundary — but this line renders outside the fence,
+ * and outside the fence a value is trusted because it was sanitized, never
+ * because a schema upstream says it is fine.
+ *
+ * The excerpt is the AGENT'S OWN text, which is why it belongs in this region at
+ * all, and it is still defused: `ownRecent` next door is the documented
+ * laundering path — another member writes something, the agent quotes it back,
+ * and from the next turn it renders here.
+ *
+ * @param ack - The acknowledgment to render.
+ */
+function acknowledgmentLine(ack: RoomContextAcknowledgment): string {
+  const who = named(ack);
+  const what = ack.isPerson ? 'person' : 'agent';
+  return `[${clock(ack.entryAt)}] ${who} (${what}${addressNote(ack)}) reacted ${label(ack.emoji)} to: ${body(ack.entryExcerpt)}`;
+}
+
+/**
  * How the agent is told who it is here.
  *
  * The one place a wrong handle does the most damage, because an agent signs its
@@ -468,6 +504,19 @@ export function formatRoomContext(data: RoomContextData, opts: { nonce?: string 
     // Outside the fence, because the agent wrote it: nothing here is untrusted
     // input to the model it came from.
     blocks.push(['You said here recently:', ...data.ownRecent.map(entryLine)].join('\n'));
+  }
+
+  if (data.acknowledgments.length > 0) {
+    // Beside `ownRecent` and for the same reason — every line quotes the agent's
+    // own message. It reads as a block rather than as marks on the entry lines
+    // above so the rule can be stated once, next to the thing it governs.
+    blocks.push(
+      [
+        'Reactions to what you said here:',
+        ...data.acknowledgments.map(acknowledgmentLine),
+        ACKNOWLEDGMENT_NOTE,
+      ].join('\n')
+    );
   }
 
   const untrusted = fenced(data, opts.nonce ?? randomBytes(NONCE_CHARS / 2).toString('hex'));

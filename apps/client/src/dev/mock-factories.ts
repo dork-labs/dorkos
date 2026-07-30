@@ -1,6 +1,7 @@
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import {
   agentAuthorRef,
+  REACTION_FREQUENTS_DEFAULT,
   type AuthorRef,
   type RoomRosterEntry,
   type RoomWithRoster,
@@ -194,6 +195,7 @@ export function createRoomWithRoster(overrides: Partial<RoomWithRoster> = {}): R
     lastActivityAt: minutesBeforeNow(9),
     viewerAuthorId:
       members.find((member) => member.author.kind !== 'agent')?.authorId ?? 'author-me',
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
     ...overrides,
     members,
   };
