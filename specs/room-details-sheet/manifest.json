@@ -1,0 +1,8 @@
+{
+  "id": "260730-112334",
+  "slug": "room-details-sheet",
+  "title": "The members dialog becomes the room sheet, and the response mode becomes readable",
+  "created": "2026-07-30",
+  "status": "specified",
+  "linearIssue": "DOR-756"
+}

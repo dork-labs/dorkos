@@ -3,6 +3,7 @@ title: Rooms
 description: Channels and direct messages, for talking to one agent or several without picking a project folder first
 ---
 
+import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Rooms
@@ -166,13 +167,17 @@ The full request and response shapes are in the [API reference](/docs/api).
 Each agent member of a room has a response mode that decides whether a given message triggers a
 reply from it:
 
-| Response mode  | Replies when                                        | Offered in        |
-| -------------- | --------------------------------------------------- | ----------------- |
-| `silent`       | never                                               | channels and DMs  |
-| `mention-only` | mentioned by name                                   | channels and DMs  |
-| `direct-only`  | the room is a DM, or mentioned by name              | channels and DMs  |
-| `engaged`      | mentioned by name, and for a short while after that | **channels only** |
-| `always`       | every message                                       | channels and DMs  |
+| Stored value   | Replies when                                        |
+| -------------- | --------------------------------------------------- |
+| `silent`       | never                                               |
+| `mention-only` | mentioned by name                                   |
+| `direct-only`  | the room is a one-to-one, or mentioned by name      |
+| `engaged`      | mentioned by name, and for a short while after that |
+| `always`       | every message                                       |
+
+Every one of these is accepted in every room. `direct-only` is the odd one out: it is the only value
+whose meaning changes with the kind of room it is stored in — in a one-to-one it answers everything,
+in a channel it answers only when you say its name.
 
 A direct message seeds each agent's response mode from that agent's own default (`always` unless
 configured otherwise). A channel seeds new members as `engaged`. Mentions are resolved once,
@@ -192,14 +197,33 @@ to it again starts both over. Both numbers are settings (`rooms.engagedWindowMin
 `rooms.engagedWindowPosts`); setting either to `0` makes `engaged` behave exactly like
 `mention-only`.
 
+The same window works in a one-to-one. A conversation with two agents in it is still a one-to-one as
+far as DorkOS is concerned, and in one of those you do say who you mean.
+
 The window is per thread. Asking an agent something inside a thread keeps it in that thread, not in
 the whole channel — and talking to it in the channel does not pull it into every thread that happens
 to be open.
 
-A direct message does not offer `engaged`, which is what the last column above means. Nobody `@`s
-anyone in a two-person conversation, so the window would never open and the setting would quietly
-mean "only when @mentioned". The agent's own default in `agent.json` does not offer it either — that
-value seeds a direct message, and this is a channel setting.
+The agent's own default in `agent.json` does not offer `engaged` — that value only seeds a
+one-to-one, and this is a per-room setting rather than a starting point.
+
+### Setting it, in the cockpit
+
+You do not pick any of those words. Open a room's sheet — the roster in its header, or **Members…**
+on its row in the sidebar — and each agent has its loudness on the right, on a scale that runs quiet
+to loud:
+
+**Silent** → **@only** → **Engaged** → **Everything**
+
+Press it and the scale opens, with the rule spelled out underneath in your own numbers. Point at a
+setting, with the mouse or the arrow keys, and the line at the top of the sheet shows what the whole
+room would become if you chose it — so you can see the consequence before you commit to it. Nothing
+is saved until you actually pick one.
+
+<Callout type="info">
+  A one-to-one currently offers three of the four — **Engaged** is missing there. That is a known
+  gap, not a rule about one-to-ones: the reply window works the same way in both kinds of room.
+</Callout>
 
 ### Who sees which rooms
 
