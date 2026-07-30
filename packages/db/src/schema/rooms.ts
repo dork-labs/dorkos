@@ -6,6 +6,7 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  foreignKey,
 } from 'drizzle-orm/sqlite-core';
 
 /**
@@ -264,6 +265,73 @@ export const roomEntries = sqliteTable(
     index('idx_room_entries_thread_root')
       .on(table.roomId, table.threadRootEntryId, table.seq)
       .where(sql`"thread_root_entry_id" IS NOT NULL`),
+  ]
+);
+
+/**
+ * One person, one emoji, one entry (spec `room-messaging-design` §2).
+ *
+ * **The primary key IS the toggle.** `(room_id, entry_id, author_id, emoji)` is
+ * unique by construction, so "react twice with the same emoji" cannot mean two
+ * rows — it means delete the one that is there. The service does not have to
+ * read before it writes, and two clients double-firing one click cannot leave a
+ * pill counted twice.
+ *
+ * **It hangs off `(room_id, id)`, not off `(room_id, seq)`.** The entry's ULID
+ * is the identifier that survives being talked about — a client holds it, a
+ * reaction event names it, and the room-context acknowledgment points at it —
+ * whereas `seq` is a position in one room's log. The composite unique index
+ * `room_entries_room_id_entry_id_unique` already exists and is exactly the
+ * parent key SQLite needs, so this costs no new index on the parent side.
+ *
+ * **`ON DELETE CASCADE`, for a delete that does not exist yet.** Nothing removes
+ * a room entry today — the log is append-only and never trimmed. The design says
+ * reactions on a deleted message die with it (§4), and the honest place to put
+ * that is the constraint rather than a cleanup step somebody has to remember to
+ * write beside a future `deleteEntry`. `createDb` turns `foreign_keys` ON, so it
+ * is enforced rather than decorative.
+ *
+ * **`author_id` is not constrained to a human**, and that is deliberate rather
+ * than an opening. Agents do not send reactions — no route accepts one, and
+ * `RoomService.toggleReaction` refuses a non-human author (etiquette E16b). That
+ * gate lives in the service because it is a conduct decision, and conduct
+ * decisions get revisited; a column that had already decided would have to be
+ * migrated on the day one is. What the schema decides is only that a reaction
+ * has an author.
+ *
+ * The second index serves the quick row: a person's most-used emoji is
+ * `GROUP BY emoji` over their own rows, across every room, which
+ * `(author_id, emoji)` answers without a sort. The primary key cannot — it leads
+ * with `room_id`, and the quick row is not a room's business.
+ */
+export const roomEntryReactions = sqliteTable(
+  'room_entry_reactions',
+  {
+    roomId: text('room_id').notNull(),
+
+    /** The `room_entries.id` ULID this reaction sits on. */
+    entryId: text('entry_id').notNull(),
+
+    /** Who reacted. A human today; see this table's doc for why the column is not narrower. */
+    authorId: text('author_id').notNull(),
+
+    /**
+     * The emoji, stored as the string that was sent — a grapheme cluster, so a
+     * ZWJ sequence, a flag or a skin tone survives verbatim. Never an enum:
+     * adding a face must not take a migration.
+     */
+    emoji: text('emoji').notNull(),
+
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.entryId, table.authorId, table.emoji] }),
+    index('idx_room_entry_reactions_author').on(table.authorId, table.emoji),
+    foreignKey({
+      columns: [table.roomId, table.entryId],
+      foreignColumns: [roomEntries.roomId, roomEntries.id],
+      name: 'room_entry_reactions_entry_fk',
+    }).onDelete('cascade'),
   ]
 );
 

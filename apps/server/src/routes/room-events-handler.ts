@@ -106,8 +106,16 @@ export const roomEventsHandler = async (
 
   /**
    * Write one framed event. Entries carry an `id:` line so the browser echoes
-   * it back on reconnect; the snapshot and ephemeral signals deliberately do
-   * not, so a reconnect resumes from the last durable entry either way.
+   * it back on reconnect; the snapshot, ephemeral signals and reaction updates
+   * deliberately do not, so a reconnect resumes from the last durable entry
+   * either way.
+   *
+   * A reaction is durable state and still gets no `id:` line, which is worth
+   * being exact about because it looks like an omission. The cursor is the
+   * highest ENTRY this reader holds; reactions have no place in that sequence
+   * and inventing one would put two numbers in one header. What keeps them
+   * correct across a gap is that each reaction event carries the entry's WHOLE
+   * current set, plus the resync below — see {@link RoomReactionEventSchema}.
    *
    * Backpressure: when `write()` returns false the frame is buffered in process
    * memory, and awaiting `drain` before the next event bounds that buffer for a
@@ -140,6 +148,24 @@ export const roomEventsHandler = async (
         if (closed) return;
         await sendEntry(entry);
         highestSent = entry.seq;
+      }
+      // The replay's own entries arrive with their reactions attached. What it
+      // cannot carry is a reaction that CHANGED on an older message while this
+      // reader was away: that entry is below the cursor, so nothing replays it.
+      // So the trailing window is resynced once, as state rather than as a
+      // delta, and AFTER the replay — an entry the resync names is either one
+      // just delivered above or one the reader was already holding.
+      //
+      // It reports EVERY entry in that window, empty sets included, and the
+      // empties are the headline reason it exists rather than padding: a
+      // REMOVAL leaves an entry unchanged AND holding no pills, so a resync
+      // that only named entries still carrying some would say nothing about it
+      // and leave this reader showing a reaction the server no longer has. The
+      // empty frame is the only correction on the wire. `RoomService.reactionResync`
+      // is the authoritative statement of this; keep the two in step.
+      for (const event of service.reactionResync(roomId, ROOMS.SNAPSHOT_HISTORY_LIMIT)) {
+        if (closed) return;
+        await send(event);
       }
     } else {
       const snapshot = service.snapshot(roomId, viewerAuthorId, ROOMS.SNAPSHOT_HISTORY_LIMIT);

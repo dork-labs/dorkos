@@ -64,9 +64,11 @@ import type {
   Room,
   RoomEntry,
   RoomEntryBody,
+  RoomEntryReaction,
   RoomKind,
   RoomMember,
   RoomPresencePayload,
+  RoomReactionEvent,
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
@@ -77,6 +79,7 @@ import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import { resolveMentions } from './mentions.js';
+import type { ReactionStore } from './reaction-store.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import { RoomRoster, type AddMemberInput } from './room-roster.js';
 import type { NewRoom } from './room-rows.js';
@@ -88,6 +91,8 @@ import type { RoomTurnBudget } from './turn-budget.js';
 /** Everything {@link RoomService} is constructed from. */
 export interface RoomServiceDeps {
   store: RoomStore;
+  /** Reactions on this room's entries — durable state, never a turn. */
+  reactions: ReactionStore;
   authors: AuthorRegistry;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
@@ -108,6 +113,17 @@ export interface RoomServiceDeps {
    */
   isOwnerAuthor(authorId: string): boolean;
 }
+
+/**
+ * How many entry ids one reaction lookup binds at a time.
+ *
+ * SQLite caps the parameters a single statement may bind (32 766 in the build
+ * `better-sqlite3` ships), and the SSE replay is the one read with no bound on
+ * its page: a reader gone for a week resumes against every entry since. Five
+ * hundred is comfortably inside the cap and still turns a fifty-message page
+ * into exactly one query, which is the case that runs constantly.
+ */
+const REACTION_LOOKUP_CHUNK = 500;
 
 /** Provenance a post carries when a trigger produced it. */
 export interface PostTrigger {
@@ -137,6 +153,7 @@ export type OpenedRoom = RoomWithRoster & {
 /** Orchestration over the store, the roster, the author registry and the streams. */
 export class RoomService {
   private readonly store: RoomStore;
+  private readonly reactions: ReactionStore;
   private readonly authors: AuthorRegistry;
   private readonly broadcaster: RoomBroadcaster;
   private readonly roster: RoomRoster;
@@ -148,6 +165,7 @@ export class RoomService {
 
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
+    this.reactions = deps.reactions;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
     this.maxAgentDepth = deps.maxAgentDepth;
@@ -162,6 +180,7 @@ export class RoomService {
     // rather than the store. They are only ever called after construction.
     this.triggers = new RoomTriggerDispatcher({
       store: deps.store,
+      reactions: deps.reactions,
       authors: deps.authors,
       agents: deps.agents,
       runner: deps.turns,
@@ -534,7 +553,7 @@ export class RoomService {
     opts: { before?: number; limit: number }
   ): RoomEntry[] {
     this.requireVisibleRoom(roomId, viewerAuthorId);
-    return this.store.listEntries(roomId, opts);
+    return this.withReactions(roomId, this.store.listEntries(roomId, opts));
   }
 
   /**
@@ -671,6 +690,124 @@ export class RoomService {
     return this.store.authorsInCascade(roomId, cascadeRoot);
   }
 
+  // === Reactions ===
+
+  /**
+   * Put one emoji on one entry, or take it back.
+   *
+   * **This is the quietest write in the domain, and the quiet is the feature**
+   * (`specs/room-messaging-design` §2.5). Look at what it does not do: it takes
+   * no turn, dispatches no trigger, writes no entry, writes no notice, spends no
+   * budget, starts no cascade, and does not touch `lastActivityAt` — so a room
+   * full of thanks does not climb a sidebar sorted by recency, and an agent
+   * being thanked is not woken up to be told. The acknowledgment reaches the
+   * agent on its NEXT turn, in the room-context block it was going to be handed
+   * anyway (`room-context.ts`), and never a moment sooner.
+   *
+   * That is also why a reaction is not `post` with a special body. A post is a
+   * turn in the conversation and everything above follows from that; a reaction
+   * is a person saying "seen" for free, and free has to mean free.
+   *
+   * The refusals, in the order they are asked and for reasons that are not
+   * interchangeable:
+   *
+   * - **Not visible** → `ROOM_NOT_FOUND`, before anything else, so a caller
+   *   holding a room id learns nothing by probing with an emoji.
+   * - **Not a member** → `MEMBER_NOT_FOUND`. Seeing a room is not being in it;
+   *   `post` draws the same line and this one is no looser.
+   * - **Archived** → `ROOM_ARCHIVED`. Archiving promises a room gains nothing
+   *   more, and a pill is something it would gain.
+   * - **Not a person** → `PEOPLE_ONLY`. See
+   *   {@link RoomService.requirePersonAuthor}.
+   * - **No such entry here** → `ENTRY_NOT_FOUND`, scoped to this room so an id
+   *   from elsewhere cannot attach a reaction to a message in a room the caller
+   *   cannot see.
+   *
+   * @param roomId - The room.
+   * @param entryId - The entry being reacted to.
+   * @param viewerAuthorId - Who is reacting.
+   * @param emoji - The emoji, already validated by the request schema.
+   * @param on - The state to land in, when the caller names one instead of
+   *   flipping. `true` ensures the reaction is there and `false` ensures it is
+   *   not, both of them idempotent in effect — which is what a client that may
+   *   retry has to be able to ask for, because a retried flip undoes itself.
+   * @returns Which way it went, and the caller's recomputed quick row.
+   */
+  toggleReaction(
+    roomId: string,
+    entryId: string,
+    viewerAuthorId: string,
+    emoji: string,
+    on?: boolean
+  ): { reacted: boolean; frequents: string[] } {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    if (!this.store.getMember(roomId, viewerAuthorId)) {
+      throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
+    }
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    this.requirePersonAuthor(viewerAuthorId);
+    if (!this.store.getEntryById(roomId, entryId)) {
+      throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
+    }
+
+    const reacted = this.reactions.set(
+      { roomId, entryId, authorId: viewerAuthorId, emoji },
+      new Date().toISOString(),
+      on
+    );
+    this.publishReactions(roomId, entryId);
+    return { reacted, frequents: this.reactions.frequents(viewerAuthorId) };
+  }
+
+  /**
+   * One entry's reactions right now, for a reader that already holds the entry.
+   *
+   * @param roomId - The room.
+   * @param entryId - The entry.
+   */
+  reactionsFor(roomId: string, entryId: string): RoomEntryReaction[] {
+    return this.reactions.listForEntry(roomId, entryId);
+  }
+
+  /**
+   * The current reaction state of every entry in a room's trailing window — the
+   * resume half of the reaction contract.
+   *
+   * A resume replays entries above the cursor, and each of those arrives with
+   * its own reactions. What it cannot carry is a reaction that changed on an
+   * OLDER message while the reader was away: that entry is below the cursor, so
+   * nothing replays it, and the reader would sit on stale pills until a reload.
+   * So the handler asks for this once, after the replay.
+   *
+   * **EVERY entry in the window, including the ones with no reactions at all.**
+   * That is not padding, it is the difference between state and a diff, and
+   * skipping the empties silently loses removals: react, disconnect, take it
+   * back, resume — the entry is unchanged so nothing replays it, and it has no
+   * pills so a "only what still has reactions" resync says nothing about it,
+   * leaving the reader showing a 👍 that {@link RoomService.reactionsFor}
+   * denies. The empty event IS the correction. It costs one small frame per
+   * message in the window on a resume only, which is the price of the contract
+   * {@link RoomReactionEventSchema} states.
+   *
+   * @param roomId - The room.
+   * @param historyLimit - How many trailing entries to cover; the same window a
+   *   cold connect hydrates, because it is the same set of drawable messages.
+   * @returns One event per entry in the window, oldest first, carrying that
+   *   entry's whole current set — `[]` when it has none.
+   */
+  reactionResync(roomId: string, historyLimit: number): RoomReactionEvent[] {
+    const entries = this.store.listEntries(roomId, { limit: historyLimit });
+    const grouped = this.reactions.listFor(
+      roomId,
+      entries.map((entry) => entry.id)
+    );
+    return entries.map((entry) => ({
+      type: 'reaction',
+      entryId: entry.id,
+      reactions: grouped.get(entry.id) ?? [],
+    }));
+  }
+
   // === Streaming ===
 
   /**
@@ -687,7 +824,10 @@ export class RoomService {
     historyLimit: number
   ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number } {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
-    const entries = this.store.listEntries(roomId, { limit: historyLimit });
+    const entries = this.withReactions(
+      roomId,
+      this.store.listEntries(roomId, { limit: historyLimit })
+    );
     return {
       room: this.withRoster(room, viewerAuthorId),
       entries,
@@ -713,7 +853,7 @@ export class RoomService {
    * @param afterSeq - Return entries with `seq` above this.
    */
   entriesAfter(roomId: string, afterSeq: number): RoomEntry[] {
-    return this.store.listEntriesAfter(roomId, afterSeq);
+    return this.withReactions(roomId, this.store.listEntriesAfter(roomId, afterSeq));
   }
 
   /**
@@ -882,9 +1022,78 @@ export class RoomService {
     }
   }
 
+  /**
+   * Refuse a reaction from anything that is not a person.
+   *
+   * **Agents do not send reactions** (`meta/agent-etiquette.md` E16b, and
+   * `specs/room-messaging-design` §2.5, which parks the question rather than
+   * answering it). Nothing here builds the path, and this is what stops one
+   * appearing by accident: an agent posting through `POST /:id/entries` reaches
+   * the room with a resolved author id, and without this gate the same identity
+   * would reach the reaction route.
+   *
+   * A 403 rather than a 404: the caller is a member of a room it can see, so
+   * there is nothing left to hide, and telling an agent "this is not yours to
+   * send" is more useful than pretending the entry vanished.
+   *
+   * An author row that has vanished is refused too — the same conservative read
+   * `post` takes when it cannot find one, since the only thing this decides is
+   * whether a non-person gets to nudge a person's message.
+   *
+   * @param authorId - The caller.
+   */
+  private requirePersonAuthor(authorId: string): void {
+    if (this.authors.getById(authorId)?.kind === 'human') return;
+    throw new RoomError('PEOPLE_ONLY', 'Only people send reactions');
+  }
+
+  /**
+   * Attach each entry's reactions, in ONE query for the whole page.
+   *
+   * Every read path takes this — the history page, the hydration snapshot and
+   * the resume replay — so a reader never holds an entry without holding its
+   * pills. Chunked because the replay is unbounded by construction (a reader
+   * gone for a week resumes against the whole gap) and SQLite caps how many
+   * parameters one statement may bind; a page nobody can read is a worse answer
+   * than two queries.
+   *
+   * @param roomId - The room the entries belong to.
+   * @param entries - The page, in whatever order the caller wants it.
+   */
+  private withReactions(roomId: string, entries: RoomEntry[]): RoomEntry[] {
+    if (entries.length === 0) return entries;
+    const grouped = new Map<string, RoomEntryReaction[]>();
+    for (let from = 0; from < entries.length; from += REACTION_LOOKUP_CHUNK) {
+      const chunk = entries.slice(from, from + REACTION_LOOKUP_CHUNK);
+      for (const [entryId, pills] of this.reactions.listFor(
+        roomId,
+        chunk.map((entry) => entry.id)
+      )) {
+        grouped.set(entryId, pills);
+      }
+    }
+    return entries.map((entry) => ({ ...entry, reactions: grouped.get(entry.id) ?? [] }));
+  }
+
+  /** Fan one entry's whole current reaction set out to the room's readers. */
+  private publishReactions(roomId: string, entryId: string): void {
+    this.broadcaster.publish(roomId, {
+      type: 'reaction',
+      entryId,
+      reactions: this.reactions.listForEntry(roomId, entryId),
+    });
+  }
+
   /** Publish a committed entry to the room's readers and bump global activity. */
   private publishEntry(entry: RoomEntry): void {
-    this.broadcaster.publish(entry.roomId, { type: 'entry', seq: entry.seq, entry });
+    // `reactions: []` rather than omitted: an entry a millisecond old genuinely
+    // has none, and a reader that had to treat "absent" and "empty" as the same
+    // thing on the live path but not on the others would have two rules.
+    this.broadcaster.publish(entry.roomId, {
+      type: 'entry',
+      seq: entry.seq,
+      entry: { ...entry, reactions: [] },
+    });
     eventFanOut.broadcast('room_activity', {
       roomId: entry.roomId,
       seq: entry.seq,
@@ -905,7 +1114,16 @@ export class RoomService {
    * @param viewerAuthorId - The caller this room was resolved for.
    */
   private withRoster(room: Room, viewerAuthorId: string): RoomWithRoster {
-    return { ...room, members: this.roster.list(room.id), viewerAuthorId };
+    return {
+      ...room,
+      members: this.roster.list(room.id),
+      viewerAuthorId,
+      // Computed here rather than on a route of its own: this is the one place
+      // every surface that draws a message capsule already asks for — the room
+      // read, the create response, and the stream's hydration snapshot — and the
+      // reader it belongs to is the id this call was already scoped by.
+      reactionFrequents: this.reactions.frequents(viewerAuthorId),
+    };
   }
 
   /**

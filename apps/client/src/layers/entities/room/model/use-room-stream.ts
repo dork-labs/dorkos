@@ -159,6 +159,12 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
               useRoomPresenceStore.getState().observe(roomId, event);
               continue;
             }
+            // Reactions are durable state on an entry rather than a place in the
+            // log, so they carry no `seq` and nothing here merges them. The
+            // server keeps them fresh on this stream and re-sends the trailing
+            // window on a resume; drawing them is B3's, and until it lands this
+            // is a deliberate ignore rather than a gap.
+            if (event.type === 'reaction') continue;
             // An author's own entry retires that author's indicators here. It
             // has to happen on the way in, beside the merge: the entry replays
             // on a reconnect and the `done` beside it does not, so a client that

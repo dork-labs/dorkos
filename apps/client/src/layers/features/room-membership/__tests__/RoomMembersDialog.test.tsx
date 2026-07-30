@@ -8,6 +8,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
   agentAuthorRef,
+  REACTION_FREQUENTS_DEFAULT,
   type RoomRosterEntry,
   type RoomSummary,
   type RoomWithRoster,
@@ -81,7 +82,12 @@ const HUMAN: RoomRosterEntry = {
 };
 
 function roster(members: RoomRosterEntry[]): RoomWithRoster {
-  return { ...ROOM, members, viewerAuthorId: HUMAN.authorId };
+  return {
+    ...ROOM,
+    members,
+    viewerAuthorId: HUMAN.authorId,
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
+  };
 }
 
 /**

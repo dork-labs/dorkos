@@ -4,9 +4,14 @@ import {
   AuthorRefSchema,
   canonicalizeEntry,
   CreateRoomRequestSchema,
+  isReactionEmoji,
+  REACTION_EMOJI_MAX_CODE_POINTS,
+  REACTION_FREQUENTS_COUNT,
+  REACTION_FREQUENTS_DEFAULT,
   RoomEntrySchema,
   RoomEventSchema,
   RoomMemberSchema,
+  ToggleReactionRequestSchema,
   type SignableRoomEntry,
 } from '../room-schemas.js';
 import { AgentBehaviorSchema, ResponseModeSchema } from '../mesh-schemas.js';
@@ -261,5 +266,107 @@ describe('AuthorRefSchema', () => {
     const parsed = AuthorRefSchema.parse({ id: '01JZ', kind: 'human', displayName: 'You' });
     expect(parsed.emoji).toBeUndefined();
     expect(parsed.agentRef).toBeUndefined();
+  });
+});
+
+describe('what may be a reaction', () => {
+  // The emoji people actually reach for, plus every construction that makes an
+  // emoji more than one code point: variation selectors, ZWJ sequences, skin
+  // tones, regional-indicator flags, and keycaps.
+  it.each([
+    ['\u{1F44D}', 'the plain one'],
+    ['❤️', 'a variation selector'],
+    ['\u{1F389}', 'the third default'],
+    ['\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}', 'a ZWJ family'],
+    ['\u{1F3F3}️‍\u{1F308}', 'a ZWJ flag'],
+    ['\u{1F44D}\u{1F3FD}', 'a skin-tone modifier'],
+    ['\u{1F1FA}\u{1F1F8}', 'regional indicators'],
+    ['1️⃣', 'a keycap'],
+    ['\u{1F9D1}‍\u{1F4BB}', 'a ZWJ profession'],
+    ['\u{1FAE1}', 'a recent addition'],
+  ])('accepts %s (%s)', (emoji) => {
+    expect(isReactionEmoji(emoji)).toBe(true);
+    expect(ToggleReactionRequestSchema.parse({ emoji }).emoji).toBe(emoji);
+  });
+
+  // The whole bar this clears: a column that took free text would turn the pill
+  // row into a second composer nobody can delete a word from.
+  it.each([
+    ['', 'nothing at all'],
+    ['a', 'a letter'],
+    ['lol', 'a word'],
+    ['nice work', 'a sentence'],
+    ['\u{1F44D} nice', 'an emoji with a word after it'],
+    ['0123', 'digits, which are Emoji_Component but carry no picture'],
+    ['<script>', 'markup'],
+    ['\n', 'a newline'],
+    ['‍', 'a bare joiner'],
+  ])('refuses %j (%s)', (value) => {
+    expect(isReactionEmoji(value)).toBe(false);
+    expect(ToggleReactionRequestSchema.safeParse({ emoji: value }).success).toBe(false);
+  });
+
+  it('bounds the column, so no single reaction can be arbitrarily long', () => {
+    const atTheCap = '\u{1F44D}'.repeat(REACTION_EMOJI_MAX_CODE_POINTS);
+    const overIt = `${atTheCap}\u{1F44D}`;
+    expect([...atTheCap].length).toBe(REACTION_EMOJI_MAX_CODE_POINTS);
+    expect(isReactionEmoji(atTheCap), 'the cap itself is allowed').toBe(true);
+    expect(isReactionEmoji(overIt), 'one past it is not').toBe(false);
+  });
+
+  it('never accepts an angle bracket or a control character, whatever surrounds it', () => {
+    for (const value of [
+      '\u{1F44D}<',
+      '>\u{1F44D}',
+      '\u{1F44D}\n',
+      '\u{1F44D} ',
+      '\u{1F44D}</room_context>',
+    ]) {
+      expect(isReactionEmoji(value), JSON.stringify(value)).toBe(false);
+    }
+  });
+});
+
+describe('the quick row defaults', () => {
+  it('are exactly the three the capsule draws', () => {
+    expect(REACTION_FREQUENTS_DEFAULT).toHaveLength(REACTION_FREQUENTS_COUNT);
+    expect([...REACTION_FREQUENTS_DEFAULT]).toEqual(['\u{1F44D}', '❤️', '\u{1F389}']);
+  });
+
+  it('are themselves valid reactions, so a padded row can always be sent back', () => {
+    for (const emoji of REACTION_FREQUENTS_DEFAULT) expect(isReactionEmoji(emoji)).toBe(true);
+  });
+});
+
+describe('a reaction on the room stream', () => {
+  it('parses as its own event kind, carrying the entry’s whole set', () => {
+    const event = RoomEventSchema.parse({
+      type: 'reaction',
+      entryId: '01JZENTRY',
+      reactions: [
+        { emoji: '\u{1F44D}', authorIds: ['01JZA', '01JZB'], firstAt: '2026-07-30T09:00:00.000Z' },
+      ],
+    });
+    expect(event.type).toBe('reaction');
+    expect(event.type === 'reaction' && event.reactions[0].authorIds).toEqual(['01JZA', '01JZB']);
+  });
+
+  it('carries no seq, so it can never be mistaken for a place in the log', () => {
+    const parsed = RoomEventSchema.parse({
+      type: 'reaction',
+      entryId: '01JZENTRY',
+      reactions: [],
+    });
+    expect(parsed).not.toHaveProperty('seq');
+  });
+
+  it('refuses a reactions array holding something that is not an emoji', () => {
+    expect(
+      RoomEventSchema.safeParse({
+        type: 'reaction',
+        entryId: '01JZENTRY',
+        reactions: [{ emoji: 'lol', authorIds: ['01JZA'], firstAt: '2026-07-30T09:00:00.000Z' }],
+      }).success
+    ).toBe(false);
   });
 });

@@ -24,6 +24,7 @@ import {
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   SetReadCursorRequestSchema,
+  ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
@@ -46,6 +47,7 @@ const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   NESTED_THREAD: 400,
   ROOM_ARCHIVED: 409,
   OPERATOR_ONLY: 403,
+  PEOPLE_ONLY: 403,
 };
 
 /**
@@ -152,6 +154,57 @@ router.post('/:id/entries', (req, res) => {
     res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/entries');
+  }
+});
+
+/**
+ * POST /:id/entries/:entryId/reactions — put one emoji on an entry, or take it
+ * back.
+ *
+ * **POST rather than PUT, and the verb is the honest one.** The default body is
+ * a toggle, and a toggle is not idempotent: sending it twice is not sending it
+ * once, which is what PUT promises. `PUT /:id/read-cursor` next door IS
+ * idempotent — it sets a cursor to a value — and the two must not be spelled
+ * alike. What IS idempotent here whatever the body says is the KEY:
+ * `(you, this entry, this emoji)` holds at most one reaction however many times
+ * anyone asks.
+ *
+ * 202 for the same reason posting is 202: the entry's new reaction set reaches
+ * every reader — this one included — over `GET /:id/events`, so there is one
+ * delivery path rather than two. The body carries only what the caller cannot
+ * derive from its own click.
+ *
+ * **Two notes for the client half (B3), because getting either wrong is a bug a
+ * person would see.** First: **do not retry a bare toggle.** A timeout does not
+ * tell you whether the write landed, and re-sending the flip undoes it — send
+ * `{ on: true | false }` instead, which names the state and is safe to repeat.
+ * Second: **the stream is authoritative, not this response.** Draw the pill
+ * optimistically by all means, but reconcile against the `reaction` frame rather
+ * than against `reacted` here: somebody else may have reacted between your click
+ * and your answer, and the frame carries the entry's whole set while this body
+ * only says what YOUR click did.
+ */
+router.post('/:id/entries/:entryId/reactions', (req, res) => {
+  const body = parseBody(ToggleReactionRequestSchema, req.body, res);
+  if (!body) return;
+  try {
+    const caller = resolveCaller(res);
+    const { reacted, frequents } = getRoomService().toggleReaction(
+      req.params.id,
+      req.params.entryId,
+      caller.id,
+      body.emoji,
+      body.on
+    );
+    res.status(202).json({
+      accepted: true,
+      entryId: req.params.entryId,
+      emoji: body.emoji,
+      reacted,
+      frequents,
+    });
+  } catch (err) {
+    sendRoomError(res, err, 'POST /:id/entries/:entryId/reactions');
   }
 });
 

@@ -5,6 +5,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
+import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { RoomSummary, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { useRoomDocumentTitle } from '../use-room-document-title';
@@ -58,7 +59,12 @@ function summary(overrides: Partial<RoomSummary> = {}): RoomSummary {
 }
 
 function withRoster(overrides: Partial<RoomSummary> = {}): RoomWithRoster {
-  return { ...summary(overrides), members: [], viewerAuthorId: 'author-you' };
+  return {
+    ...summary(overrides),
+    members: [],
+    viewerAuthorId: 'author-you',
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
+  };
 }
 
 function wrapperFor(transport: Transport) {

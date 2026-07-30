@@ -92,6 +92,8 @@ import {
   RoomSnapshotSchema,
   RoomWithRosterSchema,
   SetReadCursorRequestSchema,
+  ToggleReactionRequestSchema,
+  ToggleReactionResponseSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
@@ -2806,6 +2808,8 @@ registry.registerPath({
 const RoomIdParams = z.object({ id: z.string().min(1) });
 /** `:id` plus the `:authorId` the membership routes address. */
 const RoomMemberParams = RoomIdParams.extend({ authorId: z.string().min(1) });
+/** `:id` plus the `:entryId` a reaction attaches to — the entry's ULID, not its seq. */
+const RoomEntryParams = RoomIdParams.extend({ entryId: z.string().min(1) });
 
 /** 404 body shared by every room path: an unknown room and one the caller may not see. */
 const roomNotFound = {
@@ -2953,6 +2957,41 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'post',
+  path: '/api/rooms/{id}/entries/{entryId}/reactions',
+  tags: ['Rooms'],
+  summary: 'React to an entry, or take a reaction back',
+  description:
+    'Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{"emoji": "👍", "on": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry\'s new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **Only people may react** — a caller the server resolves as an agent (one presenting `X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`.',
+  request: {
+    params: RoomEntryParams,
+    body: { content: { 'application/json': { schema: ToggleReactionRequestSchema } } },
+  },
+  responses: {
+    202: {
+      description: "Accepted; the entry's new reaction set rides the room SSE stream",
+      content: { 'application/json': { schema: ToggleReactionResponseSchema } },
+    },
+    400: {
+      description: 'Validation error, including anything that is not a single emoji',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller is not a person; agents do not send reactions',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such room, not a member of it, or no such entry in it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
   path: '/api/rooms/{id}/members',
   tags: ['Rooms'],
   summary: 'Add a member to a room',
@@ -3079,7 +3118,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Durable room event stream (SSE)',
   description:
-    'Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` (a durable `entry`, or an ephemeral `signal` that is never replayed).',
+    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
   request: {
     params: RoomIdParams,
     query: z.object({

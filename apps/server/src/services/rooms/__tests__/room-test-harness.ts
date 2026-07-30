@@ -14,6 +14,7 @@ import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Db } from '@dorkos/db';
 import { AuthorRegistry } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
+import { ReactionStore } from '../reaction-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
@@ -109,6 +110,8 @@ export function agentLookupFor(
 export interface RoomHarness {
   db: Db;
   service: RoomService;
+  store: RoomStore;
+  reactions: ReactionStore;
   authors: AuthorRegistry;
   runner: ScriptedTurnRunner;
   /** The owner's human author id — the `'local'` sentinel, or the bound account. */
@@ -166,8 +169,11 @@ export function createRoomHarness(opts: {
   // Mutable so `setOwner` can drive the transition, and read per check the way
   // the live wiring reads it — an install becomes owned partway through its life.
   let ownerUserId = opts.ownerUserId ?? null;
+  const store = new RoomStore(db);
+  const reactions = new ReactionStore(db);
   const service = new RoomService({
-    store: new RoomStore(db),
+    store,
+    reactions,
     authors,
     broadcaster: new RoomBroadcaster(),
     agents: opts.agents,
@@ -181,6 +187,8 @@ export function createRoomHarness(opts: {
   return {
     db,
     service,
+    store,
+    reactions,
     authors,
     runner,
     human: human.id,

@@ -165,6 +165,36 @@ corresponds to a claim the dispatcher held during that window._ Note the wording
 — **while a claim is held**, not while a turn runs. The busy path holds a claim
 briefly and never runs a turn at all, and the indicator it showed was honest.
 
+**E16b. A reaction is an endpoint, not a prompt — and agents do not send them.**
+Two halves, and they answer different questions.
+
+_Receiving._ When somebody reacts to something an agent said, the agent is told
+on its next turn, in the room context, as an acknowledgment. It never replies to
+one, never thanks anybody for one, and never mentions having noticed it in the
+next thing it says. That is the whole point of the mechanism: a person can say
+"seen" for free, in both directions — one click for them, no turn for the agent.
+An agent that answers a 👍 with "you're welcome!" has turned a free gesture into
+a message somebody has to read, and has taught the person not to send the next
+one. Nothing about a reaction wakes an agent: it takes no turn, writes no entry,
+sends no notice, starts no cascade, and does not move the room in the activity
+order. _Check: no agent message in a transcript follows a reaction with no other
+trigger between them, and no agent message refers to having been reacted to._
+
+_Sending._ Agents do not react. Not "sparingly" — not at all, at this commit.
+Nothing in DorkOS builds the path and the server refuses it: only an author the
+room resolves as a person may write a reaction, and an agent presenting its
+identity is turned away. Whether an agent should ever be able to react is a
+genuinely open design question (`specs/room-messaging-design` §2 parks it), and
+until it is answered the honest posture is a refusal at the boundary rather than
+a rule in a prompt. _Check: every reaction in a room was written by a caller the
+server resolved as a person._ Read that literally rather than as "by a human
+being": with **Require login** off, a local program presenting no agent header
+resolves to the operator's own author, so the gate refuses agents that identify
+themselves and cannot refuse one that does not. That is the documented DOR-505
+residual, the same one every operator-only gate in `room-service.ts` carries, and
+naming it here is the difference between a check somebody can run and a claim
+nobody can verify.
+
 **E17. Batch related notices.** Three finished tasks are one message. Slack's
 own agent guidance puts it plainly: five issue updates should be one message,
 not five.
