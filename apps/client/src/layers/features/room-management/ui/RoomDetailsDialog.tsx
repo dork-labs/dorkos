@@ -6,10 +6,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import {
+  Button,
   ResponsiveDialog,
   ResponsiveDialogBody,
   ResponsiveDialogContent,
 } from '@/layers/shared/ui';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { RoomLoudnessLine, roomDisplayTitle } from '@/layers/entities/room';
 import type { RoomDetailsFocus, RoomDetailsRoom } from '../model/room-details';
 import { useRoomDetailsView } from '../model/use-room-details-view';
@@ -95,6 +97,21 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    */
   const [addExpanded, setAddExpanded] = useState(focus === 'add');
   /**
+   * A room with no agents in it opens the picker itself.
+   *
+   * This is the sheet's most consequential moment and it used to be one grey
+   * line: a channel with nobody in it does nothing, and the only useful act on
+   * this surface is putting somebody in it. Opened rather than offered, because
+   * an empty room is not a state anybody chose to be in.
+   *
+   * Written during render rather than from an effect, the same way
+   * `AgentChipPicker` drops a chip whose agent has left: an effect paints one
+   * frame of the collapsed row first. It converges — the branch is false on the
+   * re-render it causes — and it is one-way, so adding the first agent does not
+   * shut the picker again.
+   */
+  if (view.room !== null && view.agentCount === 0 && !addExpanded) setAddExpanded(true);
+  /**
    * The banner that says why an archived room's loudness settings are on hold.
    * Every dormant scale points at it, so the sentence is written once and read
    * by whoever needs it rather than repeated on each row.
@@ -110,25 +127,37 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * Give the search field the cursor as soon as there IS a field, whoever asked
    * for it.
    *
-   * Two paths lead here and one effect serves both, because they are the same
-   * request. "Add agents…" opens the picker already expanded, and
+   * Three paths lead here and one effect serves all of them, because they are
+   * the same request. "Add agents…" opens the picker already expanded, and
    * `onOpenAutoFocus` fires once — before the fleet has been read on a cold
    * start, so the field it wants does not exist yet. Pressing the add row
-   * expands it later, and the field usually appears in that same commit.
+   * expands it later, and the field usually appears in that same commit. And a
+   * room that turns out to hold no agents opens the picker on its own.
    *
-   * **The `<body>` case is not a slip.** The guard exists so a reader who has
-   * already tabbed to something else does not have the cursor yanked back
-   * mid-keystroke — and that means somewhere REAL. Expanding the row unmounts
-   * the button that was pressed, which drops focus to `<body>`: nobody is
-   * anywhere, so there is nothing to take away from them.
+   * **The cursor is only claimed when nobody is on a real control.** The guard
+   * exists so a reader who has already gone somewhere else does not have it
+   * yanked back mid-keystroke. `<body>` is not somewhere: expanding the row
+   * unmounts the button that was pressed and drops focus there, so there is
+   * nothing to take away from anybody. Neither is the dialog's own content
+   * element, which is where `onOpenAutoFocus` parks the cursor when the door
+   * that opened this sheet named no field.
+   *
+   * That distinction is what stops the third path stealing from the second: a
+   * sheet opened at the topic of an empty room expands the picker AND has a
+   * live editor holding the cursor, and the editor wins — the reader asked for
+   * the topic and would otherwise find themselves typing into "Search agents".
    */
   useEffect(() => {
     if (!addExpanded || searchFocused.current) return;
     const field = searchRef.current;
     if (!field) return;
-    const content = contentRef.current;
     const active = document.activeElement;
-    if (content && active !== document.body && !content.contains(active)) return;
+    if (active === field) {
+      searchFocused.current = true;
+      return;
+    }
+    const content = contentRef.current;
+    if (content !== null && active !== document.body && active !== content) return;
     searchFocused.current = true;
     field.focus();
   }, [addExpanded, view.agents.isLoading, view.agents.isError]);
@@ -136,6 +165,22 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
   const confirmRemoval = (member: RoomRosterEntry) => {
     setPendingRemoval(null);
     writes.removeMember(member);
+  };
+
+  /**
+   * Leave for the place agents are made — the same store the sidebar, the
+   * command palette and the "+" menu all open.
+   *
+   * The sheet closes first, and that is the decision rather than an omission.
+   * The creation dialog is a modal of its own, and a modal over this one closes
+   * BOTH when it is answered: the inner one's dismissal reaches the outer as an
+   * interaction from outside it (see `RemoveMemberConfirm`). There is also
+   * nothing here worth keeping — this button only exists on a fleet with
+   * nobody in it, so the roster behind it is the reader and no one else.
+   */
+  const startAgentCreation = () => {
+    onOpenChange(false);
+    useAgentCreationStore.getState().open();
   };
 
   /**
@@ -218,7 +263,12 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
             view.room !== null && <RoomLoudnessLine members={view.members} roomKind={detail.kind} />
           )}
 
-          <RoomMemberList members={view.members} isLoading={view.isLoading} isError={view.isError}>
+          <RoomMemberList
+            members={view.members}
+            isLoading={view.isLoading}
+            isError={view.isError}
+            onRetry={view.retry}
+          >
             {(member) => (
               <RoomMemberRow
                 member={member}
@@ -261,10 +311,23 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
             roster={view.agents}
             exclude={view.isAlreadyIn}
             onSubmit={writes.addAgents}
+            // "Add one to put it in here" used to follow the first sentence.
+            // The button below says that now, and says it as something you can
+            // press rather than as an instruction to go and find it.
             emptyRosterMessage={
               view.agents.candidates.length === 0
-                ? 'You have not added any agents yet. Add one to put it in here.'
+                ? 'You have not added any agents yet.'
                 : 'Every agent you have is already in here.'
+            }
+            // Only for the empty fleet, which is the one of those two sentences
+            // a person can act on — "everyone is already in here" is a finished
+            // job, not a dead end.
+            emptyRosterAction={
+              view.agents.candidates.length === 0 ? (
+                <Button type="button" size="sm" variant="outline" onClick={startAgentCreation}>
+                  Create agent
+                </Button>
+              ) : undefined
             }
             allChosenMessage="Every agent you have is already in here."
             // Only a one-to-one turns into something else by gaining somebody.

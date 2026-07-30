@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { Button, Skeleton } from '@/layers/shared/ui';
 import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { AgentChipPicker } from './AgentChipPicker';
@@ -14,6 +14,8 @@ interface AgentRosterPickerProps {
   submitLabel: (count: number) => string;
   /** Shown instead of the field when the fleet is genuinely empty. */
   emptyRosterMessage: string;
+  /** A way out of {@link AgentRosterPickerProps.emptyRosterMessage}, when there is one. */
+  emptyRosterAction?: ReactNode;
   /** Shown under the field when every candidate is already a chip. */
   allChosenMessage: string;
   /** Disable the commit button while a write is in flight. */

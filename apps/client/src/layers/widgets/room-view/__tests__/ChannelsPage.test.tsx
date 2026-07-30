@@ -14,11 +14,12 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type {
-  PostToRoomResponse,
-  RoomEntry,
-  RoomEvent,
-  RoomWithRoster,
+import {
+  agentAuthorRef,
+  type PostToRoomResponse,
+  type RoomEntry,
+  type RoomEvent,
+  type RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
@@ -147,8 +148,16 @@ describe('ChannelsPage members-panel entry points', () => {
     resolveAgents: vi.fn().mockResolvedValue({}),
   };
 
-  /** A room with somebody in it, so the header has a roster to draw. */
-  function peopled(id: string, slug: string): RoomWithRoster {
+  /**
+   * A room with somebody in it, so the header has a roster to draw.
+   *
+   * @param id - The room id.
+   * @param slug - Its channel slug.
+   * @param withAgent - Put an agent in it too. A room with NO agents opens the
+   *   sheet's picker by itself, which is the right behaviour and the wrong
+   *   fixture for anything asking what a particular door does.
+   */
+  function peopled(id: string, slug: string, withAgent = false): RoomWithRoster {
     const room = roomWith(id, slug);
     return {
       ...room,
@@ -161,20 +170,39 @@ describe('ChannelsPage members-panel entry points', () => {
           lastReadSeq: 0,
           author: { id: 'author-you', kind: 'human', displayName: 'You' },
         },
+        ...(withAgent
+          ? [
+              {
+                roomId: id,
+                authorId: 'author-ana',
+                responseMode: 'engaged' as const,
+                joinedAt: '2026-07-26T09:00:00.000Z',
+                lastReadSeq: 0,
+                author: {
+                  id: 'author-ana',
+                  kind: 'agent' as const,
+                  displayName: 'Ana',
+                  agentRef: agentAuthorRef('/w/Ana'),
+                },
+              },
+            ]
+          : []),
       ],
     };
   }
 
   it('opens the panel from the header roster, which used to do nothing at all', async () => {
+    // With an agent in it, deliberately: an EMPTY room opens the sheet's picker
+    // whichever door was used, so it could not tell the two doors apart.
     renderPage({
       ...fleet,
-      getRoom: vi.fn((id: string) => Promise.resolve(peopled(id, 'general'))),
+      getRoom: vi.fn((id: string) => Promise.resolve(peopled(id, 'general', true))),
     });
 
-    // Named for the action and the room, not "1 member" — the roster is what
+    // Named for the action and the room, not "2 members" — the roster is what
     // you press, so it has to say what pressing it does.
     const roster = await screen.findByRole('button', {
-      name: 'Members of #general, 1 member',
+      name: 'Members of #general, 2 members',
     });
     fireEvent.click(roster);
 

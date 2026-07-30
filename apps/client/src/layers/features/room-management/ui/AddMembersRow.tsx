@@ -3,7 +3,7 @@
  *
  * @module features/room-management/ui/AddMembersRow
  */
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { Plus } from 'lucide-react';
 import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import { AgentRosterPicker } from './AgentRosterPicker';
@@ -21,6 +21,11 @@ export interface AddMembersRowProps {
   onSubmit: (chosen: AgentPickerCandidate[]) => void;
   /** Said instead of the field when the fleet is genuinely empty. */
   emptyRosterMessage: string;
+  /**
+   * A way out of {@link AddMembersRowProps.emptyRosterMessage} — supplied only
+   * when the emptiness is one the reader can do something about.
+   */
+  emptyRosterAction?: ReactNode;
   /** Said under the field when every candidate is already a chip. */
   allChosenMessage: string;
   /** Whether a write is in flight. */
@@ -78,6 +83,7 @@ export function AddMembersRow({
   exclude,
   onSubmit,
   emptyRosterMessage,
+  emptyRosterAction,
   allChosenMessage,
   isSubmitting,
   note,
@@ -93,6 +99,7 @@ export function AddMembersRow({
           onSubmit={onSubmit}
           submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
           emptyRosterMessage={emptyRosterMessage}
+          emptyRosterAction={emptyRosterAction}
           allChosenMessage={allChosenMessage}
           isSubmitting={isSubmitting}
           inputRef={inputRef}

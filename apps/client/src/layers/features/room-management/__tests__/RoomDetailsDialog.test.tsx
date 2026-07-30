@@ -15,7 +15,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { formatRelativeTime } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAgentCreationStore } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import type { RoomDetailsFocus } from '../model/room-details';
 import { RoomDetailsDialog } from '../ui/RoomDetailsDialog';
@@ -232,7 +232,12 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
 });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // A real store, shared by the whole module graph — left open it would leak
+  // into the next test's assertion about it.
+  useAgentCreationStore.setState({ isOpen: false, seed: null, onCreated: null });
+});
 afterEach(cleanup);
 
 // ---------------------------------------------------------------------------
@@ -318,12 +323,80 @@ describe('RoomDetailsDialog', () => {
     expect(await screen.findByText(/Couldn't read who is in here/i)).toBeInTheDocument();
   });
 
-  it('offers an empty room a way out of being empty', async () => {
+  it('opens the picker itself for a room with nobody in it, and puts the cursor there', async () => {
+    // The sheet's most consequential moment: a room with no agents does
+    // nothing, and the only useful act on this surface is putting somebody in
+    // it. Red if it goes back to a grey line and a button to press first.
     renderPanel({
       transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
     });
 
-    expect(await screen.findByText(/No agents in here yet/i)).toBeInTheDocument();
+    const search = await screen.findByRole('combobox', { name: 'Search agents' });
+    await waitFor(() => expect(search).toHaveFocus());
+    expect(addSection().queryByRole('button', { name: 'Add agents' })).not.toBeInTheDocument();
+  });
+
+  it('says the one thing about an empty room the line above it does not', async () => {
+    // The loudness line already says "There is nobody here to answer you", so
+    // this line saying it too would be the sheet stating one fact twice. What
+    // is left is the part only it has: joining is not starting.
+    renderPanel({
+      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
+    });
+
+    expect(
+      await screen.findByText(/Whoever you add can read everything already said/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('There is nobody here to answer you')).toBeInTheDocument();
+  });
+
+  it('offers a way to make an agent when there are none to add', async () => {
+    // "You have not added any agents yet" is true and is a dead end with
+    // nothing to press. Red if the sentence goes back to standing on its own.
+    const onOpenChange = vi.fn();
+    renderPanel({
+      agents: settled([]),
+      onOpenChange,
+      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
+    });
+    await screen.findByText(/You have not added any agents yet/i);
+
+    fireEvent.click(addSection().getByRole('button', { name: 'Create agent' }));
+
+    // The sheet gets out of the way: the creation dialog is a modal of its own,
+    // and a modal over this one closes both when it is answered.
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(useAgentCreationStore.getState().isOpen).toBe(true);
+  });
+
+  it('offers no such way when every agent is already in the room', async () => {
+    // That sentence is a finished job, not a dead end — there is nothing to
+    // fix, and a button under it would be inviting somebody to solve a problem
+    // they do not have.
+    renderPanel({
+      agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana', visual: null }]),
+    });
+    await rosterSection();
+    openAddRow();
+
+    expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();
+    expect(addSection().queryByRole('button', { name: 'Create agent' })).not.toBeInTheDocument();
+  });
+
+  it('offers to read the roster again rather than asking to be closed and reopened', async () => {
+    // "Close this and open it again to retry" is the retry button, made out of
+    // a person. Red if the button goes, or stops actually re-reading.
+    const getRoom = vi.fn().mockRejectedValue(new Error('offline'));
+    const { transport } = renderPanel({ transport: createMockTransport({ getRoom }) });
+    await screen.findByText(/Couldn't read who is in here/i);
+    expect(screen.getByText(/Everyone is still where they were/i)).toBeInTheDocument();
+
+    const before = vi.mocked(transport.getRoom).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    await waitFor(() =>
+      expect(vi.mocked(transport.getRoom).mock.calls.length).toBeGreaterThan(before)
+    );
   });
 
   describe('how loud each agent is', () => {
@@ -815,7 +888,7 @@ describe('RoomDetailsDialog', () => {
           getRoom: vi.fn().mockResolvedValue({ ...roster([HUMAN]), createdAt: born }),
         }),
       });
-      await screen.findByText(/No agents in here yet/i);
+      await screen.findByText(/Whoever you add can read everything already said/i);
 
       expect(screen.getByText(`Created ${formatRelativeTime(born)}`)).toBeInTheDocument();
     });
@@ -827,7 +900,7 @@ describe('RoomDetailsDialog', () => {
       // (see `RemoveMemberConfirm`). The sidebar row keeps ITS alert, because
       // archiving from a menu over a list is where you archive the wrong room.
       const { transport } = renderArchivable(false);
-      await screen.findByText(/No agents in here yet/i);
+      await screen.findByText(/Whoever you add can read everything already said/i);
 
       fireEvent.click(screen.getByRole('button', { name: 'Archive room' }));
 
@@ -975,8 +1048,7 @@ describe('RoomDetailsDialog', () => {
         addRoomMember: vi.fn().mockResolvedValue(agentMember('Ana', '/repo/ana')),
       }),
     });
-    await screen.findByText(/No agents in here yet/i);
-    openAddRow();
+    await screen.findByText(/Whoever you add can read everything already said/i);
 
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
@@ -1004,8 +1076,7 @@ describe('RoomDetailsDialog', () => {
       }),
     });
     renderPanel({ transport });
-    await screen.findByText(/No agents in here yet/i);
-    openAddRow();
+    await screen.findByText(/Whoever you add can read everything already said/i);
 
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
@@ -1036,8 +1107,7 @@ describe('RoomDetailsDialog', () => {
       }),
     });
     renderPanel({ transport });
-    await screen.findByText(/No agents in here yet/i);
-    openAddRow();
+    await screen.findByText(/Whoever you add can read everything already said/i);
 
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }));
@@ -1076,6 +1146,23 @@ describe('RoomDetailsDialog', () => {
 
     const search = await screen.findByRole('combobox', { name: 'Search agents' });
     await waitFor(() => expect(search).toHaveFocus());
+  });
+
+  it('lets an empty room open its picker without taking the cursor off the topic', async () => {
+    // Two things want the keyboard at once: the door that said "topic", and a
+    // room that turns out to be empty and opens its own picker. The reader
+    // asked for the topic, and a live editor is somewhere REAL — unlike the
+    // dialog's own content element, which is where the cursor parks when a
+    // door named no field. Red if the guard goes back to "anywhere inside the
+    // sheet counts": this reader would be typing into "Search agents".
+    renderPanel({
+      focus: 'topic',
+      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roster([HUMAN])) }),
+    });
+
+    const search = await screen.findByRole('combobox', { name: 'Search agents' });
+    expect(screen.getByRole('textbox', { name: 'Topic' })).toHaveFocus();
+    expect(search).not.toHaveFocus();
   });
 
   it('leaves the picker shut for an entry point that did not ask to add anybody', async () => {

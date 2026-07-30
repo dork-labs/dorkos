@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { X } from 'lucide-react';
 import { cn, initialOf } from '@/layers/shared/lib';
 import { Button, IdentityAvatar } from '@/layers/shared/ui';
@@ -27,6 +27,16 @@ interface AgentChipPickerProps {
   submitLabel: (count: number) => string;
   /** Shown instead of the field when there are no candidates at all. */
   emptyRosterMessage: string;
+  /**
+   * A way out of {@link AgentChipPickerProps.emptyRosterMessage}, when the
+   * caller has one to offer.
+   *
+   * The message covers two situations and only one of them is a dead end: a
+   * fleet with nobody in it can be fixed, while "everyone is already in here"
+   * is a finished job. So the control is the caller's to supply or withhold —
+   * this component cannot tell which sentence it was handed.
+   */
+  emptyRosterAction?: ReactNode;
   /** Shown under the field when every candidate is already a chip. */
   allChosenMessage: string;
   /** Disable the commit button while a write is in flight. */
@@ -149,6 +159,7 @@ export function AgentChipPicker({
   onSubmit,
   submitLabel,
   emptyRosterMessage,
+  emptyRosterAction,
   allChosenMessage,
   isSubmitting = false,
   submitDisabled = false,
@@ -267,7 +278,12 @@ export function AgentChipPicker({
   }
 
   if (candidates.length === 0) {
-    return <p className="text-muted-foreground px-1 py-1.5 text-xs">{emptyRosterMessage}</p>;
+    return (
+      <div className="space-y-2 px-1 py-1.5">
+        <p className="text-muted-foreground text-xs">{emptyRosterMessage}</p>
+        {emptyRosterAction}
+      </div>
+    );
   }
 
   return (

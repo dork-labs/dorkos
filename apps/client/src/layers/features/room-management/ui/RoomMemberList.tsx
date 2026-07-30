@@ -5,7 +5,7 @@
  */
 import type { ReactNode } from 'react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { Skeleton } from '@/layers/shared/ui';
+import { Button, Skeleton } from '@/layers/shared/ui';
 
 export interface RoomMemberListProps {
   /** The roster, in the order the server hands it back. */
@@ -14,6 +14,8 @@ export interface RoomMemberListProps {
   isLoading: boolean;
   /** True when the roster could not be read at all. */
   isError: boolean;
+  /** Ask for the roster again. The way out of {@link RoomMemberListProps.isError}. */
+  onRetry: () => void;
   /**
    * Draw one member.
    *
@@ -60,7 +62,13 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
  * Nothing re-sorts here, so the sidebar and this sheet name the same people in
  * the same order because neither of them decides one.
  */
-export function RoomMemberList({ members, isLoading, isError, children }: RoomMemberListProps) {
+export function RoomMemberList({
+  members,
+  isLoading,
+  isError,
+  onRetry,
+  children,
+}: RoomMemberListProps) {
   const agents = members.filter((member) => member.author.kind === 'agent');
   const people = members.filter((member) => member.author.kind !== 'agent');
 
@@ -75,10 +83,18 @@ export function RoomMemberList({ members, isLoading, isError, children }: RoomMe
       )}
 
       {isError && (
-        <p className="text-muted-foreground text-sm">
-          Couldn&apos;t read who is in here. Everyone is still where they were — close this and open
-          it again to retry.
-        </p>
+        // The same shape the fleet picker below uses for the same problem: say
+        // what failed, say what is still true, and offer the one button that
+        // would fix it. "Close this and open it again" was that button, made
+        // out of a person.
+        <div role="alert" className="space-y-2">
+          <p className="text-muted-foreground text-sm">
+            Couldn&apos;t read who is in here. Everyone is still where they were.
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+            Try again
+          </Button>
+        </div>
       )}
 
       {!isLoading && !isError && (
@@ -95,8 +111,14 @@ export function RoomMemberList({ members, isLoading, isError, children }: RoomMe
           )}
 
           {agents.length === 0 ? (
+            // Deliberately NOT "there is nobody here to answer you", which is
+            // the true and consequential thing about an empty room — the
+            // loudness line above this one already says exactly that, and a
+            // sheet that says it twice is a sheet that has stopped counting.
+            // What is left is the fact only this line has: joining is not
+            // starting, so whoever arrives can read what was said before them.
             <p className="text-muted-foreground text-sm">
-              No agents in here yet. Add one below and it will see everything said so far.
+              Whoever you add can read everything already said here.
             </p>
           ) : (
             <>

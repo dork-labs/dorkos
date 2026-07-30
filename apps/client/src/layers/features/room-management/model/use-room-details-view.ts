@@ -8,7 +8,7 @@
  *
  * @module features/room-management/model/use-room-details-view
  */
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   agentAuthorRef,
   type AuthorRef,
@@ -37,6 +37,12 @@ export interface RoomDetailsView {
   isLoading: boolean;
   /** True when the roster could not be read at all. */
   isError: boolean;
+  /**
+   * Read the roster again. The way out of {@link RoomDetailsView.isError}, so a
+   * failed read is not answered by asking the reader to close the sheet and
+   * open it again — which is the same request, made of a person.
+   */
+  retry: () => void;
   /** The roster, in the order the server hands it back. Empty until it lands. */
   members: RoomRosterEntry[];
   /**
@@ -100,6 +106,11 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
   // history GET of its own — and never worth racing the live stream for the
   // cache entry it writes into. See `useLoadedRoomEntries`.
   const loadedEntries = useLoadedRoomEntries(open ? roomId : null);
+
+  const roomRefetch = roomQuery.refetch;
+  const retry = useCallback(() => {
+    void roomRefetch();
+  }, [roomRefetch]);
 
   const room = roomQuery.data ?? null;
   const members = useMemo(() => room?.members ?? [], [room]);
@@ -188,6 +199,7 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
     room,
     isLoading: roomQuery.isLoading,
     isError: roomQuery.isError,
+    retry,
     members,
     agentCount: agentMembers.length,
     participants,
