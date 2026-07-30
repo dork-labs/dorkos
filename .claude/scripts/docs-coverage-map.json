@@ -202,6 +202,16 @@
       ]
     },
     {
+      "guide": "adding-a-community-adapter.md",
+      "description": "Community backend authoring: CommunityAdapter port, capability matrix, the three typed errors + the eager stale-cursor and unknown-room throws, four connection outcomes, agent admission, credential discipline",
+      "patterns": [
+        "community-adapter",
+        "apps/server/src/services/communities/",
+        "community-conformance",
+        "fake-community-adapter"
+      ]
+    },
+    {
       "guide": "agent-operator-surface.md",
       "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb",
       "patterns": [
@@ -220,12 +230,13 @@
     },
     {
       "guide": "authentication.md",
-      "description": "Local Better Auth: session-gate, exposure-guard, per-user API keys + MCP, config + migrations",
+      "description": "Local Better Auth: session-gate, owner identity + the single-user rule, exposure-guard, per-user API keys + MCP, config + migrations",
       "patterns": [
         "apps/server/src/services/core/auth/",
         "middleware/mcp-auth",
         "apps/client/src/layers/features/auth/",
-        "packages/db/src/schema/auth"
+        "packages/db/src/schema/auth",
+        "apps/server/src/services/rooms/author-registry"
       ]
     },
     {
