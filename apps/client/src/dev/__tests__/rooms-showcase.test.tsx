@@ -313,9 +313,12 @@ describe('the rooms page is wired into the playground', () => {
   it('has a nav entry in the agents group', () => {
     const config = PAGE_CONFIGS.find((page) => page.id === 'rooms');
     expect(config?.group).toBe('agents');
-    expect(config?.sections).toEqual(
-      PLAYGROUND_REGISTRY.filter((section) => section.page === 'rooms')
-    );
+    // Deliberately NOT `expect(config.sections).toEqual(registry.filter(…))`:
+    // both read the same imported `ROOMS_SECTIONS`, so that compares an array
+    // to a filter of itself and can only go red on a typo in the literal it is
+    // filtering by. What can actually break is a section with nothing behind
+    // it, which the search test below renders for real.
+    expect(config?.sections?.length).toBeGreaterThan(0);
   });
 
   it('puts every room section in reach of the search', () => {
@@ -335,10 +338,27 @@ describe('the rooms page is wired into the playground', () => {
     );
   });
 
-  it('names the member whose row the sheet marks as the reader', () => {
-    // The fixture's `viewerAuthorId` has to be the person, or the "(you)" the
-    // channel test looks for would land on an agent and still pass.
-    expect(CHANNEL_ROOM.viewerAuthorId).toBe(MEMBER.reader.authorId);
-    expect(MEMBER.reader.author.kind).toBe('human');
+  it('marks the person, not an agent, as the reader', async () => {
+    // The channel test asserts a "(you)" is on screen and that Dorian has no
+    // pill. Neither says the two are the same row — point `viewerAuthorId` at
+    // an agent and both still pass, with the mark on the wrong member. This
+    // reads the row it actually landed on.
+    //
+    // Asserting the fixture's own `viewerAuthorId` instead would prove nothing:
+    // `createRoomWithRoster` derives it from the roster's first non-agent, so
+    // the comparison would be the factory restated over its own output.
+    await openSheet({ label: '#general', read: CHANNEL_ROOM, holds: CHANNEL_ROOM });
+
+    // The roster is read asynchronously, so wait for it rather than reading the
+    // skeleton that stands in for it.
+    const marked = (await within(roster()).findByText('(you)')).closest(
+      '[data-slot="room-member-row"]'
+    );
+    expect(marked).not.toBeNull();
+    expect(within(marked as HTMLElement).getByText('Dorian')).toBeInTheDocument();
+    // A person has no loudness at all, so the row carrying the mark must not
+    // have one either — which is the half that catches the mark landing on an
+    // agent whose name happens to be off screen.
+    expect(within(marked as HTMLElement).queryByRole('button', { name: /^How loud / })).toBeNull();
   });
 });
