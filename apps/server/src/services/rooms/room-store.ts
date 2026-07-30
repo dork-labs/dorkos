@@ -864,6 +864,38 @@ export class RoomStore {
       .run();
     return this.getRoomSession(roomId, authorId) ?? sessionId;
   }
+
+  /**
+   * Move an agent member's binding onto the session id its turn actually ran
+   * under — the runtime's canonical id, which is not always the id the room
+   * asked with.
+   *
+   * This is the one write that is deliberately NOT first-write-wins, and it has
+   * to be an UPDATE rather than another {@link RoomStore.bindRoomSession}: the
+   * insert there ignores conflicts, so the row minted before the first turn
+   * would keep a throwaway id forever. Claude Code assigns its own session id
+   * on the first turn and writes the transcript under THAT id; the room kept
+   * the pre-turn UUID, and once the live session was swept for idleness (or the
+   * server restarted) the next turn found no transcript under the bound id and
+   * started the agent over from nothing — every idle window, silently.
+   *
+   * Called after every turn, not only the first. The canonical id is stable
+   * while a conversation is, so this is a no-op write in the ordinary case, but
+   * the SDK can assign a new id on a resume too (see `rebindSdkSession` in the
+   * Claude Code session store), and the binding has to be whichever id the
+   * transcript is under — always.
+   *
+   * @param roomId - The room.
+   * @param authorId - The agent member.
+   * @param sessionId - The session the turn ran on.
+   */
+  rebindRoomSession(roomId: string, authorId: string, sessionId: string): void {
+    this.db
+      .update(roomSessions)
+      .set({ sessionId })
+      .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
+      .run();
+  }
 }
 
 export type { NewRoom, NewRoomEntry } from './room-rows.js';

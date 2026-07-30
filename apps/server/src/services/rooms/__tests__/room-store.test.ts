@@ -452,6 +452,56 @@ describe('RoomStore never trims the log', () => {
   }, 60_000);
 });
 
+describe('RoomStore per-room agent sessions', () => {
+  let store: RoomStore;
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+  });
+
+  it('binds first-write-wins and rebinds last-write-wins', () => {
+    // Two writes, two different rules, and the difference is the point. The
+    // bind resolves a race between two posts arriving before the first reply,
+    // so it must not overwrite. The rebind records which session the turn ACTUALLY
+    // ran on, so it must.
+    const first = store.bindRoomSession(
+      ROOM_ID,
+      'author-ana',
+      'placeholder',
+      '2026-07-30T10:00:00.000Z'
+    );
+    const second = store.bindRoomSession(
+      ROOM_ID,
+      'author-ana',
+      'a-later-guess',
+      '2026-07-30T10:00:00.000Z'
+    );
+    expect(first).toBe('placeholder');
+    expect(second).toBe('placeholder');
+
+    store.rebindRoomSession(ROOM_ID, 'author-ana', 'sdk-canonical-9f3c');
+    expect(store.getRoomSession(ROOM_ID, 'author-ana')).toBe('sdk-canonical-9f3c');
+  });
+
+  it('keeps each agent in the room to its own session', () => {
+    store.bindRoomSession(ROOM_ID, 'author-ana', 'ana-1', '2026-07-30T10:00:00.000Z');
+    store.bindRoomSession(ROOM_ID, 'author-bo', 'bo-1', '2026-07-30T10:00:00.000Z');
+
+    store.rebindRoomSession(ROOM_ID, 'author-ana', 'ana-canonical');
+
+    expect(store.getRoomSession(ROOM_ID, 'author-ana')).toBe('ana-canonical');
+    expect(store.getRoomSession(ROOM_ID, 'author-bo')).toBe('bo-1');
+  });
+
+  it('writes nothing for an agent that has no binding yet', () => {
+    // An UPDATE, never an upsert: a rebind is a correction to a binding that
+    // exists, and inventing one here would resurrect a session for an agent
+    // whose membership was just removed.
+    store.rebindRoomSession(ROOM_ID, 'author-ana', 'sdk-canonical-9f3c');
+    expect(store.getRoomSession(ROOM_ID, 'author-ana')).toBeNull();
+  });
+});
+
 describe('RoomStore.listRooms ordering', () => {
   let store: RoomStore;
 

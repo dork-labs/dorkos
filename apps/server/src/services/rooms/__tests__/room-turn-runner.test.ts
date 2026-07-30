@@ -14,6 +14,13 @@ import type { RoomTurnRequest } from '../room-trigger.js';
 const persistSessionRuntime = vi.fn().mockResolvedValue(true);
 const getCapabilities = vi.fn().mockReturnValue({ logBackedHistory: false, nativeContext: [] });
 
+/**
+ * What the runtime calls this session. `undefined` — no alias — is the honest
+ * default for Codex, OpenCode and test-mode; Claude Code answers with its own
+ * id, which is the whole subject of the canonical-id test below.
+ */
+let internalSessionId: (sessionId: string) => string | undefined = () => undefined;
+
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
@@ -23,7 +30,7 @@ vi.mock('../../core/runtime-registry.js', () => ({
       releaseLock: () => undefined,
       sendMessage: () => undefined,
       interruptQuery: () => Promise.resolve(false),
-      getInternalSessionId: () => undefined,
+      getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
     }),
     has: () => true,
     getDefaultType: () => 'claude-code',
@@ -43,6 +50,8 @@ interface TriggerCall {
   projector: TestProjector;
   content: string;
   roomContext?: RoomContextData;
+  /** The runtime port the real `triggerTurn` resolves the canonical id through. */
+  deps: { getInternalSessionId: (sessionId: string) => string | undefined };
 }
 
 /** What the stubbed `triggerTurn` does with the projector it is handed. */
@@ -146,19 +155,25 @@ function request(
   };
 }
 
-/** A turn that streams `parts` and closes cleanly. */
+/**
+ * A turn that streams `parts` and closes cleanly, resolving its canonical id
+ * the way the real `triggerTurn` does — off the runtime, not off the request.
+ * Echoing the requested id back unconditionally is what let a whole class of
+ * id-drift bug hide in this suite.
+ */
 function saysAndCloses(...parts: string[]): typeof turnBehaviour {
-  return ({ sessionId, projector }) => {
+  return ({ sessionId, projector, deps }) => {
     projector.ingest({ type: 'turn_start' });
     for (const text of parts) projector.ingest({ type: 'text_delta', text });
     projector.ingest({ type: 'turn_end' });
-    return { accepted: true, canonicalId: sessionId };
+    return { accepted: true, canonicalId: deps.getInternalSessionId(sessionId) ?? sessionId };
   };
 }
 
 describe('createSessionRoomTurnRunner', () => {
   beforeEach(() => {
     persistSessionRuntime.mockClear();
+    internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
   });
 
@@ -183,6 +198,32 @@ describe('createSessionRoomTurnRunner', () => {
       'claude-code',
       '/repo/ana'
     );
+  });
+
+  it('answers on, and records ownership under, the id the runtime assigned', async () => {
+    // Claude Code names the session itself on the first turn and files the
+    // transcript under THAT id. The room asked with a placeholder; everything
+    // durable must land on the runtime's id, and — the part that was broken —
+    // the id the runner hands back is the id the room binds, so `session_metadata`
+    // and `room_sessions` cannot disagree about which session this is.
+    const canonical = 'sdk-canonical-9f3c';
+    internalSessionId = () => canonical;
+
+    const result = await createSessionRoomTurnRunner().run(
+      request({ sessionId: 'room-placeholder' })
+    );
+
+    expect(result.sessionId).toBe(canonical);
+    expect(persistSessionRuntime).toHaveBeenCalledWith(canonical, 'claude-code', '/repo/ana');
+    expect(persistSessionRuntime).not.toHaveBeenCalledWith(
+      'room-placeholder',
+      expect.anything(),
+      expect.anything()
+    );
+    // The agreement itself, asserted rather than assumed: one id answers both
+    // questions, so a room session never falls through to the registry's legacy
+    // "it must be claude-code" inference for want of a row.
+    expect(persistSessionRuntime.mock.calls[0][0]).toBe(result.sessionId);
   });
 
   it('says nothing rather than queueing behind an operator who is mid-turn', async () => {
