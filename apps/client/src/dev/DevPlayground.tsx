@@ -22,6 +22,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
   Separator,
+  Toaster,
 } from '@/layers/shared/ui';
 import { TransportProvider, useTheme } from '@/layers/shared/model';
 import { ChevronLeft, LayoutDashboard, Sun, Monitor, Moon, Search } from 'lucide-react';
@@ -44,6 +45,7 @@ import { TablesPage } from './pages/TablesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { MarketplacePage } from './pages/MarketplacePage';
 import { GenUiPage } from './pages/GenUiPage';
+import { RoomsPage } from './pages/RoomsPage';
 import { TourSpotlightPage } from './pages/TourSpotlightPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import {
@@ -102,6 +104,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   settings: SettingsPage,
   marketplace: MarketplacePage,
   'gen-ui': GenUiPage,
+  rooms: RoomsPage,
   'tour-spotlight': TourSpotlightPage,
 };
 
@@ -363,6 +366,12 @@ function DevPlaygroundShell() {
             onOpenChange={setSearchOpen}
             onSelect={handleSelect}
           />
+
+          {/* The app's own `<Toaster />` is in `App.tsx`, which the playground
+              never mounts — `Root` in main.tsx branches to this shell before
+              the router. So every toast raised from a showcase, including the
+              two sections built to demonstrate toasts, went nowhere. */}
+          <Toaster />
         </SidebarProvider>
       </div>
     </TooltipProvider>

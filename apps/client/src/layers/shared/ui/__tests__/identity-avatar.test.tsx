@@ -77,6 +77,57 @@ describe('IdentityAvatar', () => {
     expect(screen.getByTestId('status-dot')).toBeInTheDocument();
   });
 
+  describe('the badge slot', () => {
+    /** The corner mark, when the disc drew one. */
+    function badgeOf(container: HTMLElement): HTMLElement | null {
+      return container.querySelector('[data-slot="identity-avatar"] > span:nth-of-type(2)');
+    }
+
+    it('marks an agent and leaves a person unmarked', () => {
+      // The whole convention in one assertion: absence is the signal. A badge
+      // that appeared on every identity would be a column of identical marks,
+      // and one reading "person" would put the burden of proof on the humans.
+      const { container: agent } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" badge={<span>⌁</span>} />
+      );
+      const { container: person } = render(<IdentityAvatar color="#7c3aed" fallback="P" />);
+
+      expect(badgeOf(agent)).toHaveTextContent('⌁');
+      expect(badgeOf(person)).toBeNull();
+    });
+
+    it('is decoration: no pointer events, and nothing in the accessibility tree', () => {
+      // A 10px target inside a 20px disc is a mis-tap on a touch screen, and
+      // the badge is not a control — the row's own text names the member.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" badge={<span>⌁</span>} />
+      );
+
+      expect(badgeOf(container)).toHaveClass('pointer-events-none');
+      expect(badgeOf(container)).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    it('scales off the disc rather than a fixed size, so 20px still reads', () => {
+      // jsdom reports every element as 0x0, so what can be pinned is the rule:
+      // both the plate and its glyph are `em` of the circle's own font size,
+      // the same way the fallback letter is. A fixed size here would be a
+      // smudge at `xs` — which is a 20px disc, and most of where this lands.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" size="xs" badge={<span>⌁</span>} />
+      );
+
+      expect(badgeOf(container)).toHaveClass('size-[1.35em]', 'text-[0.62em]');
+    });
+
+    it('draws its plate in the page background, so it reads over any disc tint', () => {
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" badge={<span>⌁</span>} />
+      );
+
+      expect(badgeOf(container)).toHaveClass('bg-background');
+    });
+  });
+
   it('contributes nothing to the accessibility tree on its own', () => {
     // An emoji has a spoken name nobody asked to hear; a caller that stands the
     // mark alone adds an sr-only label of its own.

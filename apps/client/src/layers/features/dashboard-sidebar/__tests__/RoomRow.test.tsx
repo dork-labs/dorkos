@@ -60,7 +60,7 @@ function oneToOne(agentPath: string): RoomSummary {
 const { mockRosterRef } = vi.hoisted(() => ({
   mockRosterRef: { current: null as unknown },
 }));
-vi.mock('@/layers/features/room-membership/model/use-agent-picker-candidates', () => ({
+vi.mock('@/layers/features/room-management/model/use-agent-picker-candidates', () => ({
   useAgentPickerCandidates: () => mockRosterRef.current,
 }));
 
@@ -273,10 +273,15 @@ describe('RoomRow surfaces opened from the menu', () => {
     });
     fireEvent.click(within(openDropdown()).getByText('Members…'));
 
-    const search = await screen.findByRole('combobox', { name: 'Search agents' });
-    expect(search).not.toHaveFocus();
+    const panel = await screen.findByRole('dialog');
+    await within(panel).findByRole('region', { name: 'Current members' });
+    // Adding is still one row at the foot of the roster: "Members…" asked for
+    // who is in here, so nothing has opened a field to type into.
+    expect(
+      within(panel).queryByRole('combobox', { name: 'Search agents' })
+    ).not.toBeInTheDocument();
     // …and focus is still inside the panel, not left behind on the sidebar.
-    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+    expect(panel.contains(document.activeElement)).toBe(true);
   });
 
   it('takes an added agent off the picker rather than offering to add it twice', async () => {
@@ -315,6 +320,33 @@ describe('RoomRow surfaces opened from the menu', () => {
     expect(transport.addRoomMember).toHaveBeenCalledTimes(1);
     // Bo was never picked and is still on offer.
     expect(picker().getAllByRole('option')).toHaveLength(1);
+  });
+});
+
+describe('RoomRow topic', () => {
+  it('opens the room sheet on the topic, cursor already in it', async () => {
+    // "Edit topic…" used to raise a modal holding one text field, over a room
+    // the reader was already looking at. It now opens the sheet with the topic
+    // line already in its editor. Crossing the menu seam matters: the menu
+    // closes a commit later and restores focus to its own trigger, which
+    // overwrites anything the field focused on mount.
+    const { transport } = renderRow(channel(), {
+      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roomWithRoster()) }),
+    });
+    fireEvent.click(within(openDropdown()).getByText('Edit topic…'));
+
+    // The sheet, not a dialog of its own: the roster is right there under it.
+    const panel = await screen.findByRole('dialog');
+    await within(panel).findByRole('region', { name: 'Current members' });
+
+    const input = within(panel).getByRole('textbox', { name: 'Topic' });
+    await waitFor(() => expect(input).toHaveFocus());
+    fireEvent.change(input, { target: { value: 'Clicker planning' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(transport.updateRoom).toHaveBeenCalledWith('room-1', { topic: 'Clicker planning' })
+    );
   });
 });
 

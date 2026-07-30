@@ -135,16 +135,18 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
       { timeout: STREAM_OPEN_MS }
     )
     .catch(() => {
-      // The same sentence the publish below would have thrown. A bare Playwright
-      // timeout here names `waitForFunction` and an anonymous predicate, which
-      // says nothing about which room never came up.
+      // A bare Playwright timeout here names `waitForFunction` and an anonymous
+      // predicate, which says nothing about which room never came up. The
+      // sentence is deliberately NOT the one the publish below throws: never
+      // opening and closing mid-flight are different failures, and reporting the
+      // same words for both sends the reader to the wrong place.
       throw new Error('The room stream is not open yet — nothing to publish onto.');
     });
   await page.evaluate(
     (frame) => {
       const tap = (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } })
         .__roomStream;
-      if (!tap?.push) throw new Error('The room stream is not open yet — nothing to publish onto.');
+      if (!tap?.push) throw new Error('The room stream closed before this signal could be sent.');
       tap.push(frame);
     },
     `event: signal\ndata: ${JSON.stringify(event)}\n\n`

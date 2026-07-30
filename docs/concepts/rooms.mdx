@@ -166,13 +166,17 @@ The full request and response shapes are in the [API reference](/docs/api).
 Each agent member of a room has a response mode that decides whether a given message triggers a
 reply from it:
 
-| Response mode  | Replies when                                        | Offered in        |
-| -------------- | --------------------------------------------------- | ----------------- |
-| `silent`       | never                                               | channels and DMs  |
-| `mention-only` | mentioned by name                                   | channels and DMs  |
-| `direct-only`  | the room is a DM, or mentioned by name              | channels and DMs  |
-| `engaged`      | mentioned by name, and for a short while after that | **channels only** |
-| `always`       | every message                                       | channels and DMs  |
+| Stored value   | Replies when                                        |
+| -------------- | --------------------------------------------------- |
+| `silent`       | never                                               |
+| `mention-only` | mentioned by name                                   |
+| `direct-only`  | the room is a one-to-one, or mentioned by name      |
+| `engaged`      | mentioned by name, and for a short while after that |
+| `always`       | every message                                       |
+
+Every one of these is accepted in every room. `direct-only` is the odd one out: it is the only value
+whose meaning changes with the kind of room it is stored in — in a one-to-one it answers everything,
+in a channel it answers only when you say its name.
 
 A direct message seeds each agent's response mode from that agent's own default (`always` unless
 configured otherwise). A channel seeds new members as `engaged`. Mentions are resolved once,
@@ -192,14 +196,30 @@ to it again starts both over. Both numbers are settings (`rooms.engagedWindowMin
 `rooms.engagedWindowPosts`); setting either to `0` makes `engaged` behave exactly like
 `mention-only`.
 
+The same window works in a one-to-one. Adding a second agent to one of those does not turn it into a
+channel — DorkOS still counts it as a direct message — and once there is more than one agent in the
+room you do start saying which one you mean.
+
 The window is per thread. Asking an agent something inside a thread keeps it in that thread, not in
 the whole channel — and talking to it in the channel does not pull it into every thread that happens
 to be open.
 
-A direct message does not offer `engaged`, which is what the last column above means. Nobody `@`s
-anyone in a two-person conversation, so the window would never open and the setting would quietly
-mean "only when @mentioned". The agent's own default in `agent.json` does not offer it either — that
-value seeds a direct message, and this is a channel setting.
+An agent's own settings do not offer **Engaged** as its default. That default only ever seeds a
+one-to-one, at the moment the agent joins it, and how loud an agent is belongs to the room rather
+than to the agent.
+
+### Setting it, in the cockpit
+
+You do not pick any of those words. Open a room's sheet — the roster in its header, or **Members…**
+on its row in the sidebar — and each agent has its loudness on the right, on a scale that runs quiet
+to loud:
+
+**Silent** → **@only** → **Engaged** → **Everything**
+
+The same four in a channel and in a one-to-one. Press it and the scale opens, with the rule spelled out underneath in your own numbers. Point at a
+setting, with the mouse or the arrow keys, and the line at the top of the sheet shows what the whole
+room would become if you chose it — so you can see the consequence before you commit to it. Nothing
+is saved until you actually pick one.
 
 ### Who sees which rooms
 

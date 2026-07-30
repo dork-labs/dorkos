@@ -1,0 +1,221 @@
+/**
+ * A line of text you edit by pressing it.
+ *
+ * @module features/room-management/ui/InlineTextField
+ */
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { Pencil } from 'lucide-react';
+import { cn } from '@/layers/shared/lib';
+
+export interface InlineTextFieldProps {
+  /** What is stored today, or `''` when there is nothing yet. */
+  value: string;
+  /**
+   * Write the trimmed text.
+   *
+   * Called at most once per edit, and never with text that changes nothing —
+   * see {@link InlineTextField} for the guard that makes both true.
+   */
+  onCommit: (next: string) => void;
+  /** Longest the server accepts, so typing stops there instead of failing later. */
+  maxLength: number;
+  /** What this line is, in a word or two: `Room name`, `Topic`. */
+  label: string;
+  /** What the line says when nothing is stored yet. Never blank space. */
+  placeholder: string;
+  /**
+   * Whether emptying the field means something.
+   *
+   * A topic can be removed, so `''` is a real edit there. A room with no name
+   * is not a room, so an empty name is simply a cancel.
+   */
+  commitEmpty?: boolean;
+  /**
+   * Open straight into the editor, for an entry point that named this field.
+   *
+   * The menu item that used to raise a modal for this one value lands here
+   * instead, and landing on a line you then have to press would be a worse
+   * version of the modal rather than a better one.
+   */
+  startEditing?: boolean;
+  /**
+   * The editor, handed back so whatever holds this can place the cursor.
+   *
+   * Focus is the container's to give. A menu closing behind a dialog restores
+   * focus to its own trigger a commit later, so anything focused from in here
+   * is simply overwritten; focus placed by the dialog is inside its focus scope,
+   * which Radix defends against exactly that.
+   */
+  inputRef?: RefObject<HTMLInputElement | null>;
+  /** Applied to the line AND the editor, so the text does not resize mid-edit. */
+  className?: string;
+}
+
+/**
+ * Press the text, type, Enter commits, Escape cancels.
+ *
+ * **The commit guard is the whole difficulty.** Enter commits and blurs, and the
+ * blur handler commits too — so a single Enter used to write twice, and a
+ * double-Enter three times. `committedRef` makes the first Enter or Escape the
+ * only one that decides; everything after it is a no-op. That pattern is
+ * `RoomRow`'s, where it fixed a real double-write, and it is copied here rather
+ * than reinvented.
+ *
+ * **Focus is handed back to the line the editor replaced.** Without it the
+ * editor unmounts under the cursor and focus falls to `<body>`, dropping a
+ * keyboard reader out of the sheet entirely — they would have to Tab in from
+ * the top of the page to reach the field they just edited.
+ *
+ * **Touch gets a visible affordance.** Pressing bare text to edit it is a
+ * pointer idiom that a finger has no way to discover, so the pencil is always
+ * drawn below 768px and the line is a full 44px tall there. Above it the pencil
+ * appears on hover or keyboard focus, where the cursor already says the line is
+ * live.
+ */
+export function InlineTextField({
+  value,
+  onCommit,
+  maxLength,
+  label,
+  placeholder,
+  commitEmpty = false,
+  startEditing = false,
+  inputRef,
+  className,
+}: InlineTextFieldProps) {
+  const [isEditing, setIsEditing] = useState(startEditing);
+  /**
+   * What has been TYPED, or `null` while nothing has been.
+   *
+   * Seeding this with `value` looks simpler and is wrong for one entry point:
+   * an edit that begins on mount — `startEditing` — is seeded from whatever the
+   * caller was holding, and the sheet opens on the summary its caller already
+   * had while the detail read is still in flight. A stale seed then commits the
+   * old text over the new one on Enter. Left `null`, an untouched draft simply
+   * IS the freshest value, and the first keystroke is what makes it the
+   * reader's — after which a value moving underneath (a rename in another
+   * window) can no longer rewrite what is under the cursor.
+   *
+   * `''` is a typed value, not an empty one: clearing the field is a real edit
+   * where {@link InlineTextFieldProps.commitEmpty} says it is.
+   */
+  const [typed, setTyped] = useState<string | null>(null);
+  const draft = typed ?? value;
+  const ownRef = useRef<HTMLInputElement>(null);
+  const fieldRef = inputRef ?? ownRef;
+  const lineRef = useRef<HTMLButtonElement>(null);
+  /** Whether this edit has already been decided. First Enter or Escape wins. */
+  const committedRef = useRef(false);
+
+  /**
+   * Put the cursor in the editor the moment there is one, and select what it
+   * holds.
+   *
+   * **`fieldRef` is a real dependency, not a lint concession.** It is
+   * `inputRef ?? ownRef` rather than a `useRef` result, so a caller handing
+   * over a different ref object is naming a different editor and this effect
+   * should follow it there. Both branches are stable at every call site today,
+   * so in practice it still runs once per edit — but it is written to be safe
+   * if one ever is not, which is why the "has this edit been decided" flag is
+   * reset where an edit BEGINS rather than in here.
+   *
+   * The node is read here rather than inside the frame, because it is already
+   * mounted by the time an effect runs: the deferral is about WHEN focus is
+   * taken, not about when the field exists. A frame late is what lets it win —
+   * a dialog opening around this field places focus from `onOpenAutoFocus` in
+   * the same commit, and the field it lands on is the one this then selects.
+   */
+  useEffect(() => {
+    if (!isEditing) return;
+    const field = fieldRef.current;
+    requestAnimationFrame(() => {
+      field?.focus();
+      field?.select();
+    });
+  }, [isEditing, fieldRef]);
+
+  const beginEditing = () => {
+    // Nothing typed yet, so this edit starts on whatever is stored now — see
+    // {@link typed}. Cleared rather than seeded, so the last edit's text cannot
+    // arrive in this one.
+    setTyped(null);
+    // A new edit has not been decided yet. An edit that starts on mount —
+    // `startEditing` — is covered by the ref's own initial value.
+    committedRef.current = false;
+    setIsEditing(true);
+  };
+
+  const endEditing = () => {
+    setIsEditing(false);
+    requestAnimationFrame(() => lineRef.current?.focus());
+  };
+
+  const commit = () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    endEditing();
+    const trimmed = draft.trim();
+    if (trimmed === value) return;
+    if (trimmed === '' && !commitEmpty) return;
+    // No per-call `onError`: the shared mutation toast names the action from the
+    // hook's `meta` and appends the server's own sentence.
+    onCommit(trimmed);
+  };
+
+  const cancel = () => {
+    committedRef.current = true;
+    endEditing();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      cancel();
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <input
+        ref={fieldRef}
+        value={draft}
+        maxLength={maxLength}
+        aria-label={label}
+        onChange={(event) => setTyped(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={commit}
+        className={cn(
+          'bg-background text-foreground focus-visible:ring-ring w-full min-w-0 rounded border px-1.5 py-0.5 outline-hidden focus-visible:ring-1',
+          className
+        )}
+      />
+    );
+  }
+
+  const isEmpty = value === '';
+  return (
+    <button
+      ref={lineRef}
+      type="button"
+      onClick={beginEditing}
+      className={cn(
+        'group/inline focus-visible:ring-ring flex min-h-11 w-full items-center gap-1.5 rounded text-left outline-hidden focus-visible:ring-2 md:min-h-0',
+        className
+      )}
+    >
+      {/* The action, so the control is not named by data alone — and the value
+          stays in the name, which is what voice control needs to reach it. */}
+      <span className="sr-only">{label}:</span>
+      <span className={cn('truncate', isEmpty && 'text-muted-foreground font-normal')}>
+        {isEmpty ? placeholder : value}
+      </span>
+      <Pencil
+        aria-hidden
+        className="size-3.5 shrink-0 transition-opacity md:opacity-0 md:group-hover/inline:opacity-100 md:group-focus-visible/inline:opacity-100"
+      />
+    </button>
+  );
+}

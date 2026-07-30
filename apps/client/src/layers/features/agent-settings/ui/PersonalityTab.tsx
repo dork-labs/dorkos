@@ -223,15 +223,23 @@ export function PersonalityTab({
               </SelectTrigger>
               {/*
                 Four of the enum's five to CHOOSE from, and the fifth appears
-                only when it is already stored — the same rule
-                `responseModeOptionsFor` applies to a direct message's roster,
+                only when it is already stored. Same instinct as the room
+                roster's rung scale (`entities/room/lib/response-mode.ts`),
+                which narrows what may be picked and never what can be shown,
                 for the same two reasons.
 
                 Not offered: `engaged` is a room disposition that decays over a
                 room's log, and the only thing this manifest value does is seed
-                a DIRECT MESSAGE membership, where there is no window to be in
-                and it would behave as "only when mentioned" wearing a different
-                name. A person picks `engaged` per room, in the members panel.
+                a DIRECT MESSAGE membership — one room, at join time, which is
+                a strange thing to set from an agent's own settings. A person
+                picks `engaged` per room, in the room sheet, where the sentence
+                under it quotes this install's own window.
+
+                It is a real setting there, not a degenerate one: the engaged
+                window opens in a direct message exactly as it does in a
+                channel (`room-trigger.ts` gates `engagementFor` on nothing).
+                Whether this select should offer it too is a product question
+                nobody has answered yet.
 
                 Not hidden either: `UpdateAgentRequestSchema` `.pick()`s
                 `behavior` off the manifest whole, so `PATCH /api/mesh/agents/:id`

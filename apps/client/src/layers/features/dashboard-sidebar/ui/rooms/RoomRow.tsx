@@ -36,8 +36,7 @@ import {
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
 import { RoomRowMenuItems } from './RoomRowMenuItems';
-import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
-import { RoomTopicDialog } from './RoomTopicDialog';
+import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
 
 /** Longest room name the server accepts (`UpdateRoomRequestSchema.title`). */
 const MAX_NAME = 200;
@@ -75,8 +74,10 @@ interface RoomRowProps {
  * The actions live in {@link RoomRowMenuItems}, which builds them once and
  * renders the same list into the right-click ContextMenu and the "…"
  * DropdownMenu. Rename is an inline editor on the row itself, matching the
- * gesture the sidebar already uses for naming a group; the topic editor and the
- * members panel are modals, because neither fits in a sidebar's width.
+ * gesture the sidebar already uses for naming a group. Everything else opens
+ * the room sheet — including "Edit topic…", which used to raise a modal of its
+ * own for one text field; the sheet is where the topic is now written, and this
+ * menu item is one of its doors.
  */
 export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }: RoomRowProps) {
   const isMobile = useIsMobile();
@@ -88,8 +89,7 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(room.title);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [topicOpen, setTopicOpen] = useState(false);
-  const [membersIntent, setMembersIntent] = useState<MembersDialogIntent | null>(null);
+  const [detailsFocus, setDetailsFocus] = useState<RoomDetailsFocus | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLButtonElement>(null);
   const committedRef = useRef(false);
@@ -102,6 +102,12 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
   // "Rename…" mounts an inline editor, and the launching menu closes in a SECOND
   // commit whose focus restore would blur it — blur-cancelling the editor before
   // anyone sees it (DOR-329). Armed by startRename, wired onto BOTH contents.
+  //
+  // "Edit topic…" needs the same guard for the same reason, one layer further
+  // out: it opens the room sheet with the topic already in its editor, and that
+  // editor blur-commits. Without arming, the menu's restore closed it in the
+  // commit after it appeared and the reader was left looking at a topic line
+  // they had just asked to type in.
   const { arm: armCloseFocusGuard, onCloseAutoFocus } = useMenuCloseFocusGuard();
 
   useEffect(() => {
@@ -211,11 +217,14 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
     hasUnread: unread,
     soleAgentPath,
     onMarkRead: handleMarkRead,
-    onAddAgents: () => setMembersIntent('add'),
-    onOpenMembers: () => setMembersIntent('roster'),
+    onAddAgents: () => setDetailsFocus('add'),
+    onOpenMembers: () => setDetailsFocus('members'),
     onOpenAgentProfile,
     onRename: startRename,
-    onEditTopic: () => setTopicOpen(true),
+    onEditTopic: () => {
+      armCloseFocusGuard();
+      setDetailsFocus('topic');
+    },
     onArchive: () => setArchiveOpen(true),
   };
 
@@ -324,18 +333,15 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Mounted only while open: a closed dialog would still hold state seeded
-          from a room that has since changed under it, and every room row in the
-          sidebar would carry two of them. */}
-      {topicOpen && (
-        <RoomTopicDialog room={room} open onOpenChange={(next) => !next && setTopicOpen(false)} />
-      )}
-      {membersIntent !== null && (
-        <RoomMembersDialog
+      {/* Mounted only while open: a closed sheet would still hold a roster from
+          before the last change, and every room row in the sidebar would carry
+          one of them. */}
+      {detailsFocus !== null && (
+        <RoomDetailsDialog
           room={room}
           open
-          onOpenChange={(next) => !next && setMembersIntent(null)}
-          intent={membersIntent}
+          onOpenChange={(next) => !next && setDetailsFocus(null)}
+          focus={detailsFocus}
         />
       )}
     </SidebarMenuItem>

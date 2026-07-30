@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { Radio } from 'lucide-react';
+import { Bot, Radio } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -207,6 +207,23 @@ export function DataDisplayShowcases() {
               <div key={size} className="flex flex-col items-center gap-2">
                 <IdentityAvatar color="#6366f1" emoji="🔍" size={size} />
                 <IdentityAvatar color="#6366f1" fallback="R" size={size} />
+                <span className="text-muted-foreground text-[10px]">{size}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Badge — agents get the glyph, people get nothing</ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* Every size, because the badge has to survive the smallest one:
+              `xs` is a 20px disc and it is where most of these end up — a
+              picker row, a sidebar line. If the mark is a smudge here it is
+              unusable, whatever it looks like at `lg`. */}
+          <div className="flex items-end gap-4">
+            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+              <div key={size} className="flex flex-col items-center gap-2">
+                <IdentityAvatar color="#6366f1" emoji="🔍" size={size} badge={<Bot />} />
+                <IdentityAvatar color="#10b981" fallback="P" size={size} />
                 <span className="text-muted-foreground text-[10px]">{size}</span>
               </div>
             ))}

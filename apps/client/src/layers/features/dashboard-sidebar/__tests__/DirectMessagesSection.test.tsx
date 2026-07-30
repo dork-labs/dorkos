@@ -12,6 +12,22 @@ import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { DirectMessagesSection } from '../ui/rooms/DirectMessagesSection';
 
 /**
+ * What a screen reader reads out for each offered agent, in order.
+ *
+ * Raw `textContent` would pick up the face the picker now draws — an emoji, or
+ * a fallback letter — which is `aria-hidden` and is not part of what is
+ * announced. Reading it made the list assert "AAna" for an agent called Ana.
+ * Same helper, same reason, as `AgentChipPicker.test.tsx`.
+ */
+function optionNames(): string[] {
+  return screen.getAllByRole('option').map((option) => {
+    const clone = option.cloneNode(true) as HTMLElement;
+    for (const hidden of clone.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+    return clone.textContent?.trim() ?? '';
+  });
+}
+
+/**
  * The fleet the membership surfaces read for themselves.
  *
  * Mocked at the hook rather than injected as a prop, because these components
@@ -23,7 +39,7 @@ import { DirectMessagesSection } from '../ui/rooms/DirectMessagesSection';
 const { mockRosterRef } = vi.hoisted(() => ({
   mockRosterRef: { current: null as unknown },
 }));
-vi.mock('@/layers/features/room-membership/model/use-agent-picker-candidates', () => ({
+vi.mock('@/layers/features/room-management/model/use-agent-picker-candidates', () => ({
   useAgentPickerCandidates: () => mockRosterRef.current,
 }));
 
@@ -274,7 +290,7 @@ describe('DirectMessagesSection', () => {
     });
     openPicker();
 
-    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Ana']);
+    expect(optionNames()).toEqual(['Ana']);
   });
 
   it('opens ONE conversation with everyone picked, titled after them', () => {
@@ -297,10 +313,10 @@ describe('DirectMessagesSection', () => {
     renderSection({ __fleet: settledFleet({ '/repo/ana': 'Ana', '/repo/bo': 'Bo' }) });
     openPicker();
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
-    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Bo']);
+    expect(optionNames()).toEqual(['Bo']);
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
-    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Ana', 'Bo']);
+    expect(optionNames()).toEqual(['Ana', 'Bo']);
   });
 
   it('assembles and opens a conversation from the keyboard alone', () => {
@@ -404,7 +420,7 @@ describe('DirectMessagesSection', () => {
 
     rerender(section({ __fleet: settledFleet({ '/repo/ana': 'Ana', '/repo/cy': 'Cy' }) }));
     // Cy is still offerable, so this is a vanished AIM and not an empty list.
-    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Cy']);
+    expect(optionNames()).toEqual(['Cy']);
 
     fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -475,7 +491,7 @@ describe('DirectMessagesSection', () => {
 
     openPicker();
     expect(screen.queryByRole('button', { name: 'Remove Ana' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Ana', 'Bo']);
+    expect(optionNames()).toEqual(['Ana', 'Bo']);
   });
 
   it('will not open a conversation with nobody in it', () => {
@@ -497,10 +513,7 @@ describe('DirectMessagesSection', () => {
     openPicker();
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'ana' } });
 
-    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual([
-      'Ana (alpha)',
-      'Ana (beta)',
-    ]);
+    expect(optionNames()).toEqual(['Ana (alpha)', 'Ana (beta)']);
   });
 
   it('says so when nothing matches what was typed', () => {

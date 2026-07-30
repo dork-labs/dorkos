@@ -21,6 +21,7 @@ import {
   SETTINGS_SECTIONS,
   MARKETPLACE_SECTIONS,
   GEN_UI_SECTIONS,
+  ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
@@ -65,6 +66,7 @@ describe('playground-registry', () => {
       ...SETTINGS_SECTIONS,
       ...MARKETPLACE_SECTIONS,
       ...GEN_UI_SECTIONS,
+      ...ROOMS_SECTIONS,
       ...TOUR_SPOTLIGHT_SECTIONS,
     ];
     expect(PLAYGROUND_REGISTRY).toEqual(combined);
