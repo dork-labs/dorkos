@@ -63,6 +63,20 @@ const LEVEL_OF_RUNG: Record<ResponseRung, Exclude<LoudnessLevel, 0>> = {
 };
 
 /**
+ * Where one agent sits on the same four-bar meter the room does.
+ *
+ * The quietest rung still lights a bar: it is a POSITION on a scale, not an
+ * absence, and an unlit meter beside the word `Silent` would read as a control
+ * that had failed to load. An unlit meter is the room's answer alone — see
+ * {@link LoudnessLevel}.
+ *
+ * @param rung - The rung to place.
+ */
+export function levelOfRung(rung: ResponseRung): Exclude<LoudnessLevel, 0> {
+  return LEVEL_OF_RUNG[rung];
+}
+
+/**
  * Counts read as words up to nine, then as digits.
  *
  * Index `0` is unreachable — a room with nobody answering says so in its own

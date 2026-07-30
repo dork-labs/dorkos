@@ -52,8 +52,12 @@ export type {
   ResponseRungOption,
   RungExplanation,
 } from './lib/response-mode';
-export { roomLoudness, previewLoudness } from './lib/loudness';
+export { roomLoudness, previewLoudness, levelOfRung } from './lib/loudness';
 export type { LoudnessLevel, RoomLoudness } from './lib/loudness';
+export { LoudnessMeter } from './ui/LoudnessMeter';
+export type { LoudnessMeterProps } from './ui/LoudnessMeter';
+export { ResponseModeControl } from './ui/ResponseModeControl';
+export type { ResponseModeControlProps } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { MemberList } from './ui/MemberList';
