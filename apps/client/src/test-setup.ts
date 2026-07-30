@@ -1,7 +1,71 @@
 /// <reference types="@testing-library/jest-dom" />
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
-import { vi } from 'vitest';
+import { afterAll, afterEach, vi } from 'vitest';
+
+// React work must not outlive the test that scheduled it.
+//
+// The failure it prevents, seen twice in CI and never locally: every test in
+// `@dorkos/client` passes, and the run still fails with one unhandled error —
+//
+//   ReferenceError: window is not defined
+//     at performWorkOnRootViaSchedulerTask (react-dom-client.development.js)
+//     at performWorkUntilDeadline (scheduler.development.js)
+//     at process.processImmediate (node:internal/timers)
+//
+// — attributed to a different test file each time, because it is a race, not a
+// bad test. React's scheduler queues its work loop with `setImmediate` (jsdom
+// exposes it, so React prefers it over MessageChannel), and the first thing
+// `performWorkOnRootViaSchedulerTask` reads is the bare global `window`. Vitest
+// deletes that global when it tears the jsdom environment down — measured here
+// at roughly nine immediate ticks after a file's last hook, with the worker
+// still alive and still draining immediates. Any React task still queued at
+// that moment fires into a dead window.
+//
+// Instrumenting a full run showed 26 of 643 files ending with exactly one
+// queued `performWorkUntilDeadline`, and 146 leaving their React trees mounted
+// (Vitest runs without `globals`, so `typeof afterEach === 'undefined'` at
+// import time and Testing Library never registers its own auto-cleanup). So the
+// discipline is both halves, in order:
+//
+//   1. Unmount every tree, so nothing can schedule more work.
+//   2. Yield one immediate tick. Immediates are FIFO, so anything React already
+//      queued runs here — while `window` still exists.
+//
+// Hooks registered in a setup file run last (Vitest unwinds hooks in reverse
+// registration order), so a file's own cleanup happens before this flush. The
+// `afterAll` pass is a second drain tick: React's work loop re-queues itself
+// when it runs past its 5ms frame budget, so one file-final tick can end with
+// its continuation still queued.
+//
+// The immediate is captured here, at setup time, on purpose: `vi.useFakeTimers()`
+// swaps the global one out, and a flush that queued into a frozen clock would
+// hang until the hook times out. React's scheduler captured the real one at its
+// own module load for the same reason, so this drains the queue React uses.
+const scheduleImmediate = globalThis.setImmediate;
+const flushScheduledWork = () => new Promise<void>((resolve) => scheduleImmediate(resolve));
+
+afterEach(async () => {
+  // Testing Library is imported here, not at the top, so that a test file with
+  // no React in it does not pay to load react-dom (~120ms of setup per file
+  // when this was a static import). Testing Library renders into containers it
+  // appends to `document.body` — including `renderHook` — so an empty body
+  // means nothing was mounted. Two things would falsify that: passing `render`
+  // its own `container`, which no test here does; and a file that empties the
+  // body itself, which detaches its trees without unmounting them and leaves
+  // this guard reading false — those files call `cleanup()` before the wipe.
+  // Some files opt into `@vitest-environment node`, where there is no document
+  // at all.
+  if (typeof document !== 'undefined' && document.body.firstChild) {
+    const { cleanup } = await import('@testing-library/react');
+    cleanup();
+  }
+  await flushScheduledWork();
+});
+
+afterAll(async () => {
+  await flushScheduledWork();
+});
 
 // jsdom has no ResizeObserver; components that observe size (e.g. the canvas
 // image zoom/pan surface) need a no-op polyfill to render under test.

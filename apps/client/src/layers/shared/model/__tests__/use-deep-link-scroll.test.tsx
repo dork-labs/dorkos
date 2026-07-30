@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, cleanup } from '@testing-library/react';
 import { useDeepLinkScroll } from '../use-deep-link-scroll';
 
 /**
@@ -24,6 +24,10 @@ describe('useDeepLinkScroll', () => {
   });
 
   afterEach(() => {
+    // Unmount first: wiping the body only detaches the rendered trees, and a
+    // detached tree is still mounted — the shared cleanup in `test-setup.ts`
+    // looks for React containers in the body and would find nothing to do.
+    cleanup();
     document.body.innerHTML = '';
     vi.restoreAllMocks();
   });
