@@ -219,13 +219,14 @@ describe('ResponseModeControl', () => {
   });
 
   describe('the rung list, below 768px', () => {
-    it('runs loud to quiet, top to bottom', () => {
-      // Louder is up on this axis, which is the direction the meter's own bars
-      // grow. Red if the vertical list is ever silently reordered to match the
-      // horizontal one, which would point loudness downwards.
+    it('runs quiet to loud, top to bottom — the same direction as the segments', () => {
+      // One control must not have two directions. This list shipped reversed,
+      // on the argument that the meter's bars grow upward; resizing a window
+      // then physically turned the four options over as the layout crossed
+      // 768px. Red if either rendering is ever ordered on its own again.
       renderControl({ on: 'phone' });
 
-      expect(rungLabels()).toEqual(['Everything', 'Engaged', '@only', 'Silent']);
+      expect(rungLabels()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
     });
 
     it('shows every consequence at once, which is what replaces the hover', () => {

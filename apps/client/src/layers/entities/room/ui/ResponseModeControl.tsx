@@ -75,10 +75,13 @@ export interface ResponseModeControlProps {
  * segmented control that is the one line under it, which follows whichever rung
  * the keyboard is on; in the list it is each row's own second line.
  *
- * **The list runs loud at the top.** The horizontal control runs quiet to loud
- * left to right; a vertical one that did the same would put the loudest rung at
- * the bottom, pointing the opposite way from the meter's own bars, which grow
- * upward. Each axis keeps louder in the direction that axis already means it.
+ * **Both renderings run quiet to loud, and that is not negotiable.** The list
+ * shipped reversed for one release, on the argument that the meter's bars grow
+ * upward so louder should be up. The argument is wrong the moment a window is
+ * resized: the same four options would physically turn over as the layout
+ * crossed 768px, so a reader who learned the order on a laptop would find it
+ * inverted on a phone. One control, one direction — first is quietest, wherever
+ * it is drawn.
  */
 export function ResponseModeControl({
   memberName,
@@ -105,7 +108,6 @@ export function ResponseModeControl({
   // on one this room offers, so there is no value that leaves the group without
   // a tab stop or the reader without a selection to see.
   const selected = rungOf(modeForRung(value, roomKind), roomKind);
-  const order = isMobile ? [...offered].reverse() : offered;
   const focused = aimed ?? selected;
 
   useEffect(() => {
@@ -115,11 +117,11 @@ export function ResponseModeControl({
     buttons.current.get(aimed)?.focus();
   }, [aimed]);
 
-  /** Move the aim by `step` through the rendered order, wrapping at both ends. */
+  /** Move the aim by `step` through the rungs, wrapping at both ends. */
   function moveAim(step: 1 | -1) {
-    const index = order.findIndex((option) => option.rung === focused);
-    const next = (index + step + order.length) % order.length;
-    setAimed(order[next]!.rung);
+    const index = offered.findIndex((option) => option.rung === focused);
+    const next = (index + step + offered.length) % offered.length;
+    setAimed(offered[next]!.rung);
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -138,11 +140,11 @@ export function ResponseModeControl({
         return;
       case 'Home':
         event.preventDefault();
-        setAimed(order[0]!.rung);
+        setAimed(offered[0]!.rung);
         return;
       case 'End':
         event.preventDefault();
-        setAimed(order[order.length - 1]!.rung);
+        setAimed(offered[offered.length - 1]!.rung);
     }
   }
 
@@ -186,7 +188,7 @@ export function ResponseModeControl({
         data-slot="response-mode-control"
         className={cn('divide-border border-input divide-y rounded-lg border', className)}
       >
-        {order.map((option) => {
+        {offered.map((option) => {
           const checked = option.rung === selected;
           const consequenceId = `${groupId}-${option.rung}`;
           return (
@@ -239,7 +241,7 @@ export function ResponseModeControl({
   return (
     <div {...group} data-slot="response-mode-control" className={className}>
       <div className="border-input flex overflow-hidden rounded-md border">
-        {order.map((option) => {
+        {offered.map((option) => {
           const checked = option.rung === selected;
           return (
             <button

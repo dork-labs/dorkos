@@ -56,8 +56,11 @@ export interface AddRoomMemberInput {
  * the conversation you were in the middle of (spec `rooms` §12.4).
  *
  * `responseMode` is left to the server, which seeds it from the room kind: the
- * agent's manifest default for a direct message, `mention-only` for a channel,
- * so a new arrival in a busy channel does not start answering everything.
+ * agent's manifest default for a direct message, `engaged` for a channel
+ * (`CHANNEL_RESPONSE_MODE` in `services/rooms/room-roster.ts`). `engaged` is
+ * the only bounded choice — `mention-only` taxes a person with an `@` on every
+ * single message, and `always` is agent dominance by construction — so a new
+ * arrival answers when it is spoken to and then decays back to quiet.
  */
 export function useAddRoomMember(): UseMutationResult<RoomRosterEntry, Error, AddRoomMemberInput> {
   const transport = useTransport();
