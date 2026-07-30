@@ -48,6 +48,16 @@
  *    defaults — to the cascade guard and to every room-mate reading
  *    `room_context.working` (room-presence spec §3.1).
  *
+ * 5. **The room says who is working, for exactly as long as it is true.** The
+ *    claim map is also the working indicator a person sees, published on the
+ *    room's ephemeral signal channel as it changes and re-stated every ten
+ *    seconds while it lasts. There is no second source: no route, no tool and no
+ *    model can turn an indicator on, and every release is a claim's release, so
+ *    an indicator cannot outlive the work it describes. That is the mechanical
+ *    honesty `meta/agent-etiquette.md` E16 asks for, and it is why the publishes
+ *    live in {@link RoomTriggerDispatcher.holdClaim} and
+ *    {@link RoomTriggerDispatcher.releaseClaim} rather than at each terminal.
+ *
  * The turn itself is behind {@link RoomTurnRunner}, so this file has no
  * knowledge of sessions, runtimes or locks — `room-turn-runner.ts` holds that,
  * and a test supplies a runner that answers immediately.
@@ -56,7 +66,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
-import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
+import type {
+  Room,
+  RoomEntry,
+  RoomEntryBody,
+  RoomPresencePayload,
+  RoomPresenceState,
+} from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import type { AuthorRegistry } from './author-registry.js';
@@ -207,7 +223,43 @@ export interface RoomTriggerDeps {
    * shortening the window in Settings has to bind the very next message.
    */
   engagedWindow(): EngagedWindow;
+  /**
+   * Put one agent's working state on the room's stream — live only, never
+   * logged.
+   *
+   * Deliberately NARROWER than the `RoomService.publishSignal` it is wired to at
+   * construction, which keeps a `signal` parameter because it mirrors the
+   * community port. Here the signal is always `progress` (room-presence spec §1:
+   * reuse the relay's vocabulary, never mint a name; `typing` is not used because
+   * agents do not type, they work), so passing it would be a parameter with one
+   * correct value and several wrong ones. The rule is a type instead of a
+   * comment, and the payload is required rather than optional because a presence
+   * publish that omits it is an indicator no client can key, age, or clear.
+   */
+  publishPresence(roomId: string, authorId: string, presence: RoomPresencePayload): void;
 }
+
+/**
+ * How often a live claim re-states itself on the room's stream.
+ *
+ * Signals never replay, so a client that opens a room in the middle of a turn
+ * would otherwise see nothing until that turn ended — up to an hour of a room
+ * that looks idle while an agent works. The loop makes presence self-healing:
+ * within one interval of connecting, reconnecting, or recovering a stalled
+ * stream, a client is repainted from live state alone.
+ *
+ * It is also half the crash guard. Claims are memory-only, so a server that dies
+ * mid-turn simply stops re-stating them, and the client's own TTL (three of
+ * these intervals) clears the indicator seconds later. Nothing has to be
+ * persisted, and nothing can be stranded by a process that never came back.
+ *
+ * Deliberately a constant and not configuration: it changes how quickly a stale
+ * indicator heals, never what the room does. Tuning it would be a knob with no
+ * honest guidance (room-presence spec §10). If dogfooding shows it wants tuning,
+ * that is evidence it was behaviour after all, and it graduates with the
+ * `adding-config-fields` lifecycle.
+ */
+const PRESENCE_REPUBLISH_MS = 10_000;
 
 /**
  * How many keys either notice memory holds before forgetting the oldest.
@@ -237,6 +289,16 @@ export class RoomTriggerDispatcher {
    * while every test still passed.
    */
   private readonly claimed = new Map<string, ActiveClaim>();
+
+  /**
+   * The republish loop, alive exactly while {@link RoomTriggerDispatcher.claimed}
+   * is non-empty.
+   *
+   * An install with no room in it, and a room where nobody is working, runs no
+   * timer at all — the loop is started by the first claim and cleared by the
+   * last release, rather than ticking over an empty map forever.
+   */
+  private republishing: NodeJS.Timeout | null = null;
 
   /**
    * `(room, cascade, author)` triples a CASCADE refusal notice has already
@@ -485,6 +547,13 @@ export class RoomTriggerDispatcher {
       break;
     }
 
+    // Bind every session BEFORE claiming any of them, in two passes rather than
+    // one. The binds are SQLite writes and can throw; the claims cannot. Taken in
+    // one pass, a failure on the second target left the first one claimed with no
+    // turn coming — which used to be a stale entry in a map, and is now an
+    // indicator saying an agent is working, re-stated every ten seconds forever.
+    // That is the one shape the client's TTL cannot rescue, because a republished
+    // claim never goes stale. Two passes make it unreachable instead of handled.
     for (const target of affordable) {
       // Bind the session HERE, not after the turn. Reading the binding inside
       // `runOne` and writing it on completion left a window: two posts before
@@ -499,7 +568,9 @@ export class RoomTriggerDispatcher {
         this.deps.store.getRoomSession(room.id, target.authorId) ?? randomUUID(),
         new Date().toISOString()
       );
-      this.claimed.set(claimKey(room.id, entry.cascadeRoot, target.authorId), {
+    }
+    for (const target of affordable) {
+      this.holdClaim({
         roomId: room.id,
         cascadeRoot: entry.cascadeRoot,
         authorId: target.authorId,
@@ -597,7 +668,15 @@ export class RoomTriggerDispatcher {
         // `deliverLate` had attached its handlers would be held by a promise
         // chain that never existed and released by nothing.
         const claim = this.claimed.get(key);
-        if (claim) claim.pastDeadline = true;
+        if (claim) {
+          claim.pastDeadline = true;
+          // The deadline's only announcement. It is deliberately not a notice:
+          // a durable line about every slow turn is a second message about every
+          // slow turn, and the late answer already says how long it took
+          // (room-presence spec §18). Published once here; every republish from
+          // now on carries `working_late` because it reads the same flag.
+          this.publishPresence(claim, 'working_late');
+        }
       }
       this.deliver({ room, entry, target, reply: result, sessionId: result.sessionId });
     } catch (err) {
@@ -615,10 +694,10 @@ export class RoomTriggerDispatcher {
       // `runner.run()` resolving is the end of the WAIT, which is only the end
       // of the TURN when the turn beat the deadline. A late turn is still
       // running and must still read as working — to the guard, to a room-mate
-      // reading `room_context.working`, and (once the publisher lands) to the
-      // person watching. {@link RoomTriggerDispatcher.deliverLate} releases it
-      // when the answer finally settles, whichever way it settles.
-      if (this.claimed.get(key)?.pastDeadline !== true) this.claimed.delete(key);
+      // reading `room_context.working`, and to the person watching.
+      // {@link RoomTriggerDispatcher.deliverLate} releases it when the answer
+      // finally settles, whichever way it settles.
+      if (this.claimed.get(key)?.pastDeadline !== true) this.releaseClaim(key);
     }
   }
 
@@ -652,6 +731,15 @@ export class RoomTriggerDispatcher {
     const said = reply.text?.trim();
     // An agent with nothing to say is exercising judgment, not failing. Only a
     // named `unanswered` above earns a notice.
+    //
+    // This is the ONE release with nothing durable beside it, and it is a choice
+    // rather than an oversight (room-presence spec §4.3): the person saw an
+    // indicator appear and vanish with no line to show for it. The alternatives
+    // are both worse — a "had nothing to say" entry on every ambient turn is the
+    // over-participation this whole file damps, and suppressing the indicator for
+    // turns that MIGHT end silent would mean knowing the future. `room-presence-
+    // claims.test.ts` pins it as chosen behaviour so it cannot be closed by
+    // accident.
     if (!said) return;
     const text =
       opts.late === undefined
@@ -686,7 +774,9 @@ export class RoomTriggerDispatcher {
    * until the process restarts. And it has to run AFTER the durable write above,
    * because the claim is the assertion that this agent owes the room something:
    * dropping it before the post or the notice is on the log is a promise
-   * withdrawn a moment before it is kept.
+   * withdrawn a moment before it is kept. Now that the release also publishes
+   * `done`, that ordering is what a person sees — the answer lands, and then the
+   * indicator goes, never the other way round.
    *
    * @param opts.late - The runner's promise of the eventual outcome.
    */
@@ -725,7 +815,7 @@ export class RoomTriggerDispatcher {
         this.reportSilence(opts.room, opts.entry, opts.target, 'failed');
       })
       .finally(() => {
-        this.claimed.delete(key);
+        this.releaseClaim(key);
         this.settleOne();
       });
   }
@@ -835,6 +925,105 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Take a claim, and tell the room the agent is on it.
+   *
+   * The publish is not a courtesy beside the write — it is the write's whole
+   * point. `presence is the claim map, made visible` (room-presence spec), so
+   * every path that takes a claim goes through here and there is nowhere else a
+   * `working` can come from.
+   *
+   * The `set` cannot silently evict a live claim, which is why nothing here has
+   * to release one: an author already claimed in a cascade is in the guard's
+   * in-flight union ({@link RoomTriggerDispatcher.claimsIn}), so it is refused
+   * before it can be selected a second time under the same key.
+   *
+   * @param claim - The claim being taken, already fully resolved.
+   */
+  private holdClaim(claim: ActiveClaim): void {
+    this.claimed.set(claimKey(claim.roomId, claim.cascadeRoot, claim.authorId), claim);
+    this.publishPresence(claim, 'working');
+    if (this.republishing === null) {
+      this.republishing = setInterval(() => this.republishPresence(), PRESENCE_REPUBLISH_MS);
+      // A heartbeat is not a reason for the process to stay alive: an unref'd
+      // interval lets a CLI that has finished exit while a room still holds a
+      // claim, instead of hanging for ten seconds at a time on a timer whose
+      // only job is to repaint a screen nobody is watching. Optional-called like
+      // its sibling in `room-turn-runner.ts`, which does not assume a Node timer.
+      this.republishing.unref?.();
+    }
+  }
+
+  /**
+   * Release a claim, and tell the room the agent is done.
+   *
+   * **Every terminal releases here and only here**, which is what makes the
+   * ordering rule structural rather than remembered: `deliver` and
+   * `reportSilence` have already returned by the time either `finally` calls
+   * this, so the durable entry that explains the release is on the stream before
+   * the indicator drops. A `done` published at each terminal instead would be
+   * four call sites, and the fifth — RP8's halt, which drops every pending claim
+   * — would have to remember to be the fifth.
+   *
+   * Releasing a key that is not held is a no-op rather than a throw, because
+   * {@link RoomTriggerDispatcher.runOne}'s `finally` reaches here on a path where
+   * the claim may already be gone. The map is the only record that an indicator
+   * is outstanding, so a `done` for a claim nobody holds would be an event about
+   * nothing — and on the client it would clear an indicator belonging to some
+   * other live claim for the same agent.
+   *
+   * @param key - The `(room, cascade, author)` key being released.
+   */
+  private releaseClaim(key: string): void {
+    const claim = this.claimed.get(key);
+    if (!claim) return;
+    this.claimed.delete(key);
+    this.publishPresence(claim, 'done');
+    if (this.republishing !== null && this.claimed.size === 0) {
+      clearInterval(this.republishing);
+      this.republishing = null;
+    }
+  }
+
+  /**
+   * Re-state every live claim, on the interval.
+   *
+   * **One event per CLAIM, not per agent** — deliberately, and differently from
+   * {@link RoomTriggerDispatcher.workingIn}, which collapses an agent's claims
+   * to one name. The two answer different questions. `workingIn` writes a
+   * sentence for a model to read, where "Ana, Ana" is noise. This writes the
+   * indicator's identity, `(room, author, entryId)`, and the client keys its
+   * store on exactly that so it can render one name while tracking both claims
+   * (room-presence spec §3.2, §5.1). Collapsing here would break the release: a
+   * `done` for one of an agent's two claims would be indistinguishable from a
+   * `done` for both, and DOR-752's double-cascade case would strand or
+   * prematurely clear an indicator that is still true.
+   */
+  private republishPresence(): void {
+    for (const claim of this.claimed.values()) {
+      this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
+    }
+  }
+
+  /**
+   * Put one claim's state on its room's ephemeral stream.
+   *
+   * `since` is the claim's OWN start on every publish, including the republishes
+   * and the `done`. An event that carried "now" would make an indicator reset its
+   * age every ten seconds, and a client that connected mid-turn could never learn
+   * how long the work has been running.
+   *
+   * @param claim - The claim this is about.
+   * @param state - Where it is in its life.
+   */
+  private publishPresence(claim: ActiveClaim, state: RoomPresenceState): void {
+    this.deps.publishPresence(claim.roomId, claim.authorId, {
+      state,
+      entryId: claim.entryId,
+      since: claim.claimedAt,
+    });
+  }
+
+  /**
    * Who is mid-turn in one room right now, whatever cascade they are answering.
    *
    * Presence, and only presence. An agent that can see a colleague is already on
@@ -921,10 +1110,12 @@ export class RoomTriggerDispatcher {
  *    everything downstream of it; it now carries the real cascade, so a message
  *    it addresses is triggered and a turn runs that previously did not.
  *
- * A fourth reader is next: the presence a room publishes to the person waiting,
- * which is why `entryId` and `sessionId` are recorded here rather than derived
- * later — by the time a turn ends, the entry it answered is no longer in hand
- * (room-presence spec §3.1).
+ * 4. {@link RoomTriggerDispatcher.publishPresence} — the working indicator a
+ *    person watching the room sees. It is why `entryId` is recorded here rather
+ *    than derived later: by the time a turn ends, the entry it answered is no
+ *    longer in hand, and `cascadeRoot` is not a substitute for it (room-presence
+ *    spec §3.1). `sessionId` is bound here for the same reason and stays
+ *    server-side — the signal deliberately does not carry it (§15 there).
  */
 interface ActiveClaim {
   roomId: string;

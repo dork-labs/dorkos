@@ -43,7 +43,7 @@
 import { z } from 'zod';
 import { ResponseModeSchema, type ResponseMode } from './mesh-schemas.js';
 import { SignalTypeSchema, type SignalType } from './relay-envelope-schemas.js';
-import { AuthorKindSchema, RoomKindSchema } from './room-schemas.js';
+import { AuthorKindSchema, RoomKindSchema, RoomPresenceStateSchema } from './room-schemas.js';
 
 // ---------------------------------------------------------------------------
 // 1. Addressing and identity
@@ -801,10 +801,17 @@ export type CommunityRoomClosedReason = z.infer<typeof CommunityRoomClosedReason
  * The shape mirrors the relay's own signal envelope (`state` + `data`), so the
  * port is not inventing a second vocabulary — it is carrying the one the relay
  * already has. Adapters map it to their native idiom and MUST NOT persist it.
+ *
+ * `state` is {@link RoomPresenceStateSchema}, shared with the rooms wire rather
+ * than restated, so the two can never drift apart. **Everything else here is
+ * optional where the rooms event requires it, deliberately**: a local room is the
+ * producer and always knows which entry is being worked on and since when, while
+ * a remote backend may only be able to say that somebody is working. Read the
+ * difference as the capability floor, not as this payload lagging behind.
  */
 export const CommunityPresencePayloadSchema = z.object({
   /** Where in the claim lifecycle the emitter is. */
-  state: z.enum(['working', 'working_late', 'done']),
+  state: RoomPresenceStateSchema,
   /** Who is working — the emitting side's member for that room. */
   memberId: z.string().min(1).optional(),
   /** The entry being worked on. */

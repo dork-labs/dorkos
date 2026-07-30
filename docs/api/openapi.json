@@ -5562,6 +5562,15 @@
           },
           "at": {
             "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RoomPresenceState"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string"
           }
         },
         "required": [
@@ -5580,6 +5589,14 @@
           "delivery_receipt",
           "progress",
           "backpressure"
+        ]
+      },
+      "RoomPresenceState": {
+        "type": "string",
+        "enum": [
+          "working",
+          "working_late",
+          "done"
         ]
       },
       "ActorType": {

@@ -521,6 +521,24 @@ export const RoomSnapshotSchema = z
 
 export type RoomSnapshot = z.infer<typeof RoomSnapshotSchema>;
 
+/**
+ * Where a working indicator is in its life: an agent has taken a turn, has
+ * outrun the room's wait, or has finished.
+ *
+ * Declared once and reused by `community-adapter.ts`'s presence payload, so the
+ * lifecycle a room publishes locally and the one a community carries outward can
+ * never drift into two vocabularies. The two payloads DO differ on optionality —
+ * `entryId` and `since` are required here and optional on the port — and that is
+ * capability-honest rather than drift: this room is the producer and always knows
+ * both, while a remote backend may be able to say only that somebody is working.
+ */
+export const RoomPresenceStateSchema = z
+  .enum(['working', 'working_late', 'done'])
+  .openapi('RoomPresenceState');
+
+/** Where a working indicator is in its life. See {@link RoomPresenceStateSchema}. */
+export type RoomPresenceState = z.infer<typeof RoomPresenceStateSchema>;
+
 /** A committed log entry arriving live. Carries `seq`, so it replays. */
 export const RoomEntryEventSchema = z
   .object({
@@ -542,6 +560,21 @@ export const RoomSignalEventSchema = z
     signal: SignalTypeSchema,
     authorId: z.string().min(1),
     at: z.string(),
+    /** Where in the working lifecycle this author is, on a `'progress'` signal. */
+    state: RoomPresenceStateSchema.optional(),
+    /**
+     * The entry whose trigger this presence is about. With `(room, authorId)` it
+     * is the indicator's whole identity, which is what lets one agent be working
+     * on two things at once without either release clearing the other.
+     */
+    entryId: z.string().optional(),
+    /**
+     * When the work started, ISO 8601 — never when this event was sent. Elapsed
+     * time is derived from it, and it rides EVERY publish rather than only the
+     * first: signals never replay, so an event has to be renderable on its own by
+     * a client that connected after the work began.
+     */
+    since: z.string().optional(),
   })
   .openapi('RoomSignalEvent');
 
@@ -553,6 +586,16 @@ export const RoomEventSchema = z
 export type RoomEvent = z.infer<typeof RoomEventSchema>;
 export type RoomEntryEvent = z.infer<typeof RoomEntryEventSchema>;
 export type RoomSignalEvent = z.infer<typeof RoomSignalEventSchema>;
+
+/**
+ * The three fields a `'progress'` signal carries on the rooms path.
+ *
+ * Derived from the event rather than declared beside it, so the producer cannot
+ * drift from the wire. They are optional on the event — a `'typing'` signal has
+ * no lifecycle — and required here, because a presence publish that omits one is
+ * an indicator a client cannot key, age, or clear.
+ */
+export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>>;
 
 // === Canonical serialization (reserved for signing) ===
 

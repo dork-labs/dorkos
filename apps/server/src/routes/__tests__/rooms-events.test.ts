@@ -302,6 +302,54 @@ describe('GET /api/rooms/:id/events', () => {
     expect(entries.body.entries).toHaveLength(0);
   });
 
+  it('carries the whole working lifecycle live, and never replays it', async () => {
+    // Presence is a `progress` signal with a payload, and it rides the SAME
+    // ephemeral framing typing does — no `id:` line, no `seq`, not in the log.
+    // That is what makes it impossible for a replay to resurrect an indicator
+    // for work that finished while the client was away: there is nothing to
+    // resurrect. The republish loop repaints the ones that are still true.
+    const { getRoomService } = await import('../../services/rooms/index.js');
+    const first = await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'one' });
+
+    const server = await listen();
+    const live = openRoomStream(server.port, roomId, {
+      until: (frames) => frames.some((f) => f.event === 'signal'),
+    });
+    await live.ready;
+
+    const author = getRoomService().authorRegistry.localHuman().id;
+    getRoomService().publishSignal(roomId, 'progress', author, {
+      state: 'working',
+      entryId: first.body.entryId,
+      since: '2026-07-30T04:00:00.000Z',
+    });
+
+    const signal = (await live.frames).find((f) => f.event === 'signal');
+    // Every field a client needs to render "Ana is working on it · 42s" from
+    // this one event, having connected after the work began.
+    expect(signal?.id).toBeUndefined();
+    expect(signal?.data).toMatchObject({
+      signal: 'progress',
+      authorId: author,
+      state: 'working',
+      entryId: first.body.entryId,
+      since: '2026-07-30T04:00:00.000Z',
+    });
+
+    // A second entry, then a resume from before the signal: the gap comes off
+    // the durable log, which never held it.
+    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'two' });
+    const resumed = openRoomStream(server.port, roomId, {
+      lastEventId: `${roomId}-${STREAM_EPOCH}-1`,
+      until: (frames) => frames.some((f) => f.event === 'entry'),
+    });
+    const replayed = await resumed.frames;
+    server.close();
+
+    expect(replayed.some((f) => f.event === 'signal')).toBe(false);
+    expect(replayed.map((f) => f.id)).toEqual([`${roomId}-${STREAM_EPOCH}-2`]);
+  });
+
   it('ignores an out-of-range ?after= instead of going deaf for the connection', async () => {
     const server = await listen();
     // A cursor past the end used to set the live-dedupe watermark above every
