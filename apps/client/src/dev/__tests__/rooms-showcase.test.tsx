@@ -24,13 +24,7 @@ import { getPageFromPath, PAGE_CONFIGS } from '../playground-config';
 import { PLAYGROUND_REGISTRY } from '../playground-registry';
 import { RoomsPage } from '../pages/RoomsPage';
 import { RoomSheetDemo, type RoomSheetDemoProps } from '../showcases/rooms-showcase-helpers';
-import {
-  ARCHIVED_ROOM,
-  CHANNEL_ROOM,
-  DM_ROOM,
-  EMPTY_ROOM,
-  MEMBER,
-} from '../showcases/rooms-showcase-data';
+import { ARCHIVED_ROOM, CHANNEL_ROOM, DM_ROOM, EMPTY_ROOM } from '../showcases/rooms-showcase-data';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const { toast } = await import('sonner');

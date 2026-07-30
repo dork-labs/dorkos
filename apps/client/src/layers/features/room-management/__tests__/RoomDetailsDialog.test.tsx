@@ -879,8 +879,10 @@ describe('RoomDetailsDialog', () => {
       // `not.toHaveBeenCalled()` after the first would be true whether or not
       // the toast was on its way, so removing Bo afterwards is the barrier that
       // turns the absence into a decision. An offer raised for Ana too makes
-      // this count two.
-      const { transport } = renderPanel({
+      // this count two. Both are confirmed before either settles, which is the
+      // shape this really has to hold in: the offer is raised from each
+      // removal's own promise, so a second one starting first cannot take it.
+      renderPanel({
         agents: settled([
           { agentPath: '/repo/bo', displayName: 'Bo', visual: null, description: null },
         ]),
