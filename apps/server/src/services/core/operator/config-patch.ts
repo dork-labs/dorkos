@@ -13,6 +13,10 @@ import {
 } from '@dorkos/shared/config-schema';
 import { configManager } from '../config-manager.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
+import {
+  applyClaudeAccountChange,
+  claudeAccountsChanged,
+} from '../../runtimes/claude-code/account-switch.js';
 
 /** Keys that must be filtered during deep merge to prevent prototype pollution. */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -155,6 +159,19 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
       const configKey = key as keyof typeof validated;
       configManager.set(configKey, validated[configKey]);
     }
+  }
+
+  // A write that moved the Claude accounts takes effect without a restart (spec
+  // `claude-code-accounts` D5). This lives here, at the shared seam, rather than
+  // in the PATCH route, because the `config_patch` operator tool reaches the same
+  // function — wiring only the route would leave an account switched through the
+  // tool needing a restart.
+  //
+  // Fire-and-forget after the write has landed: the setting is already persisted
+  // and the caller's answer does not depend on the re-derivation, which is itself
+  // best-effort and never throws.
+  if (claudeAccountsChanged(current.runtimes, validated.runtimes)) {
+    void applyClaudeAccountChange();
   }
 
   return { ok: true, config: configManager.getAll(), warnings };

@@ -5,6 +5,7 @@ import path from 'path';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
+  claudeConfigDirEnv,
   describeClaudeCodeAccounts,
   resolveActiveClaudeRoot,
   resolveClaudeRootSet,
@@ -288,5 +289,53 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       { path: real, label: 'Acme Corp', isAccountRoot: true },
       { path: missing, label: null, isAccountRoot: false },
     ]);
+  });
+});
+
+describe('claudeConfigDirEnv (spec claude-code-accounts D8)', () => {
+  const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
+
+  beforeEach(() => {
+    delete process.env.CLAUDE_CONFIG_DIR;
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = ORIGINAL_ENV;
+  });
+
+  it('names a chosen account explicitly', () => {
+    expect(claudeConfigDirEnv('/Users/dev/.claude2')).toEqual({
+      CLAUDE_CONFIG_DIR: '/Users/dev/.claude2',
+    });
+  });
+
+  it('names the default account by ABSENCE when nothing set the variable', () => {
+    // Not a shortcut: Claude Code takes the unsuffixed macOS Keychain name
+    // exactly when this variable is UNSET, so writing the default path where
+    // nothing was set points the CLI at an entry that does not exist. Absence is
+    // the faithful spelling of the default account.
+    const answer = claudeConfigDirEnv(path.join(os.homedir(), '.claude'));
+
+    expect(answer.CLAUDE_CONFIG_DIR).toBeUndefined();
+    // Present-as-undefined, so it still ERASES an inherited value: Node drops
+    // undefined entries when it builds a child's environment.
+    expect('CLAUDE_CONFIG_DIR' in answer).toBe(true);
+  });
+
+  it('names the default account explicitly once the variable IS set', () => {
+    // The launching shell already set it, so the suffixed Keychain name is
+    // already what Claude Code uses — spelling the path out changes nothing, and
+    // pinning it keeps a concurrent env-lock mutation out of this subprocess.
+    process.env.CLAUDE_CONFIG_DIR = '/Users/dev/.claude3';
+    const defaultRoot = path.join(os.homedir(), '.claude');
+
+    expect(claudeConfigDirEnv(defaultRoot)).toEqual({ CLAUDE_CONFIG_DIR: defaultRoot });
+  });
+
+  it('ignores a trailing separator when deciding whether the root is the default', () => {
+    expect(claudeConfigDirEnv(`${path.join(os.homedir(), '.claude')}/`)).toEqual({
+      CLAUDE_CONFIG_DIR: undefined,
+    });
   });
 });

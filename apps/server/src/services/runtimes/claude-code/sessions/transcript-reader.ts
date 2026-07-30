@@ -550,10 +550,15 @@ export class TranscriptReader {
       ? firstUserMessage.slice(0, TRANSCRIPT.TITLE_MAX_LENGTH) +
         (firstUserMessage.length > TRANSCRIPT.TITLE_MAX_LENGTH ? '...' : '')
       : `Session ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
+    // Which Claude account this session belongs to: the root the file was found
+    // under, read straight off the path — no syscall, no config read. Resolved
+    // here rather than at the assignment below because the SDK title lookup is
+    // gated on it (see `resolveSdkTitle`).
+    const account = accountForTranscript(filePath);
     // The Claude Agent SDK is the source of truth for session titles (set at
     // creation, via renameSession, or auto-generated). Prefer the persisted
     // title; fall back to the first-message derivation for untitled sessions.
-    const title = (await this.resolveSdkTitle(sessionId, cwd)) ?? derivedTitle;
+    const title = (await this.resolveSdkTitle(sessionId, cwd, account)) ?? derivedTitle;
     const { origin, originLabel } = classifyOrigin(firstRawUserMessage);
 
     const session: Session = {
@@ -584,11 +589,8 @@ export class TranscriptReader {
     if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
     if (tailStatus.lastAutoCompactAt) session.lastAutoCompactAt = tailStatus.lastAutoCompactAt;
 
-    // Which Claude account this session belongs to: the root the file was found
-    // under, read straight off the path — no syscall, no config read. Set
-    // conditionally like the readings above, so an unattributable path leaves the
-    // field absent (an honest "unknown") rather than carrying a derived guess.
-    const account = accountForTranscript(filePath);
+    // Set conditionally like the readings above, so an unattributable path leaves
+    // the field absent (an honest "unknown") rather than carrying a derived guess.
     if (account) session.account = account;
 
     // Provably empty means the whole file fit in the head read and still had
@@ -602,7 +604,8 @@ export class TranscriptReader {
   }
 
   /**
-   * Read the SDK-persisted custom title for a session, if one exists.
+   * Read the SDK-persisted custom title for a session, if one exists — and only
+   * for a session on the ACTIVE account.
    *
    * The Claude Agent SDK owns session titles and persists them across restarts,
    * so we read the stored value rather than derive and overlay our own. Returns
@@ -610,14 +613,34 @@ export class TranscriptReader {
    * first-message derivation, which filters slash-commands and system tags more
    * carefully than the SDK's raw first prompt.
    *
+   * ## The account gate is a chosen, bounded degradation, not an oversight
+   *
+   * `getSessionInfo` runs IN-PROCESS and its options carry no config dir, so the
+   * only way to read a title from a NON-active account is the same env lock
+   * rename and fork use — mutating `process.env.CLAUDE_CONFIG_DIR`
+   * process-globally. This call sits on the session-LISTING path, once per
+   * session per mtime change, so wrapping it would serialize every listing behind
+   * a process-global mutation: a systemic risk traded for a cosmetic gain (spec
+   * D8).
+   *
+   * So the honest consequence, written down rather than hidden: a custom title
+   * you set on account B may not display while account A is active — that
+   * session shows its first-message derivation instead. The alternative was
+   * reverse-engineering the SDK's title sidecar, which is exactly the
+   * implementation-detail dependency D4 refuses.
+   *
    * @param sessionId - SDK session UUID
    * @param cwd - The session's working directory; scopes the lookup to one project
+   * @param account - The account the transcript was found under; the lookup is
+   *   skipped unless it is the active one.
    */
   private async resolveSdkTitle(
     sessionId: string,
-    cwd: string | undefined
+    cwd: string | undefined,
+    account: string
   ): Promise<string | undefined> {
     if (!cwd) return undefined;
+    if (path.resolve(account) !== path.resolve(resolveActiveClaudeRoot())) return undefined;
     try {
       const info = await getSessionInfo(sessionId, { dir: cwd });
       return info?.customTitle?.trim() || undefined;

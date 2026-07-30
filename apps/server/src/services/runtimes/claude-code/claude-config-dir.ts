@@ -40,6 +40,7 @@ import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
+import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 
 /** Minimal read surface of the config manager (injectable for tests). */
 type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
@@ -47,9 +48,13 @@ type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
 /**
  * The Claude root the SDK subprocess would pick on its own, with no DorkOS
  * config in the picture: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
+ *
+ * Reads the variable through {@link ambientClaudeConfigDir} rather than directly,
+ * so a rename or fork holding the D8 env lock cannot make this answer its
+ * transient value and send a brand-new session to another client's account.
  */
 function inheritedClaudeRoot(): string {
-  return process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
+  return ambientClaudeConfigDir() ?? path.join(os.homedir(), '.claude');
 }
 
 /**
@@ -140,9 +145,10 @@ export function resolveActiveClaudeRoot(config: ConfigReader = configManager): s
  */
 export function resolveClaudeRootSet(config: ConfigReader = configManager): string[] {
   const { accounts } = readClaudeCodeConfig(config);
+  const inherited = ambientClaudeConfigDir();
   const candidates = [
     resolveActiveClaudeRoot(config),
-    ...(process.env.CLAUDE_CONFIG_DIR ? [process.env.CLAUDE_CONFIG_DIR] : []),
+    ...(inherited ? [inherited] : []),
     path.join(os.homedir(), '.claude'),
     ...accounts.map((account) => account.path),
   ];
@@ -159,6 +165,44 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
     if (isClaudeAccountRoot(candidate)) roots.push(candidate);
   }
   return roots;
+}
+
+/**
+ * The `CLAUDE_CONFIG_DIR` entry that pins a spawned SDK subprocess to `root`.
+ *
+ * Spread this into `sdkOptions.env` at every spawn site. The entry is ALWAYS
+ * present, so the subprocess's account is decided here and never inherited from
+ * `process.env` — which is what makes the D8 env lock in
+ * `claude-config-env-lock.ts` safe: a query spawning while a rename holds the
+ * lock cannot pick up its transient mutation.
+ *
+ * ## Why the value can be `undefined`, and why that is not a loophole
+ *
+ * When the launching environment set NO `CLAUDE_CONFIG_DIR` and `root` is the
+ * SDK's own default (`~/.claude`), "unset" is the faithful spelling of that
+ * account — and spelling it out instead would change behavior rather than pin it.
+ * Claude Code derives its macOS Keychain entry name as
+ * `Claude Code-credentials[-<8 hex of sha256(configDir)>]`, and it takes the
+ * UNSUFFIXED branch exactly when `CLAUDE_CONFIG_DIR` is unset — verified in the
+ * SDK's bundled `sdk.mjs` and confirmed against a real machine, where
+ * `~/.claude`'s entry is the unsuffixed one and the suffixed spelling does not
+ * exist. So writing `CLAUDE_CONFIG_DIR=~/.claude` where nothing was set before
+ * would point the CLI at a Keychain entry that is not there and break sign-in
+ * for every default install (spec AC1: at defaults, behavior is identical to
+ * today).
+ *
+ * `undefined` reaches the subprocess as a genuinely absent variable: Node's
+ * `child_process` skips `undefined` values when it builds the child's
+ * environment, so this both overrides an inherited value and removes it.
+ *
+ * @param root - The absolute Claude config directory this subprocess must use.
+ * @returns A one-entry env fragment to spread AFTER `...process.env`.
+ */
+export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | undefined } {
+  const isFaithfullyUnset =
+    ambientClaudeConfigDir() === undefined &&
+    path.resolve(root) === path.resolve(inheritedClaudeRoot());
+  return { CLAUDE_CONFIG_DIR: isFaithfullyUnset ? undefined : root };
 }
 
 /**

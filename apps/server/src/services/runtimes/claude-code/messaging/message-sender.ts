@@ -51,6 +51,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import { configManager } from '../../../core/config-manager.js';
+import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-dir.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
@@ -406,6 +407,16 @@ export async function* executeSdkQuery(
     meshAgent?.name
   );
 
+  // Which Claude Code account this turn runs and BILLS on (spec
+  // `claude-code-accounts` D3): the session's own account when disk has already
+  // told us one — a resumed conversation must stay on the client whose
+  // subscription paid for it, whichever account happens to be active — else the
+  // active account, which is what a brand-new session runs on.
+  //
+  // `undefined` is "unknown", never an error: a session with no transcript yet
+  // legitimately has no account of its own.
+  const accountEnv = claudeConfigDirEnv(session.accountRoot ?? resolveActiveClaudeRoot());
+
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -432,6 +443,14 @@ export async function* executeSdkQuery(
       // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
       ...process.env,
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
+      // The account, ALWAYS spelled out (see `claudeConfigDirEnv`) so it is never
+      // inherited from `process.env`. That is load-bearing for D8: rename and
+      // fork point the in-process SDK at an account by mutating
+      // `process.env.CLAUDE_CONFIG_DIR` process-globally for the duration of the
+      // call (`claude-config-env-lock.ts`), and a query spawning inside that
+      // window must not pick the transient value up. The two changes are safe
+      // only together — do not separate them.
+      ...accountEnv,
       // Resolved credential (if any) wins over an inherited ANTHROPIC_API_KEY.
       ...claudeCredentialEnv,
       // This session's freshly minted agent identity token (or nothing).
@@ -883,6 +902,12 @@ export async function* executeSdkQuery(
         retryDepth,
         error: err instanceof Error ? err.message : String(err),
       });
+      // `accountRoot` deliberately survives this reset (spec C2). The retry
+      // starts a BRAND-NEW SDK session, whose transcript is written under
+      // whatever account the recursion pins — so clearing the account here
+      // alongside `hasStarted` would silently move a paying client's
+      // conversation onto whichever account happens to be active. The account is
+      // a fact about the conversation, not about whether it has started.
       session.hasStarted = false;
       retriedViaRecursion = true;
       yield* executeSdkQuery(sessionId, content, session, opts, messageOpts, retryDepth + 1);

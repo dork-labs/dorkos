@@ -46,6 +46,8 @@ import { RuntimeCache } from './messaging/runtime-cache.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import type { AgentSession } from './agent-types.js';
 import { resolveClaudeCliPath, createIdlePrompt } from './sdk/sdk-utils.js';
+import { claudeConfigDirEnv, resolveActiveClaudeRoot } from './claude-config-dir.js';
+import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
@@ -468,7 +470,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async renameSession(sessionId: string, title: string, projectDir: string): Promise<void> {
-    await sdkRenameSession(sessionId, title, { dir: projectDir });
+    // `renameSession` runs IN-PROCESS and its options expose no config dir, so
+    // the env lock is the only way to point it at the session's OWN account —
+    // without it a rename writes into whichever account is active, where the
+    // session does not exist, and the new title silently goes nowhere (spec D8).
+    const accountRoot = await this.sessionStore.accountRootFor(
+      sessionId,
+      this.transcriptReader,
+      projectDir
+    );
+    await withClaudeConfigDir(accountRoot, () =>
+      sdkRenameSession(sessionId, title, { dir: projectDir })
+    );
     // The SDK persists the title; drop the reader's cache so the next read
     // re-extracts it via getSessionInfo (no in-memory title overlay).
     this.transcriptReader.invalidate(sessionId);
@@ -818,8 +831,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           settingSources: ['local', 'project', 'user'],
           ...(this.claudeCliPath ? { pathToClaudeCodeExecutable: this.claudeCliPath } : {}),
-          // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
-          env: { ...process.env },
+          env: {
+            // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
+            ...process.env,
+            // The probe gets the same explicit account pin a turn does, for two
+            // reasons. `settingSources` includes `'user'`, which resolves under
+            // the config dir — an inherited root would warm this cwd's palette
+            // from ANOTHER account's user settings, and could boot against an
+            // account that is not signed in. And an explicit entry keeps the
+            // probe out of reach of the process-global mutation the D8 env lock
+            // holds during a rename or fork. There is no session here, so the
+            // ACTIVE account is the only account this can mean.
+            ...claudeConfigDirEnv(resolveActiveClaudeRoot()),
+          },
         },
       });
       const commands = await Promise.race([

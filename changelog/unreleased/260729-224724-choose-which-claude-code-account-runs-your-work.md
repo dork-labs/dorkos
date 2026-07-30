@@ -2,12 +2,13 @@
 covers:
   - 'feat(server,shared): choose which Claude Code account new work runs on (DOR-729)'
   - 'feat(server,shared): list and read sessions from every Claude Code account (DOR-729)'
+  - 'feat(server,client): pin every turn to its own Claude Code account and apply a switch live (DOR-729)'
 ---
 
 ### Added
 
-- If you use more than one Claude Code account on the same computer — say one per client — you can now pick which one DorkOS runs on, and switch whenever you like. Your session list shows work from all of your accounts at once, each labelled with the account it belongs to, and reopening an older session always runs it on the account that created it. Setting this only affects DorkOS: your terminal and the `claude` command keep working exactly as before.
+- Do you use more than one Claude Code account on the same computer, maybe one per client? You can now choose which account DorkOS runs your work on, and switch any time. Your session list shows work from all of your accounts together, and each session is labeled with the account it belongs to. Reopening an older session always runs it on the account that created it. This setting only changes DorkOS. Your terminal and the `claude` command keep working exactly as before.
 
 ### Note for people upgrading
 
-- Nothing changes until you pick an account. Until then DorkOS behaves exactly as it did. Before this release, the account was decided by the terminal you happened to launch DorkOS from, which meant sessions belonging to your other accounts were quietly missing from the list.
+- Nothing changes until you choose an account. Until then DorkOS works the way it always has. Before this release, DorkOS used whichever account the terminal you launched it from happened to point at. That meant sessions from your other accounts were quietly missing from your list.

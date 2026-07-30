@@ -14,6 +14,7 @@ vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { getSessionInfo } from '@anthropic-ai/claude-agent-sdk';
 import { TranscriptReader } from '../transcript-reader.js';
 
 /**
@@ -87,6 +88,7 @@ describe('TranscriptReader across Claude accounts', () => {
     vaultRoot = join(tmp, 'work');
     await mkdir(vaultRoot, { recursive: true });
     reader = new TranscriptReader();
+    vi.mocked(getSessionInfo).mockClear().mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -288,6 +290,32 @@ describe('TranscriptReader across Claude accounts', () => {
       reader.hasTranscript(vaultRoot, 'aaaaaaaa-0000-4000-8000-000000000001')
     ).resolves.toEqual({ exists: false });
     await expect(reader.listTranscripts(vaultRoot)).resolves.toEqual([]);
+  });
+
+  it('asks the SDK for a custom title ONLY for a session on the active account', async () => {
+    // D8's chosen degradation, pinned so it stays chosen rather than drifting.
+    // `getSessionInfo` runs in-process with no config-dir option, so reading a
+    // title from a non-active account would need the process-global env lock —
+    // and this call sits on the LISTING path, once per session. Serializing every
+    // listing behind that mutation is the systemic risk the spec refused, so the
+    // non-active account keeps its derived title instead.
+    await seedSession(accountA, 'aaaaaaaa-0000-4000-8000-000000000001', 'work for Acme');
+    await seedSession(accountB, 'bbbbbbbb-0000-4000-8000-000000000002', 'work for Beta');
+    vi.mocked(getSessionInfo).mockResolvedValue({
+      customTitle: 'Renamed in the app',
+    } as unknown as Awaited<ReturnType<typeof getSessionInfo>>);
+
+    const titles = new Map(
+      (await reader.listSessions(vaultRoot)).map((s) => [s.account, s.title] as const)
+    );
+
+    expect(titles.get(accountA)).toBe('Renamed in the app');
+    // The honest consequence: a title set on accountB does not display while
+    // accountA is active — that row shows its first message instead.
+    expect(titles.get(accountB)).toBe('work for Beta');
+    // Asserted on the CALL too, because that is the cost being controlled: one
+    // in-process SDK read per listing at most, never one per account.
+    expect(vi.mocked(getSessionInfo)).toHaveBeenCalledTimes(1);
   });
 
   it('re-resolves accounts after invalidateAll, so a switch is not served from cache', async () => {
