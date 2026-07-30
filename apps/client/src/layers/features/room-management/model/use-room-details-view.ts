@@ -39,6 +39,12 @@ export interface RoomDetailsView {
   isError: boolean;
   /** The roster, in the order the server hands it back. Empty until it lands. */
   members: RoomRosterEntry[];
+  /**
+   * How many agents are in the room. `0` before the roster lands as well as
+   * after it lands empty, so read {@link RoomDetailsView.room} alongside it
+   * before saying anything about a room with nobody in it.
+   */
+  agentCount: number;
   /** The roster's authors, or `null` while it is still being read. */
   participants: AuthorRef[] | null;
   /** The faces of this room's agents, in roster order. */
@@ -183,6 +189,7 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
     isLoading: roomQuery.isLoading,
     isError: roomQuery.isError,
     members,
+    agentCount: agentMembers.length,
     participants,
     roomVisuals,
     facesByRef,

@@ -365,6 +365,43 @@ describe('RoomDetailsDialog', () => {
       expect(offeredRungs()).toEqual(['Silent', '@only', 'Everything']);
     });
 
+    it('says what a second agent would turn this conversation into, before it does', async () => {
+      // A one-to-one holding two agents is a group conversation, and finding
+      // that out afterwards — from a stack of faces where one face used to be —
+      // is the product teaching by surprise. The wording is the one the "+"
+      // beside Direct messages already uses.
+      renderDm('mention-only');
+      await rosterSection();
+
+      expect(
+        addSection().getByText('Adding a second agent turns this into a group conversation.')
+      ).toBeInTheDocument();
+    });
+
+    it('says it only where it is true', async () => {
+      // A channel is a channel however many agents are in it, and a
+      // conversation already holding two is already a group. Red if the note
+      // is drawn unconditionally: it would tell a reader of #general that
+      // adding Bo turns a channel into a direct message.
+      renderPanel();
+      await rosterSection();
+      expect(addSection().queryByText(/group conversation/)).not.toBeInTheDocument();
+
+      cleanup();
+      renderPanel({
+        room: DM,
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(
+              roster([HUMAN, agentMember('Ana', '/repo/ana'), agentMember('Bo', '/repo/bo')], DM)
+            ),
+        }),
+      });
+      await rosterSection();
+      expect(addSection().queryByText(/group conversation/)).not.toBeInTheDocument();
+    });
+
     it('shows the rung on the row, and what it does once you open it', async () => {
       // The pill is the glance and the scale is the task. Red if the row stops
       // naming the rung — the roster would go back to being a list of names

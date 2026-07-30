@@ -267,6 +267,15 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
                 : 'Every agent you have is already in here.'
             }
             allChosenMessage="Every agent you have is already in here."
+            // Only a one-to-one turns into something else by gaining somebody.
+            // A conversation that already holds two is already a group, and a
+            // channel is a channel however many agents are in it. The wording
+            // is the one the "+" beside Direct messages already uses.
+            note={
+              detail.kind === 'dm' && view.agentCount === 1
+                ? 'Adding a second agent turns this into a group conversation.'
+                : null
+            }
             isSubmitting={writes.isAdding}
             inputRef={searchRef}
           />

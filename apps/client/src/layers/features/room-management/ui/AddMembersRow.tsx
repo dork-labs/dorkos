@@ -26,6 +26,13 @@ export interface AddMembersRowProps {
   /** Whether a write is in flight. */
   isSubmitting: boolean;
   /**
+   * What adding somebody here would do, when it does more than add somebody —
+   * or `null` when it does not. Said before the act rather than discovered
+   * after it, and above the row, so it is on screen whether or not the picker
+   * has been opened.
+   */
+  note: string | null;
+  /**
    * The search field, handed back so the SHEET can place the cursor. Focus is
    * never taken here — see {@link AddMembersRow}.
    */
@@ -53,6 +60,11 @@ export interface AddMembersRowProps {
  * control whose only job is to undo the last press is one more thing to explain.
  * Closing the sheet is the way out.
  *
+ * **When adding somebody changes what the room IS, that is said up here.** A
+ * one-to-one holding a second agent is a group conversation, and finding that
+ * out afterwards — from a stack of faces where one face used to be — is the
+ * product teaching by surprise.
+ *
  * **It takes no focus of its own.** The cursor belongs to the sheet, which is
  * the only thing that can win it: a menu closing behind the sheet restores focus
  * to its own trigger a commit later, so anything focused from in here is simply
@@ -68,10 +80,12 @@ export function AddMembersRow({
   emptyRosterMessage,
   allChosenMessage,
   isSubmitting,
+  note,
   inputRef,
 }: AddMembersRowProps) {
   return (
     <section aria-label="Add agents" className="flex min-h-0 flex-col">
+      {note !== null && <p className="text-muted-foreground mb-2 text-xs">{note}</p>}
       {expanded ? (
         <AgentRosterPicker
           roster={roster}
