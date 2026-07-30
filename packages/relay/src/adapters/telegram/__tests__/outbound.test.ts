@@ -3,11 +3,10 @@ import {
   deliverMessage,
   handleTypingSignal,
   clearAllTypingIntervals,
-  clearTypingInterval,
   createTelegramOutboundState,
-  startTypingWithTimeout,
   BUFFER_TTL_MS,
-  MAX_TYPING_DURATION_MS,
+  TYPING_INACTIVITY_MS,
+  TYPING_REFRESH_MS,
 } from '../outbound.js';
 import type { ResponseBuffer, TelegramOutboundState } from '../outbound.js';
 import type { Bot } from 'grammy';
@@ -233,16 +232,16 @@ describe('typing indicator -- interval refresh', () => {
     expect(mockSendChatAction).toHaveBeenCalledTimes(2);
   });
 
-  it('replaces existing interval on repeated active signals', async () => {
+  it('keeps one loop running across repeated active signals', async () => {
     await handleTypingSignal(bot, 'relay.human.telegram.12345', state, 'active', testCodec);
     await handleTypingSignal(bot, 'relay.human.telegram.12345', state, 'active', testCodec);
 
-    // Should have called immediately twice (once per active signal)
-    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
+    // One loop for one working span — a repeat signal neither re-fires the
+    // chat action nor restarts the 4s cadence.
+    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
 
-    // Only one interval should be running
     await vi.advanceTimersByTimeAsync(4_000);
-    expect(mockSendChatAction).toHaveBeenCalledTimes(3);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
   });
 
   it('does nothing when bot is null', async () => {
@@ -262,114 +261,32 @@ describe('typing indicator -- interval refresh', () => {
   });
 });
 
-describe('startTypingWithTimeout', () => {
-  let bot: Bot;
-  let state: TelegramOutboundState;
+describe('typing follows the turn, not the receipt', () => {
+  const SUBJECT = 'relay.human.telegram.12345';
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.useFakeTimers();
-    bot = buildMockBot();
-    state = createTelegramOutboundState();
-  });
-
-  afterEach(() => {
-    clearAllTypingIntervals(state);
-    vi.useRealTimers();
-  });
-
-  it('sends immediate sendChatAction and sets interval', () => {
-    startTypingWithTimeout(bot, 12345, state);
-    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
-    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
-    expect(state.typingIntervals.has(12345)).toBe(true);
-  });
-
-  it('refreshes every 4 seconds like handleTypingSignal', async () => {
-    startTypingWithTimeout(bot, 12345, state);
-    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(4_000);
-    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
-
-    await vi.advanceTimersByTimeAsync(4_000);
-    expect(mockSendChatAction).toHaveBeenCalledTimes(3);
-  });
-
-  it('auto-clears after MAX_TYPING_DURATION_MS', async () => {
-    startTypingWithTimeout(bot, 12345, state);
-    expect(state.typingIntervals.has(12345)).toBe(true);
-
-    await vi.advanceTimersByTimeAsync(MAX_TYPING_DURATION_MS);
-    expect(state.typingIntervals.has(12345)).toBe(false);
-
-    // No more sendChatAction calls after timeout
-    mockSendChatAction.mockClear();
-    await vi.advanceTimersByTimeAsync(8_000);
-    expect(mockSendChatAction).not.toHaveBeenCalled();
-  });
-
-  it('does nothing when bot is null', () => {
-    startTypingWithTimeout(null, 12345, state);
-    expect(mockSendChatAction).not.toHaveBeenCalled();
-    expect(state.typingIntervals.has(12345)).toBe(false);
-  });
-
-  it('replaces existing interval for the same chatId', () => {
-    startTypingWithTimeout(bot, 12345, state);
-    const firstInterval = state.typingIntervals.get(12345);
-
-    startTypingWithTimeout(bot, 12345, state);
-    const secondInterval = state.typingIntervals.get(12345);
-
-    // Should have replaced the interval (different timer reference)
-    expect(firstInterval).not.toBe(secondInterval);
-    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
-  });
-
-  it('clears interval when sendChatAction fails on refresh', async () => {
-    startTypingWithTimeout(bot, 12345, state);
-
-    mockSendChatAction.mockRejectedValueOnce(new Error('chat not found'));
-    await vi.advanceTimersByTimeAsync(4_000);
-
-    // Interval should have been cleared on failure
-    await vi.advanceTimersByTimeAsync(4_000);
-    // 1 immediate + 1 failed interval = 2 total (no more after clear)
-    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
-  });
-
-  it('orphan timeout does not clear a newer typing session for the same chat', async () => {
-    // Start first typing session (60s timeout)
-    startTypingWithTimeout(bot, 12345, state);
-    expect(state.typingIntervals.has(12345)).toBe(true);
-
-    // Simulate outbound delivery clearing the first session at t=10s
-    await vi.advanceTimersByTimeAsync(10_000);
-    clearTypingInterval(state, 12345);
-    expect(state.typingIntervals.has(12345)).toBe(false);
-
-    // Start second typing session at t=30s
-    await vi.advanceTimersByTimeAsync(20_000);
-    startTypingWithTimeout(bot, 12345, state);
-    expect(state.typingIntervals.has(12345)).toBe(true);
-
-    // Advance to t=60s — old timeout would have fired here without the fix
-    await vi.advanceTimersByTimeAsync(30_000);
-
-    // Second session's interval should STILL be active (not cleared by orphan timeout)
-    expect(state.typingIntervals.has(12345)).toBe(true);
-  });
-});
-
-describe('deliverMessage clears typing on first outbound', () => {
   let bot: Bot;
   let responseBuffers: Map<number, ResponseBuffer>;
   let callbacks: AdapterOutboundCallbacks;
   let state: TelegramOutboundState;
 
+  /** Deliver one runtime event for the chat under test. */
+  function deliverEvent(payload: unknown) {
+    return deliverMessage({
+      adapterId: 'telegram',
+      subject: SUBJECT,
+      envelope: createEnvelope(SUBJECT, payload),
+      bot,
+      responseBuffers,
+      state,
+      callbacks,
+      streaming: false,
+      codec: testCodec,
+    });
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     bot = buildMockBot();
     responseBuffers = new Map();
     callbacks = createCallbacks();
@@ -378,122 +295,193 @@ describe('deliverMessage clears typing on first outbound', () => {
 
   afterEach(() => {
     clearAllTypingIntervals(state);
+    vi.useRealTimers();
   });
 
-  it('clears typing interval on text_delta delivery', async () => {
-    // Simulate an active typing interval
-    state.typingIntervals.set(
-      12345,
-      setInterval(() => {}, 4_000)
-    );
+  it('starts on the first event of the turn', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hel' } });
 
-    const envelope = createEnvelope('relay.human.telegram.12345', {
-      type: 'text_delta',
-      data: { text: 'Hello' },
+    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
+    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
+    expect(state.typingIntervals.has(12345)).toBe(true);
+  });
+
+  it('refreshes every 4 seconds while the turn runs', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hel' } });
+    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(3);
+
+    // Not one tick early: the cadence is 4s, not "under 4s".
+    await vi.advanceTimersByTimeAsync(3_999);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps typing well past the old 60s cap while the turn keeps speaking', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'thinking' } });
+
+    // 90s of real work, restated by the stream throughout. The old blind cap
+    // stopped at 60s and lied about a turn that was still running.
+    for (let elapsed = 0; elapsed < 90_000; elapsed += 10_000) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      await deliverEvent({ type: 'text_delta', data: { text: 'more' } });
+    }
+
+    expect(state.typingIntervals.has(12345)).toBe(true);
+    // 1 immediate + 22 refreshes (90_000 / 4_000, floored). The nine further
+    // deliveries add none: one loop per chat, kept rather than restarted.
+    expect(mockSendChatAction).toHaveBeenCalledTimes(23);
+  });
+
+  it('never cuts a turn that keeps speaking, however long it runs', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'start' } });
+
+    // 30 simulated minutes of a turn that reports in every 20s. The bound is
+    // keyed to observation, not to a work budget, so this is never cut.
+    for (let minute = 0; minute < 30; minute++) {
+      for (let tick = 0; tick < 3; tick++) {
+        await vi.advanceTimersByTimeAsync(20_000);
+        await deliverEvent({ type: 'tool_result', data: { content: 'ok' } });
+      }
+    }
+
+    expect(state.typingIntervals.has(12345)).toBe(true);
+  });
+
+  it('stops a stream that goes dark without a terminal', async () => {
+    // The reviewer's probe: one delta, then silence forever. `done` is
+    // best-effort upstream and a stalled stream may never reach its finally,
+    // so a lost terminal must not leave the chat typing for the rest of time.
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hel' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(TYPING_INACTIVITY_MS + TYPING_REFRESH_MS);
+    expect(state.typingIntervals.has(12345)).toBe(false);
+
+    const callsAtStop = mockSendChatAction.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect(mockSendChatAction).toHaveBeenCalledTimes(callsAtStop);
+  });
+
+  it('holds the indicator through a silence shorter than the bound', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hel' } });
+
+    await vi.advanceTimersByTimeAsync(TYPING_INACTIVITY_MS - TYPING_REFRESH_MS);
+
+    expect(state.typingIntervals.has(12345)).toBe(true);
+  });
+
+  it('does not re-fire a chat action for every streamed chunk', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'a' } });
+    await deliverEvent({ type: 'text_delta', data: { text: 'b' } });
+    await deliverEvent({ type: 'text_delta', data: { text: 'c' } });
+
+    // One loop for one turn — the refresh cadence is not reset by each chunk.
+    expect(mockSendChatAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at the terminal when the reply is sent', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    await deliverEvent({ type: 'done', data: {} });
+
+    expect(state.typingIntervals.has(12345)).toBe(false);
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+
+    mockSendChatAction.mockClear();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mockSendChatAction).not.toHaveBeenCalled();
+  });
+
+  it('stops at the terminal when the turn errors', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    await deliverEvent({ type: 'error', data: { message: 'Session failed' } });
+
+    expect(state.typingIntervals.has(12345)).toBe(false);
+
+    mockSendChatAction.mockClear();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(mockSendChatAction).not.toHaveBeenCalled();
+  });
+
+  it('stops while a tool approval waits on a person', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    await deliverEvent({
+      type: 'approval_required',
+      data: {
+        toolCallId: 'call-1',
+        toolName: 'Bash',
+        input: '{"command":"ls"}',
+      },
     });
-    await deliverMessage({
-      adapterId: 'telegram',
-      subject: 'relay.human.telegram.12345',
-      envelope,
-      bot,
-      responseBuffers,
-      state,
-      callbacks,
-      streaming: false,
-      codec: testCodec,
+
+    // Waiting on a human is not working. Nothing about the agent is in flight.
+    expect(state.typingIntervals.has(12345)).toBe(false);
+  });
+
+  // The other two interactions the session projector folds into `blocked`
+  // alongside `approval_required`. Telegram's own whitelist drops all three
+  // from delivery, so typing here would show a question nobody can see.
+  it('stops while a question waits on a person', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    await deliverEvent({ type: 'question_prompt', data: { id: 'q-1', questions: [] } });
+
+    expect(state.typingIntervals.has(12345)).toBe(false);
+  });
+
+  it('stops while an elicitation waits on a person', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
+
+    await deliverEvent({
+      type: 'elicitation_prompt',
+      data: { id: 'e-1', serverName: 'mcp', message: 'Which account?' },
     });
 
     expect(state.typingIntervals.has(12345)).toBe(false);
   });
 
-  it('clears typing interval on done event', async () => {
-    state.typingIntervals.set(
-      12345,
-      setInterval(() => {}, 4_000)
-    );
-    responseBuffers.set(12345, { text: 'Accumulated', startedAt: Date.now() });
+  it('stops on an error terminal that carries no message', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
 
-    const envelope = createEnvelope('relay.human.telegram.12345', {
-      type: 'done',
-      data: {},
-    });
-    await deliverMessage({
-      adapterId: 'telegram',
-      subject: 'relay.human.telegram.12345',
-      envelope,
-      bot,
-      responseBuffers,
-      state,
-      callbacks,
-      streaming: false,
-      codec: testCodec,
-    });
+    // A malformed error is still a terminal. Classifying on the event type,
+    // not on whether a message could be extracted, is what makes it one.
+    await deliverEvent({ type: 'error', data: {} });
 
     expect(state.typingIntervals.has(12345)).toBe(false);
   });
 
-  it('clears typing interval on error event', async () => {
-    state.typingIntervals.set(
-      12345,
-      setInterval(() => {}, 4_000)
-    );
+  it('stops when a standard (non-streamed) reply arrives', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
+    expect(state.typingIntervals.has(12345)).toBe(true);
 
-    const envelope = createEnvelope('relay.human.telegram.12345', {
-      type: 'error',
-      data: { message: 'Session failed' },
-    });
-    await deliverMessage({
-      adapterId: 'telegram',
-      subject: 'relay.human.telegram.12345',
-      envelope,
-      bot,
-      responseBuffers,
-      state,
-      callbacks,
-      streaming: false,
-      codec: testCodec,
-    });
+    await deliverEvent({ content: 'Direct reply' });
 
     expect(state.typingIntervals.has(12345)).toBe(false);
   });
 
-  it('clears typing interval on standard payload delivery', async () => {
-    state.typingIntervals.set(
-      12345,
-      setInterval(() => {}, 4_000)
-    );
+  it('clears the loop when a refresh fails', async () => {
+    await deliverEvent({ type: 'text_delta', data: { text: 'Hello' } });
 
-    const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Direct reply' });
-    await deliverMessage({
-      adapterId: 'telegram',
-      subject: 'relay.human.telegram.12345',
-      envelope,
-      bot,
-      responseBuffers,
-      state,
-      callbacks,
-      streaming: false,
-      codec: testCodec,
-    });
+    mockSendChatAction.mockRejectedValueOnce(new Error('chat not found'));
+    await vi.advanceTimersByTimeAsync(4_000);
+    await vi.advanceTimersByTimeAsync(4_000);
 
+    // 1 immediate + 1 failed refresh, then nothing.
+    expect(mockSendChatAction).toHaveBeenCalledTimes(2);
     expect(state.typingIntervals.has(12345)).toBe(false);
-  });
-
-  it('does not fail when no typing interval exists', async () => {
-    const envelope = createEnvelope('relay.human.telegram.12345', { content: 'Hello' });
-    const result = await deliverMessage({
-      adapterId: 'telegram',
-      subject: 'relay.human.telegram.12345',
-      envelope,
-      bot,
-      responseBuffers,
-      state,
-      callbacks,
-      streaming: false,
-      codec: testCodec,
-    });
-
-    expect(result.success).toBe(true);
   });
 });
 

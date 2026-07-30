@@ -32,7 +32,6 @@ import {
   clearAllTypingIntervals,
   clearApprovalTimeout,
   createTelegramOutboundState,
-  startTypingWithTimeout,
 } from './outbound.js';
 import type { ResponseBuffer, TelegramOutboundState } from './outbound.js';
 import { startWebhookMode, stopWebhookServer } from './webhook.js';
@@ -263,7 +262,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
       `${this.codec.prefix}.>`,
       (subject: string, signal: Signal) => {
         if (signal.type === 'typing')
-          void handleTypingSignal(this.bot, subject, this.outboundState, signal.state, this.codec);
+          handleTypingSignal(this.bot, subject, this.outboundState, signal.state, this.codec);
       }
     );
 
@@ -363,7 +362,7 @@ export class TelegramAdapter extends BaseRelayAdapter {
       handleInboundMessage(
         ctx,
         relay,
-        this.makeInboundCallbacksWithTyping(),
+        this.makeInboundCallbacks(),
         this.logger,
         this.codec,
         // Fall back to the schema's own default rather than restating one here:
@@ -449,21 +448,6 @@ export class TelegramAdapter extends BaseRelayAdapter {
       this.recordError(err);
       await ctx.answerCallbackQuery({ text: 'Error processing approval.' }).catch(() => {});
     }
-  }
-
-  /**
-   * Build inbound callbacks with typing indicator support.
-   *
-   * Extends the base callbacks with an `onPublished` hook that starts a
-   * typing indicator immediately after a successful inbound publish.
-   */
-  private makeInboundCallbacksWithTyping() {
-    return {
-      ...this.makeInboundCallbacks(),
-      onPublished: (chatId: number) => {
-        startTypingWithTimeout(this.bot, chatId, this.outboundState);
-      },
-    };
   }
 
   /**

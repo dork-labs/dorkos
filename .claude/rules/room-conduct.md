@@ -102,12 +102,18 @@ Current as of 2026-07-30; fix them rather than working around them.
 
 - Telegram's adapter has no `is_bot` filter and answers every message in every
   group. Two bots in one group is an unbounded loop.
-- Telegram's typing indicator still starts when a message is RECEIVED and blind-
-  caps at 60s, so it can show typing for an agent that never runs — the shape
-  E16a forbids. The rooms path no longer works this way; the adapter has not
-  caught up yet.
+- No room is bridged to a chat platform. Room presence reaches the cockpit
+  (`RoomService.publishSignal` → the room's event stream) and stops there. The
+  Telegram adapter keeps a signal seam for it (`handleTypingSignal`), but
+  nothing publishes into it yet, so a Telegram chat cannot show a room's
+  working state — build the bridge rather than a second indicator.
 
-Two gaps that were listed here are gone, so nothing should be written around
+Three gaps that were listed here are gone, so nothing should be written around
 them any more: the room composer has a mention picker
-(`features/mentions`), and a room shows an in-flight working indicator
-(`entities/room/model/use-room-presence.ts`, `widgets/room-view/ui/RoomPresenceLine.tsx`).
+(`features/mentions`), a room shows an in-flight working indicator
+(`entities/room/model/use-room-presence.ts`, `widgets/room-view/ui/RoomPresenceLine.tsx`),
+and Telegram's typing indicator is driven by the turn — it starts on the turn's
+first event and stops at the terminal (including a question or an approval,
+where the agent is waiting on a person). The blind 60s cap that ran from message
+receipt is gone; what remains is an inactivity bound, restated by every event,
+so only a stream that has gone dark is cut.

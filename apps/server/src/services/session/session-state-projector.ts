@@ -22,7 +22,7 @@
  *
  * @module services/session/session-state-projector
  */
-import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
+import { StaleResumeCursorError, isBlockingInteractionEvent } from '@dorkos/shared/session-stream';
 import type {
   SessionEvent,
   SessionSnapshot,
@@ -400,6 +400,8 @@ export class SessionStateProjector {
       case 'subagent_update':
         this.applySubagentUpdate(event.taskId, event.status);
         break;
+      // Kept in sync with `BLOCKING_INTERACTION_EVENT_TYPES` — a switch cannot
+      // be driven by the constant, but `trackInteraction` re-checks it.
       case 'approval_required':
       case 'question_prompt':
       case 'elicitation_prompt':
@@ -466,11 +468,10 @@ export class SessionStateProjector {
 
   /** Record a pending interaction and flip the session to `blocked`. */
   private trackInteraction(event: SessionEvent): void {
-    if (
-      event.type !== 'approval_required' &&
-      event.type !== 'question_prompt' &&
-      event.type !== 'elicitation_prompt'
-    ) {
+    // `BLOCKING_INTERACTION_EVENT_TYPES` is the one list — the Telegram
+    // adapter stops its typing indicator off the same predicate
+    // (`adapters/telegram/outbound.ts`), so the two cannot drift.
+    if (!isBlockingInteractionEvent(event)) {
       return;
     }
     // Strip the union discriminator, seq, and timer fields — the selector

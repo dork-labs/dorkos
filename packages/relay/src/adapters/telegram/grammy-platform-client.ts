@@ -2,8 +2,12 @@
  * Grammy-backed implementation of the PlatformClient interface for Telegram.
  *
  * Wraps a grammy `Bot` instance and provides typed platform operations:
- * posting, editing, and deleting messages, and managing Telegram's typing
- * indicator lifecycle.
+ * posting, editing, and deleting messages.
+ *
+ * It deliberately owns no typing indicator. Telegram's chat action is driven
+ * by the turn's own lifecycle in `outbound.ts`, and a second refresh loop here
+ * — with its own private timer map, invisible to the adapter's teardown —
+ * could only ever contradict it.
  *
  * This class owns no relay routing or envelope handling — those concerns
  * remain in `TelegramAdapter`. It operates exclusively on thread IDs (chat
@@ -17,12 +21,6 @@ import { noopLogger } from '../../types.js';
 import { formatForPlatform, truncateText } from '../../lib/payload-utils.js';
 import { MAX_MESSAGE_LENGTH } from './inbound.js';
 
-/** Telegram sendChatAction value for typing indicator. */
-const TELEGRAM_TYPING_ACTION = 'typing' as const;
-
-/** Refresh interval (ms) for Telegram typing indicator (Telegram expires it after 5s). */
-const TYPING_REFRESH_MS = 4_000;
-
 /**
  * Grammy-backed Telegram platform client implementing {@link PlatformClient}.
  *
@@ -33,9 +31,6 @@ const TYPING_REFRESH_MS = 4_000;
 export class GrammyPlatformClient implements PlatformClient {
   /** @inheritdoc */
   readonly platform = 'telegram';
-
-  /** Active typing refresh intervals keyed by numeric chat ID. */
-  readonly #typingIntervals: Map<number, ReturnType<typeof setInterval>> = new Map();
 
   readonly #bot: Bot;
   readonly #logger: RelayLogger;
@@ -157,69 +152,15 @@ export class GrammyPlatformClient implements PlatformClient {
   }
 
   /**
-   * Send a `typing` chat action to signal the bot is composing a response.
+   * Tear down the platform client.
    *
-   * Sends an immediate typing indicator, then refreshes it every
-   * {@link TYPING_REFRESH_MS} milliseconds (Telegram's indicator expires after 5s).
-   * Idempotent — calling while a typing interval is active clears the old one first.
-   *
-   * @param threadId - Telegram chat ID as a string
-   */
-  startTyping(threadId: string): void {
-    const chatId = parseChatId(threadId);
-
-    // Clear any existing interval for this chat (idempotent)
-    this.#clearTypingInterval(chatId);
-
-    // Fire immediately (best-effort)
-    this.#bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {
-      // Typing indicators are best-effort
-    });
-
-    const intervalId = setInterval(() => {
-      this.#bot.api.sendChatAction(chatId, TELEGRAM_TYPING_ACTION).catch(() => {
-        this.#clearTypingInterval(chatId);
-      });
-    }, TYPING_REFRESH_MS);
-
-    this.#typingIntervals.set(chatId, intervalId);
-    this.#logger.debug(`startTyping: started typing indicator for chat ${chatId}`);
-  }
-
-  /**
-   * Cancel the active typing indicator for a Telegram chat.
-   *
-   * Clears the refresh interval started by {@link startTyping}. No-op if no
-   * indicator is active for the chat.
-   *
-   * @param threadId - Telegram chat ID as a string
-   */
-  stopTyping(threadId: string): void {
-    const chatId = parseChatId(threadId);
-    this.#clearTypingInterval(chatId);
-    this.#logger.debug(`stopTyping: cleared typing indicator for chat ${chatId}`);
-  }
-
-  /**
-   * Tear down the platform client — clear all typing intervals.
-   *
-   * Must be called when the owning adapter stops to prevent leaked timers.
+   * Nothing to release: this client holds no timers or connections of its own
+   * — the grammy `Bot` it wraps is owned and stopped by `TelegramAdapter`, and
+   * the chat's typing loop lives with the turn in `outbound.ts`. Required by
+   * {@link PlatformClient}, which every implementation must satisfy.
    */
   async destroy(): Promise<void> {
-    for (const interval of this.#typingIntervals.values()) {
-      clearInterval(interval);
-    }
-    this.#typingIntervals.clear();
-    this.#logger.debug('destroy: cleared all typing intervals');
-  }
-
-  /** Clear the typing refresh interval for a specific chat. */
-  #clearTypingInterval(chatId: number): void {
-    const existing = this.#typingIntervals.get(chatId);
-    if (existing !== undefined) {
-      clearInterval(existing);
-      this.#typingIntervals.delete(chatId);
-    }
+    this.#logger.debug('destroy: nothing to release');
   }
 }
 

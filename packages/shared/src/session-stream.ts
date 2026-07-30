@@ -184,6 +184,50 @@ const interactionTimerShape = {
 } as const;
 
 /**
+ * The session events that stop a turn to wait on a person.
+ *
+ * One list, because two copies drift: the session projector folds all three
+ * into lifecycle `blocked`, and the Telegram adapter stops its typing
+ * indicator on all three for the same reason — the agent is not working, it is
+ * waiting. Anything added here must be a state a person has to resolve.
+ */
+export const BLOCKING_INTERACTION_EVENT_TYPES = [
+  'approval_required',
+  'question_prompt',
+  'elicitation_prompt',
+] as const;
+
+/** A session event type that blocks the turn on a person. */
+export type BlockingInteractionEventType = (typeof BLOCKING_INTERACTION_EVENT_TYPES)[number];
+
+/**
+ * Does this event type block the turn on a person?
+ *
+ * For callers holding only a discriminator string — a relay adapter reading a
+ * `type` off the wire, say. Callers holding the event itself want
+ * {@link isBlockingInteractionEvent}, which narrows the union.
+ *
+ * @param type - A session-event or stream-event `type` discriminator
+ */
+export function isBlockingInteractionEventType(type: string): type is BlockingInteractionEventType {
+  return (BLOCKING_INTERACTION_EVENT_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * Does this event block the turn on a person?
+ *
+ * Narrows to the interaction members, so a caller can reach the `id` and
+ * countdown fields only those three carry.
+ *
+ * @param event - Any event carrying a `type` discriminator
+ */
+export function isBlockingInteractionEvent<T extends { type: string }>(
+  event: T
+): event is Extract<T, { type: BlockingInteractionEventType }> {
+  return isBlockingInteractionEventType(event.type);
+}
+
+/**
  * Discriminated union (`type`) of every event a session projects onto its
  * monotonic stream. Each member carries an integer non-negative `seq`. The
  * three interaction members (`approval_required`, `question_prompt`,
