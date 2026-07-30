@@ -3,6 +3,23 @@ import type { PlaygroundSection } from '../playground-registry';
 /** Message action-surface sections for the Entry Actions playground page. */
 export const ENTRY_ACTIONS_SECTIONS: PlaygroundSection[] = [
   {
+    id: 'where-the-capsule-sits',
+    title: 'Where the capsule sits',
+    page: 'entry-actions',
+    category: 'Entry Actions',
+    keywords: [
+      'straddle',
+      'capsule',
+      'edge',
+      'gutter',
+      'occlusion',
+      'position',
+      'entrance',
+      'rise',
+      'overshoot',
+    ],
+  },
+  {
     id: 'revealing-the-toolbar',
     title: 'Revealing the toolbar',
     page: 'entry-actions',

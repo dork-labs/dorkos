@@ -1,3 +1,4 @@
+import type { Locator } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 
@@ -121,6 +122,110 @@ test.describe('Rooms — every message gets a menu', () => {
         (inset) => Math.min(inset.top, inset.bottom, inset.left, inset.right) < MIN_INSET_PX
       )
     ).toEqual([]);
+  });
+
+  test('the toolbar straddles a message, and covers no word of one at rest', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The position the design record chose, made mechanical. The toolbar used
+    // to be drawn INSIDE the message's own column, over its first line — the
+    // deeper of the two defects the capsule had, and one no assertion could
+    // see: a toolbar covering the author's name is at exactly the coordinates
+    // a "top-right" assertion would ask for.
+    //
+    // So what is asserted is the relationship between the capsule and the words
+    // underneath it. Its bottom edge must land ON the top of the message's own
+    // content column — the line the author's name sits on — and never below it,
+    // and it must cross the message block's top edge rather than float free
+    // above it. Both halves matter: the first is the promise (it covers
+    // nothing), the second is the design (it straddles, it does not hover).
+    //
+    // AT REST, which is the whole of what this pins. Scrolled past its own top,
+    // a message hands the capsule to the sticky clamp, and a clamped capsule
+    // does sit over the first line or two — the regime the next test pins the
+    // position of. The promise is about where the capsule lives, not about
+    // every scroll offset it can be looked at from.
+    //
+    // Both grouping regimes, because they are the two different geometries the
+    // one rule has to serve: a group start has 16px of top padding to hang the
+    // capsule in, and a continuation has 6px — the tight case, where the
+    // documented trade (reach up over the line above rather than down over this
+    // message's own) actually lives.
+    const slug = `e2e-actions-straddle-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['the deploy is stuck', 'the last step never returned']);
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(2, { timeout: SERVER_ROUND_TRIP_MS });
+
+    /** Measure one row's capsule against the words it is drawn beside. */
+    const measure = (entry: Locator) =>
+      entry.evaluate((row) => {
+        const bar = row.querySelector('[data-testid="entry-actions"]')!;
+        // The message's own content column: its top is the first thing the row
+        // draws — the author's name on a group start, the words themselves on a
+        // continuation. Reached through the content slot rather than by class,
+        // because that is the one part of the row with a stable hook.
+        const body = row.querySelector('[data-slot="message-content"]')!.parentElement!;
+        const barBox = bar.getBoundingClientRect();
+        return {
+          barTop: barBox.top,
+          barBottom: barBox.bottom,
+          rowTop: row.getBoundingClientRect().top,
+          bodyTop: body.getBoundingClientRect().top,
+        };
+      });
+
+    const rows: { row: string; overText: number; aboveEdge: number; belowEdge: number }[] = [];
+
+    for (const [index, row] of [
+      [0, 'group start'],
+      [1, 'continuation'],
+    ] as const) {
+      const entry = roomsPage.entries.nth(index);
+      const toolbar = roomsPage.actionsIn(entry);
+
+      await entry.hover();
+      await expect(toolbar).toHaveCSS('opacity', '1');
+      // The capsule ARRIVES with a rise that overshoots and settles, so its box
+      // means nothing until that is over. `translate` returns to `none` when the
+      // animation ends — which is the moment the geometry below is the geometry
+      // a reader is looking at, and a gate that does not presuppose the answer.
+      await expect(toolbar).toHaveCSS('translate', 'none');
+
+      const box = await measure(entry);
+      rows.push({
+        row,
+        // How far the capsule's bottom edge reaches PAST the first thing the
+        // message draws. Zero or less is the promise; anything positive is a
+        // covered word.
+        overText: Math.round(box.barBottom - box.bodyTop),
+        aboveEdge: Math.round(box.rowTop - box.barTop),
+        belowEdge: Math.round(box.barBottom - box.rowTop),
+      });
+    }
+
+    // Reported together rather than asserted one row at a time, the same way
+    // the containment test names every button that escaped: the two grouping
+    // regimes fail for different reasons, and seeing only the first would hide
+    // whichever one is not being worked on.
+    //
+    // One pixel of slack for sub-pixel layout, which is not enough for a line
+    // of text to hide in.
+    expect(rows.filter((r) => r.overText > 1)).toEqual([]);
+    // Straddling: some of it above the block's top edge, some below. A capsule
+    // floating entirely clear of the message would pass the test above while
+    // being a different design.
+    expect(rows.filter((r) => r.aboveEdge <= 0 || r.belowEdge <= 0)).toEqual([]);
+
+    // And the second row really is the tight case: less room above its words
+    // than the group start has. Without this, a change to the grouping rules
+    // could quietly turn both rows into group starts and the 6px geometry — the
+    // one the documented trade is about — would stop being tested at all, with
+    // everything above still green.
+    expect(rows[1]!.belowEdge).toBeLessThan(rows[0]!.belowEdge);
   });
 
   test('the toolbar rides the viewport edge on a message taller than the window', async ({

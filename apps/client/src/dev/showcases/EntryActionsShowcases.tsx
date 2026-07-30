@@ -58,7 +58,29 @@ function BenchRow({
   );
 }
 
-const HOVER_ENTRY = benchEntry('the deploy is stuck — the last step never returned');
+const STRADDLE_ENTRY = benchEntry('the deploy is stuck — the last step never returned');
+
+/** Where the capsule lands against the message it acts on. */
+function StraddleSection() {
+  return (
+    <PlaygroundSection
+      title="Where the capsule sits"
+      description="The capsule straddles the message's top-right edge — about half of it above the block, in the air between messages — so while that edge is on screen it covers no word of what it acts on. Its rail is a band exactly one capsule tall, hung above the message's first line, which is what makes that true by construction rather than by a number somebody picked. (Scrolled past its own top, a message hands the capsule to the sticky clamp, which is the one place it sits over words — see the sticky rail below.)"
+    >
+      <p className="text-muted-foreground mb-2 text-xs">
+        Hover the row and read the bottom edge of the pill: it should rest ON the line the author's
+        name sits on, never over it. Move away and back to watch it arrive — a fade with a small
+        rise that overshoots a pixel and settles. Leaving is a plain, faster fade with nothing
+        moving.
+      </p>
+      <ShowcaseDemo responsive>
+        <BenchRow entry={STRADDLE_ENTRY} />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+const HOVER_ENTRY = benchEntry('the lockfile changed under us, that is the whole story');
 const FOCUS_ENTRY = benchEntry('worth checking whether the cache warmed at all');
 
 /** Hover and keyboard focus — the two ways the toolbar is revealed on a pointer device. */
@@ -71,8 +93,8 @@ function RevealSection() {
       <div>
         <ShowcaseLabel>On hover</ShowcaseLabel>
         <p className="text-muted-foreground mb-2 text-xs">
-          Put the pointer on the row. The pill should sit over the message&apos;s top-right corner
-          and fully enclose its icons, with its own padding visible above and below them.
+          Put the pointer on the row. The pill should rise into place above the message and fully
+          enclose its icons, with its own padding visible above and below them.
         </p>
         <ShowcaseDemo responsive>
           <BenchRow entry={HOVER_ENTRY} />
@@ -84,7 +106,8 @@ function RevealSection() {
         <p className="text-muted-foreground mb-2 text-xs">
           Click the row (or Tab to it) and press an arrow key. The message is the tab stop; the
           buttons inside it are not, which is what keeps a room one Tab per message however many
-          actions each one carries. Escape hands focus back to the row.
+          actions each one carries. Escape hands focus back to the row. The keyboard gets the same
+          arrival the pointer does.
         </p>
         <ShowcaseDemo responsive>
           <BenchRow entry={FOCUS_ENTRY} />
@@ -101,11 +124,14 @@ function StickyRailSection() {
   return (
     <PlaygroundSection
       title="The sticky rail"
-      description="A toolbar anchored to the top of the message goes off screen the moment the message is longer than the window — the hole Slack's top-anchored toolbar has. This one rides a zero-height sticky rail instead, so it stays at the message's top while that is visible and clamps to the scroller's edge once the message extends above it."
+      description="A toolbar anchored to the top of the message goes off screen the moment the message is longer than the window — the hole Slack's top-anchored toolbar has. The rail is sticky instead, so the capsule straddles the message's top edge while that is on screen and clamps to the scroller's edge once the message extends above it. Past the clamp there is no edge left to straddle, so it stops straddling and rides the edge, whole and in the way of as little as possible."
     >
       <p className="text-muted-foreground mb-2 text-xs">
-        Scroll this box past the message&apos;s own top, then hover. The pill should be pinned just
-        inside the top edge — still whole, still holding its buttons.
+        Scroll this box slowly past the message&apos;s own top, then hover. The pill should travel
+        up with the message and simply stop at the top edge — no jump at the handover — and stay
+        pinned there, still whole, still holding its buttons. Stop the scroll just as the first line
+        clears the edge and the pill sits over it: the clamp is where the no-occlusion promise runs
+        out, and it is the price of the actions staying reachable at all.
       </p>
       <ShowcaseDemo>
         <div className="bg-background h-[360px] overflow-y-auto rounded-md border">
@@ -151,7 +177,7 @@ function ActionCountSection() {
   return (
     <PlaygroundSection
       title="How many actions"
-      description="Reply and Copy are always offered; Mention appears only when an @ would actually reach the author — so a live row carries two or three. The leftmost positions are held for quick reactions, whose design is still open, so the bar is also shown below at a width no live row produces today."
+      description="Reply and Copy are always offered; Mention appears only when an @ would actually reach the author — so a live row carries two or three. The leftmost positions are held for quick reactions, which are designed but not built, so the bar is also shown below at widths no live row produces today."
     >
       <div>
         <ShowcaseLabel>Two — your own message</ShowcaseLabel>
@@ -211,10 +237,15 @@ function GroupingSection() {
   return (
     <PlaygroundSection
       title="Grouped and ungrouped"
-      description="A group start draws the avatar, the name and the time; a continuation hangs beneath it with an empty identity gutter and its own timestamp on hover. The toolbar rides the top of the message either way, so it lands beside a name on one row and beside bare text on the next."
+      description="A group start draws the avatar, the name and the time; a continuation hangs beneath it with an empty identity gutter and its own timestamp on hover. One rule covers both: the capsule hangs off the message's own first line, and the row's top padding already moves with the grouping — so a group start gets the even straddle, and a continuation, which has only 12px of air to work with, reaches further up into it."
     >
       <div>
         <ShowcaseLabel>A group — first, middle, last</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Hover each row in turn. A 30px capsule cannot fit in the 12px between grouped messages, so
+          on a continuation it reaches over the line above — never over the message it acts on,
+          which is the one you are pointing at and about to do something to.
+        </p>
         <ShowcaseDemo responsive>
           <BenchRow entry={GROUP_FIRST} grouping={{ position: 'first' }} />
           <BenchRow entry={GROUP_MIDDLE} grouping={{ position: 'middle' }} />
@@ -273,6 +304,7 @@ function ThemeSection() {
 export function EntryActionsShowcases() {
   return (
     <>
+      <StraddleSection />
       <RevealSection />
       <StickyRailSection />
       <ActionCountSection />
