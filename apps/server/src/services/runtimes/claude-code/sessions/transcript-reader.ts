@@ -229,10 +229,18 @@ export class TranscriptReader {
         }
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
+        const account = path.dirname(projectsRoot);
         logger.warn('[TranscriptReader] account listing degraded', { projectsRoot, error: reason });
         warnings.push({
           runtime: 'claude-code',
-          message: `Claude account ${path.dirname(projectsRoot)} could not be read: ${reason}`,
+          // Every warning from this loop carries the same `runtime`, so the
+          // account is the only thing that distinguishes two of them. It travels
+          // as its own field rather than only inside the sentence, because the
+          // sidebar keys and names its notices by it (spec §Consequence for the
+          // UI); a reader must be able to see WHICH account failed without
+          // parsing a message.
+          account,
+          message: `Claude account ${account} could not be read: ${reason}`,
         });
       }
     }

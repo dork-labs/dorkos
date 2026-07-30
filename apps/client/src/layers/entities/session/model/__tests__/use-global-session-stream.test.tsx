@@ -16,6 +16,9 @@ vi.mock('@/layers/shared/lib/transport', () => ({
     attachSession: vi.fn(),
     getAttachedSessionId: vi.fn().mockReturnValue(null),
     subscribeListConnectionState: vi.fn().mockReturnValue(() => {}),
+    // The hook also listens for `session_list_invalidated` (Claude account
+    // switch); these cases drive the store directly and never fire it.
+    subscribeEvent: vi.fn().mockReturnValue(() => {}),
   },
 }));
 

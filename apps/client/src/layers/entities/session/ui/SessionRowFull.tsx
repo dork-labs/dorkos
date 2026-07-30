@@ -18,6 +18,7 @@ import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionContextGauge } from './SessionContextGauge';
 import { OriginMark } from './OriginMark';
+import { AccountMark } from './AccountMark';
 import { getOriginDescriptor } from '../config/origin-descriptors';
 
 interface SessionRowFullProps {
@@ -242,6 +243,7 @@ export function SessionRowFull({
                     model={session.model}
                     className="text-muted-foreground/50"
                   />
+                  <AccountMark account={session.account} className="text-muted-foreground/60" />
                   <div
                     className="text-muted-foreground/70 min-w-0 flex-1 truncate text-xs"
                     title={onRename ? 'Click the pencil icon to rename' : undefined}

@@ -3,6 +3,7 @@ covers:
   - 'feat(server,shared): choose which Claude Code account new work runs on (DOR-729)'
   - 'feat(server,shared): list and read sessions from every Claude Code account (DOR-729)'
   - 'feat(server,client): pin every turn to its own Claude Code account and apply a switch live (DOR-729)'
+  - 'feat(client,shared): choose and switch Claude Code accounts from the cockpit (DOR-729)'
 ---
 
 ### Added

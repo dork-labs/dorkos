@@ -144,11 +144,11 @@ Two further facts make derivation clearly right over a registry: the only availa
 
 Three call sites use the SDK **in-process**, so `sdkOptions.env` never reaches them, and the SDK's option types expose only `dir?`/`sessionStore?` — no config-dir, no env:
 
-| Site                                            | What it does                         |
-| ----------------------------------------------- | ------------------------------------ |
-| `transcript-reader.ts:461` `getSessionInfo`     | reads the SDK-persisted custom title |
-| `claude-code-runtime.ts:470` `sdkRenameSession` | renames a session                    |
-| `session-store.ts:210` `sdkForkSession`         | forks a session                      |
+| Site                                          | What it does                         |
+| --------------------------------------------- | ------------------------------------ |
+| `transcript-reader.ts` → `getSessionInfo`     | reads the SDK-persisted custom title |
+| `claude-code-runtime.ts` → `sdkRenameSession` | renames a session                    |
+| `session-store.ts` → `sdkForkSession`         | forks a session                      |
 
 The SDK memoizes its config root **keyed on** `process.env.CLAUDE_CONFIG_DIR`, so the only lever is mutating that variable process-globally — which is racy in a server running concurrent sessions across accounts.
 
@@ -187,3 +187,19 @@ Phase A's wire field `accounts[].exists` does **not** mean `fs.existsSync` — i
 ### A note for Phase B
 
 `resolveClaudeRootSet()` can legitimately return an **empty array** — D4 excludes a root without `projects/`, including when it is the active root (a freshly authenticated account that has never run a session). Listing must treat an empty set as "no sessions", never as an error, and must not assume the active root is a member.
+
+## 10. Amendment 3 — the default account is selected by ABSENCE, not by path (2026-07-29)
+
+D4 says Claude Code derives its Keychain entry name as `Claude Code-credentials-<sha256(configDir)[0:8]>`, unsuffixed for the default. That is right but underspecified, and the missing half would have broken **every default install** if the write path had pinned the env var unconditionally.
+
+Claude Code chooses the **unsuffixed** name exactly when `CLAUDE_CONFIG_DIR` is **unset** — not when it is set to the default path. Verified two ways: in the SDK's bundled `sdk.mjs`, the "is default" test is `t !== undefined ? !t : !process.env.CLAUDE_CONFIG_DIR`; and empirically on the operator's machine, `Claude Code-credentials` exists while `Claude Code-credentials-10af4501` — the suffix for `~/.claude` — **does not**, whereas `~/.claude2` and `~/.claude3` exist only under their suffixed names.
+
+So writing `CLAUDE_CONFIG_DIR=~/.claude` where nothing was set is **not** a no-op: it points the CLI at a Keychain entry that was never created, and authentication fails.
+
+**The rule the write path follows:** the pin is explicit whenever it names an account, and faithfully **absent** when absence is what names the account — passed as `{ CLAUDE_CONFIG_DIR: undefined }`, since Node's `child_process` drops undefined values, which still erases an inherited value rather than passing it through. D8's requirement is satisfied either way, because the key is always determined by DorkOS and never inherited.
+
+This also refines D8's safety argument, which was incomplete as written. An explicit `sdkOptions.env` entry protects the **transmission** of the value but not its **derivation**: `resolveActiveClaudeRoot()` falls back to `process.env.CLAUDE_CONFIG_DIR` when `activeAccount` is null, so a held rename/fork lock could contaminate the value being pinned for a brand-new session. The lock therefore owns an `ambientClaudeConfigDir()` accessor that reports the variable as it is _outside_ any held critical section, and the resolvers read through it. The lock module is the only production reader or writer of `process.env.CLAUDE_CONFIG_DIR`.
+
+### Consequence for the UI (Phase D)
+
+Renaming a session that belongs to a non-active account **does** persist to the SDK, but the sidebar keeps showing the derived title until that account is active — a direct consequence of D8's deliberate title-read gating. Left unhandled this reads as "rename did nothing," which is exactly the kind of quiet dishonesty this product refuses. The rename stays enabled, because it genuinely works, and the UI says plainly where the new name will appear.

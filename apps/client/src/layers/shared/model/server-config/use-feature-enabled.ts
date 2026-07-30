@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useTransport } from './TransportContext';
+import { useTransport } from '../TransportContext';
 
 type Subsystem = 'tasks' | 'relay';
 

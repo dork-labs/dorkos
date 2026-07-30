@@ -455,6 +455,17 @@ export const SessionListWarningSchema = z
     runtime: z.string(),
     /** Human-readable failure reason. */
     message: z.string(),
+    /**
+     * The Claude account root this failure belongs to, when the runtime reads
+     * SEVERAL stores and only one of them failed (spec `claude-code-accounts`).
+     * Absent when the whole runtime failed, which is every other runtime.
+     *
+     * Load-bearing for the UI, not decoration: claude-code pushes one warning
+     * per unreadable account and tags them all `runtime: 'claude-code'`, so
+     * without this two unreadable accounts render as two identical sentences
+     * under one React key. The account is what tells them apart.
+     */
+    account: z.string().optional(),
   })
   .openapi('SessionListWarning');
 

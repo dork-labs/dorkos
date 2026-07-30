@@ -1,0 +1,70 @@
+import { useQuery } from '@tanstack/react-query';
+import { claudeAccountName, type ClaudeAccountRef } from '../../lib/claude-accounts';
+import { useTransport } from '../TransportContext';
+
+/**
+ * Same cache entry `entities/config`'s `useConfig` writes, so this hook adds a
+ * subscriber rather than a second request. Spelled out here because `shared/`
+ * cannot import the entity's key factory, and the two must not drift.
+ *
+ * NOTE the sibling footgun: several settings tabs (and `useFeatureEnabled` next
+ * door) read the BARE `['config']` key, which is a different cache entry. Any
+ * write that must reach both invalidates the `['config']` PREFIX.
+ */
+const CONFIG_QUERY_KEY = ['config', 'current'] as const;
+
+/** Matches `useConfig`'s freshness so both subscribers agree on when to refetch. */
+const CONFIG_STALE_TIME = 30_000;
+
+/** What {@link useClaudeAccounts} reports. */
+export interface ClaudeAccountsView {
+  /** The accounts the operator registered, in the order they registered them. */
+  accounts: ClaudeAccountRef[];
+  /**
+   * Absolute path a NEW session runs and bills on, already resolved by the
+   * server. `undefined` until the config lands, or on a server too old to
+   * report it.
+   */
+  resolvedAccount: string | undefined;
+  /** True when nobody chose the resolved account — the server inherited it. */
+  inherited: boolean;
+  /**
+   * Whether more than one account is registered, which is the ONLY state where
+   * naming accounts in the product earns its pixels: with one account (or none)
+   * every session is on the same one, so a badge on every row would repeat a
+   * fact that never varies.
+   */
+  isMultiAccount: boolean;
+  /** The shortest honest name for an account path (label, else folder name). */
+  nameFor: (path: string) => string;
+}
+
+/**
+ * Read the Claude Code accounts the operator registered, and which one new work
+ * runs on (spec `claude-code-accounts`).
+ *
+ * Lives in `shared/` on purpose, mirroring `useFeatureEnabled`: session rows
+ * (`entities/session`) need this and may not import `entities/config`, so the
+ * shared layer owns the one read both layers can reach. Reading through the
+ * transport seam keeps the FSD hierarchy intact.
+ */
+export function useClaudeAccounts(): ClaudeAccountsView {
+  const transport = useTransport();
+
+  const { data } = useQuery({
+    queryKey: CONFIG_QUERY_KEY,
+    queryFn: () => transport.getConfig(),
+    staleTime: CONFIG_STALE_TIME,
+  });
+
+  const claudeCode = data?.claudeCode;
+  const accounts = claudeCode?.accounts ?? [];
+
+  return {
+    accounts,
+    resolvedAccount: claudeCode?.resolvedAccount,
+    inherited: claudeCode?.inherited ?? true,
+    isMultiAccount: accounts.length > 1,
+    nameFor: (path: string) => claudeAccountName(path, accounts),
+  };
+}

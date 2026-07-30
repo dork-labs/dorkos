@@ -273,6 +273,11 @@ describe('TranscriptReader across Claude accounts', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]!.runtime).toBe('claude-code');
     expect(warnings[0]!.message).toContain(accountB);
+    // The account travels as its own field, not only inside the sentence: every
+    // warning from this loop carries the same `runtime`, so the sidebar keys and
+    // names its notices by the account, and two unreadable accounts would
+    // otherwise collide into one notice (spec §Consequence for the UI).
+    expect(warnings[0]!.account).toBe(accountB);
   });
 
   it('treats no qualifying account as no sessions, never as an error', async () => {

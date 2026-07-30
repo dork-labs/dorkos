@@ -4,6 +4,7 @@ import {
   useRuntimeRequirements,
 } from '@/layers/entities/runtime';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
+import { ClaudeAccountsCard } from '../ClaudeAccountsCard';
 
 /**
  * Runtimes settings tab: live discovery + connect for the three agent
@@ -15,6 +16,11 @@ import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
  * terminal-free flow the status-bar picker, Run-with menu, and session-launch
  * popover open via `RuntimeSetupDialog`). This tab only adds the settings
  * framing (no page header), since the Settings dialog provides its own chrome.
+ *
+ * {@link ClaudeAccountsCard} is a SIBLING of that panel, never part of the
+ * Claude Code card inside it: `RuntimeSection` is entities-layer and props-only,
+ * and entities may not import the config hooks the accounts card needs (spec
+ * `claude-code-accounts` D7).
  */
 export function RuntimesTab() {
   const requirementsQuery = useRuntimeRequirements();
@@ -34,6 +40,8 @@ export function RuntimesTab() {
         isRechecking={requirementsQuery.isFetching}
         renderConnect={renderRuntimeConnect}
       />
+
+      <ClaudeAccountsCard />
     </div>
   );
 }

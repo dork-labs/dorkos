@@ -11,6 +11,7 @@ import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
 import { OriginMark } from './OriginMark';
+import { AccountMark } from './AccountMark';
 
 interface SessionRowCompactProps {
   session: Session;
@@ -146,6 +147,7 @@ export function SessionRowCompact({
                 model={session.model}
                 className="text-muted-foreground/50"
               />
+              <AccountMark account={session.account} className="text-muted-foreground/60" />
               <span className="text-muted-foreground/60 text-[10px]">{relativeTime}</span>
             </span>
           </button>
