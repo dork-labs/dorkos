@@ -78,8 +78,8 @@ describe('a room says why an agent did not answer', () => {
     cy = authors.resolveAgent('/agents/cy', 'Cy').id;
     di = authors.resolveAgent('/agents/di', 'Di').id;
     nextInChain = { [ana]: 'bo', [bo]: 'cy', [cy]: 'di' };
-    // A channel seeds `mention-only`; these agents answer everything, which is
-    // the setting that makes a missing answer unambiguous.
+    // A channel seeds `engaged`; these agents answer everything, which is the
+    // setting that makes a missing answer unambiguous.
     for (const [path, authorId] of [
       ['/agents/ana', ana],
       ['/agents/bo', bo],
@@ -251,7 +251,9 @@ describe('a room says why an agent did not answer', () => {
       // Four agents, each naming the next, against a ceiling of three: the
       // fourth hop is refused on depth alone, by a chain that really ran.
       open(
-        outcomeRunner((request) => ({ text: `over to @${nextInChain[request.authorId] ?? 'nobody'}` })),
+        outcomeRunner((request) => ({
+          text: `over to @${nextInChain[request.authorId] ?? 'nobody'}`,
+        })),
         ['/agents/ana', '/agents/bo', '/agents/cy', '/agents/di']
       );
       for (const agent of [ana, bo, cy, di]) {

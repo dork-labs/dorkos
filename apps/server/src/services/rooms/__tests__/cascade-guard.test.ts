@@ -60,8 +60,8 @@ describe('cascade guard, wired', () => {
       },
       human
     );
-    // A channel seeds `mention-only`; both agents answer everything here on
-    // purpose, because that is the shape that loops.
+    // A channel seeds `engaged`; both agents answer everything here on purpose,
+    // because that is the shape that loops.
     ana = authors.resolveAgent('/agents/ana', 'Ana').id;
     bo = authors.resolveAgent('/agents/bo', 'Bo').id;
     service.updateMembership(room.id, human, ana, 'always');
@@ -445,7 +445,8 @@ describe('triggering', () => {
     );
     channel.service.post(channelRoom.id, { authorId: channel.human, text: 'morning' });
     await channel.service.triggersIdle();
-    // A channel seeds `mention-only`, so an unaddressed message triggers nobody.
+    // A channel seeds `engaged`, and an agent nobody has addressed yet is not in
+    // a window, so an unaddressed message triggers nobody.
     expect(channel.runner.turns).toHaveLength(0);
 
     channel.service.post(channelRoom.id, { authorId: channel.human, text: 'morning @ana' });
