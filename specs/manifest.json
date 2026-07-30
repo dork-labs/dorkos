@@ -2,6 +2,22 @@
   "version": 1,
   "specs": [
     {
+      "id": "260730-001217",
+      "slug": "direct-connect",
+      "title": "Direct connect — OAuth 2.1 multi-account vendor MCP, the front door",
+      "created": "2026-07-30",
+      "status": "specified",
+      "project": "Connections Redesign — Direct First"
+    },
+    {
+      "id": "260730-001216",
+      "slug": "connections-redesign",
+      "title": "Connections redesign — catalog-first, honest custody, chat front door, try-it-now",
+      "created": "2026-07-30",
+      "status": "specified",
+      "project": "Connections Redesign — Direct First"
+    },
+    {
       "id": "260729-145341",
       "slug": "room-presence",
       "title": "Room presence — an honest working indicator, from claim to release",
