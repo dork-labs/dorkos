@@ -2,9 +2,16 @@
   "version": 1,
   "specs": [
     {
+      "id": "260730-154240",
+      "slug": "room-messaging-design",
+      "title": "Room messaging design — capsule, reactions, and the thread panel",
+      "created": "2026-07-30",
+      "status": "specified"
+    },
+    {
       "id": "260729-224559",
       "slug": "claude-code-accounts",
-      "title": "Claude Code accounts \u2014 choose which account runs your work",
+      "title": "Claude Code accounts — choose which account runs your work",
       "created": "2026-07-29",
       "status": "specified"
     },
