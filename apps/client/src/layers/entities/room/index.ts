@@ -46,7 +46,7 @@ export type {
 } from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
 export { presenceElapsed } from './lib/presence-copy';
-export { rungsFor, rungOf, modeForRung, explainRung } from './lib/response-mode';
+export { RESPONSE_RUNGS, rungOf, modeForRung, explainRung } from './lib/response-mode';
 export type {
   EngagedWindow,
   ResponseRung,

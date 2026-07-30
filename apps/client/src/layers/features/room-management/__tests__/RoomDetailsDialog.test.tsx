@@ -461,11 +461,16 @@ describe('RoomDetailsDialog', () => {
       expect(offeredRungs()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
     });
 
-    it('offers a direct message three, because it only has three behaviours', async () => {
+    it('offers a direct message the same four, because it has the same four behaviours', async () => {
+      // Three were offered here for one commit, on the inherited claim that a
+      // direct message's engaged window can never open. `room-trigger.ts` runs
+      // `engagementFor` for every room kind, and a GROUP conversation is still
+      // a `dm` — so the rung people would most want in a room holding three
+      // agents was the one they could not reach.
       renderDm('mention-only');
       await rosterSection();
 
-      expect(offeredRungs()).toEqual(['Silent', '@only', 'Everything']);
+      expect(offeredRungs()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
     });
 
     it('says what a second agent would turn this conversation into, before it does', async () => {
@@ -561,15 +566,17 @@ describe('RoomDetailsDialog', () => {
       ).toBeInTheDocument();
     });
 
-    it('places a stored value the room would never offer, rather than blanking', async () => {
-      // The API accepts `engaged` everywhere, so a DM membership can really
-      // hold it — set by a script or an older build. In a DM its window never
-      // opens, so it reads as @only, which is what it does. A control that
-      // rendered empty for a value that exists is a setting nobody can fix.
+    it('shows a direct message’s stored engaged value as engaged, and says what it does', async () => {
+      // The whole defect, end to end. `seedResponseMode` seeds a DM membership
+      // from the agent's own manifest and `engaged` is a legal value there, so
+      // this is a room somebody can really be looking at. It read `@only`, the
+      // sentence under it described `@only`, and the sentence was false of the
+      // membership it was describing.
       renderDm('engaged');
       await rosterSection();
 
-      expect(pill()).toHaveTextContent('@only');
+      expect(pill()).toHaveTextContent('Engaged');
+      expect(within(openScale()).getByText(/keeps answering for/)).toBeInTheDocument();
     });
 
     it('writes one canonical value per rung, never a room-dependent alias', async () => {
@@ -649,18 +656,24 @@ describe('RoomDetailsDialog', () => {
       expect(within(ana!).queryByText(/didn't save/)).not.toBeInTheDocument();
     });
 
-    it('writes `engaged` for the rung only a channel has', async () => {
-      const { transport } = renderPanel();
-      await rosterSection();
+    it.each(['channel', 'dm'] as const)(
+      'writes `engaged` for the engaged rung in a %s',
+      async (kind) => {
+        // A direct message wrote `mention-only` here — a narrowing write, fired
+        // by a rung that was already showing as chosen, storing a behaviour
+        // nobody picked. Red if the room kind ever reaches the write again.
+        const { transport } = kind === 'dm' ? renderDm('silent') : renderPanel();
+        await rosterSection();
 
-      fireEvent.click(within(openScale()).getByRole('radio', { name: 'Engaged' }));
+        fireEvent.click(within(openScale()).getByRole('radio', { name: 'Engaged' }));
 
-      await waitFor(() =>
-        expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
-          responseMode: 'engaged',
-        })
-      );
-    });
+        await waitFor(() =>
+          expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
+            responseMode: 'engaged',
+          })
+        );
+      }
+    );
   });
 
   it('removes nobody until the confirmation is accepted', async () => {

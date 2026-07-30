@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { previewLoudness, roomLoudness } from '../lib/loudness';
-import { rungOf, rungsFor } from '../lib/response-mode';
+import { RESPONSE_RUNGS, rungOf } from '../lib/response-mode';
 
 /** One agent on a roster, at a stored response mode. */
 function agent(displayName: string, responseMode: ResponseMode): RoomRosterEntry {
@@ -147,10 +147,12 @@ describe('roomLoudness', () => {
       expect(loudness.sentence).toBe('One agent answers every message here');
     });
 
-    it('reads `engaged` in a direct message as @only, because the window never opens', () => {
-      const loudness = roomLoudness([agent('Kai', 'engaged')], 'dm');
-
-      expect(loudness.level).toBe(2);
+    it('reads `engaged` the same in both kinds, because the window opens in both', () => {
+      // It used to read as `@only` in a direct message, two bars instead of
+      // three — a room aggregate that under-reported a room the reader was
+      // looking at. `room-trigger.ts` has no channel gate on `engagementFor`.
+      expect(roomLoudness([agent('Kai', 'engaged')], 'dm').level).toBe(3);
+      expect(roomLoudness([agent('Kai', 'engaged')], 'channel').level).toBe(3);
     });
   });
 });
@@ -186,7 +188,7 @@ describe('previewLoudness', () => {
     const KINDS: RoomKind[] = ['channel', 'dm'];
 
     for (const kind of KINDS) {
-      for (const option of rungsFor(kind)) {
+      for (const option of RESPONSE_RUNGS) {
         it(`agrees with roomLoudness when nothing moves — ${kind}, ${option.label}`, () => {
           const roster = [person('Dorian'), agent('Mio', 'engaged'), agent('Kai', 'mention-only')];
           // Put Mio exactly where it already is, expressed as a rung. Nothing
@@ -203,15 +205,18 @@ describe('previewLoudness', () => {
     }
   });
 
-  it('previews what a rung would really become, not what it is called', () => {
-    // A direct message has no engaged rung — `modeForRung` writes
-    // `mention-only` there — so previewing one must show the @only room the
-    // write would actually produce. Red if the hypothetical rung is used raw.
+  it('previews the engaged rung as itself in a direct message', () => {
+    // It used to answer with the `@only` room instead, because a DM wrote
+    // `mention-only` for this rung — so the line at the top of the sheet
+    // promised a quieter room than the write would produce, and then the write
+    // produced that quieter room and the preview looked right. Red if the two
+    // ever agree again: `engaged` lights three bars and `@only` two.
     const roster = [person('Dorian'), agent('Kai', 'silent')];
 
-    expect(previewLoudness(roster, 'dm', 'author-Kai', 'engaged')).toEqual(
+    expect(previewLoudness(roster, 'dm', 'author-Kai', 'engaged')).not.toEqual(
       previewLoudness(roster, 'dm', 'author-Kai', 'mention')
     );
+    expect(previewLoudness(roster, 'dm', 'author-Kai', 'engaged').level).toBe(3);
   });
 
   it('changes nothing for an author who is not on the roster', () => {

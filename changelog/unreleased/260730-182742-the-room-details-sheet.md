@@ -20,12 +20,14 @@ covers:
   - 'feat(rooms): agents arrive and leave a room instead of blinking in and out'
   - 'feat(rooms): the room sheet fits a phone'
   - 'fix(rooms): two controls a thumb could miss on a phone'
+  - 'fix(rooms): a one-to-one gets the reply window too'
 ---
 
 ### Changed
 
 - **You can finally see and understand when each agent speaks.** The members panel is now a room sheet, and it holds everything about the room in one place: its name and topic at the top, one line saying what the room will actually do, everyone who is in it — you included — a row that adds an agent, and when the room was made. Archiving is at the foot.
-- **How loud an agent is has become a scale you point at.** It used to be five sentences that all began with "Replies", in an order nobody could work out. Now each agent has a spot on a quiet-to-loud scale, and pressing it opens the scale with the real rule written underneath — including the actual number of minutes and messages your DorkOS keeps an agent talking after you mention it, read from your own settings rather than guessed.
+- **How loud an agent is has become a scale you point at.** It used to be five sentences that all began with "Replies", in an order nobody could work out. Now each agent has a spot on a quiet-to-loud scale — **Silent**, **@only**, **Engaged**, **Everything** — and pressing it opens the scale with the real rule written underneath, including the actual number of minutes and messages your DorkOS keeps an agent talking after you mention it, read from your own settings rather than guessed.
+- **A one-to-one gets the same four settings a channel does.** **Engaged** — answers when you say its name, then keeps answering for a while — used to be missing from direct messages, on the idea that nobody says a name in a two-person chat. That was wrong: add a second agent and it is still a direct message, and it is exactly the room where you want an agent that answers when spoken to and then goes quiet. If one of your agents was already set that way, its setting now shows as **Engaged** instead of quietly reading as **@only**.
 - **Point at a setting and the room tells you what it would become.** Move the mouse across the scale, or arrow through it, and the line at the top of the sheet shows what the whole room would do if you chose that — tinted to say it is a "what if". Stop pointing and it goes back. Nothing is saved until you actually pick one, and an archived room shows no such preview, because nothing would be true.
 - **A change lands the moment you make it.** The meter moves straight away instead of waiting for the server. While it saves, the setting dims; if the save is refused it goes back to what is really stored and says why — so you are never looking at a value that was never saved.
 - **Each person or agent is a line, not a card**, with its face, what it is doing right now or the last thing it did here, and its loudness on the right. Agents carry a small robot mark; people carry none.

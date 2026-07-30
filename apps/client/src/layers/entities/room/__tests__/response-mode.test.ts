@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
 import {
+  RESPONSE_RUNGS,
   explainRung,
   modeForRung,
   rungOf,
-  rungsFor,
   type EngagedWindow,
 } from '../lib/response-mode';
 
@@ -23,24 +23,17 @@ const BOTH_KINDS: readonly RoomKind[] = ['channel', 'dm'];
 /** A window with numbers nobody ships, so a hardcoded 10/5 cannot pass for it. */
 const WINDOW: EngagedWindow = { engagedWindowMinutes: 3, engagedWindowPosts: 7 };
 
-describe('rungsFor', () => {
-  it('gives a channel four rungs, quietest first', () => {
+describe('RESPONSE_RUNGS', () => {
+  it('is four rungs, quietest first', () => {
     // The order IS the information. A reader who cannot rank five sentences can
     // read a left-to-right scale without being told how, so the sequence is
     // pinned rather than the set.
-    expect(rungsFor('channel').map((option) => option.label)).toEqual([
+    expect(RESPONSE_RUNGS.map((option) => option.label)).toEqual([
       'Silent',
       '@only',
       'Engaged',
       'Everything',
     ]);
-  });
-
-  it('gives a direct message three, because it only has three behaviours', () => {
-    // `engaged` has no window to be in here: the window only opens on an
-    // @mention and nobody @s anyone in a two-person conversation. Offering it
-    // would be a fourth option that produces a third behaviour.
-    expect(rungsFor('dm').map((option) => option.label)).toEqual(['Silent', '@only', 'Everything']);
   });
 });
 
@@ -50,28 +43,30 @@ describe('rungOf', () => {
     // so a membership CAN hold one this room would never offer — set by a
     // script, an older build, or an agent through the operator surface. A
     // control that blanked for it would be a setting nobody can fix.
-    const offered = rungsFor(roomKind).map((option) => option.rung);
+    const offered = RESPONSE_RUNGS.map((option) => option.rung);
 
     for (const mode of EVERY_STORED_MODE) {
       expect(offered).toContain(rungOf(mode, roomKind));
     }
   });
 
-  it('reads the two values whose behaviour depends on the room', () => {
+  it('reads the one value whose behaviour depends on the room', () => {
     // Straight off the table in `services/rooms/addressing.ts`: `direct-only`
-    // answers everything in a DM and only mentions in a channel, and `engaged`
-    // has a window in a channel and none in a DM. These are the two that no
-    // single label could ever have covered honestly.
+    // answers everything in a DM and only mentions in a channel. It is the one
+    // of the five that no single label could ever have covered honestly.
     expect(rungOf('direct-only', 'channel')).toBe('mention');
     expect(rungOf('direct-only', 'dm')).toBe('everything');
-    expect(rungOf('engaged', 'channel')).toBe('engaged');
-    expect(rungOf('engaged', 'dm')).toBe('mention');
   });
 
-  it('reads the three that mean the same thing wherever they are stored', () => {
+  it('reads the four that mean the same thing wherever they are stored', () => {
     for (const roomKind of BOTH_KINDS) {
       expect(rungOf('silent', roomKind)).toBe('silent');
       expect(rungOf('mention-only', roomKind)).toBe('mention');
+      // Including `engaged`, which is the fix: the window opens in a direct
+      // message exactly as it does in a channel — `room-trigger.ts` has no
+      // channel gate — so collapsing it onto `@only` here described a
+      // behaviour the server does not have.
+      expect(rungOf('engaged', roomKind)).toBe('engaged');
       expect(rungOf('always', roomKind)).toBe('everything');
     }
   });
@@ -81,28 +76,24 @@ describe('modeForRung', () => {
   it.each(BOTH_KINDS)('writes a value that reads back as the rung picked, in a %s', (roomKind) => {
     // The round trip is the whole contract: pick a rung, store a mode, reopen
     // the panel, and the control must be where you left it.
-    for (const { rung } of rungsFor(roomKind)) {
-      expect(rungOf(modeForRung(rung, roomKind), roomKind)).toBe(rung);
+    for (const { rung } of RESPONSE_RUNGS) {
+      expect(rungOf(modeForRung(rung), roomKind)).toBe(rung);
     }
   });
 
-  it('never writes one of the two aliases whose meaning moves', () => {
+  it('never writes the one alias whose meaning moves', () => {
     // `direct-only` means something different in each kind of room, so nothing
     // this panel writes should ever be one — a membership carrying it would
     // change behaviour if the room it was in ever changed kind.
-    const written = BOTH_KINDS.flatMap((roomKind) =>
-      rungsFor(roomKind).map(({ rung }) => modeForRung(rung, roomKind))
-    );
-
-    expect(written).not.toContain('direct-only');
-    expect(written.filter((mode) => mode === 'engaged')).toEqual(['engaged']);
+    expect(RESPONSE_RUNGS.map(({ rung }) => modeForRung(rung))).not.toContain('direct-only');
   });
 
-  it('stores what a direct message would actually do when asked for engaged', () => {
-    // Not offered there, but total: `engaged` in a DM behaves as @only, so
-    // writing `mention-only` is the value that keeps the control still.
-    expect(modeForRung('engaged', 'dm')).toBe('mention-only');
-    expect(rungOf(modeForRung('engaged', 'dm'), 'dm')).toBe('mention');
+  it('writes `engaged` for the engaged rung, in a direct message too', () => {
+    // The rung a direct message could not reach. `mention-only` was written
+    // here instead, so picking `Engaged` in a DM silently narrowed the
+    // membership — and `respondsTo` proves the two are different behaviours:
+    // an engaged member nobody mentioned answers, a mention-only one does not.
+    expect(modeForRung('engaged')).toBe('engaged');
   });
 });
 
@@ -110,23 +101,30 @@ describe('explainRung', () => {
   it.each(BOTH_KINDS)('says something different for every rung of a %s', (roomKind) => {
     // Two rungs that read the same are a control with nothing to choose — the
     // exact defect the five peer sentences had.
-    const sentences = rungsFor(roomKind).map(
+    const sentences = RESPONSE_RUNGS.map(
       ({ rung }) => explainRung(rung, roomKind, WINDOW).sentence
     );
 
     expect(new Set(sentences).size).toBe(sentences.length);
   });
 
-  it('quotes the window this install is running, not the one it ships with', () => {
-    // The numbers are settings. An install that tuned them and then read the
-    // shipped 10 and 5 would be reading about somebody else's machine.
-    const { sentence } = explainRung('engaged', 'channel', WINDOW);
+  it.each(BOTH_KINDS)(
+    'quotes the window this install is running in a %s, not the one it ships with',
+    (roomKind) => {
+      // The numbers are settings. An install that tuned them and then read the
+      // shipped 10 and 5 would be reading about somebody else's machine.
+      //
+      // Both kinds, because a direct message used to be answered here with the
+      // `@only` sentence instead — a description that was false of the
+      // membership it was describing.
+      const { sentence } = explainRung('engaged', roomKind, WINDOW);
 
-    expect(sentence).toBe(
-      'Answers when you @mention it — then keeps answering for 3 more minutes or ' +
-        '7 more messages, whichever runs out first.'
-    );
-  });
+      expect(sentence).toBe(
+        'Answers when you @mention it — then keeps answering for 3 more minutes or ' +
+          '7 more messages, whichever runs out first.'
+      );
+    }
+  );
 
   it('agrees its units with its numbers', () => {
     const { sentence } = explainRung('engaged', 'channel', {
@@ -176,9 +174,14 @@ describe('explainRung', () => {
     );
   });
 
-  it('describes a direct message’s stored engaged value as what it does', () => {
-    // Total function: a DM has no engaged rung, and a caller reaching one is
-    // asking about a stored value that behaves as @only there.
-    expect(explainRung('engaged', 'dm', WINDOW)).toEqual(explainRung('mention', 'dm', WINDOW));
+  it('tells a direct message’s engaged rung apart from its @only one', () => {
+    // The defect this replaces: `engaged` in a DM was described with the
+    // `@only` sentence, so a membership really holding `engaged` was shown a
+    // description of a behaviour it does not have. Red if the two ever say the
+    // same thing again — that is a control with nothing to choose.
+    expect(explainRung('engaged', 'dm', WINDOW).sentence).not.toBe(
+      explainRung('mention', 'dm', WINDOW).sentence
+    );
+    expect(explainRung('engaged', 'dm', WINDOW).sentence).toContain('keeps answering');
   });
 });

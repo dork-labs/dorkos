@@ -19,10 +19,10 @@ import {
 } from '@/layers/shared/ui';
 import {
   LoudnessMeter,
+  RESPONSE_RUNGS,
   ResponseModeControl,
   levelOfRung,
   rungOf,
-  rungsFor,
   type EngagedWindow,
   type ResponseRung,
   type RoomPresenceAuthor,
@@ -41,7 +41,7 @@ const DISCLOSURE_SECONDS = 0.15;
 export interface RoomMemberRowProps {
   /** The membership this row draws, its author already resolved. */
   member: RoomRosterEntry;
-  /** The room it lives in. It decides how many rungs the control offers. */
+  /** The room it lives in; it decides what the rungs mean. See `rungOf`. */
   roomKind: RoomKind;
   /** True when this member is the person reading. */
   isReader: boolean;
@@ -155,7 +155,7 @@ export function RoomMemberRow({
   const { author } = member;
   const isAgent = author.kind === 'agent';
   const rung = rungOf(member.responseMode, roomKind);
-  const rungLabel = rungsFor(roomKind).find((option) => option.rung === rung)?.label ?? '';
+  const rungLabel = RESPONSE_RUNGS.find((option) => option.rung === rung)?.label ?? '';
   const working = presence !== null;
 
   /**

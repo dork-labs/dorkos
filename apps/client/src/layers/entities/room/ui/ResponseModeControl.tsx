@@ -28,10 +28,8 @@ import type { RoomKind } from '@dorkos/shared/room-schemas';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import {
+  RESPONSE_RUNGS,
   explainRung,
-  modeForRung,
-  rungOf,
-  rungsFor,
   type EngagedWindow,
   type ResponseRung,
 } from '../lib/response-mode';
@@ -39,14 +37,20 @@ import {
 export interface ResponseModeControlProps {
   /** The agent this sets. It names the group, so a screen reader knows whose. */
   memberName: string;
-  /** The room the membership lives in. It decides how many rungs there are. */
+  /**
+   * The room the membership lives in. Not the rung count — that is the same
+   * four everywhere — but what each rung DOES: the loudest one answers "every
+   * message you send here" in a direct message and "every message in this
+   * room" in a channel.
+   */
   roomKind: RoomKind;
   /**
-   * Where the stored value sits on this room's scale.
+   * Where the stored value sits on the scale, already projected by `rungOf`.
    *
-   * A rung this room does not offer is placed on the one it behaves as rather
-   * than blanking the control — a setting that renders empty is one nobody can
-   * fix. See {@link rungOf}.
+   * A rung rather than a `responseMode`, because the projection is total and
+   * the caller is the one holding the membership: every stored value lands on
+   * one of the four, so there is no value that leaves the group without a tab
+   * stop or the reader without a selection to see.
    */
   value: ResponseRung;
   /** Commit a rung. Called on click, and on Enter or Space from the keyboard. */
@@ -150,16 +154,11 @@ export function ResponseModeControl({
   const [hovered, setHovered] = useState<ResponseRung | null>(null);
   const buttons = useRef(new Map<ResponseRung, HTMLButtonElement | null>());
 
-  const offered = rungsFor(roomKind);
-  // Total by construction: the round trip a real write takes lands every rung
-  // on one this room offers, so there is no value that leaves the group without
-  // a tab stop or the reader without a selection to see.
-  const selected = rungOf(modeForRung(value, roomKind), roomKind);
-  const focused = aimed ?? selected;
+  const focused = aimed ?? value;
   /** What the reader is pointing at, by either means, or nothing. */
   const contemplated = hovered ?? aimed;
   /** Whose consequence is written under the rungs. */
-  const shown = contemplated ?? selected;
+  const shown = contemplated ?? value;
 
   useEffect(() => {
     // Only ever chases the keyboard. A null aim is the resting state, and
@@ -183,11 +182,11 @@ export function ResponseModeControl({
 
   useEffect(() => {
     // Pointing at what is already stored is not a hypothetical. This is also
-    // what clears the preview the moment a commit lands: `selected` follows the
+    // what clears the preview the moment a commit lands: `value` follows the
     // write, catches up with the rung being pointed at, and the report goes
     // null on its own rather than leaving the outcome dressed as a proposal.
-    onPreviewRef.current?.(contemplated === selected ? null : contemplated);
-  }, [contemplated, selected]);
+    onPreviewRef.current?.(contemplated === value ? null : contemplated);
+  }, [contemplated, value]);
 
   useEffect(
     // A scale that is put away is not being pointed at. Without this, closing
@@ -199,9 +198,9 @@ export function ResponseModeControl({
 
   /** Move the aim by `step` through the rungs, wrapping at both ends. */
   function moveAim(step: 1 | -1) {
-    const index = offered.findIndex((option) => option.rung === focused);
-    const next = (index + step + offered.length) % offered.length;
-    setAimed(offered[next]!.rung);
+    const index = RESPONSE_RUNGS.findIndex((option) => option.rung === focused);
+    const next = (index + step + RESPONSE_RUNGS.length) % RESPONSE_RUNGS.length;
+    setAimed(RESPONSE_RUNGS[next]!.rung);
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -225,12 +224,12 @@ export function ResponseModeControl({
       case 'Home':
         event.preventDefault();
         setHovered(null);
-        setAimed(offered[0]!.rung);
+        setAimed(RESPONSE_RUNGS[0]!.rung);
         return;
       case 'End':
         event.preventDefault();
         setHovered(null);
-        setAimed(offered[offered.length - 1]!.rung);
+        setAimed(RESPONSE_RUNGS[RESPONSE_RUNGS.length - 1]!.rung);
     }
   }
 
@@ -248,7 +247,7 @@ export function ResponseModeControl({
     return {
       type: 'button' as const,
       role: 'radio',
-      'aria-checked': rung === selected,
+      'aria-checked': rung === value,
       'aria-disabled': disabledReasonId === null ? undefined : true,
       // One tab stop for the whole group, on whichever rung the reader would
       // land on — the selected one, or wherever they last arrowed to.
@@ -291,8 +290,8 @@ export function ResponseModeControl({
           className
         )}
       >
-        {offered.map((option) => {
-          const checked = option.rung === selected;
+        {RESPONSE_RUNGS.map((option) => {
+          const checked = option.rung === value;
           const consequenceId = `${groupId}-${option.rung}`;
           return (
             <button
@@ -348,8 +347,8 @@ export function ResponseModeControl({
       className={cn(disabledReasonId !== null && 'opacity-60', className)}
     >
       <div className="border-input flex overflow-hidden rounded-md border">
-        {offered.map((option) => {
-          const checked = option.rung === selected;
+        {RESPONSE_RUNGS.map((option) => {
+          const checked = option.rung === value;
           return (
             <button
               key={option.rung}

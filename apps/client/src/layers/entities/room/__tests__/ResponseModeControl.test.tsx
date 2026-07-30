@@ -90,23 +90,26 @@ describe('ResponseModeControl', () => {
       expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName('Engaged');
     });
 
-    it('offers a channel four rungs and a direct message three', () => {
+    it('offers the same four rungs in a channel and in a direct message', () => {
       renderControl({ on, roomKind: 'channel' });
-      expect(screen.getAllByRole('radio')).toHaveLength(4);
+      expect(rungLabels()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
 
       cleanup();
       renderControl({ on, roomKind: 'dm' });
-      expect(screen.getAllByRole('radio')).toHaveLength(3);
+      // A direct message offered three for one commit, and `Engaged` was the
+      // one missing — the only bounded setting there is, withheld from the
+      // rooms where `Everything` is agent dominance by construction. Red if the
+      // scale ever starts reading the room kind again.
+      expect(rungLabels()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
     });
 
-    it('renders a stored value this room never offers on the rung it behaves as', () => {
-      // A direct message has no engaged rung — its window cannot open there —
-      // and the API accepts `engaged` in every room, so a membership really can
-      // hold one. Red if it blanks: a setting that renders empty is one nobody
-      // can fix.
+    it('shows a direct message’s stored engaged value on the engaged rung', () => {
+      // It used to land on `@only` here, so a membership really holding
+      // `engaged` was shown as something quieter — and the description under it
+      // described that quieter thing. Red if the projection collapses again.
       renderControl({ on, roomKind: 'dm', value: 'engaged' });
 
-      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName('@only');
+      expect(screen.getByRole('radio', { checked: true })).toHaveAccessibleName('Engaged');
     });
 
     it('commits the rung that was clicked', () => {
@@ -315,15 +318,16 @@ describe('ResponseModeControl', () => {
       expect(lastPreview(onPreview)).toBeNull();
     });
 
-    it('places the stored value on this room’s scale before comparing', () => {
-      // A direct message stores `engaged` and behaves as `@only`, so pointing at
-      // `@only` there is pointing at what is already set. Red if the comparison
-      // is made against the raw prop instead of the projected rung.
+    it('treats @only as a real proposal for a direct message set to engaged', () => {
+      // The two used to be the same rung here, so this hover reported nothing:
+      // the reader was pointing at what they already had. They are different
+      // settings, and quieting an agent down to `@only` is a change the room's
+      // line has to answer for. Red if `engaged` collapses onto `@only` again.
       const { onPreview } = renderControl({ on: 'desktop', roomKind: 'dm', value: 'engaged' });
 
       fireEvent.mouseEnter(screen.getByRole('radio', { name: '@only' }));
 
-      expect(lastPreview(onPreview)).toBeNull();
+      expect(lastPreview(onPreview)).toBe('mention');
     });
 
     it('lets the arrow keys win over a pointer left resting on a rung', () => {

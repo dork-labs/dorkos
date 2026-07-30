@@ -89,7 +89,7 @@ function RoomSheetShowcase() {
         <RoomSheetDemo label="#design — nobody in it" read={EMPTY_ROOM} holds={EMPTY_ROOM} />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>A one-to-one: three rungs, and what a second agent would do</ShowcaseLabel>
+      <ShowcaseLabel>A one-to-one, and what a second agent would do</ShowcaseLabel>
       <ShowcaseDemo>
         <RoomSheetDemo label="Direct message" read={DM_ROOM} holds={DM_ROOM} />
       </ShowcaseDemo>
@@ -270,18 +270,16 @@ function ResponseModeControlShowcase() {
         <ResponseModeDemo roomKind="channel" initial="engaged" />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>A direct message — three, because it only has three behaviours</ShowcaseLabel>
+      <ShowcaseLabel>A direct message — the same four, reading differently</ShowcaseLabel>
       <ShowcaseDemo>
+        {/* Same scale, and only the loudest rung's sentence changes: "every
+            message you send here" rather than "every message in this room".
+            This offered three for one commit, with `Engaged` missing. */}
         <ResponseModeDemo roomKind="dm" initial="everything" />
       </ShowcaseDemo>
 
-      <ShowcaseLabel>
-        A stored value this room does not offer, on the rung it behaves as
-      </ShowcaseLabel>
+      <ShowcaseLabel>The rung a direct message could not reach</ShowcaseLabel>
       <ShowcaseDemo>
-        {/* `engaged` in a one-to-one: the window only ever opens on an @mention
-            and nobody @s anyone in a two-person conversation, so it lands on
-            @only rather than rendering a control with nothing selected. */}
         <ResponseModeDemo roomKind="dm" initial="engaged" />
       </ShowcaseDemo>
 

@@ -12,10 +12,10 @@
  * - **Only agents count.** A person is never triggered — nothing in
  *   `services/rooms/addressing.ts` reads a human membership — so counting one
  *   would inflate every room by exactly the reader.
- * - **The room kind is an input, not a detail.** Two of the five stored values
- *   change behaviour by room kind, so `direct-only` is `Everything` in a direct
+ * - **The room kind is an input, not a detail.** One of the five stored values
+ *   changes behaviour by room kind: `direct-only` is `Everything` in a direct
  *   message and `@only` in a channel. An aggregate computed without the kind
- *   would report the wrong number for any roster holding one of them — see
+ *   would report the wrong number for any roster holding one — see
  *   `response-mode.ts` for the table.
  * - **{@link previewLoudness} is {@link roomLoudness} with one substitution.**
  *   Not a second implementation of the same idea: a preview that drifts from the
@@ -25,7 +25,7 @@
  * @module entities/room/lib/loudness
  */
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { modeForRung, rungOf, type ResponseRung } from './response-mode';
+import { rungOf, type ResponseRung } from './response-mode';
 
 /**
  * How many of the meter's four bars are lit.
@@ -240,12 +240,6 @@ export function roomLoudness(
  * preview that disagrees with the outcome teaches the wrong model and only
  * proves itself wrong after the write has landed.
  *
- * The hypothetical rung is put through the same round trip a real write takes
- * ({@link modeForRung} then {@link rungOf}), so asking a direct message about
- * `engaged` previews what it would actually become — `@only`, because the
- * engaged window cannot open there — rather than a rung the room has no
- * behaviour for.
- *
  * @param members - The room's roster as it is now.
  * @param roomKind - The room the roster lives in.
  * @param authorId - The member being imagined at a different rung. An id that
@@ -259,6 +253,10 @@ export function previewLoudness(
   authorId: string,
   rung: ResponseRung
 ): RoomLoudness {
-  const asStored = rungOf(modeForRung(rung, roomKind), roomKind);
-  return loudnessOf(voicesOf(members, roomKind, { authorId, rung: asStored }));
+  // The rung is used as it was given. It used to be put through the round trip
+  // a real write takes — `modeForRung` then `rungOf` — because a direct message
+  // wrote `mention-only` for the engaged rung and the preview had to show the
+  // room that write would really produce. Every rung now stores a value that
+  // reads back as itself in both kinds, so that trip is the identity.
+  return loudnessOf(voicesOf(members, roomKind, { authorId, rung }));
 }

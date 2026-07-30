@@ -73,7 +73,6 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
   const title = roomDisplayTitle(detail);
   const writes = useRoomDetailsWrites({
     roomId: room.id,
-    roomKind: detail.kind,
     roomTitle: title,
     agentPathOf: view.agentPathOf,
   });

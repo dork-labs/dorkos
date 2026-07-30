@@ -3,34 +3,50 @@
  *
  * The stored field is `responseMode`, five values deep: `always` / `engaged` /
  * `direct-only` / `mention-only` / `silent`. Offered as five peer sentences,
- * nobody could rank them or tell two of them apart, and two were worse than
- * ambiguous: **`direct-only` and `engaged` change what they mean depending on
- * the kind of room they are in**, which no label can honestly cover.
+ * nobody could rank them or tell two of them apart, and one was worse than
+ * ambiguous: **`direct-only` changes what it means depending on the kind of
+ * room it is in**, which no label can honestly cover.
  *
  * So the five values are projected onto an ordered **rung** — quiet to loud, so
- * that position carries the meaning — and the room decides how many rungs there
- * are. The projection is the behaviour table in
+ * that position carries the meaning. The projection is the behaviour table in
  * `apps/server/src/services/rooms/addressing.ts`, read straight off:
  *
- * | stored         | in a channel                    | in a direct message           |
- * | -------------- | ------------------------------- | ----------------------------- |
- * | `silent`       | never → **Silent**              | never → **Silent**            |
- * | `mention-only` | when mentioned → **@only**      | when mentioned → **@only**    |
- * | `engaged`      | mention + window → **Engaged**  | window never opens → **@only** |
- * | `direct-only`  | `roomKind !== 'dm'`, so mention → **@only** | always → **Everything** |
- * | `always`       | always → **Everything**         | always → **Everything**       |
+ * | stored         | in a channel                   | in a direct message            |
+ * | -------------- | ------------------------------ | ------------------------------ |
+ * | `silent`       | never → **Silent**             | never → **Silent**             |
+ * | `mention-only` | when mentioned → **@only**     | when mentioned → **@only**     |
+ * | `engaged`      | mention + window → **Engaged** | mention + window → **Engaged** |
+ * | `direct-only`  | mention → **@only**            | always → **Everything**        |
+ * | `always`       | always → **Everything**        | always → **Everything**        |
  *
- * A direct message therefore has three behaviours, not four, and that is why it
- * gets three rungs. `engaged` collapses there because the window only ever
- * opens on an `@mention` (`services/rooms/engagement.ts`) and nobody `@`s
- * anyone in a two-person conversation.
+ * **Both kinds have four behaviours, so both get the same four rungs.**
+ * `direct-only` is the only genuine alias in the five, and what moves with the
+ * room kind is which rung it lands on — nothing else.
+ *
+ * **The engaged window opens in a direct message, and this module claimed
+ * otherwise for one commit.** The claim — that the window only opens on an
+ * `@mention` and nobody `@`s anyone in a two-person conversation — is a
+ * prediction about how people behave rather than a property of the system, and
+ * the server contradicts it three ways: `room-trigger.ts` evaluates
+ * `engagementFor` for every room kind with no channel gate; mentions resolve
+ * and the `@` palette is offered in a direct message; and **a group direct
+ * message is still `kind: 'dm'`** — adding a second agent never promotes it to
+ * a channel, and people plainly do address each other by name in a
+ * three-way conversation. Executed against the server's own predicate,
+ * `respondsTo('engaged', { roomKind: 'dm', mentioned: false, isEngaged: true })`
+ * answers `true` where `mention-only` answers `false`: two behaviours, which
+ * may not share a rung. The cost of the collapse was not cosmetic — `engaged`
+ * is the only bounded setting (`services/rooms/engagement.ts`), so a direct
+ * message could reach it by no means the UI offered.
+ *
+ * The claim was inherited rather than invented: the same sentence is still on
+ * the TSDoc of `responseModeOptionsFor` in `main`, which this module replaced.
  *
  * **{@link rungOf} is total on purpose.** The API accepts every value in every
- * room and the schema calls them all legal, so a membership CAN hold one this
- * room would never offer — set by a script, by an older build, or by an agent
- * through the operator surface. A control that rendered blank for a value that
- * is really there is a setting nobody can fix, which is worse than the
- * duplication that avoiding it costs.
+ * room and the schema calls them all legal, so a membership CAN hold one no UI
+ * writes any more — `direct-only`, set by a script, by an older build, or by an
+ * agent through the operator surface. A control that rendered blank for a value
+ * that is really there is a setting nobody can fix.
  *
  * @module entities/room/lib/response-mode
  */
@@ -64,39 +80,30 @@ export interface RungExplanation {
   note: string | null;
 }
 
-/** Quiet → loud. A channel has a bounded middle setting; see the module doc. */
-const CHANNEL_RUNGS: readonly ResponseRungOption[] = [
+/**
+ * The scale, quietest first — the same four wherever it is drawn.
+ *
+ * The order IS the information: a reader who cannot rank five sentences can
+ * read a left-to-right scale without being told how.
+ *
+ * It does not vary by room kind, because there is nothing to vary. Both kinds
+ * have these four behaviours; only which stored value lands on which rung
+ * moves, and that is {@link rungOf}'s business.
+ */
+export const RESPONSE_RUNGS: readonly ResponseRungOption[] = [
   { rung: 'silent', label: 'Silent' },
   { rung: 'mention', label: '@only' },
   { rung: 'engaged', label: 'Engaged' },
   { rung: 'everything', label: 'Everything' },
 ] as const;
 
-/** Three, because a direct message only has three behaviours. */
-const DM_RUNGS: readonly ResponseRungOption[] = [
-  { rung: 'silent', label: 'Silent' },
-  { rung: 'mention', label: '@only' },
-  { rung: 'everything', label: 'Everything' },
-] as const;
-
 /**
- * The rungs this kind of room offers, quietest first.
- *
- * The order IS the information: a reader who cannot rank five sentences can
- * read a left-to-right scale without being told how.
- *
- * @param roomKind - The room the membership lives in.
- */
-export function rungsFor(roomKind: RoomKind): readonly ResponseRungOption[] {
-  return roomKind === 'dm' ? DM_RUNGS : CHANNEL_RUNGS;
-}
-
-/**
- * Where a stored value sits on this room's scale. Total — every value lands
- * somewhere in both kinds of room, and never on a rung the room does not offer.
+ * Where a stored value sits on the scale. Total — every one of the five lands
+ * on a rung in both kinds of room.
  *
  * @param mode - What the membership stores today.
- * @param roomKind - The room it lives in; two of the five values read it.
+ * @param roomKind - The room it lives in; `direct-only` is the one value that
+ *   reads it.
  */
 export function rungOf(mode: ResponseMode, roomKind: RoomKind): ResponseRung {
   switch (mode) {
@@ -105,7 +112,7 @@ export function rungOf(mode: ResponseMode, roomKind: RoomKind): ResponseRung {
     case 'mention-only':
       return 'mention';
     case 'engaged':
-      return roomKind === 'dm' ? 'mention' : 'engaged';
+      return 'engaged';
     case 'direct-only':
       return roomKind === 'dm' ? 'everything' : 'mention';
     case 'always':
@@ -116,24 +123,26 @@ export function rungOf(mode: ResponseMode, roomKind: RoomKind): ResponseRung {
 /**
  * The value to write when somebody picks a rung.
  *
- * One canonical value per rung, so the four aliases stop multiplying: a room
- * never writes `direct-only`, whose meaning depends on where it is stored, and
- * a direct message never writes `engaged`, whose window cannot open there.
- * Asking for `engaged` in a direct message writes `mention-only` instead —
- * that is what it would have behaved as, and writing it plainly is what keeps
- * the control from jumping to a rung the reader did not choose.
+ * One canonical value per rung, so the alias stops multiplying: nothing here
+ * ever writes `direct-only`, whose meaning depends on where it is stored, and a
+ * control whose consequence depends on a field the reader cannot see is one
+ * nobody can predict.
+ *
+ * **The room kind is not an input.** Four of the five stored values mean the
+ * same thing wherever they live, and the fifth is the one this never writes —
+ * so a rung maps to a value without anything else having to be known, and a
+ * caller cannot store the wrong behaviour by projecting through the wrong kind.
  *
  * @param rung - The rung the reader picked.
- * @param roomKind - The room it was picked in.
  */
-export function modeForRung(rung: ResponseRung, roomKind: RoomKind): ResponseMode {
+export function modeForRung(rung: ResponseRung): ResponseMode {
   switch (rung) {
     case 'silent':
       return 'silent';
     case 'mention':
       return 'mention-only';
     case 'engaged':
-      return roomKind === 'dm' ? 'mention-only' : 'engaged';
+      return 'engaged';
     case 'everything':
       return 'always';
   }
@@ -195,24 +204,19 @@ export function explainRung(
   roomKind: RoomKind,
   window: EngagedWindow | null
 ): RungExplanation {
-  // A direct message has no engaged rung, so a caller that asks for one is
-  // asking about a stored value that behaves as `@only` there. Answer for what
-  // it does rather than for what it is called.
-  const asked = roomKind === 'dm' && rung === 'engaged' ? 'mention' : rung;
-  switch (asked) {
+  switch (rung) {
     case 'silent':
       return {
         sentence: 'Never speaks here',
         note: 'You can still talk to it in its own session.',
       };
     case 'mention':
-      return {
-        sentence: 'Answers only when you @mention it.',
-        note:
-          roomKind === 'dm'
-            ? 'In a conversation this small, that means it mostly stays quiet.'
-            : null,
-      };
+      // No second line for a direct message any more. The one that used to sit
+      // here — "in a conversation this small, it mostly stays quiet" — was the
+      // module's false premise in miniature: it predicted how a small room
+      // behaves, and a direct message holding three agents does not behave that
+      // way. The sentence above is exact in both kinds and needs no help.
+      return { sentence: 'Answers only when you @mention it.', note: null };
     case 'engaged':
       return explainEngaged(window);
     case 'everything':

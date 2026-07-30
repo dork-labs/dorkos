@@ -11,7 +11,7 @@
  */
 import { useCallback } from 'react';
 import { toast } from 'sonner';
-import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import {
   modeForRung,
@@ -49,13 +49,6 @@ export interface RoomDetailsWrites {
 export interface RoomDetailsWritesInput {
   /** The room being changed. */
   roomId: string;
-  /**
-   * The kind the SERVER most recently reported, never the caller's copy: two of
-   * the five stored response modes mean different things in a channel and in a
-   * direct message, so a rung projected through the wrong kind stores the wrong
-   * behaviour.
-   */
-  roomKind: RoomKind;
   /** The room in prose, for the undo offer to name. */
   roomTitle: string;
   /**
@@ -87,7 +80,7 @@ export interface RoomDetailsWritesInput {
  * @param input - The room being written to.
  */
 export function useRoomDetailsWrites(input: RoomDetailsWritesInput): RoomDetailsWrites {
-  const { roomId, roomKind, roomTitle, agentPathOf } = input;
+  const { roomId, roomTitle, agentPathOf } = input;
   const addMember = useAddRoomMember();
   const removeRoomMember = useRemoveRoomMember();
   const setResponseMode = useSetMemberResponseMode();
@@ -111,15 +104,17 @@ export function useRoomDetailsWrites(input: RoomDetailsWritesInput): RoomDetails
   const setRung = useCallback(
     (member: RoomRosterEntry, rung: ResponseRung) => {
       // A rung is what a person picks; a `responseMode` is what gets stored. One
-      // canonical value per rung, so this sheet never writes one of the two
-      // aliases whose meaning depends on which kind of room it ends up in.
+      // canonical value per rung, so this sheet never writes `direct-only` —
+      // the one value whose meaning depends on which kind of room it ends up
+      // in. The kind is not read here for the same reason it is not an argument
+      // to `modeForRung`: nothing about the write depends on it.
       setResponseMode.mutate({
         roomId,
         authorId: member.authorId,
-        responseMode: modeForRung(rung, roomKind),
+        responseMode: modeForRung(rung),
       });
     },
-    [setResponseMode, roomId, roomKind]
+    [setResponseMode, roomId]
   );
 
   const removeMember = useCallback(

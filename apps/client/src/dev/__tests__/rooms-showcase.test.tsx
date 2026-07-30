@@ -149,7 +149,7 @@ describe('the room sheet fixture reaches every state', () => {
     expect(screen.getByText('There is nobody here to answer you')).toBeInTheDocument();
   });
 
-  it('a one-to-one offers three rungs and says what a second agent would do', async () => {
+  it('a one-to-one offers all four rungs and says what a second agent would do', async () => {
     await openSheet({ label: 'DM', read: DM_ROOM, holds: DM_ROOM });
 
     expect(
@@ -158,8 +158,11 @@ describe('the room sheet fixture reaches every state', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'How loud Mio Clicker PM is here' }));
     const group = await screen.findByRole('radiogroup');
-    expect(within(group).getAllByRole('radio')).toHaveLength(3);
-    expect(within(group).queryByRole('radio', { name: 'Engaged' })).not.toBeInTheDocument();
+    // The second agent this sheet offers to add is exactly why `Engaged` has to
+    // be here: the conversation it makes is still a `dm`, and it is the room
+    // where an unbounded `Everything` agent is hardest to live with.
+    expect(within(group).getAllByRole('radio')).toHaveLength(4);
+    expect(within(group).getByRole('radio', { name: 'Engaged' })).toBeInTheDocument();
   });
 
   it('an archived room says its settings are on hold and keeps them reachable', async () => {
@@ -296,12 +299,12 @@ describe('the page itself draws every section', () => {
       10
     );
 
-    // Four sections of rungs: a channel's four, a DM's three, a stored value
-    // this room does not offer landing on the rung it behaves as, and the
-    // dormant one. The DM sections are what would silently disappear if
-    // `rungsFor` ever stopped reading the room kind.
+    // Four sections of rungs: a channel, a direct message, the engaged rung a
+    // direct message could not reach until it had four, and the dormant one.
+    // Every one of them is the same four now — a section that came back with
+    // three would be the collapse this page exists to show is gone.
     const groups = screen.getAllByRole('radiogroup');
-    expect(groups.map((group) => within(group).getAllByRole('radio').length)).toEqual([4, 3, 3, 4]);
+    expect(groups.map((group) => within(group).getAllByRole('radio').length)).toEqual([4, 4, 4, 4]);
   });
 });
 
