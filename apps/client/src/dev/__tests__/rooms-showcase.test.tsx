@@ -22,6 +22,7 @@ import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSearch } from '../PlaygroundSearch';
 import { getPageFromPath, PAGE_CONFIGS } from '../playground-config';
 import { PLAYGROUND_REGISTRY } from '../playground-registry';
+import { RoomsPage } from '../pages/RoomsPage';
 import { RoomSheetDemo, type RoomSheetDemoProps } from '../showcases/rooms-showcase-helpers';
 import {
   ARCHIVED_ROOM,
@@ -40,7 +41,18 @@ beforeEach(() => {
   const proto = Element.prototype as unknown as Record<string, unknown>;
   if (!proto.hasPointerCapture) proto.hasPointerCapture = vi.fn();
   if (!proto.releasePointerCapture) proto.releasePointerCapture = vi.fn();
+  // The page's TOC observes its own anchors, and jsdom has no such thing.
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  );
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 afterEach(cleanup);
 
@@ -239,6 +251,57 @@ describe('the fixture accepts the writes the sheet makes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }));
 
     await waitFor(() => expect(within(roster()).getByText('ravi-bot')).toBeInTheDocument());
+  });
+});
+
+describe('the page itself draws every section', () => {
+  /**
+   * The whole page, once.
+   *
+   * The sheet gets its own describe block above because it is the one thing
+   * here with a fake server behind it. The other six sections are plain props
+   * — which means nothing would stop one of them throwing on mount, being
+   * swallowed by `ShowcaseErrorBoundary`, and shipping as a red box that only
+   * somebody who opened `/dev/rooms` would ever see.
+   */
+  it('renders all seven, and none of them crashes into the boundary', async () => {
+    render(
+      <TransportProvider transport={createPlaygroundTransport()}>
+        <RoomsPage />
+      </TransportProvider>
+    );
+    await settle();
+
+    for (const section of PLAYGROUND_REGISTRY.filter((s) => s.page === 'rooms')) {
+      expect(screen.getByRole('heading', { name: new RegExp(section.title) })).toBeInTheDocument();
+      // The anchor the TOC and ⌘K point at has to exist on the page, not only
+      // in the registry.
+      expect(document.getElementById(section.id)).not.toBeNull();
+    }
+    expect(screen.queryByText(/crashed$/)).not.toBeInTheDocument();
+  });
+
+  it('draws every loudness level and every rung the two room kinds offer', async () => {
+    render(
+      <TransportProvider transport={createPlaygroundTransport()}>
+        <RoomsPage />
+      </TransportProvider>
+    );
+    await settle();
+
+    // Ten meters: five levels at two sizes, live — and ten more dormant.
+    const meters = document.querySelectorAll('[data-slot="loudness-meter"]');
+    expect(meters.length).toBeGreaterThanOrEqual(20);
+    expect(document.querySelectorAll('[data-slot="loudness-meter"][data-dormant]')).toHaveLength(
+      10
+    );
+
+    // Four sections of rungs: a channel's four, a DM's three, a stored value
+    // this room does not offer landing on the rung it behaves as, and the
+    // dormant one. The DM sections are what would silently disappear if
+    // `rungsFor` ever stopped reading the room kind.
+    const groups = screen.getAllByRole('radiogroup');
+    expect(groups.map((group) => within(group).getAllByRole('radio').length)).toEqual([4, 3, 3, 4]);
   });
 });
 
