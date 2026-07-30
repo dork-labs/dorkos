@@ -125,7 +125,7 @@ export function createHookState(overrides: Partial<HookState> = {}): HookState {
  * the same page — which is the kind of difference a reviewer wastes a minute
  * on. Anything that has to look recent is offset from here.
  */
-export const MOCK_ROOM_NOW = new Date('2026-07-30T09:00:00.000Z');
+const MOCK_ROOM_NOW = new Date('2026-07-30T09:00:00.000Z');
 
 /** An ISO timestamp `minutes` before {@link MOCK_ROOM_NOW}. */
 export function minutesBeforeNow(minutes: number): string {

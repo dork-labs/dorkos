@@ -11,6 +11,14 @@ import type { LoudnessLevel } from '../lib/loudness';
  * Only the container's height changes between sizes; the bars are fractions of
  * it. One rule covers every size, instead of a table of four heights per size
  * that has to be kept in proportion by hand.
+ *
+ * **Deliberately not exported.** The shadcn convention that pairs a component
+ * with its `componentVariants` is scoped to the primitives in `shared/ui`
+ * (`.claude/rules/components.md`), where the export earns its place: another
+ * file reads the type — `AgentAvatar` off `identityAvatarVariants`, the alert
+ * dialog off `buttonVariants`. This meter is an entity component, its variants
+ * are read only by the props interface below, and `entities/room`'s barrel does
+ * not re-export them — so an export here would reach nobody.
  */
 const loudnessMeterVariants = cva('inline-flex shrink-0 items-end gap-0.5', {
   variants: {
@@ -118,5 +126,3 @@ export function LoudnessMeter({ level, size, dormant = false, className }: Loudn
     </span>
   );
 }
-
-export { loudnessMeterVariants };

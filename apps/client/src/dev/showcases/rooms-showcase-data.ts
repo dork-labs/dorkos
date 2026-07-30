@@ -28,7 +28,7 @@ import { MOCK_SERVER_CONFIG } from './settings-mock-data';
 // ---------------------------------------------------------------------------
 
 /** Where each agent in the cast lives on disk. The join key for everything else. */
-export const AGENT_PATHS = {
+const AGENT_PATHS = {
   pm: '/Users/dev/agents/mio-clicker-pm',
   code: '/Users/dev/agents/mio-click-code',
   kai: '/Users/dev/agents/kai',
@@ -113,7 +113,7 @@ export const ROOM_CANDIDATES = [
 // ---------------------------------------------------------------------------
 
 /** The person reading. Every room fixture has them in it, because every room does. */
-export const READER = createRoomAuthor({
+const READER = createRoomAuthor({
   id: 'author-me',
   displayName: 'Dorian',
   color: '#7b8cdc',
