@@ -49,6 +49,24 @@ neither is fixed here.
 - **DOR-698 — `rooms/mention-picker.spec.ts`, ~1 run in 16 even in isolation.**
   `getByRole('combobox', { name: 'Message #…' })` is not visible. Isolation rules
   out cross-test interference; it is the composer's own readiness.
+- **The cockpit crashes into its error boundary with `useEventStream must be
+used within an EventStreamProvider`, any spec, roughly 1 run in 10.** The
+  failing assertion is whatever the test was doing — usually "expected 2,
+  received 0", because the whole app has been replaced by the boundary — so it
+  reads like a product bug in the surface under test. **It is not.** Check
+  `error-context.md` before diagnosing anything: if the page snapshot is
+  `DorkOS encountered an unexpected error` over that sentence, you have found
+  this and not your feature.
+
+  The suite runs the client through `turbo dev`, so Vite HMR is live. A hot
+  update creates a **new** React Context object while already-mounted consumers
+  still hold the old one, `useContext` answers `undefined`, and the provider's
+  own guard throws. Dev-only by construction — a production build has no HMR —
+  and unrelated to whatever spec happened to be running. Background on this
+  provider's mount behaviour: `research/20260327_sse_singleton_strictmode_hmr.md`.
+
+  Re-run the spec in isolation (`--repeat-each=5`) before you touch anything. If
+  it passes, that is the answer.
 
 **A stale Vite can outlive its run.** `turbo dev` spawns vite as a grandchild,
 so when Playwright kills the leg the vite process survives holding the port.
