@@ -126,22 +126,28 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await roomsPage.membersButton.click();
     const panel = page.getByRole('dialog');
     await expect(panel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(panel.getByRole('heading', { name: `Members of #${slug}` })).toBeVisible();
-    await expect(panel.getByRole('button', { name: `Remove ${ana.name}` })).toBeVisible();
-    await expect(panel.getByRole('button', { name: `Remove ${kai.name}` })).toBeVisible();
-    // The per-room override this panel is the first UI ever to touch. This
+    // The sheet is named by the ROOM. Its visible name is a control — press it
+    // and it becomes the rename field — and a control's accessible name says
+    // what pressing it does, so it cannot also be the sheet's.
+    await expect(panel).toHaveAccessibleName(`#${slug}`);
+    // Both agents have a row, each with its verbs behind its own "…".
+    await expect(panel.getByRole('button', { name: `${ana.name} actions` })).toBeVisible();
+    await expect(panel.getByRole('button', { name: `${kai.name} actions` })).toBeVisible();
+    // The per-room override this sheet is the first UI ever to touch. This
     // channel was made through the UI, not through the fixture, so it carries
     // the shipped channel seed — `engaged` (room-participation spec §9.4) —
     // rather than whatever `roomsApi.createChannel` silences its rooms to.
-    const scale = panel.getByRole('combobox', { name: `How loud ${ana.name} is here` });
-    await expect(scale).toHaveText('Engaged');
+    const pill = panel.getByRole('button', { name: `How loud ${ana.name} is here` });
+    await expect(pill).toHaveText('Engaged');
 
-    // And the sentence under it has to carry the REAL numbers, which only a
-    // real server can prove. They come from `rooms.engagedWindowMinutes` and
-    // `rooms.engagedWindowPosts` over `GET /api/config`; with that plumbing
-    // broken the copy degrades to a numberless sentence and every unit test
-    // still passes, because a mock transport can be told anything. These are
-    // the shipped ceilings, and this cockpit has not changed them.
+    // The pill is the glance; the scale under it is the task. And the sentence
+    // there has to carry the REAL numbers, which only a real server can prove.
+    // They come from `rooms.engagedWindowMinutes` and `rooms.engagedWindowPosts`
+    // over `GET /api/config`; with that plumbing broken the copy degrades to a
+    // numberless sentence and every unit test still passes, because a mock
+    // transport can be told anything. These are the shipped ceilings, and this
+    // cockpit has not changed them.
+    await pill.click();
     await expect(
       panel.getByText('keeps answering for 10 more minutes or 5 more messages', { exact: false })
     ).toBeVisible();
