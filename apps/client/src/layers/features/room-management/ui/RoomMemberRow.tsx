@@ -173,7 +173,12 @@ export function RoomMemberRow({
 
   return (
     <div data-slot="room-member-row">
-      <div className="flex items-center gap-3">
+      {/* 56px under a thumb. The row is not itself a tap target — the pill and
+          the "…" are — but it carries two lines of text and a face, and at the
+          36px its contents come to it reads as a list of dots with captions.
+          Above 768px the contents decide, the way every other list in the
+          cockpit lets them. */}
+      <div className="flex min-h-14 items-center gap-3 md:min-h-0">
         <IdentityAvatar
           // 32px under a thumb, 28px under a pointer — the disc is not a
           // control, but it is the thing a finger lands on when aiming at the

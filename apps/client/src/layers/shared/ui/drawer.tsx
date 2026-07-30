@@ -26,6 +26,22 @@ const DrawerOverlay = React.forwardRef<
 ));
 DrawerOverlay.displayName = 'DrawerOverlay';
 
+/**
+ * The sheet itself.
+ *
+ * **The home-indicator gap is already handled, and not from here.** vaul stamps
+ * `data-vaul-drawer` on this element, and `index.css` pads that selector by
+ * `env(safe-area-inset-bottom)` for every drawer in the app at once — so there
+ * is no inset class in the list below, and adding one would double the gap on a
+ * notched phone. `viewport-fit=cover` in `index.html` is what makes the value
+ * non-zero.
+ *
+ * **The height is the caller's.** `bottom-0` with `h-auto` means a sheet grows
+ * with whatever is inside it, past the top of the screen if there is enough —
+ * `mt-24` cannot stop it, because a margin-top does nothing to a fixed box whose
+ * `top` is `auto`. Every dialog in this app caps itself at `max-h-[85vh]` and
+ * puts one scrolling region inside; a new one has to do the same.
+ */
 const DrawerContent = React.forwardRef<
   React.ComponentRef<typeof DrawerPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>

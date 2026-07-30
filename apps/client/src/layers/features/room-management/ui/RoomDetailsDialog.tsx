@@ -11,7 +11,7 @@ import {
   ResponsiveDialogBody,
   ResponsiveDialogContent,
 } from '@/layers/shared/ui';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { useAgentCreationStore, useIsTouchOnly } from '@/layers/shared/model';
 import { RoomLoudnessLine, roomDisplayTitle, type LoudnessPreview } from '@/layers/entities/room';
 import type { RoomDetailsFocus, RoomDetailsRoom } from '../model/room-details';
 import { useRoomDetailsView } from '../model/use-room-details-view';
@@ -126,6 +126,9 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * by whoever needs it rather than repeated on each row.
    */
   const dormantReasonId = useId();
+  // Not viewport width: a narrow desktop window is still a desktop, and what is
+  // being asked is whether a software keyboard would pop. See `useIsTouchOnly`.
+  const isTouchOnly = useIsTouchOnly();
   const searchRef = useRef<HTMLInputElement>(null);
   const topicRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -155,9 +158,17 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * sheet opened at the topic of an empty room expands the picker AND has a
    * live editor holding the cursor, and the editor wins — the reader asked for
    * the topic and would otherwise find themselves typing into "Search agents".
+   *
+   * **None of it happens where touch is the only pointer.** Not one of the three
+   * paths is somebody tapping a text field: they are a menu item, a row, and a
+   * room that turned out to be empty. Taking the cursor there pops the software
+   * keyboard over the list the reader came to read — the same rule the composer
+   * holds to in `focusUnlessTouch`, for the same reason. The field is still
+   * there, still the first thing under the heading, and still one tap away; what
+   * a touch reader does not get is a keyboard they did not ask for.
    */
   useEffect(() => {
-    if (!addExpanded || searchFocused.current) return;
+    if (!addExpanded || searchFocused.current || isTouchOnly) return;
     const field = searchRef.current;
     if (!field) return;
     const active = document.activeElement;
@@ -169,7 +180,7 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
     if (content !== null && active !== document.body && active !== content) return;
     searchFocused.current = true;
     field.focus();
-  }, [addExpanded, view.agents.isLoading, view.agents.isError]);
+  }, [addExpanded, isTouchOnly, view.agents.isLoading, view.agents.isError]);
 
   const confirmRemoval = (member: RoomRosterEntry) => {
     setPendingRemoval(null);
@@ -209,7 +220,9 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
 
   /** The field the entry point named, if it named one and it exists yet. */
   const entryPointField = (): HTMLElement | null => {
-    if (focus === 'add') return searchRef.current;
+    // "Add agents…" asks for the picker, not for a keyboard — see the effect
+    // above. "Edit topic…" names one text field and is answered even on touch.
+    if (focus === 'add') return isTouchOnly ? null : searchRef.current;
     if (focus === 'topic') return topicRef.current;
     return null;
   };
@@ -217,7 +230,13 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
-        className="sm:max-w-md"
+        // Capped, the way every other dialog in this app is capped. Neither
+        // shell caps itself: a drawer is `bottom-0` with `h-auto`, so a roster
+        // of eight agents grows its top off the screen and takes the room's
+        // name with it, and a centred dialog does the same at both ends. The
+        // body is the one scrolling region inside, so the cap is what turns it
+        // into one.
+        className="max-h-[85vh] sm:max-w-md"
         // Focus follows the entry point, and this is the only place that can
         // place it. Radix's default — the first tabbable element, which is the
         // room's own name — is wrong for all four doors.

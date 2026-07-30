@@ -183,6 +183,31 @@ function openAddRow(): void {
   fireEvent.click(row);
 }
 
+/**
+ * Answer the pointer queries as a phone would, leaving the width ones alone.
+ *
+ * `useIsTouchOnly` asks two: is the primary pointer coarse, and is ANY attached
+ * pointer fine. A phone answers yes and no. The viewport queries are left at the
+ * shared setup's "desktop", because the rule under test is about pointers — a
+ * narrow desktop window is still a desktop.
+ */
+function touchOnly(on: boolean): void {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => ({
+      matches: on && query.includes('pointer: coarse'),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 /** One member's loudness pill — what the row shows, and what opens the scale. */
 function pill(name = 'Ana'): HTMLElement {
   return screen.getByRole('button', { name: `How loud ${name} is here` });
@@ -238,7 +263,10 @@ beforeEach(() => {
   // into the next test's assertion about it.
   useAgentCreationStore.setState({ isOpen: false, seed: null, onCreated: null });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  touchOnly(false);
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -702,6 +730,38 @@ describe('RoomDetailsDialog', () => {
       expect(wash).not.toBeNull();
       expect(wash!.className).toContain('pointer-events-none');
       expect(wash).toHaveAttribute('aria-hidden');
+    });
+  });
+
+  describe('on a phone', () => {
+    /**
+     * Two class contracts and one behaviour.
+     *
+     * The classes are the honest limit of jsdom here: it measures every element
+     * as 0 × 0, so nothing about how tall anything actually is, or whether a
+     * drag-to-dismiss fights the roster's own scroll, can be settled short of a
+     * real browser on a real viewport. What a class assertion still catches is
+     * the rule being deleted, which is how both of these went missing.
+     */
+    it('caps its own height, because neither shell caps itself', () => {
+      // A drawer is `bottom-0` with `h-auto` and `mt-24` does nothing to it —
+      // a margin-top cannot move a fixed box whose `top` is `auto` — so a
+      // roster of eight agents grows its top off the screen and takes the
+      // room's name with it. A centred dialog does the same at both ends. Every
+      // other dialog in this app caps itself; this one did not. Red if the cap
+      // goes: the body below it is the only scrolling region, and without a
+      // bounded parent it never becomes one.
+      renderPanel();
+
+      const content = document.querySelector('[role="dialog"]');
+      expect(content!.className).toContain('max-h-[85vh]');
+    });
+
+    it('gives the scrolling region a bounded parent to scroll inside', () => {
+      renderPanel();
+
+      const body = document.querySelector('[data-slot="responsive-dialog-body"]');
+      expect(body!.className).toContain('overflow-y-auto');
     });
   });
 
@@ -1316,6 +1376,24 @@ describe('RoomDetailsDialog', () => {
 
     const search = await screen.findByRole('combobox', { name: 'Search agents' });
     await waitFor(() => expect(search).toHaveFocus());
+  });
+
+  it('never pops a software keyboard on a device that only has one', async () => {
+    // None of the three paths to this cursor is somebody tapping a text field:
+    // they are a menu item, a row, and a room that turned out to be empty. On
+    // touch, taking the cursor puts the keyboard over the list the reader came
+    // to read — the rule `focusUnlessTouch` holds the composer to. Red if the
+    // guard goes: the test above proves the same request IS answered where
+    // there is a real pointer, so the two together are the whole rule.
+    //
+    // Pointer, deliberately, and not width: a narrow desktop window is still a
+    // desktop, so this leaves the viewport queries answering "wide" and changes
+    // only what kind of pointer exists.
+    touchOnly(true);
+    renderPanel({ focus: 'add' });
+
+    const search = await screen.findByRole('combobox', { name: 'Search agents' });
+    expect(search).not.toHaveFocus();
   });
 
   it('lets an empty room open its picker without taking the cursor off the topic', async () => {

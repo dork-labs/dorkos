@@ -185,6 +185,19 @@ describe('RoomMemberRow', () => {
       expect(open!.getAttribute('class')).toContain('rotate-180');
     });
 
+    it('is a thumb’s worth of row on touch, and its contents’ worth above it', () => {
+      // A row carrying a face and two lines of text comes to about 36px if
+      // nothing asks for more, which on a phone reads as a list of dots with
+      // captions. jsdom measures everything as 0 × 0, so the 56px itself is the
+      // browser's to confirm; what is settleable is that the floor is asked for
+      // below 768px and given back above it. Red if either half goes.
+      const { container } = renderRow();
+
+      const row = container.querySelector('[data-slot="room-member-row"] > div');
+      expect(row!.className).toContain('min-h-14');
+      expect(row!.className).toContain('md:min-h-0');
+    });
+
     it('gives a person no loudness and no menu', () => {
       // There is no verb for the reader, and nothing triggers them. The empty
       // slot is the statement.
