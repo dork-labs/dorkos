@@ -17,6 +17,16 @@ export interface ClaudeAccountRef {
   path: string;
   /** What the operator calls this account, or `null` when unnamed. */
   label: string | null;
+  /**
+   * Whether the server can currently find a Claude account in that folder — it
+   * exists AND holds a `projects/` directory (the structural check, spec D4).
+   * `false` means the folder contributes no sessions, and every surface that
+   * offers the account has to say so rather than present it as ordinary.
+   *
+   * `undefined` means nobody reported on it: the account in USE when the operator
+   * never registered it, which the server only names as a path.
+   */
+  isAccountRoot?: boolean;
 }
 
 /**
@@ -56,18 +66,46 @@ export function claudeAccountOptions(
   accounts: readonly ClaudeAccountRef[],
   inUse: string | undefined | null
 ): ClaudeAccountRef[] {
-  const options = accounts.map((account) => ({ path: account.path, label: account.label }));
+  const options = accounts.map((account) => ({
+    path: account.path,
+    label: account.label,
+    isAccountRoot: account.isAccountRoot,
+  }));
   if (inUse && !options.some((option) => option.path === inUse)) {
-    options.push({ path: inUse, label: null });
+    // No `isAccountRoot`: the server reports that check for REGISTERED accounts
+    // only, and claiming a verdict nobody made would be worse than saying nothing.
+    options.push({ path: inUse, label: null, isAccountRoot: undefined });
   }
   return options;
 }
 
 /**
- * Last path segment, ignoring a trailing slash. Returns the input unchanged when
- * it has no segment to take (`'/'`, `''`).
+ * Whether a path names a folder on the machine the SERVER runs on, which is the
+ * only place a Claude account exists.
+ *
+ * Both spellings count, because the cockpit cannot see which platform the server
+ * is on: a POSIX root (`/Users/you/.claude2`) and a Windows drive or network root
+ * (`C:\Users\you\.claude2`, `\\host\share\claude`). A leading `~` does NOT count:
+ * nothing between the field and the config file expands it, so `~/.claude2` would
+ * be stored verbatim and register a folder that is not there.
+ *
+ * @param candidate - The path a person typed.
+ * @returns True when the path is absolute for some platform the server may run on.
+ */
+export function isAbsoluteAccountPath(candidate: string): boolean {
+  return /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(candidate);
+}
+
+/**
+ * Last path segment, ignoring a trailing separator. Returns the input unchanged
+ * when it has no segment to take (`'/'`, `''`).
+ *
+ * Splits on BOTH separators: an account folder is a server-side path, and on
+ * Windows (a shipped download target) `C:\Users\dev\.claude2` split on `/` alone
+ * yields the whole path — which would then be rendered as a badge and read aloud
+ * as an account name.
  */
 function folderName(path: string): string {
-  const segments = path.split('/').filter(Boolean);
+  const segments = path.split(/[\\/]/).filter(Boolean);
   return segments.length > 0 ? segments[segments.length - 1]! : path;
 }

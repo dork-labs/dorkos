@@ -4,6 +4,7 @@ covers:
   - 'feat(server,shared): list and read sessions from every Claude Code account (DOR-729)'
   - 'feat(server,client): pin every turn to its own Claude Code account and apply a switch live (DOR-729)'
   - 'feat(client,shared): choose and switch Claude Code accounts from the cockpit (DOR-729)'
+  - 'fix(server,client): name the default Claude account by absence, plus DOR-729 review fixes'
 ---
 
 ### Added

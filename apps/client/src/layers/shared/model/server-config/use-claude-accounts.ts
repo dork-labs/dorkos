@@ -18,7 +18,12 @@ const CONFIG_STALE_TIME = 30_000;
 
 /** What {@link useClaudeAccounts} reports. */
 export interface ClaudeAccountsView {
-  /** The accounts the operator registered, in the order they registered them. */
+  /**
+   * The accounts the operator registered, in the order they registered them,
+   * each carrying the server's `isAccountRoot` verdict. Keep that field: a
+   * surface that OFFERS an account the server already flagged unusable has to say
+   * so, or selecting it silently points new work at a signed-out config.
+   */
   accounts: ClaudeAccountRef[];
   /**
    * Absolute path a NEW session runs and bills on, already resolved by the

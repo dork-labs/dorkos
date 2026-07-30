@@ -14,7 +14,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session, ServerConfig } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { TransportProvider, useAppStore, useClaudeAccounts } from '@/layers/shared/model';
 import { SessionRow } from '../ui/SessionRow';
 import { useSessionChatStore } from '../model/session-chat-store';
 import { useSessionListStore } from '../model/session-list-store';
@@ -66,6 +66,19 @@ function configWithAccounts(
       accounts: accounts.map((account) => ({ ...account, isAccountRoot: true })),
     },
   };
+}
+
+/**
+ * Reports what the accounts hook currently knows.
+ *
+ * Mounted next to the row so a test can wait for the config read to LAND before
+ * asserting the badge is ABSENT. The row's title renders on the first pass, while
+ * the config query is still in flight, so waiting on it would assert the absence
+ * of a badge that had not yet had the chance to appear.
+ */
+function AccountsProbe() {
+  const { accounts } = useClaudeAccounts();
+  return <span data-testid="accounts-known">{accounts.length}</span>;
 }
 
 function renderRowWith(accounts: { path: string; label: string | null }[], ui: React.ReactElement) {
@@ -150,17 +163,21 @@ describe('session account badge', () => {
   it('stays silent when only one account is registered', async () => {
     renderRowWith(
       [{ path: WORK_ACCOUNT, label: 'Acme Corp' }],
-      <SessionRow
-        variant="full"
-        session={makeSession({ account: WORK_ACCOUNT })}
-        isActive={false}
-        onClick={() => {}}
-      />
+      <>
+        <AccountsProbe />
+        <SessionRow
+          variant="full"
+          session={makeSession({ account: WORK_ACCOUNT })}
+          isActive={false}
+          onClick={() => {}}
+        />
+      </>
     );
 
-    // Give the config query time to land, then assert the badge never appears.
-    await waitFor(() => expect(screen.getByText('Test conversation')).toBeDefined());
-    await Promise.resolve();
+    // Wait for the CONFIG to land — the row's title is on screen before it does,
+    // so synchronizing on the title would assert an absence that nothing had yet
+    // had the chance to fill.
+    await waitFor(() => expect(screen.getByTestId('accounts-known').textContent).toBe('1'));
     expect(screen.queryByText('Acme Corp')).toBeNull();
   });
 
@@ -170,15 +187,18 @@ describe('session account badge', () => {
         { path: HOME_ACCOUNT, label: 'Personal' },
         { path: WORK_ACCOUNT, label: 'Acme Corp' },
       ],
-      <SessionRow
-        variant="full"
-        session={makeSession({ runtime: 'codex' })}
-        isActive={false}
-        onClick={() => {}}
-      />
+      <>
+        <AccountsProbe />
+        <SessionRow
+          variant="full"
+          session={makeSession({ runtime: 'codex' })}
+          isActive={false}
+          onClick={() => {}}
+        />
+      </>
     );
 
-    await waitFor(() => expect(screen.getByText('Test conversation')).toBeDefined());
+    await waitFor(() => expect(screen.getByTestId('accounts-known').textContent).toBe('2'));
     expect(screen.queryByText('Personal')).toBeNull();
     expect(screen.queryByText('Acme Corp')).toBeNull();
   });

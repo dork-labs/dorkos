@@ -32,7 +32,7 @@ export {
 export { useInteractiveShortcuts } from './use-interactive-shortcuts';
 export { useLongPress } from './use-long-press';
 export { useFeatureEnabled } from './server-config/use-feature-enabled';
-export { useClaudeAccounts, type ClaudeAccountsView } from './server-config/use-claude-accounts';
+export { useClaudeAccounts } from './server-config/use-claude-accounts';
 export { useNow } from './use-now';
 export {
   useAgentCreationStore,

@@ -171,6 +171,38 @@ describe('ClaudeAccountsCard', () => {
     });
   });
 
+  it("refuses a path that is not the folder's full path, and says what to type", async () => {
+    const user = userEvent.setup();
+    const transport = renderCard({ resolvedAccount: HOME, inherited: true, accounts: [] });
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toBeInTheDocument()
+    );
+
+    // Nothing between this field and the config file expands `~`, so a shorthand
+    // path registers a folder that is not there — and that junk entry still
+    // counts towards "more than one account", turning badges on for every row.
+    await user.type(screen.getByLabelText('Account folder'), '~/.claude2');
+
+    expect(screen.getByTestId('claude-account-not-absolute')).toHaveTextContent(
+      "Use the folder's full path"
+    );
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+    expect(transport.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('accepts a full path with no complaint', async () => {
+    const user = userEvent.setup();
+    renderCard({ resolvedAccount: HOME, inherited: true, accounts: [] });
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toBeInTheDocument()
+    );
+
+    await user.type(screen.getByLabelText('Account folder'), WORK);
+
+    expect(screen.queryByTestId('claude-account-not-absolute')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
+  });
+
   it('refuses to add the same folder twice', async () => {
     const user = userEvent.setup();
     renderCard({

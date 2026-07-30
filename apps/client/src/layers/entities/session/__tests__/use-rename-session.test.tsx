@@ -52,9 +52,13 @@ function config(resolvedAccount: string): Partial<ServerConfig> {
 }
 
 /** Mount the rename mutation over a session-list cache holding one session. */
-function setup(opts: { sessionAccount?: string; activeAccount: string }) {
+function setup(opts: { sessionAccount?: string; activeAccount?: string }) {
   const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue(config(opts.activeAccount)),
+    // No `activeAccount` stands for a server that reports no account block at
+    // all — the hook then knows the session's account but not the active one.
+    getConfig: vi
+      .fn()
+      .mockResolvedValue(opts.activeAccount ? config(opts.activeAccount) : ({} as ServerConfig)),
     updateSession: vi.fn().mockResolvedValue(undefined),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -70,7 +74,9 @@ function setup(opts: { sessionAccount?: string; activeAccount: string }) {
     () => ({ rename: useRenameSession(CWD), accounts: useClaudeAccounts() }),
     { wrapper }
   );
-  return { result, transport };
+  /** The title the sidebar would render for the session right now. */
+  const titleInList = () => queryClient.getQueryData<Session[]>(sessionKeys.list(CWD))?.[0]?.title;
+  return { result, transport, titleInList };
 }
 
 describe('useRenameSession — account honesty', () => {
@@ -99,12 +105,49 @@ describe('useRenameSession — account honesty', () => {
     );
   });
 
-  it('stays quiet when the session is on the active account', async () => {
-    const { result, transport } = setup({ sessionAccount: HOME, activeAccount: HOME });
+  it('does not flash a name it would have to take back', async () => {
+    const { result, transport, titleInList } = setup({
+      sessionAccount: WORK,
+      activeAccount: HOME,
+    });
     await waitFor(() => expect(result.current.accounts.resolvedAccount).toBe(HOME));
 
     result.current.rename.mutate({ sessionId: 's1', title: 'Fix the tokenizer' });
 
+    await waitFor(() => expect(transport.updateSession).toHaveBeenCalled());
+    // The settle-time refetch returns the DERIVED title for this account, so an
+    // optimistic patch would show the new name and then visibly revert it.
+    expect(titleInList()).toBe('Fix the parser');
+  });
+
+  it('explains itself even when it does not know which account is active', async () => {
+    // The config read has not landed, or the server reports no account block. The
+    // hook cannot promise the name appears here, so it must neither patch the row
+    // nor go silent — silence plus no visible change is "rename did nothing".
+    const { result, transport, titleInList } = setup({ sessionAccount: WORK });
+    await waitFor(() => expect(result.current.accounts.accounts).toEqual([]));
+
+    result.current.rename.mutate({ sessionId: 's1', title: 'Fix the tokenizer' });
+
+    await waitFor(() => expect(transport.updateSession).toHaveBeenCalled());
+    expect(titleInList()).toBe('Fix the parser');
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Renamed on .claude2', {
+        description: 'Your session list shows the new name while .claude2 is the account in use.',
+      })
+    );
+  });
+
+  it('stays quiet when the session is on the active account, and shows the name at once', async () => {
+    const { result, transport, titleInList } = setup({
+      sessionAccount: HOME,
+      activeAccount: HOME,
+    });
+    await waitFor(() => expect(result.current.accounts.resolvedAccount).toBe(HOME));
+
+    result.current.rename.mutate({ sessionId: 's1', title: 'Fix the tokenizer' });
+
+    await waitFor(() => expect(titleInList()).toBe('Fix the tokenizer'));
     await waitFor(() => expect(transport.updateSession).toHaveBeenCalled());
     // The name is about to appear on its own; a toast would be noise.
     expect(toast.success).not.toHaveBeenCalled();

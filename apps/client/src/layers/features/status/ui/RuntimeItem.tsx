@@ -232,7 +232,21 @@ export function RuntimeItem({
                   Default
                 </ResponsiveDropdownMenuRadioItem>
                 {account.accounts.map((entry) => (
-                  <ResponsiveDropdownMenuRadioItem key={entry.path} value={entry.path}>
+                  <ResponsiveDropdownMenuRadioItem
+                    key={entry.path}
+                    value={entry.path}
+                    // The server already checked this folder and could not find an
+                    // account in it, so say so here as plainly as the settings
+                    // card does on its row. Still selectable, not disabled: an
+                    // account authenticated a minute ago has no `projects/`
+                    // either (spec §9), and choosing it is how the first session
+                    // gets there.
+                    description={
+                      entry.isAccountRoot === false
+                        ? 'Does not look like an account folder yet'
+                        : undefined
+                    }
+                  >
                     {account.nameFor(entry.path)}
                   </ResponsiveDropdownMenuRadioItem>
                 ))}

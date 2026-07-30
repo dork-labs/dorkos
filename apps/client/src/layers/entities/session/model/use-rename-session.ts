@@ -25,6 +25,12 @@ import { sessionKeys } from '../api/query-keys';
  * not disable a rename that genuinely works — both would trade one honest,
  * bounded surprise for a dishonest one.
  *
+ * That is also why the optimistic patch is SKIPPED for those sessions. The
+ * settle-time invalidation always refetches, and the refetch returns the derived
+ * title, so patching would show the new name and then visibly take it back —
+ * "rename did nothing" with an extra flicker. Showing the old name plus a
+ * sentence about where the new one lives is the honest version of the same fact.
+ *
  * @param cwd - Current working directory (agent path) used as the sessions query key segment.
  */
 export function useRenameSession(cwd: string | null) {
@@ -45,22 +51,33 @@ export function useRenameSession(cwd: string | null) {
       // Read the account BEFORE the optimistic patch, from the row the sidebar
       // renders. Absent for runtimes with no account concept.
       const account = previous?.find((s) => s.id === sessionId)?.account;
+      // Whether the list can actually show this title once the dust settles. No
+      // account means a runtime that has none, and the title is simply the
+      // session's. An account DorkOS is not currently reading titles from cannot
+      // show it — and an unknown active account cannot be promised either, so it
+      // is treated the same way rather than optimistically.
+      const showsInList =
+        account === undefined || (resolvedAccount !== undefined && account === resolvedAccount);
 
-      // Optimistically update the cache
-      queryClient.setQueryData<Session[]>(sessionKeys.list(cwd), (old) =>
-        old?.map((s) => (s.id === sessionId ? { ...s, title } : s))
-      );
+      if (showsInList) {
+        queryClient.setQueryData<Session[]>(sessionKeys.list(cwd), (old) =>
+          old?.map((s) => (s.id === sessionId ? { ...s, title } : s))
+        );
+      }
 
-      return { previous, account };
+      return { previous, account, showsInList };
     },
 
     onSuccess: (_data, _vars, context) => {
       const account = context?.account;
       // Silent in the ordinary case: the name is about to appear on its own, and
       // a toast for every rename would be noise.
-      if (!account || !resolvedAccount || account === resolvedAccount) return;
-      toast.success(`Renamed on ${nameFor(account)}`, {
-        description: 'Your session list shows the new name once you switch to that account.',
+      if (!account || context?.showsInList) return;
+      const name = nameFor(account);
+      toast.success(`Renamed on ${name}`, {
+        description: resolvedAccount
+          ? 'Your session list shows the new name once you switch to that account.'
+          : `Your session list shows the new name while ${name} is the account in use.`,
       });
     },
 

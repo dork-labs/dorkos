@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { claudeAccountName, claudeAccountOptions, shortenHomePath } from '@/layers/shared/lib';
+import {
+  claudeAccountName,
+  claudeAccountOptions,
+  isAbsoluteAccountPath,
+  shortenHomePath,
+} from '@/layers/shared/lib';
 import {
   Button,
   DirectoryPicker,
@@ -38,19 +43,16 @@ type ClaudeCodePatch = {
 /**
  * Turn a failed config write into one sentence a person can act on.
  *
- * The 403 case is the one that must never pass silently: both `operator-only`
- * leaves here refuse an agent, and under Require login they refuse anything
- * without an operator session cookie. The server already answers in plain words
- * ("Only a person can change those settings"), so this surfaces that rather than
- * inventing a second wording that could drift from the guard.
+ * The server's own wording is always preferred, and a refusal is the case that
+ * matters: both `operator-only` leaves here reject an agent, and under Require
+ * login they reject anything without an operator session cookie. The server
+ * answers that in plain words ("Only a person can change those settings"), so
+ * repeating it here is both correct and drift-proof — a second wording of our own
+ * would go stale the day the guard's wording changes. The fallback covers a
+ * transport that throws without a message at all.
  */
 function describeWriteFailure(err: unknown): string {
-  const message = err instanceof Error && err.message ? err.message : '';
-  const status = (err as { status?: number }).status;
-  if (status === 403) {
-    return message || 'Only a person signed in to DorkOS can change this setting.';
-  }
-  return message || 'Could not save that. Try again.';
+  return (err instanceof Error && err.message) || 'Could not save that. Try again.';
 }
 
 /**
@@ -82,6 +84,13 @@ export function ClaudeAccountsCard() {
 
   const trimmedPath = newPath.trim();
   const isDuplicate = accounts.some((account) => account.path === trimmedPath);
+  // The path is stored and read exactly as typed — nothing between this field and
+  // the server expands a `~` — so a shorthand path would register a folder that is
+  // not there. That is worse than it sounds: a junk entry still counts towards
+  // "more than one account", which turns account badges on for every session row
+  // when there is really only one account.
+  const isNotAbsolute = trimmedPath.length > 0 && !isAbsoluteAccountPath(trimmedPath);
+  const canAdd = trimmedPath.length > 0 && !isDuplicate && !isNotAbsolute;
 
   /**
    * Persist a `runtimes.claudeCode` change.
@@ -110,7 +119,7 @@ export function ClaudeAccountsCard() {
   }
 
   function addAccount() {
-    if (!trimmedPath || isDuplicate) return;
+    if (!canAdd) return;
     write(
       {
         accounts: [
@@ -185,7 +194,7 @@ export function ClaudeAccountsCard() {
           <div className="space-y-2">
             <PathInput
               aria-label="Account folder"
-              placeholder="~/.claude2"
+              placeholder="/Users/you/.claude2"
               value={newPath}
               onChange={setNewPath}
               onBrowse={() => setPickerOpen(true)}
@@ -203,17 +212,23 @@ export function ClaudeAccountsCard() {
                 onChange={(e) => setNewLabel(e.target.value)}
                 className="h-8 flex-1"
               />
-              <Button
-                size="sm"
-                onClick={addAccount}
-                disabled={!trimmedPath || isDuplicate || updateConfig.isPending}
-              >
+              <Button size="sm" onClick={addAccount} disabled={!canAdd || updateConfig.isPending}>
                 Add
               </Button>
             </div>
             {isDuplicate && (
               <p className="text-muted-foreground text-xs" data-testid="claude-account-duplicate">
                 That folder is already on the list.
+              </p>
+            )}
+            {isNotAbsolute && (
+              <p
+                className="text-muted-foreground text-xs"
+                data-testid="claude-account-not-absolute"
+              >
+                Use the folder&apos;s full path, like <code>/Users/you/.claude2</code>. A path that
+                starts with <code>~</code> will not work. Browse to pick the folder if you are not
+                sure.
               </p>
             )}
           </div>

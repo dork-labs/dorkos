@@ -178,31 +178,43 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
  *
  * ## Why the value can be `undefined`, and why that is not a loophole
  *
- * When the launching environment set NO `CLAUDE_CONFIG_DIR` and `root` is the
- * SDK's own default (`~/.claude`), "unset" is the faithful spelling of that
- * account — and spelling it out instead would change behavior rather than pin it.
- * Claude Code derives its macOS Keychain entry name as
- * `Claude Code-credentials[-<8 hex of sha256(configDir)>]`, and it takes the
+ * When `root` is the SDK's own default (`~/.claude`), "unset" is normally the
+ * faithful spelling of that account — and spelling it out instead would change
+ * behavior rather than pin it. Claude Code derives its macOS Keychain entry name
+ * as `Claude Code-credentials[-<8 hex of sha256(configDir)>]`, and it takes the
  * UNSUFFIXED branch exactly when `CLAUDE_CONFIG_DIR` is unset — verified in the
  * SDK's bundled `sdk.mjs` and confirmed against a real machine, where
  * `~/.claude`'s entry is the unsuffixed one and the suffixed spelling does not
- * exist. So writing `CLAUDE_CONFIG_DIR=~/.claude` where nothing was set before
- * would point the CLI at a Keychain entry that is not there and break sign-in
- * for every default install (spec AC1: at defaults, behavior is identical to
- * today).
+ * exist. So writing `CLAUDE_CONFIG_DIR=~/.claude` points the CLI at a Keychain
+ * entry that was never created, and sign-in fails.
  *
  * `undefined` reaches the subprocess as a genuinely absent variable: Node's
  * `child_process` skips `undefined` values when it builds the child's
- * environment, so this both overrides an inherited value and removes it.
+ * environment, so this both overrides an inherited value and removes it. That is
+ * what lets absence still satisfy acceptance criterion 3 — an explicit account
+ * choice overrides an inherited `CLAUDE_CONFIG_DIR`, including by erasing it.
+ *
+ * ## The one exception, which looks redundant and is not
+ *
+ * `ambientNamesRoot` keeps the pin EXPLICIT when the launching environment
+ * already named `~/.claude` itself. An operator who always exports
+ * `CLAUDE_CONFIG_DIR=~/.claude` authenticated under that regime, so their
+ * SUFFIXED entry is the one that exists and naming the path is right for them.
+ * Absence is right on every OTHER route to `~/.claude`: nothing set at all, or an
+ * inherited variable naming a DIFFERENT account that the operator has just
+ * overridden by selecting the default. Do not collapse this to "the ambient
+ * value is unset" — that conflates which Keychain BRANCH Claude Code takes with
+ * whether the name for the WANTED account exists, and it breaks sign-in for
+ * anyone who selects `~/.claude` from a shell pointing somewhere else.
  *
  * @param root - The absolute Claude config directory this subprocess must use.
  * @returns A one-entry env fragment to spread AFTER `...process.env`.
  */
 export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | undefined } {
-  const isFaithfullyUnset =
-    ambientClaudeConfigDir() === undefined &&
-    path.resolve(root) === path.resolve(inheritedClaudeRoot());
-  return { CLAUDE_CONFIG_DIR: isFaithfullyUnset ? undefined : root };
+  const ambient = ambientClaudeConfigDir();
+  const isDefaultRoot = path.resolve(root) === path.resolve(path.join(os.homedir(), '.claude'));
+  const ambientNamesRoot = ambient !== undefined && path.resolve(ambient) === path.resolve(root);
+  return { CLAUDE_CONFIG_DIR: isDefaultRoot && !ambientNamesRoot ? undefined : root };
 }
 
 /**

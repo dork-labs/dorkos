@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useClaudeAccounts } from '@/layers/shared/model';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { ServerConfig } from '@dorkos/shared/types';
 
@@ -121,6 +121,7 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     ResponsiveDropdownMenuRadioItem: ({
       children,
       value,
+      description,
     }: {
       children: React.ReactNode;
       value: string;
@@ -130,6 +131,7 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     }) => (
       <div role="radio" aria-checked={false} data-radio-value={value}>
         <span>{children}</span>
+        {description && <span data-testid="radio-description">{description}</span>}
       </div>
     ),
     ResponsiveDropdownMenuItem: ({
@@ -227,6 +229,20 @@ function render(ui: React.ReactElement) {
       </QueryClientProvider>
     ),
   });
+}
+
+/**
+ * Reports what the shared accounts hook currently knows.
+ *
+ * Mounted alongside the chip so a test can wait for the config read to LAND
+ * before asserting the account group is ABSENT. Waiting on the menu itself proves
+ * nothing: the dropdown renders on the first pass, while the config query is
+ * still in flight, so the absence assertion would run before the state it is
+ * about even exists and could never fail.
+ */
+function AccountsProbe() {
+  const { accounts } = useClaudeAccounts();
+  return <span data-testid="accounts-known">{accounts.length}</span>;
 }
 
 /** Server config registering `count` named Claude accounts, the first one active. */
@@ -683,14 +699,54 @@ describe('RuntimeItem', () => {
       );
     });
 
-    it('stays out of the menu when only one account is registered', async () => {
-      mockServerConfig = withAccounts(1);
+    it('says so when a registered folder is not a usable account, instead of offering it plainly', async () => {
+      // The server already checked and found no account there, so this option
+      // points new work at a config Claude Code treats as signed out. The
+      // settings card warns on its row; this must agree rather than stay quiet.
+      mockServerConfig = {
+        claudeCode: {
+          resolvedAccount: '/Users/dev/.claude',
+          inherited: true,
+          accounts: [
+            { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+            { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: false },
+          ],
+        },
+      };
       everyRuntimeReady();
       render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
 
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      const marked = screen
+        .getAllByRole('radio')
+        .filter((el) => el.getAttribute('data-radio-value') === '/Users/dev/.claude2');
+      expect(marked).toHaveLength(1);
+      expect(marked[0]).toHaveTextContent('Does not look like an account folder yet');
+      // The usable one carries no such mark.
+      expect(
+        screen
+          .getAllByRole('radio')
+          .find((el) => el.getAttribute('data-radio-value') === '/Users/dev/.claude')
+      ).not.toHaveTextContent('Does not look like an account folder yet');
+    });
+
+    it('stays out of the menu when only one account is registered', async () => {
+      mockServerConfig = withAccounts(1);
+      everyRuntimeReady();
+      render(
+        <>
+          <AccountsProbe />
+          <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />
+        </>
+      );
+
+      // Wait for the CONFIG, not the menu: the dropdown is already on screen
+      // before the accounts are known, so synchronizing on it would assert the
+      // absence of something that had not had a chance to appear.
+      await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('1'));
       // The runtime group is still there; the account group is not. Nothing to
       // switch between means a control with nothing to control.
-      await waitFor(() => expect(screen.getByTestId('dropdown-root')).toBeInTheDocument());
+      expect(screen.getByTestId('dropdown-root')).toBeInTheDocument();
       expect(screen.getAllByRole('radiogroup')).toHaveLength(1);
       expect(screen.queryByText('Personal')).not.toBeInTheDocument();
       expect(screen.queryAllByTestId('dropdown-label').map((el) => el.textContent)).not.toContain(
@@ -701,11 +757,17 @@ describe('RuntimeItem', () => {
     it('stays out of the menu once the session has started', async () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
-      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={false} />);
+      render(
+        <>
+          <AccountsProbe />
+          <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={false} />
+        </>
+      );
 
       // A started session's account is fixed to the one that created it, so a
       // switcher here would imply a move that cannot happen.
-      await waitFor(() => expect(screen.getByTestId('tooltip-content')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('2'));
+      expect(screen.getByTestId('tooltip-content')).toBeInTheDocument();
       expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
       expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
     });
@@ -713,9 +775,15 @@ describe('RuntimeItem', () => {
     it('stays out of the menu for a runtime with no accounts', async () => {
       mockServerConfig = withAccounts(2);
       everyRuntimeReady();
-      render(<RuntimeItem runtime="codex" onChangeRuntime={vi.fn()} canSelect={true} />);
+      render(
+        <>
+          <AccountsProbe />
+          <RuntimeItem runtime="codex" onChangeRuntime={vi.fn()} canSelect={true} />
+        </>
+      );
 
-      await waitFor(() => expect(screen.getByTestId('dropdown-root')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('2'));
+      expect(screen.getByTestId('dropdown-root')).toBeInTheDocument();
       expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
     });
   });

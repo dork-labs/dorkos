@@ -9,7 +9,7 @@
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { claudeAccountOptions } from '@/layers/shared/lib';
+import { claudeAccountOptions, type ClaudeAccountRef } from '@/layers/shared/lib';
 import { useClaudeAccounts } from '@/layers/shared/model';
 import { useUpdateConfig } from '@/layers/entities/config';
 
@@ -25,8 +25,11 @@ export interface AccountSwitch {
    * The accounts to offer, in the order the operator added them, plus the one in
    * use if it was never registered — otherwise the menu would have no item
    * matching its own value and nothing would look selected.
+   *
+   * Each carries `isAccountRoot`, so the menu can mark an account the server
+   * cannot find rather than offering it as if it were ready.
    */
-  accounts: { path: string; label: string | null }[];
+  accounts: ClaudeAccountRef[];
   /** The radio value currently selected: an account path, or the default sentinel. */
   selectedValue: string;
   /** Whether a switcher is worth showing at all (more than one account registered). */
@@ -65,8 +68,13 @@ export function useAccountSwitch(): AccountSwitch {
           void queryClient.invalidateQueries({ queryKey: ['config'] });
         },
         onError: (err) => {
-          const message = err instanceof Error && err.message ? err.message : '';
-          toast.error(message || 'Could not switch account. Try again.');
+          // The server's own sentence, same as the settings card's
+          // `describeWriteFailure`: it already refuses in plain words, and a
+          // second wording of ours would drift from the guard. The fallback is
+          // only for a transport that throws without a message at all.
+          toast.error(
+            (err instanceof Error && err.message) || 'Could not switch account. Try again.'
+          );
         },
       }
     );

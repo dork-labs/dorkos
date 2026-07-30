@@ -323,12 +323,38 @@ describe('claudeConfigDirEnv (spec claude-code-accounts D8)', () => {
     expect('CLAUDE_CONFIG_DIR' in answer).toBe(true);
   });
 
-  it('names the default account explicitly once the variable IS set', () => {
-    // The launching shell already set it, so the suffixed Keychain name is
-    // already what Claude Code uses — spelling the path out changes nothing, and
-    // pinning it keeps a concurrent env-lock mutation out of this subprocess.
+  it('still names the default account by ABSENCE when an UNRELATED account is inherited', () => {
+    // The case that decides this: the launching shell exported ~/.claude3, and the
+    // operator then selected ~/.claude in the cockpit. Spelling the default path
+    // out here sends Claude Code to `Claude Code-credentials-<hash of ~/.claude>`,
+    // which does NOT exist — the unsuffixed entry is the one absence created — so
+    // the turn fails to sign in. Which branch Claude Code is ON is not the same
+    // question as whether the name for the WANTED account exists.
     process.env.CLAUDE_CONFIG_DIR = '/Users/dev/.claude3';
+    const answer = claudeConfigDirEnv(path.join(os.homedir(), '.claude'));
+
+    expect(answer.CLAUDE_CONFIG_DIR).toBeUndefined();
+    // Still present-as-undefined, which is what ERASES the inherited ~/.claude3
+    // rather than letting the subprocess pick it up (acceptance criterion 3).
+    expect('CLAUDE_CONFIG_DIR' in answer).toBe(true);
+  });
+
+  it('names the default account by ABSENCE when the inherited account is a sibling', () => {
+    // The reported failure verbatim: launched from a shell exporting
+    // `CLAUDE_CONFIG_DIR=~/.claude2`, ~/.claude selected in the cockpit.
+    process.env.CLAUDE_CONFIG_DIR = path.join(os.homedir(), '.claude2');
+
+    expect(
+      claudeConfigDirEnv(path.join(os.homedir(), '.claude')).CLAUDE_CONFIG_DIR
+    ).toBeUndefined();
+  });
+
+  it('names the default account EXPLICITLY when the inherited variable already named it', () => {
+    // The one path to ~/.claude where the suffixed Keychain entry genuinely
+    // exists: this operator always exports CLAUDE_CONFIG_DIR=~/.claude, so they
+    // authenticated under that regime and pinning the path is right for them.
     const defaultRoot = path.join(os.homedir(), '.claude');
+    process.env.CLAUDE_CONFIG_DIR = defaultRoot;
 
     expect(claudeConfigDirEnv(defaultRoot)).toEqual({ CLAUDE_CONFIG_DIR: defaultRoot });
   });
