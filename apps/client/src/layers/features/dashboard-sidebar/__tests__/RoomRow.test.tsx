@@ -273,10 +273,15 @@ describe('RoomRow surfaces opened from the menu', () => {
     });
     fireEvent.click(within(openDropdown()).getByText('Members…'));
 
-    const search = await screen.findByRole('combobox', { name: 'Search agents' });
-    expect(search).not.toHaveFocus();
+    const panel = await screen.findByRole('dialog');
+    await within(panel).findByRole('region', { name: 'Current members' });
+    // Adding is still one row at the foot of the roster: "Members…" asked for
+    // who is in here, so nothing has opened a field to type into.
+    expect(
+      within(panel).queryByRole('combobox', { name: 'Search agents' })
+    ).not.toBeInTheDocument();
     // …and focus is still inside the panel, not left behind on the sidebar.
-    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+    expect(panel.contains(document.activeElement)).toBe(true);
   });
 
   it('takes an added agent off the picker rather than offering to add it twice', async () => {

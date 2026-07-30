@@ -22,7 +22,7 @@ import { useEngagedWindow } from '@/layers/entities/config';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import type { RoomDetailsFocus, RoomDetailsRoom } from '../model/room-details';
-import { AgentRosterPicker } from './AgentRosterPicker';
+import { AddMembersRow } from './AddMembersRow';
 import { RoomDetailsHeader } from './RoomDetailsHeader';
 import { RoomMemberRow } from './RoomMemberRow';
 
@@ -94,30 +94,45 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * find the bottom of.
    */
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
+  /**
+   * Whether the picker at the foot of the roster has been opened in place.
+   *
+   * The "Add agents…" entry point opens it already open, which is the whole
+   * difference between that door and "Members…" — both land on one sheet, and
+   * only the state it opens in says which one was pressed.
+   */
+  const [addExpanded, setAddExpanded] = useState(focus === 'add');
   const searchRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLElement | null>(null);
-  /** Whether the "add" entry point has already been handed its field. Once only. */
+  /** Whether the search field has already been handed the cursor. Once only. */
   const searchFocused = useRef(false);
 
   /**
-   * Give the search field the focus the "add" entry point asked for, as soon as
-   * there IS a field.
+   * Give the search field the cursor as soon as there IS a field, whoever asked
+   * for it.
    *
-   * `onOpenAutoFocus` fires once, when the dialog opens, and the field it wants
-   * arrives later than that whenever the fleet has to be read first. So the
-   * request is honoured again here — once, and only while focus is still inside
-   * the dialog, so a reader who has already tabbed somewhere else does not have
-   * it yanked back mid-keystroke.
+   * Two paths lead here and one effect serves both, because they are the same
+   * request. "Add agents…" opens the picker already expanded, and
+   * `onOpenAutoFocus` fires once — before the fleet has been read on a cold
+   * start, so the field it wants does not exist yet. Pressing the add row
+   * expands it later, and the field usually appears in that same commit.
+   *
+   * **The `<body>` case is not a slip.** The guard exists so a reader who has
+   * already tabbed to something else does not have the cursor yanked back
+   * mid-keystroke — and that means somewhere REAL. Expanding the row unmounts
+   * the button that was pressed, which drops focus to `<body>`: nobody is
+   * anywhere, so there is nothing to take away from them.
    */
   useEffect(() => {
-    if (focus !== 'add' || searchFocused.current) return;
+    if (!addExpanded || searchFocused.current) return;
     const field = searchRef.current;
     if (!field) return;
     const content = contentRef.current;
-    if (content && !content.contains(document.activeElement)) return;
+    const active = document.activeElement;
+    if (content && active !== document.body && !content.contains(active)) return;
     searchFocused.current = true;
     field.focus();
-  }, [focus, agents.isLoading, agents.isError]);
+  }, [addExpanded, agents.isLoading, agents.isError]);
 
   const title = roomDisplayTitle(room);
   const members = useMemo(() => roomQuery.data?.members ?? [], [roomQuery.data]);
@@ -252,11 +267,11 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
         // sidebar. Focus placed by the dialog is inside its focus scope, which
         // Radix defends against exactly that.
         //
-        // With a `focus` of "add" the field may not exist YET — the panel reads its
-        // own fleet, so the picker draws a shape while that lands. Focus goes
-        // to the content in the meantime and {@link useFocusSearchWhenReady}
-        // hands it on the moment the field appears; without that, "Add
-        // agents…" on a cold read left the reader nowhere.
+        // With a `focus` of "add" the field may not exist YET — the sheet reads
+        // its own fleet, so the picker draws a shape while that lands. Focus
+        // goes to the content in the meantime and the effect above hands it on
+        // the moment the field appears; without that, "Add agents…" on a cold
+        // read left the reader nowhere.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const target =
@@ -339,26 +354,21 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
             )}
           </section>
 
-          <section aria-label="Add agents" className="space-y-2 border-t pt-4">
-            <h3 className="text-sm font-medium">Add agents</h3>
-            <p className="text-muted-foreground text-xs">
-              They join here and can read everything already said.
-            </p>
-            <AgentRosterPicker
-              roster={agents}
-              exclude={isAlreadyIn}
-              onSubmit={handleAdd}
-              submitLabel={(count) => (count > 1 ? `Add ${count} agents` : 'Add agent')}
-              emptyRosterMessage={
-                agents.candidates.length === 0
-                  ? 'You have not added any agents yet. Add one to put it in here.'
-                  : 'Every agent you have is already in here.'
-              }
-              allChosenMessage="Every agent you have is already in here."
-              isSubmitting={addMember.isPending}
-              inputRef={searchRef}
-            />
-          </section>
+          <AddMembersRow
+            expanded={addExpanded}
+            onExpand={() => setAddExpanded(true)}
+            roster={agents}
+            exclude={isAlreadyIn}
+            onSubmit={handleAdd}
+            emptyRosterMessage={
+              agents.candidates.length === 0
+                ? 'You have not added any agents yet. Add one to put it in here.'
+                : 'Every agent you have is already in here.'
+            }
+            allChosenMessage="Every agent you have is already in here."
+            isSubmitting={addMember.isPending}
+            inputRef={searchRef}
+          />
         </ResponsiveDialogBody>
       </ResponsiveDialogContent>
     </ResponsiveDialog>

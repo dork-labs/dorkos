@@ -152,6 +152,20 @@ function addSection() {
   return within(screen.getByRole('region', { name: 'Add agents' }));
 }
 
+/**
+ * Open the picker the way a reader does — by pressing the row at the foot of
+ * the roster. Not needed when the sheet was opened through "Add agents…",
+ * which is the entry point that opens it already expanded.
+ */
+function openAddRow(): void {
+  const row = addSection().getByRole('button', { name: 'Add agents' });
+  // Focused first, because a real pointer focuses the button it presses and
+  // `fireEvent.click` does not — and the hazard lives in what happens to that
+  // focus one commit later, when the row unmounts and drops it on `<body>`.
+  row.focus();
+  fireEvent.click(row);
+}
+
 /** One member's loudness pill — what the row shows, and what opens the scale. */
 function pill(name = 'Ana'): HTMLElement {
   return screen.getByRole('button', { name: `How loud ${name} is here` });
@@ -467,9 +481,48 @@ describe('RoomDetailsDialog', () => {
     ).toBeInTheDocument();
   });
 
+  describe('adding somebody', () => {
+    it('ends the roster with a row rather than opening a second panel', async () => {
+      // The old sheet carried a second heading, a second explanation and an
+      // always-open picker whose disabled button was the heaviest thing on
+      // screen. Red if any of that comes back: the foot of the roster is one
+      // more row until somebody presses it.
+      renderPanel();
+      await rosterList();
+
+      expect(addSection().getByRole('button', { name: 'Add agents' })).toBeInTheDocument();
+      expect(
+        addSection().queryByRole('combobox', { name: 'Search agents' })
+      ).not.toBeInTheDocument();
+    });
+
+    it('turns that row into the picker, with the cursor already in it', async () => {
+      // Expanding it unmounts the button that was pressed, which drops focus
+      // to <body>. Red if the focus guard treats that as "the reader has gone
+      // somewhere else" — pressing the row would open a field nobody is in.
+      renderPanel();
+      await rosterList();
+      openAddRow();
+
+      const search = screen.getByRole('combobox', { name: 'Search agents' });
+      await waitFor(() => expect(search).toHaveFocus());
+      expect(addSection().queryByRole('button', { name: 'Add agents' })).not.toBeInTheDocument();
+    });
+
+    it('opens with the picker already open for the door that asked to add', async () => {
+      // "Add agents…" and "Members…" land on ONE sheet, so the state it opens
+      // in is the only thing left saying which was pressed.
+      renderPanel({ focus: 'add' });
+      await rosterList();
+
+      expect(screen.getByRole('combobox', { name: 'Search agents' })).toBeInTheDocument();
+    });
+  });
+
   it('offers only agents that are not already in the room', async () => {
     renderPanel();
     await rosterList();
+    openAddRow();
 
     // Ana is on the roster; Bo is not.
     expect(screen.getAllByRole('option')).toHaveLength(1);
@@ -484,6 +537,7 @@ describe('RoomDetailsDialog', () => {
       }),
     });
     await screen.findByText(/No agents in here yet/i);
+    openAddRow();
 
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
@@ -512,6 +566,7 @@ describe('RoomDetailsDialog', () => {
     });
     renderPanel({ transport });
     await screen.findByText(/No agents in here yet/i);
+    openAddRow();
 
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     fireEvent.click(screen.getByRole('option', { name: 'Bo' }));
@@ -543,6 +598,7 @@ describe('RoomDetailsDialog', () => {
     });
     renderPanel({ transport });
     await screen.findByText(/No agents in here yet/i);
+    openAddRow();
 
     fireEvent.click(screen.getByRole('option', { name: 'Ana' }));
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }));
@@ -583,16 +639,14 @@ describe('RoomDetailsDialog', () => {
     await waitFor(() => expect(search).toHaveFocus());
   });
 
-  it('opens on the roster for an entry point that asked for the topic', async () => {
-    // The topic is not in this panel yet, so "topic" lands where "members"
-    // lands. What it must NOT do is take the cursor — an entry point whose
-    // field does not exist here has no claim on the search box, and a reader
-    // who asked about the topic typing into "Search agents" is worse than
-    // landing nowhere in particular.
+  it('leaves the picker shut for an entry point that did not ask to add anybody', async () => {
+    // An entry point that asked about the topic has no claim on the search
+    // box. Red if the picker ever opens for anything but "Add agents…" — a
+    // reader who came for the topic would be typing into "Search agents".
     renderPanel({ focus: 'topic' });
 
     await rosterList();
-    expect(screen.getByRole('combobox', { name: 'Search agents' })).not.toHaveFocus();
+    expect(screen.queryByRole('combobox', { name: 'Search agents' })).not.toBeInTheDocument();
   });
 
   it('says there is nobody left to add rather than showing an empty picker', async () => {
@@ -600,6 +654,7 @@ describe('RoomDetailsDialog', () => {
       agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana', visual: null }]),
     });
     await rosterList();
+    openAddRow();
 
     expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();

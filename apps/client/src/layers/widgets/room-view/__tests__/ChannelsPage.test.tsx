@@ -178,13 +178,12 @@ describe('ChannelsPage members-panel entry points', () => {
     });
     fireEvent.click(roster);
 
-    const panel = await screen.findByRole('dialog');
-    expect(within(panel).getByText('Members of #general')).toBeInTheDocument();
-    // Awaited: the panel reads its own fleet, so the field arrives with the
-    // answer rather than with the dialog.
-    const search = await within(panel).findByLabelText('Search agents');
-    // The roster half, because that is what the header asked for.
-    expect(search).not.toHaveFocus();
+    const panel = await screen.findByRole('dialog', { name: '#general' });
+    await within(panel).findByRole('region', { name: 'Current members' });
+    // The roster half, because that is what the header asked for: adding is
+    // still one row at the foot of the list rather than an open field.
+    expect(within(panel).getByRole('button', { name: 'Add agents' })).toBeInTheDocument();
+    expect(within(panel).queryByLabelText('Search agents')).not.toBeInTheDocument();
   });
 
   it('makes the empty state say what is wrong, and gives it the button it promises', async () => {
@@ -201,11 +200,10 @@ describe('ChannelsPage members-panel entry points', () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Add agents' }));
 
-    const panel = await screen.findByRole('dialog');
-    expect(within(panel).getByText('Members of #general')).toBeInTheDocument();
-    // "Add agents…" lands on the picker, so the next keystroke is a search.
-    // Awaited: the panel reads its own fleet, so the field arrives with the
-    // answer rather than with the dialog.
+    const panel = await screen.findByRole('dialog', { name: '#general' });
+    // "Add agents…" lands on the picker, already open, so the next keystroke is
+    // a search. Awaited: the sheet reads its own fleet, so the field arrives
+    // with the answer rather than with the dialog.
     const search = await within(panel).findByLabelText('Search agents');
     await waitFor(() => expect(search).toHaveFocus());
   });
