@@ -2416,6 +2416,22 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Standing-permission policy (DOR-501)' }),
+    rooms: z
+      .object({
+        engagedWindowMinutes: z.number().int().openapi({
+          description:
+            'How long an agent on the `engaged` response mode keeps answering after it was @mentioned, in minutes. Read-only here: the cockpit states this number in the words it uses to describe the mode, and an operator who changed it would otherwise be shown a sentence that is false. `0` means the window never opens and `engaged` behaves like `mention-only`',
+        }),
+        engagedWindowPosts: z.number().int().openapi({
+          description:
+            'How many messages by other members close that same window, whichever ceiling runs out first. Read-only here, for the same reason. `0` means the window never opens',
+        }),
+      })
+      .optional()
+      .openapi({
+        description:
+          'The two engaged-window ceilings, so the cockpit can describe the `engaged` response mode with the numbers actually in force (spec `rooms` §9.2)',
+      }),
     workbench: z
       .object({
         defaultViewers: z.record(z.string(), z.string()).openapi({

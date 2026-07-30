@@ -573,6 +573,43 @@ describe('GET /api/config', () => {
     expect(res.body).toHaveProperty('mesh');
   });
 
+  // The cockpit prints these two numbers inside the sentence that describes the
+  // `engaged` response mode — "keeps answering for 10 more minutes or 5 more
+  // messages". They are settings, so the sentence is only true if the cockpit
+  // reads the numbers actually in force rather than the shipped defaults.
+  describe('rooms — the engaged-window numbers the cockpit says out loud', () => {
+    it('reports the shipped ceilings when nobody has changed them', async () => {
+      const res = await request(app).get('/api/config').expect(200);
+
+      expect(res.body.rooms).toEqual({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
+    });
+
+    it('reports what an operator actually set, not what ships', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('rooms', {
+        ...configManager.get('rooms')!,
+        engagedWindowMinutes: 3,
+        engagedWindowPosts: 2,
+      });
+
+      const res = await request(app).get('/api/config').expect(200);
+
+      expect(res.body.rooms).toEqual({ engagedWindowMinutes: 3, engagedWindowPosts: 2 });
+    });
+
+    it('carries the two ceilings and nothing else out of the rooms block', async () => {
+      // The rest of `rooms` is turn budgets and reply waits — real settings the
+      // cockpit never states out loud. Widening this to the whole block would
+      // put an operator's spend limits on a wire that did not need them.
+      const res = await request(app).get('/api/config').expect(200);
+
+      expect(Object.keys(res.body.rooms).sort()).toEqual([
+        'engagedWindowMinutes',
+        'engagedWindowPosts',
+      ]);
+    });
+  });
+
   // The cockpit shows a person where a new agent will live and probes that path
   // for a conflict, so the reported directory has to be the one the server will
   // actually create in — the stored `~/.dork/agents` is not it once `DORK_HOME`

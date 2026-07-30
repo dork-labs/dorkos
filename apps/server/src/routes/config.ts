@@ -212,6 +212,19 @@ router.get('/', async (_req, res) => {
       standingGrants: false,
       trustWindowMinutes: 480,
     },
+    // The two engaged-window ceilings, and only those two. The cockpit prints
+    // them inside the sentence that describes the `engaged` response mode —
+    // "keeps answering for 10 more minutes or 5 more messages" — so an operator
+    // who tuned them would otherwise be reading a sentence about somebody
+    // else's install. The rest of the `rooms` block (turn budgets, reply waits)
+    // is nothing the cockpit says out loud, so it stays off the wire.
+    rooms: (() => {
+      const rooms = configManager.get('rooms') ?? USER_CONFIG_DEFAULTS.rooms;
+      return {
+        engagedWindowMinutes: rooms.engagedWindowMinutes,
+        engagedWindowPosts: rooms.engagedWindowPosts,
+      };
+    })(),
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },
     // Surface the sidebar organization + Shape + status-bar prefs so the client
     // can read them via useConfig() (DOR-329, DOR-355, DOR-431). Schema defaults

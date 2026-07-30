@@ -9,6 +9,7 @@
 
 export { configKeys } from './api/query-keys';
 export { useConfig } from './model/use-config';
+export { useEngagedWindow } from './model/use-engaged-window';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';
 export type { DefaultAgentSession, DefaultAgentIdentity } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
