@@ -60,6 +60,10 @@ describe('useShortcutsPanel', () => {
 
     const div = document.createElement('div');
     div.contentEditable = 'true';
+    // jsdom implements the `contentEditable` attribute but leaves
+    // `isContentEditable` undefined, and the guard reads the latter — so the
+    // element has to answer that question itself or this test asserts nothing.
+    Object.defineProperty(div, 'isContentEditable', { value: true });
     document.body.appendChild(div);
     div.focus();
 
