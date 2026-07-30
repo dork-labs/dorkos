@@ -272,6 +272,83 @@ export class RoomsPage {
     return this.entries.filter({ has: this.page.getByText(text, { exact: true }) });
   }
 
+  /**
+   * The action toolbar drawn over one message.
+   *
+   * Always in the page — it is revealed by opacity, not by mounting — so
+   * `toBeVisible` cannot answer whether it is showing. Assert `opacity` for
+   * that; Playwright's visibility check does not read it.
+   *
+   * @param entry - The message row, from {@link RoomsPage.entries}.
+   */
+  actionsIn(entry: Locator): Locator {
+    return entry.getByTestId('entry-actions');
+  }
+
+  /**
+   * The thread hanging off one message: the reply group drawn directly beneath
+   * it.
+   *
+   * Positional on purpose. A thread is a relation between entries rather than a
+   * room with an id of its own (ADR 260728-022013), so "the replies to THIS
+   * message" is a question about where the group sits — and matching it by
+   * position is what catches a reply that renders loose in the room's flow.
+   *
+   * @param entry - The message the thread should hang off.
+   */
+  threadUnder(entry: Locator): Locator {
+    return entry.locator('xpath=following-sibling::*[1][@data-testid="room-thread"]');
+  }
+
+  /** Every thread group in the open room. */
+  get threads(): Locator {
+    return this.page.getByTestId('room-thread');
+  }
+
+  /** The line above the composer naming the thread it is aimed at. */
+  get replyBanner(): Locator {
+    return this.page.getByTestId('room-reply-banner');
+  }
+
+  /**
+   * The composer once it is aimed at a thread.
+   *
+   * Its own locator rather than {@link RoomsPage.composer}, because the
+   * placeholder — which IS the accessible name — moves with the aim. That makes
+   * "the composer is pointed at a thread" something the accessibility tree can
+   * be asked, rather than a class only a screenshot could catch.
+   */
+  get threadComposer(): Locator {
+    return this.page.getByRole('combobox', { name: 'Reply in this thread…' });
+  }
+
+  /**
+   * Hold a message down long enough for the touch menu, without moving.
+   *
+   * The gesture is genuinely time-based — the hook waits 500ms and stands down
+   * if the pointer travels — so this waits rather than polls.
+   *
+   * @param entry - The message to press.
+   * @param options.holdMs - How long to hold. Below 500 the press is a tap.
+   * @param options.driftPx - How far to drag mid-hold, for the scroll case.
+   */
+  async longPress(
+    entry: Locator,
+    options: { holdMs?: number; driftPx?: number } = {}
+  ): Promise<void> {
+    const { holdMs = 700, driftPx = 0 } = options;
+    const box = await entry.boundingBox();
+    if (!box) throw new Error('Cannot press a message that has no box on screen');
+    const x = box.x + Math.min(40, box.width / 2);
+    const y = box.y + Math.min(12, box.height / 2);
+
+    await this.page.mouse.move(x, y);
+    await this.page.mouse.down();
+    if (driftPx > 0) await this.page.mouse.move(x, y + driftPx);
+    await this.page.waitForTimeout(holdMs);
+    await this.page.mouse.up();
+  }
+
   /** How far the room's history is scrolled, in pixels from the top. */
   async scrollTop(): Promise<number> {
     return this.scroller.evaluate((el) => el.scrollTop);

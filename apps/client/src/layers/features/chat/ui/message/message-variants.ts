@@ -33,8 +33,8 @@ export const messageItem = tv({
     authorName: 'truncate text-sm font-medium',
     timestamp: 'text-xs tabular-nums transition-colors duration-150',
     /**
-     * Hover action toolbar at the row's top-right (D6). A container, not a
-     * single button: reactions and reply-in-thread land here in later phases.
+     * Hover action toolbar for a message row (D6). A container, not a single
+     * button — how it is anchored is the `anchor` variant below.
      *
      * `pointer-events-none` while invisible: the toolbar floats above message
      * text that is explicitly selectable (see `content` below), so an
@@ -43,7 +43,7 @@ export const messageItem = tv({
      * keyboard path still reaches it without a pointer ever being involved.
      */
     actions:
-      'bg-popover shadow-soft pointer-events-none absolute top-1 right-2 z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
+      'bg-popover shadow-soft pointer-events-none z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
     // desktop-darwin:select-text: the desktop shell defaults chrome to
     // non-selectable (index.css), but message bodies — text, code blocks,
     // command output — are exactly what a user copies out of a chat, so this
@@ -71,11 +71,42 @@ export const messageItem = tv({
         content: 'text-xs',
       },
     },
+    /**
+     * How the action toolbar is held against the row.
+     *
+     * `corner` pins it to the row's top-right and is right for session chat,
+     * where a message is one turn and the toolbar is never far from the top of
+     * what it acts on.
+     *
+     * `rail` leaves positioning to a `sticky` wrapper the caller supplies, which
+     * is what a ROOM needs: a long message scrolled past its own top would put a
+     * corner-pinned toolbar off screen, exactly the hole Slack's top-anchored
+     * toolbar has. Sticky keeps it at the top of the message while that is
+     * visible and clamps it to the viewport edge once the message extends above,
+     * with no popper math and nothing to reposition on scroll.
+     *
+     * `focus-within` is widened to the whole ROW here, so the toolbar shows when
+     * the message takes focus and the keyboard can see what it is stepping into
+     * — but only on a device with a real pointer. A room's message is focusable,
+     * and on a touch screen a TAP focuses it, so an ungated rule paints the
+     * toolbar over the message's first line for anyone who merely touched it.
+     * Touch gets the long-press drawer and nothing else. `pointer-coarse` is the
+     * repo's existing spelling of this split (`StatusLine`), and `hover:` is
+     * already gated the same way by Tailwind v4.
+     */
+    anchor: {
+      corner: { actions: 'absolute top-1 right-2' },
+      rail: {
+        actions:
+          'relative pointer-fine:group-focus-within:pointer-events-auto pointer-fine:group-focus-within:opacity-100',
+      },
+    },
   },
   defaultVariants: {
     role: 'assistant',
     position: 'only',
     density: 'comfortable',
+    anchor: 'corner',
   },
 });
 

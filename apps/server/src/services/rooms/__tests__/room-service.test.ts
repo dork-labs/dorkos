@@ -1550,3 +1550,98 @@ describe('RoomService — enabling login moves nothing', () => {
     expect(reopened?.members.find((m) => m.authorId === after)?.author.displayName).toBe('You');
   });
 });
+
+describe('RoomService — a thread reply is an addressing act', () => {
+  /**
+   * What the cockpit's new reply affordance actually costs (DOR-731).
+   *
+   * Replying in a thread posts through `POST /:id/threads`, which is
+   * `RoomService.post` with a `replyTo` — so it runs the SAME addressing,
+   * budget and cascade rules an ordinary post does. The client adds no
+   * mechanism for any of that, which is exactly why it has to be pinned here:
+   * nothing in the browser can tell "the reply reached the agent" apart from
+   * "the reply rendered" if the agent never had to answer.
+   *
+   * `mention-only` on purpose. A channel seeds `engaged`, which would leave Ana
+   * answerable for ten minutes after the first message and make the SECOND
+   * assertion below true for a reason that has nothing to do with the thread.
+   */
+  const agents = agentLookupFor({
+    '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
+  });
+
+  it('triggers the agent a reply names, and answers inside the same thread', async () => {
+    const harness = createRoomHarness({
+      agents,
+      runner: scriptedRunner(() => 'the cache is cold'),
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      harness.human
+    );
+    const ana = harness.service.addMember(room.id, harness.human, {
+      agentPath: '/agents/ana',
+      responseMode: 'mention-only',
+    }).authorId;
+
+    // A root nobody is named in: the thread is the only thing that can trigger her.
+    const root = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: 'the build is slow',
+    });
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toEqual([]);
+
+    harness.service.post(room.id, {
+      authorId: harness.human,
+      text: `@ana any idea?`,
+      replyTo: root.id,
+    });
+    await harness.service.triggersIdle();
+
+    // She ran, and she ran on the reply's own words.
+    expect(harness.runner.turns).toHaveLength(1);
+    expect(harness.runner.turns[0]?.authorId).toBe(ana);
+    expect(harness.runner.turns[0]?.prompt).toBe('@ana any idea?');
+
+    // And her answer is in the thread, not loose in the room. An answer that
+    // surfaced in the channel would move the conversation out from under the
+    // aside it belongs to — the thing threads exist to prevent.
+    const log = harness.service.listEntries(room.id, harness.human, { limit: 50 });
+    const answer = log.find((entry) => entry.authorId === ana);
+    expect(answer?.body.text).toBe('the cache is cold');
+    expect(answer?.threadRootEntryId).toBe(root.id);
+  });
+
+  it('spends the room budget the same way a top-level message does', async () => {
+    // The reply route adds no fresh allowance. A thread that could not run out
+    // would be a way around the one limit that keeps a room from running all
+    // night.
+    const harness = createRoomHarness({
+      agents,
+      runner: scriptedRunner(() => null),
+      maxAutomaticTurnsPerRoomPerHour: 1,
+    });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      harness.human
+    );
+    harness.service.addMember(room.id, harness.human, {
+      agentPath: '/agents/ana',
+      responseMode: 'mention-only',
+    });
+
+    const root = harness.service.post(room.id, { authorId: harness.human, text: '@ana ping' });
+    await harness.service.triggersIdle();
+    expect(harness.runner.turns).toHaveLength(1);
+
+    harness.service.post(room.id, {
+      authorId: harness.human,
+      text: '@ana again',
+      replyTo: root.id,
+    });
+    await harness.service.triggersIdle();
+
+    expect(harness.runner.turns).toHaveLength(1);
+  });
+});

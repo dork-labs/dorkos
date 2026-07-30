@@ -9,7 +9,7 @@ import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { RoomComposer } from './RoomComposer';
 import { RoomHeader } from './RoomHeader';
 import { RoomPresenceLine } from './RoomPresenceLine';
-import { RoomTimeline } from './RoomTimeline';
+import { RoomTimeline, RoomTimelineSkeleton } from './RoomTimeline';
 
 /**
  * The `/channels` page — one room's history, addressed by search param.
@@ -81,14 +81,7 @@ export function ChannelsPage() {
           <Skeleton className="size-7 rounded-full" />
           <Skeleton className="h-4 w-40" />
         </div>
-        <RoomTimeline
-          entries={[]}
-          members={[]}
-          lastReadSeq={null}
-          isLoading
-          error={null}
-          onAddAgents={() => setMembersIntent('add')}
-        />
+        <RoomTimelineSkeleton />
       </div>
     );
   }
@@ -110,6 +103,8 @@ export function ChannelsPage() {
       <RoomHeader room={room} onOpenMembers={() => setMembersIntent('roster')} />
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <RoomTimeline
+          roomId={room.id}
+          viewerAuthorId={room.viewerAuthorId}
           entries={entries}
           members={room.members}
           lastReadSeq={frozenReadSeq}

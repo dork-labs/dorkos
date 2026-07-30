@@ -1,5 +1,6 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
+import { Reply, X } from 'lucide-react';
 import { ChatInput, type ChatInputHandle } from '@/layers/features/chat';
 import {
   MentionPalette,
@@ -8,9 +9,14 @@ import {
 } from '@/layers/features/mentions';
 import {
   roomDisplayTitle,
+  useComposerFocusRequest,
   useRoomDraft,
   useRoomDraftStore,
+  useRoomEntries,
+  useRoomReplyTarget,
+  useRoomReplyTargetStore,
   usePostToRoom,
+  useReplyInThread,
   type RoomWithRoster,
 } from '@/layers/entities/room';
 
@@ -42,10 +48,24 @@ interface RoomComposerProps {
  * turns "did that reach anyone?" into something you can see before you send.
  * The composer stays the shared `ChatInput` — it already carries every palette
  * prop; only the panel above it is new.
+ *
+ * **One composer, two destinations.** Choosing "Reply in thread" on a message
+ * aims this box at that thread until you aim it back; a line above the input
+ * says so and takes it back. There is no second text box for threads, because
+ * a room with two composers has to answer "which one am I typing in?" on every
+ * keystroke, and the answer would be a matter of which one has focus.
+ *
+ * The aim SURVIVES sending, so an exchange inside a thread is a conversation
+ * rather than a sequence of re-aiming. That is only honest while the banner is
+ * unmissable — it is what keeps a reply from silently becoming a room-wide post
+ * or the reverse.
  */
 export function RoomComposer({ room }: RoomComposerProps) {
   const text = useRoomDraft(room.id);
   const post = usePostToRoom();
+  const reply = useReplyInThread();
+  const replyTo = useRoomReplyTarget(room.id);
+  const focusRequest = useComposerFocusRequest(room.id);
   const inputRef = useRef<ChatInputHandle>(null);
 
   const mentions = useMentionAutocomplete({
@@ -53,6 +73,41 @@ export function RoomComposer({ room }: RoomComposerProps) {
     viewerAuthorId: room.viewerAuthorId,
     text,
   });
+
+  /**
+   * Take the caret when a message asked for it.
+   *
+   * The request is a counter rather than a flag, so two replies in a row are two
+   * requests; the ref is what keeps this from firing on a value that merely
+   * happened to be non-zero when the composer mounted — coming back to a room
+   * you once replied in is not a request for its keyboard.
+   *
+   * `focus`, not `focusUnlessTouch`: pressing "Reply in thread" IS asking, and
+   * on a phone the point of the press is to type.
+   */
+  const lastFocusRequest = useRef(focusRequest);
+  useEffect(() => {
+    if (focusRequest === lastFocusRequest.current) return;
+    lastFocusRequest.current = focusRequest;
+    inputRef.current?.focus();
+  }, [focusRequest]);
+
+  /**
+   * Who the open thread belongs to, when this reader can be told.
+   *
+   * Reads the same cached history the timeline draws, so it costs no request.
+   * `undefined` covers the honest gap: a thread whose head is older than the
+   * page loaded, or an author who has since left the room. The banner then says
+   * only that a thread is open — which is the part that must never be wrong,
+   * because it is what stops the next sentence going somewhere unintended.
+   */
+  const entriesQuery = useRoomEntries(room.id);
+  const replyingToName = useMemo(() => {
+    if (replyTo === undefined) return undefined;
+    const root = entriesQuery.data?.find((entry) => entry.id === replyTo);
+    if (!root) return undefined;
+    return room.members.find((member) => member.author.id === root.authorId)?.author.displayName;
+  }, [replyTo, entriesQuery.data, room.members]);
 
   const setDraft = useCallback(
     (next: string) => useRoomDraftStore.getState().set(room.id, next),
@@ -121,6 +176,16 @@ export function RoomComposer({ room }: RoomComposerProps) {
     if (body === '') return;
     // No per-call callbacks: a refusal is handled by the mutation itself, which
     // still runs when this composer is gone. See `usePostToRoom`.
+    //
+    // The aim is read here rather than passed in, and it is deliberately NOT
+    // cleared on success: an answer inside a thread is usually followed by
+    // another one, and re-aiming between every sentence would make a thread the
+    // most expensive place in the room to hold a conversation. The banner above
+    // is what keeps that honest.
+    if (replyTo !== undefined) {
+      reply.mutate({ roomId: room.id, rootEntryId: replyTo, text: body });
+      return;
+    }
     post.mutate({ roomId: room.id, text: body });
   };
 
@@ -137,6 +202,34 @@ export function RoomComposer({ room }: RoomComposerProps) {
           )}
         </AnimatePresence>
       </div>
+      {/*
+        Where the next sentence is going, said plainly. It is a `status` so a
+        screen reader is told when the aim changes rather than only on the way
+        past it, and the way out is a real button — pressing it is how a reader
+        who arrived here by keyboard gets back to addressing the room.
+      */}
+      {replyTo !== undefined && (
+        <div
+          role="status"
+          data-testid="room-reply-banner"
+          className="bg-muted/50 text-muted-foreground mb-2 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs"
+        >
+          <Reply aria-hidden className="size-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {replyingToName === undefined
+              ? 'Replying in a thread'
+              : `Replying to ${replyingToName}`}
+          </span>
+          <button
+            type="button"
+            aria-label="Stop replying in this thread"
+            onClick={() => useRoomReplyTargetStore.getState().clear(room.id)}
+            className="focus-ring hover:text-foreground rounded p-0.5"
+          >
+            <X aria-hidden className="size-3.5" />
+          </button>
+        </div>
+      )}
       <ChatInput
         ref={inputRef}
         value={text}
@@ -171,7 +264,11 @@ export function RoomComposer({ room }: RoomComposerProps) {
         // Ties the pending double-Escape wipe to this room, so an arm raised in
         // one conversation cannot clear the draft of the next one.
         contextKey={room.id}
-        placeholder={`Message ${roomDisplayTitle(room)}…`}
+        // The placeholder moves with the aim, so the box says where it is
+        // pointed even for a reader who never looks up at the banner.
+        placeholder={
+          replyTo === undefined ? `Message ${roomDisplayTitle(room)}…` : 'Reply in this thread…'
+        }
       />
     </div>
   );
