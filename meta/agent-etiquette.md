@@ -146,6 +146,25 @@ strongest for exactly our users: experienced operators penalize latency rather
 than reading it as thoughtfulness. Kai does not want to watch an agent pretend
 to think.
 
+**E16a. Mechanical presence signals are the system's, not the agent's, and do
+not count as participation.** A working indicator published by the harness when
+it claims a turn and cleared when it releases one is exempt from every speaking
+rule above: it is not a turn, not an acknowledgment, and never model-chosen. The
+exemption is exactly as wide as the mechanism and no wider: it covers an
+indicator that exists only while the dispatcher holds a real claim for a real
+trigger, on whichever surface ships one that way — the cockpit does today, and
+each adapter (Telegram, Slack, communities) joins as its own indicator becomes
+claim-driven rather than message-driven. An indicator started by anything else —
+a message merely arriving, most of all — is not exempt; it is the fake E16
+already forbids, and `.claude/rules/room-conduct.md` records which surfaces are
+still there. Anything an agent _chooses_ to send is a message and pays a
+message's cost. E15's one acknowledgment is untouched: the indicator does not
+spend it, so an agent facing a long job still says "on it" once in words when
+the rhythm calls for it. _Check: every presence indicator in a transcript window
+corresponds to a claim the dispatcher held during that window._ Note the wording
+— **while a claim is held**, not while a turn runs. The busy path holds a claim
+briefly and never runs a turn at all, and the indicator it showed was honest.
+
 **E17. Batch related notices.** Three finished tasks are one message. Slack's
 own agent guidance puts it plainly: five issue updates should be one message,
 not five.

@@ -8,6 +8,7 @@ import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { RoomComposer } from './RoomComposer';
 import { RoomHeader } from './RoomHeader';
+import { RoomPresenceLine } from './RoomPresenceLine';
 import { RoomTimeline } from './RoomTimeline';
 
 /**
@@ -142,6 +143,11 @@ export function ChannelsPage() {
           height, a part-typed IME composition — carry across. The DRAFT is safe
           either way; it belongs to the room, not to this element. */}
       <RoomComposer key={room.id} room={room} />
+
+      {/* Under the composer, where a line about the wait belongs: it is about
+          what happens after you press Enter, and putting it above would push
+          the last message every time an agent picked something up. */}
+      <RoomPresenceLine roomId={room.id} members={room.members} />
 
       {/* Mounted only while open: it reads the room itself, and a closed one
           would hold a roster from before the last change under it. */}

@@ -80,12 +80,38 @@ agent decides when to reply in that channel.
 keeps a busy channel from turning into everyone answering at once. You can change it per agent in
 the members panel: from replying to everything, down to never replying on its own.
 
+## What you see while an agent works
+
+Ask a question in a room and an agent may take a while to answer. While it's working, a line under
+the message box tells you so:
+
+**Kai is working on it · 42s**
+
+The count is how long it has been going. If more than one agent picked it up, they're all named, up
+to three — past that the line counts them instead, and you can tap it to see who.
+
+If the work runs longer than a room normally waits, the line says so rather than sitting there
+looking stuck:
+
+**Kai is still working — this is taking longer than usual · 12m**
+
+The answer still comes when it's ready. Nothing is lost, and a late reply says how long it took.
+
+**The line only appears while real work is running.** DorkOS shows it when an agent actually picks
+up your message and takes it away the moment the work ends — it can't be faked, and an agent can't
+turn it on by wanting to. When it goes, either the answer is there or the room tells you why there
+isn't one.
+
+It can take a few seconds to catch up. If you open a room in the middle of a long reply, or your
+browser reconnects, the line appears within about ten seconds rather than instantly. And if it is
+missing while you were expecting it, that is worth reading as "DorkOS isn't sure right now" — your
+browser may have lost the room's live connection, or the agent may genuinely have stopped.
+
 ## Good to know
 
 - **Mentioning someone.** Type `@` followed by an agent's name to address just them. It's how you
-  get an answer in a channel, and it's useful in a group DM. DorkOS doesn't autocomplete this yet,
-  so type the name as it appears in the sidebar. Get it wrong and DorkOS just treats it as plain
-  text; nothing breaks.
+  get an answer in a channel, and it's useful in a group DM. Get it wrong and DorkOS just treats it
+  as plain text; nothing breaks.
 - **Several replies at once is normal.** Addressing more than one agent and getting more than one
   answer is how rooms are meant to work, not a glitch.
 - **Agents can reply to each other, up to a point.** If one agent's reply mentions another, that

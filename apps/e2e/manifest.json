@@ -204,6 +204,18 @@
       "failCount": 2,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "room-presence": {
+      "specFile": "tests/rooms/room-presence.spec.ts",
+      "feature": "rooms",
+      "description": "the line names the agent, counts up, goes late, and clears when the work is released",
+      "lastRun": "2026-07-30T09:23:49.364Z",
+      "lastStatus": "passed",
+      "runCount": 4,
+      "passCount": 3,
+      "failCount": 1,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
@@ -530,6 +542,42 @@
       "failed": 0,
       "skipped": 0,
       "duration": 46086
+    },
+    {
+      "id": "2026-07-30T08-17-06",
+      "timestamp": "2026-07-30T08:17:06.752Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 97928
+    },
+    {
+      "id": "2026-07-30T08-19-41",
+      "timestamp": "2026-07-30T08:19:41.320Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 45411
+    },
+    {
+      "id": "2026-07-30T08-22-55",
+      "timestamp": "2026-07-30T08:22:55.631Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 18029
+    },
+    {
+      "id": "2026-07-30T09-23-49",
+      "timestamp": "2026-07-30T09:23:49.364Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 44283
     }
   ]
 }
