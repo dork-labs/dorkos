@@ -12,6 +12,16 @@
  * So the rule these tests pin is one sentence: **a claim lives until its turn
  * reaches a terminal**, and every way a turn can reach one releases it.
  *
+ * The second half of this file pins what the ROOM says while that is going on.
+ * Presence is the claim map made visible: a `progress` signal at the claim,
+ * another at the wait deadline, one more when the turn ends, and a re-statement
+ * every ten seconds in between so a client that connects mid-turn is not left
+ * looking at a room that seems idle. Two properties there are worth more than
+ * the rest, and both are asserted on the ORDER of the room's own stream rather
+ * than on a mock: an indicator never drops before the entry that explains it,
+ * and an indicator's age is measured from when the work started, not from when
+ * the last event was sent.
+ *
  * Everything below runs through the real service and the real dispatcher, like
  * the cascade tests; only the runner stands in, because the alternative is a
  * model call. What this file's runner adds over `outcomeRunner` is control of
@@ -26,7 +36,12 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type {
+  RoomEntry,
+  RoomEvent,
+  RoomSignalEvent,
+  RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { LateRoomReply, RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
@@ -50,6 +65,10 @@ type TurnPlan =
   | 'hold'
   /** Answers straight away. */
   | 'answer'
+  /** Never ran: another writer held the session, so the room says so instead. */
+  | 'busy'
+  /** Blows up before it can produce anything — the runtime-is-down path. */
+  | 'throws'
   /** Answers only once the test releases it, which fixes the order of two turns. */
   | 'gated';
 
@@ -146,6 +165,16 @@ function drivenRunner(opts: {
           // room has no answer yet, and one is still coming.
           return Promise.resolve({ sessionId, text: null, late });
         }
+        case 'busy':
+          // What `room-turn-runner.ts` returns when the session lock refuses: no
+          // turn ran, and the room owes the person a line about it.
+          return Promise.resolve({ sessionId, text: null, unanswered: 'busy' });
+        case 'throws':
+          // The runner REJECTING, which is a different terminal from a turn that
+          // returns `unanswered`: it lands in `runOne`'s `catch` rather than in
+          // `deliver`, and is the only terminal that reaches the release without
+          // passing through `deliver` at all.
+          return Promise.reject(new Error('the runtime went away'));
         case 'gated':
           return new Promise<RoomTurnResult>((resolve) => {
             gates.set(request.authorId, () => resolve({ sessionId, text: say(request) }));
@@ -200,6 +229,15 @@ describe('a claim lives until its turn is done', () => {
   let bo: string;
   let cy: string;
   let human: string;
+  /**
+   * Everything the room fanned out, in the order its readers received it.
+   *
+   * Recorded at the broadcaster — the one seam every entry and every signal
+   * passes through — and still delivered, so this observes the real stream
+   * rather than replacing it. Order is the whole point: "the answer lands, then
+   * the indicator goes" is a claim about this list and about nothing else.
+   */
+  let published: Array<{ roomId: string; event: RoomEvent }> = [];
 
   /**
    * Wire a channel holding Ana, Bo and Cy around `driven`, every one of them
@@ -227,6 +265,13 @@ describe('a claim lives until its turn is done', () => {
   ): void {
     ({ service, authors, human } = createRoomHarness({ agents, runner: driven }));
     runner = driven;
+    published = [];
+    const broadcaster = service.stream;
+    const deliver = broadcaster.publish.bind(broadcaster);
+    vi.spyOn(broadcaster, 'publish').mockImplementation((roomId, event) => {
+      published.push({ roomId, event });
+      deliver(roomId, event);
+    });
     room = service.createRoom(
       {
         kind: 'channel',
@@ -284,6 +329,43 @@ describe('a claim lives until its turn is done', () => {
     return (turn?.roomContext.working ?? []).map((claim) => claim.displayName);
   }
 
+  /** This room's stream, entries and signals interleaved, in order. */
+  function roomStream(): RoomEvent[] {
+    return published.filter((sent) => sent.roomId === room.id).map((sent) => sent.event);
+  }
+
+  /** Every presence signal about one agent, in the order it was sent. */
+  function presenceFor(authorId: string): RoomSignalEvent[] {
+    return roomStream()
+      .filter((event): event is RoomSignalEvent => event.type === 'signal')
+      .filter((event) => event.authorId === authorId);
+  }
+
+  /** Just the lifecycle, which is what most of these assertions are about. */
+  function statesFor(authorId: string): Array<string | undefined> {
+    return presenceFor(authorId).map((event) => event.state);
+  }
+
+  /**
+   * Where one agent's release sits in the room's stream.
+   *
+   * @param authorId - Whose indicator released.
+   */
+  function releaseIndex(authorId: string): number {
+    return roomStream().findIndex(
+      (event) => event.type === 'signal' && event.authorId === authorId && event.state === 'done'
+    );
+  }
+
+  /**
+   * Where the durable entry that explains a release sits in the same stream.
+   *
+   * @param matches - Which entry is being looked for.
+   */
+  function entryIndex(matches: (entry: RoomEntry) => boolean): number {
+    return roomStream().findIndex((event) => event.type === 'entry' && matches(event.entry));
+  }
+
   describe('while the room has stopped waiting', () => {
     it('still reports the agent as working, to everyone who asks', async () => {
       // The defect this pins: `runOne`'s `finally` deleted the claim the moment
@@ -322,10 +404,20 @@ describe('a claim lives until its turn is done', () => {
       // measure how long Ana has been working and not how long ago she was last
       // interrupted.
       //
-      // The clock is pinned (Date only — `settleUntil` still needs real timers) so
+      // **Presence does the opposite, and this is the only place both are
+      // visible at once.** The roster block is prose for a model, where "Ana,
+      // Ana" is noise; the signal stream carries an INDICATOR per claim, keyed
+      // `(author, entryId)`, because the client has to be able to clear one of
+      // Ana's two indicators when that turn ends without clearing the other. A
+      // per-author collapse here would make the second claim's `done`
+      // indistinguishable from the first's, and the live turn's indicator would
+      // die at the client's TTL while the work was still running.
+      //
+      // The clock is pinned (`settleUntil` still needs a real `setTimeout`) so
       // "oldest wins" is checkable. Two claims a millisecond apart would let a
-      // newest-wins bug pass.
-      vi.useFakeTimers({ toFake: ['Date'] });
+      // newest-wins bug pass. `setInterval` is faked alongside it so the
+      // republish tick can be driven from here.
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
       try {
         vi.setSystemTime(new Date('2026-07-30T04:00:00.000Z'));
         open(
@@ -338,13 +430,16 @@ describe('a claim lives until its turn is done', () => {
           'seeded'
         );
 
-        service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+        const asked = service.post(room.id, {
+          authorId: human,
+          text: '@ana can you check the deploy?',
+        });
         await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
         expect(runner.holdsFor(ana)).toBe(1);
 
         // Five minutes on, well inside Ana's ten-minute window.
         vi.setSystemTime(new Date('2026-07-30T04:05:00.000Z'));
-        service.post(room.id, { authorId: human, text: '@bo what do you think?' });
+        const later = service.post(room.id, { authorId: human, text: '@bo what do you think?' });
         await settleUntil(
           () => runner.holdsFor(ana) === 2 && turnsBy(bo).length === 1,
           'Ana re-triggered on her engagement, and Bo handed a turn'
@@ -356,6 +451,20 @@ describe('a claim lives until its turn is done', () => {
         // And Bo is told about her once, from when she started.
         expect(workingSeenBy(turnsBy(bo)[0])).toEqual(['Ana']);
         expect(turnsBy(bo)[0].roomContext.working[0].since).toBe('2026-07-30T04:00:00.000Z');
+
+        // The stream, meanwhile, is still carrying BOTH of Ana's claims: one tick
+        // re-states each of them separately, under the entry it is answering and
+        // from the time that claim was taken. Collapsing them to one event per
+        // author is what this pins against.
+        const before = presenceFor(ana).length;
+        vi.advanceTimersByTime(10_000);
+        const tick = presenceFor(ana).slice(before);
+        expect(tick.map((event) => event.entryId)).toEqual([asked.id, later.id]);
+        expect(tick.map((event) => event.state)).toEqual(['working_late', 'working_late']);
+        expect(tick.map((event) => event.since)).toEqual([
+          '2026-07-30T04:00:00.000Z',
+          '2026-07-30T04:05:00.000Z',
+        ]);
 
         runner.land(ana, { text: null, waitedMs: 12 * 60_000 });
         runner.land(ana, { text: null, waitedMs: 7 * 60_000 });
@@ -524,6 +633,15 @@ describe('a claim lives until its turn is done', () => {
       // Nothing was refused, so the room had nothing to report.
       expect(notices()).toEqual([]);
 
+      // Bo's indicator names the entry Bo was actually asked by, which below the
+      // top of a cascade is NOT the cascade root: `aside` triggered Bo, `asked`
+      // began the exchange. Everywhere else in this file the two coincide,
+      // because depth 0 is the only place they can, so publishing `cascadeRoot`
+      // instead would look right in every other scenario — and here it would key
+      // Bo's line to the question Ana was asked rather than the one Bo was.
+      expect(aside.id).not.toBe(aside.cascadeRoot);
+      expect(presenceFor(bo)[0].entryId).toBe(aside.id);
+
       runner.land(ana, { text: 'all green', waitedMs: 12 * 60_000 });
       await service.triggersIdle();
     });
@@ -557,6 +675,255 @@ describe('a claim lives until its turn is done', () => {
 
       expect(turnsBy(ana)).toHaveLength(2);
       expect(noticesAbout(ana)).toEqual([]);
+    });
+  });
+
+  describe('and the room says so on its stream', () => {
+    it('says who is working, from the moment the claim is taken', async () => {
+      // The claim already existed and was shown to nobody but other agents. This
+      // is the publish that closes that: one signal, per claimed target, naming
+      // the agent, the question it is answering, and when it started.
+      //
+      // The clock is pinned so `since` is checkable against a literal —
+      // `expect.any(String)` would pass on an indicator with no age at all.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-07-30T04:00:00.000Z'));
+        // Gated, so the turn is still running when the assertions read the
+        // stream: a turn that answered would have released before they looked.
+        open(drivenRunner({ plan: () => 'gated' }));
+
+        const asked = service.post(room.id, {
+          authorId: human,
+          text: '@ana can you check the deploy?',
+        });
+        await settleUntil(() => turnsBy(ana).length === 1, 'Ana handed a turn');
+
+        expect(presenceFor(ana)).toHaveLength(1);
+        const working = presenceFor(ana)[0];
+        // `progress`, from the relay's shared vocabulary. Never `typing`: agents
+        // do not type, they work (room-presence spec §1).
+        expect(working.signal).toBe('progress');
+        expect(working.state).toBe('working');
+        expect(working.entryId).toBe(asked.id);
+        expect(working.since).toBe('2026-07-30T04:00:00.000Z');
+
+        // The question is on the stream before the indicator that names it, so a
+        // client is never told about work on an entry it has not been sent.
+        expect(entryIndex((entry) => entry.id === asked.id)).toBeLessThan(
+          roomStream().indexOf(working)
+        );
+        // And nobody else is claimed to be doing anything.
+        expect(presenceFor(bo)).toEqual([]);
+
+        runner.release(ana);
+        await service.triggersIdle();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lets the indicator go only once the answer is on the log', async () => {
+      // The ordering rule, on the ordinary path: `done` is published after
+      // `writer.post` returns, so the reply is already on the stream when the
+      // line under the composer disappears. Reversed, a person watches the
+      // indicator vanish and then waits for an answer they think was lost.
+      open(drivenRunner({ plan: () => 'answer' }));
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await service.triggersIdle();
+
+      expect(statesFor(ana)).toEqual(['working', 'done']);
+      expect(postsBy(ana)).toHaveLength(1);
+      expect(releaseIndex(ana)).toBe(
+        entryIndex((entry) => entry.kind === 'post' && entry.authorId === ana) + 1
+      );
+    });
+
+    it('lets the indicator go only once the notice that explains it is on the log', async () => {
+      // A busy refusal never gets past the session lock, so the person's whole
+      // experience of it is: an indicator appeared, and it resolved into a line
+      // saying the agent did not pick this up. Indicator and explanation, in that
+      // order, never indicator and mystery.
+      open(drivenRunner({ plan: () => 'busy' }));
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await service.triggersIdle();
+
+      expect(statesFor(ana)).toEqual(['working', 'done']);
+      expect(noticesAbout(ana)).toHaveLength(1);
+      expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
+      expect(releaseIndex(ana)).toBe(entryIndex((entry) => entry.kind === 'notice') + 1);
+    });
+
+    it('lets the indicator go only once a turn that blew up has been reported', async () => {
+      // The fourth terminal, and the only one that never reaches `deliver`: the
+      // runner rejects, `runOne`'s `catch` reports the failure, and the release
+      // happens in the `finally` after it. Same ordering rule as every other
+      // path, on the path most likely to be rewritten by someone adding error
+      // handling later.
+      open(drivenRunner({ plan: () => 'throws' }));
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await service.triggersIdle();
+
+      expect(statesFor(ana)).toEqual(['working', 'done']);
+      expect(noticesAbout(ana)).toHaveLength(1);
+      expect(noticesAbout(ana)[0].body.notice).toBe('turn_failed');
+      expect(releaseIndex(ana)).toBe(entryIndex((entry) => entry.kind === 'notice') + 1);
+    });
+
+    it('releases with nothing on the log when the agent chose to say nothing', async () => {
+      // The one indicator-then-nothing this design ACCEPTS (spec §4.3), pinned
+      // here as a choice so that closing it is a decision somebody makes rather
+      // than a test nobody wrote. A turn that runs and decides there is nothing
+      // worth adding is exercising judgment; forcing a durable "had nothing to
+      // say" entry on every ambient turn would be the over-participation this
+      // whole programme exists to prevent.
+      open(drivenRunner({ plan: () => 'answer', say: () => null }));
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await service.triggersIdle();
+
+      expect(statesFor(ana)).toEqual(['working', 'done']);
+      // The question is the entire log, and the entire durable half of the
+      // stream: nothing was written between the indicator appearing and going.
+      expect(log()).toHaveLength(1);
+      expect(roomStream().filter((event) => event.type === 'entry')).toHaveLength(1);
+    });
+
+    it('says a turn is taking longer than usual once, and releases when it lands', async () => {
+      // The deadline is a state change, not a notice: the room already tells the
+      // person how long the answer took when it finally posts, and a durable line
+      // at every deadline would be a second message about every slow turn.
+      open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }));
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
+
+      expect(statesFor(ana)).toEqual(['working', 'working_late']);
+
+      runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
+
+      expect(statesFor(ana)).toEqual(['working', 'working_late', 'done']);
+      // Same ordering rule as the fast path, on the path where it matters most:
+      // the late answer has been waited on for minutes.
+      expect(releaseIndex(ana)).toBe(
+        entryIndex((entry) => entry.kind === 'post' && entry.authorId === ana) + 1
+      );
+    });
+
+    it('releases after the failure notice when a late delivery never lands', async () => {
+      // The other way a late turn settles. It used to leave a `logger.warn` and
+      // nothing else; now it leaves the same damped `turn_failed` notice every
+      // other failure leaves, and the indicator goes after that notice.
+      open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }));
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
+
+      runner.fail(ana, new Error('the session stream went away'));
+      await service.triggersIdle();
+
+      expect(statesFor(ana)).toEqual(['working', 'working_late', 'done']);
+      expect(noticesAbout(ana)[0].body.notice).toBe('turn_failed');
+      expect(releaseIndex(ana)).toBe(entryIndex((entry) => entry.kind === 'notice') + 1);
+    });
+
+    it('shows an indicator for every attempt, while saying once that the agent was busy', async () => {
+      // Two busy refusals for the same agent, with no successful turn between
+      // them. The notice is damped on `(room, agent)` until that agent answers
+      // again — four messages to a busy agent must not put four apologies in the
+      // room — but the INDICATOR is not damped, because each attempt really did
+      // take a claim and really did release it.
+      //
+      // So the second release's durable explanation is the notice already
+      // standing on the log. That is the release invariant read exactly as
+      // written (spec §4.1 path (a)): an indicator may disappear into a fresh
+      // notice OR one already standing, and never into nothing.
+      open(drivenRunner({ plan: () => 'busy' }));
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await service.triggersIdle();
+      service.post(room.id, { authorId: human, text: '@ana any luck?' });
+      await service.triggersIdle();
+
+      expect(turnsBy(ana)).toHaveLength(2);
+      expect(statesFor(ana)).toEqual(['working', 'done', 'working', 'done']);
+      expect(noticesAbout(ana)).toHaveLength(1);
+
+      // The first release resolves into its own fresh notice; the second writes
+      // no notice at all, and the standing one is still there to explain it.
+      const stream = roomStream();
+      const releases = stream.flatMap((event, at) =>
+        event.type === 'signal' && event.state === 'done' ? [at] : []
+      );
+      const notice = entryIndex((entry) => entry.kind === 'notice');
+      expect(releases).toHaveLength(2);
+      expect(releases[0]).toBe(notice + 1);
+      expect(
+        stream
+          .slice(releases[0], releases[1])
+          .filter((e) => e.type === 'entry' && e.entry.kind === 'notice')
+      ).toEqual([]);
+    });
+
+    it('keeps re-stating every live claim, dated from when each one started', async () => {
+      // Signals never replay, so without this loop a client that opens a room in
+      // the middle of a turn sees a room that looks idle — for up to an hour, on
+      // the shipped ceiling. Re-stating live claims on an interval means presence
+      // heals itself within one tick of any connect, reconnect or recovery, with
+      // nothing persisted and nothing to strand if the process dies.
+      //
+      // Only the interval is faked: `settleUntil` still needs a real `setTimeout`
+      // to hop the macrotask queue. Faking `Date` alongside it is what makes the
+      // `since` assertions below discriminate — ten seconds pass on the clock,
+      // and every re-statement still carries the time the work began.
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-07-30T04:00:00.000Z'));
+        open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'gated') }));
+
+        service.post(room.id, { authorId: human, text: '@ana @bo can you check the deploy?' });
+        await settleUntil(
+          () => runner.holdsFor(ana) === 1 && turnsBy(bo).length === 1,
+          'Ana past the wait deadline, with Bo still working'
+        );
+        expect(statesFor(ana)).toEqual(['working', 'working_late']);
+        expect(statesFor(bo)).toEqual(['working']);
+        // One loop for the whole dispatcher, not one per claim.
+        expect(vi.getTimerCount()).toBe(1);
+
+        vi.advanceTimersByTime(10_000);
+
+        // Both claims re-stated, each in the state it is actually in.
+        expect(statesFor(ana)).toEqual(['working', 'working_late', 'working_late']);
+        expect(statesFor(bo)).toEqual(['working', 'working']);
+        // And dated from when the work started, not from when the event was
+        // sent. A `since` that meant "now" would reset every indicator's age
+        // every ten seconds, and this is what catches it.
+        expect(presenceFor(ana).map((event) => event.since)).toEqual([
+          '2026-07-30T04:00:00.000Z',
+          '2026-07-30T04:00:00.000Z',
+          '2026-07-30T04:00:00.000Z',
+        ]);
+        expect(presenceFor(bo).map((event) => event.since)).toEqual([
+          '2026-07-30T04:00:00.000Z',
+          '2026-07-30T04:00:00.000Z',
+        ]);
+
+        runner.release(bo);
+        runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+        await service.triggersIdle();
+
+        expect(statesFor(ana).at(-1)).toBe('done');
+        expect(statesFor(bo).at(-1)).toBe('done');
+        // The map is empty, so the loop is gone: an idle room runs no timer.
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

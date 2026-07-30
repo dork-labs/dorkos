@@ -66,6 +66,7 @@ import type {
   RoomEntryBody,
   RoomKind,
   RoomMember,
+  RoomPresencePayload,
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
@@ -172,6 +173,13 @@ export class RoomService {
         postNotice: (roomId, body, cascade, replyTo) =>
           this.postNotice(roomId, body, cascade, replyTo),
       },
+      // The room's ephemeral channel, handed over as a bound method for the same
+      // reason the writer is: the dispatcher publishes what its claim map knows
+      // and stays ignorant of how a room fans out. `progress` is bound HERE, so
+      // the one signal name presence may use is not a decision the dispatcher can
+      // get wrong.
+      publishPresence: (roomId, authorId, presence) =>
+        this.publishSignal(roomId, 'progress', authorId, presence),
     });
   }
 
@@ -716,13 +724,23 @@ export class RoomService {
    * @param roomId - The room.
    * @param signal - The signal type, from the relay's shared vocabulary.
    * @param authorId - Who the signal is about.
+   * @param presence - The working lifecycle, on a `'progress'` signal. Every
+   *   publish carries the whole of it, `since` included: an ephemeral event is
+   *   never replayed, so it has to be renderable by a client that connected in
+   *   the middle of the work.
    */
-  publishSignal(roomId: string, signal: SignalType, authorId: string): void {
+  publishSignal(
+    roomId: string,
+    signal: SignalType,
+    authorId: string,
+    presence?: RoomPresencePayload
+  ): void {
     this.broadcaster.publish(roomId, {
       type: 'signal',
       signal,
       authorId,
       at: new Date().toISOString(),
+      ...presence,
     });
   }
 
