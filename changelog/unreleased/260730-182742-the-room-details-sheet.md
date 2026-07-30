@@ -56,4 +56,4 @@ covers:
 
 - A room with a lot of agents in it no longer grows the sheet off the top of the screen. It stops at a readable height and the middle scrolls, the way every other panel in DorkOS does.
 - Opening the sheet on a phone no longer pops the keyboard at you. The search box is still the first thing under the heading, and still one tap away — you just get to look at the list first.
-- Two controls on a phone were a few pixels too small to hit reliably: an agent's loudness setting, and the **×** that takes an agent back off the list while you are choosing. Both are now comfortably thumb-sized.
+- The **×** that takes an agent back off the list while you are choosing was a few pixels too small to hit reliably on a phone. It is now comfortably thumb-sized.

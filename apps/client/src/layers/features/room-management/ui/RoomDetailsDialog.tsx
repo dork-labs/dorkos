@@ -117,6 +117,11 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * frame of the collapsed row first. It converges — the branch is false on the
    * re-render it causes — and it is one-way, so adding the first agent does not
    * shut the picker again.
+   *
+   * The archived term looks redundant, because an archived room renders no add
+   * row for this to open. It is deliberate: without it an empty archived room
+   * arms the picker invisibly, and bringing the room back from the footer would
+   * then spring it open on a reader who only asked for the room back.
    */
   if (view.room !== null && !detail.archived && view.agentCount === 0 && !addExpanded)
     setAddExpanded(true);

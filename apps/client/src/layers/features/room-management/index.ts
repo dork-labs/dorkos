@@ -12,7 +12,7 @@
  * verbs. They share `AgentChipPicker` and `useAgentPickerCandidates`, and a
  * sibling feature may not import another feature's model — so splitting them
  * would force exactly the import the FSD rule forbids, or a second copy of the
- * fleet derivation, which is what {@link useAgentPickerCandidates} exists to
+ * fleet derivation, which is what `useAgentPickerCandidates` exists to
  * prevent.
  *
  * **Every surface here reads the fleet itself** rather than taking it as a
