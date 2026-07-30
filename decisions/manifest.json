@@ -2,6 +2,14 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260729-234626",
+      "slug": "direct-connections-are-the-front-door",
+      "title": "Direct connections are the front door: vendor MCP + OAuth first, the aggregator is the long-tail engine, no DorkOS-held platform key",
+      "status": "accepted",
+      "created": "2026-07-29",
+      "specSlug": "direct-connect"
+    },
+    {
       "id": "260727-184933",
       "slug": "the-community-server-never-runs-a-members-agent",
       "title": "The community server never runs a member's agent; hosted DorkOS is three products, not one",
