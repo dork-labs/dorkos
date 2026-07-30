@@ -47,6 +47,16 @@ export interface RoomDetailsView {
   facesByRef: ReadonlyMap<string, AgentVisual>;
   /** Whether an agent is already in the room, and so not offerable. */
   isAlreadyIn: (agent: { agentPath: string }) => boolean;
+  /**
+   * Where a member's agent lives on disk, or `null` when the fleet cannot say.
+   *
+   * The roster carries `agentRef`, a one-way hash of the directory (a home path
+   * is not something to put on a shared surface, ADR 260726-170126), and every
+   * write that puts an agent INTO a room needs the directory itself. The fleet
+   * this sheet already reads to offer the picker is the only thing that holds
+   * both, so the mapping is built here rather than guessed anywhere else.
+   */
+  agentPathOf: (member: RoomRosterEntry) => string | null;
   /** When each author last posted, as far as the loaded page can say. */
   lastSpokeByAuthor: ReadonlyMap<string, string>;
   /** Who is working, when this client is being told at all. */
@@ -119,6 +129,21 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
     return faces;
   }, [agents.candidates]);
 
+  /**
+   * The same join as {@link facesByRef}, read the other way: from the handle a
+   * roster row carries back to the directory a write needs.
+   */
+  const agentPathOf = useMemo(() => {
+    const paths = new Map<string, string>();
+    for (const candidate of agents.candidates) {
+      paths.set(agentAuthorRef(candidate.agentPath), candidate.agentPath);
+    }
+    return (member: RoomRosterEntry): string | null => {
+      const ref = member.author.agentRef;
+      return ref === undefined ? null : (paths.get(ref) ?? null);
+    };
+  }, [agents.candidates]);
+
   const participants = useMemo(() => room?.members.map((member) => member.author) ?? null, [room]);
 
   /**
@@ -162,6 +187,7 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
     roomVisuals,
     facesByRef,
     isAlreadyIn,
+    agentPathOf,
     lastSpokeByAuthor,
     working,
     engagedWindow,

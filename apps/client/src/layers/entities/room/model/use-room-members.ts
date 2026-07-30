@@ -65,6 +65,17 @@ export interface AddRoomMemberInput {
    * row minted in the same transaction.
    */
   agentPath: string;
+  /**
+   * The mode to join on, for a caller putting a member **back** that knows what
+   * it held.
+   *
+   * Omit for a first join: the server's seed is the right answer there, and the
+   * only one that reads an agent's own manifest. An undo is the case that must
+   * NOT omit it — the seed for a channel is `engaged`, so re-adding without
+   * this turns an agent somebody had set to Silent into one that answers, and
+   * calls that "undo".
+   */
+  responseMode?: ResponseMode;
 }
 
 /**
@@ -76,20 +87,24 @@ export interface AddRoomMemberInput {
  * every participant here is one of your own agents — while forking would strand
  * the conversation you were in the middle of (spec `rooms` §12.4).
  *
- * `responseMode` is left to the server, which seeds it from the room kind: the
- * agent's manifest default for a direct message, `engaged` for a channel
- * (`CHANNEL_RESPONSE_MODE` in `services/rooms/room-roster.ts`). `engaged` is
- * the only bounded choice — `mention-only` taxes a person with an `@` on every
- * single message, and `always` is agent dominance by construction — so a new
- * arrival answers when it is spoken to and then decays back to quiet.
+ * `responseMode` is left to the server unless the caller names one, and the
+ * server seeds it from the room kind: the agent's manifest default for a direct
+ * message, `engaged` for a channel (`CHANNEL_RESPONSE_MODE` in
+ * `services/rooms/room-roster.ts`). `engaged` is the only bounded choice —
+ * `mention-only` taxes a person with an `@` on every single message, and
+ * `always` is agent dominance by construction — so a new arrival answers when
+ * it is spoken to and then decays back to quiet.
  */
 export function useAddRoomMember(): UseMutationResult<RoomRosterEntry, Error, AddRoomMemberInput> {
   const transport = useTransport();
   const invalidate = useRosterInvalidation();
 
   return useMutation({
-    mutationFn: ({ roomId, agentPath }: AddRoomMemberInput) =>
-      transport.addRoomMember(roomId, { agentPath }),
+    mutationFn: ({ roomId, agentPath, responseMode }: AddRoomMemberInput) =>
+      transport.addRoomMember(roomId, {
+        agentPath,
+        ...(responseMode === undefined ? {} : { responseMode }),
+      }),
     onSuccess: (_member, { roomId }) => invalidate(roomId),
     // The shared mutation toast reads this with the server's own sentence after
     // it: "Couldn't add that agent — Only you can change who is in a room".

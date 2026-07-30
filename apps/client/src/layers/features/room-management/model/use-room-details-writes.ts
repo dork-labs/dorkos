@@ -10,6 +10,7 @@
  * @module features/room-management/model/use-room-details-writes
  */
 import { useCallback } from 'react';
+import { toast } from 'sonner';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import {
@@ -55,26 +56,38 @@ export interface RoomDetailsWritesInput {
    * behaviour.
    */
   roomKind: RoomKind;
+  /** The room in prose, for the undo offer to name. */
+  roomTitle: string;
+  /**
+   * Where a member's agent lives on disk, or `null` when the fleet cannot say.
+   * Putting an agent back needs its directory, and a roster row carries only a
+   * one-way hash of it — see `useRoomDetailsView`.
+   */
+  agentPathOf: (member: RoomRosterEntry) => string | null;
 }
 
 /**
  * The room sheet's writes, with the reporting each one needs.
  *
- * **Nothing here raises a success toast.** Every one of these writes changes
- * something the reader is already looking at — the meter moves, the row leaves
- * the roster, the chip disappears — and a toast confirming a change somebody
- * just watched happen is a notification about their own hand.
+ * **Only one of them says anything on success, and it is the one carrying an
+ * undo.** Every write here changes something the reader is already looking at —
+ * the meter moves, the row leaves the roster, the chip disappears — so a toast
+ * confirming it is a notification about their own hand. Removal is the
+ * exception, because what it destroys is invisible: the agent's per-room
+ * session binding goes with the membership, so an agent added back afterwards
+ * starts fresh. Archiving a whole room has offered an undo since it shipped;
+ * taking one agent out of one room is the narrower act and had none.
  *
- * **Nothing here raises an error toast either.** The shared mutation toast
- * already composes each hook's `meta.errorLabel` with the server's own sentence,
- * and it is the only report that survives this sheet being closed mid-write — a
+ * **Nothing here raises an error toast.** The shared mutation toast already
+ * composes each hook's `meta.errorLabel` with the server's own sentence, and it
+ * is the only report that survives this sheet being closed mid-write — a
  * per-call `onError` is dispatched only while the observer still has listeners.
  * A second toast raised here would mean two lines for one failure.
  *
  * @param input - The room being written to.
  */
 export function useRoomDetailsWrites(input: RoomDetailsWritesInput): RoomDetailsWrites {
-  const { roomId, roomKind } = input;
+  const { roomId, roomKind, roomTitle, agentPathOf } = input;
   const addMember = useAddRoomMember();
   const removeRoomMember = useRemoveRoomMember();
   const setResponseMode = useSetMemberResponseMode();
@@ -111,9 +124,41 @@ export function useRoomDetailsWrites(input: RoomDetailsWritesInput): RoomDetails
 
   const removeMember = useCallback(
     (member: RoomRosterEntry) => {
-      removeRoomMember.mutate({ roomId, authorId: member.authorId });
+      // Both read BEFORE the write. Afterwards the roster no longer holds this
+      // membership, so there is nothing left to read the mode off — and an undo
+      // that re-adds without it takes the server's join-time seed instead,
+      // which for a channel is `engaged`. That would turn an agent somebody had
+      // deliberately set to Silent into one that answers, and call it undo.
+      const { responseMode } = member;
+      const agentPath = agentPathOf(member);
+      removeRoomMember.mutate(
+        { roomId, authorId: member.authorId },
+        {
+          // No `onError` beside it, deliberately. The undo runs long after this
+          // row has gone, and TanStack dispatches per-call callbacks only while
+          // the observer still has listeners — so a handler here would not fire
+          // and the failure would fall through to the generic "Action failed."
+          // The add hook's `meta.errorLabel` reaches the mutation cache's own
+          // handler, which is not gated. Same reasoning as `RoomRow`'s archive.
+          onSuccess: () => {
+            const offer = `${member.author.displayName} removed from ${roomTitle}`;
+            // Nothing is said at all when there is no way back to offer: the
+            // row leaving the roster is the confirmation, and a toast with no
+            // verb on it is a notification about something already on screen.
+            // An agent with no directory the fleet can name is one that has
+            // left the mesh, and nothing could put it back.
+            if (agentPath === null) return;
+            toast.success(offer, {
+              action: {
+                label: 'Undo',
+                onClick: () => addMember.mutate({ roomId, agentPath, responseMode }),
+              },
+            });
+          },
+        }
+      );
     },
-    [removeRoomMember, roomId]
+    [removeRoomMember, addMember, roomId, roomTitle, agentPathOf]
   );
 
   /**

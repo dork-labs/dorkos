@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
@@ -34,6 +35,8 @@ const { mockRosterRef } = vi.hoisted(() => ({
 vi.mock('../model/use-agent-picker-candidates', () => ({
   useAgentPickerCandidates: () => mockRosterRef.current,
 }));
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -224,6 +227,7 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
 });
 
+beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 // ---------------------------------------------------------------------------
@@ -527,6 +531,104 @@ describe('RoomDetailsDialog', () => {
     await waitFor(() =>
       expect(transport.removeRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana')
     );
+  });
+
+  describe('taking an agent back out', () => {
+    /** The undo the removal toast offered, or `null` when it offered none. */
+    function undoOffer(): (() => void) | null {
+      const call = vi.mocked(toast.success).mock.calls[0];
+      if (call === undefined) return null;
+      const options = call[1] as { action?: { label: string; onClick: () => void } } | undefined;
+      return options?.action?.onClick ?? null;
+    }
+
+    it('puts the agent back on the mode it had, not the one a new join gets', async () => {
+      // The whole point. `engaged` is what the server seeds a channel join
+      // with, so an undo that re-adds without naming a mode turns an agent
+      // somebody set to Silent into one that answers — and calls that undo.
+      // Red if the mode stops being sent, or is read after the write, when the
+      // roster no longer holds the membership to read it off.
+      const { transport } = renderPanel({
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana', 'silent')])),
+        }),
+      });
+      await rosterSection();
+
+      removeThroughMenu();
+      fireEvent.click(
+        within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole(
+          'button',
+          { name: 'Remove' }
+        )
+      );
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('Ana removed from #general', expect.anything())
+      );
+      const undo = undoOffer();
+      expect(undo).not.toBeNull();
+      undo!();
+
+      await waitFor(() =>
+        expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', {
+          agentPath: '/repo/ana',
+          responseMode: 'silent',
+        })
+      );
+    });
+
+    it('says nothing when it has no way back to offer', async () => {
+      // The agent's directory is what an add needs, and a roster row carries
+      // only a one-way hash of it — so an agent the fleet cannot name is one
+      // nothing could put back. A toast with no verb on it, over a row the
+      // reader has just watched leave, would be a notification about their own
+      // hand. Red if the offer is raised regardless of whether it works.
+      //
+      // Ana is not in the fleet and Bo is, and BOTH are removed: a bare
+      // `not.toHaveBeenCalled()` after the first would be true whether or not
+      // the toast was on its way, so removing Bo afterwards is the barrier that
+      // turns the absence into a decision. An offer raised for Ana too makes
+      // this count two.
+      const { transport } = renderPanel({
+        agents: settled([{ agentPath: '/repo/bo', displayName: 'Bo', visual: null }]),
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(
+              roster([HUMAN, agentMember('Ana', '/repo/ana'), agentMember('Bo', '/repo/bo')])
+            ),
+        }),
+      });
+      await rosterSection();
+
+      const confirmRemoval = (name: string) => {
+        removeThroughMenu(name);
+        fireEvent.click(
+          within(screen.getByRole('group', { name: `Remove ${name} from #general?` })).getByRole(
+            'button',
+            { name: 'Remove' }
+          )
+        );
+      };
+
+      confirmRemoval('Ana');
+      // Settled before the second one starts, and that is load-bearing: one
+      // observer serves both, so a `mutate` that supersedes an unsettled one
+      // takes its per-call callbacks with it — and the barrier below would then
+      // pass because TanStack dropped the offer, not because this code declined
+      // to make it.
+      await waitFor(() => expect(transport.getRoom).toHaveBeenCalledTimes(2));
+
+      confirmRemoval('Bo');
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('Bo removed from #general', expect.anything())
+      );
+      expect(toast.success).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('confirms in place, so the panel the reader is working in stays open', async () => {

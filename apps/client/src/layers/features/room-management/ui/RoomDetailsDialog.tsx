@@ -69,7 +69,12 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    */
   const detail: RoomDetailsRoom = view.room ?? room;
   const title = roomDisplayTitle(detail);
-  const writes = useRoomDetailsWrites({ roomId: room.id, roomKind: detail.kind });
+  const writes = useRoomDetailsWrites({
+    roomId: room.id,
+    roomKind: detail.kind,
+    roomTitle: title,
+    agentPathOf: view.agentPathOf,
+  });
 
   /** The member whose removal is waiting to be confirmed, by author id. */
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
