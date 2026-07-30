@@ -65,6 +65,64 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(toolbar.getByRole('button', { name: 'Copy text' })).toBeVisible();
   });
 
+  test('the toolbar encloses the buttons it is drawn around', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The defect this pins shipped once. The toolbar was in the right place,
+    // fully clickable, and named correctly — every assertion above passed —
+    // while it rendered as a 6px capsule with 24px buttons hanging out of it
+    // top and bottom, reading as a strikethrough line ruled through the icons.
+    // Its sticky rail is a zero-height flex row, and a flex row's default
+    // `align-items: stretch` had squashed the pill to the line's cross size.
+    //
+    // Position and clickability cannot catch that: an overflowing child is
+    // still at the right coordinates and still takes a click. Only the
+    // relationship between the two boxes can, so that is what is asserted —
+    // the container holds its contents, with its own padding still visible on
+    // every side.
+    const slug = `e2e-actions-encloses-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['the deploy is stuck']);
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+
+    const entry = roomsPage.entries.first();
+    const toolbar = roomsPage.actionsIn(entry);
+
+    await entry.hover();
+    await expect(toolbar).toHaveCSS('opacity', '1');
+
+    const insets = await toolbar.evaluate((bar) => {
+      const pill = bar.getBoundingClientRect();
+      return [...bar.querySelectorAll('button')].map((button) => {
+        const box = button.getBoundingClientRect();
+        return {
+          button: button.getAttribute('aria-label') ?? '(unnamed)',
+          top: Math.round(box.top - pill.top),
+          bottom: Math.round(pill.bottom - box.bottom),
+          left: Math.round(box.left - pill.left),
+          right: Math.round(pill.right - box.right),
+        };
+      });
+    });
+
+    // The pill is `p-0.5` inside a 1px border, so every real inset is 3px. Two
+    // is the floor: enough to fail on any overflow or on padding collapsing
+    // away, loose enough to survive a sub-pixel layout or a rounding change.
+    const MIN_INSET_PX = 2;
+    expect(insets.length).toBeGreaterThan(0);
+    // Filtered rather than asserted one at a time, so a failure names every
+    // button that escaped and by how far, instead of only the first.
+    expect(
+      insets.filter(
+        (inset) => Math.min(inset.top, inset.bottom, inset.left, inset.right) < MIN_INSET_PX
+      )
+    ).toEqual([]);
+  });
+
   test('the toolbar rides the viewport edge on a message taller than the window', async ({
     page,
     roomsApi,

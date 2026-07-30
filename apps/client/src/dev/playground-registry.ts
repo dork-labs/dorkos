@@ -5,6 +5,7 @@ export type Page =
   | 'forms'
   | 'components'
   | 'chat'
+  | 'entry-actions'
   | 'features'
   | 'promos'
   | 'command-palette'
@@ -37,6 +38,7 @@ export { TOKENS_SECTIONS } from './sections/tokens-sections';
 export { FORMS_SECTIONS } from './sections/forms-sections';
 export { COMPONENTS_SECTIONS } from './sections/components-sections';
 export { CHAT_SECTIONS } from './sections/chat-sections';
+export { ENTRY_ACTIONS_SECTIONS } from './sections/entry-actions-sections';
 export { FEATURES_SECTIONS } from './sections/features-sections';
 export { PROMOS_SECTIONS } from './sections/promos-sections';
 export { COMMAND_PALETTE_SECTIONS } from './sections/command-palette-sections';
@@ -56,6 +58,7 @@ import { TOKENS_SECTIONS as tokens } from './sections/tokens-sections';
 import { FORMS_SECTIONS as forms } from './sections/forms-sections';
 import { COMPONENTS_SECTIONS as components } from './sections/components-sections';
 import { CHAT_SECTIONS as chat } from './sections/chat-sections';
+import { ENTRY_ACTIONS_SECTIONS as entryActions } from './sections/entry-actions-sections';
 import { FEATURES_SECTIONS as features } from './sections/features-sections';
 import { PROMOS_SECTIONS as promos } from './sections/promos-sections';
 import { COMMAND_PALETTE_SECTIONS as commandPalette } from './sections/command-palette-sections';
@@ -80,6 +83,7 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...forms,
   ...components,
   ...chat,
+  ...entryActions,
   ...features,
   ...promos,
   ...commandPalette,

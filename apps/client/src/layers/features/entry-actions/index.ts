@@ -11,6 +11,7 @@
  * @module features/entry-actions
  */
 export { useEntryActions } from './model/use-entry-actions';
+export type { EntryAction } from './lib/entry-actions';
 export { EntryActionBar } from './ui/EntryActionBar';
 export type { EntryActionBarHandle } from './ui/EntryActionBar';
 export { EntryActionMenu } from './ui/EntryActionMenu';

@@ -1,0 +1,283 @@
+import { AtSign, Copy, Reply } from 'lucide-react';
+import { cn } from '@/layers/shared/lib';
+import type { MessageAuthor, MessageGrouping } from '@/layers/shared/model';
+import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
+import { messageItem } from '@/layers/features/chat';
+import { EntryActionBar, type EntryAction } from '@/layers/features/entry-actions';
+import { RoomEntryRow } from '@/layers/widgets/room-view';
+import { PlaygroundSection } from '../PlaygroundSection';
+import { ShowcaseDemo } from '../ShowcaseDemo';
+import { ShowcaseLabel } from '../ShowcaseLabel';
+import {
+  BENCH_AGENT,
+  BENCH_AGENT_REF,
+  BENCH_ROOM_ID,
+  BENCH_VIEWER,
+  BENCH_VIEWER_ID,
+  BENCH_VIEWER_REF,
+  TALL_TEXT,
+  benchEntry,
+} from './entry-actions-showcase-data';
+
+/** The toolbar's own look, taken from the variant the rooms surface uses. */
+const railActions = messageItem({ anchor: 'rail' }).actions();
+
+interface BenchRowProps {
+  /** The seeded entry to draw. */
+  entry: RoomEntry;
+  /** Who wrote it. Defaults to the agent, so the reader can mention them. */
+  author?: MessageAuthor;
+  /** The same author as a roster holds them, or undefined for a former member. */
+  authorRef?: AuthorRef | undefined;
+  /** Where the row sits in its author group. */
+  grouping?: MessageGrouping;
+}
+
+/**
+ * One seeded room row, with the bench's defaults already applied.
+ *
+ * This is the REAL `RoomEntryRow` — the toolbar's enclosure is held by layout
+ * the row itself owns (a zero-height sticky rail), so a copy of its markup
+ * would be the one thing incapable of showing a layout defect.
+ */
+function BenchRow({
+  entry,
+  author = BENCH_AGENT,
+  authorRef = BENCH_AGENT_REF,
+  grouping = { position: 'only' },
+}: BenchRowProps) {
+  return (
+    <RoomEntryRow
+      roomId={BENCH_ROOM_ID}
+      entry={entry}
+      author={author}
+      authorRef={authorRef}
+      viewerAuthorId={BENCH_VIEWER_ID}
+      grouping={grouping}
+    />
+  );
+}
+
+const HOVER_ENTRY = benchEntry('the deploy is stuck — the last step never returned');
+const FOCUS_ENTRY = benchEntry('worth checking whether the cache warmed at all');
+
+/** Hover and keyboard focus — the two ways the toolbar is revealed on a pointer device. */
+function RevealSection() {
+  return (
+    <PlaygroundSection
+      title="Revealing the toolbar"
+      description="The toolbar is always in the DOM and revealed by opacity, never mounted on demand — so it can be reached with a pointer or with a key, and neither path shifts the row. Touch gets the long-press drawer instead and is deliberately left out of both rules below."
+    >
+      <div>
+        <ShowcaseLabel>On hover</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Put the pointer on the row. The pill should sit over the message&apos;s top-right corner
+          and fully enclose its icons, with its own padding visible above and below them.
+        </p>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={HOVER_ENTRY} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>On focus</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Click the row (or Tab to it) and press an arrow key. The message is the tab stop; the
+          buttons inside it are not, which is what keeps a room one Tab per message however many
+          actions each one carries. Escape hands focus back to the row.
+        </p>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={FOCUS_ENTRY} />
+        </ShowcaseDemo>
+      </div>
+    </PlaygroundSection>
+  );
+}
+
+const TALL_ENTRY = benchEntry(TALL_TEXT);
+
+/** The sticky rail on a message taller than what is on screen. */
+function StickyRailSection() {
+  return (
+    <PlaygroundSection
+      title="The sticky rail"
+      description="A toolbar anchored to the top of the message goes off screen the moment the message is longer than the window — the hole Slack's top-anchored toolbar has. This one rides a zero-height sticky rail instead, so it stays at the message's top while that is visible and clamps to the scroller's edge once the message extends above it."
+    >
+      <p className="text-muted-foreground mb-2 text-xs">
+        Scroll this box past the message&apos;s own top, then hover. The pill should be pinned just
+        inside the top edge — still whole, still holding its buttons.
+      </p>
+      <ShowcaseDemo>
+        <div className="bg-background h-[360px] overflow-y-auto rounded-md border">
+          <BenchRow entry={TALL_ENTRY} />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+const MINE_ENTRY = benchEntry('shipping it now', {
+  authorId: BENCH_VIEWER_ID,
+});
+const THEIRS_ENTRY = benchEntry('the cache was cold, so every package rebuilt');
+const DEPARTED_ENTRY = benchEntry('I moved the job to the nightly runner before I left');
+
+/** Inert stand-ins for the action set, so the pill can be seen at each width. */
+const SPECIMEN_ACTIONS: EntryAction[] = [
+  { id: 'reply', label: 'Reply in thread', icon: Reply, run: () => {} },
+  { id: 'copy', label: 'Copy text', icon: Copy, run: () => {} },
+  { id: 'mention', label: 'Mention Ana', icon: AtSign, run: () => {} },
+];
+
+/**
+ * A standalone bar, shown without hover so the pill's shape can be read at each
+ * width. `opacity-100` is the only thing overridden — an appearance the row
+ * itself only reaches on hover, held open here so a still image can carry it.
+ */
+function Specimen({ count }: { count: number }) {
+  return (
+    <div className="flex justify-start">
+      <EntryActionBar
+        actions={SPECIMEN_ACTIONS.slice(0, count)}
+        onExit={() => {}}
+        className={cn(railActions, 'pointer-events-auto opacity-100')}
+      />
+    </div>
+  );
+}
+
+/** How the pill changes shape with the number of actions in it. */
+function ActionCountSection() {
+  return (
+    <PlaygroundSection
+      title="How many actions"
+      description="Reply and Copy are always offered; Mention appears only when an @ would actually reach the author — so a live row carries two or three. The leftmost positions are held for quick reactions, whose design is still open, so the bar is also shown below at a width no live row produces today."
+    >
+      <div>
+        <ShowcaseLabel>Two — your own message</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          No Mention: you are never offered a mention of yourself, the same way the mention picker
+          leaves you out.
+        </p>
+        <ShowcaseDemo>
+          <BenchRow entry={MINE_ENTRY} author={BENCH_VIEWER} authorRef={BENCH_VIEWER_REF} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>Two — an author no @ can reach</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Someone who has left the room has no mention handle, and offering a mention that silently
+          addresses nobody is worse than not offering one.
+        </p>
+        <ShowcaseDemo>
+          <BenchRow entry={DEPARTED_ENTRY} authorRef={undefined} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>Three — somebody else, still in the room</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BenchRow entry={THEIRS_ENTRY} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>The pill on its own — one, two, three</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          The bar alone, held open without hover. Every icon sits inside the border with even
+          padding around it at every width — including one, which no live row produces today but
+          which the bar is asked to draw the moment the set is filtered any harder.
+        </p>
+        <ShowcaseDemo>
+          <div className="flex flex-col items-start gap-3">
+            <Specimen count={1} />
+            <Specimen count={2} />
+            <Specimen count={3} />
+          </div>
+        </ShowcaseDemo>
+      </div>
+    </PlaygroundSection>
+  );
+}
+
+const GROUP_FIRST = benchEntry('I can take the deploy if nobody else has it');
+const GROUP_MIDDLE = benchEntry('the lockfile changed under us, that is the whole story');
+const GROUP_LAST = benchEntry('rerunning it clean now');
+const GROUP_ONLY = benchEntry('done — green on the second run');
+
+/** The toolbar over a group start and over a continuation. */
+function GroupingSection() {
+  return (
+    <PlaygroundSection
+      title="Grouped and ungrouped"
+      description="A group start draws the avatar, the name and the time; a continuation hangs beneath it with an empty identity gutter and its own timestamp on hover. The toolbar rides the top of the message either way, so it lands beside a name on one row and beside bare text on the next."
+    >
+      <div>
+        <ShowcaseLabel>A group — first, middle, last</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={GROUP_FIRST} grouping={{ position: 'first' }} />
+          <BenchRow entry={GROUP_MIDDLE} grouping={{ position: 'middle' }} />
+          <BenchRow entry={GROUP_LAST} grouping={{ position: 'last' }} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>On its own</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={GROUP_ONLY} grouping={{ position: 'only' }} />
+        </ShowcaseDemo>
+      </div>
+    </PlaygroundSection>
+  );
+}
+
+const THEME_ENTRY = benchEntry(
+  'the pill has to be opaque — the words under it must not show through'
+);
+
+/** The same row on both surfaces the cockpit is read on. */
+function ThemeSection() {
+  return (
+    <PlaygroundSection
+      title="Both themes"
+      description="The toolbar is drawn ON TOP of a paragraph, so its surface has to be opaque and its shadow has to read against the page behind it. The first row follows the playground's own theme (the toggle at the foot of the sidebar); the second is pinned dark, so a light page can show both at once."
+    >
+      <div>
+        <ShowcaseLabel>The playground&apos;s theme</ShowcaseLabel>
+        <ShowcaseDemo>
+          <BenchRow entry={THEME_ENTRY} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>Pinned dark</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="dark bg-background text-foreground rounded-md border p-2">
+            <BenchRow entry={THEME_ENTRY} />
+          </div>
+        </ShowcaseDemo>
+      </div>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The message action surface, on the real room row that carries it.
+ *
+ * This bench exists because of a defect that every non-visual check passed: the
+ * toolbar was in the right place, clickable, and correctly named while it
+ * rendered as a thin capsule with its buttons hanging out of it top and bottom.
+ * Position and clickability could not see it. A person looking at it could.
+ */
+export function EntryActionsShowcases() {
+  return (
+    <>
+      <RevealSection />
+      <StickyRailSection />
+      <ActionCountSection />
+      <GroupingSection />
+      <ThemeSection />
+    </>
+  );
+}
