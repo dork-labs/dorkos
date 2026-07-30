@@ -3,7 +3,6 @@ title: Rooms
 description: Channels and direct messages, for talking to one agent or several without picking a project folder first
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Rooms
@@ -205,8 +204,9 @@ The window is per thread. Asking an agent something inside a thread keeps it in 
 the whole channel — and talking to it in the channel does not pull it into every thread that happens
 to be open.
 
-The agent's own default in `agent.json` does not offer `engaged` — that value only seeds a
-one-to-one, and this is a per-room setting rather than a starting point.
+An agent's own settings do not offer **Engaged** as its default. That default only ever seeds a
+one-to-one, at the moment the agent joins it, and how loud an agent is belongs to the room rather
+than to the agent.
 
 ### Setting it, in the cockpit
 
@@ -216,15 +216,10 @@ to loud:
 
 **Silent** → **@only** → **Engaged** → **Everything**
 
-Press it and the scale opens, with the rule spelled out underneath in your own numbers. Point at a
+The same four in a channel and in a one-to-one. Press it and the scale opens, with the rule spelled out underneath in your own numbers. Point at a
 setting, with the mouse or the arrow keys, and the line at the top of the sheet shows what the whole
 room would become if you chose it — so you can see the consequence before you commit to it. Nothing
 is saved until you actually pick one.
-
-<Callout type="info">
-  A one-to-one currently offers three of the four — **Engaged** is missing there. That is a known
-  gap, not a rule about one-to-ones: the reply window works the same way in both kinds of room.
-</Callout>
 
 ### Who sees which rooms
 

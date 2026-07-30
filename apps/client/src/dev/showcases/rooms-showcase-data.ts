@@ -188,7 +188,7 @@ export const EMPTY_ROOM: RoomWithRoster = createRoomWithRoster({
 });
 
 /**
- * A one-to-one, which offers three rungs rather than four and warns that a
+ * A one-to-one: the same four rungs a channel gets, and the warning that a
  * second agent turns it into a group conversation.
  */
 export const DM_ROOM: RoomWithRoster = createRoomWithRoster({

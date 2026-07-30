@@ -76,7 +76,7 @@ Rooms currently have **zero** playground coverage across 18 pages and 40 showcas
 
 One responsive sheet. Header carries the room's mark, its inline-editable name and topic, and an archived badge. Beneath it, a single line states what the room will actually do — a four-bar loudness meter and a plain sentence, aggregated across the roster.
 
-Then one list: people first, then agents, each group with a count, the reader included and marked "(you)". Each member is one row — disc with a bot badge for agents and a live dot when present, name, one secondary line that is only ever a verifiable fact, a loudness pill on the right, and a `⋯` menu. Pressing the pill expands the row into a segmented control of the rungs this room kind offers, ordered quiet to loud, with the true rule spelled out beneath it in real numbers.
+Then one list: people first, then agents, each group with a count, the reader included and marked "(you)". Each member is one row — disc with a bot badge for agents and a live dot when present, name, one secondary line that is only ever a verifiable fact, a loudness pill on the right, and a `⋯` menu. Pressing the pill expands the row into a segmented control of the four rungs, ordered quiet to loud, with the true rule spelled out beneath it in real numbers.
 
 Adding is the last row of the list, not a second panel; it expands in place into the existing chip picker, now with faces. The footer states when the room was created and offers to archive it.
 

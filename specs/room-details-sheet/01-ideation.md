@@ -77,6 +77,9 @@ They _are_ ordered loudest-to-quietest in code. Nothing on screen says so: no sc
 
 So a channel has **four** distinct behaviours dressed as five, and **a DM offers four options that produce three behaviours.** That is not a copy problem showing through the labels; it is a modelling problem showing through the copy.
 
+> [!IMPORTANT]
+> **The `engaged` row of that table is wrong, and the specification does not follow it.** The window opens in a direct message exactly as it does in a channel — `room-trigger.ts` gates `engagementFor` on nothing, and a group direct message is still `kind: 'dm'` — so a DM has four behaviours too. The claim was read off `main`'s `responseModeOptionsFor` TSDoc during this audit and carried forward as fact; it was believed all the way into a first implementation. Left standing here, with this note, because how a wrong premise travelled is the part worth remembering. The corrected table is [`02-specification.md` §2.1](./02-specification.md).
+
 The bounded rule the `engaged` label gestures at is concrete and knowable: `rooms.engagedWindowMinutes` (10) and `rooms.engagedWindowPosts` (5), whichever runs out first. The UI has never said so, despite those being the operator's own settings.
 
 ## 4. What Slack teaches, and where it stops
