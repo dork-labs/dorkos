@@ -4,6 +4,7 @@
  * @module features/room-management/ui/RoomMemberList
  */
 import type { ReactNode } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { Button, Skeleton } from '@/layers/shared/ui';
 
@@ -30,12 +31,94 @@ export interface RoomMemberListProps {
 /** How many placeholder rows stand in for the roster while it is read. */
 const SKELETON_ROWS = 2;
 
+/** How long a row takes to open its own height, or to give it back. */
+const ROW_SECONDS = 0.15;
+
+/** How long the brand wash on a row that has just arrived takes to fade out. */
+const LANDING_SECONDS = 0.9;
+
+/** How strongly that wash starts. Enough to catch the eye, not to obscure a word. */
+const LANDING_OPACITY = 0.16;
+
 /** The heading over one group. Uppercase and small, the way a roster labels itself. */
 function GroupHeading({ label, count }: { label: string; count: number }) {
   return (
     <h3 className="text-muted-foreground px-1 pt-1 text-[10px] font-medium tracking-wider uppercase">
       {label} <span className="tabular-nums">{count}</span>
     </h3>
+  );
+}
+
+/**
+ * One group of the roster, with its rows arriving and leaving rather than
+ * blinking.
+ *
+ * **Both halves of that are information.** A row that leaves by collapsing its
+ * own height gives the Undo toast something to refer to — before, the list
+ * simply jumped and the offer to undo was about a row nobody saw go. A row that
+ * arrives by opening its height and washing brand once is the other end of the
+ * add: today an agent vanishes silently from the picker and appears silently
+ * here, which reads as loss rather than as success.
+ *
+ * `initial={false}` is what keeps the roster you OPEN the sheet on from
+ * performing: those rows were already there. It is read from React context, so
+ * it reaches the wash inside each row as well as the row itself.
+ *
+ * Under `prefers-reduced-motion` both durations go to zero, so a row still
+ * arrives and still leaves — it simply does it at once. The wash goes with them,
+ * and nothing is lost with it: it says "this is the one that just arrived",
+ * which the arrival itself already says.
+ *
+ * The gap between rows is padding on each row rather than `space-y` on the list,
+ * because a margin is outside the height being animated and would leave a
+ * stripe of empty list behind every row that collapses. The list pulls the
+ * outermost of it back so the group ends where it used to.
+ */
+function MemberGroup({
+  label,
+  members,
+  children,
+}: {
+  label: string;
+  members: readonly RoomRosterEntry[];
+  children: (member: RoomRosterEntry) => ReactNode;
+}) {
+  const reduced = useReducedMotion();
+  const collapsed = { height: 0, opacity: 0 };
+
+  return (
+    <>
+      <GroupHeading label={label} count={members.length} />
+      <ul className="-mt-1 -mb-1.5">
+        <AnimatePresence initial={false}>
+          {members.map((member) => (
+            <motion.li
+              key={member.authorId}
+              initial={collapsed}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={collapsed}
+              transition={{ duration: reduced ? 0 : ROW_SECONDS, ease: 'easeOut' }}
+              // The height is what is being animated, so what does not fit yet
+              // must not be drawn outside it.
+              className="overflow-hidden"
+            >
+              {/* The top slack is the working dot's, whose ping expands past the
+                  disc it sits on and would otherwise be shaved by the clip. */}
+              <div className="relative pt-1 pb-1.5">
+                <motion.span
+                  aria-hidden
+                  initial={{ opacity: LANDING_OPACITY }}
+                  animate={{ opacity: 0 }}
+                  transition={{ duration: reduced ? 0 : LANDING_SECONDS, ease: 'easeOut' }}
+                  className="bg-brand pointer-events-none absolute inset-0 rounded-md"
+                />
+                {children(member)}
+              </div>
+            </motion.li>
+          ))}
+        </AnimatePresence>
+      </ul>
+    </>
   );
 }
 
@@ -100,14 +183,9 @@ export function RoomMemberList({
       {!isLoading && !isError && (
         <>
           {people.length > 0 && (
-            <>
-              <GroupHeading label="People" count={people.length} />
-              <ul className="space-y-2.5">
-                {people.map((member) => (
-                  <li key={member.authorId}>{children(member)}</li>
-                ))}
-              </ul>
-            </>
+            <MemberGroup label="People" members={people}>
+              {children}
+            </MemberGroup>
           )}
 
           {agents.length === 0 ? (
@@ -121,14 +199,9 @@ export function RoomMemberList({
               Whoever you add can read everything already said here.
             </p>
           ) : (
-            <>
-              <GroupHeading label="Agents" count={agents.length} />
-              <ul className="space-y-2.5">
-                {agents.map((member) => (
-                  <li key={member.authorId}>{children(member)}</li>
-                ))}
-              </ul>
-            </>
+            <MemberGroup label="Agents" members={agents}>
+              {children}
+            </MemberGroup>
           )}
         </>
       )}

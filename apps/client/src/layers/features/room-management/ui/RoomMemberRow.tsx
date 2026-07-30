@@ -4,7 +4,8 @@
  * @module features/room-management/ui/RoomMemberRow
  */
 import { useEffect, useId, useRef } from 'react';
-import { Bot, MoreHorizontal } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { Bot, ChevronDown, MoreHorizontal } from 'lucide-react';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { cn, initialOf, type AgentVisual } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
@@ -28,6 +29,14 @@ import {
 } from '@/layers/entities/room';
 import { memberSecondaryLine } from '../lib/member-line';
 import { RemoveMemberConfirm } from './RemoveMemberConfirm';
+
+/**
+ * How long the loudness scale takes to open its own height, or to give it back.
+ *
+ * The caret above it turns in the same time, so the mark and the panel it
+ * belongs to are one movement rather than two that happen to overlap.
+ */
+const DISCLOSURE_SECONDS = 0.15;
 
 export interface RoomMemberRowProps {
   /** The membership this row draws, its author already resolved. */
@@ -140,6 +149,7 @@ export function RoomMemberRow({
   dormantReasonId,
 }: RoomMemberRowProps) {
   const isMobile = useIsMobile();
+  const reduced = useReducedMotion();
   const controlId = useId();
   const confirmRef = useRef<HTMLButtonElement>(null);
   const { author } = member;
@@ -181,7 +191,17 @@ export function RoomMemberRow({
             <span
               aria-hidden
               className="bg-status-success ring-background absolute -top-px -right-px size-2 rounded-full ring-2"
-            />
+            >
+              {/* It pulses because the thing it reports is happening RIGHT NOW,
+                  and a still dot says the same about a state that ended an hour
+                  ago. The same ping `AgentAvatar` gives a live agent in the
+                  mesh — which never reached this row, because a room's working
+                  signal and an agent's health are different facts and this row
+                  draws the identity disc rather than the agent one.
+                  `motion-reduce:hidden` leaves the dot itself, so the fact
+                  survives the preference and only the motion goes. */}
+              <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden" />
+            </span>
           )}
         </IdentityAvatar>
 
@@ -228,6 +248,16 @@ export function RoomMemberRow({
               dormant={dormantReasonId !== null}
             />
             {rungLabel}
+            {/* The pill opens something, and a meter beside a word does not
+                look like it does. The caret says so, and turning over as the
+                scale opens is what ties the mark to the panel. */}
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                'size-3 shrink-0 transition-transform duration-150',
+                expanded && 'rotate-180'
+              )}
+            />
           </button>
         )}
 
@@ -284,32 +314,48 @@ export function RoomMemberRow({
         </p>
       )}
 
-      {isAgent && expanded && (
-        // Indented under the name rather than the disc, so the control reads as
-        // belonging to this member and not to the list.
-        <div id={controlId} className="mt-2 ml-11 md:ml-10">
-          <ResponseModeControl
-            memberName={author.displayName}
-            roomKind={roomKind}
-            value={rung}
-            onChange={onRungChange}
-            onPreview={dormantReasonId === null ? onRungPreview : undefined}
-            engagedWindow={engagedWindow}
-            disabledReasonId={dormantReasonId}
-          />
-          {isMobile && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={onRemoveRequested}
-              className="text-destructive hover:text-destructive mt-1 h-11 w-full justify-start px-3"
-            >
-              Remove from this room
-            </Button>
-          )}
-        </div>
-      )}
+      {/* `initial={false}` so a row that mounts already open — the sheet keeps
+          one scale open at a time and re-renders around it — does not perform
+          the opening it did not do. */}
+      <AnimatePresence initial={false}>
+        {isAgent && expanded && (
+          <motion.div
+            id={controlId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: reduced ? 0 : DISCLOSURE_SECONDS, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            {/* Indented under the name rather than the disc, so the control
+                reads as belonging to this member and not to the list. The
+                bottom slack is the last control's focus ring, which the clip
+                above would otherwise shave. */}
+            <div className="mt-2 mb-1 ml-11 md:ml-10">
+              <ResponseModeControl
+                memberName={author.displayName}
+                roomKind={roomKind}
+                value={rung}
+                onChange={onRungChange}
+                onPreview={dormantReasonId === null ? onRungPreview : undefined}
+                engagedWindow={engagedWindow}
+                disabledReasonId={dormantReasonId}
+              />
+              {isMobile && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={onRemoveRequested}
+                  className="text-destructive hover:text-destructive mt-1 h-11 w-full justify-start px-3"
+                >
+                  Remove from this room
+                </Button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {confirmingRemoval && (
         <RemoveMemberConfirm

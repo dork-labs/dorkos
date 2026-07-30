@@ -648,6 +648,61 @@ describe('RoomDetailsDialog', () => {
     );
   });
 
+  /**
+   * How a row arrives and how it leaves.
+   *
+   * **Almost none of this is settleable here, and saying so is the point.** The
+   * movement itself is `motion` props, which the shared test setup strips off
+   * before anything renders; jsdom runs no transitions and measures every
+   * element as 0 × 0. So whether a row really opens its height, whether the
+   * brand wash really fades, and whether both go to zero under
+   * `prefers-reduced-motion` are browser questions and are on the browser
+   * suite's list. What is settleable is the structure the movement needs — and
+   * every one of these has a way to be wrong that a person would notice.
+   */
+  describe('how the roster arrives and leaves', () => {
+    /** The `li` elements of whichever group holds the agents. */
+    async function agentRows(): Promise<HTMLElement[]> {
+      const region = await rosterSection();
+      return within(region).getAllByRole('listitem');
+    }
+
+    it('clips each row, so a collapsing one does not spill out of its own height', async () => {
+      // Red if the clip goes: a row leaving would draw its whole self outside a
+      // box that is already shrinking, which reads as a glitch rather than as a
+      // removal — and the Undo toast would be about something nobody saw go.
+      renderPanel();
+
+      for (const row of await agentRows()) expect(row.className).toContain('overflow-hidden');
+    });
+
+    it('spaces the rows with padding rather than with a margin', async () => {
+      // A margin sits OUTSIDE the height being animated, so every row that
+      // collapsed would leave a stripe of empty list behind it. Red if the list
+      // goes back to `space-y`.
+      renderPanel();
+      const region = await rosterSection();
+
+      for (const list of within(region).getAllByRole('list')) {
+        expect(list.className).not.toContain('space-y');
+      }
+    });
+
+    it('lays the landing wash over the row without ever taking a press from it', async () => {
+      // It covers the whole row, including the pill and the "…". Red if it
+      // becomes clickable or reachable: an agent's controls would go dead for as
+      // long as the wash is on screen, and a screen reader would find an
+      // element that says nothing.
+      renderPanel();
+      const rows = await agentRows();
+
+      const wash = rows[0]!.querySelector('.bg-brand');
+      expect(wash).not.toBeNull();
+      expect(wash!.className).toContain('pointer-events-none');
+      expect(wash).toHaveAttribute('aria-hidden');
+    });
+  });
+
   describe('taking an agent back out', () => {
     /** The undo the removal toast offered, or `null` when it offered none. */
     function undoOffer(): (() => void) | null {

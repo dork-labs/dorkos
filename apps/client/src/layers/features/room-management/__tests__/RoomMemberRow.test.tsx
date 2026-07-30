@@ -153,6 +153,38 @@ describe('RoomMemberRow', () => {
       expect(busy.querySelector('.bg-status-success')).not.toBeNull();
     });
 
+    it('pulses that dot, and drops only the pulse when motion is unwanted', () => {
+      // The dot reports something happening RIGHT NOW, and a still one says the
+      // same about a state that ended an hour ago. `AgentAvatar` has had this
+      // ping since it shipped and it never reached here — this row draws the
+      // identity disc, and a room's working signal is not an agent's mesh
+      // health. Red if the ping goes, and red if `motion-reduce:hidden` ever
+      // lands on the dot itself: the preference would then delete the fact
+      // rather than the movement. Whether it actually animates is the browser's
+      // to say — jsdom runs no animations at all.
+      const { container } = renderRow({
+        presence: { authorId: 'author-Ana', state: 'working', since: '', elapsedMs: 1000 },
+      });
+
+      const ping = container.querySelector('.animate-ping');
+      expect(ping).not.toBeNull();
+      expect(ping!.className).toContain('motion-reduce:hidden');
+      expect(ping!.parentElement!.className).not.toContain('motion-reduce:hidden');
+    });
+
+    it('turns the pill’s caret over while the scale is open', () => {
+      // A meter beside a word does not look like a control that opens
+      // something. Red if the caret goes, or if it stops answering to the open
+      // state — a mark that points the same way in both is decoration.
+      const shut = renderRow().container.querySelector('.lucide-chevron-down');
+      expect(shut).not.toBeNull();
+      expect(shut!.getAttribute('class')).not.toContain('rotate-180');
+
+      cleanup();
+      const open = renderRow({ expanded: true }).container.querySelector('.lucide-chevron-down');
+      expect(open!.getAttribute('class')).toContain('rotate-180');
+    });
+
     it('gives a person no loudness and no menu', () => {
       // There is no verb for the reader, and nothing triggers them. The empty
       // slot is the statement.
