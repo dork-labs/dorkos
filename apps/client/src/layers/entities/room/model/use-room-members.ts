@@ -13,7 +13,7 @@
  */
 import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import type { RoomRosterEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 
@@ -31,6 +31,27 @@ function useRosterInvalidation(): (roomId: string) => void {
   return (roomId: string) => {
     void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
     void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
+  };
+}
+
+/**
+ * One room with a single member's response mode replaced.
+ *
+ * Only that member is rewritten and the rest of the roster is the object the
+ * cache already holds, which is what makes the rollback below safe while a
+ * second member's write is still in flight: restoring a whole snapshot of the
+ * room would quietly take that one back too.
+ */
+function withMemberMode(
+  room: RoomWithRoster,
+  authorId: string,
+  responseMode: ResponseMode
+): RoomWithRoster {
+  return {
+    ...room,
+    members: room.members.map((member) =>
+      member.authorId === authorId ? { ...member, responseMode } : member
+    ),
   };
 }
 
@@ -114,6 +135,16 @@ export interface SetResponseModeInput {
   responseMode: ResponseMode;
 }
 
+/** What a failed mode change has to put back. */
+interface ResponseModeRollback {
+  /**
+   * The mode this member held before the optimistic write, or `undefined` when
+   * the roster was not in the cache to read one from — in which case there is
+   * nothing to restore and the refetch is the only answer.
+   */
+  previous: ResponseMode | undefined;
+}
+
 /**
  * Change one agent's per-room response mode — this room's override of the
  * agent's manifest default.
@@ -121,19 +152,56 @@ export interface SetResponseModeInput {
  * This is the setting that decides when an agent replies without being
  * addressed, so it is what makes a channel holding two `always` agents
  * survivable.
+ *
+ * **Written to the cache before the server has agreed, and taken back if it
+ * does not.** The control this drives is a meter that moves, so the value
+ * arriving a round trip late reads as a control that did not respond; and
+ * leaving the chosen value on screen after a refusal is worse than showing
+ * nothing at all, because the control then states a setting that was never
+ * stored. So the roster is patched at once and the one member's mode is put
+ * back on failure.
+ *
+ * The rollback restores that member's mode alone rather than the snapshot of
+ * the whole room — see {@link withMemberMode} — so a second member's write that
+ * is still in flight is not taken back along with it.
+ *
+ * `onSettled` rather than `onSuccess`, because a failed write leaves the cache
+ * holding a value this client invented and the server's copy is the only way
+ * back to the truth. Still never `roomKeys.all`: see {@link useRosterInvalidation}.
  */
 export function useSetMemberResponseMode(): UseMutationResult<
   RoomRosterEntry,
   Error,
-  SetResponseModeInput
+  SetResponseModeInput,
+  ResponseModeRollback
 > {
   const transport = useTransport();
+  const queryClient = useQueryClient();
   const invalidate = useRosterInvalidation();
 
   return useMutation({
     mutationFn: ({ roomId, authorId, responseMode }: SetResponseModeInput) =>
       transport.updateRoomMember(roomId, authorId, { responseMode }),
-    onSuccess: (_member, { roomId }) => invalidate(roomId),
+    onMutate: async ({ roomId, authorId, responseMode }) => {
+      // A read already on the wire predates this change and would land on top
+      // of it, putting the old rung back under a reader who is watching the
+      // meter move.
+      await queryClient.cancelQueries({ queryKey: roomKeys.detail(roomId) });
+      const cached = queryClient.getQueryData<RoomWithRoster>(roomKeys.detail(roomId));
+      const previous = cached?.members.find((member) => member.authorId === authorId)?.responseMode;
+      queryClient.setQueryData<RoomWithRoster>(roomKeys.detail(roomId), (room) =>
+        room === undefined ? room : withMemberMode(room, authorId, responseMode)
+      );
+      return { previous };
+    },
+    onError: (_error, { roomId, authorId }, rollback) => {
+      const previous = rollback?.previous;
+      if (previous === undefined) return;
+      queryClient.setQueryData<RoomWithRoster>(roomKeys.detail(roomId), (room) =>
+        room === undefined ? room : withMemberMode(room, authorId, previous)
+      );
+    },
+    onSettled: (_member, _error, { roomId }) => invalidate(roomId),
     meta: { errorLabel: "Couldn't change how that agent replies" },
   });
 }

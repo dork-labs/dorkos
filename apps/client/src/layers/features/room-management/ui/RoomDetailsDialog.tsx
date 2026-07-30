@@ -10,18 +10,10 @@ import {
   ResponsiveDialogBody,
   ResponsiveDialogContent,
 } from '@/layers/shared/ui';
-import {
-  RoomLoudnessLine,
-  modeForRung,
-  roomDisplayTitle,
-  useAddRoomMember,
-  useRemoveRoomMember,
-  useSetMemberResponseMode,
-  type ResponseRung,
-} from '@/layers/entities/room';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
+import { RoomLoudnessLine, roomDisplayTitle } from '@/layers/entities/room';
 import type { RoomDetailsFocus, RoomDetailsRoom } from '../model/room-details';
 import { useRoomDetailsView } from '../model/use-room-details-view';
+import { useRoomDetailsWrites } from '../model/use-room-details-writes';
 import { AddMembersRow } from './AddMembersRow';
 import { RoomDetailsFooter } from './RoomDetailsFooter';
 import { RoomDetailsHeader } from './RoomDetailsHeader';
@@ -69,9 +61,15 @@ interface RoomDetailsDialogProps {
  */
 export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetailsDialogProps) {
   const view = useRoomDetailsView(room.id, open);
-  const addMember = useAddRoomMember();
-  const removeMember = useRemoveRoomMember();
-  const setResponseMode = useSetMemberResponseMode();
+  /**
+   * The room as freshly as it is known. The prop is what the caller already had
+   * — a sidebar summary, or the open room — so the header draws before the read
+   * lands and never flickers through a room with no topic and no age. The read
+   * then wins, which is what redraws the badge in front of whoever archived it.
+   */
+  const detail: RoomDetailsRoom = view.room ?? room;
+  const title = roomDisplayTitle(detail);
+  const writes = useRoomDetailsWrites({ roomId: room.id, roomKind: detail.kind });
 
   /** The member whose removal is waiting to be confirmed, by author id. */
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
@@ -124,49 +122,9 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
     field.focus();
   }, [addExpanded, view.agents.isLoading, view.agents.isError]);
 
-  /**
-   * The room as freshly as it is known. The prop is what the caller already had
-   * — a sidebar summary, or the open room — so the header draws before the read
-   * lands and never flickers through a room with no topic and no age. The read
-   * then wins, which is what redraws the badge in front of whoever archived it.
-   */
-  const detail: RoomDetailsRoom = view.room ?? room;
-  const title = roomDisplayTitle(detail);
-
-  const handleAdd = (chosen: AgentPickerCandidate[]) => {
-    // One call per agent: the roster endpoint adds one member at a time, and a
-    // partial success is still progress worth keeping, so a failure is reported
-    // on its own rather than rolling the others back. Reporting is the shared
-    // mutation toast's — the hook names the action and the server says why, and
-    // raising a second toast here only ever produced two lines for one failure.
-    //
-    // Nothing is cleared here, and the sheet stays open. Each agent that lands
-    // joins the roster, drops out of `candidates`, and takes its own chip with
-    // it — so the selection empties at the rate the writes actually succeed,
-    // and after three of four the reader is left holding the one that failed
-    // rather than a button that would add the other three again.
-    for (const agent of chosen) {
-      addMember.mutate({ roomId: room.id, agentPath: agent.agentPath });
-    }
-  };
-
-  // A rung is what a person picks; a `responseMode` is what gets stored. One
-  // canonical value per rung, so this sheet never writes one of the two aliases
-  // whose meaning depends on which kind of room it ends up in.
-  const handleRungChange = (member: RoomRosterEntry, rung: ResponseRung) => {
-    setResponseMode.mutate({
-      roomId: room.id,
-      authorId: member.authorId,
-      // `detail.kind`, not the caller's: two of the five stored values mean
-      // different things in a channel and in a DM, so the kind the SERVER most
-      // recently reported is the only safe one to project a rung through.
-      responseMode: modeForRung(rung, detail.kind),
-    });
-  };
-
   const confirmRemoval = (member: RoomRosterEntry) => {
     setPendingRemoval(null);
-    removeMember.mutate({ roomId: room.id, authorId: member.authorId });
+    writes.removeMember(member);
   };
 
   /**
@@ -260,7 +218,13 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
                 lastSpokeAt={view.lastSpokeByAuthor.get(member.authorId) ?? null}
                 expanded={expandedMember === member.authorId}
                 onExpandedChange={(next) => setExpandedMember(next ? member.authorId : null)}
-                onRungChange={(rung) => handleRungChange(member, rung)}
+                onRungChange={(rung) => writes.setRung(member, rung)}
+                savingRung={writes.savingRungFor === member.authorId}
+                rungError={
+                  writes.rungFailure?.authorId === member.authorId
+                    ? writes.rungFailure.message
+                    : null
+                }
                 roomTitle={title}
                 // The confirmation lives in the ROW rather than here, because
                 // the row is what owns the "…" menu — and where the keyboard
@@ -280,14 +244,14 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
             onExpand={() => setAddExpanded(true)}
             roster={view.agents}
             exclude={view.isAlreadyIn}
-            onSubmit={handleAdd}
+            onSubmit={writes.addAgents}
             emptyRosterMessage={
               view.agents.candidates.length === 0
                 ? 'You have not added any agents yet. Add one to put it in here.'
                 : 'Every agent you have is already in here.'
             }
             allChosenMessage="Every agent you have is already in here."
-            isSubmitting={addMember.isPending}
+            isSubmitting={writes.isAdding}
             inputRef={searchRef}
           />
         </ResponsiveDialogBody>

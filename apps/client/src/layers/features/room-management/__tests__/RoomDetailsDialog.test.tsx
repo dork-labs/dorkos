@@ -185,6 +185,23 @@ function pill(name = 'Ana'): HTMLElement {
   return screen.getByRole('button', { name: `How loud ${name} is here` });
 }
 
+/**
+ * A `getRoom` that answers once and then never again.
+ *
+ * The point is what it makes impossible: a refetch cannot be the thing that
+ * restores a rolled-back value, so a test that sees the true rung back on the
+ * pill has seen the rollback and nothing else. With an always-answering fake,
+ * the same assertion stays green with the rollback deleted.
+ */
+function readableOnce(value: RoomWithRoster) {
+  let served = false;
+  return vi.fn().mockImplementation(() => {
+    if (served) return new Promise<RoomWithRoster>(() => {});
+    served = true;
+    return Promise.resolve(value);
+  });
+}
+
 /** Open a member's scale and hand back the radiogroup. */
 function openScale(name = 'Ana'): HTMLElement {
   fireEvent.click(pill(name));
@@ -417,6 +434,70 @@ describe('RoomDetailsDialog', () => {
           responseMode: 'silent',
         })
       );
+    });
+
+    it('moves the meter as soon as it is picked, not a round trip later', async () => {
+      // The confirmation IS the meter moving, so a value that arrives when the
+      // server agrees reads as a control that did not respond. Red the moment
+      // the optimistic write goes: this write never settles, so nothing else
+      // can put `Everything` on the pill.
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: vi.fn().mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana')])),
+          updateRoomMember: vi.fn().mockReturnValue(new Promise<never>(() => {})),
+        }),
+      });
+      await rosterSection();
+
+      fireEvent.click(within(openScale()).getByRole('radio', { name: 'Everything' }));
+
+      await waitFor(() => expect(pill()).toHaveTextContent('Everything'));
+      // The pill is dimmed with a class jsdom cannot see; this is the half of
+      // "in flight" that reaches somebody who is not looking at it.
+      expect(pill()).toHaveAttribute('aria-busy', 'true');
+    });
+
+    it('takes the rung back when the write is refused, and says why on the row', async () => {
+      // A control still showing the value that never saved is worse than one
+      // that showed nothing: it states a setting the server does not hold.
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: readableOnce(roster([HUMAN, agentMember('Ana', '/repo/ana')])),
+          updateRoomMember: vi.fn().mockRejectedValue(new Error('Only you can change that')),
+        }),
+      });
+      await rosterSection();
+
+      fireEvent.click(within(openScale()).getByRole('radio', { name: 'Everything' }));
+
+      expect(
+        await screen.findByText("That didn't save — Only you can change that")
+      ).toBeInTheDocument();
+      expect(pill()).toHaveTextContent('@only');
+      expect(pill()).not.toHaveAttribute('aria-busy');
+    });
+
+    it('blames the row it happened on, and no other', async () => {
+      // One mutation observer serves every row, so the failure has to be
+      // matched back to a member. Red if the reason is drawn on every agent's
+      // row — Bo would be told a change nobody made to it had failed.
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: readableOnce(
+            roster([HUMAN, agentMember('Ana', '/repo/ana'), agentMember('Bo', '/repo/bo')])
+          ),
+          updateRoomMember: vi.fn().mockRejectedValue(new Error('Only you can change that')),
+        }),
+      });
+      const section = await rosterSection();
+
+      fireEvent.click(within(openScale('Bo')).getByRole('radio', { name: 'Everything' }));
+
+      await screen.findByText("That didn't save — Only you can change that");
+      const rows = within(section).getAllByRole('listitem');
+      const ana = rows.find((row) => within(row).queryByText('Ana') !== null);
+      expect(ana).toBeDefined();
+      expect(within(ana!).queryByText(/didn't save/)).not.toBeInTheDocument();
     });
 
     it('writes `engaged` for the rung only a channel has', async () => {

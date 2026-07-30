@@ -51,6 +51,14 @@ export interface RoomMemberRowProps {
   onExpandedChange: (expanded: boolean) => void;
   /** Commit a rung for this member. */
   onRungChange: (rung: ResponseRung) => void;
+  /** Whether this member's rung is being written right now. */
+  savingRung: boolean;
+  /**
+   * Why this member's last rung change did not save, or `null` when the last
+   * one did. The pill has already gone back to the stored value by then; this
+   * says why it moved back.
+   */
+  rungError: string | null;
   /** The room in prose, for the confirmation to name. */
   roomTitle: string;
   /** Ask to take this member out. The list decides which row is asking. */
@@ -97,6 +105,8 @@ export function RoomMemberRow({
   expanded,
   onExpandedChange,
   onRungChange,
+  savingRung,
+  rungError,
   roomTitle,
   onRemoveRequested,
   confirmingRemoval,
@@ -166,9 +176,15 @@ export function RoomMemberRow({
             aria-expanded={expanded}
             aria-controls={expanded ? controlId : undefined}
             aria-label={`How loud ${author.displayName} is here`}
+            // The value on it is this client's guess until the server agrees.
+            // Not disabled with it: the pill only opens the scale, and taking
+            // that away for the length of a round trip would be a control that
+            // stops working every time it is used.
+            aria-busy={savingRung || undefined}
             onClick={() => onExpandedChange(!expanded)}
             className={cn(
               'text-muted-foreground hover:text-foreground focus-visible:ring-ring relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs outline-hidden transition-colors focus-visible:ring-2 md:h-6 md:px-2',
+              savingRung && 'opacity-60',
               // 32px of real pill plus 6px of invisible reach each way is the
               // 44px a thumb needs. Six, and not the twelve that would be
               // simpler: `AgentChipPicker` learned at 390x844 that a 12px
@@ -224,6 +240,20 @@ export function RoomMemberRow({
           </DropdownMenu>
         )}
       </div>
+
+      {rungError !== null && (
+        // Why the pill just moved back. Indented under the name like the scale
+        // and the confirmation, so it reads as belonging to this member.
+        //
+        // Deliberately not a live region: the shared mutation toast already
+        // announces the same failure with the action named in front of it, and
+        // it is the report that survives this sheet being closed. A second
+        // announcement here would say the same thing twice to the one reader
+        // who cannot glance at the pill to see it move.
+        <p className="text-destructive mt-1 ml-11 text-xs md:ml-10">
+          That didn&apos;t save — {rungError}
+        </p>
+      )}
 
       {isAgent && expanded && (
         // Indented under the name rather than the disc, so the control reads as

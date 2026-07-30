@@ -49,6 +49,8 @@ function renderRow(overrides: Partial<RoomMemberRowProps> = {}) {
     expanded: false,
     onExpandedChange: vi.fn(),
     onRungChange: vi.fn(),
+    savingRung: false,
+    rungError: null,
     roomTitle: '#general',
     onRemoveRequested: vi.fn(),
     confirmingRemoval: false,
