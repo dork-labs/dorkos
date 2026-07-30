@@ -34,6 +34,7 @@
  * @module server/services/rooms/room-context
  */
 import type {
+  RoomContextAcknowledgment,
   RoomContextAuthor,
   RoomContextData,
   RoomContextEntry,
@@ -43,6 +44,7 @@ import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { advertisedHandles, mentionCandidatesFrom } from './author-handles.js';
 import type { EngagementWindow } from './engagement.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
+import type { ReactionStore } from './reaction-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
@@ -64,6 +66,19 @@ const OWN_RECENT_MAX_ENTRIES = 5;
 const THREAD_EXCERPT_CHARS = 200;
 
 /**
+ * How many acknowledgments reach the model at most, newest first.
+ *
+ * They are already bounded by {@link OWN_RECENT_MAX_ENTRIES} — only reactions on
+ * the agent's own recent posts are reported — but one popular message can carry
+ * a dozen pills on its own, and a turn that opened with twelve lines of thanks
+ * would be a turn spent reading thanks.
+ */
+const ACKNOWLEDGMENTS_MAX = 5;
+
+/** How much of the agent's own reacted-to message is quoted back to identify it. */
+const ACKNOWLEDGMENT_EXCERPT_CHARS = 80;
+
+/**
  * Name for an author whose row has vanished. Rendering something honest beats
  * dropping the line: a message with no attribution is still a message that was
  * said, and hiding it would leave the agent reading half a conversation. The
@@ -75,6 +90,8 @@ const UNKNOWN_DISPLAY_NAME = 'Unknown';
 /** The data this module reads. Everything is synchronous (`better-sqlite3`). */
 export interface RoomContextDeps {
   store: RoomStore;
+  /** Reactions on this agent's own posts — read only, and never a reason to run. */
+  reactions: ReactionStore;
   authors: AuthorRegistry;
   /** Resolves an agent's handle from its directory — one name an `@` may match. */
   agents: RoomAgentLookup;
@@ -153,6 +170,16 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     OWN_RECENT_MAX_ENTRIES
   );
 
+  // Reactions on those same posts, in ONE query. Scoped to `ownRecent` because
+  // that is what makes an acknowledgment age out on its own: five more messages
+  // from this agent and an old pill stops riding every turn. Reading them costs
+  // no model call, which is the point — being thanked must stay free
+  // (`meta/agent-etiquette.md` E7).
+  const reacted = deps.reactions.listFor(
+    input.room.id,
+    ownRecent.map((entry) => entry.id)
+  );
+
   // Resolve authors from the ROSTER PLUS whoever actually wrote the entries
   // being rendered. Roster-only was wrong in a way that inverted the one field
   // this whole kind exists for: `removeMember` is a real path, and a person who
@@ -162,6 +189,10 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     ...missed.map((entry) => entry.authorId),
     ...ownRecent.map((entry) => entry.authorId),
     ...input.working.map((claim) => claim.authorId),
+    // Somebody who reacted may have left the room since, exactly as an entry's
+    // author may have — so they are resolved from the same union rather than
+    // assumed to be on the roster.
+    ...[...reacted.values()].flatMap((pills) => pills.flatMap((pill) => pill.authorIds)),
   ]);
   const people = new Set<string>();
   for (const [id, record] of records) if (record.kind === 'human') people.add(id);
@@ -206,6 +237,34 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     };
   }
 
+  /**
+   * Every reaction standing on the agent's own recent posts, newest first.
+   *
+   * Newest is decided by the ENTRY, not by the reaction: `ownRecent` is
+   * oldest-first, so walking it backwards puts the freshest message's thanks at
+   * the top — which is the order the agent would care about them in, and the one
+   * the excerpt lines up with.
+   */
+  function acknowledgments(): RoomContextAcknowledgment[] {
+    const found: RoomContextAcknowledgment[] = [];
+    for (let i = ownRecent.length - 1; i >= 0 && found.length < ACKNOWLEDGMENTS_MAX; i -= 1) {
+      const entry = ownRecent[i];
+      for (const pill of reacted.get(entry.id) ?? []) {
+        for (const authorId of pill.authorIds) {
+          if (found.length >= ACKNOWLEDGMENTS_MAX) break;
+          found.push({
+            ...nameOf(authorId),
+            isPerson: people.has(authorId),
+            emoji: pill.emoji,
+            entryAt: entry.createdAt,
+            entryExcerpt: entry.body.text.slice(0, ACKNOWLEDGMENT_EXCERPT_CHARS),
+          });
+        }
+      }
+    }
+    return found;
+  }
+
   return {
     room: frame.room,
     thread: frame.thread,
@@ -224,6 +283,7 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     pending: missed.map(flatten),
     pendingTruncated,
     ownRecent: ownRecent.map(flatten),
+    acknowledgments: acknowledgments(),
     addressing: {
       responseMode:
         self?.responseMode ?? fallbackResponseMode(deps, records.get(input.agentAuthorId)),

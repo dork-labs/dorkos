@@ -5109,11 +5109,19 @@
                 "type": "string",
                 "minLength": 1,
                 "description": "The author id the server resolved for THIS request — who the reader is. Match a roster member on it to find your own membership (your read cursor, your response mode); never match on `author.kind`. It is not necessarily on `members`: seeing a room and being in it are different things."
+              },
+              "reactionFrequents": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "THIS reader's most-used reaction emoji, most-used first, always exactly three — the quick row in the message capsule. Counted across every room, because a person's reaction habits are theirs and not a room's, and padded from the shipped defaults so a new install still gets a full row. It rides the room rather than a route of its own for the same reason `viewerAuthorId` does: the reader is already resolved here, the value is one aggregate query, and a capsule that had to fetch it separately would draw an empty row first."
               }
             },
             "required": [
               "members",
-              "viewerAuthorId"
+              "viewerAuthorId",
+              "reactionFrequents"
             ]
           }
         ]
@@ -5330,6 +5338,13 @@
           },
           "createdAt": {
             "type": "string"
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomEntryReaction"
+            },
+            "description": "The entry's reactions right now, oldest pill first. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event, which carries `[]` because an entry a millisecond old has none. It is optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
           }
         },
         "required": [
@@ -5383,6 +5398,36 @@
           "addressing_changed"
         ]
       },
+      "RoomEntryReaction": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "$ref": "#/components/schemas/ReactionEmoji"
+          },
+          "authorIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Who reacted with this emoji, in the order they did — and, for two that landed inside the same millisecond, by author id, so two installs holding identical rows draw identical rows rather than leaving the order to whichever index the planner picked. Match against the room roster to render names; an id that is not on it belongs to somebody who has left."
+          },
+          "firstAt": {
+            "type": "string",
+            "description": "When the first of these landed. The pill row is ordered by it, so a pill keeps its place as more people join it."
+          }
+        },
+        "required": [
+          "emoji",
+          "authorIds",
+          "firstAt"
+        ]
+      },
+      "ReactionEmoji": {
+        "type": "string",
+        "description": "One emoji, stored as the string that was sent — grapheme clusters, joiners, skin tones and flags all survive verbatim. There is no enum: an install that only ever accepted a fixed list would have to ship a migration to add a face.",
+        "example": "👍"
+      },
       "PostToRoomResponse": {
         "type": "object",
         "properties": {
@@ -5423,6 +5468,57 @@
         },
         "required": [
           "text"
+        ]
+      },
+      "ToggleReactionResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "entryId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "emoji": {
+            "$ref": "#/components/schemas/ReactionEmoji"
+          },
+          "reacted": {
+            "type": "boolean",
+            "description": "The state your pill is in NOW: true when this call added the reaction, false when it took one back."
+          },
+          "frequents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Your quick row, recomputed with this reaction counted. Returned so the capsule stays current without a second request."
+          }
+        },
+        "required": [
+          "accepted",
+          "entryId",
+          "emoji",
+          "reacted",
+          "frequents"
+        ]
+      },
+      "ToggleReactionRequest": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "$ref": "#/components/schemas/ReactionEmoji"
+          },
+          "on": {
+            "type": "boolean",
+            "description": "The state to land in: `true` puts the reaction there, `false` takes it away, and both are safe to send twice. Omit to flip whatever is there, which is what a click means. Sending `true` for a reaction you already have does NOT restamp it, so the pill keeps its place in a row ordered by first appearance."
+          }
+        },
+        "required": [
+          "emoji"
         ]
       },
       "AddRoomMemberRequest": {
@@ -5603,6 +5699,34 @@
           "working",
           "working_late",
           "done"
+        ]
+      },
+      "RoomReactionEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "reaction"
+            ]
+          },
+          "entryId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The entry in this room whose reactions changed."
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomEntryReaction"
+            },
+            "description": "The entry's COMPLETE reaction set now, not a delta — an empty array means the last pill was taken back."
+          }
+        },
+        "required": [
+          "type",
+          "entryId",
+          "reactions"
         ]
       },
       "ActorType": {
@@ -13072,6 +13196,96 @@
         }
       }
     },
+    "/api/rooms/{id}/entries/{entryId}/reactions": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "React to an entry, or take a reaction back",
+        "description": "Keyed on `(you, this entry, this emoji)`, which holds at most one reaction however many times anyone asks. With no `on` in the body this is a TOGGLE — the same emoji again removes it — which is what a click means and is exactly not idempotent, hence POST rather than PUT. **Do not retry a bare toggle**: a timeout does not say whether the write landed, and re-sending the flip undoes it. Send `{\"emoji\": \"👍\", \"on\": true}` or `on: false` instead, which names the state you want and is safe to repeat; `on: true` on a reaction you already have does not restamp it, so the pill keeps its place in a row ordered by first appearance. Returns 202 with which way it went and your recomputed quick row — but **treat the event stream as authoritative, not this body**: the entry's new reaction set reaches every reader, this one included, over `GET /api/rooms/{id}/events` as a `reaction` frame carrying the WHOLE current set, while this body says only what YOUR call did and somebody else may have reacted in between. **A reaction is costless by design**: it takes no turn, writes no entry, sends no notice, starts no cascade and does not move the room in the activity order. When it lands on an agent-authored entry the agent is told on its next turn, in its room context, as an acknowledgment it never replies to. **Only people may react** — a caller the server resolves as an agent (one presenting `X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "entryId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToggleReactionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; the entry's new reaction set rides the room SSE stream",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToggleReactionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error, including anything that is not a single emoji",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not a person; agents do not send reactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, not a member of it, or no such entry in it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/rooms/{id}/members": {
       "post": {
         "tags": [
@@ -13413,7 +13627,7 @@
           "Rooms"
         ],
         "summary": "Durable room event stream (SSE)",
-        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` (a durable `entry`, or an ephemeral `signal` that is never replayed).",
+        "description": "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
         "parameters": [
           {
             "schema": {
@@ -13454,6 +13668,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/RoomSignalEvent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoomReactionEvent"
                     }
                   ]
                 }

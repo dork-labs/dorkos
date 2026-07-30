@@ -13,6 +13,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
+import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { TransportProvider } from '@/layers/shared/model';
@@ -69,6 +70,7 @@ function made(): RoomWithRoster {
     lastActivityAt: '2026-07-27T10:00:00.000Z',
     members: [],
     viewerAuthorId: 'author-you',
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
   };
 }
 

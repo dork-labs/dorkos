@@ -78,6 +78,7 @@ import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import type { AuthorRegistry } from './author-registry.js';
 import { evaluateCascade } from './cascade-guard.js';
 import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
+import type { ReactionStore } from './reaction-store.js';
 import { buildRoomContext } from './room-context.js';
 import {
   buildBudgetNotice,
@@ -206,6 +207,8 @@ export interface CascadeStamp {
 /** Everything {@link RoomTriggerDispatcher} is constructed from. */
 export interface RoomTriggerDeps {
   store: RoomStore;
+  /** Read-only here: the room context reports acknowledgments, never writes one. */
+  reactions: ReactionStore;
   authors: AuthorRegistry;
   agents: RoomAgentLookup;
   runner: RoomTurnRunner;

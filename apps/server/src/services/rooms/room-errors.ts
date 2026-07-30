@@ -20,7 +20,9 @@ export type RoomErrorCode =
   | 'INVALID_SLUG'
   | 'NESTED_THREAD'
   | 'ROOM_ARCHIVED'
-  | 'OPERATOR_ONLY';
+  | 'OPERATOR_ONLY'
+  /** A non-person tried to react. Agents do not send reactions (etiquette E16b). */
+  | 'PEOPLE_ONLY';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {
