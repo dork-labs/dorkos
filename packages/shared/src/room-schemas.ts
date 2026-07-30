@@ -843,8 +843,20 @@ export type RoomReactionEvent = z.infer<typeof RoomReactionEventSchema>;
  *
  * Derived from the event rather than declared beside it, so the producer cannot
  * drift from the wire. They are optional on the event — a `'typing'` signal has
- * no lifecycle — and required here, because a presence publish that omits one is
- * an indicator a client cannot key, age, or clear.
+ * no lifecycle — and required HERE because of what a partial one costs
+ * downstream: an indicator with no `entryId` cannot be keyed, and one with no
+ * `since` cannot be aged or shown an elapsed time.
+ *
+ * **Required of the producer that always knows all three, not of every caller.**
+ * `RoomTriggerDispatcher` owns the claim map, so its `publishPresence` dep takes
+ * this whole type and is held to it. `RoomService.publishSignal` accepts a
+ * `Partial` of it, because a `CommunityAdapter` caller's payload is optional
+ * field by field (a remote backend may only be able to say that somebody is
+ * working), and inventing an `entryId` to satisfy a required type would put a
+ * fabricated key on the wire. The client is what makes that safe rather than
+ * lossy: `useRoomPresenceStore.observe` DROPS any progress frame missing one of
+ * the three, so an unkeyable indicator is never rendered and never has to be
+ * cleared.
  */
 export type RoomPresencePayload = Required<Pick<RoomSignalEvent, 'state' | 'entryId' | 'since'>>;
 

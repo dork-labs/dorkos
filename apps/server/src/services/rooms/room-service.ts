@@ -868,12 +868,21 @@ export class RoomService {
    *   publish carries the whole of it, `since` included: an ephemeral event is
    *   never replayed, so it has to be renderable by a client that connected in
    *   the middle of the work.
+   *
+   *   Typed as a PARTIAL here and as a whole {@link RoomPresencePayload} at the
+   *   dispatcher's `publishPresence` dep, because the two producers have
+   *   different floors. The dispatcher owns the claim map, so it always knows
+   *   all three and is held to all three. `LocalCommunityAdapter` publishes on
+   *   behalf of a `CommunityAdapter` caller, whose payload is optional field by
+   *   field (a remote backend may only be able to say that somebody is working)
+   *   — and inventing an `entryId` to satisfy a required type would be a worse
+   *   answer than carrying less.
    */
   publishSignal(
     roomId: string,
     signal: SignalType,
     authorId: string,
-    presence?: RoomPresencePayload
+    presence?: Partial<RoomPresencePayload>
   ): void {
     this.broadcaster.publish(roomId, {
       type: 'signal',
