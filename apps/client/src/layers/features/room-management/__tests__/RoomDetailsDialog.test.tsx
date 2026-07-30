@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -590,6 +590,36 @@ describe('RoomDetailsDialog', () => {
           responseMode: 'silent',
         })
       );
+    });
+
+    it('writes nothing when the rung pressed is the one already stored', async () => {
+      // A `direct-only` membership sits on `@only` in a channel, so pressing
+      // `@only` there would rewrite it to `mention-only` — same behaviour, a
+      // real write, and nothing on screen moves to say it happened. Silence is
+      // the honest answer to "set it to what it already is".
+      //
+      // Both clicks in one `act`, because `mutate` only SCHEDULES: separate
+      // `fireEvent` calls each flush on their own, so a guard could be missing
+      // and the second write would still arrive second.
+      const { transport } = renderPanel({
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana', 'direct-only')])),
+        }),
+      });
+      await rosterSection();
+      const rungs = openScale();
+
+      act(() => {
+        fireEvent.click(within(rungs).getByRole('radio', { name: '@only' }));
+      });
+      expect(transport.updateRoomMember).not.toHaveBeenCalled();
+
+      // The barrier: a control that never writes at all would pass the line
+      // above on its own.
+      fireEvent.click(within(rungs).getByRole('radio', { name: 'Silent' }));
+      await waitFor(() => expect(transport.updateRoomMember).toHaveBeenCalledTimes(1));
     });
 
     it('moves the meter as soon as it is picked, not a round trip later', async () => {

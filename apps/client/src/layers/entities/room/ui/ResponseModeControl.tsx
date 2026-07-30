@@ -53,7 +53,12 @@ export interface ResponseModeControlProps {
    * stop or the reader without a selection to see.
    */
   value: ResponseRung;
-  /** Commit a rung. Called on click, and on Enter or Space from the keyboard. */
+  /**
+   * Commit a rung. Called on click, and on Enter or Space from the keyboard.
+   *
+   * Never called with the rung already in {@link ResponseModeControlProps.value}
+   * — that is not a change, and a caller may treat every call as one.
+   */
   onChange: (rung: ResponseRung) => void;
   /**
    * The engaged-window ceilings, or `null` while the config read is in flight.
@@ -263,6 +268,12 @@ export function ResponseModeControl({
         // do is still worth doing on a room you are deciding whether to revive.
         setAimed(rung);
         if (disabledReasonId !== null) return;
+        // Choosing what is already chosen is not a change, and every commit
+        // here is a network write. Without this, pressing the checked rung
+        // stores a value nothing on screen moves to acknowledge — and where the
+        // stored value is an alias, the write silently canonicalises it into
+        // something the reader never picked.
+        if (rung === value) return;
         onChange(rung);
       },
     };

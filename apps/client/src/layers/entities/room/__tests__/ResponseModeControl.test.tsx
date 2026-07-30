@@ -120,6 +120,23 @@ describe('ResponseModeControl', () => {
       expect(onChange).toHaveBeenCalledExactlyOnceWith('silent');
     });
 
+    it('commits nothing for the rung that is already chosen', () => {
+      // Every commit is a network write. Pressing the rung the control is
+      // already showing as checked is not a change, and a write that stores
+      // what is already stored is one the reader cannot see happen — which is
+      // exactly how a DM's `engaged` was quietly narrowed to `mention-only`.
+      //
+      // The second click is the barrier: without it this would pass just as
+      // well with `onChange` never wired up at all.
+      const { onChange } = renderControl({ on, value: 'mention' });
+
+      fireEvent.click(screen.getByRole('radio', { name: '@only' }));
+      expect(onChange).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Silent' }));
+      expect(onChange).toHaveBeenCalledExactlyOnceWith('silent');
+    });
+
     it('describes every rung by what it does, not only by what it is called', () => {
       // Red if the wiring is dropped: a screen reader would be left with a
       // one-word label, which is exactly the state five peer sentences left
