@@ -234,6 +234,16 @@ export interface ConnectorProvider {
  * disclosure line, and (when a configured provider refused to register) the
  * honest error text, e.g. the Nango encryption-key refusal.
  */
+/**
+ * Which credential KIND a provider's stored key validated as. Composio issues
+ * two: project API keys (authenticate via `x-api-key`) and user-account keys
+ * (`uak_…`, the CLI's kind, via `x-user-api-key`) — both work, and the setup
+ * card can say which one it is using. `unknown` until a real call validates.
+ */
+export const ConnectorKeyKindSchema = z.enum(['project', 'user', 'unknown']);
+/** Which credential kind validated. See {@link ConnectorKeyKindSchema}. */
+export type ConnectorKeyKind = z.infer<typeof ConnectorKeyKindSchema>;
+
 export const ConnectorProviderStatusSchema = z.object({
   /** Backend type identifier, e.g. `'composio' | 'nango'`. */
   type: z.string(),
@@ -247,6 +257,8 @@ export const ConnectorProviderStatusSchema = z.object({
   disclosure: z.string(),
   /** Why a configured provider is not registered (secret-free), when it isn't. */
   error: z.string().optional(),
+  /** Which credential kind the stored key validated as, when the provider reports it. */
+  keyKind: ConnectorKeyKindSchema.optional(),
 });
 /** One provider's setup state. See {@link ConnectorProviderStatusSchema}. */
 export type ConnectorProviderStatus = z.infer<typeof ConnectorProviderStatusSchema>;

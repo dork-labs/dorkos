@@ -26,12 +26,18 @@ const VALID_ENCRYPTION_KEY = Buffer.alloc(32).toString('base64');
  * (401) branch. No method touches the network.
  */
 function fakeComposioClient(failProbeWith?: Error): ComposioHttpClient {
+  // Mirrors the real client's kind tracking: 'unknown' until a call succeeds.
+  let validated = false;
   return {
+    keyKind: () => (validated ? 'user' : 'unknown'),
     listToolkits: () => Promise.resolve([]),
     initiateConnection: () => Promise.reject(new Error('not used')),
     getConnectionState: () => Promise.reject(new Error('not used')),
-    listConnectedAccounts: () =>
-      failProbeWith ? Promise.reject(failProbeWith) : Promise.resolve([]),
+    listConnectedAccounts: () => {
+      if (failProbeWith) return Promise.reject(failProbeWith);
+      validated = true;
+      return Promise.resolve([]);
+    },
     deleteConnectedAccount: () => Promise.resolve(),
     mcpSessionForAccount: () => Promise.resolve(null),
   };
@@ -208,6 +214,17 @@ describe('ConnectorProviderBootstrapper', () => {
       const healthy = await bootstrapper.reload('nango');
       expect(healthy.registered).toBe(true);
       expect(healthy.error).toBeUndefined();
+    });
+
+    it('the status names which key kind validated once the probe succeeds (DOR-736)', async () => {
+      secrets.set(COMPOSIO_API_KEY_REF, 'uak_founder_key');
+      const bootstrapper = makeBootstrapper();
+      const status = await bootstrapper.reload('composio');
+      // The probe validated the key, so the card can say what it is using.
+      expect(status).toMatchObject({ registered: true, keyKind: 'user' });
+      // A provider that does not track kinds (nango) simply omits the field.
+      const statuses = await bootstrapper.listStatuses();
+      expect(statuses.find((s) => s.type === 'nango')!.keyKind).toBeUndefined();
     });
 
     it('a key that fails the connection check never registers — the founder-401 case', async () => {

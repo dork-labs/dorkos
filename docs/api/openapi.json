@@ -11415,6 +11415,14 @@
                           },
                           "error": {
                             "type": "string"
+                          },
+                          "keyKind": {
+                            "type": "string",
+                            "enum": [
+                              "project",
+                              "user",
+                              "unknown"
+                            ]
                           }
                         },
                         "required": [
@@ -11502,6 +11510,14 @@
                     },
                     "error": {
                       "type": "string"
+                    },
+                    "keyKind": {
+                      "type": "string",
+                      "enum": [
+                        "project",
+                        "user",
+                        "unknown"
+                      ]
                     }
                   },
                   "required": [
@@ -11573,6 +11589,14 @@
                     },
                     "error": {
                       "type": "string"
+                    },
+                    "keyKind": {
+                      "type": "string",
+                      "enum": [
+                        "project",
+                        "user",
+                        "unknown"
+                      ]
                     }
                   },
                   "required": [

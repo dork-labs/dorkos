@@ -34,6 +34,7 @@
  */
 import type {
   ConnectorCustody,
+  ConnectorKeyKind,
   ConnectorProvider,
   ConnectorProviderStatus,
 } from '@dorkos/shared/connector-provider';
@@ -124,6 +125,15 @@ interface ManagedProviderSpec {
 /** Strip a `file:` prefix down to the credential-store name. */
 function credentialNameOf(ref: string): string {
   return ref.replace(/^file:/, '');
+}
+
+/** Whether a registered provider reports which credential kind validated. */
+function reportsKeyKind(provider: unknown): provider is { keyKind(): ConnectorKeyKind } {
+  return (
+    typeof provider === 'object' &&
+    provider !== null &&
+    typeof (provider as { keyKind?: unknown }).keyKind === 'function'
+  );
 }
 
 /**
@@ -294,11 +304,16 @@ export class ConnectorProviderBootstrapper {
   /** Build one provider's reference-free status DTO. */
   private async _statusFor(spec: ManagedProviderSpec): Promise<ConnectorProviderStatus> {
     const error = this._lastError.get(spec.type);
+    const live = this._registry.resolveProvider(spec.type);
+    // Which credential kind validated (Composio has two, with different auth
+    // headers) — a fact the card states, never a secret or a reference.
+    const keyKind = live !== undefined && reportsKeyKind(live) ? live.keyKind() : undefined;
     return {
       type: spec.type,
       configured: await spec.configured(),
-      registered: this._registry.resolveProvider(spec.type) !== undefined,
+      registered: live !== undefined,
       custody: spec.custody,
+      ...(keyKind !== undefined && { keyKind }),
       // Managed custody reuses the ADR-canonical sentence verbatim; other
       // stances render their service-independent disclosure copy. Copy stays
       // server-owned either way (custody-disclosure module).
