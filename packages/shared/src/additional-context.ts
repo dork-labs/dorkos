@@ -247,10 +247,23 @@ export interface RoomContextData {
     responseMode: ResponseMode;
     /**
      * ISO timestamp an `engaged` window expires, or `null` when there is none.
-     * Always `null` today: the `engaged` mode itself is a later phase of the
-     * room-participation spec (§9), and this carries its value when it lands.
+     *
+     * `null` for every mode other than `engaged`, which is not the same claim as
+     * "not engaged": the other four have no window, so reporting one would
+     * describe a bound nothing applies.
      */
     engagedUntil: string | null;
+    /**
+     * How many more messages from other members that same window survives, or
+     * `null` alongside {@link RoomContextData.addressing.engagedUntil}.
+     *
+     * The window ends on whichever of the two runs out first, so a deadline on
+     * its own is half a rule. Remaining rather than the configured ceiling: an
+     * agent cannot see how much of the window has already been spent, so a
+     * ceiling is a number it could not place itself against. `0` means the next
+     * message from anybody else closes it.
+     */
+    engagedPostsLeft: number | null;
     /** True when the triggering entry mentioned this agent by name. */
     addressedNow: boolean;
   };
@@ -401,6 +414,7 @@ export const RoomContextDataSchema = z.object({
   addressing: z.object({
     responseMode: ResponseModeSchema,
     engagedUntil: z.string().nullable(),
+    engagedPostsLeft: z.number().int().nullable(),
     addressedNow: z.boolean(),
   }),
   budget: z.object({

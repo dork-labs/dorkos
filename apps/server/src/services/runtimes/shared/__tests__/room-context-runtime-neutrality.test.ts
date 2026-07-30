@@ -57,7 +57,12 @@ const ENTRY: AdditionalContextEntry = {
     ],
     pendingTruncated: false,
     ownRecent: [],
-    addressing: { responseMode: 'always', engagedUntil: null, addressedNow: false },
+    addressing: {
+      responseMode: 'always',
+      engagedUntil: null,
+      engagedPostsLeft: null,
+      addressedNow: false,
+    },
     budget: {
       automaticRepliesLeftInThisRoomThisHour: 41,
       automaticRepliesLeftInTotalThisHour: 187,

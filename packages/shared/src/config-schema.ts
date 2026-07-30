@@ -759,6 +759,32 @@ export const UserConfigSchema = z.object({
        * §9).
        */
       lateReplyCeilingMinutes: z.number().int().min(1).max(1440).default(60),
+      /**
+       * How long an agent stays addressable after you talk to it, before it goes
+       * back to needing an @mention. Talking to it again starts the clock over.
+       *
+       * This is the ceiling, not the setting: a room can hold an agent to a
+       * shorter window, never a longer one. `0` means an agent is only ever
+       * addressable by @mention, whatever any room says.
+       *
+       * Like every number in this area, it is a judgement rather than a
+       * measurement — see `meta/agent-etiquette.md` §9. Nobody publishes a
+       * defensible figure for how long a person expects to keep talking to
+       * something without naming it again, so this one is ours, to be tuned by
+       * using the product.
+       */
+      engagedWindowMinutes: z.number().int().min(0).max(1440).default(10),
+      /**
+       * How many messages from other people can go by before an agent stops
+       * treating itself as part of the conversation. Talking to it again starts
+       * the count over.
+       *
+       * The second half of the same window, and it ends on whichever runs out
+       * first — a quiet ten minutes and a busy ten messages are both reasons to
+       * stop assuming a question was meant for you. Also a ceiling, and also a
+       * judgement rather than a measurement.
+       */
+      engagedWindowPosts: z.number().int().min(0).max(100).default(5),
     })
     .default(() => ({
       maxAgentDepth: 3,
@@ -766,6 +792,8 @@ export const UserConfigSchema = z.object({
       maxAutomaticTurnsTotalPerHour: 240,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 10,
+      engagedWindowPosts: 5,
     })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],

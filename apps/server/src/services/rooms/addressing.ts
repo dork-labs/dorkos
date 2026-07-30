@@ -24,6 +24,15 @@ export interface AddressingMember {
   kind: AuthorKind;
   /** This room's stored override, not the manifest default. */
   responseMode: ResponseMode;
+  /**
+   * Whether this member is still inside its engaged window here — the §9.2
+   * predicate, already evaluated.
+   *
+   * A boolean rather than a query, because that predicate needs a clock and the
+   * room log and this module has neither. `engagement.ts` computes it and
+   * `room-trigger.ts` threads it in; every other mode ignores it.
+   */
+  isEngaged: boolean;
 }
 
 /** The entry being addressed. */
@@ -40,22 +49,30 @@ export interface AddressingEntry {
  * | -------------- | ------------------------------------------------ |
  * | `silent`       | never                                            |
  * | `mention-only` | mentioned                                        |
+ * | `engaged`      | mentioned, or still inside the engaged window    |
  * | `direct-only`  | the room is a DM, or mentioned                   |
  * | `always`       | always                                           |
+ *
+ * `engaged` reads `isEngaged` and never recomputes it: being mentioned resets
+ * the window by construction, because the mention becomes its newest anchor, so
+ * the two terms overlap rather than compete.
  *
  * @param mode - The member's per-room response mode.
  * @param opts.roomKind - The room's kind.
  * @param opts.mentioned - Whether this member is in the entry's resolved mentions.
+ * @param opts.isEngaged - The already-evaluated engaged-window predicate.
  */
 export function respondsTo(
   mode: ResponseMode,
-  opts: { roomKind: RoomKind; mentioned: boolean }
+  opts: { roomKind: RoomKind; mentioned: boolean; isEngaged: boolean }
 ): boolean {
   switch (mode) {
     case 'silent':
       return false;
     case 'mention-only':
       return opts.mentioned;
+    case 'engaged':
+      return opts.mentioned || opts.isEngaged;
     case 'direct-only':
       return opts.roomKind === 'dm' || opts.mentioned;
     case 'always':
@@ -86,6 +103,7 @@ export function selectTriggerTargets(opts: {
       respondsTo(member.responseMode, {
         roomKind: opts.roomKind,
         mentioned: mentioned.has(member.authorId),
+        isEngaged: member.isEngaged,
       })
     )
     .map((member) => member.authorId);

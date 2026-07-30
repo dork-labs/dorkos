@@ -64,9 +64,14 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   trigger was skipped. Nothing is wrong with the agent; it was just occupied.
  * - `turn_failed` — the agent started answering and the turn ended in an error,
  *   or it never finished at all.
+ * - `addressing_changed` — DorkOS itself changed when the agents in this room
+ *   answer. The only code not written by `room-notices.ts`: migration 0039 wrote
+ *   it once, into every channel whose members it moved from `mention-only` to
+ *   `engaged` (room-participation spec §9.4). A widening nobody asked for has to
+ *   say so, because absence is never consent.
  */
 export const RoomNoticeCodeSchema = z
-  .enum(['cascade_stopped', 'budget_reached', 'agent_busy', 'turn_failed'])
+  .enum(['cascade_stopped', 'budget_reached', 'agent_busy', 'turn_failed', 'addressing_changed'])
   .openapi('RoomNoticeCode');
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
@@ -211,7 +216,7 @@ export const RoomMemberSchema = z
     roomId: z.string().min(1),
     authorId: z.string().min(1),
     responseMode: ResponseModeSchema.describe(
-      'Per-room override, written explicitly at join time. Seeded from the manifest for a DM and "mention-only" for a channel. A thread is a position inside a channel rather than a room of its own, so a reply there reads the channel\'s value.'
+      'Per-room override, written explicitly at join time. Seeded from the manifest for a DM and "engaged" for a channel. A thread is a position inside a channel rather than a room of its own, so a reply there reads the channel\'s value — but the engaged window itself is thread-scoped, so being addressed in a thread does not engage the agent across the whole channel.'
     ),
     joinedAt: z.string(),
     lastReadSeq: z.number().int().min(0).describe('The (member, room) read cursor.'),
@@ -387,7 +392,7 @@ export const AddRoomMemberRequestSchema = z
       .optional()
       .describe('Add an agent by its directory, minting the author row if this is its first room.'),
     responseMode: ResponseModeSchema.optional().describe(
-      'Omit to seed from the room kind: the agent manifest for a DM, "mention-only" for a channel.'
+      'Omit to seed from the room kind: the agent manifest for a DM, "engaged" for a channel.'
     ),
   })
   .refine((v) => v.authorId !== undefined || v.agentPath !== undefined, {

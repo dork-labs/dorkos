@@ -140,17 +140,40 @@ The full request and response shapes are in the [API reference](/docs/api).
 Each agent member of a room has a response mode that decides whether a given message triggers a
 reply from it:
 
-| Response mode  | Replies when                           |
-| -------------- | -------------------------------------- |
-| `silent`       | never                                  |
-| `mention-only` | mentioned by name                      |
-| `direct-only`  | the room is a DM, or mentioned by name |
-| `always`       | every message                          |
+| Response mode  | Replies when                                        | Offered in        |
+| -------------- | --------------------------------------------------- | ----------------- |
+| `silent`       | never                                               | channels and DMs  |
+| `mention-only` | mentioned by name                                   | channels and DMs  |
+| `direct-only`  | the room is a DM, or mentioned by name              | channels and DMs  |
+| `engaged`      | mentioned by name, and for a short while after that | **channels only** |
+| `always`       | every message                                       | channels and DMs  |
 
 A direct message seeds each agent's response mode from that agent's own default (`always` unless
-configured otherwise). A channel seeds new members as `mention-only`. Mentions are resolved once,
+configured otherwise). A channel seeds new members as `engaged`. Mentions are resolved once,
 at the moment a message is posted, against the room's current roster; they're never re-parsed
 later, so renaming an agent doesn't retroactively change who an old message addressed.
+
+#### Staying in the conversation
+
+`engaged` is the channel default because the two either side of it are both wrong for a room you
+actually work in. `mention-only` charges you an `@` on every single message, even when it is
+obvious who you are talking to. `always` means an agent answers everything anybody says, which in a
+room with more than one of them is a conversation you are no longer part of.
+
+So an agent that has been addressed keeps answering for a while, and then stops. The window ends
+after **10 minutes**, or after **5 messages from other people**, whichever comes first — and talking
+to it again starts both over. Both numbers are settings (`rooms.engagedWindowMinutes` and
+`rooms.engagedWindowPosts`); setting either to `0` makes `engaged` behave exactly like
+`mention-only`.
+
+The window is per thread. Asking an agent something inside a thread keeps it in that thread, not in
+the whole channel — and talking to it in the channel does not pull it into every thread that happens
+to be open.
+
+A direct message does not offer `engaged`, which is what the last column above means. Nobody `@`s
+anyone in a two-person conversation, so the window would never open and the setting would quietly
+mean "only when @mentioned". The agent's own default in `agent.json` does not offer it either — that
+value seeds a direct message, and this is a channel setting.
 
 ### Who sees which rooms
 

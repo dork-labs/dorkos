@@ -18,8 +18,20 @@ import type { MentionCandidate } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
-/** The membership seed a channel gets, per spec §2. */
-const CHANNEL_RESPONSE_MODE: ResponseMode = 'mention-only';
+/**
+ * The membership seed a channel gets (room-participation spec §9.4).
+ *
+ * `engaged`, not `mention-only`. The old seed taxed a person with an `@` on
+ * every single message, which is the top complaint in both upstream trackers;
+ * `always` is agent dominance by construction, because a participant that never
+ * has to think cannot lose the race to speak. `engaged` is the only bounded
+ * option, because it decays — see `engagement.ts`.
+ *
+ * Changing this constant changes NEW joins only. The value is written explicitly
+ * at join time and stays written, so migration 0039 is what moved the
+ * memberships that already existed.
+ */
+const CHANNEL_RESPONSE_MODE: ResponseMode = 'engaged';
 
 /**
  * What a non-agent membership stores. The column is NOT NULL and the value is
@@ -170,10 +182,10 @@ export class RoomRoster {
   }
 
   /**
-   * The `responseMode` a membership is seeded with, per spec §2: `mention-only`
-   * in a channel, the agent's manifest default in a DM. Written explicitly at
-   * join time, so nothing has to re-derive it later and changing the manifest
-   * never rewrites a room somebody already configured.
+   * The `responseMode` a membership is seeded with: `engaged` in a channel, the
+   * agent's manifest default in a DM. Written explicitly at join time, so
+   * nothing has to re-derive it later and changing the manifest never rewrites a
+   * room somebody already configured.
    *
    * There is no third case. A thread is a position inside a channel, not a room
    * (ADR 260728-022013), so a reply there reads the channel's membership and

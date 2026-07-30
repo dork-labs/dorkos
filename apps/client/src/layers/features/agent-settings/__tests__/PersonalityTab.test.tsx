@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 // Mock useDebouncedInput before importing PersonalityTab (prevents Zustand app-store init)
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -72,6 +72,24 @@ const mockAgent = {
   personaEnabled: true,
   enabledToolGroups: {},
 };
+
+// Radix Select drives itself with pointer capture and scrolls the highlighted
+// option into view — browser APIs jsdom does not implement, and without them the
+// listbox never opens, so the closed trigger is all a test can see.
+beforeAll(() => {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+  Element.prototype.scrollIntoView = () => {};
+});
+
+/** Open the response-mode menu and read back every option it offers. */
+function offeredModes(): string[] {
+  fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+  return within(screen.getByRole('listbox'))
+    .getAllByRole('option')
+    .map((option) => option.textContent ?? '');
+}
 
 describe('PersonalityTab', () => {
   beforeEach(() => {
@@ -155,6 +173,55 @@ describe('PersonalityTab', () => {
 
     expect(screen.getByText('Response Mode')).toBeInTheDocument();
     expect(screen.getByText('Always respond')).toBeInTheDocument();
+  });
+
+  /**
+   * The blank-control failure, pinned from both sides.
+   *
+   * `UpdateAgentRequestSchema` `.pick()`s `behavior` off the manifest whole, so
+   * `PATCH /api/mesh/agents/:id` accepts the full `ResponseModeSchema` — this
+   * value is reachable without any UI ever offering it, and a Select with no
+   * matching item renders its trigger empty.
+   */
+  it('shows a stored engaged mode rather than blanking the control', () => {
+    render(
+      <PersonalityTab
+        agent={{ ...mockAgent, behavior: { responseMode: 'engaged' as const } }}
+        soulContent="soul"
+        nopeContent="nope"
+        onUpdate={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Stays in the conversation (per room)')).toBeInTheDocument();
+  });
+
+  it('does not offer engaged as a fresh choice, because it only seeds a DM here', () => {
+    render(
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
+    );
+
+    // Four options and no fifth: at the manifest level `engaged` would seed a
+    // direct message, where the window never opens. A person picks it per room.
+    expect(offeredModes()).toEqual([
+      'Always respond',
+      'Direct messages only',
+      'Only when mentioned',
+      'Never respond automatically',
+    ]);
+  });
+
+  it('offers the fifth only to the agent that already stores it', () => {
+    render(
+      <PersonalityTab
+        agent={{ ...mockAgent, behavior: { responseMode: 'engaged' as const } }}
+        soulContent="soul"
+        nopeContent="nope"
+        onUpdate={vi.fn()}
+      />
+    );
+
+    expect(offeredModes()).toContain('Stays in the conversation (per room)');
   });
 
   it('renders with null convention content without crashing', () => {

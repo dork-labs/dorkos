@@ -21,6 +21,7 @@ import {
   lt,
   gt,
   ne,
+  isNull,
   sql,
   count,
   desc,
@@ -538,6 +539,69 @@ export class RoomStore {
       .limit(limit)
       .all();
     return rows.reverse().map(toEntry);
+  }
+
+  /**
+   * The newest posts in one thread scope that somebody else wrote, NEWEST
+   * FIRST — the engaged window's only read (`engagement.ts`, spec §9.2).
+   *
+   * Three predicates, each of them load-bearing:
+   *
+   * - **Thread scope.** `null` means the channel's top level, which is
+   *   `thread_root_entry_id IS NULL` rather than "no filter": being addressed
+   *   inside a thread must not engage an agent across the whole channel, and
+   *   the reverse (spec §3.2).
+   * - **`kind = 'post'`.** A notice is the room talking about the conversation,
+   *   not a turn in it, so it neither anchors a window nor decays one.
+   * - **Not this author.** An agent's own posts do not decay its own window, and
+   *   an entry it wrote cannot be the message that addressed it.
+   *
+   * Newest-first is the ordering the caller counts in: the index of the newest
+   * entry mentioning the member IS how many messages by others have landed since
+   * it.
+   *
+   * **The two scopes are served by two different indexes, and only one of them
+   * was free.** The top-level scope walks the `(room_id, seq)` primary key
+   * backwards and stops at `limit`, with the other three clauses as residual
+   * filters — right, because in a channel most rows are top-level posts, so the
+   * first few it meets are the ones it wants. The thread scope cannot do that:
+   * a thread is a handful of rows scattered through a long log, so a primary-key
+   * walk reads the WHOLE room before it collects `limit` of them. It did exactly
+   * that until migration 0040 put `seq` into `idx_room_entries_thread_root` —
+   * measured at 5.5ms per call on a 50k-entry channel, once per engaged agent
+   * per message. `packages/db/src/schema/rooms.ts` records why the fix is a
+   * third index column rather than an `INDEXED BY` hint, and
+   * `__tests__/engagement.test.ts` pins the plan so a regression is visible
+   * rather than merely slow.
+   *
+   * @param roomId - The room.
+   * @param opts.threadRootEntryId - The thread to scope to, or `null` for the
+   *   channel's top level.
+   * @param opts.excludeAuthorId - The member the window is being evaluated for.
+   * @param opts.limit - How many of the newest to read.
+   */
+  listRecentPostsByOthers(
+    roomId: string,
+    opts: { threadRootEntryId: string | null; excludeAuthorId: string; limit: number }
+  ): RoomEntry[] {
+    if (opts.limit <= 0) return [];
+    const rows = this.db
+      .select()
+      .from(roomEntries)
+      .where(
+        and(
+          eq(roomEntries.roomId, roomId),
+          opts.threadRootEntryId === null
+            ? isNull(roomEntries.threadRootEntryId)
+            : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId),
+          eq(roomEntries.kind, 'post'),
+          ne(roomEntries.authorId, opts.excludeAuthorId)
+        )
+      )
+      .orderBy(desc(roomEntries.seq))
+      .limit(opts.limit)
+      .all();
+    return rows.map(toEntry);
   }
 
   /**

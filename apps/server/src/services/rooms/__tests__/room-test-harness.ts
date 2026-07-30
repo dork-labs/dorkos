@@ -13,6 +13,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Db } from '@dorkos/db';
 import { AuthorRegistry } from '../author-registry.js';
+import type { EngagedWindow } from '../engagement.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
@@ -137,6 +138,9 @@ export interface RoomHarness {
  *   literal, and high enough by default that it never silently masks a cascade
  *   test — a budget refusal and a guard refusal look alike from the outside.
  * @param opts.maxAutomaticTurnsTotalPerHour - The install-wide spend cap.
+ * @param opts.engagedWindow - The two engaged-window ceilings. A literal for the
+ *   same reason as the ceiling above, and shipped-default-shaped so a test that
+ *   does not care about the window still gets the behaviour a person would.
  * @param opts.ownerUserId - The account that owns this install, when the test is
  *   about one. Omitted means "no accounts", which is the default posture and the
  *   one where the `'local'` author is the owner. Resolved through the real
@@ -149,6 +153,7 @@ export function createRoomHarness(opts: {
   maxAgentDepth?: number;
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
+  engagedWindow?: EngagedWindow;
   ownerUserId?: string;
 }): RoomHarness {
   const db = createTestDb();
@@ -157,6 +162,7 @@ export function createRoomHarness(opts: {
   const maxAgentDepth = opts.maxAgentDepth ?? 3;
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
+  const engagedWindow = opts.engagedWindow ?? { minutes: 10, posts: 5 };
   // Mutable so `setOwner` can drive the transition, and read per check the way
   // the live wiring reads it — an install becomes owned partway through its life.
   let ownerUserId = opts.ownerUserId ?? null;
@@ -168,6 +174,7 @@ export function createRoomHarness(opts: {
     turns: runner,
     budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
     maxAgentDepth: () => maxAgentDepth,
+    engagedWindow: () => engagedWindow,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
   });
   const human = ownerUserId === null ? authors.localHuman() : authors.bindOwner(ownerUserId);

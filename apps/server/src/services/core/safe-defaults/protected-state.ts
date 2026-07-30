@@ -239,6 +239,17 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     direction: 'lower',
     reason: 'Install-wide automatic-turn spend cap.',
   },
+  {
+    path: 'rooms.engagedWindowMinutes',
+    direction: 'lower',
+    reason:
+      'How long an agent keeps answering after somebody addressed it. A shorter window is a tightened bound, and a wipe that lengthened it would put agents back into conversations a person had narrowed them out of.',
+  },
+  {
+    path: 'rooms.engagedWindowPosts',
+    direction: 'lower',
+    reason: 'The same window, counted in messages from other members instead of minutes.',
+  },
 ] as const;
 
 /**

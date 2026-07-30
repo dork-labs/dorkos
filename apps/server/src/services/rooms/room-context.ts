@@ -41,6 +41,7 @@ import type {
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { advertisedHandles, mentionCandidatesFrom } from './author-handles.js';
+import type { EngagementWindow } from './engagement.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
@@ -100,6 +101,16 @@ export interface RoomContextInput {
   budget: { room: number; global: number };
   /** The cascade ceiling minus this turn's depth. */
   repliesLeftInThisChain: number;
+  /**
+   * This agent's open engaged window here, or `null` when it is not in one — a
+   * `responseMode` other than `engaged` is always `null`, because saying
+   * otherwise would describe a window nothing reads.
+   *
+   * Passed in rather than derived: the predicate needs a clock and this module
+   * has none (`engagement.ts` owns it, `room-trigger.ts` evaluates it once per
+   * entry and threads it here).
+   */
+  engaged: EngagementWindow | null;
 }
 
 /**
@@ -216,9 +227,8 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     addressing: {
       responseMode:
         self?.responseMode ?? fallbackResponseMode(deps, records.get(input.agentAuthorId)),
-      // The `engaged` mode is a later phase (spec §9); nothing can be engaged
-      // yet, so this is honestly null rather than speculatively computed.
-      engagedUntil: null,
+      engagedUntil: input.engaged?.until.toISOString() ?? null,
+      engagedPostsLeft: input.engaged?.postsLeft ?? null,
       addressedNow: input.entry.mentions.includes(input.agentAuthorId),
     },
     budget: {

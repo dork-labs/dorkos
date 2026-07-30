@@ -55,6 +55,7 @@ import { logger } from '../../lib/logger.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import type { AuthorRegistry } from './author-registry.js';
 import { evaluateCascade } from './cascade-guard.js';
+import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
 import { buildRoomContext } from './room-context.js';
 import {
   buildBudgetNotice,
@@ -188,6 +189,11 @@ export interface RoomTriggerDeps {
   budget: RoomTurnBudget;
   /** The live `rooms.maxAgentDepth`, read per dispatch so a change takes effect. */
   maxAgentDepth(): number;
+  /**
+   * The live engaged-window ceilings, read per dispatch for the same reason:
+   * shortening the window in Settings has to bind the very next message.
+   */
+  engagedWindow(): EngagedWindow;
 }
 
 /**
@@ -329,14 +335,39 @@ export class RoomTriggerDispatcher {
   private claimTargets(room: Room, entry: RoomEntry): TriggerTarget[] {
     const members = this.deps.store.listMembers(room.id);
     const records = this.deps.authors.getMany(members.map((m) => m.authorId));
+    // ONCE PER ENTRY, not once per turn. The engaged window is per member, but
+    // its thread scope and its clock are shared by everyone this entry could
+    // trigger — and the answer has to be the same for addressing and for the
+    // context the turn is handed, or an agent gets told it is engaged by the
+    // very message that decided it was not.
+    const window = this.deps.engagedWindow();
+    const now = new Date();
+    const threadRootEntryId = entry.threadRootEntryId ?? null;
+    const engaged = new Map<string, EngagementWindow>();
     const addressing: AddressingMember[] = [];
     for (const member of members) {
       const record = records.get(member.authorId);
       if (!record) continue;
+      // Only an `engaged` agent that did not write this entry can be inside a
+      // window, so no other membership pays for the query.
+      const open =
+        record.kind === 'agent' &&
+        member.responseMode === 'engaged' &&
+        member.authorId !== entry.authorId
+          ? engagementFor(this.deps, {
+              roomId: room.id,
+              threadRootEntryId,
+              authorId: member.authorId,
+              window,
+              now,
+            })
+          : null;
+      if (open) engaged.set(member.authorId, open);
       addressing.push({
         authorId: member.authorId,
         kind: record.kind,
         responseMode: member.responseMode,
+        isEngaged: open !== null,
       });
     }
 
@@ -416,6 +447,7 @@ export class RoomTriggerDispatcher {
         agentPath: record.naturalKey,
         displayName: record.displayName,
         depth: decision.depth,
+        engaged: engaged.get(authorId) ?? null,
         // Replaced with the real binding once the budget has been charged; a
         // target that never becomes affordable never mints a session.
         sessionId: '',
@@ -524,6 +556,7 @@ export class RoomTriggerDispatcher {
           working: this.workingIn(room.id),
           budget: this.deps.budget.remaining(room.id),
           repliesLeftInThisChain: Math.max(0, this.deps.maxAgentDepth() - target.depth),
+          engaged: target.engaged,
         }),
       });
 
@@ -792,6 +825,12 @@ interface TriggerTarget {
   agentPath: string;
   displayName: string;
   depth: number;
+  /**
+   * Its open engaged window, or `null` when it is not in one. Carried from the
+   * per-entry evaluation rather than recomputed for the turn: the same clock,
+   * the same answer.
+   */
+  engaged: EngagementWindow | null;
   /** The `(room, agent)` session, bound at claim time so a race resolves to one. */
   sessionId: string;
 }

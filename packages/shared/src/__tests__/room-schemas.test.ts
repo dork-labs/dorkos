@@ -91,7 +91,7 @@ describe('canonicalizeEntry', () => {
 
 describe('responseMode reuse', () => {
   it('is the same enum the agent manifest already ships — one declaration, two scopes', () => {
-    const values = ['always', 'direct-only', 'mention-only', 'silent'];
+    const values = ['always', 'engaged', 'direct-only', 'mention-only', 'silent'];
     expect(ResponseModeSchema.options).toEqual(values);
     for (const responseMode of values) {
       expect(AgentBehaviorSchema.parse({ responseMode }).responseMode).toBe(responseMode);

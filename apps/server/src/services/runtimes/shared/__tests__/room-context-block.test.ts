@@ -75,7 +75,12 @@ function context(overrides: Partial<RoomContextData> = {}): RoomContextData {
         mentionsMe: false,
       },
     ],
-    addressing: { responseMode: 'mention-only', engagedUntil: null, addressedNow: true },
+    addressing: {
+      responseMode: 'mention-only',
+      engagedUntil: null,
+      engagedPostsLeft: null,
+      addressedNow: true,
+    },
     budget: {
       automaticRepliesLeftInThisRoomThisHour: 41,
       automaticRepliesLeftInTotalThisHour: 187,
@@ -138,6 +143,52 @@ describe('what the block tells an agent', () => {
     expect(where).toBe('You are in Ana Reyes, a direct message.');
     expect(identity).toContain('You are @ana here.');
     expect(identity).not.toContain('room');
+  });
+
+  it('says an engaged agent is still in the conversation, and on what terms', () => {
+    const block = formatRoomContext(
+      context({
+        addressing: {
+          responseMode: 'engaged',
+          engagedUntil: '2026-07-28T14:12:00.000Z',
+          engagedPostsLeft: 3,
+          addressedNow: false,
+        },
+      }),
+      { nonce: NONCE }
+    );
+    expect(block).toContain(
+      'You answer here when somebody mentions you, and for a short while afterwards'
+    );
+    // The time ALONE would read as the whole rule, and it is half of it: the
+    // window ends on other people's messages too.
+    expect(block).toContain(
+      'You are engaged in this conversation until 14:12, or until 3 more messages from ' +
+        'other members — whichever comes first.'
+    );
+  });
+
+  it.each([
+    [1, 'until 14:12, or until 1 more message from another member — whichever comes first.'],
+    [0, 'until 14:12, or until the next message from another member — whichever comes first.'],
+  ])('counts the last of the window out rather than rounding it off (%i left)', (left, clause) => {
+    const block = formatRoomContext(
+      context({
+        addressing: {
+          responseMode: 'engaged',
+          engagedUntil: '2026-07-28T14:12:00.000Z',
+          engagedPostsLeft: left,
+          addressedNow: false,
+        },
+      }),
+      { nonce: NONCE }
+    );
+    expect(block).toContain(clause);
+  });
+
+  it('claims no window for a mode that has none', () => {
+    const block = formatRoomContext(context(), { nonce: NONCE });
+    expect(block).not.toContain('You are engaged in this conversation');
   });
 
   it('reports the budget as numbers the agent can spend against', () => {

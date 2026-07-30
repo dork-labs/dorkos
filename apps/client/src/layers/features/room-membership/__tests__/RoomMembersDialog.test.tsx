@@ -104,6 +104,8 @@ function renderPanel(
     intent?: 'roster' | 'add';
     agents?: ReturnType<typeof settled>;
     onOpenChange?: (open: boolean) => void;
+    /** The room the panel is opened over. Defaults to the channel above. */
+    room?: RoomSummary;
   } = {}
 ) {
   const transport =
@@ -125,7 +127,7 @@ function renderPanel(
   mockRosterRef.current = opts.agents ?? FLEET;
   const utils = render(
     <RoomMembersDialog
-      room={ROOM}
+      room={opts.room ?? ROOM}
       open
       onOpenChange={opts.onOpenChange ?? vi.fn()}
       intent={opts.intent ?? 'roster'}
@@ -225,6 +227,75 @@ describe('RoomMembersDialog', () => {
     expect(screen.getByRole('combobox', { name: 'When Ana replies' })).toHaveTextContent(
       'Replies only when @mentioned'
     );
+  });
+
+  describe('which modes a room offers', () => {
+    /** The same panel over a direct message rather than a channel. */
+    const DM: RoomSummary = { ...ROOM, kind: 'dm', slug: null, title: 'Ana' };
+
+    /** Open the mode menu for Ana and read back what it offers. */
+    async function offeredModes(): Promise<string[]> {
+      const trigger = screen.getByRole('combobox', { name: 'When Ana replies' });
+      fireEvent.keyDown(trigger, { key: 'Enter' });
+      const listbox = await screen.findByRole('listbox');
+      return within(listbox)
+        .getAllByRole('option')
+        .map((option) => option.textContent ?? '');
+    }
+
+    it('offers all five in a channel, degenerate pairings included', async () => {
+      renderPanel();
+      await rosterList();
+
+      expect(await offeredModes()).toEqual([
+        'Replies to everything',
+        'Replies while it is in the conversation',
+        'Replies when spoken to directly',
+        'Replies only when @mentioned',
+        'Never replies on its own',
+      ]);
+    });
+
+    it('withholds the engaged mode in a direct message, where its label is untrue', async () => {
+      // Nobody `@`s anyone in a two-person conversation, so the window never
+      // opens and "replies while it is in the conversation" would describe an
+      // agent that almost never replies. The other degenerate pairings stay,
+      // because their labels stay true — see `RESPONSE_MODE_OPTIONS`.
+      renderPanel({
+        room: DM,
+        transport: createMockTransport({
+          getRoom: vi.fn().mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana')])),
+        }),
+      });
+      await rosterList();
+
+      expect(await offeredModes()).toEqual([
+        'Replies to everything',
+        'Replies when spoken to directly',
+        'Replies only when @mentioned',
+        'Never replies on its own',
+      ]);
+    });
+
+    it('still shows a stored engaged value in a direct message rather than blanking', async () => {
+      // The API accepts it everywhere, so a DM membership can really hold it —
+      // and a control that renders empty for a value that exists is a setting
+      // nobody can fix.
+      renderPanel({
+        room: DM,
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana', 'engaged')])),
+        }),
+      });
+      await rosterList();
+
+      expect(screen.getByRole('combobox', { name: 'When Ana replies' })).toHaveTextContent(
+        'Replies while it is in the conversation'
+      );
+      expect(await offeredModes()).toContain('Replies while it is in the conversation');
+    });
   });
 
   it('writes the chosen response-mode override through the Transport port', async () => {

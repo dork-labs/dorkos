@@ -120,7 +120,12 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       ],
       pendingTruncated: false,
       ownRecent: [],
-      addressing: { responseMode: 'mention-only', engagedUntil: null, addressedNow: true },
+      addressing: {
+        responseMode: 'mention-only',
+        engagedUntil: null,
+        engagedPostsLeft: null,
+        addressedNow: true,
+      },
       budget: {
         automaticRepliesLeftInThisRoomThisHour: 41,
         automaticRepliesLeftInTotalThisHour: 187,

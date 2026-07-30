@@ -999,6 +999,8 @@ export function backfillRoomsDefaults(store: {
     maxAutomaticTurnsTotalPerHour: 240,
     replyWaitMinutes: 10,
     lateReplyCeilingMinutes: 60,
+    engagedWindowMinutes: 10,
+    engagedWindowPosts: 5,
   };
   const rooms = store.get('rooms');
   if (rooms == null) {
@@ -1403,7 +1405,9 @@ export const CONFIG_MIGRATIONS = {
     // to each other before a room stops them, plus the two spend caps that hold
     // whoever the caller claims to be — per room, and across the whole install.
     // Extended by DOR-621 with the two turn-wait bounds (`replyWaitMinutes`,
-    // `lateReplyCeilingMinutes`), which ship in this same unreleased key.
+    // `lateReplyCeilingMinutes`), and again by RP4 with the two engaged-window
+    // ceilings (`engagedWindowMinutes`, `engagedWindowPosts`), all of which ship
+    // in this same unreleased key.
     // Additive + idempotent; seeds the shipped defaults, so every bound is on
     // for every upgraded install.
     backfillRoomsDefaults(store);
