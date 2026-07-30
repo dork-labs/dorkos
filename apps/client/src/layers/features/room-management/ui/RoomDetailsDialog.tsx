@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UserMinus } from 'lucide-react';
-import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import { agentAuthorRef, type Room, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { initialOf } from '@/layers/shared/lib';
 import {
@@ -21,13 +20,18 @@ import {
 } from '@/layers/shared/ui';
 import {
   authorColor,
+  explainRung,
+  modeForRung,
   roomDisplayTitle,
+  rungOf,
+  rungsFor,
   useAddRoomMember,
   useRemoveRoomMember,
   useRoom,
   useSetMemberResponseMode,
-  responseModeOptionsFor,
+  type ResponseRung,
 } from '@/layers/entities/room';
+import { useEngagedWindow } from '@/layers/entities/config';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
@@ -100,6 +104,10 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
   const addMember = useAddRoomMember();
   const removeMember = useRemoveRoomMember();
   const setResponseMode = useSetMemberResponseMode();
+  // The ceilings the engaged rung is described with. `null` until the config
+  // read lands, and the sentence says less rather than quoting the numbers this
+  // install ships with — see `useEngagedWindow`.
+  const engagedWindow = useEngagedWindow();
   /** The member whose removal is waiting to be confirmed, by author id. */
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -165,8 +173,15 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
     }
   };
 
-  const handleModeChange = (member: RoomRosterEntry, mode: ResponseMode) => {
-    setResponseMode.mutate({ roomId: room.id, authorId: member.authorId, responseMode: mode });
+  // A rung is what a person picks; a `responseMode` is what gets stored. One
+  // canonical value per rung, so this panel never writes one of the two aliases
+  // whose meaning depends on which kind of room it ends up in.
+  const handleRungChange = (member: RoomRosterEntry, rung: ResponseRung) => {
+    setResponseMode.mutate({
+      roomId: room.id,
+      authorId: member.authorId,
+      responseMode: modeForRung(rung, room.kind),
+    });
   };
 
   const confirmRemoval = (member: RoomRosterEntry) => {
@@ -271,36 +286,47 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
                       </button>
                     </div>
 
-                    {/* The mode gets its own line rather than sharing one with
-                        the name: the longest label — "Replies while it is in the
-                        conversation" — does not fit beside an agent name at this
-                        width, and a setting truncated to "Replies while it i…"
-                        is one you cannot read. The full-width trigger clamps at
-                        one line too, so `room-conversation.spec.ts` measures the
-                        label against its box in a real browser; jsdom has no
-                        layout and would report every width as zero. */}
+                    {/* The rung gets its own line rather than sharing one with
+                        the name, and the sentence under it carries the weight
+                        the labels no longer do. A one-word label is only
+                        rankable next to the others, so the scale is the
+                        control's order and the sentence says what the chosen
+                        one actually does — with the numbers this install is
+                        really running. Widths are measured in
+                        `room-conversation.spec.ts`, in a real browser: jsdom
+                        has no layout and reports every width as zero. */}
                     <Select
-                      value={member.responseMode}
-                      onValueChange={(value) => handleModeChange(member, value as ResponseMode)}
+                      value={rungOf(member.responseMode, room.kind)}
+                      onValueChange={(value) => handleRungChange(member, value as ResponseRung)}
                     >
                       <SelectTrigger
                         className="mt-1.5 w-full"
-                        aria-label={`When ${member.author.displayName} replies`}
+                        aria-label={`How loud ${member.author.displayName} is here`}
                       >
                         <SelectValue />
                       </SelectTrigger>
-                      {/* Offered per membership, not per panel: a direct
-                          message withholds `engaged`, whose label is untrue
-                          there — unless this membership already holds it, in
-                          which case hiding it would blank the control. */}
+                      {/* Only the rungs this room has. A direct message offers
+                          three, because it only has three behaviours — and a
+                          stored value that would have been a fourth is
+                          projected onto one of them rather than blanking the
+                          control. */}
                       <SelectContent>
-                        {responseModeOptionsFor(room.kind, member.responseMode).map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
+                        {rungsFor(room.kind).map((option) => (
+                          <SelectItem key={option.rung} value={option.rung}>
                             {option.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                    <p className="text-muted-foreground mt-1.5 text-xs">
+                      {
+                        explainRung(
+                          rungOf(member.responseMode, room.kind),
+                          room.kind,
+                          engagedWindow
+                        ).sentence
+                      }
+                    </p>
 
                     {/* Confirmed in place rather than in a second dialog.
                           A dialog over a dialog closed BOTH when it was

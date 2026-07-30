@@ -133,22 +133,18 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     // channel was made through the UI, not through the fixture, so it carries
     // the shipped channel seed — `engaged` (room-participation spec §9.4) —
     // rather than whatever `roomsApi.createChannel` silences its rooms to.
-    const mode = panel.getByRole('combobox', { name: `When ${ana.name} replies` });
-    await expect(mode).toHaveText('Replies while it is in the conversation');
+    const scale = panel.getByRole('combobox', { name: `How loud ${ana.name} is here` });
+    await expect(scale).toHaveText('Engaged');
 
-    // And it has to be READABLE, not merely present. The trigger clamps its
-    // label to one line, so a label too long for the control is silently cut to
-    // "Replies while it i…" — a setting nobody can act on. This is the longest
-    // of the five, and jsdom cannot see it: it has no layout, so every width
-    // there is zero.
-    const clipped = await mode
-      .locator('span')
-      .first()
-      .evaluate((node) => {
-        const box = node as HTMLElement;
-        return box.scrollWidth > box.clientWidth;
-      });
-    expect(clipped, 'the response-mode label is truncated in its control').toBe(false);
+    // And the sentence under it has to carry the REAL numbers, which only a
+    // real server can prove. They come from `rooms.engagedWindowMinutes` and
+    // `rooms.engagedWindowPosts` over `GET /api/config`; with that plumbing
+    // broken the copy degrades to a numberless sentence and every unit test
+    // still passes, because a mock transport can be told anything. These are
+    // the shipped ceilings, and this cockpit has not changed them.
+    await expect(
+      panel.getByText('keeps answering for 10 more minutes or 5 more messages', { exact: false })
+    ).toBeVisible();
   });
 
   test('an empty channel says it is empty and hands you the button (DOR-600)', async ({

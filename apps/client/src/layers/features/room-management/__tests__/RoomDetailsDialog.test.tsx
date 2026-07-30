@@ -220,97 +220,118 @@ describe('RoomDetailsDialog', () => {
     expect(await screen.findByText(/No agents in here yet/i)).toBeInTheDocument();
   });
 
-  it('renders the stored response mode in words, not as its enum value', async () => {
-    renderPanel();
-    await rosterList();
-
-    expect(screen.getByRole('combobox', { name: 'When Ana replies' })).toHaveTextContent(
-      'Replies only when @mentioned'
-    );
-  });
-
-  describe('which modes a room offers', () => {
+  describe('how loud each agent is', () => {
     /** The same panel over a direct message rather than a channel. */
     const DM: RoomSummary = { ...ROOM, kind: 'dm', slug: null, title: 'Ana' };
 
-    /** Open the mode menu for Ana and read back what it offers. */
-    async function offeredModes(): Promise<string[]> {
-      const trigger = screen.getByRole('combobox', { name: 'When Ana replies' });
-      fireEvent.keyDown(trigger, { key: 'Enter' });
+    /** The scale for Ana. */
+    function scale(): HTMLElement {
+      return screen.getByRole('combobox', { name: 'How loud Ana is here' });
+    }
+
+    /** Open Ana's scale and read back the rungs it offers, in order. */
+    async function offeredRungs(): Promise<string[]> {
+      fireEvent.keyDown(scale(), { key: 'Enter' });
       const listbox = await screen.findByRole('listbox');
       return within(listbox)
         .getAllByRole('option')
         .map((option) => option.textContent ?? '');
     }
 
-    it('offers all five in a channel, degenerate pairings included', async () => {
-      renderPanel();
-      await rosterList();
-
-      expect(await offeredModes()).toEqual([
-        'Replies to everything',
-        'Replies while it is in the conversation',
-        'Replies when spoken to directly',
-        'Replies only when @mentioned',
-        'Never replies on its own',
-      ]);
-    });
-
-    it('withholds the engaged mode in a direct message, where its label is untrue', async () => {
-      // Nobody `@`s anyone in a two-person conversation, so the window never
-      // opens and "replies while it is in the conversation" would describe an
-      // agent that almost never replies. The other degenerate pairings stay,
-      // because their labels stay true — see `RESPONSE_MODE_OPTIONS`.
-      renderPanel({
-        room: DM,
-        transport: createMockTransport({
-          getRoom: vi.fn().mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana')])),
-        }),
-      });
-      await rosterList();
-
-      expect(await offeredModes()).toEqual([
-        'Replies to everything',
-        'Replies when spoken to directly',
-        'Replies only when @mentioned',
-        'Never replies on its own',
-      ]);
-    });
-
-    it('still shows a stored engaged value in a direct message rather than blanking', async () => {
-      // The API accepts it everywhere, so a DM membership can really hold it —
-      // and a control that renders empty for a value that exists is a setting
-      // nobody can fix.
-      renderPanel({
+    /** The panel over a direct message whose only agent holds `mode`. */
+    function renderDm(mode: RoomRosterEntry['responseMode']) {
+      return renderPanel({
         room: DM,
         transport: createMockTransport({
           getRoom: vi
             .fn()
+            .mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana', mode)])),
+        }),
+      });
+    }
+
+    it('offers a channel four rungs, quiet to loud', async () => {
+      // Position is the meaning. Five peer sentences in no stated order were
+      // the defect this replaces — nobody could rank them.
+      renderPanel();
+      await rosterList();
+
+      expect(await offeredRungs()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
+    });
+
+    it('offers a direct message three, because it only has three behaviours', async () => {
+      renderDm('mention-only');
+      await rosterList();
+
+      expect(await offeredRungs()).toEqual(['Silent', '@only', 'Everything']);
+    });
+
+    it('says what the chosen rung actually does, underneath it', async () => {
+      renderPanel();
+      await rosterList();
+
+      expect(scale()).toHaveTextContent('@only');
+      expect(screen.getByText('Answers only when you @mention it.')).toBeInTheDocument();
+    });
+
+    it('states the engaged window this install is running, not the shipped one', async () => {
+      // The numbers are settings, and they are inside the sentence. An install
+      // that tuned them must not read a sentence built from the defaults.
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
             .mockResolvedValue(roster([HUMAN, agentMember('Ana', '/repo/ana', 'engaged')])),
+          getConfig: vi
+            .fn()
+            .mockResolvedValue({ rooms: { engagedWindowMinutes: 3, engagedWindowPosts: 7 } }),
         }),
       });
       await rosterList();
 
-      expect(screen.getByRole('combobox', { name: 'When Ana replies' })).toHaveTextContent(
-        'Replies while it is in the conversation'
-      );
-      expect(await offeredModes()).toContain('Replies while it is in the conversation');
+      expect(
+        await screen.findByText(/keeps answering for 3 more minutes or 7 more messages/)
+      ).toBeInTheDocument();
     });
-  });
 
-  it('writes the chosen response-mode override through the Transport port', async () => {
-    const { transport } = renderPanel();
-    await rosterList();
+    it('places a stored value the room would never offer, rather than blanking', async () => {
+      // The API accepts `engaged` everywhere, so a DM membership can really
+      // hold it — set by a script or an older build. In a DM its window never
+      // opens, so it reads as @only, which is what it does. A control that
+      // rendered empty for a value that exists is a setting nobody can fix.
+      renderDm('engaged');
+      await rosterList();
 
-    const trigger = screen.getByRole('combobox', { name: 'When Ana replies' });
-    fireEvent.keyDown(trigger, { key: 'Enter' });
-    fireEvent.click(await screen.findByRole('option', { name: 'Never replies on its own' }));
+      expect(scale()).toHaveTextContent('@only');
+    });
 
-    await waitFor(() =>
-      expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
-        responseMode: 'silent',
-      })
-    );
+    it('writes one canonical value per rung, never a room-dependent alias', async () => {
+      const { transport } = renderPanel();
+      await rosterList();
+
+      fireEvent.keyDown(scale(), { key: 'Enter' });
+      fireEvent.click(await screen.findByRole('option', { name: 'Silent' }));
+
+      await waitFor(() =>
+        expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
+          responseMode: 'silent',
+        })
+      );
+    });
+
+    it('writes `engaged` for the rung only a channel has', async () => {
+      const { transport } = renderPanel();
+      await rosterList();
+
+      fireEvent.keyDown(scale(), { key: 'Enter' });
+      fireEvent.click(await screen.findByRole('option', { name: 'Engaged' }));
+
+      await waitFor(() =>
+        expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
+          responseMode: 'engaged',
+        })
+      );
+    });
   });
 
   it('removes nobody until the confirmation is accepted', async () => {

@@ -45,8 +45,13 @@ export type {
   SetResponseModeInput,
 } from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
-export { responseModeOptionsFor } from './lib/response-mode';
-export type { ResponseModeOption } from './lib/response-mode';
+export { rungsFor, rungOf, modeForRung, explainRung } from './lib/response-mode';
+export type {
+  EngagedWindow,
+  ResponseRung,
+  ResponseRungOption,
+  RungExplanation,
+} from './lib/response-mode';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { MemberList } from './ui/MemberList';

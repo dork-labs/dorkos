@@ -223,8 +223,9 @@ export function PersonalityTab({
               </SelectTrigger>
               {/*
                 Four of the enum's five to CHOOSE from, and the fifth appears
-                only when it is already stored — the same rule
-                `responseModeOptionsFor` applies to a direct message's roster,
+                only when it is already stored. Same instinct as the room
+                roster's rung scale (`entities/room/lib/response-mode.ts`),
+                which narrows what may be picked and never what can be shown,
                 for the same two reasons.
 
                 Not offered: `engaged` is a room disposition that decays over a
