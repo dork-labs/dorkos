@@ -88,12 +88,14 @@ export interface RoomMemberRowProps {
   /** The engaged-window ceilings, or `null` while the config read is in flight. */
   engagedWindow: EngagedWindow | null;
   /**
-   * Why this room's loudness settings are not in effect, as the id of the
-   * element that says so — or `null` when they are.
+   * Why this room cannot be changed, as the id of the element that says so —
+   * or `null` when it can.
    *
-   * Non-null greys the meter and stops the scale committing, and is handed to
-   * the scale so a screen reader is told the reason rather than left to
-   * discover a control that does nothing.
+   * Non-null greys the meter, stops the scale committing, and takes away both
+   * removal verbs; it is also handed to the scale, so a screen reader is told
+   * the reason rather than left to discover a control that does nothing. The
+   * scale itself stays: reading what each rung means is worth doing on a room
+   * you are deciding whether to revive, and a verb is not.
    */
   dormantReasonId: string | null;
 }
@@ -273,7 +275,7 @@ export function RoomMemberRow({
           </button>
         )}
 
-        {isAgent && !isMobile && (
+        {isAgent && !isMobile && dormantReasonId === null && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -353,7 +355,7 @@ export function RoomMemberRow({
                 engagedWindow={engagedWindow}
                 disabledReasonId={dormantReasonId}
               />
-              {isMobile && (
+              {isMobile && dormantReasonId === null && (
                 <Button
                   type="button"
                   size="sm"

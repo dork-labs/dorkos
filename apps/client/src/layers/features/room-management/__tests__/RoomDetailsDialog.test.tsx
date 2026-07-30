@@ -1182,7 +1182,7 @@ describe('RoomDetailsDialog', () => {
         fireEvent.keyDown(openScale('Ana'), { key: 'Home' });
 
         expect(document.querySelector('[data-slot="room-loudness-line"]')).toBeNull();
-        expect(screen.getByText(/these settings are on hold/)).toBeInTheDocument();
+        expect(screen.getByText(/their settings are on hold/)).toBeInTheDocument();
       });
     });
   });
@@ -1307,6 +1307,61 @@ describe('RoomDetailsDialog', () => {
         })
       );
       expect(transport.updateRoomMember).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers no way to staff a room whose settings it says are on hold', async () => {
+      // The banner said the settings were on hold while the add row sat there
+      // unguarded — and adding names no `responseMode`, so the server seeds
+      // one: `engaged` for a channel. Remove-then-add inside an archived room
+      // therefore rewrote a deliberate `Silent` into an agent that answers, in
+      // the one room the sheet claims nothing can be changed in. An archived
+      // room is one you are deciding whether to revive, not one you staff.
+      //
+      // The barrier is bringing it back: both verbs return, so their absence
+      // above is this guard's doing rather than a roster that never drew them.
+      renderArchivable(true, [HUMAN, agentMember('Ana', '/repo/ana', 'silent')]);
+      await rosterSection();
+
+      expect(screen.queryByRole('button', { name: 'Add agents' })).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Ana actions')).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Bring this room back' }));
+
+      expect(await screen.findByRole('button', { name: 'Add agents' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Ana actions')).toBeInTheDocument();
+    });
+
+    it('holds the touch path’s Remove button too, not only the desktop menu', async () => {
+      // Below 768px the "…" does not exist at all — a dropdown portalled inside
+      // a vaul drawer is a known-hazard nesting — and Remove is a plain button
+      // at the foot of the expanded row. Guarding only the menu would leave the
+      // whole removal path open on a phone.
+      // Every query answered yes — a phone is under 768px AND coarse-pointered,
+      // and `useIsMobile` is the one that decides which removal verb is drawn.
+      // `touchOnly` alone leaves the width queries at "desktop", so this test
+      // would assert the absence of a button the desktop never renders.
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: (query: string) => ({
+          matches: true,
+          media: query,
+          onchange: null,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+        }),
+      });
+      renderArchivable(true, [HUMAN, agentMember('Ana', '/repo/ana', 'silent')]);
+      await rosterSection();
+      openScale();
+
+      expect(screen.getByRole('radiogroup', { name: 'How loud is Ana here?' })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'Remove from this room' })
+      ).not.toBeInTheDocument();
     });
 
     it('brings an archived room back from the same place', async () => {

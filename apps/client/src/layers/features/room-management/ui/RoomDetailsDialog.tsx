@@ -118,11 +118,12 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * re-render it causes — and it is one-way, so adding the first agent does not
    * shut the picker again.
    */
-  if (view.room !== null && view.agentCount === 0 && !addExpanded) setAddExpanded(true);
+  if (view.room !== null && !detail.archived && view.agentCount === 0 && !addExpanded)
+    setAddExpanded(true);
   /**
-   * The banner that says why an archived room's loudness settings are on hold.
-   * Every dormant scale points at it, so the sentence is written once and read
-   * by whoever needs it rather than repeated on each row.
+   * The banner that says why an archived room's roster and settings are on
+   * hold. Every dormant scale points at it, so the sentence is written once and
+   * read by whoever needs it rather than repeated on each row.
    */
   const dormantReasonId = useId();
   // Not viewport width: a narrow desktop window is still a desktop, and what is
@@ -274,14 +275,17 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
               be false there — "Two agents will answer you here" of a room that
               answers nothing. It says the true thing instead, and it is also
               the reason each dormant scale below hands to a screen reader, so
-              the sentence has to work as a description of one of them. */}
+              the sentence has to work as a description of one of them.
+
+              It names the ROSTER as well as the settings, because both are
+              held: see the add row and `RoomMemberRow`'s removal verbs below. */}
           {detail.archived ? (
             <p
               id={dormantReasonId}
               className="bg-muted/50 text-muted-foreground rounded-lg px-3 py-2.5 text-xs"
             >
-              Nobody is triggered in an archived room, so these settings are on hold. Bring it back
-              to change them.
+              Nobody is triggered in an archived room, so its members and their settings are on
+              hold. Bring it back to change them.
             </p>
           ) : (
             // Only once there is a roster: an empty one is a real answer here
@@ -337,43 +341,51 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
             )}
           </RoomMemberList>
 
-          <AddMembersRow
-            expanded={addExpanded}
-            onExpand={() => setAddExpanded(true)}
-            roster={view.agents}
-            exclude={view.isAlreadyIn}
-            onSubmit={writes.addAgents}
-            // "Add one to put it in here" used to follow the first sentence.
-            // The button below says that now, and says it as something you can
-            // press rather than as an instruction to go and find it.
-            emptyRosterMessage={
-              view.agents.candidates.length === 0
-                ? 'You have not added any agents yet.'
-                : 'Every agent you have is already in here.'
-            }
-            // Only for the empty fleet, which is the one of those two sentences
-            // a person can act on — "everyone is already in here" is a finished
-            // job, not a dead end.
-            emptyRosterAction={
-              view.agents.candidates.length === 0 ? (
-                <Button type="button" size="sm" variant="outline" onClick={startAgentCreation}>
-                  Create agent
-                </Button>
-              ) : undefined
-            }
-            allChosenMessage="Every agent you have is already in here."
-            // Only a one-to-one turns into something else by gaining somebody.
-            // A conversation that already holds two is already a group, and a
-            // channel is a channel however many agents are in it. The wording
-            // is the one the "+" beside Direct messages already uses.
-            note={
-              detail.kind === 'dm' && view.agentCount === 1
-                ? 'Adding a second agent turns this into a group conversation.'
-                : null
-            }
-            isSubmitting={writes.isAdding}
-            inputRef={searchRef}
-          />
+          {/* Not drawn at all in an archived room. Adding names no
+              `responseMode`, so the server seeds one — `engaged` for a channel
+              — which means remove-then-add here would rewrite a deliberate
+              `Silent` into an agent that answers, in the very room the banner
+              above says nothing can be changed in. A surface that refuses to
+              let you CHANGE a setting must not let you SET one. */}
+          {!detail.archived && (
+            <AddMembersRow
+              expanded={addExpanded}
+              onExpand={() => setAddExpanded(true)}
+              roster={view.agents}
+              exclude={view.isAlreadyIn}
+              onSubmit={writes.addAgents}
+              // "Add one to put it in here" used to follow the first sentence.
+              // The button below says that now, and says it as something you
+              // can press rather than as an instruction to go and find it.
+              emptyRosterMessage={
+                view.agents.candidates.length === 0
+                  ? 'You have not added any agents yet.'
+                  : 'Every agent you have is already in here.'
+              }
+              // Only for the empty fleet, which is the one of those two
+              // sentences a person can act on — "everyone is already in here"
+              // is a finished job, not a dead end.
+              emptyRosterAction={
+                view.agents.candidates.length === 0 ? (
+                  <Button type="button" size="sm" variant="outline" onClick={startAgentCreation}>
+                    Create agent
+                  </Button>
+                ) : undefined
+              }
+              allChosenMessage="Every agent you have is already in here."
+              // Only a one-to-one turns into something else by gaining somebody.
+              // A conversation that already holds two is already a group, and a
+              // channel is a channel however many agents are in it. The wording
+              // is the one the "+" beside Direct messages already uses.
+              note={
+                detail.kind === 'dm' && view.agentCount === 1
+                  ? 'Adding a second agent turns this into a group conversation.'
+                  : null
+              }
+              isSubmitting={writes.isAdding}
+              inputRef={searchRef}
+            />
+          )}
         </ResponsiveDialogBody>
 
         <RoomDetailsFooter room={detail} />

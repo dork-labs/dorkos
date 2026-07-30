@@ -23,6 +23,7 @@ covers:
   - 'fix(rooms): a one-to-one gets the reply window too'
   - 'fix(rooms): pressing the setting you already have writes nothing'
   - 'fix(rooms): two removals at once, two ways back'
+  - 'fix(rooms): an archived room stops being one you can staff'
 ---
 
 ### Changed
@@ -35,7 +36,7 @@ covers:
 - **Each person or agent is a line, not a card**, with its face, what it is doing right now or the last thing it did here, and its loudness on the right. Agents carry a small robot mark; people carry none.
 - **A room's name and topic are edited where you read them.** Press the line, type, press Enter — Escape puts it back. A channel with no topic says "Add a topic" instead of leaving a gap.
 - **Adding an agent is the last row of the list of who is in the room**, rather than a second panel with its own heading. Press it and it becomes the picker, cursor already in it.
-- **An archived room stops pretending.** Every meter goes grey and the scales cannot be changed, because nothing is triggered in an archived room. The settings are still shown — they are what each agent will do the moment you bring the room back — and the sheet says so where a screen reader will read it too.
+- **An archived room stops pretending.** Every meter goes grey, the scales cannot be changed, and there is no way to add or remove an agent — nothing is triggered in an archived room, so its members and their settings are on hold until you bring it back. The settings are still shown, because they are what each agent will do the moment you do, and the sheet says so where a screen reader will read it too.
 - **Opening the sheet for a room with nobody in it opens the picker straight away.** A room with nobody in it does nothing, so putting somebody in it is the only thing worth offering. "You have not added any agents yet" now comes with a **Create agent** button, and a roster that could not be read now offers **Try again** instead of asking you to close the sheet and open it again.
 - **Rows in the roster are taller on a touch screen**, so a face and two lines read as a person rather than as a dot with a caption.
 
