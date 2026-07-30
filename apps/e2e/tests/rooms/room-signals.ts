@@ -110,11 +110,26 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
     entryId: signal.entryId,
     since: signal.since,
   };
+  // **Wait for the tap rather than demand it.** The room's stream is a RESUME:
+  // it opens only once the history read has landed, so between `goto` and the
+  // socket being live there is a window whose width is the server's response
+  // time. Throwing on the first look made that window a coin toss on a busy
+  // machine — the failure named the tap, which is not where the problem was.
+  //
+  // A readiness wait, not a sleep: it returns the instant the stream is up, and
+  // a stream that never opens still fails, with a message that says so.
+  await page.waitForFunction(
+    () =>
+      (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } }).__roomStream
+        ?.push != null,
+    undefined,
+    { timeout: 30_000 }
+  );
   await page.evaluate(
     (frame) => {
       const tap = (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } })
         .__roomStream;
-      if (!tap?.push) throw new Error('The room stream is not open yet — nothing to publish onto.');
+      if (!tap?.push) throw new Error('The room stream closed before this signal could be sent.');
       tap.push(frame);
     },
     `event: signal\ndata: ${JSON.stringify(event)}\n\n`
