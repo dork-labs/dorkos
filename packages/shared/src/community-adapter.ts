@@ -36,7 +36,8 @@
  * exactly as `room-schemas.ts` does.
  *
  * See `specs/community-adapter/02-specification.md` (including Amendment 2, which
- * gives `publishSignal` its presence payload).
+ * gives `publishSignal` its presence payload, and Amendment 3, which says what
+ * `subscribeRoom` owes a room the caller cannot have).
  *
  * @module shared/community-adapter
  */
@@ -924,6 +925,60 @@ export class StaleCommunityCursorError extends Error {
 }
 
 /**
+ * Thrown EAGERLY by {@link CommunityAdapter.subscribeRoom} when `roomId` is not
+ * a room this identity can stream — it does not exist, or it exists and is not
+ * visible here.
+ *
+ * **Those two cases throw the identical refusal**, which is why this class takes
+ * no `reason` parameter where the other two errors do: a room id is an address,
+ * not an authorization, and any detail that told them apart would let anyone
+ * holding an id confirm that somebody else's direct message exists. The shipped
+ * `requireVisibleRoom` collapses them for exactly this reason, and an adapter
+ * MUST NOT widen the message with a cause.
+ *
+ * "Eagerly" carries the same weight it does on
+ * {@link StaleCommunityCursorError}, and the conformance suite asserts it the
+ * same way — by construction, awaiting nothing. Check the room before returning
+ * the generator; an `async function*` cannot satisfy it. Check it **before the
+ * cursor** as well — {@link CommunityAdapter.subscribeRoom} states why that
+ * order is part of the contract rather than an implementation detail.
+ *
+ * **Why `getRoom` answers `null` and this throws.** The asymmetry is in what
+ * each return type can express, not in what either discloses. A method whose
+ * return type has an empty value uses it: `getRoom` answers `null`,
+ * `listMembers` an empty roster, `listEntries` an empty page. `subscribeRoom`
+ * returns a stream, and no stream means "no room" — every ROOM stream this port
+ * hands out opens with a snapshot OF a room (`subscribeRoomList` is a different
+ * stream with no snapshot at all, and no room to be about).
+ * Each alternative is worse than throwing:
+ * an immediate `room_closed` would report that a room went away to a caller that
+ * never had one, and would make the terminal event ambiguous between "you lost
+ * it" and "there was never one"; a stream that simply never yields is
+ * indistinguishable from a quiet room, so the caller parks forever — the very
+ * failure the eager cursor throw exists to prevent; and a nullable return would
+ * put a null check at every call site for a case the caller must ALSO handle as
+ * a throw, since a room can vanish between `getRoom` and `subscribeRoom`. What
+ * never differs across those shapes is what the caller learns about WHY:
+ * unknown and invisible are indistinguishable on every one of them.
+ */
+export class CommunityRoomNotFoundError extends Error {
+  /**
+   * Build the refusal, naming only the address that could not be streamed.
+   *
+   * @param community - The community that refused.
+   * @param roomId - The room that is not available to this identity. Whether it
+   *   is absent or merely invisible is deliberately not reported.
+   */
+  constructor(
+    readonly community: CommunityRef,
+    readonly roomId: string
+  ) {
+    super(`Room '${roomId}' is not available in community '${community}'`);
+    this.name = 'CommunityRoomNotFoundError';
+  }
+}
+
+/**
  * Rejected by any capability-gated method whose capability is off. Never a
  * silent no-op and never a partial write — a required method with a typed
  * refusal is what an optional method cannot be: visible to the compiler and
@@ -1016,6 +1071,11 @@ export interface CommunityAdapter {
    * authorization, and reporting the two apart would let a probe distinguish
    * them.
    *
+   * {@link CommunityAdapter.subscribeRoom} answers the same pair by throwing
+   * {@link CommunityRoomNotFoundError}, and is no more forthcoming about which
+   * of the two holds — only the shape of the answer differs, because a stream
+   * has no empty value the way a nullable room does.
+   *
    * @param roomId - The room's id within this community.
    */
   getRoom(roomId: string): Promise<CommunityRoom | null>;
@@ -1058,8 +1118,25 @@ export interface CommunityAdapter {
    * capability-gated: there is no flag that lets an adapter offer a weaker
    * resume.
    *
+   * Throws {@link CommunityRoomNotFoundError} EAGERLY, by that same discipline,
+   * when `roomId` is not a room this identity can stream — unknown and invisible
+   * alike, indistinguishably. `getRoom` answers `null` for the same pair; the
+   * asymmetry is in what each return type can express and not in what either
+   * discloses, which {@link CommunityRoomNotFoundError} argues in full.
+   *
+   * **The room is checked BEFORE the cursor, and the order is contractual.** A
+   * cursor's validity is usually a function of the room's own state — an adapter
+   * that bounds a resume against what a room holds finds nothing to bound
+   * against in a room that is not there — so an adapter that validated the
+   * cursor first answers {@link StaleCommunityCursorError} for a room that does
+   * not exist and {@link CommunityRoomNotFoundError} for one that exists and is
+   * hidden. Two typed refusals that differ IS the probe the identical message
+   * closes, re-opened one line earlier. Neither error's message can leak it;
+   * only the order can.
+   *
    * A room that becomes unservable mid-subscription yields a terminal
-   * `room_closed` event — never a thrown error, never a silent end.
+   * `room_closed` event — never a thrown error, never a silent end. That is a
+   * room this stream WAS serving; the refusal above is a room it never could.
    *
    * @param roomId - The room to stream.
    * @param sinceCursor - Resume point; emit only what follows it.

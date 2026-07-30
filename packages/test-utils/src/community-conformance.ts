@@ -31,6 +31,12 @@
  * - **Who may publish a presence signal.** The rule that a presence signal
  *   exists only while a real claim is held is enforced at the one producer and
  *   tested there — a port-level fake cannot know whether a claim was real.
+ * - **That an INVISIBLE room is refused identically to an absent one.** U16
+ *   asserts the refusal, against a fabricated id every backend can be handed.
+ *   Arranging a room that exists and is not visible needs a second identity the
+ *   port does not expose, so the collapse — stated on
+ *   `CommunityRoomNotFoundError`, which carries no reason field to break it with
+ *   — is each adapter's to hold and to test where it can mint one.
  * - **That an entry's author is in the room's CURRENT roster.** An entry
  *   outlives its author's membership (our own rooms model keeps a departed
  *   member's entries in the log), so a roster-membership requirement would fail

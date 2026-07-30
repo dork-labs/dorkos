@@ -17,6 +17,7 @@
  * @module test-utils/fake-community-adapter
  */
 import {
+  CommunityRoomNotFoundError,
   CommunityUnsupportedError,
   LOCAL_COMMUNITY,
   StaleCommunityCursorError,
@@ -185,7 +186,9 @@ const DEFAULT_CAPABILITIES: Omit<CommunityCapabilities, 'type'> = {
  * community or a superseded epoch is rejected rather than bounded.
  * `subscribeRoom` validates it **synchronously** and only then returns a stream,
  * because the port requires the throw at call time and an `async function*`
- * cannot do that.
+ * cannot do that. The room itself is checked first and the same way: an id this
+ * fake cannot stream is refused with `CommunityRoomNotFoundError` before the
+ * cursor is looked at.
  *
  * @example
  * ```typescript
@@ -356,9 +359,10 @@ export class FakeCommunityAdapter implements CommunityAdapter {
     signal?: AbortSignal
   ): AsyncIterable<CommunityRoomEvent> {
     const stored = this._rooms.get(roomId);
-    if (!stored) throw new Error(`unknown room '${roomId}'`);
-    // Validated SYNCHRONOUSLY, before any stream exists: the port requires the
-    // stale-cursor throw at call time.
+    // Both refusals land SYNCHRONOUSLY, before any stream exists: the port
+    // requires the room check and the stale-cursor throw at call time, and this
+    // is the reference implementation of that shape.
+    if (!stored) throw new CommunityRoomNotFoundError(this.community, roomId);
     const from = sinceCursor === undefined ? 0 : this._ordinalOrThrow(roomId, sinceCursor);
 
     const stream = new Pushable<CommunityRoomEvent>(() => {

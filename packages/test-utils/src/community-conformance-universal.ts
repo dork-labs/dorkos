@@ -1,12 +1,13 @@
 /**
- * The universal half of the `CommunityAdapter` conformance suite: the fifteen
+ * The universal half of the `CommunityAdapter` conformance suite: the sixteen
  * assertions every backend owes, with no branch and no opt-out.
  *
  * These are the properties that stay true whatever a backend declares — an
  * address that carries its own community, a snapshot before any entry, a resume
  * that is gap-free or refuses, exhaustion declared rather than inferred, stable
- * entry ids, honest attribution, a terminal event when a room goes away, and no
- * credential anywhere on the wire.
+ * entry ids, honest attribution, a terminal event when a room goes away, one
+ * defined answer for a room the caller cannot have, and no credential anywhere
+ * on the wire.
  *
  * @module test-utils/community-conformance-universal
  */
@@ -18,6 +19,7 @@ import {
   CommunityEntrySchema,
   CommunityMemberSchema,
   CommunityRefSchema,
+  CommunityRoomNotFoundError,
   CommunityRoomSchema,
   CommunityUnsupportedError,
   StaleCommunityCursorError,
@@ -504,6 +506,37 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
         adapter.listMembers('no-such-room-id'),
         'an unknown room has an empty roster, never a throw'
       ).resolves.toEqual([]);
+    });
+
+    it('U16 refuses to stream a room it cannot serve, eagerly', async () => {
+      // The guard, and it is not paranoia: `toThrow(undefined)` degrades to a
+      // bare `toThrow`, so a stale `@dorkos/shared` dist turns this case — whose
+      // whole job is discriminating one error class from another — into "it
+      // threw something", and a backend throwing a plain `Error` passes it. The
+      // check costs a line and makes the failure name its own cause instead of
+      // going green.
+      if (typeof CommunityRoomNotFoundError !== 'function') {
+        throw new Error(
+          'stale @dorkos/shared dist: CommunityRoomNotFoundError did not import — rebuild with `pnpm --filter @dorkos/shared build`'
+        );
+      }
+      const { adapter } = await arrange();
+
+      // Constructed, awaiting nothing — the U6/U7 shape, for the same reason.
+      // The two failures this catches are the two an adapter actually ships: a
+      // stream that opens and never yields (a caller parks on it forever,
+      // unable to tell it from a quiet room), and a refusal deferred to the
+      // first pull (a caller holding a plain `try` never sees it).
+      //
+      // DELIBERATELY NOT ASSERTED: that a room which exists but is invisible
+      // throws the SAME refusal. Arranging one needs a second identity the port
+      // does not expose, so the collapse is stated on
+      // `CommunityRoomNotFoundError` and held by each adapter's own tests —
+      // this case proves the shape, not the discretion.
+      expect(
+        () => adapter.subscribeRoom('no-such-room-id'),
+        'a room this identity cannot stream is refused with CommunityRoomNotFoundError, at call time'
+      ).toThrow(CommunityRoomNotFoundError);
     });
   });
 }

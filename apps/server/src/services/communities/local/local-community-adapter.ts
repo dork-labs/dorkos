@@ -75,6 +75,7 @@
  * @module server/services/communities/local/local-community-adapter
  */
 import {
+  CommunityRoomNotFoundError,
   CommunityUnsupportedError,
   LOCAL_COMMUNITY,
   type AddCommunityMemberOpts,
@@ -247,8 +248,8 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   // `disconnect` only walks maps this class owns. The four capability refusals
   // below return `Promise.reject` because they call nothing that can throw —
   // they ARE the throw. And `subscribeRoom` is the deliberate exception in the
-  // other direction: its stale-cursor throw MUST be synchronous, so it cannot
-  // be `async` at all.
+  // other direction: its unknown-room and stale-cursor throws MUST both be
+  // synchronous, so it cannot be `async` at all.
 
   async listRooms(): Promise<CommunityRoom[]> {
     // Archived rooms are listed, not hidden: `archived` is a state the port
@@ -306,8 +307,9 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * covered. The store is synchronous, so both halves happen in one tick and
    * there is no window at all.
    *
-   * The cursor is validated before any of that, so
-   * `StaleCommunityCursorError` is thrown at call time as the port requires —
+   * Both refusals run before any of that, so `CommunityRoomNotFoundError` (a
+   * room this identity cannot stream, absent or invisible alike) and
+   * `StaleCommunityCursorError` are thrown at call time as the port requires —
    * which is also why this is a plain method returning a stream rather than an
    * `async function*`.
    *
@@ -342,16 +344,13 @@ export class LocalCommunityAdapter implements CommunityAdapter {
   ): AsyncIterable<CommunityRoomEvent> {
     const identity = this.identity();
     const room = this.deps.service.getRoom(roomId, identity);
-    // The port documents no outcome for subscribing to a room that is not
-    // there, and the reference fake throws — so this throws, and it throws the
-    // SAME refusal for "no such room" and "not visible to you", exactly as
-    // `requireVisibleRoom` collapses them. Distinguishing them would let a
-    // caller holding a room id confirm that somebody else's DM exists, which is
-    // the one thing the shipped rule exists to prevent. Recorded as a gap in
-    // the port rather than a local invention: the contract should say what
-    // `subscribeRoom` owes an unknown room, and the conformance suite should
-    // assert it.
-    if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    // The port's own refusal, not a local one, and the SAME refusal for "no
+    // such room" and "not visible to you" — `getRoom` collapsed them one line
+    // above, exactly as `requireVisibleRoom` does, and
+    // `CommunityRoomNotFoundError` carries no reason field to un-collapse them
+    // with. Distinguishing the two would let a caller holding a room id confirm
+    // that somebody else's DM exists.
+    if (!room) throw new CommunityRoomNotFoundError(this.community, roomId);
     const highestSeq = this.deps.service.maxSeq(roomId);
     const from =
       sinceCursor === undefined

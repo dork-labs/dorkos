@@ -68,7 +68,7 @@ Each of these was open at the end of ideation. The rationale matters as much as 
 
 ## Goals
 
-- **G1** — A Zod-first `CommunityAdapter` port in `packages/shared`, with `CommunityCapabilities`, two typed errors, and DTOs that carry no credential and no filesystem path.
+- **G1** — A Zod-first `CommunityAdapter` port in `packages/shared`, with `CommunityCapabilities`, two typed errors, and DTOs that carry no credential and no filesystem path. **[Amended 2026-07-30 (DOR-754): three typed errors — `subscribeRoom` gained `CommunityRoomNotFoundError`; see Amendment 3.]**
 - **G2** — `communityConformance` in `@dorkos/test-utils`, capability-aware in the `connectorConformance` sense: every difference is a **declared flag with a branched assertion**, never a weakened one. Plus a `FakeCommunityAdapter` configurable across the whole flag matrix.
 - **G3** — The four mismatches are expressible **without weakening**: an opaque cursor that is gap-free or refuses, universally and with no per-adapter opt-out; an entry-level thread relation; a three-valued read-cursor flag; a three-valued invite flag.
 - **G4** — Out-of-band admission is a first-class connection outcome with a plain-language disclosure, distinguishable from a bad credential and from an unreachable host.
@@ -393,6 +393,11 @@ export interface CommunityAdapter {
    *
    * Gap-free-or-throw is universal, not capability-gated: there is no flag that
    * lets an adapter offer a weaker resume (§Decisions resolved after SPECIFY, OQ6).
+   *
+   * [Amended 2026-07-30 (DOR-754): also throws `CommunityRoomNotFoundError`
+   * eagerly when `roomId` is not a room this identity can stream — unknown and
+   * invisible alike, indistinguishably. See Amendment 3 at the end of this
+   * document.]
    */
   subscribeRoom(
     roomId: string,
@@ -738,6 +743,7 @@ The port has no UI. What it decides about UX is what a later surface is allowed 
 | **U13** | **Every capability-gated method whose capability is off rejects with `CommunityUnsupportedError`** — iterated over the off flags, so a new flag is covered the day it is added. Never a silent no-op, and never a partial write (the store is re-read after each refusal and must be unchanged).                                                                                                                                                  |
 | **U14** | `disconnect()` resolves and is idempotent, including on a never-connected adapter.                                                                                                                                                                                                                                                                                                                                                                |
 | **U15** | `listMembers` returns well-formed members including the connected identity when it is a member; unknown room → `[]` or `null`, never a throw.                                                                                                                                                                                                                                                                                                     |
+| **U16** | **[Added 2026-07-30 (DOR-754) — see Amendment 3.]** `subscribeRoom` on a room this identity cannot stream throws `CommunityRoomNotFoundError` **eagerly** — asserted by constructing the call and awaiting nothing, the U6/U7 shape. Universal and un-gated: every backend can be handed a fabricated room id, so nothing needs arranging and no capability governs it.                                                                           |
 
 #### Capability-branched — the difference is declared, not weakened
 
@@ -791,7 +797,7 @@ The port has no UI. What it decides about UX is what a later surface is allowed 
 
 ## Documentation
 
-- `contributing/adding-a-community-adapter.md` — new, cut to the shape of `contributing/adding-a-runtime.md`: the flag matrix, the required conformance hooks, the credential contract, and the two typed errors. The single most valuable artifact for the three adapter tickets.
+- `contributing/adding-a-community-adapter.md` — new, cut to the shape of `contributing/adding-a-runtime.md`: the flag matrix, the required conformance hooks, the credential contract, and the two typed errors. The single most valuable artifact for the three adapter tickets. **[Amended 2026-07-30 (DOR-754): three typed errors, and the guide now also carries the room-before-cursor ordering rule and the identical-refusal rule; see Amendment 3.]**
 - `contributing/architecture.md` — one paragraph naming the fourth seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`.
 - `AGENTS.md` — one line in Architecture once the first adapter ships, not before (the demo-claim gate: nothing claims a surface works until it does).
 - **No user-facing docs and no changelog fragment in this spec.** Nothing a person can see changes. **[Amended 2026-07-30 (DOR-592): the last sentence used to read "the changelog fragment lands with the first adapter", and the first adapter has now landed deliberately without one — wrapping local rooms behind this port changed no surface a person can reach, so the same "nothing a person can see" test that exempted the contract exempted its first implementation too. The fragment lands with the first adapter somebody can SEE, not the first one that exists.]**
@@ -925,3 +931,40 @@ Two consequences, both deliberate:
 
 - **`'none'` is enforced in both directions.** The adapter refuses `publishSignal` _and_ drops every `signal` frame its own room broadcaster carries. An adapter that declared `'none'` and still yielded signals would be lying in the direction the shared suite structurally cannot catch — no port method can provoke a backend-native signal — so it is pinned in the local adapter's own tests.
 - **This flips with the payload, not separately.** `specs/room-presence/02-specification.md` §3.2 widens the room signal envelope and its §11 scope table assigns the port-side implementation to the local and server adapters. That change sets `signals: 'both'` in the adapter, restores the `signal` mapping in `LocalCommunityAdapter.subscribeRoom`, and returns this row's cell to `both`. Until it lands, the table and the shipped code agree.
+
+---
+
+## Amendment 3 — `subscribeRoom` owes an unknown room a defined answer (2026-07-30, DOR-754)
+
+This document contracted `getRoom` to answer `null` for a room that is unknown or not visible, and said nothing at all about what `subscribeRoom` owes the same pair. Two backends filled the silence two different ways, which is how the gap was found while building the first real adapter (DOR-592): the reference `FakeCommunityAdapter` threw a plain `Error`, `LocalCommunityAdapter` threw the rooms subsystem's own `RoomError('ROOM_NOT_FOUND')`, and no conformance row noticed either. Both now throw the port's error, and §9 gains the assertion that would have caught it. On the Amendment 1 precedent, this section is appended rather than inserted so every `file:line` citation into this document keeps resolving.
+
+### A. §3 — a third typed error, thrown eagerly, identical for unknown and invisible
+
+`subscribeRoom(roomId, …)` on a room this identity cannot stream throws **`CommunityRoomNotFoundError`**, **eagerly and synchronously** — at call time, before the first `next()`. That is the discipline `StaleCommunityCursorError` already carries (§4 rule 3), for the same reason and asserted the same way: an `async function*` cannot satisfy it, so the room is checked in a plain method that then returns a generator. The room check runs first, before the cursor is looked at.
+
+**Unknown and invisible throw the identical refusal, message included**, and the class deliberately takes **no `reason` argument** where the other two errors do. That is §Security's "a room id is not a capability" made mechanical rather than restated: the shipped `requireVisibleRoom` already reports one `ROOM_NOT_FOUND` for both, and a `reason` field is precisely the crack a probe would widen into "does the operator have a DM with that agent?".
+
+**The room is checked BEFORE the cursor, and that order is contractual rather than incidental.** A cursor's validity is usually a function of the room's own state — the local adapter bounds a resume against the room's `maxSeq`, and a room that is not there has none — so an adapter that validated the cursor first answers `StaleCommunityCursorError` for a room that does not exist and `CommunityRoomNotFoundError` for one that exists and is hidden. **Two typed refusals that differ IS the probe the identical message closes**, re-opened one line earlier and invisible to every assertion about either error's contents: neither message leaks it, only the order can. This is not hypothetical — reordering those two checks in the local adapter left the whole community suite green until the assertion below existed, which is why the rule is written at the port and pinned in a test rather than left to each author to rediscover.
+
+**The asymmetry with `getRoom` is about what each return type can express, not about what either discloses.** A method whose return type has an empty value uses it — `getRoom` → `null`, `listMembers` → `[]` (U15), `listEntries` → an empty page. `subscribeRoom` returns a stream, and no stream means "no room": every **room** stream this port hands out opens with a snapshot **of** a room. (`subscribeRoomList` is the port's other stream and carries no snapshot at all — `CommunityRoomListEventSchema` has three members and none of them is one — which is exactly why the quantifier is narrowed: it is not about a room, so it has no room to refuse about either.) The three alternatives were considered and each is worse:
+
+- **an immediate terminal `room_closed`** tells a caller a room went away when it never had one, and makes §6's terminal event ambiguous between "you lost access" and "there was never one to lose";
+- **a stream that simply never yields** is indistinguishable from a quiet room, so the caller parks on it forever — the exact failure the eager-throw discipline exists to prevent, one method along;
+- **a nullable return** puts a null check at every call site for a case the caller must handle as a throw anyway, since a room can vanish between `getRoom` and `subscribeRoom`.
+
+What does **not** differ across those shapes is what the caller learns about why. `getRoom`'s `null` and this throw are equally silent; only the shape of the silence differs.
+
+### B. §9 — a sixteenth universal row, and why universal is the right half
+
+U16 is in the universal half rather than the branched one because it needs no arrangement and no declaration: **every backend can be handed a room id that does not exist**, so there is nothing to seed, no hook to decline, and no capability that could turn the case off. A backend that cannot be asked about an unknown room does not exist.
+
+The one thing U16 does **not** assert is the collapse itself. Arranging a room that exists and is invisible needs a second identity, and the port has no method that mints one — so the suite proves the shape and each adapter proves the discretion where it can arrange it. `LocalCommunityAdapter`'s own tests do exactly that, against the visibility rule that ships: a non-owner author subscribing to a room it does not belong to gets the same error, **the same message and the same own properties**, once the id each was asked about is normalized away. That test asks twice — **once with no cursor and once with a cursor addressed to the room in question** — because the second is what pins §A's ordering rule, and a refusal that is identical only when no cursor is supplied is not identical.
+
+### C. The typed-error count — two places marked, two left as recorded history
+
+This document counts the port's typed errors in four places, and not in the same words: **G1** and **§Documentation** say "two typed errors", while **§Code structure & file organization** and **Phase 1** say "both typed errors". From this amendment the count is three, and the four are treated differently on purpose:
+
+- **G1 and §Documentation are marked in place**, per this document's own convention — both prior amendments state that each change is "marked in place above", and Amendment 2 §D exists precisely because one amendment did not. G1 is a goal, which a reader checks the port against; §Documentation specifies the contents of `contributing/adding-a-community-adapter.md`, which this change edited.
+- **§Code structure and Phase 1 are left as written.** The first is a line inside a fenced directory listing — a comment on a path, not a claim to check — and the second is the shipped-history log of what Phase 1 delivered, which really was two. Marking either would be amending a record of the past rather than a statement about the port.
+
+**§Implementation Phases' "all fifteen universal"** is left for that second reason too: Phase 2 shipped fifteen, and §9's table — now sixteen rows — is where the contract lives rather than where its history does.

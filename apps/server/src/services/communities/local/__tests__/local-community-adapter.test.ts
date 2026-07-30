@@ -4,14 +4,17 @@
  * What the shared suite cannot reach: the cases that are specific to wrapping
  * THIS backend.
  *
- * The conformance run next door proves the contract. These prove the three
+ * The conformance run next door proves the contract. These prove the four
  * things only a local adapter can be asked about — a cursor refused for a reason
- * no fixture can arrange, the local-only columns that must never reach the wire,
- * and the shipped room semantics this wrapper is obliged to keep (idempotent
- * removal, a monotonic read cursor, an archived room that still reads).
+ * no fixture can arrange, a room that exists and is invisible being refused
+ * exactly like one that does not exist, the local-only columns that must never
+ * reach the wire, and the shipped room semantics this wrapper is obliged to keep
+ * (idempotent removal, a monotonic read cursor, an archived room that still
+ * reads).
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CommunityRoomNotFoundError,
   LOCAL_COMMUNITY,
   StaleCommunityCursorError,
   type CommunityCursor,
@@ -42,6 +45,41 @@ function setup(): { adapter: LocalCommunityAdapter; harness: RoomHarness; store:
     resolveIdentity: localCommunityIdentity(harness.authors),
   });
   return { adapter, harness, store };
+}
+
+/** A room id no install holds — what a caller probing for someone else's room has. */
+const ABSENT = 'no-such-room-id';
+
+/**
+ * The error a synchronous refusal threw, or a failure naming what came back
+ * instead. A returned stream is the wrong answer as loudly as a wrong error is.
+ *
+ * @param call - The call that must refuse at call time.
+ */
+function refusalFrom(call: () => unknown): Error {
+  try {
+    call();
+  } catch (err) {
+    return err as Error;
+  }
+  throw new Error('expected a refusal at call time; the call returned instead');
+}
+
+/**
+ * An error's own enumerable properties, with the room id it was asked about
+ * normalized away — so two refusals about two different rooms are comparable on
+ * everything except the address each was handed.
+ *
+ * @param err - The refusal to read.
+ * @param roomId - The id to normalize out of every string value.
+ */
+function ownShape(err: Error, roomId: string): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(err).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? value.replaceAll(roomId, '<id>') : value,
+    ])
+  );
 }
 
 /** A channel with two entries, opened through the port. */
@@ -98,6 +136,77 @@ describe('LocalCommunityAdapter cursors', () => {
     expect(() => adapter.subscribeRoom(roomId, '7' as CommunityCursor)).toThrow(
       StaleCommunityCursorError
     );
+  });
+});
+
+describe('LocalCommunityAdapter room visibility', () => {
+  it('refuses a room it cannot show and a room that is not there identically', async () => {
+    // The half of the port's unknown-room contract the shared suite says it
+    // does NOT assert: a room that exists and is invisible must be refused with
+    // the same error AND the same message as one that does not exist. Arranging
+    // it needs a second identity, which no port method can mint — so it is
+    // proven here, against the visibility rule that ships.
+    const { adapter, harness, store } = setup();
+    await adapter.connect();
+    const roomId = await seed(adapter, 'The owner’s own room');
+
+    // A non-owner sees only the rooms it belongs to, and this one belongs to
+    // the operator alone.
+    const stranger = harness.authors.resolveAgent('/Users/planted/agents/stranger', 'Stranger').id;
+    const asStranger = new LocalCommunityAdapter({
+      service: harness.service,
+      store,
+      resolveIdentity: () => stranger,
+    });
+    await asStranger.connect();
+
+    // Both ways a caller can ask, because the refusal must not depend on which.
+    // The second probe is the one that pins the ORDER of the two checks: a
+    // local cursor is bounded against what the room holds, and a room that is
+    // not there holds nothing — so an adapter that validated the cursor before
+    // the room would answer `StaleCommunityCursorError` for the absent room
+    // (seq 1 is "ahead" of maxSeq 0) and `CommunityRoomNotFoundError` for the
+    // invisible one. Two typed refusals that differ IS the probe the identical
+    // message closes, re-opened one line earlier.
+    const probes = [
+      { asked: 'with no cursor', cursor: (): CommunityCursor | undefined => undefined },
+      {
+        asked: 'with a cursor addressed to the room asked about',
+        cursor: (id: string) =>
+          `${LOCAL_COMMUNITY}|${id}|${STREAM_EPOCH}|1` as CommunityCursor | undefined,
+      },
+    ];
+
+    for (const { asked, cursor } of probes) {
+      const invisible = refusalFrom(() => asStranger.subscribeRoom(roomId, cursor(roomId)));
+      const absent = refusalFrom(() => asStranger.subscribeRoom(ABSENT, cursor(ABSENT)));
+
+      expect(invisible, `${asked}: a room this identity cannot see is refused`).toBeInstanceOf(
+        CommunityRoomNotFoundError
+      );
+      expect(absent, `${asked}: a room that is not there is refused the same way`).toBeInstanceOf(
+        CommunityRoomNotFoundError
+      );
+      // Indistinguishable down to the message, once the id each was asked about
+      // is normalized away. Any difference is the probe that would tell a
+      // caller holding an id that somebody else's room exists.
+      expect(
+        invisible.message.replace(roomId, '<id>'),
+        `${asked}: an invisible room and an absent one must read identically`
+      ).toBe(absent.message.replace(ABSENT, '<id>'));
+      // And nothing hangs off the error either. Message equality alone would
+      // let a later `reason` field carry the difference the message no longer
+      // does, so the shape is compared too — keys first, because "one refusal
+      // grew a field" is the failure worth naming, then values.
+      expect(
+        Object.keys(invisible).sort(),
+        `${asked}: a field on one refusal and not the other is a probe`
+      ).toEqual(Object.keys(absent).sort());
+      expect(
+        ownShape(invisible, roomId),
+        `${asked}: no property may differ once the id is normalized`
+      ).toEqual(ownShape(absent, ABSENT));
+    }
   });
 });
 
