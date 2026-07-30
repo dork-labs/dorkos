@@ -45,7 +45,13 @@ function renderHeader(overrides: Partial<RoomDetailsRoom> = {}, transport?: Tran
   render(
     <ResponsiveDialog open>
       <ResponsiveDialogContent aria-describedby={undefined}>
-        <RoomDetailsHeader room={{ ...CHANNEL, ...overrides }} participants={null} visuals={null} />
+        <RoomDetailsHeader
+          room={{ ...CHANNEL, ...overrides }}
+          participants={null}
+          visuals={null}
+          startTopicEditing={false}
+          topicRef={{ current: null }}
+        />
       </ResponsiveDialogContent>
     </ResponsiveDialog>,
     { wrapper }

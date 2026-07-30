@@ -56,6 +56,7 @@ export type {
 export { roomLoudness, previewLoudness, levelOfRung } from './lib/loudness';
 export type { LoudnessLevel, RoomLoudness } from './lib/loudness';
 export { LoudnessMeter } from './ui/LoudnessMeter';
+export { RoomLoudnessLine } from './ui/RoomLoudnessLine';
 export { ResponseModeControl } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';

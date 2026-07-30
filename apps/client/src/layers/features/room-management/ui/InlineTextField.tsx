@@ -3,7 +3,7 @@
  *
  * @module features/room-management/ui/InlineTextField
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 
@@ -30,6 +30,23 @@ export interface InlineTextFieldProps {
    * is not a room, so an empty name is simply a cancel.
    */
   commitEmpty?: boolean;
+  /**
+   * Open straight into the editor, for an entry point that named this field.
+   *
+   * The menu item that used to raise a modal for this one value lands here
+   * instead, and landing on a line you then have to press would be a worse
+   * version of the modal rather than a better one.
+   */
+  startEditing?: boolean;
+  /**
+   * The editor, handed back so whatever holds this can place the cursor.
+   *
+   * Focus is the container's to give. A menu closing behind a dialog restores
+   * focus to its own trigger a commit later, so anything focused from in here
+   * is simply overwritten; focus placed by the dialog is inside its focus scope,
+   * which Radix defends against exactly that.
+   */
+  inputRef?: RefObject<HTMLInputElement | null>;
   /** Applied to the line AND the editor, so the text does not resize mid-edit. */
   className?: string;
 }
@@ -62,11 +79,14 @@ export function InlineTextField({
   label,
   placeholder,
   commitEmpty = false,
+  startEditing = false,
+  inputRef,
   className,
 }: InlineTextFieldProps) {
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(startEditing);
   const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const ownRef = useRef<HTMLInputElement>(null);
+  const fieldRef = inputRef ?? ownRef;
   const lineRef = useRef<HTMLButtonElement>(null);
   /** Whether this edit has already been decided. First Enter or Escape wins. */
   const committedRef = useRef(false);
@@ -76,12 +96,12 @@ export function InlineTextField({
     committedRef.current = false;
     // After the commit that swaps the line for the field.
     requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
+      fieldRef.current?.focus();
+      fieldRef.current?.select();
     });
   }, [isEditing]);
 
-  const startEditing = () => {
+  const beginEditing = () => {
     // Seeded here rather than kept in step with `value`: the draft belongs to
     // one edit, and a room renamed in another tab mid-edit must not rewrite
     // what somebody is typing.
@@ -124,7 +144,7 @@ export function InlineTextField({
   if (isEditing) {
     return (
       <input
-        ref={inputRef}
+        ref={fieldRef}
         value={draft}
         maxLength={maxLength}
         aria-label={label}
@@ -144,7 +164,7 @@ export function InlineTextField({
     <button
       ref={lineRef}
       type="button"
-      onClick={startEditing}
+      onClick={beginEditing}
       className={cn(
         'group/inline focus-visible:ring-ring flex min-h-11 w-full items-center gap-1.5 rounded text-left outline-hidden focus-visible:ring-2 md:min-h-0',
         className

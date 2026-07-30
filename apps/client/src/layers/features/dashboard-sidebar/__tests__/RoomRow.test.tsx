@@ -323,6 +323,33 @@ describe('RoomRow surfaces opened from the menu', () => {
   });
 });
 
+describe('RoomRow topic', () => {
+  it('opens the room sheet on the topic, cursor already in it', async () => {
+    // "Edit topic…" used to raise a modal holding one text field, over a room
+    // the reader was already looking at. It now opens the sheet with the topic
+    // line already in its editor. Crossing the menu seam matters: the menu
+    // closes a commit later and restores focus to its own trigger, which
+    // overwrites anything the field focused on mount.
+    const { transport } = renderRow(channel(), {
+      transport: createMockTransport({ getRoom: vi.fn().mockResolvedValue(roomWithRoster()) }),
+    });
+    fireEvent.click(within(openDropdown()).getByText('Edit topic…'));
+
+    // The sheet, not a dialog of its own: the roster is right there under it.
+    const panel = await screen.findByRole('dialog');
+    await within(panel).findByRole('region', { name: 'Current members' });
+
+    const input = within(panel).getByRole('textbox', { name: 'Topic' });
+    await waitFor(() => expect(input).toHaveFocus());
+    fireEvent.change(input, { target: { value: 'Clicker planning' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(transport.updateRoom).toHaveBeenCalledWith('room-1', { topic: 'Clicker planning' })
+    );
+  });
+});
+
 describe('RoomRow rename', () => {
   it('opens an inline editor seeded with the title behind the #slug', () => {
     renderRow(channel());

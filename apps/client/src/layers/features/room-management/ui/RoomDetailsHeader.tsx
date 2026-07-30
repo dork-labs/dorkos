@@ -3,6 +3,7 @@
  *
  * @module features/room-management/ui/RoomDetailsHeader
  */
+import type { RefObject } from 'react';
 import type { AuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentVisual } from '@/layers/shared/lib';
 import { ResponsiveDialogHeader, ResponsiveDialogTitle } from '@/layers/shared/ui';
@@ -28,6 +29,13 @@ export interface RoomDetailsHeaderProps {
   participants: readonly AuthorRef[] | null;
   /** The faces of the agents in a DM, so its mark is a face and not a letter. */
   visuals: readonly AgentVisual[] | null;
+  /**
+   * Open the topic straight into its editor — the entry point that used to
+   * raise a modal for this one field.
+   */
+  startTopicEditing: boolean;
+  /** The topic editor, so the sheet can place the cursor in it. */
+  topicRef: RefObject<HTMLInputElement | null>;
 }
 
 /**
@@ -54,7 +62,13 @@ export interface RoomDetailsHeaderProps {
  * opens an editor holding `General` is a control lying about its own value. The
  * `#` beside it still says which kind of room this is.
  */
-export function RoomDetailsHeader({ room, participants, visuals }: RoomDetailsHeaderProps) {
+export function RoomDetailsHeader({
+  room,
+  participants,
+  visuals,
+  startTopicEditing,
+  topicRef,
+}: RoomDetailsHeaderProps) {
   const renameRoom = useRenameRoom();
   const setTopic = useSetRoomTopic();
 
@@ -100,6 +114,8 @@ export function RoomDetailsHeader({ room, participants, visuals }: RoomDetailsHe
               label="Topic"
               placeholder="Add a topic"
               commitEmpty
+              startEditing={startTopicEditing}
+              inputRef={topicRef}
               className="text-muted-foreground text-sm"
             />
           )}
