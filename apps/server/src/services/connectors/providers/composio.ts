@@ -27,6 +27,7 @@ import type {
   ConnectedAccountId,
   ConnectedAccountStatus,
   ConnectorCapabilities,
+  ConnectorKeyKind,
   ConnectorProvider,
   ConnectorToolkit,
   ConnectPoll,
@@ -178,6 +179,15 @@ export class ComposioConnectorProvider implements ConnectorProvider {
    */
   constructor(opts: ComposioConnectorProviderOpts) {
     this._client = opts.client;
+  }
+
+  /**
+   * Which credential kind the stored key validated as (`'unknown'` until a real
+   * call succeeds, or when the injected client does not track kinds). Surfaced
+   * on the provider status so the setup card can say what it is using.
+   */
+  keyKind(): ConnectorKeyKind {
+    return this._client.keyKind?.() ?? 'unknown';
   }
 
   getCapabilities(): ConnectorCapabilities {

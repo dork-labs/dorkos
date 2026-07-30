@@ -8,24 +8,46 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ComposioApiError, FetchComposioHttpClient } from '../composio-client.js';
 
-/** Build a client over a fetch fake that replays scripted responses in order. */
-function clientWith(responses: Array<{ status?: number; body?: unknown }>) {
+/**
+ * Build a client over a fetch fake. Responses can be scripted in order, or
+ * routed by a function of (url, headers) — the latter models the real API's
+ * header-dependent auth (`VERIFIED-LIVE 2026-07-30`: the same key answers 200
+ * or 401 purely by which header carries it).
+ */
+function clientWith(
+  responses:
+    | Array<{ status?: number; body?: unknown }>
+    | ((url: string, headers: Record<string, string>) => { status?: number; body?: unknown }),
+  opts?: { apiKey?: string }
+) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   let i = 0;
   const fetchImpl = vi.fn(async (url: unknown, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
-    const response = responses[Math.min(i, responses.length - 1)] ?? {};
+    const response = Array.isArray(responses)
+      ? (responses[Math.min(i, responses.length - 1)] ?? {})
+      : responses(String(url), (init?.headers ?? {}) as Record<string, string>);
     i += 1;
     const body =
       typeof response.body === 'string' ? response.body : JSON.stringify(response.body ?? {});
     return new Response(body, { status: response.status ?? 200 });
   });
   const client = new FetchComposioHttpClient({
-    apiKey: 'ak-project-key',
+    apiKey: opts?.apiKey ?? 'ak-project-key',
     userId: 'dorkos-operator',
     fetchImpl: fetchImpl as unknown as typeof fetch,
   });
   return { client, calls };
+}
+
+/** The recorded auth-relevant headers of one call. */
+function authHeadersOf(call: { init: RequestInit }): Record<string, string | undefined> {
+  const headers = call.init.headers as Record<string, string>;
+  return {
+    'x-api-key': headers['x-api-key'],
+    'x-user-api-key': headers['x-user-api-key'],
+    'x-project-id': headers['x-project-id'],
+  };
 }
 
 /** One toolkit item exactly as the v3.1 reference shapes it. */
@@ -110,6 +132,136 @@ describe('listToolkits — the real v3.1 envelope', () => {
       message:
         'Composio request failed (401): Invalid API key: uak**SGn9 Please check you are using a valid API key.',
     });
+  });
+});
+
+describe('key kinds — VERIFIED-LIVE (2026-07-30) header routing', () => {
+  const UNAUTHORIZED = {
+    status: 401,
+    body: {
+      error: {
+        message: 'Invalid API key: uak**SGn9',
+        code: 801,
+        slug: 'APIKey_InvalidAPIKey',
+        status: 401,
+        suggested_fix: 'Please check you are using a valid API key.',
+      },
+    },
+  };
+
+  /**
+   * A responder shaped like the real API: the SAME key answers 200 or 401
+   * purely by which header carries it — here, only `x-user-api-key` works.
+   */
+  function userKeyOnlyApi(url: string, headers: Record<string, string>) {
+    if (!headers['x-user-api-key']) return UNAUTHORIZED;
+    if (url.includes('/api/v3/auth/session/info')) {
+      return { body: { project: { nano_id: 'pr_founder', org_id: 'org_1' } } };
+    }
+    return { body: { items: [toolkitItem('gmail')], next_cursor: null } };
+  }
+
+  it('a uak_ key rides x-user-api-key, with its project resolved via session-info', async () => {
+    const { client, calls } = clientWith(userKeyOnlyApi, { apiKey: 'uak_founder_key' });
+
+    const toolkits = await client.listToolkits();
+    expect(toolkits.map((tk) => tk.slug)).toEqual(['gmail']);
+    expect(client.keyKind()).toBe('user');
+
+    // Call 1: session-info under the bare user header (no project id yet)…
+    expect(calls[0]!.url).toContain('/api/v3/auth/session/info');
+    expect(authHeadersOf(calls[0]!)).toMatchObject({
+      'x-user-api-key': 'uak_founder_key',
+      'x-api-key': undefined,
+      'x-project-id': undefined,
+    });
+    // …call 2: the v3.1 call carries the resolved pr_… project id.
+    expect(calls[1]!.url).toContain('/api/v3.1/toolkits');
+    expect(authHeadersOf(calls[1]!)).toMatchObject({
+      'x-user-api-key': 'uak_founder_key',
+      'x-api-key': undefined,
+      'x-project-id': 'pr_founder',
+    });
+  });
+
+  it('a project key rides x-api-key and never calls session-info', async () => {
+    const { client, calls } = clientWith([
+      { body: { items: [toolkitItem('gmail')], next_cursor: null } },
+    ]);
+    await client.listToolkits();
+    expect(client.keyKind()).toBe('project');
+    expect(calls).toHaveLength(1);
+    expect(authHeadersOf(calls[0]!)).toMatchObject({
+      'x-api-key': 'ak-project-key',
+      'x-user-api-key': undefined,
+    });
+  });
+
+  it('an unknown-prefix key that 401s under x-api-key retries once as a user key and locks in', async () => {
+    // The catch-all for prefixes we have not seen (e.g. org keys): guess
+    // project, fall back to the user header on the first 401.
+    const { client, calls } = clientWith(userKeyOnlyApi, { apiKey: 'org_mystery_key' });
+
+    const toolkits = await client.listToolkits();
+    expect(toolkits.map((tk) => tk.slug)).toEqual(['gmail']);
+    expect(client.keyKind()).toBe('user');
+    // Attempt as project (401) → retry as user (200).
+    expect(authHeadersOf(calls[0]!)['x-api-key']).toBe('org_mystery_key');
+    expect(authHeadersOf(calls[1]!)['x-user-api-key']).toBe('org_mystery_key');
+
+    // The NEXT call goes straight to the user header — now with the project
+    // resolved — and never re-tries x-api-key.
+    await client.listToolkits();
+    const later = calls.slice(2);
+    expect(later.some((call) => call.url.includes('/api/v3/auth/session/info'))).toBe(true);
+    for (const call of later) {
+      expect(authHeadersOf(call)['x-api-key']).toBeUndefined();
+    }
+    expect(authHeadersOf(calls[calls.length - 1]!)['x-project-id']).toBe('pr_founder');
+  });
+
+  it('a key both headers reject fails honestly with the API message; kind stays unknown', async () => {
+    const { client, calls } = clientWith(() => UNAUTHORIZED, { apiKey: 'completely_bogus' });
+    await expect(client.listToolkits()).rejects.toMatchObject({
+      name: 'ComposioApiError',
+      status: 401,
+      message: expect.stringContaining('valid API key'),
+    });
+    // Exactly one retry: both header kinds tried, then fail.
+    expect(calls).toHaveLength(2);
+    expect(client.keyKind()).toBe('unknown');
+  });
+
+  it('a 401 AFTER the key has validated does not retry — a revocation fails honestly', async () => {
+    const { client, calls } = clientWith([
+      { body: { items: [toolkitItem('gmail')], next_cursor: null } },
+      UNAUTHORIZED,
+    ]);
+    await client.listToolkits();
+    await expect(client.listToolkits()).rejects.toMatchObject({ status: 401 });
+    // No third call: the validated kind is not second-guessed.
+    expect(calls).toHaveLength(2);
+  });
+
+  it('an unreachable session-info degrades silently — user-key calls proceed bare', async () => {
+    const { client, calls } = clientWith(
+      (url, headers) => {
+        if (url.includes('/api/v3/auth/session/info')) return { status: 500, body: {} };
+        if (!headers['x-user-api-key']) return UNAUTHORIZED;
+        return { body: { items: [toolkitItem('gmail')], next_cursor: null } };
+      },
+      { apiKey: 'uak_founder_key' }
+    );
+
+    const toolkits = await client.listToolkits();
+    expect(toolkits).toHaveLength(1);
+    // VERIFIED-LIVE (2026-07-30): bare x-user-api-key answers 200s.
+    expect(authHeadersOf(calls[1]!)['x-project-id']).toBeUndefined();
+  });
+
+  it('keyKind is unknown before any call has validated', () => {
+    const { client } = clientWith([{ body: { items: [] } }], { apiKey: 'uak_founder_key' });
+    expect(client.keyKind()).toBe('unknown');
   });
 });
 
