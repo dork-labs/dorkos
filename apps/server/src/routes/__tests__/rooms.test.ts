@@ -337,14 +337,14 @@ describe('/api/rooms', () => {
   });
 
   describe('members', () => {
-    it('adds an agent by its directory and seeds a channel to mention-only', async () => {
+    it('adds an agent by its directory and seeds a channel to engaged', async () => {
       const room = await createChannel();
       const res = await request(app)
         .post(`/api/rooms/${room.id}/members`)
         .send({ agentPath: ANA_PATH });
 
       expect(res.status).toBe(201);
-      expect(res.body.responseMode).toBe('mention-only');
+      expect(res.body.responseMode).toBe('engaged');
       expect(res.body.author.displayName).toBe('Ana');
     });
 

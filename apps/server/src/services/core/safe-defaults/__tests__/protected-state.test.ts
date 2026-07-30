@@ -244,6 +244,8 @@ describe('applyProtectedState', () => {
       maxAutomaticTurnsTotalPerHour: 240,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 10,
+      engagedWindowPosts: 5,
     });
   });
 

@@ -71,6 +71,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'mesh.scanRoots',
       'providers',
       'relay.dataDir',
+      'rooms.engagedWindowMinutes',
+      'rooms.engagedWindowPosts',
       'rooms.maxAgentDepth',
       'rooms.maxAutomaticTurnsPerRoomPerHour',
       'rooms.maxAutomaticTurnsTotalPerHour',

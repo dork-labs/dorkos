@@ -242,6 +242,8 @@ function respondsSentence(mode: ResponseMode): string {
   switch (mode) {
     case 'always':
       return 'You answer every message here.';
+    case 'engaged':
+      return 'You answer here when somebody mentions you, and for a short while afterwards while the conversation is still with you.';
     case 'mention-only':
       return 'You answer here when somebody mentions you.';
     case 'direct-only':
@@ -249,6 +251,25 @@ function respondsSentence(mode: ResponseMode): string {
     case 'silent':
       return 'You are set not to reply here.';
   }
+}
+
+/**
+ * The message half of an engaged window, counted out.
+ *
+ * `null` should not reach here — it travels with `engagedUntil`, and the caller
+ * has already tested that — but a count is a number a model will act on, so the
+ * absent case says nothing rather than inventing one.
+ *
+ * @param postsLeft - Messages from other members the window still survives.
+ */
+function postsLeftClause(postsLeft: number | null): string {
+  if (postsLeft === null) return 'or until enough messages go by without you being named';
+  // All three are `or until …` clauses in one vocabulary, so the caller's
+  // "whichever comes first" lands on two comparable options rather than after a
+  // clause that has already stated the outcome.
+  if (postsLeft <= 0) return 'or until the next message from another member';
+  if (postsLeft === 1) return 'or until 1 more message from another member';
+  return `or until ${postsLeft} more messages from other members`;
 }
 
 /**
@@ -353,8 +374,13 @@ function preamble(data: RoomContextData, where: string): string[] {
   const addressed = data.addressing.addressedNow ? ' This message mentions you.' : '';
   lines.push(`${identity} ${respondsSentence(data.addressing.responseMode)}${addressed}`);
   if (data.addressing.engagedUntil) {
+    // BOTH halves, with the real number in the second one. A time alone reads as
+    // the whole rule and is half of one; "enough messages" is a rule an agent
+    // cannot follow, which is the same failure `.claude/rules/room-conduct.md`
+    // records about telling a model not to loop.
     lines.push(
-      `You are engaged in this conversation until ${clock(data.addressing.engagedUntil)}.`
+      `You are engaged in this conversation until ${clock(data.addressing.engagedUntil)}, ` +
+        `${postsLeftClause(data.addressing.engagedPostsLeft)} — whichever comes first.`
     );
   }
 

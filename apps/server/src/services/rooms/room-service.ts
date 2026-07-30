@@ -74,6 +74,7 @@ import type {
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
+import type { EngagedWindow } from './engagement.js';
 import { resolveMentions } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import { RoomRoster, type AddMemberInput } from './room-roster.js';
@@ -95,6 +96,8 @@ export interface RoomServiceDeps {
   budget: RoomTurnBudget;
   /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
   maxAgentDepth(): number;
+  /** The live `rooms.engagedWindow*` ceilings, injected for the same reason. */
+  engagedWindow(): EngagedWindow;
   /**
    * Whether this author is the person who owns the install.
    *
@@ -163,6 +166,7 @@ export class RoomService {
       runner: deps.turns,
       budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,
+      engagedWindow: deps.engagedWindow,
       writer: {
         post: (roomId, input) => this.post(roomId, input),
         postNotice: (roomId, body, cascade, replyTo) =>

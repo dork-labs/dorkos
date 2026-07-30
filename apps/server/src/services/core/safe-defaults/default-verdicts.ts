@@ -197,6 +197,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // the safe value is simply the shipped one.
   'rooms.replyWaitMinutes': 10,
   'rooms.lateReplyCeilingMinutes': 60,
+  // The engaged window's two ceilings. Both ARE bounds: they are what stops
+  // `engaged` becoming `always` with extra steps, and a person can set either
+  // lower.
+  'rooms.engagedWindowMinutes': 10,
+  'rooms.engagedWindowPosts': 5,
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,

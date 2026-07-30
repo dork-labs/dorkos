@@ -69,8 +69,29 @@ export type AgentHealthStatus = z.infer<typeof AgentHealthStatusSchema>;
  * Deliberately unnamed for OpenAPI: it stays inlined into
  * {@link AgentBehaviorSchema}'s generated component so extracting it changed no
  * byte of `docs/api/openapi.json`.
+ *
+ * The five values are the four turn-allocation rules of Sacks/Schegloff/Jefferson
+ * 1974 plus "no participation", which is why there is no sixth:
+ *
+ * - `always` — rule 1(b), self-selection. Answers everything, and in a room with
+ *   a participant that cannot lose the race for the floor that is dominance by
+ *   construction rather than by accident.
+ * - `engaged` — rule 1(c), the current speaker may continue, and the rules
+ *   re-apply at each transition-relevance place. Answers when addressed, and for
+ *   a bounded window afterwards; the window is a derived predicate over the room
+ *   log (`services/rooms/engagement.ts`), never stored state.
+ * - `direct-only` — `mention-only` plus "a direct message addresses everyone in
+ *   it". A room-kind rule rather than a turn-allocation one.
+ * - `mention-only` — rule 1(a), the current speaker selects the next.
+ * - `silent` — no participation. A true off switch: the agent never runs.
  */
-export const ResponseModeSchema = z.enum(['always', 'direct-only', 'mention-only', 'silent']);
+export const ResponseModeSchema = z.enum([
+  'always',
+  'engaged',
+  'direct-only',
+  'mention-only',
+  'silent',
+]);
 
 export type ResponseMode = z.infer<typeof ResponseModeSchema>;
 

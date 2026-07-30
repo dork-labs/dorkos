@@ -61,6 +61,8 @@ describe('UserConfigSchema', () => {
         maxAutomaticTurnsTotalPerHour: 240,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
+        engagedWindowMinutes: 10,
+        engagedWindowPosts: 5,
       },
       onboarding: {
         completedSteps: [],
@@ -369,6 +371,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         maxAutomaticTurnsTotalPerHour: 240,
         replyWaitMinutes: 10,
         lateReplyCeilingMinutes: 60,
+        engagedWindowMinutes: 10,
+        engagedWindowPosts: 5,
       },
       onboarding: {
         completedSteps: [],

@@ -129,10 +129,26 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await expect(panel.getByRole('heading', { name: `Members of #${slug}` })).toBeVisible();
     await expect(panel.getByRole('button', { name: `Remove ${ana.name}` })).toBeVisible();
     await expect(panel.getByRole('button', { name: `Remove ${kai.name}` })).toBeVisible();
-    // The per-room override this panel is the first UI ever to touch.
-    await expect(panel.getByRole('combobox', { name: `When ${ana.name} replies` })).toHaveText(
-      'Replies only when @mentioned'
-    );
+    // The per-room override this panel is the first UI ever to touch. This
+    // channel was made through the UI, not through the fixture, so it carries
+    // the shipped channel seed — `engaged` (room-participation spec §9.4) —
+    // rather than whatever `roomsApi.createChannel` silences its rooms to.
+    const mode = panel.getByRole('combobox', { name: `When ${ana.name} replies` });
+    await expect(mode).toHaveText('Replies while it is in the conversation');
+
+    // And it has to be READABLE, not merely present. The trigger clamps its
+    // label to one line, so a label too long for the control is silently cut to
+    // "Replies while it i…" — a setting nobody can act on. This is the longest
+    // of the five, and jsdom cannot see it: it has no layout, so every width
+    // there is zero.
+    const clipped = await mode
+      .locator('span')
+      .first()
+      .evaluate((node) => {
+        const box = node as HTMLElement;
+        return box.scrollWidth > box.clientWidth;
+      });
+    expect(clipped, 'the response-mode label is truncated in its control').toBe(false);
   });
 
   test('an empty channel says it is empty and hands you the button (DOR-600)', async ({
