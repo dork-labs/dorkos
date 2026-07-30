@@ -94,8 +94,8 @@ function settled(candidates: AgentPickerCandidate[]) {
 }
 
 const FLEET = settled([
-  { agentPath: '/repo/ana', displayName: 'Ana' },
-  { agentPath: '/repo/bo', displayName: 'Bo' },
+  { agentPath: '/repo/ana', displayName: 'Ana', visual: null },
+  { agentPath: '/repo/bo', displayName: 'Bo', visual: null },
 ]);
 
 function renderPanel(
@@ -396,7 +396,8 @@ describe('RoomDetailsDialog', () => {
     await rosterList();
 
     // Ana is on the roster; Bo is not.
-    expect(screen.getAllByRole('option').map((el) => el.textContent)).toEqual(['Bo']);
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.getByRole('option', { name: 'Bo' })).toBeInTheDocument();
   });
 
   it('adds every agent picked, one call each', async () => {
@@ -518,7 +519,9 @@ describe('RoomDetailsDialog', () => {
   });
 
   it('says there is nobody left to add rather than showing an empty picker', async () => {
-    renderPanel({ agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana' }]) });
+    renderPanel({
+      agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana', visual: null }]),
+    });
     await rosterList();
 
     expect(screen.getByText('Every agent you have is already in here.')).toBeInTheDocument();

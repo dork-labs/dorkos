@@ -74,8 +74,8 @@ describe('useAgentPickerCandidates', () => {
     await waitFor(() => expect(result.current.candidates).toHaveLength(2));
     // The subject, not a count: these two agents, in the order a reader scans.
     expect(result.current.candidates).toEqual([
-      { agentPath: '/w/ana', displayName: 'ana' },
-      { agentPath: '/w/kai', displayName: 'kai' },
+      { agentPath: '/w/ana', displayName: 'ana', visual: null },
+      { agentPath: '/w/kai', displayName: 'kai', visual: null },
     ]);
     expect(result.current.isError).toBe(false);
   });
@@ -91,7 +91,12 @@ describe('useAgentPickerCandidates', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.isError).toBe(false);
-    expect(result.current.candidates).toEqual([{ agentPath: '/w/ana', displayName: 'ana' }]);
+    // Degraded on both halves and honest about it: the name falls back to the
+    // directory, and the face is dropped rather than hashed out of the path,
+    // which would be a confident guess this agent wears nowhere else.
+    expect(result.current.candidates).toEqual([
+      { agentPath: '/w/ana', displayName: 'ana', visual: null },
+    ]);
   });
 
   it('does not resolve an empty list of paths when retrying a failed mesh read', async () => {

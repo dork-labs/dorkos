@@ -42,9 +42,9 @@ beforeEach(() => toastError.mockClear());
 afterEach(cleanup);
 
 const AGENTS = [
-  { agentPath: '/w/ana', displayName: 'Ana' },
-  { agentPath: '/w/bo', displayName: 'Bo' },
-  { agentPath: '/w/kai', displayName: 'Kai' },
+  { agentPath: '/w/ana', displayName: 'Ana', visual: null },
+  { agentPath: '/w/bo', displayName: 'Bo', visual: null },
+  { agentPath: '/w/kai', displayName: 'Kai', visual: null },
 ];
 
 /**

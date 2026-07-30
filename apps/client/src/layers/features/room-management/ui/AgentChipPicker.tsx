@@ -1,7 +1,7 @@
 import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { X } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
-import { Button } from '@/layers/shared/ui';
+import { cn, initialOf } from '@/layers/shared/lib';
+import { Button, IdentityAvatar } from '@/layers/shared/ui';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 
 interface AgentChipPickerProps {
@@ -366,14 +366,37 @@ export function AgentChipPicker({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => add(candidate)}
               className={cn(
-                'flex min-h-11 cursor-pointer items-center truncate rounded-sm px-2 py-2 text-sm md:min-h-0 md:py-1.5',
+                'flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm md:min-h-0 md:py-1.5',
                 // Weaker than the real highlight on purpose, so a hovered row
                 // and the announced one are still told apart when they differ.
                 'hover:bg-accent/50',
                 index === activeIndex && 'bg-accent text-accent-foreground'
               )}
             >
-              {candidate.displayName}
+              {/* The face, so this list stops reading as a directory listing of
+                  every folder you own. It is the SAME face the sidebar and the
+                  message gutter draw, resolved once in `entities/agent` — a
+                  picker that hashed its own would introduce a second appearance
+                  for one agent.
+
+                  No agent badge on these rows, deliberately: everything
+                  offered here is an agent, so a mark on every one would be a
+                  column of identical glyphs. The badge earns its place the day
+                  this list offers people too.
+
+                  An agent whose manifest could not be read gets a letter on a
+                  neutral disc instead. `currentColor` is the row's own text
+                  colour, so the disc reads as a shade of the surface rather
+                  than a colour that means something — see
+                  `AgentPickerCandidate.visual` for why the directory is not
+                  hashed into a face here. */}
+              <IdentityAvatar
+                size="xs"
+                color={candidate.visual?.color ?? 'currentColor'}
+                emoji={candidate.visual?.emoji}
+                fallback={initialOf(candidate.displayName)}
+              />
+              <span className="min-w-0 flex-1 truncate">{candidate.displayName}</span>
             </li>
           ))}
         </ul>

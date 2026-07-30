@@ -32,9 +32,10 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
  *   pending flag unguarded would spin that person's picker for good, which is
  *   why waiting on it is conditioned on there being paths to resolve.
  * - **Only the mesh read can fail this roster.** Resolving manifests is what
- *   turns a directory into a display name; when it fails the name falls back to
- *   the directory's own last segment — degraded, still usable, still the right
- *   agents. Blocking the picker on that would trade a worse label for no picker
+ *   turns a directory into a display name and a face; when it fails the name
+ *   falls back to the directory's own last segment and the face is dropped
+ *   entirely — degraded, still usable, still the right agents. Blocking the
+ *   picker on that would trade a worse label for no picker
  *   at all. A failed mesh read is different: it leaves nothing to offer, and
  *   presenting that as an empty fleet is the lie this shape exists to prevent.
  *
@@ -46,10 +47,12 @@ export function useAgentPickerCandidates(): AgentRoster {
   const paths = useMemo(() => (mesh.data?.agents ?? []).map((a) => a.projectPath), [mesh.data]);
   const resolved = useResolvedAgents(paths);
 
-  const candidates = useMemo(
-    () => toAgentPickerCandidates(disambiguateDisplayNames(paths, resolved.data ?? {})),
-    [paths, resolved.data]
-  );
+  const candidates = useMemo(() => {
+    // One manifest read feeds both halves of a candidate — its name and its
+    // face — so the two can never disagree about which agent they describe.
+    const manifests = resolved.data ?? {};
+    return toAgentPickerCandidates(disambiguateDisplayNames(paths, manifests), manifests);
+  }, [paths, resolved.data]);
 
   const meshRefetch = mesh.refetch;
   const resolvedRefetch = resolved.refetch;

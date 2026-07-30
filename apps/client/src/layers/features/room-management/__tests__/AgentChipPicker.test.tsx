@@ -9,15 +9,16 @@
  * than coverage. Enter and the button are separate rungs and each is checked.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { AgentChipPicker } from '../ui/AgentChipPicker';
 
 afterEach(cleanup);
 
-const FLEET = [
-  { agentPath: '/w/ana', displayName: 'Ana' },
-  { agentPath: '/w/bo', displayName: 'Bo' },
+const FLEET: AgentPickerCandidate[] = [
+  { agentPath: '/w/ana', displayName: 'Ana', visual: { color: '#6366f1', emoji: '🔍' } },
+  { agentPath: '/w/bo', displayName: 'Bo', visual: null },
 ];
 
 /**
@@ -25,7 +26,10 @@ const FLEET = [
  * That is what lets a test type a query and hover a different match at the same
  * time — the state the announced/added desync lived in.
  */
-const TRIO = [...FLEET, { agentPath: '/w/kai', displayName: 'Kai' }];
+const TRIO: AgentPickerCandidate[] = [
+  ...FLEET,
+  { agentPath: '/w/kai', displayName: 'Kai', visual: null },
+];
 
 function renderPicker(submitDisabled: boolean) {
   const onSubmit = vi.fn();
@@ -61,6 +65,29 @@ function renderFresh(candidates = FLEET) {
   return { onSubmit, field: () => screen.getByLabelText('Search agents') };
 }
 
+describe('AgentChipPicker faces', () => {
+  it('draws the agent’s own face, and a letter for one it could not resolve', () => {
+    // The list used to be plain text — every project folder you own, in
+    // alphabetical order, with no faces at all, while a picker ten directories
+    // away drew the same agents WITH them. A face that could not be resolved
+    // draws a letter rather than a hashed one: an invented face here would be
+    // this agent's only wrong appearance in the whole cockpit.
+    renderFresh();
+
+    expect(within(screen.getByRole('option', { name: 'Ana' })).getByText('🔍')).toBeInTheDocument();
+    expect(within(screen.getByRole('option', { name: 'Bo' })).getByText('B')).toBeInTheDocument();
+  });
+
+  it('keeps the face out of what a screen reader announces for the row', () => {
+    // An emoji has a spoken name nobody asked to hear, and the row is picked by
+    // agent name. The option's accessible name must stay the name alone.
+    renderFresh();
+
+    expect(screen.getByRole('option', { name: 'Ana' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '🔍 Ana' })).not.toBeInTheDocument();
+  });
+});
+
 describe('AgentChipPicker submitDisabled', () => {
   it('refuses the KEYBOARD commit, not just the button', () => {
     const onSubmit = renderPicker(true);
@@ -82,7 +109,7 @@ describe('AgentChipPicker submitDisabled', () => {
 
     fireEvent.keyDown(screen.getByLabelText('Search agents'), { key: 'Enter' });
 
-    expect(onSubmit).toHaveBeenCalledWith([{ agentPath: '/w/ana', displayName: 'Ana' }]);
+    expect(onSubmit).toHaveBeenCalledWith([FLEET[0]]);
   });
 });
 
@@ -100,6 +127,20 @@ describe('AgentChipPicker submitDisabled', () => {
  * reader presses to finish used to add that agent instead of committing.
  */
 describe('AgentChipPicker: the announced row IS the Enter target', () => {
+  /**
+   * What a screen reader reads out for a row — its text with the decorative
+   * parts left out.
+   *
+   * Raw `textContent` would pick up the agent's face, which is `aria-hidden`
+   * and is not part of what is announced. This invariant is about what the
+   * reader is TOLD, so it has to compare the same string.
+   */
+  function announcedText(el: Element): string {
+    const clone = el.cloneNode(true) as HTMLElement;
+    for (const hidden of clone.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+    return clone.textContent?.trim() ?? '';
+  }
+
   /** The option `aria-activedescendant` names, or null when nothing is announced. */
   function announced(): string | null {
     const field = screen.getByLabelText('Search agents');
@@ -107,7 +148,7 @@ describe('AgentChipPicker: the announced row IS the Enter target', () => {
     if (!id) return null;
     const el = document.getElementById(id);
     if (!el) throw new Error(`aria-activedescendant points at ${id}, which is not in the document`);
-    return el.textContent;
+    return announcedText(el);
   }
 
   /** Every option the list currently draws as selected. Must never exceed one. */
@@ -115,7 +156,7 @@ describe('AgentChipPicker: the announced row IS the Enter target', () => {
     return screen
       .queryAllByRole('option')
       .filter((el) => el.getAttribute('aria-selected') === 'true')
-      .map((el) => el.textContent ?? '');
+      .map(announcedText);
   }
 
   /**
@@ -199,7 +240,7 @@ describe('AgentChipPicker: the announced row IS the Enter target', () => {
     fireEvent.keyDown(field(), { key: 'Enter' });
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit).toHaveBeenCalledWith([{ agentPath: '/w/ana', displayName: 'Ana' }]);
+    expect(onSubmit).toHaveBeenCalledWith([TRIO[0]]);
   });
 
   it('still adds when Enter follows an ARROW key', () => {

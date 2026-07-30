@@ -10,6 +10,8 @@
  *
  * @module entities/agent/lib/agent-choices
  */
+import type { AgentVisualSource } from '@/layers/shared/lib';
+import { resolveAgentVisual, type AgentVisual } from '@/layers/shared/lib';
 
 /** One agent the operator can put in a conversation. */
 export interface AgentPickerCandidate {
@@ -17,6 +19,21 @@ export interface AgentPickerCandidate {
   agentPath: string;
   /** What to call it on screen, already disambiguated across the roster. */
   displayName: string;
+  /**
+   * The agent's face — the same colour and emoji every other surface draws for
+   * it — or `null` when its manifest could not be read.
+   *
+   * **`null` means "we do not know what this agent looks like", and a picker
+   * has to say so rather than invent one.** The face is hashed from the
+   * manifest's id, so with no manifest there is nothing to hash: the only other
+   * handle is the directory, and hashing THAT produces a perfectly stable,
+   * perfectly confident face that matches nothing — the sidebar, the message
+   * gutter and this list would each show the same agent differently, and the
+   * one place that guessed would look the most certain. This is the same
+   * mistake DOR-582 fixed in a DM's mark, where the tempting id was the
+   * `authors` row. Draw a letter instead; a letter is honest about not knowing.
+   */
+  visual: AgentVisual | null;
 }
 
 /**
@@ -46,20 +63,33 @@ export interface AgentRoster {
 
 /**
  * Turn a `path → display name` map into the sorted list every agent picker
- * reads.
+ * reads, with each agent's face on it.
  *
  * Sorted by the name on screen rather than by path, because that is the order
  * the reader is scanning in. `localeCompare` rather than `<`, so accented names
  * land where a person expects them rather than after `Z`.
  *
+ * **The face is resolved here rather than at each picker**, from the same
+ * manifest `disambiguateDisplayNames` names the agent from and through
+ * the same `resolveAgentVisual` the sidebar and the message gutter use. That is
+ * what makes one agent look like itself everywhere. An agent with no manifest
+ * gets no face at all — see {@link AgentPickerCandidate.visual} for why the
+ * directory is not a substitute.
+ *
  * @param displayNames - Display names keyed by agent directory, as
  *   `disambiguateDisplayNames` returns them.
+ * @param agents - Resolved manifests keyed by the same directories. A path that
+ *   is missing, `null` or `undefined` here yields a candidate with no face.
  * @returns The candidates, sorted by display name.
  */
 export function toAgentPickerCandidates(
-  displayNames: Record<string, string>
+  displayNames: Record<string, string>,
+  agents: Record<string, AgentVisualSource | null | undefined>
 ): AgentPickerCandidate[] {
   return Object.entries(displayNames)
-    .map(([agentPath, displayName]) => ({ agentPath, displayName }))
+    .map(([agentPath, displayName]) => {
+      const agent = agents[agentPath];
+      return { agentPath, displayName, visual: agent ? resolveAgentVisual(agent) : null };
+    })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
