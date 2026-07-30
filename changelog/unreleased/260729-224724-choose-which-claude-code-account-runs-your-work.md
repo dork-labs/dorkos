@@ -5,6 +5,7 @@ covers:
   - 'feat(server,client): pin every turn to its own Claude Code account and apply a switch live (DOR-729)'
   - 'feat(client,shared): choose and switch Claude Code accounts from the cockpit (DOR-729)'
   - 'fix(server,client): name the default Claude account by absence, plus DOR-729 review fixes'
+  - 'refactor(client): drop a dead canSelect term from both status-bar gates (DOR-729)'
 ---
 
 ### Added
