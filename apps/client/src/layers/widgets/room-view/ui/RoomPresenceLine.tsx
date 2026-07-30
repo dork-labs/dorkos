@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { useRoomPresence } from '@/layers/entities/room';
-import { PRESENCE_NAME_LIMIT, presenceElapsed, presenceSentence } from '../lib/presence-copy';
+import { presenceElapsed, useRoomPresence } from '@/layers/entities/room';
+import { PRESENCE_NAME_LIMIT, presenceSentence } from '../lib/presence-copy';
 
 /**
  * What to call an agent the roster does not hold.

@@ -11,7 +11,7 @@
 export { roomKeys } from './api/query-keys';
 export { useRooms, useRoomsByKind } from './model/use-rooms';
 export type { RoomsByKind } from './model/use-rooms';
-export { useRoom, useRoomEntries } from './model/use-room';
+export { useRoom, useRoomEntries, useLoadedRoomEntries } from './model/use-room';
 export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
 export type { RoomStreamState } from './model/use-room-stream';
 export { useRoomPresence, useRoomPresenceStore, PRESENCE_TICK_MS } from './model/use-room-presence';
@@ -45,6 +45,7 @@ export type {
   SetResponseModeInput,
 } from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
+export { presenceElapsed } from './lib/presence-copy';
 export { rungsFor, rungOf, modeForRung, explainRung } from './lib/response-mode';
 export type {
   EngagedWindow,
@@ -55,9 +56,7 @@ export type {
 export { roomLoudness, previewLoudness, levelOfRung } from './lib/loudness';
 export type { LoudnessLevel, RoomLoudness } from './lib/loudness';
 export { LoudnessMeter } from './ui/LoudnessMeter';
-export type { LoudnessMeterProps } from './ui/LoudnessMeter';
 export { ResponseModeControl } from './ui/ResponseModeControl';
-export type { ResponseModeControlProps } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { MemberList } from './ui/MemberList';

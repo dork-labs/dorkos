@@ -1,33 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { UserMinus } from 'lucide-react';
 import { agentAuthorRef, type Room, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { initialOf } from '@/layers/shared/lib';
+import type { AgentVisual } from '@/layers/shared/lib';
 import {
-  Button,
-  IdentityAvatar,
   ResponsiveDialog,
   ResponsiveDialogBody,
   ResponsiveDialogContent,
   ResponsiveDialogDescription,
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Skeleton,
 } from '@/layers/shared/ui';
 import {
-  authorColor,
-  explainRung,
   modeForRung,
   roomDisplayTitle,
-  rungOf,
-  rungsFor,
   useAddRoomMember,
+  useLoadedRoomEntries,
   useRemoveRoomMember,
   useRoom,
+  useRoomPresence,
   useSetMemberResponseMode,
   type ResponseRung,
 } from '@/layers/entities/room';
@@ -35,6 +25,7 @@ import { useEngagedWindow } from '@/layers/entities/config';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
+import { RoomMemberRow } from './RoomMemberRow';
 
 /**
  * Which part of the panel the reader asked for, so that part gets the focus.
@@ -108,9 +99,26 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
   // read lands, and the sentence says less rather than quoting the numbers this
   // install ships with — see `useEngagedWindow`.
   const engagedWindow = useEngagedWindow();
+  // Who is working, if anybody is telling us. The signal rides the room's own
+  // SSE stream, which only the room ON SCREEN has open — so a panel opened from
+  // the sidebar over some other room correctly learns nothing, and the rows say
+  // the next true thing instead. Opening a second stream to decorate a dialog is
+  // not a trade worth making.
+  const working = useRoomPresence(open ? room.id : null);
+  // "Last spoke" is decoration: worth printing over an open room, never worth a
+  // history GET of its own — and never worth racing the live stream for the
+  // cache entry it writes into. See `useLoadedRoomEntries`.
+  const loadedEntries = useLoadedRoomEntries(open ? room.id : null);
   /** The member whose removal is waiting to be confirmed, by author id. */
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
+  /**
+   * The one member whose loudness scale is open, by author id.
+   *
+   * One at a time: four expanded rungs plus their consequences is most of a
+   * phone screen, and a sheet that can grow to four of them is one nobody can
+   * find the bottom of.
+   */
+  const [expandedMember, setExpandedMember] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLElement | null>(null);
   /** Whether the "add" entry point has already been handed its field. Once only. */
@@ -136,12 +144,6 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
     field.focus();
   }, [focus, agents.isLoading, agents.isError]);
 
-  // The confirmation takes the focus so it can be answered from the keyboard
-  // without hunting for it, and so a screen reader reads what it is confirming.
-  useEffect(() => {
-    if (pendingRemoval !== null) confirmRef.current?.focus();
-  }, [pendingRemoval]);
-
   const title = roomDisplayTitle(room);
   const members = useMemo(() => roomQuery.data?.members ?? [], [roomQuery.data]);
   const agentMembers = useMemo(() => members.filter((m) => m.author.kind === 'agent'), [members]);
@@ -155,6 +157,39 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
     );
     return (agent: { agentPath: string }) => present.has(agentAuthorRef(agent.agentPath));
   }, [agentMembers]);
+
+  /**
+   * Each agent's real face, keyed by the same stable handle the roster carries.
+   *
+   * The fleet is read here anyway to offer the picker, and its candidates hold
+   * the visual `entities/agent` resolves from the manifest — the one the sidebar
+   * and the message gutter draw. Joining on it is what stops this roster
+   * inventing a second appearance for an agent the reader already recognises.
+   */
+  const facesByRef = useMemo(() => {
+    const faces = new Map<string, AgentVisual>();
+    for (const candidate of agents.candidates) {
+      if (candidate.visual !== null)
+        faces.set(agentAuthorRef(candidate.agentPath), candidate.visual);
+    }
+    return faces;
+  }, [agents.candidates]);
+
+  /**
+   * When each author last posted, as far as the loaded page can say.
+   *
+   * Posts only: a notice is the ROOM speaking about a member, not the member
+   * speaking. Absent authors are absent from the map, and the row prints when
+   * they joined rather than claiming they have never spoken — the page is only
+   * the tail of the log, so silence in it proves nothing.
+   */
+  const lastSpokeByAuthor = useMemo(() => {
+    const spoke = new Map<string, string>();
+    for (const entry of loadedEntries ?? []) {
+      if (entry.kind === 'post') spoke.set(entry.authorId, entry.createdAt);
+    }
+    return spoke;
+  }, [loadedEntries]);
 
   const handleAdd = (chosen: AgentPickerCandidate[]) => {
     // One call per agent: the roster endpoint adds one member at a time, and a
@@ -263,108 +298,44 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
                 No agents in here yet. Add one below and it will see everything said so far.
               </p>
             ) : (
-              <ul className="space-y-2">
-                {agentMembers.map((member) => (
-                  <li key={member.authorId} className="rounded-md border p-2">
-                    <div className="flex items-center gap-2">
-                      <IdentityAvatar
-                        color={member.author.color ?? authorColor(member.author.id)}
-                        emoji={member.author.emoji}
-                        fallback={initialOf(member.author.displayName)}
-                        className="size-6 shrink-0"
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {member.author.displayName}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${member.author.displayName}`}
-                        onClick={() => setPendingRemoval(member.authorId)}
-                        className="text-muted-foreground hover:text-destructive focus-visible:ring-ring shrink-0 rounded-md p-1.5 outline-hidden transition-colors focus-visible:ring-2"
-                      >
-                        <UserMinus className="size-4" />
-                      </button>
-                    </div>
+              /* Everyone, in the order the server hands them back — oldest
+                 membership first (`RoomStore.listMembers`), which puts whoever
+                 opened the room at the top. Nothing re-sorts here: the sidebar
+                 and this panel name the same people in the same order because
+                 neither of them decides one.
 
-                    {/* The rung gets its own line rather than sharing one with
-                        the name, and the sentence under it carries the weight
-                        the labels no longer do. A one-word label is only
-                        rankable next to the others, so the scale is the
-                        control's order and the sentence says what the chosen
-                        one actually does — with the numbers this install is
-                        really running. Widths are measured in
-                        `room-conversation.spec.ts`, in a real browser: jsdom
-                        has no layout and reports every width as zero. */}
-                    <Select
-                      value={rungOf(member.responseMode, room.kind)}
-                      onValueChange={(value) => handleRungChange(member, value as ResponseRung)}
-                    >
-                      <SelectTrigger
-                        className="mt-1.5 w-full"
-                        aria-label={`How loud ${member.author.displayName} is here`}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      {/* Only the rungs this room has. A direct message offers
-                          three, because it only has three behaviours — and a
-                          stored value that would have been a fourth is
-                          projected onto one of them rather than blanking the
-                          control. */}
-                      <SelectContent>
-                        {rungsFor(room.kind).map((option) => (
-                          <SelectItem key={option.rung} value={option.rung}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-muted-foreground mt-1.5 text-xs">
-                      {
-                        explainRung(
-                          rungOf(member.responseMode, room.kind),
-                          room.kind,
-                          engagedWindow
-                        ).sentence
+                 The reader is IN this list. A panel that answers "who is in
+                 here?" by listing everyone except the person asking is
+                 describing a room that does not exist. They simply have no
+                 loudness and no verbs — see `RoomMemberRow`. */
+              <ul className="space-y-2.5">
+                {members.map((member) => (
+                  <li key={member.authorId}>
+                    <RoomMemberRow
+                      member={member}
+                      roomKind={room.kind}
+                      isReader={member.authorId === roomQuery.data?.viewerAuthorId}
+                      visual={
+                        member.author.agentRef
+                          ? (facesByRef.get(member.author.agentRef) ?? null)
+                          : null
                       }
-                    </p>
-
-                    {/* Confirmed in place rather than in a second dialog.
-                          A dialog over a dialog closed BOTH when it was
-                          answered — the inner one's dismissal reaches the outer
-                          as an interaction from outside it — so the roster the
-                          reader was working on vanished with the confirmation.
-                          jsdom has no portals to race; only a browser shows it. */}
-                    {pendingRemoval === member.authorId && (
-                      <div
-                        role="group"
-                        aria-label={`Remove ${member.author.displayName} from ${title}?`}
-                        className="bg-muted/60 mt-1.5 space-y-2 rounded-md p-2"
-                      >
-                        <p className="text-muted-foreground text-xs">
-                          Remove {member.author.displayName}? It stops seeing new messages here and
-                          what it already said stays. Adding it back starts a fresh session.
-                        </p>
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setPendingRemoval(null)}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            ref={confirmRef}
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => confirmRemoval(member)}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </div>
-                    )}
+                      presence={working.find((agent) => agent.authorId === member.authorId) ?? null}
+                      lastSpokeAt={lastSpokeByAuthor.get(member.authorId) ?? null}
+                      expanded={expandedMember === member.authorId}
+                      onExpandedChange={(next) => setExpandedMember(next ? member.authorId : null)}
+                      onRungChange={(rung) => handleRungChange(member, rung)}
+                      roomTitle={title}
+                      // The confirmation lives in the ROW rather than here,
+                      // because the row is what owns the "…" menu — and where
+                      // the keyboard lands when that menu closes is a decision
+                      // only the menu can make. See `RoomMemberRow`.
+                      onRemoveRequested={() => setPendingRemoval(member.authorId)}
+                      confirmingRemoval={pendingRemoval === member.authorId}
+                      onConfirmRemoval={() => confirmRemoval(member)}
+                      onCancelRemoval={() => setPendingRemoval(null)}
+                      engagedWindow={engagedWindow}
+                    />
                   </li>
                 ))}
               </ul>

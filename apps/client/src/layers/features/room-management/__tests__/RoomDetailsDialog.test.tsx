@@ -151,6 +151,23 @@ function addSection() {
   return within(screen.getByRole('region', { name: 'Add agents' }));
 }
 
+/** One member's loudness pill — what the row shows, and what opens the scale. */
+function pill(name = 'Ana'): HTMLElement {
+  return screen.getByRole('button', { name: `How loud ${name} is here` });
+}
+
+/** Open a member's scale and hand back the radiogroup. */
+function openScale(name = 'Ana'): HTMLElement {
+  fireEvent.click(pill(name));
+  return screen.getByRole('radiogroup', { name: `How loud is ${name} here?` });
+}
+
+/** Ask to remove a member through the row's "…" menu, and confirm it. */
+function removeThroughMenu(name = 'Ana'): void {
+  fireEvent.pointerDown(screen.getByLabelText(`${name} actions`));
+  fireEvent.click(within(screen.getByRole('menu')).getByText('Remove from this room'));
+}
+
 // Radix Select drives itself with pointer capture and scrolls the highlighted
 // option into view — both browser APIs jsdom does not implement at all, and
 // without them the listbox never opens.
@@ -168,7 +185,10 @@ afterEach(cleanup);
 // ---------------------------------------------------------------------------
 
 describe('RoomDetailsDialog', () => {
-  it('lists the agents in the room and leaves the operator out of the roster', async () => {
+  it('lists everyone in the room, the reader included', async () => {
+    // The panel answers "who is in here?", and a list that omits the person
+    // asking describes a room that does not exist. Red if the roster goes back
+    // to agents only.
     renderPanel({
       transport: createMockTransport({
         getRoom: vi
@@ -180,11 +200,22 @@ describe('RoomDetailsDialog', () => {
     });
 
     const list = await rosterList();
-    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
     expect(within(list).getByText('Ana')).toBeInTheDocument();
-    // There is no verb for the person — they are the room's other side, not a
-    // member you manage — so "You" never gets a response mode or a remove.
-    expect(within(list).queryByText('You')).not.toBeInTheDocument();
+    expect(within(list).getByText('You')).toBeInTheDocument();
+    expect(within(list).getByText('(you)')).toBeInTheDocument();
+  });
+
+  it('gives the reader no loudness and no verbs', async () => {
+    // A person is never triggered and there is no verb for them, so the empty
+    // slot is the statement. Red if the row starts drawing a pill or a menu for
+    // a human — it would be offering a setting that does nothing.
+    renderPanel();
+    await rosterList();
+
+    expect(pill('Ana')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'How loud You is here' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('You actions')).not.toBeInTheDocument();
   });
 
   it('shows a skeleton while the roster loads, then the roster', async () => {
@@ -224,18 +255,11 @@ describe('RoomDetailsDialog', () => {
     /** The same panel over a direct message rather than a channel. */
     const DM: RoomSummary = { ...ROOM, kind: 'dm', slug: null, title: 'Ana' };
 
-    /** The scale for Ana. */
-    function scale(): HTMLElement {
-      return screen.getByRole('combobox', { name: 'How loud Ana is here' });
-    }
-
     /** Open Ana's scale and read back the rungs it offers, in order. */
-    async function offeredRungs(): Promise<string[]> {
-      fireEvent.keyDown(scale(), { key: 'Enter' });
-      const listbox = await screen.findByRole('listbox');
-      return within(listbox)
-        .getAllByRole('option')
-        .map((option) => option.textContent ?? '');
+    function offeredRungs(): string[] {
+      return within(openScale())
+        .getAllByRole('radio')
+        .map((radio) => radio.getAttribute('aria-label') ?? radio.textContent ?? '');
     }
 
     /** The panel over a direct message whose only agent holds `mode`. */
@@ -256,22 +280,49 @@ describe('RoomDetailsDialog', () => {
       renderPanel();
       await rosterList();
 
-      expect(await offeredRungs()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
+      expect(offeredRungs()).toEqual(['Silent', '@only', 'Engaged', 'Everything']);
     });
 
     it('offers a direct message three, because it only has three behaviours', async () => {
       renderDm('mention-only');
       await rosterList();
 
-      expect(await offeredRungs()).toEqual(['Silent', '@only', 'Everything']);
+      expect(offeredRungs()).toEqual(['Silent', '@only', 'Everything']);
     });
 
-    it('says what the chosen rung actually does, underneath it', async () => {
+    it('shows the rung on the row, and what it does once you open it', async () => {
+      // The pill is the glance and the scale is the task. Red if the row stops
+      // naming the rung — the roster would go back to being a list of names
+      // with the one thing worth knowing hidden behind a click.
       renderPanel();
       await rosterList();
 
-      expect(scale()).toHaveTextContent('@only');
+      expect(pill()).toHaveTextContent('@only');
+      expect(screen.queryByText('Answers only when you @mention it.')).not.toBeInTheDocument();
+
+      openScale();
       expect(screen.getByText('Answers only when you @mention it.')).toBeInTheDocument();
+    });
+
+    it('opens one scale at a time', async () => {
+      // Four rungs and their consequences is most of a phone screen; two rows
+      // of them is a sheet nobody can find the bottom of.
+      renderPanel({
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(
+              roster([HUMAN, agentMember('Ana', '/repo/ana'), agentMember('Bo', '/repo/bo')])
+            ),
+        }),
+      });
+      await rosterList();
+
+      openScale('Ana');
+      openScale('Bo');
+
+      expect(screen.getAllByRole('radiogroup')).toHaveLength(1);
+      expect(screen.getByRole('radiogroup', { name: 'How loud is Bo here?' })).toBeInTheDocument();
     });
 
     it('states the engaged window this install is running, not the shipped one', async () => {
@@ -288,6 +339,7 @@ describe('RoomDetailsDialog', () => {
         }),
       });
       await rosterList();
+      openScale();
 
       expect(
         await screen.findByText(/keeps answering for 3 more minutes or 7 more messages/)
@@ -302,15 +354,14 @@ describe('RoomDetailsDialog', () => {
       renderDm('engaged');
       await rosterList();
 
-      expect(scale()).toHaveTextContent('@only');
+      expect(pill()).toHaveTextContent('@only');
     });
 
     it('writes one canonical value per rung, never a room-dependent alias', async () => {
       const { transport } = renderPanel();
       await rosterList();
 
-      fireEvent.keyDown(scale(), { key: 'Enter' });
-      fireEvent.click(await screen.findByRole('option', { name: 'Silent' }));
+      fireEvent.click(within(openScale()).getByRole('radio', { name: 'Silent' }));
 
       await waitFor(() =>
         expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
@@ -323,8 +374,7 @@ describe('RoomDetailsDialog', () => {
       const { transport } = renderPanel();
       await rosterList();
 
-      fireEvent.keyDown(scale(), { key: 'Enter' });
-      fireEvent.click(await screen.findByRole('option', { name: 'Engaged' }));
+      fireEvent.click(within(openScale()).getByRole('radio', { name: 'Engaged' }));
 
       await waitFor(() =>
         expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
@@ -338,7 +388,7 @@ describe('RoomDetailsDialog', () => {
     const { transport } = renderPanel();
     await rosterList();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    removeThroughMenu();
     const confirm = screen.getByRole('group', { name: 'Remove Ana from #general?' });
     expect(confirm).toHaveTextContent('Adding it back starts a fresh session.');
     expect(transport.removeRoomMember).not.toHaveBeenCalled();
@@ -355,7 +405,7 @@ describe('RoomDetailsDialog', () => {
     const { transport } = renderPanel();
     await rosterList();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    removeThroughMenu();
     fireEvent.click(
       within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
         name: 'Remove',
@@ -370,7 +420,7 @@ describe('RoomDetailsDialog', () => {
     renderPanel();
     await rosterList();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    removeThroughMenu();
     await waitFor(() =>
       expect(
         within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole(
@@ -385,7 +435,7 @@ describe('RoomDetailsDialog', () => {
     const { transport } = renderPanel();
     await rosterList();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    removeThroughMenu();
     fireEvent.click(
       within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
         name: 'Cancel',
@@ -401,7 +451,7 @@ describe('RoomDetailsDialog', () => {
     renderPanel({ onOpenChange });
     await rosterList();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Ana' }));
+    removeThroughMenu();
     // Radix listens for Escape on the document in the capture phase, which is
     // where the panel's own handler has to intercept it — so this is dispatched
     // there rather than at the confirmation.
@@ -493,7 +543,8 @@ describe('RoomDetailsDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }));
     await waitFor(() => expect(addSection().queryByText('Ana')).not.toBeInTheDocument());
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove Ana' }));
+    await screen.findByLabelText('Ana actions');
+    removeThroughMenu();
     fireEvent.click(
       within(screen.getByRole('group', { name: 'Remove Ana from #general?' })).getByRole('button', {
         name: 'Remove',
