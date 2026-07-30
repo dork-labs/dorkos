@@ -85,9 +85,12 @@ describe('registerLocalCommunity', () => {
       readCursor: 'server',
       responseMode: true,
       threadDepth: 1,
-      // Not 'both': the room signal envelope carries no presence payload yet,
-      // and `'both'` now means round-tripping one. See the adapter's module doc.
-      signals: 'none',
+      // 'both' now that the adapter genuinely does both: it publishes through
+      // `RoomService` and maps every signal frame the broadcaster carries back
+      // onto the port's stream. It declared 'none' for ten commits after the
+      // room signal envelope gained the presence payload that made 'both' true
+      // — honest when written, stale when it landed.
+      signals: 'both',
       credential: 'none',
     });
   });

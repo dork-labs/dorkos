@@ -89,6 +89,34 @@ describe('the presence store', () => {
     expect(keysIn(ROOM)).toEqual([]);
   });
 
+  it('ignores a `progress` that is missing its key — a partial payload is not an indicator', () => {
+    // The community port makes `entryId` and `since` optional on its presence
+    // payload, so a backend that can only say "somebody is working" produces
+    // exactly this frame, and `RoomService.publishSignal` accepts it. The client
+    // is where that stops: an indicator with no `entryId` cannot be keyed and
+    // one with no `since` cannot be aged, so a stored partial would show a
+    // worker that no `done` could ever address and no TTL could sensibly clear.
+    const store = useRoomPresenceStore.getState();
+
+    store.observe(ROOM, {
+      type: 'signal',
+      signal: 'progress',
+      authorId: 'kai',
+      at: '2026-07-30T10:00:00.000Z',
+      state: 'working',
+    });
+    store.observe(ROOM, {
+      type: 'signal',
+      signal: 'progress',
+      authorId: 'kai',
+      at: '2026-07-30T10:00:00.000Z',
+      state: 'working',
+      entryId: 'entry-1',
+    });
+
+    expect(keysIn(ROOM)).toEqual([]);
+  });
+
   it('deletes only the claim a `done` names', () => {
     const store = useRoomPresenceStore.getState();
     store.observe(ROOM, signal('kai', 'working', 'entry-1'));

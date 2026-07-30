@@ -20,11 +20,19 @@
 import type {
   CommunityEntry,
   CommunityMember,
+  CommunityPresencePayload,
   CommunityRef,
   CommunityRoom,
+  CommunityRoomEvent,
   CommunityThreadSummary,
 } from '@dorkos/shared/community-adapter';
-import type { Room, RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import type {
+  Room,
+  RoomEntry,
+  RoomPresencePayload,
+  RoomRosterEntry,
+  RoomSignalEvent,
+} from '@dorkos/shared/room-schemas';
 import { mintLocalCursor } from './local-cursor.js';
 
 /**
@@ -118,5 +126,59 @@ export function toCommunityMember(
     responseMode: member.responseMode,
     ownerMemberId: null,
     joinedAt: member.joinedAt,
+  };
+}
+
+/**
+ * Project one live signal, in each direction.
+ *
+ * The two envelopes say the same thing with the subject in a different place:
+ * the room event names the author once, at the top, while the port's frame names
+ * the emitter at the top AND lets the presence payload say who the work is
+ * about. Locally those are one person, so `authorId` fills both — a subscriber
+ * reading only `payload.memberId` and one reading only `memberId` must not
+ * disagree about who is working.
+ *
+ * A payload rides ONLY when the room event carries a `state`. A bare `typing`
+ * signal has no lifecycle, and an empty `payload: {}` would claim a presence
+ * that is not there.
+ *
+ * @param event - The room's own signal frame.
+ */
+export function toCommunitySignal(
+  event: RoomSignalEvent
+): Extract<CommunityRoomEvent, { type: 'signal' }> {
+  return {
+    type: 'signal',
+    signal: event.signal,
+    memberId: event.authorId,
+    at: event.at,
+    ...(event.state
+      ? {
+          payload: {
+            state: event.state,
+            memberId: event.authorId,
+            ...(event.entryId ? { entryId: event.entryId } : {}),
+            ...(event.since ? { since: event.since } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Project a port presence payload onto the rooms envelope's own three fields.
+ *
+ * `memberId` is deliberately not among them: on the rooms side who-is-working is
+ * the event's `authorId`, and carrying it twice on the wire would let the two
+ * copies disagree.
+ *
+ * @param payload - The port's presence payload.
+ */
+export function toRoomPresence(payload: CommunityPresencePayload): Partial<RoomPresencePayload> {
+  return {
+    state: payload.state,
+    ...(payload.entryId ? { entryId: payload.entryId } : {}),
+    ...(payload.since ? { since: payload.since } : {}),
   };
 }

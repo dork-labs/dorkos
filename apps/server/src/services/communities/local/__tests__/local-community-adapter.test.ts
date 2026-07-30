@@ -30,10 +30,13 @@ import {
 import { LocalCommunityAdapter } from '../local-community-adapter.js';
 import { localCommunityIdentity } from '../register-local-community.js';
 
+/** The one agent this file can put on a roster, for the cases that need a second member. */
+const AGENT_PATH = '/Users/planted/agents/ana';
+
 /** One adapter over one fresh in-memory install. */
 function setup(): { adapter: LocalCommunityAdapter; harness: RoomHarness; store: RoomStore } {
   const harness = createRoomHarness({
-    agents: agentLookupFor({}),
+    agents: agentLookupFor({ [AGENT_PATH]: { name: 'Ana' } }),
     runner: scriptedRunner(() => null),
   });
   const store = new RoomStore(harness.db);
@@ -306,34 +309,117 @@ describe('LocalCommunityAdapter roster and read cursor', () => {
 });
 
 describe('LocalCommunityAdapter signals', () => {
-  it('observes no signal, not just emits none', async () => {
-    // `signals: 'none'` claims two things, and the shared suite can only check
-    // one of them: it has no way to make a backend produce a signal of its own,
-    // so its quiet-window assertion passes against an adapter that would happily
-    // forward one. The local backend HAS a live signal channel, so the second
-    // half — "neither emits nor observes" — has to be pinned here.
+  it('forwards a signal its OWN producer published, payload intact', async () => {
+    // `signals: 'both'` claims two directions, and the shared suite can only
+    // check one of them: it has no way to make a backend produce a signal of its
+    // own, so C15 only ever sees what it published itself. The direction that
+    // matters for presence is the other one — the producer is the trigger
+    // dispatcher, and nobody would care about an indicator only the person
+    // working can see — so it is pinned here, against the room's real channel.
     const { adapter, harness } = setup();
     await adapter.connect();
     const roomId = await seed(adapter);
+    const [first] = (await adapter.listEntries(roomId)).entries;
+    const agent = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
 
     const iterator = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
     try {
-      const first = await iterator.next();
-      expect(first.value?.type).toBe('snapshot');
+      expect((await iterator.next()).value?.type).toBe('snapshot');
 
-      // Real signals, published the way the room's own producers publish them.
+      // Exactly the call the dispatcher makes at claim, agent and all.
+      harness.service.publishSignal(roomId, 'progress', agent.id, {
+        state: 'working',
+        entryId: first!.id,
+        since: '2026-07-29T00:00:00.000Z',
+      });
+      const presence = await iterator.next();
+      expect(presence.value?.type, 'a signal the room produced reaches the port').toBe('signal');
+      expect(presence.value).toMatchObject({
+        signal: 'progress',
+        // The agent, NOT the connected human: an indicator attributed to
+        // whoever holds the connection would name the wrong worker in every
+        // case this feature exists for.
+        memberId: agent.id,
+        payload: {
+          state: 'working',
+          memberId: agent.id,
+          entryId: first!.id,
+          since: '2026-07-29T00:00:00.000Z',
+        },
+      });
+
+      // A signal with no lifecycle carries no payload — an empty one would
+      // claim a presence that is not there.
       harness.service.publishSignal(roomId, 'typing', harness.human);
-      harness.service.publishSignal(roomId, 'progress', harness.human);
-      // ...and one durable entry behind them, so "nothing arrived" cannot be
-      // confused with "the stream was not delivering".
-      const posted = await adapter.post(roomId, { text: 'after the signals' });
+      const typing = await iterator.next();
+      expect(typing.value).toEqual({
+        type: 'signal',
+        signal: 'typing',
+        memberId: harness.human,
+        at: expect.any(String),
+      });
 
-      const next = await iterator.next();
-      expect(next.value?.type, 'a signal-less adapter forwards no signal').toBe('entry');
-      expect(next.value?.type === 'entry' && next.value.entry.id).toBe(posted.entryId);
+      // ...and one durable entry behind them, so "the signals arrived" cannot be
+      // confused with a stream that forwards everything it is handed: the entry
+      // still arrives, in order, after them.
+      const posted = await adapter.post(roomId, { text: 'after the signals' });
+      const entry = await iterator.next();
+      expect(entry.value?.type).toBe('entry');
+      expect(entry.value?.type === 'entry' && entry.value.entry.id).toBe(posted.entryId);
     } finally {
       await iterator.return?.();
     }
+  });
+
+  it('refuses to publish presence about somebody who is not in the room', async () => {
+    // `memberId` is not decoration: whatever it says lands verbatim on every
+    // subscriber's presence line as "X is working". The port leaves it
+    // unvalidated for backends whose identity model is foreign to ours — ours
+    // is this install's own author namespace, so a ghost id is a claim this
+    // backend can see is false, and publishing it would put a worker on the
+    // wall who does not exist. Refused loudly, and NEVER quietly re-attributed
+    // to the caller: a fallback turns a bad id into "the operator is working".
+    const { adapter } = setup();
+    await adapter.connect();
+    const roomId = await seed(adapter);
+
+    await expect(
+      adapter.publishSignal(roomId, 'progress', { state: 'working', memberId: 'ghost-nobody' })
+    ).rejects.toMatchObject({ name: 'RoomError', code: 'MEMBER_NOT_FOUND' });
+  });
+
+  it('still lets one room member publish presence about another — the documented gap', async () => {
+    // The residual this adapter does NOT close, pinned so it stays a decision
+    // rather than a surprise: the roster check proves the subject EXISTS, not
+    // that it is working. Mechanical honesty needs the claim map, which lives
+    // in the dispatcher. That is tolerable only while every caller is
+    // server-side code that already knows what it started — which is why the
+    // method's doc requires claim-gating before any route or MCP tool exposes
+    // it, and why this test is here to fail loudly if that day arrives quietly.
+    const { adapter, harness } = setup();
+    await adapter.connect();
+    const roomId = await seed(adapter);
+    const member = harness.service.addMember(roomId, harness.human, {
+      agentPath: AGENT_PATH,
+      responseMode: 'silent',
+    });
+
+    await expect(
+      adapter.publishSignal(roomId, 'progress', { state: 'working', memberId: member.authorId })
+    ).resolves.toBeUndefined();
+  });
+
+  it('refuses to signal into a room it cannot see', async () => {
+    // The port does not contract this method against an unknown room, so the
+    // adapter answers the way it answers everywhere else: a room id is not a
+    // capability. Without the check, a caller holding any id could put "someone
+    // is working" onto a stream it is not allowed to read.
+    const { adapter } = setup();
+    await adapter.connect();
+
+    await expect(adapter.publishSignal(ABSENT, 'progress', { state: 'working' })).rejects.toThrow(
+      CommunityRoomNotFoundError
+    );
   });
 });
 

@@ -28,9 +28,20 @@
  *   file, which is filesystem-specific and belongs in a real adapter's own
  *   tests. What is asserted here is the property a fake can hold: no credential
  *   appears in anything the port returns.
- * - **Who may publish a presence signal.** The rule that a presence signal
- *   exists only while a real claim is held is enforced at the one producer and
- *   tested there — a port-level fake cannot know whether a claim was real.
+ * - **Who may publish a presence signal, and whether `payload.memberId` names
+ *   anyone real.** The rule that a presence signal exists only while a real
+ *   claim is held is enforced at the producer that owns the claim and tested
+ *   there — a port-level fake cannot know whether a claim was real. The id is
+ *   not checked here either: a backend with a foreign identity model has nothing
+ *   to check it against, so the check belongs to each adapter whose members are
+ *   its own install's identities, and is tested there (`LocalCommunityAdapter`
+ *   refuses an id that is not in the room).
+ * - **That a presence payload is not persisted PRIVATELY.** C15 asserts the
+ *   whole of what the port can see about "live only, never durable": the signal
+ *   does not become an entry, and a subscription opened after the publish is not
+ *   told about it. A backend that also wrote the payload into a table it never
+ *   surfaces would pass, because no port method could ever read it back. That
+ *   half is each adapter's own to hold.
  * - **That an INVISIBLE room is refused identically to an absent one.** U16
  *   asserts the refusal, against a fabricated id every backend can be handed.
  *   Arranging a room that exists and is not visible needs a second identity the

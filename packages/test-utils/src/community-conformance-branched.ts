@@ -315,43 +315,86 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
 
     it('C15 round-trips a presence signal when it has signals, and yields none when it does not', async () => {
       const { adapter, caps, roomId, identityMemberId } = await arrange();
-      const iterator = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
-      try {
-        await nextEvent(iterator, 'the opening snapshot', eventTimeoutMs);
 
-        if (caps.signals === 'none') {
+      if (caps.signals === 'none') {
+        // The stream exists here only to be watched: the refusal is half the
+        // branch, and "nothing was yielded either" is the other half.
+        const quiet = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
+        try {
+          await nextEvent(quiet, 'the opening snapshot', eventTimeoutMs);
           await expect(adapter.publishSignal(roomId, 'typing')).rejects.toBeInstanceOf(
             CommunityUnsupportedError
           );
-          const quiet = await drainQuietly(iterator, QUIET_WINDOW_MS);
+          const seen = await drainQuietly(quiet, QUIET_WINDOW_MS);
           expect(
-            quiet.filter((e) => e.type === 'signal'),
+            seen.filter((e) => e.type === 'signal'),
             'a signal-less adapter never yields a signal'
           ).toEqual([]);
-          return;
+        } finally {
+          await quiet.return?.();
         }
+        return;
+      }
 
-        const payload = {
-          state: 'working' as const,
-          memberId: identityMemberId,
-          since: '2026-07-29T00:00:00.000Z',
-        };
+      // A REAL entry, because `entryId` is the field that says which question
+      // is being worked on: an indicator keyed on a fabricated id would render
+      // against nothing, and an adapter that dropped the field would pass an
+      // assertion written around a value nobody could check.
+      const before = await adapter.listEntries(roomId);
+      const payload = {
+        state: 'working' as const,
+        memberId: identityMemberId,
+        entryId: before.entries[0]!.id,
+        since: '2026-07-29T00:00:00.000Z',
+      };
+
+      // The SECOND subscription is the point: a signal that only reaches the
+      // stream its publisher happens to hold is not fan-out, and presence is
+      // for the people who are not the one working.
+      const observer = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
+      try {
+        await nextEvent(observer, "the observer's opening snapshot", eventTimeoutMs);
         await adapter.publishSignal(roomId, 'progress', payload);
         const event = await awaitRoomEvent(
-          iterator,
+          observer,
           (e) => e.type === 'signal',
           'the published signal'
         );
         expect(event.type).toBe('signal');
         if (event.type === 'signal') {
           expect(event.signal).toBe('progress');
+          expect(event.memberId, 'the frame says who emitted it').toBe(identityMemberId);
           expect(
             event.payload,
-            'the presence payload arrives intact — a signal that cannot say what it means is a cleared throat'
-          ).toMatchObject(payload);
+            'the presence payload arrives intact, every field of it — a signal that cannot say what it means is a cleared throat'
+          ).toEqual(payload);
         }
       } finally {
-        await iterator.return?.();
+        await observer.return?.();
+      }
+
+      // "Live only; never durable", in the one direction a port-level suite
+      // can see it: a signal must not become an entry, and a subscription
+      // opened AFTER the publish must not be told about it. A backend that
+      // wrote the payload into a private table nobody can read through the
+      // port is invisible here, and the suite's module doc says so rather than
+      // implying this covers it.
+      const after = await adapter.listEntries(roomId);
+      expect(
+        after.entries.map((entry) => entry.id),
+        'a signal never enters the log'
+      ).toEqual(before.entries.map((entry) => entry.id));
+      const latecomer = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
+      try {
+        const snapshot = await nextEvent(latecomer, "the latecomer's snapshot", eventTimeoutMs);
+        expect(snapshot.type).toBe('snapshot');
+        const replayed = await drainQuietly(latecomer, QUIET_WINDOW_MS);
+        expect(
+          replayed.filter((e) => e.type === 'signal'),
+          'a signal published before a subscription existed is gone, not replayed'
+        ).toEqual([]);
+      } finally {
+        await latecomer.return?.();
       }
     });
 

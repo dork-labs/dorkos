@@ -1281,8 +1281,15 @@ export interface CommunityAdapter {
    * who is working, on which entry, since when, and in which phase. Adapters map
    * it to their native idiom and MUST NOT persist it. Who may call this — the
    * rule that a presence signal exists only while a real claim is held — is
-   * enforced at the one producer, not here: a port-level fake cannot know
-   * whether a claim was real.
+   * enforced at the producer that owns the claim, not here: a port-level fake
+   * cannot know whether a claim was real.
+   *
+   * `payload.memberId` is deliberately unvalidated AT THIS PORT, because a
+   * backend with a foreign identity model has nothing to check it against. An
+   * adapter whose members ARE this install's own identities owes the check
+   * itself: whatever this field says is what every subscriber will be shown as
+   * "who is working", so an id naming nobody must be refused rather than
+   * published or silently re-attributed to the caller.
    *
    * @param roomId - The room to signal in.
    * @param signal - Which signal.
