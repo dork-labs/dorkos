@@ -6,9 +6,10 @@
  * across communities with per-community degradation, and the credential
  * discipline every machine-managed adapter resolves through.
  *
- * No concrete adapter lives here. Local rooms, a read-only Buzz relay and
- * `apps/community` are separate tickets, in that order, and each ships with its
- * own `communityConformance` registration.
+ * The first concrete adapter lives in `local/` — this machine's own SQLite
+ * rooms, wrapped rather than rewritten. A read-only Buzz relay and
+ * `apps/community` follow, in that order, and each ships with its own
+ * `communityConformance` registration.
  *
  * @module server/services/communities
  */
@@ -23,6 +24,9 @@ export {
   repairCommunityCredentialPermissions,
   resolveCommunityCredential,
 } from './credentials.js';
+// Only the startup wiring leaves this domain — the adapter itself is reached
+// through the registry, the way every other backend behind this port will be.
+export { registerLocalCommunity } from './local/register-local-community.js';
 export {
   CommunityNotRegisteredError,
   CommunityRegistry,

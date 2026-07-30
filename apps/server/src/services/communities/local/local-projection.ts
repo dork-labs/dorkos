@@ -1,0 +1,122 @@
+/**
+ * The row-to-port projection for local rooms: `Room`, `RoomEntry` and
+ * `RoomRosterEntry` as the `CommunityAdapter` speaks them.
+ *
+ * Kept beside the adapter rather than inside it for the reason `room-rows.ts` is
+ * kept beside `room-store.ts`: one file is the behavior, the other is the
+ * shapes, and interleaving them means reading a mapping table to follow a
+ * stream.
+ *
+ * **Two fields are dropped on the way out, and both are deliberate.**
+ * `workspaceId` binds a room to a checkout on THIS machine, and the port keeps
+ * it off the wire (spec `community-adapter` §Decisions, OQ3) — it stays a
+ * local-only column. `AuthorRecord.naturalKey` — an agent's absolute directory —
+ * never leaves the server at all; the roster the service hands us has already
+ * projected it away through {@link toAuthorRef}, which is why nothing here has
+ * to remember to.
+ *
+ * @module server/services/communities/local/local-projection
+ */
+import type {
+  CommunityEntry,
+  CommunityMember,
+  CommunityRef,
+  CommunityRoom,
+  CommunityThreadSummary,
+} from '@dorkos/shared/community-adapter';
+import type { Room, RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import { mintLocalCursor } from './local-cursor.js';
+
+/**
+ * Project one room.
+ *
+ * @param community - The community this adapter serves.
+ * @param room - The stored room.
+ * @param unreadCount - How many entries the connected identity has not read, or
+ *   `null` when it is not a member — the port's "not applicable here", which is
+ *   exactly the semantic `RoomSummary.unreadCount` already carries. Never `0`
+ *   for a room whose unread cannot be computed: a silent room and an
+ *   uncomputable one are different states.
+ */
+export function toCommunityRoom(
+  community: CommunityRef,
+  room: Room,
+  unreadCount: number | null
+): CommunityRoom {
+  return {
+    community,
+    roomId: room.id,
+    kind: room.kind,
+    title: room.title,
+    slug: room.slug,
+    topic: room.topic,
+    archived: room.archived,
+    createdAt: room.createdAt,
+    lastActivityAt: room.lastActivityAt,
+    unreadCount,
+  };
+}
+
+/**
+ * Project one entry.
+ *
+ * `depth` is derived rather than stored, and it can be: the service refuses a
+ * reply whose parent is itself a reply, so an entry is either top-level or one
+ * level down and there is no third case to represent. The day a later ADR opens
+ * a second level, `threadDepth` stops being `1` and this derivation is what
+ * changes with it.
+ *
+ * @param community - The community this adapter serves.
+ * @param entry - The stored entry.
+ * @param thread - The rolled-up thread summary, when this entry is a root that
+ *   has replies.
+ */
+export function toCommunityEntry(
+  community: CommunityRef,
+  entry: RoomEntry,
+  thread?: CommunityThreadSummary
+): CommunityEntry {
+  return {
+    community,
+    roomId: entry.roomId,
+    id: entry.id,
+    authorId: entry.authorId,
+    text: entry.body.text,
+    mentions: [...entry.mentions],
+    parentEntryId: entry.parentEntryId,
+    threadRootEntryId: entry.threadRootEntryId,
+    depth: entry.threadRootEntryId === null ? 0 : 1,
+    ...(thread ? { thread } : {}),
+    cursor: mintLocalCursor(community, entry.roomId, entry.seq),
+    createdAt: entry.createdAt,
+  };
+}
+
+/**
+ * Project one roster row.
+ *
+ * `role` is `null` for everybody and `ownerMemberId` is `null` for everybody,
+ * because this backend declares `roles.supported: false` and
+ * `agentAdmission: 'none'`. Neither is a placeholder waiting to be filled in:
+ * one machine with one operator has nobody to rank and nobody to vouch to.
+ *
+ * @param community - The community this adapter serves.
+ * @param member - The membership, with its author already resolved.
+ */
+export function toCommunityMember(
+  community: CommunityRef,
+  member: RoomRosterEntry
+): CommunityMember {
+  return {
+    community,
+    memberId: member.authorId,
+    kind: member.author.kind,
+    displayName: member.author.displayName,
+    ...(member.author.emoji ? { emoji: member.author.emoji } : {}),
+    ...(member.author.color ? { color: member.author.color } : {}),
+    role: null,
+    responseMode: member.responseMode,
+    ownerMemberId: null,
+    joinedAt: member.joinedAt,
+  };
+}

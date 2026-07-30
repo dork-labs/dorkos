@@ -605,6 +605,104 @@ export class RoomStore {
   }
 
   /**
+   * A bounded FORWARD page of one room's log, oldest-first, starting strictly
+   * after a `seq` — the read a cursor-paged listing needs.
+   *
+   * The sibling {@link RoomStore.listEntries} pages BACKWARDS from the newest
+   * entry, which is what a chat window scrolling up wants and what a cursor
+   * cannot use: resuming from an entry means "the next few after this one", and
+   * expressing that with `before` requires knowing the answer first.
+   * {@link RoomStore.listEntriesAfter} has the right direction and no bound,
+   * which is fine for a replay that must be complete and wrong for a page.
+   *
+   * **Two scopes, and each is served by an index that already exists.** The
+   * default (`threadRootEntryId` omitted) is the top-level timeline —
+   * `parent_entry_id IS NULL` as a residual filter over a `(room_id, seq)`
+   * range the primary key already orders, which is exactly why
+   * `packages/db/src/schema/rooms.ts` deliberately does not index that
+   * predicate. Passing a root reads `idx_room_entries_thread_root`, whose third
+   * column is `seq` precisely so an ordered page stops at its limit instead of
+   * sorting the whole thread.
+   *
+   * Ask for one more row than the page needs: a caller that must declare
+   * exhaustion (rather than let a reader infer it from a short page) can only
+   * do so by knowing whether a further row exists.
+   *
+   * @param roomId - The room.
+   * @param opts.afterSeq - Return entries with `seq` strictly above this.
+   * @param opts.limit - How many of the oldest matching entries to return.
+   * @param opts.threadRootEntryId - Omit for the top level; pass a root entry id
+   *   for that thread's replies.
+   */
+  listEntriesFrom(
+    roomId: string,
+    opts: { afterSeq: number; limit: number; threadRootEntryId?: string }
+  ): RoomEntry[] {
+    if (opts.limit <= 0) return [];
+    const rows = this.db
+      .select()
+      .from(roomEntries)
+      .where(
+        and(
+          eq(roomEntries.roomId, roomId),
+          gt(roomEntries.seq, opts.afterSeq),
+          opts.threadRootEntryId === undefined
+            ? isNull(roomEntries.parentEntryId)
+            : eq(roomEntries.threadRootEntryId, opts.threadRootEntryId)
+        )
+      )
+      .orderBy(roomEntries.seq)
+      .limit(opts.limit)
+      .all();
+    return rows.map(toEntry);
+  }
+
+  /**
+   * Rolled-up reply counts for several thread roots at once.
+   *
+   * The batched form of {@link RoomStore.countThreadReplies}, and it exists for
+   * the reason {@link RoomStore.listMembersForRooms} exists: a page of fifty
+   * entries would otherwise be fifty `COUNT(*)` round trips to decorate a
+   * summary nobody asked for one row at a time.
+   *
+   * `lastReplyAt` is `MAX(created_at)`, which orders correctly because every
+   * value is written by `new Date().toISOString()` — one fixed-width UTC format,
+   * where lexicographic and chronological order coincide. Two replies inside the
+   * same millisecond report the same instant, which is what a display timestamp
+   * can honestly say about them.
+   *
+   * @param roomId - The room the threads live in.
+   * @param rootEntryIds - The roots to roll up. An empty list reads nothing.
+   * @returns One entry per root that HAS replies; a root with none is absent.
+   */
+  countThreadRepliesFor(
+    roomId: string,
+    rootEntryIds: readonly string[]
+  ): Map<string, { replyCount: number; lastReplyAt: string }> {
+    const summaries = new Map<string, { replyCount: number; lastReplyAt: string }>();
+    const wanted = [...new Set(rootEntryIds)];
+    if (wanted.length === 0) return summaries;
+    const rows = this.db
+      .select({
+        rootEntryId: roomEntries.threadRootEntryId,
+        replyCount: count(),
+        lastReplyAt: sql<string>`MAX(${roomEntries.createdAt})`,
+      })
+      .from(roomEntries)
+      .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.threadRootEntryId, wanted)))
+      .groupBy(roomEntries.threadRootEntryId)
+      .all();
+    for (const row of rows) {
+      if (row.rootEntryId === null) continue;
+      summaries.set(row.rootEntryId, {
+        replyCount: row.replyCount,
+        lastReplyAt: row.lastReplyAt,
+      });
+    }
+    return summaries;
+  }
+
+  /**
    * Every entry after a cursor, in `seq` order — the SSE replay read. The log
    * is never trimmed, so this can always be served gap-free.
    *

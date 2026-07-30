@@ -55,6 +55,54 @@ function seedRoom(store: RoomStore, id = ROOM_ID): void {
   );
 }
 
+describe('RoomStore forward paging', () => {
+  let store: RoomStore;
+
+  beforeEach(() => {
+    store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'e1' }));
+    store.appendEntry(entry({ id: 'e2' }));
+    store.appendEntry(entry({ id: 'r1', parentEntryId: 'e1', threadRootEntryId: 'e1' }));
+    store.appendEntry(entry({ id: 'r2', parentEntryId: 'e1', threadRootEntryId: 'e1' }));
+  });
+
+  it('pages the top level oldest-first, and a thread reply is not on it', () => {
+    // The default timeline is `parent_entry_id IS NULL`: a reply lives in this
+    // room's log but belongs to its thread, not to the timeline.
+    expect(store.listEntriesFrom(ROOM_ID, { afterSeq: 0, limit: 10 }).map((e) => e.id)).toEqual([
+      'e1',
+      'e2',
+    ]);
+    expect(store.listEntriesFrom(ROOM_ID, { afterSeq: 0, limit: 1 }).map((e) => e.id)).toEqual([
+      'e1',
+    ]);
+    expect(store.listEntriesFrom(ROOM_ID, { afterSeq: 1, limit: 10 }).map((e) => e.id)).toEqual([
+      'e2',
+    ]);
+  });
+
+  it('pages one thread, scoped to its root', () => {
+    expect(
+      store
+        .listEntriesFrom(ROOM_ID, { afterSeq: 0, limit: 10, threadRootEntryId: 'e1' })
+        .map((e) => e.id)
+    ).toEqual(['r1', 'r2']);
+    expect(
+      store.listEntriesFrom(ROOM_ID, { afterSeq: 0, limit: 10, threadRootEntryId: 'e2' }),
+      'a root with no replies has an empty thread, not the room'
+    ).toEqual([]);
+  });
+
+  it('rolls several threads up in one read, and never counts a root in its own replies', () => {
+    const summaries = store.countThreadRepliesFor(ROOM_ID, ['e1', 'e2']);
+    expect(summaries.get('e1')?.replyCount).toBe(2);
+    expect(summaries.get('e1')?.lastReplyAt).toBe('2026-07-26T12:00:00.000Z');
+    expect(summaries.has('e2'), 'a root with no replies is absent, not zero').toBe(false);
+    expect(store.countThreadRepliesFor(ROOM_ID, []).size, 'an empty ask reads nothing').toBe(0);
+  });
+});
+
 describe('RoomStore seq allocation', () => {
   let db: Db;
   let store: RoomStore;
