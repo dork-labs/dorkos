@@ -1,0 +1,153 @@
+# Adding a Community Adapter
+
+## Overview
+
+This guide walks through adding a backend behind the `CommunityAdapter` port: the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. A community adapter lets one local DorkOS server read and write rooms **somewhere other than this machine** — without the cockpit, the router or the session spine learning that more than one place exists.
+
+```
+client ──Transport──▶ your local DorkOS server ──CommunityAdapter──▶ ┌ local rooms   (SQLite, shipped today)
+       (unchanged)                                                   ├ Buzz relay    (Nostr/WS, read-only)
+                                                                     └ apps/community (Postgres)
+```
+
+The port mirrors `AgentRuntime` deliberately: one Zod-first contract, N backends, a server-side registry, capability flags, and a shared conformance suite that gates every implementation. If you have read [adding-a-runtime.md](adding-a-runtime.md) or [adding-a-connector.md](adding-a-connector.md), this will feel familiar.
+
+**No concrete adapter ships yet.** The contract and its gate are in; local rooms, a read-only Buzz relay and `apps/community` are separate tickets, in that order.
+
+Spec: [`specs/community-adapter/02-specification.md`](../specs/community-adapter/02-specification.md). Related ADRs: [0310](../decisions/0310-runtime-owned-session-storage-aggregated-listing.md) (aggregate-with-degradation, the shape the registry copies), [0256](../decisions/0256-runtime-capabilities-shape-booleans-plus-structured-plus-features.md) (structured capability fields over a flat bag), [`260726-170125`](../decisions/260726-170125-a-room-is-a-membership-scoped-durable-stream.md) (a room is a membership-scoped durable stream), [`260728-022013`](../decisions/260728-022013-a-thread-is-a-relation-between-entries.md) (a thread is a relation between entries), [`260727-184933`](../decisions/260727-184933-the-community-server-never-runs-a-members-agent.md) (the community server never runs a member's agent).
+
+## Key Files
+
+| Concept                  | Location                                                                                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The contract             | `packages/shared/src/community-adapter.ts` (port, schemas, both typed errors)                                                                    |
+| Conformance suite        | `packages/test-utils/src/community-conformance.ts` (+ `-support`, `-universal`, `-branched`)                                                     |
+| Reference implementation | `packages/test-utils/src/fake-community-adapter.ts` (`FakeCommunityAdapter`)                                                                     |
+| Registry (dispatch)      | `apps/server/src/services/communities/registry.ts`                                                                                               |
+| Cross-community listing  | `apps/server/src/services/communities/aggregate-community-rooms.ts`                                                                              |
+| Credential discipline    | `apps/server/src/services/communities/credentials.ts`                                                                                            |
+| Reused vocabularies      | `packages/shared/src/mesh-schemas.ts` (`ResponseMode`), `relay-envelope-schemas.ts` (`SignalType`), `room-schemas.ts` (`RoomKind`, `AuthorKind`) |
+| The local room model     | `packages/db/src/schema/rooms.ts`, `apps/server/src/services/rooms/`                                                                             |
+
+## Four rules that are not negotiable
+
+1. **One instance serves one community.** `adapter.community` is readonly, and every address the adapter emits — rooms, entries, members, invites — carries that value. Joining two communities means two adapters.
+2. **Every method is required.** A capability-gated method whose capability is off rejects with `CommunityUnsupportedError`. Never a silent no-op, never a partial write. Optional methods let a backend omit a surface with the compiler silent; a required method with a typed refusal cannot.
+3. **No credential crosses the port** — not as an argument, not on a DTO, not in `features`. Resolve yours from `resolveCommunityCredential(dorkHome, community)`.
+4. **Nothing executes an agent.** There is no turn, no session handle and no invocation on this port, deliberately. The port carries conversation; compute stays on the member's machine.
+
+## Declare your capabilities honestly
+
+`CommunityCapabilities` has thirteen substantive flags. **Capabilities describe the adapter, not the protocol.** If your protocol has read cursors but your v1 adapter does nothing with them, declare `readCursor: 'none'` — declaring what a protocol could theoretically do makes the flags a lie the conformance suite cannot catch.
+
+| Flag             | Values                                      | What it changes                                                                                |
+| ---------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `roomList`       | `push` / `poll`                             | Latency of `subscribeRoomList`, never its shape. `poll` must declare `roomListPollIntervalMs`. |
+| `roomAddressing` | `slug` / `opaque-id`                        | Whether a slug-addressing UI may render `#name`                                                |
+| `canPost`        | boolean                                     | `post`                                                                                         |
+| `roomAdmin`      | boolean                                     | `createRoom`, `updateRoom`, `addMember`, `removeMember`                                        |
+| `roles`          | `{ supported, default?, values[] }`         | Whether members carry a role, and which ids are legal                                          |
+| `admission`      | `open` / `out-of-band` / `invite`           | How a new member gets in                                                                       |
+| `invite`         | `none` / `community` / `room`               | `createInvite`, and whether a room-scoped request is refused                                   |
+| `agentAdmission` | `none` / `owner-vouched`                    | `admitAgent`, `revokeAgent`                                                                    |
+| `readCursor`     | `server` / `client-opaque` / `none`         | The cursor methods, and whether `unreadCount` can be a number                                  |
+| `responseMode`   | boolean                                     | `setResponseMode`, and whether members carry one                                               |
+| `threadDepth`    | `1` / `'unbounded'`                         | Whether a reply to a reply is refused                                                          |
+| `signals`        | `none` / `both`                             | `publishSignal`                                                                                |
+| `credential`     | `none` / `machine-managed` / `user-account` | What holding a credential means for this backend                                               |
+
+Two flags people reach for and will not find. There is **no resume flag**: a gap-free resume is a property of the port that every adapter owes (see below). There is **no roster flag**: all three backends enumerate members, so `listMembers` is universal — what differs is roles, and those have one.
+
+## The cursor is the sharpest part of the contract
+
+There is no `seq` on this port. A `CommunityCursor` is an opaque, adapter-minted, community-scoped token, and four rules govern it:
+
+1. **Only the minting adapter interprets it.** No consumer may parse, compare, order or arithmetic one.
+2. **It is self-identifying.** Encode enough to reject a cursor minted for a different room, a different community, or a superseded epoch. A foreign cursor is a plausible value that would silently skip real entries, so **reject it, do not bound it**.
+3. **Resume is gap-free or it throws** `StaleCommunityCursorError`, **eagerly** — at call time, before the first `next()`. This is the trap most worth reading twice: an `async function*` cannot satisfy it, because its body does not run until the first pull. Write `subscribeRoom` as a plain method that validates and then returns a generator.
+4. **Every entry carries the cursor that resumes after it.** That is what replaces `seq` for a consumer.
+
+Two invariants take `seq`'s place, and both are asserted: order is the adapter's emission order (`createdAt` is for display, never for sorting — a wall clock can tie or skew), and **dedupe is by entry `id`**, so ids must be stable and unique within a room.
+
+Exhaustion is **declared, never inferred**: `nextCursor === null` is the only authority. The converse holds too — a non-null cursor promises there is more, so never hand one back and then serve an empty page.
+
+## Connection is four outcomes, typed on the result
+
+`connect()` never throws for a connection outcome. It resolves to one of four statuses, and telling them apart is the whole point:
+
+- `'connected'` — carries the `identity`.
+- `'not-admitted'` — the credential is **valid** and this community has not admitted it. An operator action is required and there is no in-protocol way to ask. **Requires a plain-language `disclosure`.**
+- `'unauthorized'` — the credential is wrong, expired, rejected, or banned.
+- `'unreachable'` — the host did not answer.
+
+Collapsing `'not-admitted'` into `'unauthorized'` produces the worst available UX: a person told to check a credential they cannot see, for a machine-managed key that is in fact perfectly valid.
+
+**`'not-admitted'` invalidates that community's cached rooms.** This is normative. A member who was removed and a member who was never let in reach the same status on their next `connect()`, so one rule covers both. `aggregateCommunityRooms` already refuses to list a `'not-admitted'` community; **an adapter that keeps a local cache owes the other half — dropping the cached rows, and that community's message-index rows, in the same transaction.** A crash between the two leaves a searchable orphan whose room no longer exists to re-check membership against. The other three statuses deliberately do **not** invalidate: `'unreachable'` says nothing about membership, and `'unauthorized'` carries a ban indistinguishably from an expiry.
+
+## Agent admission (four contractual properties)
+
+`admitAgent` mints the agent's **own** identity in the community, vouched for by the connected member. Four properties are contractual, not incidental:
+
+1. The admitted agent is a **distinct member** from its owner.
+2. Its `ownerMemberId` is the connected identity.
+3. Its role **never administers**, whatever its owner's role is. Capability does not flow owner → agent.
+4. Its admission is **derived** from its owner's and re-evaluated on use — never copied into a row a cleanup job must find. Removing the human removes their agents.
+
+`AdmitAgentInput` deliberately carries no agent-side consent field: only a member adds their own agents, so there is no third party to refuse.
+
+## Step-by-step
+
+### 1. Write the adapter
+
+Put it in its own directory under `apps/server/src/services/communities/<backend>/`. Implement every method on `CommunityAdapter`; refuse the gated ones your capabilities turn off with `CommunityUnsupportedError`.
+
+### 2. Resolve your credential
+
+```typescript
+import { resolveCommunityCredential } from '../credentials.js';
+
+const secret = resolveCommunityCredential(dorkHome, this.community);
+```
+
+Precedence is environment override → persisted `0600` file → generate-and-persist. A lax file mode is **repaired and warned**, never rejected: locking the owner out of their own instance is the worse failure. The value is never logged; only its path is. Never return it from any port method.
+
+### 3. Register the conformance suite
+
+```typescript
+import { communityConformance } from '@dorkos/test-utils';
+
+communityConformance(() => new MyCommunityAdapter(/* ... */), {
+  name: 'MyCommunityAdapter — conformance',
+  plantedCredential: TEST_CREDENTIAL,
+  seedRoom: async (adapter) => /* a readable room with at least two entries */,
+  makeUnreachableAdapter: () => new MyCommunityAdapter({ host: 'http://127.0.0.1:1' }),
+  // Optional, and each one you omit is a case that stops being tested — the
+  // suite reports the skip by name rather than passing quietly.
+  makeUnadmittedAdapter: ...,
+  makeUnauthorizedAdapter: ...,
+  revokeOwner: ...,
+  makeEvictedRoom: ...,
+  secondCommunity: ...,
+});
+```
+
+`seedRoom` is required, and a read-only backend arranges it **out of band** with an admin tool. That is the honest cost of a read-only backend, not a reason to stop testing it.
+
+A backend that needs a live server (a relay, a hosted community) gates its run on an env var and skips when absent — the pattern `runtimeConformance` already uses for a runtime whose binary is missing.
+
+### 4. Register with the registry
+
+```typescript
+communityRegistry.register(adapter, 'Dork Labs');
+```
+
+The **label** is supplied here, not reported by the adapter, so a rename never has to reach one. Dispatch is on `community`, never on a room id — a bare room id is ambiguous by construction. An unregistered ref throws `CommunityNotRegisteredError` rather than falling back to local: masking a mismatch would answer a question about someone else's community with this machine's own rooms.
+
+## Traps
+
+- **`subscribeRoom` as an async generator.** The eager stale-cursor throw is impossible that way. Validate first, return a generator second.
+- **Guessing why a room went away.** A room that becomes unservable mid-subscription yields a terminal `room_closed` with `reason: 'archived' | 'access-revoked' | 'unknown'`. A relay can emit one reason string for two different causes, so `'unknown'` exists to let an adapter be honest instead of confident. Telling a member who just lost access that the room was put away is the failure this prevents.
+- **Rendering `unreadCount: 0` where none can be computed.** `null` means "not applicable here". A silent room and a room whose unread cannot be computed are different states.
+- **Silently widening an invite.** A `'community'`-scoped backend given a `roomId` must **refuse**. It must not widen, and must not substitute "an admin adds you" — those are different acts with different consent semantics. Pass `CommunityUnsupportedError`'s fourth argument (`reason`) when you refuse for scope: the capability is _on_, just narrower than asked for, and the default message would send a reader looking for a flag that is already set.
+- **Putting a filesystem path on the wire.** `workspaceId` is deliberately not on this port: it binds a room to a checkout on one machine, and a remote community has no opinion about a path on someone's laptop.
+- **Treating a room id as a capability.** `RoomAddress` is an address, not an authorization. Re-check membership on every read — the cache is never the access boundary.

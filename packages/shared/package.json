@@ -89,6 +89,10 @@
       "types": "./src/connector-provider.ts",
       "default": "./dist/connector-provider.js"
     },
+    "./community-adapter": {
+      "types": "./src/community-adapter.ts",
+      "default": "./dist/community-adapter.js"
+    },
     "./command-intents": {
       "types": "./src/command-intents.ts",
       "default": "./dist/command-intents.js"
