@@ -18,7 +18,13 @@ export { useRoomPresence, useRoomPresenceStore, PRESENCE_TICK_MS } from './model
 export type { RoomPresenceAuthor } from './model/use-room-presence';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
+export { useReplyInThread } from './model/use-reply-in-thread';
 export { useRoomDraft, useRoomDraftStore } from './model/room-drafts';
+export {
+  useComposerFocusRequest,
+  useRoomReplyTarget,
+  useRoomReplyTargetStore,
+} from './model/reply-targets';
 export { useRoomListStream } from './model/use-room-list-stream';
 export { useMarkRoomRead, useMarkRoomReadNow } from './model/use-mark-room-read';
 export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
@@ -45,6 +51,7 @@ export type {
   SetResponseModeInput,
 } from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
+export { replyRootFor, threadRootIdOf } from './lib/thread';
 export { responseModeOptionsFor } from './lib/response-mode';
 export type { ResponseModeOption } from './lib/response-mode';
 export { RoomAvatar } from './ui/RoomAvatar';

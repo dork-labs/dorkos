@@ -15,6 +15,7 @@ import type {
   CreateRoomRequest,
   ListRoomEntriesQuery,
   ListRoomsQuery,
+  PostThreadReplyRequest,
   PostToRoomRequest,
   PostToRoomResponse,
   RoomEntry,
@@ -92,6 +93,26 @@ export interface RoomTransport {
    * @param req - What to say, and the session that produced it when one did.
    */
   postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse>;
+  /**
+   * Reply inside the thread hanging off one entry in this room.
+   *
+   * Separate from {@link postToRoom} rather than an optional field on it,
+   * mirroring the routes: writing into a thread is a deliberate act with a
+   * required target, never an omitted parameter. Trigger-only in exactly the
+   * same way — the 202 carries the reply's identity, the reply itself arrives
+   * over {@link subscribeRoom}, and it triggers agents through the same
+   * addressing, budget and cascade rules an ordinary post does.
+   *
+   * **`rootEntryId` must be an entry that heads a thread, never a reply.** The
+   * server refuses a reply to a reply (`NESTED_THREAD`, 400), so a caller
+   * offering this on an arbitrary entry resolves the root itself — one level is
+   * what the timeline already draws, so retargeting is what the reader already
+   * sees, and a refusal here would be an error message about our own UI.
+   *
+   * @param id - The room the target entry lives in.
+   * @param req - The entry to hang the reply off, and what to say.
+   */
+  replyInThread(id: string, req: PostThreadReplyRequest): Promise<PostToRoomResponse>;
   /**
    * Add a member to a room, by author id or by agent directory.
    *

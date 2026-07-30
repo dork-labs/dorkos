@@ -10,6 +10,14 @@ import { RoomEntryRow } from './RoomEntryRow';
 import { RoomThreadReplies } from './RoomThreadReplies';
 
 interface RoomTimelineProps {
+  /** The room on screen. Every entry's actions act on it. */
+  roomId: string;
+  /**
+   * The reader's own author id, as the server resolved it for this request.
+   * Always present — seeing a room and being a member of it are different
+   * things, and this answers the first.
+   */
+  viewerAuthorId: string;
   /**
    * The room's whole history, oldest first — including thread replies. It
    * arrives unfiltered on purpose: the same array reaches `useMarkRoomRead`,
@@ -35,6 +43,30 @@ interface RoomTimelineProps {
 const SKELETON_ROWS = 4;
 
 /**
+ * What a room looks like before it has arrived.
+ *
+ * Its own component because two different waits render it — the room itself
+ * loading, and the room's history loading under a masthead that is already
+ * drawn — and a timeline that has no room yet cannot be asked for the room id
+ * and reader identity its rows need.
+ */
+export function RoomTimelineSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 p-4" aria-busy data-testid="room-timeline-loading">
+      {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+        <div key={`room-skeleton-${i}`} className="flex gap-3">
+          <Skeleton className="size-7 shrink-0 rounded-full" />
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-full max-w-md" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
  * A room's history: the same rows session chat renders — author groups, day
  * boundaries, and the rule marking where you left off — with more than two
  * people in them.
@@ -49,6 +81,8 @@ const SKELETON_ROWS = 4;
  * browser, so where you left off is the same on every device you open.
  */
 export function RoomTimeline({
+  roomId,
+  viewerAuthorId,
   entries,
   members,
   lastReadSeq,
@@ -73,21 +107,7 @@ export function RoomTimeline({
     );
   }, [topLevel, lastReadSeq, now]);
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-4 p-4" aria-busy data-testid="room-timeline-loading">
-        {Array.from({ length: SKELETON_ROWS }, (_, i) => (
-          <div key={`room-skeleton-${i}`} className="flex gap-3">
-            <Skeleton className="size-7 shrink-0 rounded-full" />
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-3 w-full max-w-md" />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
+  if (isLoading) return <RoomTimelineSkeleton />;
 
   if (error) {
     return (
@@ -136,12 +156,23 @@ export function RoomTimeline({
         return (
           <Fragment key={entry.id}>
             <RoomEntryRow
+              roomId={roomId}
               entry={entry}
               author={toMessageAuthor(entry.authorId, authors)}
+              authorRef={authors.get(entry.authorId)}
+              viewerAuthorId={viewerAuthorId}
               grouping={row.grouping}
               orphanedReply={orphaned.has(entry.id)}
             />
-            {replies && <RoomThreadReplies replies={replies} authors={authors} now={now} />}
+            {replies && (
+              <RoomThreadReplies
+                roomId={roomId}
+                replies={replies}
+                authors={authors}
+                viewerAuthorId={viewerAuthorId}
+                now={now}
+              />
+            )}
           </Fragment>
         );
       })}

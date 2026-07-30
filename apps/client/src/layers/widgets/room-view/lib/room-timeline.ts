@@ -4,7 +4,7 @@
  * @module widgets/room-view/lib/room-timeline
  */
 import type { AuthorRef, RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
-import { authorColor } from '@/layers/entities/room';
+import { authorColor, threadRootIdOf } from '@/layers/entities/room';
 import type { MessageAuthor } from '@/layers/shared/model';
 
 /**
@@ -62,29 +62,16 @@ export interface ThreadedEntries {
 }
 
 /**
- * The entry a reply belongs under, or null when it is not a reply.
+ * Split a room's log into its own flow and the replies hanging off it.
  *
- * `threadRootEntryId` is the SCOPE and `parentEntryId` is the RELATION; PR 1
- * added both deliberately. Grouping on the scope is what keeps this display
- * rule independent of the server's depth policy: `threadPointers` refuses a
+ * Placement reads {@link threadRootIdOf}, which is the SCOPE
+ * (`threadRootEntryId`) before the RELATION (`parentEntryId`); PR 1 added both
+ * deliberately. Grouping on the scope is what keeps this display rule
+ * independent of the server's depth policy: `threadPointers` refuses a
  * reply-to-a-reply today, but its own doc says opening a second level is one
  * `if` and that "nothing else in the schema has an opinion". Grouping on the
  * relation would have quietly made that false — a depth-two reply would key
  * under another reply, and nothing ever reads that key back out.
- *
- * The fallback is not decoration. The two pointers are written together and
- * are pinned equal by a test, but that invariant is not yet a `CHECK`
- * constraint (PR 3 adds it while it rebuilds the table), so a hand-written row
- * can still carry one without the other.
- *
- * @param entry - The entry to place.
- */
-function threadRootOf(entry: RoomEntry): string | null {
-  return entry.threadRootEntryId ?? entry.parentEntryId;
-}
-
-/**
- * Split a room's log into its own flow and the replies hanging off it.
  *
  * A thread is a relation between entries, not a room (ADR 260728-022013): a
  * reply is an ordinary entry in this room carrying a pointer at the entry that
@@ -132,7 +119,7 @@ export function groupByThread(entries: readonly RoomEntry[]): ThreadedEntries {
   // no render pass ever reads.
   const flowIds = new Set<string>();
   for (const entry of entries) {
-    if (threadRootOf(entry) === null) flowIds.add(entry.id);
+    if (threadRootIdOf(entry) === null) flowIds.add(entry.id);
   }
 
   const topLevel: RoomEntry[] = [];
@@ -141,7 +128,7 @@ export function groupByThread(entries: readonly RoomEntry[]): ThreadedEntries {
 
   // Pass 2: place each entry, defaulting to the flow whenever it cannot be hung.
   for (const entry of entries) {
-    const rootId = threadRootOf(entry);
+    const rootId = threadRootIdOf(entry);
     if (rootId === null) {
       topLevel.push(entry);
       continue;

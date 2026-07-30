@@ -67,6 +67,20 @@ export const TIMING = {
   TRIGGER_PENDING_TIMEOUT_MS: 15_000,
 } as const;
 
+/**
+ * How far a pointer may drift during a hold before it stops being a hold, in
+ * CSS pixels. The distance half of {@link TIMING.LONG_PRESS_MS}.
+ *
+ * A finger resting on a screen never sits perfectly still, so zero would mean
+ * no touch device could ever long-press. Past this, the gesture is a scroll or
+ * a text selection the reader has already begun.
+ *
+ * Compared per axis (Chebyshev distance) rather than as a true radius: it costs
+ * no square root, and the shape the reader perceives — "did my finger stay put?"
+ * — is not precise enough for the corners of the square to be noticeable.
+ */
+export const LONG_PRESS_DRIFT_PX = 10;
+
 export const SSE_RESILIENCE = {
   /** Client heartbeat watchdog timeout — 3x server heartbeat interval (ms). */
   HEARTBEAT_TIMEOUT_MS: 45_000,
