@@ -22,6 +22,7 @@ covers:
   - 'fix(rooms): two controls a thumb could miss on a phone'
   - 'fix(rooms): a one-to-one gets the reply window too'
   - 'fix(rooms): pressing the setting you already have writes nothing'
+  - 'fix(rooms): two removals at once, two ways back'
 ---
 
 ### Changed
@@ -55,3 +56,4 @@ covers:
 - Opening the sheet on a phone no longer pops the keyboard at you. The search box is still the first thing under the heading, and still one tap away — you just get to look at the list first.
 - Two controls on a phone were a few pixels too small to hit reliably: an agent's loudness setting, and the **×** that takes an agent back off the list while you are choosing. Both are now comfortably thumb-sized.
 - Pressing the loudness setting an agent already has now does nothing, instead of quietly saving it again — which could fail, and could change how the setting was stored without changing what the agent does.
+- Taking two agents out of a room one after the other now offers **Undo** for both. The first offer used to be dropped if the second removal started before it finished, leaving one agent gone with no way to put it back on the setting it had.

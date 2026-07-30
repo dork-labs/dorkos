@@ -810,11 +810,24 @@ describe('RoomDetailsDialog', () => {
 
   describe('taking an agent back out', () => {
     /** The undo the removal toast offered, or `null` when it offered none. */
-    function undoOffer(): (() => void) | null {
-      const call = vi.mocked(toast.success).mock.calls[0];
+    function undoOffer(name?: string): (() => void) | null {
+      const calls = vi.mocked(toast.success).mock.calls;
+      const call =
+        name === undefined ? calls[0] : calls.find(([offer]) => String(offer).startsWith(name));
       if (call === undefined) return null;
       const options = call[1] as { action?: { label: string; onClick: () => void } } | undefined;
       return options?.action?.onClick ?? null;
+    }
+
+    /** Ask to remove a member and accept the confirmation, in one gesture. */
+    function confirmRemoval(name: string): void {
+      removeThroughMenu(name);
+      fireEvent.click(
+        within(screen.getByRole('group', { name: `Remove ${name} from #general?` })).getByRole(
+          'button',
+          { name: 'Remove' }
+        )
+      );
     }
 
     it('puts the agent back on the mode it had, not the one a new join gets', async () => {
@@ -881,30 +894,72 @@ describe('RoomDetailsDialog', () => {
       });
       await rosterSection();
 
-      const confirmRemoval = (name: string) => {
-        removeThroughMenu(name);
-        fireEvent.click(
-          within(screen.getByRole('group', { name: `Remove ${name} from #general?` })).getByRole(
-            'button',
-            { name: 'Remove' }
-          )
-        );
-      };
-
       confirmRemoval('Ana');
-      // Settled before the second one starts, and that is load-bearing: one
-      // observer serves both, so a `mutate` that supersedes an unsettled one
-      // takes its per-call callbacks with it — and the barrier below would then
-      // pass because TanStack dropped the offer, not because this code declined
-      // to make it.
-      await waitFor(() => expect(transport.getRoom).toHaveBeenCalledTimes(2));
-
       confirmRemoval('Bo');
 
       await waitFor(() =>
         expect(toast.success).toHaveBeenCalledWith('Bo removed from #general', expect.anything())
       );
       expect(toast.success).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers an undo for each of two removals in flight at once', async () => {
+      // One mutation observer serves every row, and TanStack keeps ONE slot for
+      // per-call callbacks: a second `mutate` overwrote the first call's
+      // `onSuccess`, so the first agent left with no way back. What it destroys
+      // is invisible — the per-room session binding goes with the membership —
+      // which is the whole reason the offer exists.
+      //
+      // Both removals are confirmed while neither has settled, which is what
+      // makes this the concurrent case rather than two sequential ones.
+      const resolvers: Array<() => void> = [];
+      const { transport } = renderPanel({
+        transport: createMockTransport({
+          getRoom: vi
+            .fn()
+            .mockResolvedValue(
+              roster([
+                HUMAN,
+                agentMember('Ana', '/repo/ana', 'silent'),
+                agentMember('Bo', '/repo/bo', 'always'),
+              ])
+            ),
+          removeRoomMember: vi
+            .fn()
+            .mockImplementation(() => new Promise<void>((resolve) => resolvers.push(resolve))),
+        }),
+      });
+      await rosterSection();
+
+      confirmRemoval('Ana');
+      confirmRemoval('Bo');
+      // `mutate` only SCHEDULES, so the calls have to be waited for — and
+      // neither can settle while it is waited for, because the transport holds
+      // both promises open. That is what puts them in flight together.
+      await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalledTimes(2));
+      expect(resolvers).toHaveLength(2);
+
+      await act(async () => {
+        for (const resolve of resolvers) resolve();
+      });
+
+      await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
+      // Each offer has to carry ITS OWN member's captured mode. A single
+      // surviving callback would put one of them back on the other's setting,
+      // or on the server's join-time seed — `engaged` for a channel, which is
+      // how a deliberately silenced agent starts answering and calls it undo.
+      undoOffer('Ana')!();
+      undoOffer('Bo')!();
+
+      await waitFor(() => expect(transport.addRoomMember).toHaveBeenCalledTimes(2));
+      expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', {
+        agentPath: '/repo/ana',
+        responseMode: 'silent',
+      });
+      expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', {
+        agentPath: '/repo/bo',
+        responseMode: 'always',
+      });
     });
   });
 

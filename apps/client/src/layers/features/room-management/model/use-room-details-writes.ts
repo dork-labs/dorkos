@@ -77,6 +77,11 @@ export interface RoomDetailsWritesInput {
  * per-call `onError` is dispatched only while the observer still has listeners.
  * A second toast raised here would mean two lines for one failure.
  *
+ * **The one report this file does raise is read off a promise, not off a
+ * per-call callback.** Those callbacks live in a single slot on the mutation
+ * observer, and every row shares one observer — so two removals in flight at
+ * once cost the first one its offer. See {@link RoomDetailsWrites.removeMember}.
+ *
  * @param input - The room being written to.
  */
 export function useRoomDetailsWrites(input: RoomDetailsWritesInput): RoomDetailsWrites {
@@ -126,32 +131,41 @@ export function useRoomDetailsWrites(input: RoomDetailsWritesInput): RoomDetails
       // deliberately set to Silent into one that answers, and call it undo.
       const { responseMode } = member;
       const agentPath = agentPathOf(member);
-      removeRoomMember.mutate(
-        { roomId, authorId: member.authorId },
-        {
-          // No `onError` beside it, deliberately. The undo runs long after this
-          // row has gone, and TanStack dispatches per-call callbacks only while
-          // the observer still has listeners — so a handler here would not fire
-          // and the failure would fall through to the generic "Action failed."
-          // The add hook's `meta.errorLabel` reaches the mutation cache's own
-          // handler, which is not gated. Same reasoning as `RoomRow`'s archive.
-          onSuccess: () => {
-            const offer = `${member.author.displayName} removed from ${roomTitle}`;
-            // Nothing is said at all when there is no way back to offer: the
-            // row leaving the roster is the confirmation, and a toast with no
-            // verb on it is a notification about something already on screen.
-            // An agent with no directory the fleet can name is one that has
-            // left the mesh, and nothing could put it back.
-            if (agentPath === null) return;
-            toast.success(offer, {
-              action: {
-                label: 'Undo',
-                onClick: () => addMember.mutate({ roomId, agentPath, responseMode }),
-              },
-            });
-          },
-        }
-      );
+      // Settled from the MUTATION's own promise rather than from a per-call
+      // `onSuccess`. One observer serves every row and TanStack keeps ONE slot
+      // for per-call callbacks (`MutationObserver`'s `#mutateOptions`), so a
+      // second removal started before the first has landed overwrites the first
+      // call's handlers and that agent leaves with no way back — while what the
+      // removal destroyed, its per-room session binding, is invisible. The
+      // promise `mutateAsync` returns belongs to one call and settles whatever
+      // else the observer goes on to do. Same fix, and the same reasoning, as
+      // the queued `/rename` in `use-native-commands.ts` (DOR-480).
+      //
+      // Serialising the removals would hide this rather than fix it: the second
+      // agent would wait on the first for no reason the reader can see.
+      removeRoomMember
+        .mutateAsync({ roomId, authorId: member.authorId })
+        .then(() => {
+          const offer = `${member.author.displayName} removed from ${roomTitle}`;
+          // Nothing is said at all when there is no way back to offer: the
+          // row leaving the roster is the confirmation, and a toast with no
+          // verb on it is a notification about something already on screen.
+          // An agent with no directory the fleet can name is one that has
+          // left the mesh, and nothing could put it back.
+          if (agentPath === null) return;
+          toast.success(offer, {
+            action: {
+              label: 'Undo',
+              onClick: () => addMember.mutate({ roomId, agentPath, responseMode }),
+            },
+          });
+        })
+        // The rejection arm is what makes this safe to leave unawaited, and it
+        // stays empty on purpose: the shared mutation toast already composes
+        // this hook's `meta.errorLabel` with the server's own sentence, from
+        // the mutation cache, which is not gated on anybody still listening. A
+        // second report here would mean two lines for one failure.
+        .catch(() => {});
     },
     [removeRoomMember, addMember, roomId, roomTitle, agentPathOf]
   );
