@@ -216,6 +216,21 @@
      edge length exactly, so a continuation row (which renders an empty gutter,
      or the hover timestamp) stays flush with the group start above it. */
   --msg-gutter-width: 1.75rem;
+  /* How tall the message action capsule is: a 24px button (`size-6`) plus the
+     pill's own 2px padding and 1px border on each side. A room row hangs its
+     sticky rail exactly this far above the message's first line, which is what
+     puts the capsule's bottom edge ON that line and never over it. If the
+     capsule ever grows past this, it starts covering words — which is why the
+     relationship is asserted in `room-entry-actions.spec.ts` rather than left
+     to whoever changes the button size. */
+  --msg-actions-height: 1.875rem;
+  /* How long the capsule takes to appear, and to go. Arriving is the 90ms the
+     design record names; leaving is deliberately quicker, because a control you
+     have moved away from should be gone by the time you look elsewhere. Both
+     live here rather than inline so the pair can be read — and changed —
+     together, which is the only way the asymmetry stays deliberate. */
+  --msg-actions-fade-in: 90ms;
+  --msg-actions-fade-out: 60ms;
 
   /* === Shape tokens === */
   --msg-radius: 1.25rem;
@@ -227,10 +242,6 @@
   --msg-enter-damping: 28;
   --msg-tool-expand-duration: 300ms;
   --msg-tool-expand-easing: cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* === Interactive state tokens === */
-  --msg-actions-opacity-default: 0;
-  --msg-actions-opacity-hover: 1;
 
   /* === Elevation tokens === */
   --msg-tool-shadow: none;
@@ -631,6 +642,37 @@ body {
 
 @utility animate-drain {
   animation-name: drain;
+}
+
+/* The message action capsule's entrance: a 5px rise that overshoots a pixel and
+   settles (design record §5.1). The overshoot is a KEYFRAME, not the curve —
+   cubic-bezier(.2,1.4,.4,1) alone only carries a 5px travel about a quarter of
+   a pixel past its landing (measured), which is invisible. So the pixel the
+   design asks for is stated, and the curve shapes the way there.
+
+   The fade is the 90ms the design names; the rise runs longer so the settle has
+   somewhere to happen, which is the proportion the approved demo shows — and
+   still well inside the 300ms every motion here resolves within.
+
+   `translate` rather than `transform` so it composes with anything else the
+   capsule is asked to do later, and because that is the property Tailwind's own
+   translate utilities write. Call sites gate this with `motion-safe:`, so a
+   reader who has asked for less motion is never handed the rise at all — the
+   capsule appears, already where it settles. */
+@keyframes capsule-in {
+  from {
+    translate: 0 5px;
+  }
+  55% {
+    translate: 0 -1px;
+  }
+  to {
+    translate: 0 0;
+  }
+}
+
+@utility animate-capsule-in {
+  animation: capsule-in 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 
 @keyframes health-pulse {

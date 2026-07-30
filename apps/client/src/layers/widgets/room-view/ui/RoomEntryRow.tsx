@@ -169,11 +169,36 @@ export function RoomEntryRow({
             <MarkdownContent content={entry.body.text} linkSafety />
           </div>
           {/*
-            The rail is what makes the toolbar reachable on a message longer than
-            the window. It is `sticky` inside the message's own column and has no
-            height of its own, so it costs the row no vertical space, sits at the
-            top of the message while the top is on screen, and rides the viewport
-            edge for as long as the message keeps going.
+            The rail is the strip of gutter the capsule lives in — exactly one
+            capsule tall, sitting directly ABOVE the message's first line, so the
+            capsule straddles the message block's top edge and, for as long as
+            that edge is on screen, covers no word of it (design record §1).
+            `-mt` cancels its own height, so the band costs the row no vertical
+            space and the message sits where it would have anyway: the capsule is
+            drawn in the air between messages, not in a lane carved out for it.
+
+            One rule, every grouping position. The band hangs off the message's
+            own first line, and the row's top padding already moves with the
+            grouping — so a group start (16px of padding) gets the even straddle
+            the design draws, while a tight continuation (6px) reaches further up
+            into the group's own 12px of air. That is the honest trade: a 30px
+            capsule cannot fit in 12px, and of the two things it can overlap, the
+            words of the message it ACTS ON are the ones it must never touch.
+
+            It is also `sticky`, which is what keeps it reachable on a message
+            longer than the window: it rides the message's top while that is on
+            screen and clamps to the scroller's edge once the message extends
+            above it. The clamp is unchanged by the band — `top-1` still pins the
+            band's own top, so a clamped capsule sits exactly where it always
+            did, and the handover is continuous because sticky never jumps.
+
+            The clamp is also the one place the capsule DOES cover words: with a
+            message's first line just under the scroller's edge, the pinned
+            capsule sits over it. Nothing can be done about that without giving
+            up either the clamp or the straddle, and the clamp is what makes a
+            long message's actions reachable at all. It is a narrow band —
+            roughly the capsule's own height of scroll — and off it entirely for
+            the rest of the message.
 
             LAST in the DOM and `order-first` in the layout, deliberately. Read
             order is what a screen reader follows, and a toolbar announced ahead
@@ -183,17 +208,16 @@ export function RoomEntryRow({
             without moving the reading order, and the sticky clamp is computed on
             the laid-out box, so it survives the move.
 
-            `items-start` is load-bearing, not tidiness. This is a flex row of
-            height ZERO, and a flex row's default `align-items: stretch` sizes a
-            child to the line's cross size — so the toolbar was squashed to
-            nothing and shipped as a 6px capsule with its own 24px buttons
-            hanging 9px out of it top and bottom, reading as a line ruled
-            through the icons. Session chat never hit this: its `corner` anchor
-            is `absolute`, so it is out of flow and no flex line ever sizes it.
+            `items-start` is load-bearing, not tidiness. A flex row's default
+            `align-items: stretch` sizes a child to the line's cross size — which
+            once squashed the pill to a 6px capsule with its own 24px buttons
+            hanging out of it top and bottom, reading as a line ruled through the
+            icons. Session chat never hit this: its `corner` anchor is
+            `absolute`, so it is out of flow and no flex line ever sizes it.
             Pinned by "the toolbar encloses the buttons it is drawn around" in
             `room-entry-actions.spec.ts`.
           */}
-          <div className="pointer-events-none sticky top-1 z-20 order-first flex h-0 items-start justify-end pr-2">
+          <div className="pointer-events-none sticky top-1 z-20 order-first -mt-(--msg-actions-height) flex h-(--msg-actions-height) items-start justify-end pr-2">
             <EntryActionBar
               ref={barRef}
               actions={actions}

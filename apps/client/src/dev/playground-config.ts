@@ -134,7 +134,7 @@ export const PAGE_CONFIGS: PageConfig[] = [
     id: 'entry-actions',
     label: 'Entry Actions',
     description:
-      'The action surface every room message carries — the hover toolbar, its sticky rail, and how the pill holds its buttons across action counts, group positions, and both themes.',
+      'The action surface every room message carries — where the capsule sits, how it arrives, its sticky rail, and how the pill holds its buttons across action counts, group positions, and both themes.',
     icon: MousePointerClick,
     group: 'session',
     sections: ENTRY_ACTIONS_SECTIONS,

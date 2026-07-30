@@ -49,9 +49,12 @@ export const messageItem = tv({
      * page: it is one rung up the same `--elevation-*` ladder, and that ladder
      * is tuned per theme (0.05 alpha light, 0.5 dark) where a raw `shadow-md`
      * would all but vanish against a near-black background.
+     *
+     * How it ARRIVES is the `anchor` variant's business, not this slot's — the
+     * two anchors reveal at different speeds and only one of them moves.
      */
     actions:
-      'bg-popover shadow-elevated pointer-events-none z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
+      'bg-popover shadow-elevated pointer-events-none z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
     // desktop-darwin:select-text: the desktop shell defaults chrome to
     // non-selectable (index.css), but message bodies — text, code blocks,
     // command output — are exactly what a user copies out of a chat, so this
@@ -103,10 +106,33 @@ export const messageItem = tv({
      * already gated the same way by Tailwind v4.
      */
     anchor: {
-      corner: { actions: 'absolute top-1 right-2' },
+      corner: { actions: 'absolute top-1 right-2 transition-opacity duration-150' },
       rail: {
-        actions:
-          'relative pointer-fine:group-focus-within:pointer-events-auto pointer-fine:group-focus-within:opacity-100',
+        actions: [
+          'relative',
+          'pointer-fine:group-focus-within:pointer-events-auto pointer-fine:group-focus-within:opacity-100',
+          // How it arrives (design record §5.1): a 90ms fade with a 5px rise
+          // that overshoots about a pixel and settles (`animate-capsule-in`,
+          // defined in `index.css`). Leaving is a plain, faster fade with
+          // nothing moving — which is why the rise is an ANIMATION and not a
+          // transition: an animation only exists while the row is revealed, so
+          // there is no return leg to suppress. A transition would slide the
+          // capsule back down through the fade, reading as a dismissal.
+          //
+          // `motion-safe:` gates the rise, and the fade needs no gate of its
+          // own: the global reduced-motion rule in `index.css` collapses every
+          // transition to a hundredth of a millisecond, so a reader who has
+          // asked for less motion gets the capsule in a single frame, already
+          // where it settles. Soft for everyone else, instant for them.
+          //
+          // Repeated per reveal rule rather than shared, because Tailwind only
+          // emits classes it can SEE — a variant built by template string is a
+          // class that never gets generated.
+          'transition-opacity duration-(--msg-actions-fade-out) ease-out',
+          'group-hover:motion-safe:animate-capsule-in group-hover:duration-(--msg-actions-fade-in)',
+          'focus-within:motion-safe:animate-capsule-in focus-within:duration-(--msg-actions-fade-in)',
+          'pointer-fine:group-focus-within:motion-safe:animate-capsule-in pointer-fine:group-focus-within:duration-(--msg-actions-fade-in)',
+        ],
       },
     },
   },

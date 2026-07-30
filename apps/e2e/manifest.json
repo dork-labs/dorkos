@@ -220,12 +220,12 @@
     "room-entry-actions": {
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
-      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, a reply gathers under the message it answers, and a reply to a reply joins it, a long press opens the drawer, and a short one or a drag does not",
-      "lastRun": "2026-07-30T12:37:09.490Z",
+      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, a reply gathers under the message it answers, and a reply to a reply joins it, a long press opens the drawer, and a short one or a drag does not",
+      "lastRun": "2026-07-30T18:05:20.221Z",
       "lastStatus": "passed",
-      "runCount": 13,
-      "passCount": 8,
-      "failCount": 5,
+      "runCount": 19,
+      "passCount": 11,
+      "failCount": 8,
       "relatedCode": [],
       "lastModified": ""
     },
@@ -758,6 +758,60 @@
       "failed": 0,
       "skipped": 0,
       "duration": 53523
+    },
+    {
+      "id": "2026-07-30T17-02-43",
+      "timestamp": "2026-07-30T17:02:43.726Z",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 67128
+    },
+    {
+      "id": "2026-07-30T17-03-46",
+      "timestamp": "2026-07-30T17:03:46.143Z",
+      "total": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 40138
+    },
+    {
+      "id": "2026-07-30T17-04-59",
+      "timestamp": "2026-07-30T17:04:59.622Z",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 34813
+    },
+    {
+      "id": "2026-07-30T18-01-05",
+      "timestamp": "2026-07-30T18:01:05.531Z",
+      "total": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 23806
+    },
+    {
+      "id": "2026-07-30T18-02-41",
+      "timestamp": "2026-07-30T18:02:41.587Z",
+      "total": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 31037
+    },
+    {
+      "id": "2026-07-30T18-05-20",
+      "timestamp": "2026-07-30T18:05:20.221Z",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 127454
     }
   ]
 }
