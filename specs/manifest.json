@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260730-213143",
+      "slug": "execution-defaults",
+      "title": "Execution defaults — runtime, model and effort, server-wide and per agent",
+      "created": "2026-07-30",
+      "status": "specified"
+    },
+    {
       "id": "260730-154240",
       "slug": "room-messaging-design",
       "title": "Room messaging design — capsule, reactions, and the thread panel",
