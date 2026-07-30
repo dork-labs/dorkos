@@ -189,6 +189,9 @@
           "originLabel": {
             "type": "string"
           },
+          "account": {
+            "type": "string"
+          },
           "cwd": {
             "type": "string"
           }
@@ -242,6 +245,9 @@
             "type": "string"
           },
           "message": {
+            "type": "string"
+          },
+          "account": {
             "type": "string"
           }
         },

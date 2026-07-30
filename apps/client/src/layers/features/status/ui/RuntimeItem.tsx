@@ -23,6 +23,11 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/layers/shared/ui';
+import { shortenHomePath } from '@/layers/shared/lib';
+import { DEFAULT_ACCOUNT_VALUE, useAccountSwitch } from '../model/use-account-switch';
+
+/** The runtime whose sessions belong to a Claude account. */
+const CLAUDE_CODE = 'claude-code';
 
 interface RuntimeItemProps {
   /**
@@ -76,6 +81,11 @@ type SetupDialogState = { open: boolean; runtime?: string };
  * Runtimes that are not ready are never dead options: they render as a single
  * "Connect" entry that opens the Ready/Connect setup surface (one-click
  * provisioning for OpenCode; the terminal detail lives behind Advanced).
+ *
+ * On Claude Code the same menu carries the ACCOUNT the next session bills to,
+ * once more than one is registered — the choice belongs where a turn is
+ * initiated, not only in Settings, because misattributed billing is the failure
+ * mode (spec `claude-code-accounts` D6).
  */
 export function RuntimeItem({
   runtime,
@@ -86,6 +96,7 @@ export function RuntimeItem({
 }: RuntimeItemProps) {
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
+  const account = useAccountSwitch();
   const [setupDialog, setSetupDialog] = useState<SetupDialogState>({ open: false });
 
   const registeredTypes = Object.keys(capabilityMap?.capabilities ?? {});
@@ -102,10 +113,23 @@ export function RuntimeItem({
 
   // Actionable content gates the dropdown: another runtime to select, a
   // registered runtime needing setup, or an addable runtime to discover.
-  const selectable =
-    canSelect &&
+  //
+  // Neither gate re-tests `canSelect`: the `if (!canSelect)` return below is
+  // reached before any consumer of these, so a `canSelect &&` term here reads as
+  // defensive but can never be the reason either one is false.
+  const canChangeRuntime =
     !!onChangeRuntime &&
     (registeredTypes.length > 1 || needsSetupTypes.length > 0 || hasAddableRuntime);
+  // Which Claude account the next session bills to — the same pre-launch window
+  // the runtime choice lives in, and for the same reason: once a session exists
+  // its account is fixed to the one that created it (spec D3), so a switcher on a
+  // started session would imply a move that is impossible. A started session's
+  // account is legible on its sidebar row instead.
+  //
+  // Only with more than one account registered: below that every session runs on
+  // the same account and the row would be a control with nothing to control.
+  const canChangeAccount = runtime === CLAUDE_CODE && account.isMultiAccount;
+  const selectable = canChangeRuntime || canChangeAccount;
 
   // Read-only identity chip. Deliberately not dimmed: unlike a temporarily
   // disabled control, "this session runs on OpenCode · qwen2.5-coder" is the
@@ -150,42 +174,86 @@ export function RuntimeItem({
           </button>
         </ResponsiveDropdownMenuTrigger>
         <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
-          <ResponsiveDropdownMenuLabel>Runtime</ResponsiveDropdownMenuLabel>
-          <ResponsiveDropdownMenuRadioGroup
-            value={runtime}
-            onValueChange={(v) => onChangeRuntime?.(v)}
-          >
-            {readyTypes.map((type) => {
-              const d = getRuntimeDescriptor(type);
-              return (
-                <ResponsiveDropdownMenuRadioItem key={type} value={type} icon={d.icon}>
-                  {d.label}
-                </ResponsiveDropdownMenuRadioItem>
-              );
-            })}
-          </ResponsiveDropdownMenuRadioGroup>
-          {needsSetupTypes.map((type) => {
-            const d = getRuntimeDescriptor(type);
-            return (
-              <ResponsiveDropdownMenuItem
-                key={type}
-                icon={d.icon}
-                description="Connect"
-                onSelect={() => setSetupDialog({ open: true, runtime: type })}
-              >
-                {d.label}
-              </ResponsiveDropdownMenuItem>
-            );
-          })}
-          {hasAddableRuntime && (
+          {canChangeRuntime && (
             <>
-              <ResponsiveDropdownMenuSeparator />
-              <ResponsiveDropdownMenuItem
-                icon={Plus}
-                onSelect={() => setSetupDialog({ open: true })}
+              <ResponsiveDropdownMenuLabel>Runtime</ResponsiveDropdownMenuLabel>
+              <ResponsiveDropdownMenuRadioGroup
+                value={runtime}
+                onValueChange={(v) => onChangeRuntime?.(v)}
               >
-                Add a runtime
-              </ResponsiveDropdownMenuItem>
+                {readyTypes.map((type) => {
+                  const d = getRuntimeDescriptor(type);
+                  return (
+                    <ResponsiveDropdownMenuRadioItem key={type} value={type} icon={d.icon}>
+                      {d.label}
+                    </ResponsiveDropdownMenuRadioItem>
+                  );
+                })}
+              </ResponsiveDropdownMenuRadioGroup>
+              {needsSetupTypes.map((type) => {
+                const d = getRuntimeDescriptor(type);
+                return (
+                  <ResponsiveDropdownMenuItem
+                    key={type}
+                    icon={d.icon}
+                    description="Connect"
+                    onSelect={() => setSetupDialog({ open: true, runtime: type })}
+                  >
+                    {d.label}
+                  </ResponsiveDropdownMenuItem>
+                );
+              })}
+              {hasAddableRuntime && (
+                <>
+                  <ResponsiveDropdownMenuSeparator />
+                  <ResponsiveDropdownMenuItem
+                    icon={Plus}
+                    onSelect={() => setSetupDialog({ open: true })}
+                  >
+                    Add a runtime
+                  </ResponsiveDropdownMenuItem>
+                </>
+              )}
+            </>
+          )}
+          {canChangeAccount && (
+            <>
+              {canChangeRuntime && <ResponsiveDropdownMenuSeparator />}
+              <ResponsiveDropdownMenuLabel>Account</ResponsiveDropdownMenuLabel>
+              <ResponsiveDropdownMenuRadioGroup
+                value={account.selectedValue}
+                onValueChange={account.choose}
+              >
+                <ResponsiveDropdownMenuRadioItem
+                  value={DEFAULT_ACCOUNT_VALUE}
+                  description={
+                    account.inherited && account.resolvedAccount
+                      ? shortenHomePath(account.resolvedAccount)
+                      : undefined
+                  }
+                >
+                  Default
+                </ResponsiveDropdownMenuRadioItem>
+                {account.accounts.map((entry) => (
+                  <ResponsiveDropdownMenuRadioItem
+                    key={entry.path}
+                    value={entry.path}
+                    // The server already checked this folder and could not find an
+                    // account in it, so say so here as plainly as the settings
+                    // card does on its row. Still selectable, not disabled: an
+                    // account authenticated a minute ago has no `projects/`
+                    // either (spec §9), and choosing it is how the first session
+                    // gets there.
+                    description={
+                      entry.isAccountRoot === false
+                        ? 'Does not look like an account folder yet'
+                        : undefined
+                    }
+                  >
+                    {account.nameFor(entry.path)}
+                  </ResponsiveDropdownMenuRadioItem>
+                ))}
+              </ResponsiveDropdownMenuRadioGroup>
             </>
           )}
         </ResponsiveDropdownMenuContent>

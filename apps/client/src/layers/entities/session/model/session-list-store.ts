@@ -103,6 +103,18 @@ interface SessionListActions {
    * on their next real transition.
    */
   resetStatuses: () => void;
+  /**
+   * Forget every session this store is holding, without touching statuses or
+   * unseen flags.
+   *
+   * For the one event that says the whole list is stale rather than naming what
+   * changed: a Claude account switch changes WHICH stores the server reads, and
+   * the restarted watcher only upserts — it never announces the sessions it
+   * stopped watching as removed (spec `claude-code-accounts` D5). Dropping the
+   * map lets the authoritative refetch that follows rebuild it, instead of
+   * leaving the union of the old and new account sets on screen.
+   */
+  dropSessions: () => void;
 }
 
 /**
@@ -245,6 +257,15 @@ export const useSessionListStore = create<SessionListStoreState & SessionListAct
           },
           false,
           'session-list/resetStatuses'
+        ),
+
+      dropSessions: () =>
+        set(
+          (state) => {
+            state.sessions = {};
+          },
+          false,
+          'session-list/dropSessions'
         ),
     })),
     { name: 'SessionListStore', enabled: import.meta.env.DEV }

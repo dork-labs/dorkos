@@ -9,18 +9,37 @@ import type { RecentSessionsResponse, Session } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 
+/**
+ * Generic-event handlers the hook registered, keyed by event name, so a test can
+ * deliver a global-stream event without an SSE connection.
+ */
+const eventHandlers = new Map<string, (data: unknown) => void>();
+
 // Keep the effect from opening a real global stream — we only exercise the
 // store → query-cache bridge, not the SSE transport.
 vi.mock('@/layers/shared/lib/transport', () => ({
-  streamManager: { connectList: vi.fn() },
+  streamManager: {
+    connectList: vi.fn(),
+    subscribeEvent: vi.fn((name: string, handler: (data: unknown) => void) => {
+      eventHandlers.set(name, handler);
+      return () => eventHandlers.delete(name);
+    }),
+  },
 }));
 vi.mock('../model/session-stream-binding', () => ({
   initSessionStreamBinding: vi.fn(),
   resetSessionStreamBinding: vi.fn(),
 }));
+// `useSessions` reads the active session id from the router search params; there
+// is no router here (the same stub `use-sessions.test.tsx` uses).
+vi.mock('../model/use-session-id', () => ({
+  useSessionId: () => [null, vi.fn()] as const,
+}));
 
+import { useAppStore } from '@/layers/shared/model';
 import { useGlobalSessionStream } from '../model/use-global-session-stream';
 import { useRecentSessions } from '../model/use-recent-sessions';
+import { useSessions } from '../model/use-sessions';
 import { useSessionListStore } from '../model/session-list-store';
 
 function makeSession(id: string): Session {
@@ -78,5 +97,60 @@ describe('useGlobalSessionStream — recent-sessions invalidation', () => {
     });
 
     await waitFor(() => expect(transport.listRecentSessions).toHaveBeenCalledTimes(2));
+  });
+});
+
+/**
+ * A Claude account switch changes WHICH stores DorkOS reads, and the restarted
+ * watcher only ever upserts — it never announces the sessions it stopped
+ * watching as removed. So the server says "the whole list is stale" once
+ * (`session_list_invalidated`, spec `claude-code-accounts` D5) and the client has
+ * to drop what it holds. Without this the cockpit shows the union of the old and
+ * new account sets until a manual reload.
+ */
+describe('useGlobalSessionStream — session_list_invalidated', () => {
+  beforeEach(() => {
+    useSessionListStore.setState({ sessions: {}, rekeys: {} });
+    useAppStore.setState({ selectedCwd: '/projects/api' });
+    eventHandlers.clear();
+    vi.clearAllMocks();
+  });
+
+  it('drops the held session list and refetches it from the server', async () => {
+    // The account switch happens between these two answers: the old account's
+    // session is gone from the server's union, and only a refetch can learn that.
+    const listSessions = vi
+      .fn()
+      .mockResolvedValueOnce({ sessions: [makeSession('from-old-account')] })
+      .mockResolvedValue({ sessions: [makeSession('from-new-account')] });
+    const transport = createMockTransport({ listSessions });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+
+    const { result } = renderHook(
+      () => ({ list: useSessions(), stream: useGlobalSessionStream() }),
+      { wrapper }
+    );
+    await waitFor(() => expect(result.current.list.sessions).toHaveLength(1));
+    expect(result.current.list.sessions[0]!.id).toBe('from-old-account');
+
+    // The live store is holding a row from the account that is no longer read.
+    act(() => {
+      useSessionListStore.getState().upsertSession(makeSession('from-old-account'));
+    });
+    expect(Object.keys(useSessionListStore.getState().sessions)).toEqual(['from-old-account']);
+
+    act(() => {
+      eventHandlers.get('session_list_invalidated')?.({ changedAt: '2026-07-29T00:00:00.000Z' });
+    });
+
+    // Red when the client ignores the event: the list keeps the old account's
+    // session and the store keeps holding it.
+    await waitFor(() => expect(result.current.list.sessions[0]?.id).toBe('from-new-account'));
+    expect(useSessionListStore.getState().sessions).toEqual({});
   });
 });

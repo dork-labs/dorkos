@@ -1,6 +1,13 @@
 /**
- * Resolves the Claude Agent SDK's config root — the directory holding
+ * Resolves the Claude Agent SDK's config roots — the directories holding
  * `projects/` (JSONL transcripts), `todos/`, and other SDK-managed state.
+ *
+ * A "Claude Code account" IS one of these directories: it carries that account's
+ * transcripts and its own sign-in, which is why pointing the SDK at a different
+ * one changes both the history DorkOS can see and the subscription the work bills
+ * to. An operator running one account per client therefore runs several of these
+ * directories, and this module is the single place that decides which one is
+ * active and which ones exist (spec `claude-code-accounts`).
  *
  * The SDK's own subprocess resolves this as `CLAUDE_CONFIG_DIR ?? ~/.claude`
  * (verified against `@anthropic-ai/claude-agent-sdk`'s bundled `sdk.mjs`: the
@@ -12,22 +19,233 @@
  * one place, DorkOS reads another, and the session 404s despite having run,
  * billed, and streamed successfully (DOR-250).
  *
+ * `runtimes.claudeCode.activeAccount` sits IN FRONT of that env var rather than
+ * behind it, on purpose: inheriting whichever directory the launching terminal
+ * exported is exactly the non-determinism this feature removes. With the field at
+ * its `null` default the chain is byte-for-byte the SDK's own.
+ *
  * `os.homedir()` is banned everywhere else in `apps/server/src/` (see
- * `.claude/rules/dork-home.md`), but this directory is exempt: it predates the
- * ban and mirrors the SDK's own config-dir resolution, which is itself
- * homedir-based when no override is set. See `eslint.config.js` — the
- * `services/runtimes/claude-code/**` block never applies `HOMEDIR_BANS`.
+ * `.claude/rules/dork-home.md`), and this file is one of the three carve-outs —
+ * exempt from the CALL ban **by filename**, so a sibling module may not call it
+ * either. Everything that needs the real `~/.claude` lives here for that reason.
+ * The IMPORT ban still reaches this file, so the import must stay spelled
+ * `import os from 'os'`; `import { homedir }` here is a lint error.
  *
  * @module services/runtimes/claude-code/claude-config-dir
  */
+import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import type { UserConfig } from '@dorkos/shared/config-schema';
+import type { ServerConfig } from '@dorkos/shared/schemas';
+import { logger } from '../../../lib/logger.js';
+import { configManager } from '../../core/config-manager.js';
+import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
+
+/** Minimal read surface of the config manager (injectable for tests). */
+type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
 
 /**
- * Resolve the Claude Agent SDK's config root directory.
+ * The Claude root the SDK subprocess would pick on its own, with no DorkOS
+ * config in the picture: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
  *
- * @returns `$CLAUDE_CONFIG_DIR` when set, else `~/.claude`.
+ * Reads the variable through {@link ambientClaudeConfigDir} rather than directly,
+ * so a rename or fork holding the D8 env lock cannot make this answer its
+ * transient value and send a brand-new session to another client's account.
  */
-export function resolveClaudeConfigDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
+function inheritedClaudeRoot(): string {
+  return ambientClaudeConfigDir() ?? path.join(os.homedir(), '.claude');
+}
+
+/**
+ * Read `runtimes.claudeCode` without ever throwing.
+ *
+ * Config resolution is on the transcript read path, and the singleton is
+ * undefined before `initConfigManager()` runs (a unit test, an early boot step).
+ * Failing there must degrade to the inherited default rather than break a read,
+ * so every failure is a debug line and an empty answer.
+ */
+function readClaudeCodeConfig(config: ConfigReader): {
+  activeAccount: string | null;
+  accounts: readonly { path: string; label: string | null }[];
+} {
+  try {
+    const claudeCode = config.get('runtimes')?.claudeCode;
+    return {
+      activeAccount: claudeCode?.activeAccount ?? null,
+      accounts: claudeCode?.accounts ?? [],
+    };
+  } catch (err) {
+    logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
+    return { activeAccount: null, accounts: [] };
+  }
+}
+
+/**
+ * Whether a directory currently qualifies as a Claude account.
+ *
+ * Structural, never credential-based (spec D4): an account is a directory that
+ * exists and holds a `projects/` subdirectory. That single test cleanly separates
+ * real accounts from neighbours like `~/.claude-worktrees` and `~/.claudekit`,
+ * which have no `projects/`. A `statSync` that throws answers the
+ * does-not-exist case at the same time.
+ *
+ * Claude Code names its macOS Keychain entry after a hash of the config
+ * directory, which is _why_ changing the directory changes the billing identity —
+ * but that is observed behavior of one release and macOS-only, so nothing here
+ * depends on it. An authentication failure surfaces as a runtime error, which is
+ * honest, rather than as a pre-flight guess.
+ */
+function isClaudeAccountRoot(dir: string): boolean {
+  try {
+    return fs.statSync(path.join(dir, 'projects')).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the Claude root a NEW session runs and bills on.
+ *
+ * `runtimes.claudeCode.activeAccount` first, then the SDK's own chain
+ * (`$CLAUDE_CONFIG_DIR`, else `~/.claude`). Never throws: an unreadable config
+ * degrades to the inherited default.
+ *
+ * @param config - Config reader (defaults to the module singleton).
+ * @returns The absolute Claude config directory to run in.
+ */
+export function resolveActiveClaudeRoot(config: ConfigReader = configManager): string {
+  return readClaudeCodeConfig(config).activeAccount ?? inheritedClaudeRoot();
+}
+
+/**
+ * Resolve every Claude root DorkOS should enumerate — what listing and search
+ * read across, as opposed to the single root a new session runs in.
+ *
+ * The union is the active root, `$CLAUDE_CONFIG_DIR` when set, `~/.claude`, and
+ * every registered account, deduplicated and filtered to the directories that
+ * actually qualify ({@link isClaudeAccountRoot}). Two parts of that are load-bearing:
+ *
+ * - **Choosing an active account ADDS it to the set.** Otherwise selecting
+ *   `~/.claude2` would move new work there while listing still covered only the
+ *   old root, and a short list is indistinguishable from a complete one.
+ * - **`~/.claude` stays in unconditionally**, even when another account is
+ *   active, because the SDK may already have written there and dropping it hides
+ *   history.
+ *
+ * The active root comes first and the rest keep their declaration order, so the
+ * result is deterministic. Never throws; an unreadable config narrows the answer
+ * rather than failing it. A root that qualifies but cannot be READ is not this
+ * function's problem — the caller reports it as a warning and contributes zero
+ * sessions.
+ *
+ * @param config - Config reader (defaults to the module singleton).
+ * @returns Qualifying Claude roots, active first, each named once. Possibly empty
+ *   on a machine where Claude Code has never run.
+ */
+export function resolveClaudeRootSet(config: ConfigReader = configManager): string[] {
+  const { accounts } = readClaudeCodeConfig(config);
+  const inherited = ambientClaudeConfigDir();
+  const candidates = [
+    resolveActiveClaudeRoot(config),
+    ...(inherited ? [inherited] : []),
+    path.join(os.homedir(), '.claude'),
+    ...accounts.map((account) => account.path),
+  ];
+
+  const seen = new Set<string>();
+  const roots: string[] = [];
+  for (const candidate of candidates) {
+    // Dedupe on the resolved path so `~/.claude` and `~/.claude/` are one root,
+    // but emit the candidate as written. The active root is first, so its
+    // spelling is the one that survives.
+    const key = path.resolve(candidate);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (isClaudeAccountRoot(candidate)) roots.push(candidate);
+  }
+  return roots;
+}
+
+/**
+ * The `CLAUDE_CONFIG_DIR` entry that pins a spawned SDK subprocess to `root`.
+ *
+ * Spread this into `sdkOptions.env` at every spawn site. The entry is ALWAYS
+ * present, so the subprocess's account is decided here and never inherited from
+ * `process.env` — which is what makes the D8 env lock in
+ * `claude-config-env-lock.ts` safe: a query spawning while a rename holds the
+ * lock cannot pick up its transient mutation.
+ *
+ * ## Why the value can be `undefined`, and why that is not a loophole
+ *
+ * When `root` is the SDK's own default (`~/.claude`), "unset" is normally the
+ * faithful spelling of that account — and spelling it out instead would change
+ * behavior rather than pin it. Claude Code derives its macOS Keychain entry name
+ * as `Claude Code-credentials[-<8 hex of sha256(configDir)>]`, and it takes the
+ * UNSUFFIXED branch exactly when `CLAUDE_CONFIG_DIR` is unset — verified in the
+ * SDK's bundled `sdk.mjs` and confirmed against a real machine, where
+ * `~/.claude`'s entry is the unsuffixed one and the suffixed spelling does not
+ * exist. So writing `CLAUDE_CONFIG_DIR=~/.claude` points the CLI at a Keychain
+ * entry that was never created, and sign-in fails.
+ *
+ * `undefined` reaches the subprocess as a genuinely absent variable: Node's
+ * `child_process` skips `undefined` values when it builds the child's
+ * environment, so this both overrides an inherited value and removes it. That is
+ * what lets absence still satisfy acceptance criterion 3 — an explicit account
+ * choice overrides an inherited `CLAUDE_CONFIG_DIR`, including by erasing it.
+ *
+ * ## The one exception, which looks redundant and is not
+ *
+ * `ambientNamesRoot` keeps the pin EXPLICIT when the launching environment
+ * already named `~/.claude` itself. An operator who always exports
+ * `CLAUDE_CONFIG_DIR=~/.claude` authenticated under that regime, so their
+ * SUFFIXED entry is the one that exists and naming the path is right for them.
+ * Absence is right on every OTHER route to `~/.claude`: nothing set at all, or an
+ * inherited variable naming a DIFFERENT account that the operator has just
+ * overridden by selecting the default. Do not collapse this to "the ambient
+ * value is unset" — that conflates which Keychain BRANCH Claude Code takes with
+ * whether the name for the WANTED account exists, and it breaks sign-in for
+ * anyone who selects `~/.claude` from a shell pointing somewhere else.
+ *
+ * @param root - The absolute Claude config directory this subprocess must use.
+ * @returns A one-entry env fragment to spread AFTER `...process.env`.
+ */
+export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | undefined } {
+  const ambient = ambientClaudeConfigDir();
+  const isDefaultRoot = path.resolve(root) === path.resolve(path.join(os.homedir(), '.claude'));
+  const ambientNamesRoot = ambient !== undefined && path.resolve(ambient) === path.resolve(root);
+  return { CLAUDE_CONFIG_DIR: isDefaultRoot && !ambientNamesRoot ? undefined : root };
+}
+
+/**
+ * Describe the Claude account state for `GET /api/config` — where a new session
+ * will run, whether that was chosen or inherited, and which registered accounts
+ * DorkOS can currently find.
+ *
+ * The resolved path has to come from the server: the cockpit cannot see the
+ * server process's `CLAUDE_CONFIG_DIR`, so without this it could only show an
+ * empty field where the effective default belongs.
+ *
+ * The return type is the wire contract itself rather than a restatement of it, so
+ * this function and `ServerConfigSchema` cannot drift apart.
+ *
+ * @param config - Config reader (defaults to the module singleton).
+ * @returns The `claudeCode` block of the server config response.
+ */
+export function describeClaudeCodeAccounts(
+  config: ConfigReader = configManager
+): NonNullable<ServerConfig['claudeCode']> {
+  const { activeAccount, accounts } = readClaudeCodeConfig(config);
+  return {
+    resolvedAccount: activeAccount ?? inheritedClaudeRoot(),
+    inherited: activeAccount === null,
+    accounts: accounts.map((account) => ({
+      path: account.path,
+      label: account.label,
+      // NOT `exists`: this is D4's structural check, so a directory that is
+      // really there but holds no `projects/` reports false. Naming it `exists`
+      // would read as `fs.existsSync` to any UI and mislabel that case.
+      isAccountRoot: isClaudeAccountRoot(account.path),
+    })),
+  };
 }

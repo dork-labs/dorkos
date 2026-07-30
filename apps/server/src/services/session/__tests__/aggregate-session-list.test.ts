@@ -7,9 +7,10 @@
  * the merge/sort/tag/degrade logic directly, including the per-runtime
  * timeout with an injectable budget (so no test ever sleeps the real 2s).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { FakeAgentRuntime, createMockSessionWithReading } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { aggregateSessionList } from '../aggregate-session-list.js';
 
 function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'updatedAt'>): Session {
@@ -218,5 +219,54 @@ describe('aggregateSessionList', () => {
     expect(sessions.map((s) => s.id)).toEqual(['cc-1']);
     expect(sessions[0]!.contextTokens).toBe(120_000);
     expect(warnings).toEqual([{ runtime: 'codex', message: 'codex offline' }]);
+  });
+
+  it('carries a runtime own partial-failure warnings alongside the sessions it did read', async () => {
+    // One level below ADR-0310's per-runtime degradation: claude-code reads one
+    // store per Claude account, so an unreadable ACCOUNT must cost that account's
+    // sessions only. Rejecting would throw away the accounts that read fine;
+    // returning a short list silently would look exactly like a complete one.
+    const claude = new FakeAgentRuntime('claude-code');
+    claude.listSessionsWithWarnings = vi.fn().mockResolvedValue({
+      sessions: [makeSession({ id: 'in-account-a', updatedAt: '2026-03-01T00:00:00.000Z' })],
+      warnings: [
+        { runtime: 'claude-code', message: 'Claude account ~/.claude2 could not be read' },
+      ],
+    });
+
+    const { sessions, warnings } = await aggregateSessionList({
+      runtimes: [claude],
+      projectDir: '/p',
+    });
+
+    expect(sessions.map((s) => s.id)).toEqual(['in-account-a']);
+    expect(warnings).toEqual([
+      { runtime: 'claude-code', message: 'Claude account ~/.claude2 could not be read' },
+    ]);
+    // The envelope form REPLACES the plain listing rather than joining it: two
+    // reads of the same directory could disagree, and would double every session.
+    expect(claude.listSessions).not.toHaveBeenCalled();
+  });
+
+  it('still asks a runtime that does NOT implement the envelope through plain listSessions', async () => {
+    // `listSessionsWithWarnings` is optional, and a runtime reading one store has
+    // no partial failure to report — a successful listing is complete by
+    // construction. Hand-rolled rather than a FakeAgentRuntime, because the fake
+    // implements the optional method and the point here is its ABSENCE.
+    const singleStore = {
+      type: 'codex',
+      listSessions: vi
+        .fn()
+        .mockResolvedValue([makeSession({ id: 'cx-1', updatedAt: '2026-03-01T00:00:00.000Z' })]),
+      getInternalSessionId: vi.fn().mockReturnValue(undefined),
+    } as unknown as AgentRuntime;
+
+    const { sessions, warnings } = await aggregateSessionList({
+      runtimes: [singleStore],
+      projectDir: '/p',
+    });
+
+    expect(sessions.map((s) => s.id)).toEqual(['cx-1']);
+    expect(warnings).toEqual([]);
   });
 });

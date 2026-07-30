@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
+import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import {
@@ -85,6 +86,13 @@ router.get('/', async (_req, res) => {
     workingDirectory: process.cwd(),
     platform: `${process.platform}-${process.arch}`,
     runtimes: configuredRuntimes(),
+    // Which Claude account new work will run and bill on, RESOLVED, plus the
+    // accounts registered here (spec claude-code-accounts). Resolved for the same
+    // reason `claudeCliPath` is: the cockpit cannot see the server process's
+    // `CLAUDE_CONFIG_DIR`, so it would otherwise show an empty field where the
+    // effective default belongs. The reader falls back to the section defaults on
+    // its own, which covers the pre-migration read window.
+    claudeCode: describeClaudeCodeAccounts(),
     boundary: getBoundary(),
     // Set by index.ts at startup before routes are registered — always present at request time
     dorkHome: process.env.DORK_HOME!,

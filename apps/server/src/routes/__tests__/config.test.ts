@@ -585,6 +585,68 @@ describe('GET /api/config', () => {
     expect(res.body.agents.defaultAgent).toBe('dorkbot');
   });
 
+  // The cockpit cannot see the server process's `CLAUDE_CONFIG_DIR`, so if GET did
+  // not resolve the active Claude account the account switcher could only show an
+  // empty field where the effective default belongs (spec claude-code-accounts,
+  // acceptance criterion 8).
+  describe('claudeCode — which Claude account new work runs on', () => {
+    const ORIGINAL_ENV = process.env.CLAUDE_CONFIG_DIR;
+
+    afterEach(() => {
+      if (ORIGINAL_ENV === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = ORIGINAL_ENV;
+    });
+
+    it('reports the inherited environment as the resolved account', async () => {
+      process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
+
+      const res = await request(app).get('/api/config').expect(200);
+
+      expect(res.body.claudeCode).toEqual({
+        resolvedAccount: '/tmp/inherited-claude',
+        inherited: true,
+        accounts: [],
+      });
+    });
+
+    it('reports a chosen account, its roster, and which of them it can find', async () => {
+      const real = path.join(tmpDir, 'claude2');
+      fs.mkdirSync(path.join(real, 'projects'), { recursive: true });
+      const missing = path.join(tmpDir, 'gone');
+      process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('runtimes', {
+        ...configManager.get('runtimes'),
+        claudeCode: {
+          activeAccount: real,
+          accounts: [
+            { path: real, label: 'Acme Corp' },
+            { path: missing, label: null },
+          ],
+        },
+      });
+
+      const res = await request(app).get('/api/config').expect(200);
+
+      // The chosen account wins over the inherited env var, and the roster says
+      // honestly which entries no longer resolve.
+      expect(res.body.claudeCode).toEqual({
+        resolvedAccount: real,
+        inherited: false,
+        accounts: [
+          { path: real, label: 'Acme Corp', isAccountRoot: true },
+          { path: missing, label: null, isAccountRoot: false },
+        ],
+      });
+    });
+
+    it('does not widen the runtimes id list, which other readers treat as flat ids', async () => {
+      const res = await request(app).get('/api/config').expect(200);
+
+      expect(res.body.runtimes).toEqual(['claude-code', 'codex', 'opencode']);
+    });
+  });
+
   it('reports a directory the person configured as their own, tilde expanded', async () => {
     const { configManager } = await import('../../services/core/config-manager.js');
     configManager.set('agents', { defaultDirectory: '~/work/agents', defaultAgent: 'dorkbot' });

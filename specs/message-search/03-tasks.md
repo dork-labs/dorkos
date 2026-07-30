@@ -181,7 +181,7 @@ Add the append-only-JSONL mechanism and the Claude Code source. This is where th
   - Plugin artifacts (`<slug>/vercel-plugin/skill-injections.jsonl`) are excluded.
   - **Discovery still WALKS the tree rather than globbing `projects/*/*.jsonl`**, because a one-level glob would exclude subagents by accident of depth rather than by decision — and the day someone wants them, the change must be a predicate, not a rewrite.
 - `projections/claude-code.ts` — pure. `origin_key` = the session id (the JSONL filename stem), `ordinal` = index of the message within the file, `container_path` = the head record's `cwd` (`transcript-reader.ts:104-106`), never the lossy slug.
-- The root is `${CLAUDE_CONFIG_DIR ?? ~/.claude}/projects`. Use `resolveClaudeConfigDir()`; hardcoding `~/.claude` "silently split-brains" (DOR-250). **Single root only in this task — task 3.2 makes it a set, and 3.2 exists because a single root is measurably wrong on the operator's own machine.**
+- The root is the ACTIVE Claude account's `projects/`. Use `resolveActiveClaudeRoot()` (`services/runtimes/claude-code/claude-config-dir.ts`); hardcoding `~/.claude` "silently split-brains" (DOR-250). **Single root only in this task — task 3.2 makes it a set, and 3.2 exists because a single root is measurably wrong on the operator's own machine. `resolveClaudeRootSet()` already returns that set (DOR-729 shipped it), so 3.2 is mostly a matter of calling it from the registry row.**
 - `scripts/search-corpus-bench.ts` — a committed, env-gated script that rebuilds from the operator's real transcripts and prints `roots=… files=… messages=… rebuildMs=… dbBytes=…`. This is the artifact tasks 3.2, 4.1 and 5.1 all measure with.
 
 ## Verification
@@ -236,7 +236,7 @@ So: **the frontier reader treats `\n` as the only line terminator** and never us
 - **Depends on:** 3.1 · **Parallel with:** 4.1, 5.1
 - **Active form:** Making search cover every Claude Code config root
 
-**This task exists because a measurement contradicted the spec, not because the spec asked for it.** The spec resolves ONE Claude Code projects root, via `resolveClaudeConfigDir()` = `$CLAUDE_CONFIG_DIR ?? ~/.claude`. On the operator's own machine that silently loses most of the corpus the feature promises.
+**This task exists because a measurement contradicted the spec, not because the spec asked for it.** The spec resolves ONE Claude Code projects root, via what was then `resolveClaudeConfigDir()` = `$CLAUDE_CONFIG_DIR ?? ~/.claude`. (DOR-729 has since replaced that helper with `resolveActiveClaudeRoot()` for the single active root and `resolveClaudeRootSet()` for the set, so this task is now largely a matter of reading from the set.) On the operator's own machine that silently loses most of the corpus the feature promises.
 
 ## The measurement (2026-07-28, this machine, read-only)
 
@@ -253,12 +253,12 @@ A single-root index sees at most **17,989 of 26,811 messages — 67%**. And the 
 
 That is the failure shape the spec's own G4 refuses ("a search box that silently covers less for one runtime than another") applied to a case the spec did not anticipate: covering less for the SAME runtime, depending on an environment variable.
 
-**Why the spec got this wrong is worth recording.** `resolveClaudeConfigDir()` is exactly right for its existing job — reading back a transcript for a session DorkOS itself just ran, where DorkOS must resolve the identical directory the SDK wrote to (DOR-250). The index asks a different question: where does the operator's history live? Those are different questions and the spec inherited the answer to the first.
+**Why the spec got this wrong is worth recording.** Resolving the single active root (`resolveActiveClaudeRoot()` today) is exactly right for its existing job — reading back a transcript for a session DorkOS itself just ran, where DorkOS must resolve the identical directory the SDK wrote to (DOR-250). The index asks a different question: where does the operator's history live? Those are different questions and the spec inherited the answer to the first.
 
 ## Scope
 
-- The claude-code registry row's root resolver returns a **set of roots**, not one. Default set: `$CLAUDE_CONFIG_DIR` when set, UNION `~/.claude`. That alone fixes the catastrophic case (server inherits a minor root and indexes 3.5%).
-- Additional roots come from user config, so `~/.claude2` and any future profile can be added without a code change. Follow `contributing/configuration.md` and the `adding-config-fields` skill: a Zod field on `UserConfigSchema` with a semver-keyed migration. Default `[]`, meaning "just the two above".
+- The claude-code registry row's root resolver returns a **set of roots**, not one. **Call `resolveClaudeRootSet()`** — DOR-729 shipped it, and it already returns the active root, `$CLAUDE_CONFIG_DIR` when set, `~/.claude`, and every registered account, filtered to the directories that hold a `projects/` subdirectory. That alone fixes the catastrophic case (server inherits a minor root and indexes 3.5%).
+- Additional roots come from user config, so `~/.claude2` and any future profile can be added without a code change. That config already exists: DOR-729 added `runtimes.claudeCode.accounts` (path plus label) and folds every registered account into the root set, so no new config field is needed here. Its default is `[]`, meaning "just the two above".
 - **Do not auto-glob `~/.claude*`.** It is a guess, and on this machine it would sweep up `.claude-worktrees` and `.claudekit`, which are not config dirs.
 - Roots that do not exist are skipped silently; a root that exists but fails to read contributes one `search_sources.last_error` and zero rows, per the per-source degradation rule (G3).
 - Session ids are UUIDs, so `origin_key` collision across roots is not a practical risk — but `search_sources` is keyed `(source_id, origin_key)`, so if two roots ever did hold the same session id the second would silently overwrite the first's frontier. Assert distinctness in the test below rather than assuming it.

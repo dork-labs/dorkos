@@ -389,4 +389,32 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     expect(a.returned()).toBe(true);
     expect(b.returned()).toBe(true);
   });
+
+  it('re-subscribes after stop(), which is what makes a live account switch work', async () => {
+    // Relied on by `runtimes/claude-code/account-switch.ts`: each watcher
+    // captured the OLD Claude projects roots when it was constructed, so the
+    // whole mechanism for applying an account switch without a restart is
+    // stop-then-start re-invoking `subscribeSessionList`. Pinned here rather than
+    // assumed, because `start()` no-ops while the broadcaster is still running —
+    // a `stop()` that left `running` set would make the restart silently do
+    // nothing and leave every watcher on the old accounts.
+    const first = controllableSessionList();
+    const second = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValueOnce(first.iterable);
+    runtimeA.subscribeSessionList.mockReturnValueOnce(second.iterable);
+
+    broadcaster.start([runtimeA]);
+    await broadcaster.stop();
+    broadcaster.start([runtimeA]);
+
+    expect(runtimeA.subscribeSessionList).toHaveBeenCalledTimes(2);
+    // The NEW stream is the live one: an event on it reaches clients.
+    second.push({ type: 'session_removed', sessionId: SESSION_A });
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_removed',
+        expect.objectContaining({ sessionId: SESSION_A })
+      );
+    });
+  });
 });

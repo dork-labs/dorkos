@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider, useClaudeAccounts } from '@/layers/shared/model';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { ServerConfig } from '@dorkos/shared/types';
 
 // ---------------------------------------------------------------------------
 // Mock the runtime entity hooks so tests can drive the registered-runtime map
@@ -117,6 +121,7 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     ResponsiveDropdownMenuRadioItem: ({
       children,
       value,
+      description,
     }: {
       children: React.ReactNode;
       value: string;
@@ -126,6 +131,7 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     }) => (
       <div role="radio" aria-checked={false} data-radio-value={value}>
         <span>{children}</span>
+        {description && <span data-testid="radio-description">{description}</span>}
       </div>
     ),
     ResponsiveDropdownMenuItem: ({
@@ -175,15 +181,84 @@ beforeAll(() => {
   });
 });
 
+// A refused account switch is reported by toast — the status bar has no room for
+// an inline error.
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mockRuntimeCapabilities.mockReturnValue({ data: undefined });
   mockRuntimeRequirements.mockReturnValue({ data: undefined });
+  mockServerConfig = {};
+  mockUpdateConfig = () => Promise.resolve();
 });
 
 // Import after mocks are set up
+import { toast } from 'sonner';
 import { RuntimeItem } from '../ui/RuntimeItem';
+
+/**
+ * What `GET /api/config` answers for the current test. The chip reads the
+ * registered Claude accounts from here (spec `claude-code-accounts` D6); the
+ * runtime cases leave it empty, which is a default install.
+ */
+let mockServerConfig: Partial<ServerConfig> = {};
+
+/** The transport the most recent {@link render} handed the tree, for write assertions. */
+let lastTransport: ReturnType<typeof createMockTransport>;
+
+/** What `PATCH /api/config` does in the current test. Overridden to assert a refusal. */
+let mockUpdateConfig: () => Promise<void> = () => Promise.resolve();
+
+/**
+ * Render with the providers the chip's config read needs. Shadows RTL's `render`
+ * so every existing case gets them without repeating the wrapper.
+ */
+function render(ui: React.ReactElement) {
+  const transport = createMockTransport({
+    getConfig: vi.fn().mockResolvedValue(mockServerConfig),
+    updateConfig: vi.fn(() => mockUpdateConfig()),
+  });
+  lastTransport = transport;
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(ui, {
+    wrapper: ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    ),
+  });
+}
+
+/**
+ * Reports what the shared accounts hook currently knows.
+ *
+ * Mounted alongside the chip so a test can wait for the config read to LAND
+ * before asserting the account group is ABSENT. Waiting on the menu itself proves
+ * nothing: the dropdown renders on the first pass, while the config query is
+ * still in flight, so the absence assertion would run before the state it is
+ * about even exists and could never fail.
+ */
+function AccountsProbe() {
+  const { accounts } = useClaudeAccounts();
+  return <span data-testid="accounts-known">{accounts.length}</span>;
+}
+
+/** Server config registering `count` named Claude accounts, the first one active. */
+function withAccounts(count: number): Partial<ServerConfig> {
+  const all = [
+    { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+    { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
+  ];
+  return {
+    claudeCode: {
+      resolvedAccount: '/Users/dev/.claude',
+      inherited: true,
+      accounts: all.slice(0, count),
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Capability fixtures — only the map KEYS matter to RuntimeItem; the values
@@ -552,6 +627,164 @@ describe('RuntimeItem', () => {
         })
       ).toHaveLength(0);
       expect(screen.queryByTestId('dropdown-separator')).not.toBeInTheDocument();
+    });
+  });
+
+  // The account decides which client's subscription a turn bills to, so it is
+  // offered where a turn is initiated and not only in Settings (spec
+  // `claude-code-accounts` D6).
+  describe('Claude account switching', () => {
+    /** Every known runtime registered and ready, so nothing else adds menu content. */
+    function everyRuntimeReady() {
+      mockRuntimeCapabilities.mockReturnValue({
+        data: capsMap('claude-code', 'claude-code', 'codex', 'opencode'),
+      });
+      mockRuntimeRequirements.mockReturnValue({
+        data: requirementsFor(['claude-code', 'codex', 'opencode']),
+      });
+    }
+
+    /** The account radio group is the last one rendered (the runtime group comes first). */
+    function accountGroup() {
+      const groups = screen.getAllByRole('radiogroup');
+      return groups[groups.length - 1]!;
+    }
+
+    it('lists the registered accounts plus the inherited default', async () => {
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      const group = accountGroup();
+      expect(group.querySelectorAll('[role="radio"]')).toHaveLength(3);
+      expect(group).toHaveTextContent('Default');
+      expect(group).toHaveTextContent('Personal');
+      // Nothing chosen yet, so the default option is the selected one.
+      expect(group.getAttribute('data-value')).toBe('__default__');
+    });
+
+    it('writes the chosen account so the next session bills to it', async () => {
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      const user = userEvent.setup();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Acme Corp'));
+
+      expect(lastTransport.updateConfig).toHaveBeenCalledWith({
+        runtimes: { claudeCode: { activeAccount: '/Users/dev/.claude2' } },
+      });
+    });
+
+    it('says so when the write is refused, instead of looking like it worked', async () => {
+      mockServerConfig = withAccounts(2);
+      const refusal = Object.assign(new Error('Only a person can change those settings'), {
+        status: 403,
+        code: 'operator_only_config',
+      });
+      mockUpdateConfig = () => Promise.reject(refusal);
+      everyRuntimeReady();
+      const user = userEvent.setup();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+
+      await user.click(screen.getByText('Acme Corp'));
+
+      // Both `runtimes.claudeCode` leaves are operator-only, so under Require
+      // login this 403 is a real outcome. Red when it is swallowed.
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Only a person can change those settings')
+      );
+    });
+
+    it('says so when a registered folder is not a usable account, instead of offering it plainly', async () => {
+      // The server already checked and found no account there, so this option
+      // points new work at a config Claude Code treats as signed out. The
+      // settings card warns on its row; this must agree rather than stay quiet.
+      mockServerConfig = {
+        claudeCode: {
+          resolvedAccount: '/Users/dev/.claude',
+          inherited: true,
+          accounts: [
+            { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+            { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: false },
+          ],
+        },
+      };
+      everyRuntimeReady();
+      render(<RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />);
+
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      const marked = screen
+        .getAllByRole('radio')
+        .filter((el) => el.getAttribute('data-radio-value') === '/Users/dev/.claude2');
+      expect(marked).toHaveLength(1);
+      expect(marked[0]).toHaveTextContent('Does not look like an account folder yet');
+      // The usable one carries no such mark.
+      expect(
+        screen
+          .getAllByRole('radio')
+          .find((el) => el.getAttribute('data-radio-value') === '/Users/dev/.claude')
+      ).not.toHaveTextContent('Does not look like an account folder yet');
+    });
+
+    it('stays out of the menu when only one account is registered', async () => {
+      mockServerConfig = withAccounts(1);
+      everyRuntimeReady();
+      render(
+        <>
+          <AccountsProbe />
+          <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={true} />
+        </>
+      );
+
+      // Wait for the CONFIG, not the menu: the dropdown is already on screen
+      // before the accounts are known, so synchronizing on it would assert the
+      // absence of something that had not had a chance to appear.
+      await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('1'));
+      // The runtime group is still there; the account group is not. Nothing to
+      // switch between means a control with nothing to control.
+      expect(screen.getByTestId('dropdown-root')).toBeInTheDocument();
+      expect(screen.getAllByRole('radiogroup')).toHaveLength(1);
+      expect(screen.queryByText('Personal')).not.toBeInTheDocument();
+      expect(screen.queryAllByTestId('dropdown-label').map((el) => el.textContent)).not.toContain(
+        'Account'
+      );
+    });
+
+    it('stays out of the menu once the session has started', async () => {
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      render(
+        <>
+          <AccountsProbe />
+          <RuntimeItem runtime="claude-code" onChangeRuntime={vi.fn()} canSelect={false} />
+        </>
+      );
+
+      // A started session's account is fixed to the one that created it, so a
+      // switcher here would imply a move that cannot happen.
+      await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('2'));
+      expect(screen.getByTestId('tooltip-content')).toBeInTheDocument();
+      expect(screen.queryByTestId('dropdown-root')).not.toBeInTheDocument();
+      expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
+    });
+
+    it('stays out of the menu for a runtime with no accounts', async () => {
+      mockServerConfig = withAccounts(2);
+      everyRuntimeReady();
+      render(
+        <>
+          <AccountsProbe />
+          <RuntimeItem runtime="codex" onChangeRuntime={vi.fn()} canSelect={true} />
+        </>
+      );
+
+      await waitFor(() => expect(screen.getByTestId('accounts-known')).toHaveTextContent('2'));
+      expect(screen.getByTestId('dropdown-root')).toBeInTheDocument();
+      expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
     });
   });
 });

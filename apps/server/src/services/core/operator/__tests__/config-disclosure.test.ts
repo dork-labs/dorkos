@@ -164,6 +164,15 @@ function fullyPopulatedConfig(): Record<string, unknown> {
     },
     runtimes: {
       default: 'claude-code',
+      // A populated roster, including an unnamed account, so the projection is
+      // exercised on both `label` branches rather than on an empty array.
+      claudeCode: {
+        activeAccount: '/Users/me/.claude2',
+        accounts: [
+          { path: '/Users/me/.claude', label: 'Acme Corp' },
+          { path: '/Users/me/.claude2', label: null },
+        ],
+      },
       opencode: {
         enabled: true,
         binaryPath: '/opt/homebrew/bin/opencode',

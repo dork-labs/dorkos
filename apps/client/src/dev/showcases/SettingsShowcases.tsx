@@ -27,7 +27,13 @@ import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { IntegrationsTab } from '@/layers/features/settings/ui/IntegrationsTab';
 import { AgentsTab } from '@/layers/features/settings/ui/AgentsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
-import { MockedQueryProvider, TabShell } from './settings-showcase-helpers';
+import { ClaudeAccountsCard } from '@/layers/features/settings/ui/ClaudeAccountsCard';
+import {
+  MockedQueryProvider,
+  RefusedConfigWriteProvider,
+  TabShell,
+} from './settings-showcase-helpers';
+import { MOCK_SERVER_CONFIG_MULTI_ACCOUNT } from './settings-mock-data';
 
 /** Comprehensive showcase for the Settings dialog system. */
 export function SettingsShowcases() {
@@ -35,10 +41,53 @@ export function SettingsShowcases() {
     <>
       <FullSettingsDialogSection />
       <IndividualTabsSection />
+      <ClaudeAccountsSection />
       <MobileDrillInSection />
       <LoadingEmptyStatesSection />
       <PrimitivesSection />
     </>
+  );
+}
+
+/**
+ * Section 2b — the Claude Code account card in every state it can reach
+ * (spec `claude-code-accounts`).
+ *
+ * Worth its own section because three of these states are invisible on the
+ * playground's default data: a registered roster, a folder that is not an account
+ * yet, and a refused write.
+ */
+function ClaudeAccountsSection() {
+  return (
+    <PlaygroundSection
+      title="Claude Code Accounts"
+      description="Which Claude account new work runs and bills on. An operator running one account per client registers each folder here and names it after the client."
+    >
+      <ShowcaseLabel>Default install — nothing registered</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider>
+          <ClaudeAccountsCard />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Several accounts — one in use, one unnamed, one not an account yet
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT}>
+          <ClaudeAccountsCard />
+        </MockedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Write refused — pick an account to see the message</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RefusedConfigWriteProvider>
+          <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT}>
+            <ClaudeAccountsCard />
+          </MockedQueryProvider>
+        </RefusedConfigWriteProvider>
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }
 

@@ -251,6 +251,16 @@ export const CONFIG_DISCLOSURE = {
   'workbench.autoOpenDiff': 'expose',
 
   'runtimes.default': 'expose',
+  // Which Claude account new work runs on, and the accounts registered here
+  // (spec claude-code-accounts). Directories and a human label — the same class
+  // as `runtimes.*.binaryPath`, exposed on purpose: an absolute path is how this
+  // surface addresses directories, and naming one is not naming a secret. The
+  // account's sign-in lives inside the directory and never passes through config,
+  // so there is nothing here to withhold. An agent knowing which account it is
+  // running on is the point.
+  'runtimes.claudeCode.activeAccount': 'expose',
+  'runtimes.claudeCode.accounts[].path': 'expose',
+  'runtimes.claudeCode.accounts[].label': 'expose',
   'runtimes.opencode.enabled': 'expose',
   'runtimes.opencode.binaryPath': 'expose',
   'runtimes.opencode.port': 'expose',

@@ -157,6 +157,17 @@ export function useGlobalSessionStream(): void {
       }
     });
 
+    // The whole list is stale — a Claude account switch changed which stores the
+    // server reads (spec `claude-code-accounts` D5). This is the one event that
+    // names nothing specific, because the restarted watcher upserts the sessions
+    // from the roots it now watches and never announces the ones it stopped
+    // watching as removed: only dropping what we hold and asking again converges.
+    const unsubscribeInvalidated = streamManager.subscribeEvent('session_list_invalidated', () => {
+      useSessionListStore.getState().dropSessions();
+      void queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
+      invalidateRecentSessions(queryClient);
+    });
+
     // Reconcile whatever already landed (the singleton store survives unmount /
     // HMR), THEN connect. Subscribe → reconcile-current → connect guarantees the
     // cache reflects both pre-existing and subsequent sessions.
@@ -171,6 +182,9 @@ export function useGlobalSessionStream(): void {
     }
     streamManager.connectList();
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeInvalidated();
+    };
   }, [queryClient]);
 }

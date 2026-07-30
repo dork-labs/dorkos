@@ -17,6 +17,7 @@ import {
   backfillSidebarRoomSections,
   backfillRoomsDefaults,
   backfillConnectorsDefaults,
+  backfillClaudeCodeRuntimeDefaults,
   backfillSmartGroupKindDefaults,
   migrateSidebarMembersToItemRefs,
   CONFIG_MIGRATIONS,
@@ -48,10 +49,11 @@ import { execSync } from 'child_process';
 
 /**
  * Expected `runtimes` section defaults (spec: additional-agent-runtimes +
- * effortless-runtime-switching T1 credential fields).
+ * effortless-runtime-switching T1 credential fields + claude-code-accounts).
  */
 const RUNTIMES_DEFAULTS = {
   default: 'claude-code',
+  claudeCode: { activeAccount: null, accounts: [] },
   opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
   codex: { enabled: true, binaryPath: null, credentialRef: null },
 };
@@ -1146,6 +1148,21 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
     // The connector-completion `connectors` backfill rides the same composite.
     expect(store.data.connectors).toEqual({ rawMcpServers: [] });
   });
+
+  it('composes the claude-code-accounts backfill into the same key', () => {
+    // `runtimes.claudeCode` rides this composite too, and a stored `runtimes`
+    // block is the case it exists for — conf's shallow defaults-merge never
+    // reaches inside one.
+    const store = createMockStore({
+      runtimes: { default: 'claude-code', codex: { enabled: true, binaryPath: null } },
+    });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect(store.data.runtimes).toEqual({
+      default: 'claude-code',
+      codex: { enabled: true, binaryPath: null },
+      claudeCode: { activeAccount: null, accounts: [] },
+    });
+  });
 });
 
 describe('backfillConnectorsDefaults migration (connector-completion, raw-MCP config)', () => {
@@ -1188,6 +1205,139 @@ describe('backfillConnectorsDefaults migration (connector-completion, raw-MCP co
       );
       const manager = initConfigManager(dir);
       expect(manager.get('connectors')).toEqual({ rawMcpServers: [] });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', () => {
+  it('adds claudeCode to an existing runtimes block without touching its siblings', () => {
+    // The case the migration exists for: conf merges top-level defaults shallowly,
+    // so a stored `runtimes` object never inherits a new nested section.
+    const store = createMockStore({
+      runtimes: {
+        default: 'opencode',
+        opencode: { enabled: true, binaryPath: '/opt/bin/opencode', port: 5111 },
+        codex: { enabled: false, binaryPath: null, credentialRef: 'env:CODEX_KEY' },
+      },
+    });
+    backfillClaudeCodeRuntimeDefaults(store);
+    expect(store.data.runtimes).toEqual({
+      default: 'opencode',
+      opencode: { enabled: true, binaryPath: '/opt/bin/opencode', port: 5111 },
+      codex: { enabled: false, binaryPath: null, credentialRef: 'env:CODEX_KEY' },
+      claudeCode: { activeAccount: null, accounts: [] },
+    });
+  });
+
+  it('is idempotent and never overwrites a chosen account or a registered roster', () => {
+    const configured = {
+      default: 'claude-code',
+      claudeCode: {
+        activeAccount: '/Users/me/.claude2',
+        accounts: [{ path: '/Users/me/.claude2', label: 'Acme Corp' }],
+      },
+    };
+    const store = createMockStore({ runtimes: structuredClone(configured) });
+    backfillClaudeCodeRuntimeDefaults(store);
+    backfillClaudeCodeRuntimeDefaults(store);
+    expect(store.data.runtimes).toEqual(configured);
+  });
+
+  it('is a no-op when there is no runtimes block (the schema default owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillClaudeCodeRuntimeDefaults(store);
+    expect(store.data.runtimes).toBeUndefined();
+  });
+
+  it('a real pre-0.57.0 config file gains the section on disk (full conf path)', () => {
+    // A real `conf` store over a real file — the mock never crosses the conf/Ajv
+    // seam (`.claude/rules/safe-defaults.md`). `projectVersion` is stated
+    // explicitly because SERVER_VERSION resolves to 0.0.0 in a dev tree, which
+    // puts the unreleased key outside conf's `(storedVersion, projectVersion]`
+    // window and would run no migration at all.
+    //
+    // The assertion reads the FILE, not the store: Ajv fills the missing section
+    // in on every READ, so `store.get('runtimes')` would look right even with the
+    // migration deleted. What only the migration does is write it through.
+    const dir = path.join(os.tmpdir(), 'test-dork-claudecode-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      const priorRuntimes = {
+        default: 'claude-code',
+        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+        codex: { enabled: true, binaryPath: null, credentialRef: null },
+      };
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          server: { port: 5000, cwd: null, boundary: null, open: true },
+          runtimes: priorRuntimes,
+          __internal__: { migrations: { version: '0.56.0' } },
+        }),
+        'utf-8'
+      );
+
+      const jsonSchema = z.toJSONSchema(UserConfigSchema, { target: 'jsonSchema2019-09' }) as {
+        properties?: Record<string, unknown>;
+      };
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: (jsonSchema.properties ?? {}) as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.57.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        runtimes: Record<string, unknown>;
+      };
+      expect(onDisk.runtimes.claudeCode).toEqual({ activeAccount: null, accounts: [] });
+      // The upgrade adds a section; it changes no runtime the person configured.
+      expect(onDisk.runtimes).toMatchObject(priorRuntimes);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a real config file that already names an account, through Ajv', () => {
+    // Ajv, not Zod, is the validator on the config read path, and it REJECTS
+    // unknown keys where Zod merely strips them. Booting a real manager over a
+    // populated roster is the only way to prove the generated JSON Schema
+    // actually admits this shape.
+    const dir = path.join(os.tmpdir(), 'test-dork-claudecode-set-' + Date.now());
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        path.join(dir, 'config.json'),
+        JSON.stringify({
+          ...USER_CONFIG_DEFAULTS,
+          runtimes: {
+            ...USER_CONFIG_DEFAULTS.runtimes,
+            claudeCode: {
+              activeAccount: '/Users/me/.claude3',
+              accounts: [
+                { path: '/Users/me/.claude', label: 'Acme Corp' },
+                { path: '/Users/me/.claude3', label: null },
+              ],
+            },
+          },
+        })
+      );
+      const manager = initConfigManager(dir);
+      expect(manager.get('runtimes').claudeCode).toEqual({
+        activeAccount: '/Users/me/.claude3',
+        accounts: [
+          { path: '/Users/me/.claude', label: 'Acme Corp' },
+          { path: '/Users/me/.claude3', label: null },
+        ],
+      });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

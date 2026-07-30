@@ -4,7 +4,8 @@ import type { PlaygroundSection } from '../playground-registry';
  * Settings sections from SettingsPage.
  *
  * Sources: SettingsShowcases — Full Settings Dialog, Individual Tabs,
- * Mobile Drill-In, Loading & Empty States, Settings Primitives.
+ * Claude Code Accounts, Mobile Drill-In, Loading & Empty States,
+ * Settings Primitives.
  */
 export const SETTINGS_SECTIONS: PlaygroundSection[] = [
   // Dialogs
@@ -32,6 +33,21 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'advanced',
       'tab',
       'isolated',
+    ],
+  },
+  {
+    id: 'claude-code-accounts',
+    title: 'Claude Code Accounts',
+    page: 'settings',
+    category: 'Tabs',
+    keywords: [
+      'claude',
+      'account',
+      'billing',
+      'client',
+      'config dir',
+      'CLAUDE_CONFIG_DIR',
+      'switch',
     ],
   },
   // Responsive

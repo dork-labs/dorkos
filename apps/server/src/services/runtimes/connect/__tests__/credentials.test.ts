@@ -33,6 +33,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
     providers: {},
     runtimes: {
       default: 'claude-code',
+      claudeCode: { activeAccount: null, accounts: [] },
       opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
       codex: { enabled: true, binaryPath: null, credentialRef: null },
     },

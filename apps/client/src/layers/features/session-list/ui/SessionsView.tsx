@@ -7,6 +7,7 @@ import {
   SidebarMenuItem,
   ScrollArea,
 } from '@/layers/shared/ui';
+import { useClaudeAccounts } from '@/layers/shared/model';
 import { SessionRow } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session, SessionListWarning } from '@dorkos/shared/types';
@@ -32,21 +33,41 @@ interface SessionsViewProps {
 }
 
 /**
- * Quiet inline notice for one runtime whose sessions could not be listed.
- * Names the runtime; the server's failure reason rides the tooltip so the
- * line stays a single calm sentence ("OpenCode server is starting…" class
- * detail on hover).
+ * Identity of one warning: the runtime, plus the account when the failure
+ * belongs to a single Claude account rather than the whole runtime.
+ *
+ * Claude Code reads one store per account and pushes one warning per unreadable
+ * account, all tagged `runtime: 'claude-code'` — so the runtime alone is NOT an
+ * identity. Keyed by it, two unreadable accounts produced duplicate React keys
+ * and duplicate test ids (spec `claude-code-accounts`).
+ */
+function warningKey(warning: SessionListWarning): string {
+  return warning.account ? `${warning.runtime}-${warning.account}` : warning.runtime;
+}
+
+/**
+ * Quiet inline notice for one store whose sessions could not be listed.
+ *
+ * Names whatever failed: the account when one Claude account is unreadable and
+ * the others still list, the runtime when the whole backend is down. Two notices
+ * therefore read as two different problems. The server's failure reason rides the
+ * tooltip so the line stays a single calm sentence ("OpenCode server is
+ * starting…" class detail on hover).
  */
 function SessionListWarningNotice({ warning }: { warning: SessionListWarning }) {
-  const label = getRuntimeDescriptor(warning.runtime).label;
+  const { nameFor } = useClaudeAccounts();
+  const runtimeLabel = getRuntimeDescriptor(warning.runtime).label;
+  const subject = warning.account
+    ? `${runtimeLabel} sessions from ${nameFor(warning.account)}`
+    : `${runtimeLabel} sessions`;
   return (
     <p
       className="text-muted-foreground/60 flex items-start gap-1.5 text-xs"
       title={warning.message}
-      data-testid={`session-list-warning-${warning.runtime}`}
+      data-testid={`session-list-warning-${warningKey(warning)}`}
     >
       <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
-      <span>Couldn&apos;t load {label} sessions</span>
+      <span>Couldn&apos;t load {subject}</span>
     </p>
   );
 }
@@ -65,7 +86,7 @@ export function SessionsView({
       {warnings.length > 0 && (
         <div className="space-y-1 px-4 pt-2" data-testid="session-list-warnings">
           {warnings.map((warning) => (
-            <SessionListWarningNotice key={warning.runtime} warning={warning} />
+            <SessionListWarningNotice key={warningKey(warning)} warning={warning} />
           ))}
         </div>
       )}

@@ -160,6 +160,19 @@ export const SessionSchema = z
      * Absent when `origin` is absent or no better label than the kind exists.
      */
     originLabel: z.string().optional(),
+    /**
+     * Which Claude Code account this session belongs to — the absolute Claude
+     * config directory its transcript lives under (`~/.claude`, `~/.claude2`,
+     * …). Derived from disk on every read and never stored: a session's
+     * transcript exists under exactly one account, and that is also the only
+     * account that can resume it (spec `claude-code-accounts` D3). ABSENT means
+     * the account is unknown — the unmarked default — so runtimes with no
+     * account concept (codex, opencode) need no changes and neither does a
+     * single-account machine's history. Best-effort, never a security boundary;
+     * a client turns it into a human label by matching it against the
+     * registered accounts in `GET /api/config`.
+     */
+    account: z.string().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');
@@ -442,6 +455,17 @@ export const SessionListWarningSchema = z
     runtime: z.string(),
     /** Human-readable failure reason. */
     message: z.string(),
+    /**
+     * The Claude account root this failure belongs to, when the runtime reads
+     * SEVERAL stores and only one of them failed (spec `claude-code-accounts`).
+     * Absent when the whole runtime failed, which is every other runtime.
+     *
+     * Load-bearing for the UI, not decoration: claude-code pushes one warning
+     * per unreadable account and tags them all `runtime: 'claude-code'`, so
+     * without this two unreadable accounts render as two identical sentences
+     * under one React key. The account is what tells them apart.
+     */
+    account: z.string().optional(),
   })
   .openapi('SessionListWarning');
 
@@ -2129,6 +2153,38 @@ export const ServerConfigSchema = z
     runtimes: z.array(z.string()).openapi({
       description: 'Agent runtimes configured on the host, e.g. ["claude-code", "codex"]',
     }),
+    claudeCode: z
+      .object({
+        resolvedAccount: z.string().openapi({
+          description:
+            "The Claude config directory a NEW session will run and bill on, already resolved. The client cannot compute this: it is the configured account, else the server process's inherited $CLAUDE_CONFIG_DIR, else ~/.claude",
+        }),
+        inherited: z.boolean().openapi({
+          description:
+            'True when resolvedAccount was INHERITED (from $CLAUDE_CONFIG_DIR, else ~/.claude) because no account is configured; false when a person chose it. Lets the UI show the resolved default instead of an empty field',
+        }),
+        accounts: z
+          .array(
+            z.object({
+              path: z.string().openapi({
+                description: "Absolute path of the account's Claude config directory",
+              }),
+              label: z.string().nullable().openapi({
+                description: 'What the operator calls this account, or null if unnamed',
+              }),
+              isAccountRoot: z.boolean().openapi({
+                description:
+                  'Whether DorkOS can currently find a Claude account here — the directory exists AND holds a `projects/` directory (the structural check, spec claude-code-accounts D4). Deliberately not named `exists`: a directory that exists without `projects/` reports false. False means it contributes no sessions',
+              }),
+            })
+          )
+          .openapi({ description: 'The Claude accounts the operator has registered' }),
+      })
+      .optional()
+      .openapi({
+        description:
+          'Which Claude Code account new work runs on, and the accounts registered here (spec claude-code-accounts)',
+      }),
     claudeCliPath: z.string().nullable(),
     tunnel: TunnelStatusSchema,
     tasks: z

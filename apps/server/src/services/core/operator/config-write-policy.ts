@@ -311,6 +311,17 @@ export const CONFIG_WRITE_POLICY = {
   'workbench.autoOpenDiff': 'agent-writable',
 
   'runtimes.default': 'agent-writable',
+  // Which Claude account new work runs and BILLS on, and the roster it is chosen
+  // from (spec claude-code-accounts D6). A Claude config directory carries its own
+  // sign-in, so moving the active account moves the operator's spend onto a
+  // different subscription — for the operator this feature was written for, a
+  // different paying client. That is the credential axis this module holds, so an
+  // agent must not be able to do it, and it never needs to: the person picks their
+  // client in the cockpit. The roster is guarded with it, because an account is
+  // only selectable once it is registered.
+  'runtimes.claudeCode.activeAccount': 'operator-only',
+  'runtimes.claudeCode.accounts[].path': 'operator-only',
+  'runtimes.claudeCode.accounts[].label': 'operator-only',
   'runtimes.opencode.enabled': 'agent-writable',
   // An executable the server spawns.
   'runtimes.opencode.binaryPath': 'operator-only',

@@ -104,6 +104,7 @@ describe('UserConfigSchema', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
+        claudeCode: { activeAccount: null, accounts: [] },
         opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
@@ -414,6 +415,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
+        claudeCode: { activeAccount: null, accounts: [] },
         opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
         codex: { enabled: true, binaryPath: null, credentialRef: null },
       },
@@ -682,6 +684,7 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
+      claudeCode: { activeAccount: null, accounts: [] },
       opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
       codex: { enabled: true, binaryPath: null, credentialRef: null },
     });
@@ -691,6 +694,7 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
+      claudeCode: { activeAccount: null, accounts: [] },
       opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
       codex: { enabled: true, binaryPath: null, credentialRef: null },
     });
@@ -747,6 +751,70 @@ describe('UserConfigSchema runtimes', () => {
   it('rejects a non-integer opencode.port', () => {
     expect(() =>
       UserConfigSchema.parse({ version: 1, runtimes: { opencode: { port: 42.5 } } })
+    ).toThrow();
+  });
+});
+
+describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () => {
+  it('defaults to no account chosen and none registered', () => {
+    // The default IS today's behavior: nothing selected, so resolution falls
+    // through to the inherited environment.
+    expect(UserConfigSchema.parse({ version: 1 }).runtimes.claudeCode).toEqual({
+      activeAccount: null,
+      accounts: [],
+    });
+  });
+
+  it('fills the section when a sibling runtime is the only thing provided', () => {
+    // The shape that matters on upgrade: a stored `runtimes` block that predates
+    // this field must read back with the section present, not undefined.
+    const result = UserConfigSchema.parse({
+      version: 1,
+      runtimes: { opencode: { enabled: false } },
+    });
+    expect(result.runtimes.claudeCode).toEqual({ activeAccount: null, accounts: [] });
+  });
+
+  it('keeps an active account and a labelled roster verbatim', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: {
+          activeAccount: '/Users/me/.claude2',
+          accounts: [
+            { path: '/Users/me/.claude', label: 'Acme Corp' },
+            { path: '/Users/me/.claude2', label: null },
+          ],
+        },
+      },
+    });
+    expect(result.runtimes.claudeCode).toEqual({
+      activeAccount: '/Users/me/.claude2',
+      accounts: [
+        { path: '/Users/me/.claude', label: 'Acme Corp' },
+        { path: '/Users/me/.claude2', label: null },
+      ],
+    });
+  });
+
+  it('rejects an account with an empty path', () => {
+    // The path is the identity — an empty one names no directory at all.
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        runtimes: { claudeCode: { accounts: [{ path: '', label: null }] } },
+      })
+    ).toThrow();
+  });
+
+  it('rejects an account entry missing its label', () => {
+    // Every field of an entry is stated, matching `connectors.rawMcpServers`:
+    // an omitted label is a caller bug, not an implied null.
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        runtimes: { claudeCode: { accounts: [{ path: '/Users/me/.claude2' }] } },
+      })
     ).toThrow();
   });
 });

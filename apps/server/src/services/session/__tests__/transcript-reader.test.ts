@@ -6,6 +6,16 @@ vi.mock('fs/promises');
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   getSessionInfo: vi.fn().mockResolvedValue(undefined),
 }));
+// Pin the Claude accounts. Unmocked, `resolveClaudeRootSet()` reads the real
+// machine — so the union listing would walk however many accounts the developer
+// happens to have (serving this file's single mocked `readdir` once per account,
+// duplicating every session) and none at all on a CI runner. One staged account
+// keeps the reader's own behavior under test instead of the host's.
+const MOCK_CLAUDE_ROOT = '/mock/.claude';
+vi.mock('../../runtimes/claude-code/claude-config-dir.js', () => ({
+  resolveActiveClaudeRoot: () => MOCK_CLAUDE_ROOT,
+  resolveClaudeRootSet: () => [MOCK_CLAUDE_ROOT],
+}));
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/path'),
@@ -931,11 +941,18 @@ describe('TranscriptReader', () => {
     });
 
     it('returns empty array when directory does not exist', async () => {
-      (fs.readdir as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('ENOENT'));
+      // A real errno, not just the word: an absent slug dir is the SILENT skip
+      // (a project this account never worked on), while any other read failure is
+      // reported as a warning. A bare `new Error('ENOENT')` has no `.code` and so
+      // takes the second path, testing the opposite of what this case is named for.
+      const enoent = new Error('ENOENT') as NodeJS.ErrnoException;
+      enoent.code = 'ENOENT';
+      (fs.readdir as ReturnType<typeof vi.fn>).mockRejectedValue(enoent);
 
-      const sessions = await transcriptReader.listSessions('/vault');
+      const { sessions, warnings } = await transcriptReader.listSessionsAcrossAccounts('/vault');
 
       expect(sessions).toEqual([]);
+      expect(warnings).toEqual([]);
     });
 
     it('filters non-JSONL files', async () => {

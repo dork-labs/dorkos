@@ -42,6 +42,13 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
   platform: 'darwin-arm64',
   runtimes: ['claude-code', 'codex', 'opencode'],
   claudeCliPath: '/usr/local/bin/claude',
+  // A default install: nothing registered, so the account card shows only the
+  // inherited default and the sidebar badges stay hidden.
+  claudeCode: {
+    resolvedAccount: '/Users/dev/.claude',
+    inherited: true,
+    accounts: [],
+  },
   tunnel: {
     enabled: false,
     connected: false,
@@ -97,6 +104,26 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
       maxPerWindow: 60,
       windowSecs: 60,
     },
+  },
+};
+
+/**
+ * Server config for an operator running one Claude account per client, with a
+ * chosen active account (spec `claude-code-accounts`). Drives the account card's
+ * populated state: a roster, an "in use" marker, and a folder DorkOS cannot read
+ * as an account (`isAccountRoot: false`, the structural `projects/` check).
+ */
+export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
+  ...MOCK_SERVER_CONFIG,
+  claudeCode: {
+    resolvedAccount: '/Users/dev/.claude2',
+    inherited: false,
+    accounts: [
+      { path: '/Users/dev/.claude', label: 'Personal', isAccountRoot: true },
+      { path: '/Users/dev/.claude2', label: 'Acme Corp', isAccountRoot: true },
+      { path: '/Users/dev/.claude3', label: null, isAccountRoot: true },
+      { path: '/Users/dev/.claude-new', label: 'Just signed up', isAccountRoot: false },
+    ],
   },
 };
 

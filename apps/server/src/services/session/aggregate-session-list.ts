@@ -7,6 +7,11 @@
  * `warnings[]` entry and zero sessions — never a failed request or a blank
  * list. Task 1.4 mirrors this fan-out for `subscribeSessionList`.
  *
+ * A runtime reading several stores degrades one level FURTHER down, on the same
+ * channel: claude-code reads one store per Claude account, so an account it
+ * cannot read reports itself and costs only its own sessions
+ * ({@link listOneRuntime}).
+ *
  * @module services/session/aggregate-session-list
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -18,6 +23,23 @@ import { logger } from '../../lib/logger.js';
  * (e.g. an OpenCode sidecar still booting) must not stall the whole list.
  */
 export const LIST_SESSIONS_TIMEOUT_MS = 2_000;
+
+/**
+ * One runtime's listing, in the envelope form.
+ *
+ * A runtime that can lose PART of its own history without failing reports that
+ * itself via `listSessionsWithWarnings` — claude-code reads one store per Claude
+ * account, and an unreadable account must cost only its own sessions. Every other
+ * runtime has a single store, so a successful `listSessions` is by definition
+ * complete and carries no warnings.
+ */
+function listOneRuntime(
+  runtime: AgentRuntime,
+  projectDir: string
+): Promise<{ sessions: Session[]; warnings: SessionListWarning[] }> {
+  if (runtime.listSessionsWithWarnings) return runtime.listSessionsWithWarnings(projectDir);
+  return runtime.listSessions(projectDir).then((sessions) => ({ sessions, warnings: [] }));
+}
 
 /** Reject `promise` if it does not settle within `ms`. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -82,7 +104,7 @@ export async function aggregateSessionList(opts: {
   const { runtimes, projectDir, timeoutMs = LIST_SESSIONS_TIMEOUT_MS } = opts;
 
   const results = await Promise.allSettled(
-    runtimes.map((runtime) => withTimeout(runtime.listSessions(projectDir), timeoutMs))
+    runtimes.map((runtime) => withTimeout(listOneRuntime(runtime, projectDir), timeoutMs))
   );
 
   const sessions: Session[] = [];
@@ -90,7 +112,11 @@ export async function aggregateSessionList(opts: {
   runtimes.forEach((runtime, i) => {
     const result = results[i]!;
     if (result.status === 'fulfilled') {
-      for (const session of result.value) {
+      // Partial failures the runtime survived (an unreadable Claude account)
+      // travel beside the sessions it DID read, on the same channel a wholly
+      // failed runtime uses below.
+      warnings.push(...result.value.warnings);
+      for (const session of result.value.sessions) {
         // Retired id (see the TSDoc): the runtime maps this session onto a
         // DIFFERENT canonical one, so `GET /:id` would answer about the
         // successor. Drop the row rather than describe a session nobody can

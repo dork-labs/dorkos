@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260729-224559",
+      "slug": "claude-code-accounts",
+      "title": "Claude Code accounts \u2014 choose which account runs your work",
+      "created": "2026-07-29",
+      "status": "specified"
+    },
+    {
       "id": "260730-001217",
       "slug": "direct-connect",
       "title": "Direct connect — OAuth 2.1 multi-account vendor MCP, the front door",

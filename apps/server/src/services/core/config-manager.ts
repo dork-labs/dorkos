@@ -1223,6 +1223,44 @@ export function backfillProfileDefaults(store: {
 }
 
 /**
+ * Migration body: backfill `runtimes.claudeCode` — which Claude account new
+ * sessions run and bill on, and the accounts DorkOS knows about (spec
+ * `claude-code-accounts` D1) — onto an EXISTING `runtimes` block.
+ *
+ * conf merges top-level defaults SHALLOWLY, so a `runtimes` object already on
+ * disk never inherits a newly-added nested section on its own, and every install
+ * upgraded past the `0.45.0` backfill has one. Ajv does fill the key in at READ
+ * time, but that fill is not written back (conf's `Object.assign` shares the
+ * section object, so the `deepEqual` short-circuit leaves the file sparse), which
+ * is why this writes it through on the upgrade where it lands — the same
+ * no-op-anchor role {@link backfillProfileDefaults} plays for its section.
+ *
+ * Additive + idempotent: only writes when `claudeCode` is absent, and never
+ * touches `default`, `opencode` or `codex`. The whole-`runtimes`-absent case
+ * belongs to the schema default on read plus {@link backfillRuntimesDefaults}.
+ *
+ * Seeds `{ activeAccount: null, accounts: [] }` — no account chosen and none
+ * registered, which is byte-for-byte the behavior before the field existed: the
+ * inherited `$CLAUDE_CONFIG_DIR`, else `~/.claude`. An upgrade therefore never
+ * moves anybody's work onto a different account.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillClaudeCodeRuntimeDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  if ('claudeCode' in runtimes) return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { activeAccount: null, accounts: [] },
+  });
+}
+
+/**
  * @internal Exported for testing only — lets the migration-key invariant test
  * assert the newest key is always ahead of the current release (the DOR-339
  * "0.54.0 shipped mid-flight" class of bug: a key equal to or behind an
@@ -1437,6 +1475,12 @@ export const CONFIG_MIGRATIONS = {
     // never grants a tool endpoint nobody configured. Independent of the
     // profile backfill above — disjoint fields, order-immaterial.
     backfillConnectorsDefaults(store);
+    // `runtimes.claudeCode` (which Claude account new sessions run and bill on;
+    // spec claude-code-accounts). Supplies the nested section conf's shallow
+    // defaults-merge will not add to a `runtimes` block already on disk.
+    // Additive + idempotent; seeds "no account chosen, none registered", which
+    // is exactly today's inherit-the-environment behavior.
+    backfillClaudeCodeRuntimeDefaults(store);
   },
 } as const;
 

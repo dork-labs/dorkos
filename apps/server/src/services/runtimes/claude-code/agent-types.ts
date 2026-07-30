@@ -28,6 +28,24 @@ export interface AgentSession {
   effort?: EffortLevel;
   fastMode?: boolean;
   cwd?: string;
+  /**
+   * The Claude Code account this session belongs to: the absolute Claude CONFIG
+   * directory its transcript lives under (`~/.claude`, `~/.claude2`, …). Not
+   * `cwd`, which is the working directory — the two are unrelated paths.
+   *
+   * Resolved from disk, never chosen: a session's transcript exists under exactly
+   * one account, and only that account can resume it, so this is the account the
+   * next turn must run and bill on regardless of which one is currently active
+   * (spec `claude-code-accounts` D3). Set by `SessionStore.ensureForMessage` from
+   * the transcript probe it already performs.
+   *
+   * UNDEFINED means unknown, which is the honest answer in two cases: a session
+   * with no transcript yet (a brand-new session runs on the ACTIVE account — that
+   * is what makes it the active one), and a transcript no registered account
+   * holds. A consumer must treat undefined as "use the active account", never as
+   * a reason to fail.
+   */
+  accountRoot?: string;
   /** True once the first SDK query has been sent (JSONL file exists) */
   hasStarted: boolean;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
