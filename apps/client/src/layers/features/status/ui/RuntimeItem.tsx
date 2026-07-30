@@ -113,8 +113,11 @@ export function RuntimeItem({
 
   // Actionable content gates the dropdown: another runtime to select, a
   // registered runtime needing setup, or an addable runtime to discover.
+  //
+  // Neither gate re-tests `canSelect`: the `if (!canSelect)` return below is
+  // reached before any consumer of these, so a `canSelect &&` term here reads as
+  // defensive but can never be the reason either one is false.
   const canChangeRuntime =
-    canSelect &&
     !!onChangeRuntime &&
     (registeredTypes.length > 1 || needsSetupTypes.length > 0 || hasAddableRuntime);
   // Which Claude account the next session bills to — the same pre-launch window
@@ -125,7 +128,7 @@ export function RuntimeItem({
   //
   // Only with more than one account registered: below that every session runs on
   // the same account and the row would be a control with nothing to control.
-  const canChangeAccount = canSelect && runtime === CLAUDE_CODE && account.isMultiAccount;
+  const canChangeAccount = runtime === CLAUDE_CODE && account.isMultiAccount;
   const selectable = canChangeRuntime || canChangeAccount;
 
   // Read-only identity chip. Deliberately not dimmed: unlike a temporarily
