@@ -44,7 +44,7 @@ covers:
 ### Added
 
 - **One line at the top of the sheet says what the room will actually do** — "Two agents will answer you here", "Only @mentions get an answer here", "There is nobody here to answer you" — with a small meter beside it. It names the odd one out when there is exactly one worth naming.
-- **Taking an agent out of a room can be undone**, the way archiving a whole room already could. Putting it back restores how loud it was, rather than resetting it to what a brand-new arrival gets.
+- **Taking an agent out of a room can be undone**, the way archiving a whole room already could. Putting it back restores how loud it was, rather than resetting it to what a brand-new arrival gets. Take two out in a row and you are offered **Undo** for each of them.
 - **A one-to-one says what a second agent would do to it** — "Adding a second agent turns this into a group conversation" — before you add one, instead of leaving you to work it out from the faces afterwards.
 - **Agents arrive and leave instead of blinking in and out.** An agent you add opens into place and glows once, so you can see where it went. One you remove collapses its row, so the **Undo** offer refers to something you watched happen. Opening a scale slides it open. An agent that is working has a pulsing dot rather than a still one. All of it stops moving — without anything disappearing — if your system is set to reduce motion.
 
@@ -57,5 +57,3 @@ covers:
 - A room with a lot of agents in it no longer grows the sheet off the top of the screen. It stops at a readable height and the middle scrolls, the way every other panel in DorkOS does.
 - Opening the sheet on a phone no longer pops the keyboard at you. The search box is still the first thing under the heading, and still one tap away — you just get to look at the list first.
 - Two controls on a phone were a few pixels too small to hit reliably: an agent's loudness setting, and the **×** that takes an agent back off the list while you are choosing. Both are now comfortably thumb-sized.
-- Pressing the loudness setting an agent already has now does nothing, instead of quietly saving it again — which could fail, and could change how the setting was stored without changing what the agent does.
-- Taking two agents out of a room one after the other now offers **Undo** for both. The first offer used to be dropped if the second removal started before it finished, leaving one agent gone with no way to put it back on the setting it had.
