@@ -57,6 +57,18 @@ export interface ResponseModeControlProps {
    * false number about somebody's own install on screen.
    */
   engagedWindow: EngagedWindow | null;
+  /**
+   * Why this control cannot be committed, as the id of the element that says
+   * so — or `null` when it can.
+   *
+   * Non-null makes every rung `aria-disabled` and describes it with that
+   * element as well as with its own consequence. Deliberately NOT the `disabled`
+   * attribute: a disabled button leaves the tab order, so the reason a screen
+   * reader was given would be on a control it can never reach — which is the
+   * dead control the reason exists to explain. The rungs stay focusable, still
+   * preview what each would do, and simply do not commit.
+   */
+  disabledReasonId?: string | null;
   className?: string;
 }
 
@@ -89,6 +101,7 @@ export function ResponseModeControl({
   value,
   onChange,
   engagedWindow,
+  disabledReasonId = null,
   className,
 }: ResponseModeControlProps) {
   const isMobile = useIsMobile();
@@ -148,12 +161,22 @@ export function ResponseModeControl({
     }
   }
 
+  /**
+   * The ids describing one rung: what it does, and — when it cannot be
+   * committed — why not. Two ids rather than a replacement, so a reader who
+   * cannot change the setting still learns what it means.
+   */
+  function describedBy(consequenceId: string): string {
+    return disabledReasonId === null ? consequenceId : `${consequenceId} ${disabledReasonId}`;
+  }
+
   /** Shared by both renderings: what one rung's button has to be and do. */
   function radioProps(rung: ResponseRung) {
     return {
       type: 'button' as const,
       role: 'radio',
       'aria-checked': rung === selected,
+      'aria-disabled': disabledReasonId === null ? undefined : true,
       // One tab stop for the whole group, on whichever rung the reader would
       // land on — the selected one, or wherever they last arrowed to.
       tabIndex: rung === focused ? 0 : -1,
@@ -163,8 +186,11 @@ export function ResponseModeControl({
       onClick: () => {
         // The pointer names its own target, so the aim follows the click.
         // Without this, clicking one rung after arrowing to another would leave
-        // the explanation describing a rung nobody is on.
+        // the explanation describing a rung nobody is on. The aim moves even
+        // when nothing can be committed, because reading what each rung would
+        // do is still worth doing on a room you are deciding whether to revive.
         setAimed(rung);
+        if (disabledReasonId !== null) return;
         onChange(rung);
       },
     };
@@ -186,7 +212,11 @@ export function ResponseModeControl({
       <div
         {...group}
         data-slot="response-mode-control"
-        className={cn('divide-border border-input divide-y rounded-lg border', className)}
+        className={cn(
+          'divide-border border-input divide-y rounded-lg border',
+          disabledReasonId !== null && 'opacity-60',
+          className
+        )}
       >
         {offered.map((option) => {
           const checked = option.rung === selected;
@@ -203,7 +233,7 @@ export function ResponseModeControl({
               // through. The name is the visible label, so it still contains
               // what a voice-control user would say.
               aria-label={option.label}
-              aria-describedby={consequenceId}
+              aria-describedby={describedBy(consequenceId)}
               className={cn(
                 'focus-visible:ring-ring flex min-h-12 w-full items-start gap-3 px-3 py-2.5 text-left outline-hidden transition-colors first:rounded-t-lg last:rounded-b-lg focus-visible:ring-2 focus-visible:ring-inset',
                 checked ? 'bg-brand/10' : 'active:bg-accent'
@@ -239,7 +269,11 @@ export function ResponseModeControl({
   const explanation = explainRung(focused, roomKind, engagedWindow);
   const explanationId = `${groupId}-explanation`;
   return (
-    <div {...group} data-slot="response-mode-control" className={className}>
+    <div
+      {...group}
+      data-slot="response-mode-control"
+      className={cn(disabledReasonId !== null && 'opacity-60', className)}
+    >
       <div className="border-input flex overflow-hidden rounded-md border">
         {offered.map((option) => {
           const checked = option.rung === selected;
@@ -247,7 +281,7 @@ export function ResponseModeControl({
             <button
               key={option.rung}
               {...radioProps(option.rung)}
-              aria-describedby={explanationId}
+              aria-describedby={describedBy(explanationId)}
               className={cn(
                 'focus-visible:ring-ring h-9 flex-1 border-r px-1 text-xs outline-hidden transition-colors last:border-r-0 focus-visible:ring-2 focus-visible:ring-inset',
                 checked

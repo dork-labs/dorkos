@@ -57,6 +57,7 @@ function renderRow(overrides: Partial<RoomMemberRowProps> = {}) {
     onConfirmRemoval: vi.fn(),
     onCancelRemoval: vi.fn(),
     engagedWindow: null,
+    dormantReasonId: null,
     ...overrides,
   };
   return { ...render(<RoomMemberRow {...props} />), props };

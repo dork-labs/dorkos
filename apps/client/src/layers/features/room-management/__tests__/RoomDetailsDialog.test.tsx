@@ -205,10 +205,15 @@ function readableOnce(value: RoomWithRoster) {
   });
 }
 
+/** A member's scale, once something has opened it. */
+function scale(name = 'Ana'): HTMLElement {
+  return screen.getByRole('radiogroup', { name: `How loud is ${name} here?` });
+}
+
 /** Open a member's scale and hand back the radiogroup. */
 function openScale(name = 'Ana'): HTMLElement {
   fireEvent.click(pill(name));
-  return screen.getByRole('radiogroup', { name: `How loud is ${name} here?` });
+  return scale(name);
 }
 
 /** Ask to remove a member through the row's "…" menu, and confirm it. */
@@ -746,15 +751,15 @@ describe('RoomDetailsDialog', () => {
 
   describe('the foot of the sheet', () => {
     /** A sheet over a room whose archived flag the fake server really holds. */
-    function renderArchivable(startArchived: boolean) {
+    function renderArchivable(startArchived: boolean, members: RoomRosterEntry[] = [HUMAN]) {
       let archived = startArchived;
       const transport = createMockTransport({
         getRoom: vi
           .fn()
-          .mockImplementation(() => Promise.resolve({ ...roster([HUMAN]), archived })),
+          .mockImplementation(() => Promise.resolve({ ...roster(members), archived })),
         updateRoom: vi.fn().mockImplementation((_id: string, body: { archived?: boolean }) => {
           if (body.archived !== undefined) archived = body.archived;
-          return Promise.resolve({ ...roster([HUMAN]), archived });
+          return Promise.resolve({ ...roster(members), archived });
         }),
       });
       renderPanel({ room: { ...ROOM, archived: startArchived }, transport });
@@ -807,6 +812,63 @@ describe('RoomDetailsDialog', () => {
 
       expect(screen.getByText(/Nobody is triggered in an archived room/)).toBeInTheDocument();
       expect(screen.queryByText(/answer you here/)).not.toBeInTheDocument();
+    });
+
+    it('greys every meter, because the setting is real and dormant', async () => {
+      // A bright meter on a room that triggers nobody claims the setting is in
+      // effect. Unlit would be the opposite lie — the rung is still stored and
+      // still what the agent will do the moment the room comes back. Red if the
+      // room's archived flag stops reaching the meter.
+      renderArchivable(true, [HUMAN, agentMember('Ana', '/repo/ana')]);
+      await rosterSection();
+
+      expect(pill().querySelector('[data-slot="loudness-meter"]')).toHaveAttribute('data-dormant');
+    });
+
+    it('describes a dormant rung with the reason, and keeps it reachable', async () => {
+      // A `disabled` button leaves the tab order, so the reason a screen reader
+      // was handed would sit on a control it can never arrive at — which is the
+      // dead control the reason exists to explain. Red if the rungs go back to
+      // the disabled attribute, or if the description drops the banner.
+      renderArchivable(true, [HUMAN, agentMember('Ana', '/repo/ana')]);
+      await rosterSection();
+
+      const rung = within(openScale()).getByRole('radio', { name: 'Everything' });
+      expect(rung).toHaveAttribute('aria-disabled', 'true');
+      const described = (rung.getAttribute('aria-describedby') ?? '').split(' ');
+      const banner = screen.getByText(/Nobody is triggered in an archived room/);
+      expect(described).toContain(banner.id);
+      // The `disabled` attribute is what takes an element out of the tab order,
+      // and jsdom has no tab order to check — it will happily focus a disabled
+      // button that carries a `tabindex`, which every rung does. So its absence
+      // is asserted directly rather than through a focus call that would pass
+      // either way.
+      expect(rung).not.toBeDisabled();
+    });
+
+    it('writes nothing while the room is archived, and writes again once it is back', async () => {
+      // The barrier: `not.toHaveBeenCalled()` on the line after a click is true
+      // whatever the control did, because `mutate` only schedules its
+      // `mutationFn`. Committing a real change afterwards through the SAME
+      // control and insisting the port saw exactly one call is what turns the
+      // absence into a decision.
+      const { transport } = renderArchivable(true, [HUMAN, agentMember('Ana', '/repo/ana')]);
+      await rosterSection();
+
+      fireEvent.click(within(openScale()).getByRole('radio', { name: 'Everything' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Bring this room back' }));
+      await screen.findByRole('button', { name: 'Archive room' });
+
+      // The scale is still open — pressing the pill again would shut it.
+      fireEvent.click(within(scale()).getByRole('radio', { name: 'Everything' }));
+
+      await waitFor(() =>
+        expect(transport.updateRoomMember).toHaveBeenCalledWith('room-1', 'author-Ana', {
+          responseMode: 'always',
+        })
+      );
+      expect(transport.updateRoomMember).toHaveBeenCalledTimes(1);
     });
 
     it('brings an archived room back from the same place', async () => {

@@ -71,6 +71,15 @@ export interface RoomMemberRowProps {
   onCancelRemoval: () => void;
   /** The engaged-window ceilings, or `null` while the config read is in flight. */
   engagedWindow: EngagedWindow | null;
+  /**
+   * Why this room's loudness settings are not in effect, as the id of the
+   * element that says so — or `null` when they are.
+   *
+   * Non-null greys the meter and stops the scale committing, and is handed to
+   * the scale so a screen reader is told the reason rather than left to
+   * discover a control that does nothing.
+   */
+  dormantReasonId: string | null;
 }
 
 /**
@@ -113,6 +122,7 @@ export function RoomMemberRow({
   onConfirmRemoval,
   onCancelRemoval,
   engagedWindow,
+  dormantReasonId,
 }: RoomMemberRowProps) {
   const isMobile = useIsMobile();
   const controlId = useId();
@@ -197,7 +207,11 @@ export function RoomMemberRow({
               expanded && 'text-foreground border-brand/50'
             )}
           >
-            <LoudnessMeter level={levelOfRung(rung)} size="pill" />
+            <LoudnessMeter
+              level={levelOfRung(rung)}
+              size="pill"
+              dormant={dormantReasonId !== null}
+            />
             {rungLabel}
           </button>
         )}
@@ -265,6 +279,7 @@ export function RoomMemberRow({
             value={rung}
             onChange={onRungChange}
             engagedWindow={engagedWindow}
+            disabledReasonId={dormantReasonId}
           />
           {isMobile && (
             <Button

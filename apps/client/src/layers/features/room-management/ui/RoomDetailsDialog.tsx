@@ -3,7 +3,7 @@
  *
  * @module features/room-management/ui/RoomDetailsDialog
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import {
   ResponsiveDialog,
@@ -94,6 +94,12 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * opens in says which one was pressed.
    */
   const [addExpanded, setAddExpanded] = useState(focus === 'add');
+  /**
+   * The banner that says why an archived room's loudness settings are on hold.
+   * Every dormant scale points at it, so the sentence is written once and read
+   * by whoever needs it rather than repeated on each row.
+   */
+  const dormantReasonId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const topicRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLElement | null>(null);
@@ -194,12 +200,16 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
         <ResponsiveDialogBody className="space-y-4">
           {/* An archived room triggers nobody, so the loudness sentence would
               be false there — "Two agents will answer you here" of a room that
-              answers nothing. It says the true thing instead, including that
-              the settings below are not pointless. */}
+              answers nothing. It says the true thing instead, and it is also
+              the reason each dormant scale below hands to a screen reader, so
+              the sentence has to work as a description of one of them. */}
           {detail.archived ? (
-            <p className="bg-muted/50 text-muted-foreground rounded-lg px-3 py-2.5 text-xs">
-              Nobody is triggered in an archived room. These settings apply again if you bring it
-              back.
+            <p
+              id={dormantReasonId}
+              className="bg-muted/50 text-muted-foreground rounded-lg px-3 py-2.5 text-xs"
+            >
+              Nobody is triggered in an archived room, so these settings are on hold. Bring it back
+              to change them.
             </p>
           ) : (
             // Only once there is a roster: an empty one is a real answer here
@@ -240,6 +250,7 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
                 onConfirmRemoval={() => confirmRemoval(member)}
                 onCancelRemoval={() => setPendingRemoval(null)}
                 engagedWindow={view.engagedWindow}
+                dormantReasonId={detail.archived ? dormantReasonId : null}
               />
             )}
           </RoomMemberList>
