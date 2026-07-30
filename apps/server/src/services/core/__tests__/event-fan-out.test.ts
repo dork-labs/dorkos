@@ -163,4 +163,39 @@ describe('EventFanOut', () => {
     unsub1();
     expect(eventFanOut.clientCount).toBe(1);
   });
+
+  describe('in-process listeners', () => {
+    it('delivers to a server-side listener with no HTTP client anywhere', () => {
+      // The local community adapter reads room lifecycle from here rather than
+      // polling the room table for a fact this bus already carries.
+      const seen: [string, unknown][] = [];
+      const unsub = eventFanOut.subscribe((name, data) => seen.push([name, data]));
+      try {
+        eventFanOut.broadcast('room_created', { roomId: 'room-1' });
+        expect(seen).toEqual([['room_created', { roomId: 'room-1' }]]);
+      } finally {
+        unsub();
+      }
+      eventFanOut.broadcast('room_created', { roomId: 'room-2' });
+      expect(seen, 'unsubscribing stops delivery').toHaveLength(1);
+    });
+
+    it('logs and skips a listener that throws, rather than failing the write behind it', () => {
+      // A room write must never fail because something downstream of it did.
+      const seen: string[] = [];
+      const unsubs2 = [
+        eventFanOut.subscribe(() => {
+          throw new Error('listener exploded');
+        }),
+        eventFanOut.subscribe((name) => seen.push(name)),
+      ];
+      try {
+        expect(() => eventFanOut.broadcast('room_updated', { roomId: 'room-1' })).not.toThrow();
+        expect(seen, 'the second listener still ran').toEqual(['room_updated']);
+        expect(logger.warn).toHaveBeenCalled();
+      } finally {
+        for (const unsub of unsubs2) unsub();
+      }
+    });
+  });
 });

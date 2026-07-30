@@ -319,10 +319,10 @@ export const CommunityRoleDescriptorSchema = z.object({
 | `readCursor`      | `server`                                 | **`none`** (`client-opaque` when write lands)                     | `server`                               |
 | `responseMode`    | `true`                                   | `false`                                                           | `true`                                 |
 | `threadDepth`     | `1`                                      | **`unbounded`**                                                   | `1`                                    |
-| `signals`         | `both`                                   | **`none`**                                                        | `both`                                 |
+| `signals`         | **`none`** — see Amendment 2 §D          | **`none`**                                                        | `both`                                 |
 | `credential`      | `none`                                   | `machine-managed`                                                 | `user-account`                         |
 
-Two things this table makes visible. First, **read-only Buzz turns five flags off that our own two backends both leave on** — `canPost`, `roomAdmin`, `readCursor`, `responseMode` and `signals` — and turns two more down, `roomList` to `poll` and `roomAddressing` to `opaque-id`. That is the whole reason D5 sequenced it second. Second, **capabilities describe the ADAPTER, not the protocol.** Buzz-the-protocol has NIP-RS read cursors, community invites, and kind:20001/20002 presence and typing that a read-only client can genuinely observe; the read-only v1 adapter declares `readCursor: 'none'`, `invite: 'none'` and `signals: 'none'` anyway, because two of those need a write and the third has no consumer without one (OQ8). Declaring what the protocol could theoretically do would make the flags a lie the conformance suite could not catch.
+Two things this table makes visible. First, **read-only Buzz turns five flags off that our own two backends both leave on** — `canPost`, `roomAdmin`, `readCursor`, `responseMode` and `signals` (the last of these is now off on the shipped local adapter too, for an unrelated and temporary reason: Amendment 2 §D) — and turns two more down, `roomList` to `poll` and `roomAddressing` to `opaque-id`. That is the whole reason D5 sequenced it second. Second, **capabilities describe the ADAPTER, not the protocol.** Buzz-the-protocol has NIP-RS read cursors, community invites, and kind:20001/20002 presence and typing that a read-only client can genuinely observe; the read-only v1 adapter declares `readCursor: 'none'`, `invite: 'none'` and `signals: 'none'` anyway, because two of those need a write and the third has no consumer without one (OQ8). Declaring what the protocol could theoretically do would make the flags a lie the conformance suite could not catch.
 
 ### 3. The port
 
@@ -794,7 +794,7 @@ The port has no UI. What it decides about UX is what a later surface is allowed 
 - `contributing/adding-a-community-adapter.md` — new, cut to the shape of `contributing/adding-a-runtime.md`: the flag matrix, the required conformance hooks, the credential contract, and the two typed errors. The single most valuable artifact for the three adapter tickets.
 - `contributing/architecture.md` — one paragraph naming the fourth seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`.
 - `AGENTS.md` — one line in Architecture once the first adapter ships, not before (the demo-claim gate: nothing claims a surface works until it does).
-- **No user-facing docs and no changelog fragment in this spec.** Nothing a person can see changes. The changelog fragment lands with the first adapter.
+- **No user-facing docs and no changelog fragment in this spec.** Nothing a person can see changes. **[Amended 2026-07-30 (DOR-592): the last sentence used to read "the changelog fragment lands with the first adapter", and the first adapter has now landed deliberately without one — wrapping local rooms behind this port changed no surface a person can reach, so the same "nothing a person can see" test that exempted the contract exempted its first implementation too. The fragment lands with the first adapter somebody can SEE, not the first one that exists.]**
 
 ## Implementation Phases
 
@@ -914,3 +914,14 @@ The shape mirrors the relay's own `Signal` envelope (`packages/shared/src/relay-
 ### C. C15 — the `'both'` branch proves more; nothing is weakened
 
 C15's `'both'` branch becomes: publish **with a presence payload** → the same signal, payload intact, arrives on a second subscription. The `'none'` branch is untouched: publish rejects, no signal is ever yielded. Conformance still branches on the capability and neither branch got easier — this is branching, not weakening, in exactly the sense §4's rules require. One boundary the suite deliberately does not assert here: _who_ may call `publishSignal`. The mechanical-honesty rule — a presence signal exists only while a real claim is held — is enforced at the one producer (the trigger dispatcher, `specs/room-presence/02-specification.md` §1) and tested there, because a port-level fake cannot know whether a claim was real.
+
+### D. The three-backend table's `local` row: `signals` is `'none'` until the payload lands (2026-07-30, DOR-592)
+
+§2's table said the local adapter declares `signals: 'both'`, and §B above quietly made that false without changing the cell — **the amendment that redefined `'both'` did not update the row it invalidated.** The cell now reads `'none'`, and the reason is worth stating because it is not the reason read-only Buzz declares the same value.
+
+Buzz declares `'none'` because that adapter does nothing with signals. The local adapter declares it because of a **missing field, not a missing feature**: `RoomService.publishSignal` and the SSE `signal` frame both ship, but `RoomSignalEventSchema` carries no structured payload, and after §B a `'both'` adapter must round-trip one. So the honest declaration for the local backend, at the commit that first put it behind this port, is `'none'` — and the conformance suite proves that is not a hedge: declaring `'both'` without the payload reds **U13** (a supported capability that refuses) and **C15**.
+
+Two consequences, both deliberate:
+
+- **`'none'` is enforced in both directions.** The adapter refuses `publishSignal` _and_ drops every `signal` frame its own room broadcaster carries. An adapter that declared `'none'` and still yielded signals would be lying in the direction the shared suite structurally cannot catch — no port method can provoke a backend-native signal — so it is pinned in the local adapter's own tests.
+- **This flips with the payload, not separately.** `specs/room-presence/02-specification.md` §3.2 widens the room signal envelope and its §11 scope table assigns the port-side implementation to the local and server adapters. That change sets `signals: 'both'` in the adapter, restores the `signal` mapping in `LocalCommunityAdapter.subscribeRoom`, and returns this row's cell to `both`. Until it lands, the table and the shipped code agree.

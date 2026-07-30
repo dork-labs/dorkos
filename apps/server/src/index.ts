@@ -169,6 +169,7 @@ import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
+import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
 import { createTerminalRouter } from './routes/terminal.js';
@@ -715,9 +716,26 @@ async function start() {
   // broadcaster, so an install with no rooms in it costs one object graph and
   // no background work. A post now triggers whoever it addresses, bounded by
   // the cascade guard (`rooms.maxAgentDepth`, ADR 260726-170127).
-  const { service: roomService } = createRoomSubsystem({ db });
+  const {
+    service: roomService,
+    store: roomStore,
+    authors: roomAuthors,
+  } = createRoomSubsystem({ db });
   setRoomService(roomService);
   logger.info('[Rooms] RoomService registered');
+
+  // The local community (spec `community-adapter` §8) — this machine's own rooms
+  // behind the `CommunityAdapter` port. Registered unconditionally and first,
+  // because the registry's guarantee is that `LOCAL_COMMUNITY` is always there:
+  // every other community is additive and may fail to construct without taking
+  // the server down, but the one backed by the store this process already holds
+  // cannot be the missing one.
+  await registerLocalCommunity({
+    service: roomService,
+    store: roomStore,
+    authors: roomAuthors,
+  });
+  logger.info('[Communities] local community registered');
 
   // Message search (ADR 260728-214214) — a derived index over what was said,
   // rebuilt from the sources it reads and owning nothing. Unconditional and

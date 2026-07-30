@@ -12,7 +12,7 @@ client ──Transport──▶ your local DorkOS server ──CommunityAdapter�
 
 The port mirrors `AgentRuntime` deliberately: one Zod-first contract, N backends, a server-side registry, capability flags, and a shared conformance suite that gates every implementation. If you have read [adding-a-runtime.md](adding-a-runtime.md) or [adding-a-connector.md](adding-a-connector.md), this will feel familiar.
 
-**No concrete adapter ships yet.** The contract and its gate are in; local rooms, a read-only Buzz relay and `apps/community` are separate tickets, in that order.
+**One concrete adapter ships: local rooms** (`apps/server/src/services/communities/local/`), registered as `LOCAL_COMMUNITY` at startup and passing the conformance suite. A read-only Buzz relay and `apps/community` follow, in that order. Read the local adapter alongside this guide — it is the worked example for everything below, including two things a fake cannot show you: what an honest capability declaration costs (it declares `signals: 'none'` because the room signal envelope cannot yet carry a presence payload), and how a synchronous store is wrapped in a promise-returning port without letting a refusal escape as a synchronous throw.
 
 Spec: [`specs/community-adapter/02-specification.md`](../specs/community-adapter/02-specification.md). Related ADRs: [0310](../decisions/0310-runtime-owned-session-storage-aggregated-listing.md) (aggregate-with-degradation, the shape the registry copies), [0256](../decisions/0256-runtime-capabilities-shape-booleans-plus-structured-plus-features.md) (structured capability fields over a flat bag), [`260726-170125`](../decisions/260726-170125-a-room-is-a-membership-scoped-durable-stream.md) (a room is a membership-scoped durable stream), [`260728-022013`](../decisions/260728-022013-a-thread-is-a-relation-between-entries.md) (a thread is a relation between entries), [`260727-184933`](../decisions/260727-184933-the-community-server-never-runs-a-members-agent.md) (the community server never runs a member's agent).
 
@@ -23,6 +23,7 @@ Spec: [`specs/community-adapter/02-specification.md`](../specs/community-adapter
 | The contract             | `packages/shared/src/community-adapter.ts` (port, schemas, both typed errors)                                                                    |
 | Conformance suite        | `packages/test-utils/src/community-conformance.ts` (+ `-support`, `-universal`, `-branched`)                                                     |
 | Reference implementation | `packages/test-utils/src/fake-community-adapter.ts` (`FakeCommunityAdapter`)                                                                     |
+| First real adapter       | `apps/server/src/services/communities/local/` (adapter, cursor, projection, startup registration)                                                |
 | Registry (dispatch)      | `apps/server/src/services/communities/registry.ts`                                                                                               |
 | Cross-community listing  | `apps/server/src/services/communities/aggregate-community-rooms.ts`                                                                              |
 | Credential discipline    | `apps/server/src/services/communities/credentials.ts`                                                                                            |
@@ -142,6 +143,8 @@ communityRegistry.register(adapter, 'Dork Labs');
 ```
 
 The **label** is supplied here, not reported by the adapter, so a rename never has to reach one. Dispatch is on `community`, never on a room id — a bare room id is ambiguous by construction. An unregistered ref throws `CommunityNotRegisteredError` rather than falling back to local: masking a mismatch would answer a question about someone else's community with this machine's own rooms.
+
+`LOCAL_COMMUNITY` is registered unconditionally by `registerLocalCommunity` at startup, so a caller can always reach this machine's own rooms. Every other community is additive and may fail to construct without taking the server down.
 
 ## Traps
 
