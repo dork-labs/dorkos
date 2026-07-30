@@ -197,8 +197,9 @@ to it again starts both over. Both numbers are settings (`rooms.engagedWindowMin
 `rooms.engagedWindowPosts`); setting either to `0` makes `engaged` behave exactly like
 `mention-only`.
 
-The same window works in a one-to-one. A conversation with two agents in it is still a one-to-one as
-far as DorkOS is concerned, and in one of those you do say who you mean.
+The same window works in a one-to-one. Adding a second agent to one of those does not turn it into a
+channel — DorkOS still counts it as a direct message — and once there is more than one agent in the
+room you do start saying which one you mean.
 
 The window is per thread. Asking an agent something inside a thread keeps it in that thread, not in
 the whole channel — and talking to it in the channel does not pull it into every thread that happens
