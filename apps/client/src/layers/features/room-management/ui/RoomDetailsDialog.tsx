@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { agentAuthorRef, type Room, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import { agentAuthorRef, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import type { AgentVisual } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogBody,
   ResponsiveDialogContent,
-  ResponsiveDialogDescription,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
   Skeleton,
 } from '@/layers/shared/ui';
 import {
@@ -24,32 +21,10 @@ import {
 import { useEngagedWindow } from '@/layers/entities/config';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
+import type { RoomDetailsFocus, RoomDetailsRoom } from '../model/room-details';
 import { AgentRosterPicker } from './AgentRosterPicker';
+import { RoomDetailsHeader } from './RoomDetailsHeader';
 import { RoomMemberRow } from './RoomMemberRow';
-
-/**
- * Which part of the panel the reader asked for, so that part gets the focus.
- *
- * Named for what the reader wanted to see rather than for a section of this
- * file: the panel is on its way to holding everything about a room, and an
- * entry point that says `'topic'` is describing its own menu item, not
- * predicting the layout it will land in. `'topic'` is accepted and currently
- * lands on the roster, because the topic is not in this panel yet — an entry
- * point that names it is honest about where it came from, and starts working
- * the moment the field exists.
- */
-export type RoomDetailsFocus = 'members' | 'add' | 'topic';
-
-/**
- * The least this panel needs to know about a room.
- *
- * Deliberately narrower than `RoomSummary`: the three entry points spec §14.3
- * names hold different shapes — a sidebar row has a `RoomSummary`, the open
- * room has a `RoomWithRoster` — and neither is assignable to the other. The
- * panel reads the room itself anyway, so an id and enough to name it is all it
- * ever needed.
- */
-export type RoomDetailsRoom = Pick<Room, 'id' | 'kind' | 'slug' | 'title'>;
 
 interface RoomDetailsDialogProps {
   /** The room whose roster is being managed. */
@@ -175,6 +150,27 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
     return faces;
   }, [agents.candidates]);
 
+  /** The roster's authors, or `null` while it is still being read. */
+  const participants = useMemo(
+    () => (roomQuery.data ? roomQuery.data.members.map((member) => member.author) : null),
+    [roomQuery.data]
+  );
+
+  /**
+   * The faces of this room's agents, in roster order.
+   *
+   * Only a direct message's mark draws them, and it is the same join the roster
+   * rows make — so the mark at the top of the sheet is the face the row below it
+   * shows, rather than a letter disc for the agent the reader is looking at.
+   */
+  const roomVisuals = useMemo(
+    () =>
+      agentMembers
+        .map((member) => (member.author.agentRef ? facesByRef.get(member.author.agentRef) : null))
+        .filter((visual): visual is AgentVisual => visual !== null && visual !== undefined),
+    [agentMembers, facesByRef]
+  );
+
   /**
    * When each author last posted, as far as the loaded page can say.
    *
@@ -269,13 +265,14 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
           (target as HTMLElement | null)?.focus();
         }}
         onEscapeKeyDown={handleEscapeKeyDown}
+        // Nothing here describes the sheet as a whole. Its parts — the room
+        // line, each member's row — say what they are where they are, and a
+        // sentence at the top summarising a surface the reader is already
+        // looking at is the help text the sheet was designed not to need.
+        // Radix asks to be told that on purpose rather than assumed.
+        aria-describedby={undefined}
       >
-        <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Members of {title}</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Who is in here, and when each agent replies.
-          </ResponsiveDialogDescription>
-        </ResponsiveDialogHeader>
+        <RoomDetailsHeader room={room} participants={participants} visuals={roomVisuals} />
 
         <ResponsiveDialogBody className="space-y-4">
           <section

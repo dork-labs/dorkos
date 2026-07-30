@@ -15,7 +15,8 @@ import {
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { RoomDetailsDialog, type RoomDetailsFocus } from '../ui/RoomDetailsDialog';
+import type { RoomDetailsFocus } from '../model/room-details';
+import { RoomDetailsDialog } from '../ui/RoomDetailsDialog';
 
 /**
  * The fleet this surface reads for itself.
@@ -413,7 +414,9 @@ describe('RoomDetailsDialog', () => {
     );
 
     await waitFor(() => expect(transport.removeRoomMember).toHaveBeenCalled());
-    expect(screen.getByRole('dialog')).toHaveTextContent('Members of #general');
+    expect(
+      within(screen.getByRole('dialog')).getByRole('region', { name: 'Current members' })
+    ).toBeInTheDocument();
   });
 
   it('puts the focus on the confirmation so it can be answered from the keyboard', async () => {
@@ -459,7 +462,9 @@ describe('RoomDetailsDialog', () => {
 
     expect(screen.queryByRole('group', { name: /^Remove Ana/ })).not.toBeInTheDocument();
     expect(onOpenChange).not.toHaveBeenCalled();
-    expect(screen.getByRole('dialog')).toHaveTextContent('Members of #general');
+    expect(
+      within(screen.getByRole('dialog')).getByRole('region', { name: 'Current members' })
+    ).toBeInTheDocument();
   });
 
   it('offers only agents that are not already in the room', async () => {
