@@ -11,7 +11,8 @@
     "./react-helpers": "./src/react-helpers.tsx",
     "./sse-helpers": "./src/sse-helpers.ts",
     "./sse-test-helpers": "./src/sse-test-helpers.ts",
-    "./fake-connector-provider": "./src/fake-connector-provider.ts"
+    "./fake-connector-provider": "./src/fake-connector-provider.ts",
+    "./fake-community-adapter": "./src/fake-community-adapter.ts"
   },
   "scripts": {
     "lint": "eslint .",

@@ -494,6 +494,12 @@ Tools are implemented in `apps/server/src/services/runtimes/claude-code/mcp-tool
 
 The agent iteration loop: `create_extension` -> `test_extension` (smoke) -> `reload_extensions` (visual) -> iterate.
 
+## Community Registry (the fourth seam)
+
+`CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. It lets one local server read and write rooms in more than one place — this machine's SQLite rooms, a foreign relay, a hosted community — without the cockpit, the router or the session spine learning that more than one place exists. **The client's `Transport` is unchanged**: the seam is entirely server-side, so keys never touch the browser and there is one render path and one streaming model.
+
+One instance serves one community, so every address on the port is the pair `(community, roomId)`. `CommunityRegistry` (`apps/server/src/services/communities/registry.ts`) dispatches on the community and holds the human-readable label; `aggregateCommunityRooms` lists across communities with per-community degradation and `warnings[]` — ADR-0310's shape with the nouns changed. Backend differences are **declared capabilities with branched conformance assertions**, never softened shared ones, and `communityConformance` in `@dorkos/test-utils` is the gate. No concrete adapter ships yet. Author guide: [adding-a-community-adapter.md](adding-a-community-adapter.md).
+
 ## Per-Session Tool Groups
 
 Each agent can be told about a different subset of the DorkOS MCP tools. The resolution pipeline runs on every `sendMessage()` call in `ClaudeCodeRuntime`:

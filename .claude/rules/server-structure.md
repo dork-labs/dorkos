@@ -12,9 +12,9 @@ Express server: flat `routes/`, domain-grouped `services/`.
 apps/server/src/
 ├── routes/        # Thin HTTP handlers, flat — one file per resource
 ├── services/      # Business logic, grouped by domain:
-│   │              #   activity/ core/ core-extensions/ extensions/ harness/
-│   │              #   marketplace/ marketplace-mcp/ mesh/ relay/ runtimes/
-│   │              #   session/ tasks/ workspace/
+│   │              #   activity/ communities/ core/ core-extensions/ extensions/
+│   │              #   harness/ marketplace/ marketplace-mcp/ mesh/ relay/
+│   │              #   runtimes/ session/ tasks/ workspace/
 │   └── __tests__/ # Cross-domain integration tests
 ├── middleware/    # Cross-cutting HTTP concerns
 └── lib/           # dork-home.ts, resolve-root.ts, small pure helpers

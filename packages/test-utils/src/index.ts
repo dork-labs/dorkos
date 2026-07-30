@@ -8,8 +8,10 @@
 // option, so tsc fails with TS6142 the moment their test files enter a
 // typechecked program.
 export * from './capability-conformance.js';
+export * from './community-conformance.js';
 export * from './connector-conformance.js';
 export * from './fake-agent-runtime.js';
+export * from './fake-community-adapter.js';
 export * from './fake-connector-provider.js';
 export * from './mock-factories.js';
 export * from './runtime-conformance.js';
