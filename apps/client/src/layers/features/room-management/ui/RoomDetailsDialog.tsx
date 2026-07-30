@@ -12,7 +12,7 @@ import {
   ResponsiveDialogContent,
 } from '@/layers/shared/ui';
 import { useAgentCreationStore } from '@/layers/shared/model';
-import { RoomLoudnessLine, roomDisplayTitle } from '@/layers/entities/room';
+import { RoomLoudnessLine, roomDisplayTitle, type LoudnessPreview } from '@/layers/entities/room';
 import type { RoomDetailsFocus, RoomDetailsRoom } from '../model/room-details';
 import { useRoomDetailsView } from '../model/use-room-details-view';
 import { useRoomDetailsWrites } from '../model/use-room-details-writes';
@@ -88,6 +88,15 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
    * find the bottom of.
    */
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
+  /**
+   * The rung the reader is pointing at without having committed it, and whose.
+   *
+   * Held here because the room line is here: pointing at a rung is a question
+   * about one member and the answer is about the whole room, and this is the
+   * only thing on screen holding both. Only one scale is open at a time, so one
+   * slot is one preview.
+   */
+  const [preview, setPreview] = useState<LoudnessPreview | null>(null);
   /**
    * Whether the picker at the foot of the roster has been opened in place.
    *
@@ -260,7 +269,9 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
             // Only once there is a roster: an empty one is a real answer here
             // — "There is nobody here to answer you" — so drawing this during
             // the read would state something false and then correct itself.
-            view.room !== null && <RoomLoudnessLine members={view.members} roomKind={detail.kind} />
+            view.room !== null && (
+              <RoomLoudnessLine members={view.members} roomKind={detail.kind} preview={preview} />
+            )
           )}
 
           <RoomMemberList
@@ -284,6 +295,9 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
                 expanded={expandedMember === member.authorId}
                 onExpandedChange={(next) => setExpandedMember(next ? member.authorId : null)}
                 onRungChange={(rung) => writes.setRung(member, rung)}
+                onRungPreview={(rung) =>
+                  setPreview(rung === null ? null : { authorId: member.authorId, rung })
+                }
                 savingRung={writes.savingRungFor === member.authorId}
                 rungError={
                   writes.rungFailure?.authorId === member.authorId

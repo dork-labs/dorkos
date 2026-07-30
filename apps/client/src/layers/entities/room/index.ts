@@ -54,7 +54,7 @@ export type {
   RungExplanation,
 } from './lib/response-mode';
 export { roomLoudness, previewLoudness, levelOfRung } from './lib/loudness';
-export type { LoudnessLevel, RoomLoudness } from './lib/loudness';
+export type { LoudnessLevel, LoudnessPreview, RoomLoudness } from './lib/loudness';
 export { LoudnessMeter } from './ui/LoudnessMeter';
 export { RoomLoudnessLine } from './ui/RoomLoudnessLine';
 export { ResponseModeControl } from './ui/ResponseModeControl';

@@ -45,6 +45,26 @@ describe('LoudnessMeter', () => {
     ).toHaveLength(3);
   });
 
+  it('gives every bar of every size one and the same transition', () => {
+    // A CLASS contract and nothing more: jsdom runs no transitions, so this
+    // cannot say the meters actually move — that is the browser suite's, along
+    // with whether `prefers-reduced-motion` snaps them (the global rule in
+    // `index.css` cuts every transition in the app to 0.01ms). What it does
+    // catch is the two meters drifting apart, which is the whole point of the
+    // mark: commit a rung and the member's bars and the room's bars have to
+    // read as one gesture rather than as two repaints near each other.
+    const { container } = render(
+      <>
+        <LoudnessMeter level={2} size="pill" />
+        <LoudnessMeter level={4} size="room" />
+      </>
+    );
+
+    const bars = [...container.querySelectorAll('[data-slot="loudness-meter"] > span')];
+    expect(bars).toHaveLength(8);
+    for (const bar of bars) expect(bar.className).toContain('transition-colors duration-150');
+  });
+
   it('says nothing to a screen reader', () => {
     // Every place this is drawn has the words beside it. A meter announcing
     // "3 of 4" next to a label reading `Engaged` is the same fact twice.

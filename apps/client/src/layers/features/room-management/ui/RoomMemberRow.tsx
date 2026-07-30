@@ -51,6 +51,13 @@ export interface RoomMemberRowProps {
   onExpandedChange: (expanded: boolean) => void;
   /** Commit a rung for this member. */
   onRungChange: (rung: ResponseRung) => void;
+  /**
+   * Which rung the reader is pointing at without having committed it, or `null`
+   * when they are pointing at nothing.
+   *
+   * Never called in an archived room — see {@link RoomMemberRow}.
+   */
+  onRungPreview: (rung: ResponseRung | null) => void;
   /** Whether this member's rung is being written right now. */
   savingRung: boolean;
   /**
@@ -103,6 +110,13 @@ export interface RoomMemberRowProps {
  * **The `⋯` is desktop only.** Below 768px the sheet is a vaul drawer, and a
  * dropdown portalled inside one is a known-hazard nesting — so Remove moves to
  * the foot of the expanded row, where a touch reader is already looking.
+ *
+ * **An archived room previews nothing, and the guard lives here.** The scale
+ * still says what each rung means, because reading that is worth doing on a room
+ * you are deciding whether to revive — but there is no room-level consequence to
+ * point at: the sheet replaces its loudness line with the sentence saying why
+ * these settings are on hold. This row is the one holding both facts, so it is
+ * the one that withholds the report.
  */
 export function RoomMemberRow({
   member,
@@ -114,6 +128,7 @@ export function RoomMemberRow({
   expanded,
   onExpandedChange,
   onRungChange,
+  onRungPreview,
   savingRung,
   rungError,
   roomTitle,
@@ -278,6 +293,7 @@ export function RoomMemberRow({
             roomKind={roomKind}
             value={rung}
             onChange={onRungChange}
+            onPreview={dormantReasonId === null ? onRungPreview : undefined}
             engagedWindow={engagedWindow}
             disabledReasonId={dormantReasonId}
           />

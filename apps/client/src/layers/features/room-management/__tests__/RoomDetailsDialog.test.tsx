@@ -857,6 +857,117 @@ describe('RoomDetailsDialog', () => {
       expect(screen.getByText('One agent will answer you here')).toBeInTheDocument();
       expect(screen.getByText('Bo only when @mentioned')).toBeInTheDocument();
     });
+
+    /**
+     * Pointing at a rung and being shown what it would do to the room.
+     *
+     * **Nothing here settles the motion.** jsdom runs no CSS transitions and
+     * reports every element as 0 × 0, so whether the meter slides or jumps —
+     * and whether it snaps under `prefers-reduced-motion`, which the global rule
+     * in `index.css` decides for every transition in the app — is a browser
+     * question. What is settleable is which sentence is on screen, and that it
+     * is the one `previewLoudness` gives for that exact roster rather than a
+     * second answer computed some other way.
+     */
+    describe('and what it would do if you changed something', () => {
+      /** A room where moving Bo really does change the room's own answer. */
+      function renderMixed() {
+        return renderPanel({
+          transport: createMockTransport({
+            getRoom: vi
+              .fn()
+              .mockResolvedValue(
+                roster([
+                  HUMAN,
+                  agentMember('Ana', '/repo/ana', 'engaged'),
+                  agentMember('Bo', '/repo/bo', 'mention-only'),
+                ])
+              ),
+          }),
+        });
+      }
+
+      /** The room's own line, whatever it currently says. */
+      function loudnessLine(): HTMLElement {
+        const found = document.querySelector('[data-slot="room-loudness-line"]');
+        if (found === null) throw new Error('the room says nothing about itself');
+        return found as HTMLElement;
+      }
+
+      it('rewrites the room’s own sentence as the keyboard crosses the rungs', async () => {
+        // The whole model in three seconds and no help text: point at `Everything`
+        // for Bo and the ROOM says what it would become. Red if the line ever
+        // computes its own answer — `previewLoudness` is `roomLoudness` over one
+        // swapped value, and a preview that can drift is worse than none.
+        renderMixed();
+        await rosterSection();
+        expect(screen.getByText('One agent will answer you here')).toBeInTheDocument();
+
+        fireEvent.keyDown(openScale('Bo'), { key: 'End' });
+
+        expect(screen.getByText('Two agents will answer you here')).toBeInTheDocument();
+        expect(screen.queryByText('One agent will answer you here')).not.toBeInTheDocument();
+      });
+
+      it('says it is a hypothetical, in words as well as in colour', async () => {
+        // A reader who is not looking at the tint would otherwise be told
+        // something false about the room they are in.
+        renderMixed();
+        await rosterSection();
+
+        fireEvent.keyDown(openScale('Bo'), { key: 'End' });
+
+        expect(loudnessLine()).toHaveAttribute('data-preview');
+        expect(within(loudnessLine()).getByText(/If you make that change/)).toBeInTheDocument();
+      });
+
+      it('answers a pointer exactly as it answers the arrow keys', async () => {
+        // Keyboard parity is not a courtesy here: the arrows were the ONLY way
+        // to reach this before there was a pointer path at all. Red if either
+        // input gets its own answer.
+        renderMixed();
+        await rosterSection();
+
+        fireEvent.mouseEnter(within(openScale('Bo')).getByRole('radio', { name: 'Everything' }));
+
+        expect(screen.getByText('Two agents will answer you here')).toBeInTheDocument();
+      });
+
+      it('slides back to what is true when the reader stops pointing', async () => {
+        renderMixed();
+        await rosterSection();
+        const group = openScale('Bo');
+
+        fireEvent.keyDown(group, { key: 'End' });
+        fireEvent.blur(group, { relatedTarget: document.body });
+
+        expect(screen.getByText('One agent will answer you here')).toBeInTheDocument();
+        expect(loudnessLine()).not.toHaveAttribute('data-preview');
+      });
+
+      it('says nothing hypothetical about an archived room', async () => {
+        // There is no loudness line to preview into: an archived room triggers
+        // nobody, so the sentence would be false however it was computed. Red if
+        // the line comes back, or if the scale starts reporting there.
+        renderPanel({
+          room: { ...ROOM, archived: true },
+          transport: createMockTransport({
+            getRoom: vi.fn().mockResolvedValue(
+              roster([HUMAN, agentMember('Ana', '/repo/ana', 'engaged')], {
+                ...ROOM,
+                archived: true,
+              })
+            ),
+          }),
+        });
+        await rosterSection();
+
+        fireEvent.keyDown(openScale('Ana'), { key: 'Home' });
+
+        expect(document.querySelector('[data-slot="room-loudness-line"]')).toBeNull();
+        expect(screen.getByText(/these settings are on hold/)).toBeInTheDocument();
+      });
+    });
   });
 
   describe('the foot of the sheet', () => {

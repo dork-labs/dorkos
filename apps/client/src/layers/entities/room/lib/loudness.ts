@@ -178,9 +178,18 @@ function loudnessOf(voices: readonly Voice[]): RoomLoudness {
   };
 }
 
-/** One member imagined somewhere other than where they are. */
-interface RungOverride {
+/**
+ * One member imagined somewhere other than where they are.
+ *
+ * Carried as the pair rather than as a finished {@link RoomLoudness}, so the
+ * surface that renders the preview is the one that computes it — through
+ * {@link previewLoudness} and nothing else. A caller handing over an already
+ * computed answer is a caller that could have computed it some other way.
+ */
+export interface LoudnessPreview {
+  /** The member being imagined at a different rung. */
   authorId: string;
+  /** The rung to imagine them on. */
   rung: ResponseRung;
 }
 
@@ -194,7 +203,7 @@ interface RungOverride {
 function voicesOf(
   members: readonly RoomRosterEntry[],
   roomKind: RoomKind,
-  override?: RungOverride
+  override?: LoudnessPreview
 ): Voice[] {
   return members
     .filter((member) => member.author.kind === 'agent')

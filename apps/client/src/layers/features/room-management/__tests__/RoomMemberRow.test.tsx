@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { AuthorRef, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import type { AgentVisual } from '@/layers/shared/lib';
@@ -49,6 +49,7 @@ function renderRow(overrides: Partial<RoomMemberRowProps> = {}) {
     expanded: false,
     onExpandedChange: vi.fn(),
     onRungChange: vi.fn(),
+    onRungPreview: vi.fn(),
     savingRung: false,
     rungError: null,
     roomTitle: '#general',
@@ -201,6 +202,34 @@ describe('RoomMemberRow', () => {
           { name: 'Remove' }
         )
       ).toHaveFocus();
+    });
+  });
+
+  describe('pointing at a rung without committing it', () => {
+    it('reports the rung the reader arrowed onto', () => {
+      const { props } = renderRow({ expanded: true, member: AGENT });
+
+      fireEvent.keyDown(screen.getByRole('radiogroup'), { key: 'End' });
+
+      expect(props.onRungPreview).toHaveBeenLastCalledWith('everything');
+    });
+
+    it('reports nothing at all in an archived room', () => {
+      // There is nothing to preview into: the sheet replaces its loudness line
+      // with the sentence saying these settings are on hold, so a report would
+      // describe a consequence that is not on screen and is not true anyway.
+      // The scale still explains each rung — reading that is worth doing on a
+      // room you are deciding whether to revive. Red if the guard goes.
+      const { props } = renderRow({
+        expanded: true,
+        member: AGENT,
+        dormantReasonId: 'why-on-hold',
+      });
+
+      fireEvent.keyDown(screen.getByRole('radiogroup'), { key: 'End' });
+
+      expect(props.onRungPreview).not.toHaveBeenCalled();
+      expect(screen.getByText('Answers every message in this room.')).toBeInTheDocument();
     });
   });
 });

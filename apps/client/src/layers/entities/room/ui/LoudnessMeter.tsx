@@ -19,8 +19,6 @@ const loudnessMeterVariants = cva('inline-flex shrink-0 items-end gap-0.5', {
       pill: 'h-3',
       /** On the room line, where one meter stands for the whole roster. */
       room: 'h-3.5',
-      /** The room line while it is showing what a change would do. */
-      preview: 'h-4',
     },
   },
   defaultVariants: { size: 'pill' },
@@ -28,6 +26,21 @@ const loudnessMeterVariants = cva('inline-flex shrink-0 items-end gap-0.5', {
 
 /** The four bars, quietest first, as fractions of the meter's own height. */
 const BAR_HEIGHTS = ['h-1/4', 'h-2/4', 'h-3/4', 'h-full'] as const;
+
+/**
+ * How long a bar takes to light or go out.
+ *
+ * Named, and shared by every bar in every meter, because the point is that a
+ * member's meter and the room's meter move **as one system** — commit a rung and
+ * the two are one gesture rather than two repaints that happen to be near each
+ * other. Two durations would be two gestures.
+ *
+ * Left to `transition-colors` alone this is Tailwind's default, which is the
+ * same 150ms today and is not ours to rely on. Under `prefers-reduced-motion`
+ * the global rule in `index.css` cuts every transition to 0.01ms, so the meter
+ * snaps to the same place rather than losing the change.
+ */
+const BAR_TRANSITION = 'transition-colors duration-150';
 
 export interface LoudnessMeterProps extends VariantProps<typeof loudnessMeterVariants> {
   /** How many bars are lit. `0` lights none — see {@link LoudnessLevel}. */
@@ -66,7 +79,17 @@ function barTint(lit: boolean, dormant: boolean): string {
  * rather than this growing one.
  *
  * The colour transitions, so changing a rung reads as the member's meter and the
- * room's meter moving as one system rather than as two separate repaints.
+ * room's meter moving as one system rather than as two separate repaints. One
+ * duration for both — see {@link BAR_TRANSITION}.
+ *
+ * **Height is loudness, so nothing else may change it.** There were three sizes
+ * once, the third a taller meter for the room line while it previews a change.
+ * It is gone: a meter that grows says *louder*, and the preview's whole job is to
+ * report a level that is very often the SAME level — a room with an `Everything`
+ * agent in it does not get quieter because one other agent does. A mark that grew
+ * anyway would answer the question wrongly in exactly the case the preview is
+ * most worth having. Whether a reading is hypothetical is said in words and in
+ * the tint around them, where it cannot be mistaken for a quantity.
  *
  * **Whether a meter is dormant is the caller's to say.** `roomLoudness` knows
  * nothing about archived rooms, deliberately — it answers what a roster does,
@@ -85,7 +108,8 @@ export function LoudnessMeter({ level, size, dormant = false, className }: Loudn
         <span
           key={height}
           className={cn(
-            'w-0.5 rounded-full transition-colors',
+            'w-0.5 rounded-full',
+            BAR_TRANSITION,
             height,
             barTint(index < level, dormant)
           )}

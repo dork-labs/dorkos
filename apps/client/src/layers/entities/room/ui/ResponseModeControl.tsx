@@ -69,6 +69,21 @@ export interface ResponseModeControlProps {
    * preview what each would do, and simply do not commit.
    */
   disabledReasonId?: string | null;
+  /**
+   * Which rung the reader is currently contemplating, or `null` when they are
+   * contemplating nothing.
+   *
+   * "Contemplating" is the pointer's hover or the keyboard's aim, whichever
+   * moved last — see {@link ResponseModeControl}. Never the rung that is already
+   * stored: pointing at the setting you already have is not a hypothetical, and
+   * a surface told it was one would dress the status quo up as a change.
+   *
+   * Called from an effect over derived state rather than from each handler, so
+   * it also fires when a commit lands and the thing being contemplated becomes
+   * the thing that is true. The identity of the callback is not a dependency, so
+   * an inline arrow here is safe.
+   */
+  onPreview?: (rung: ResponseRung | null) => void;
   className?: string;
 }
 
@@ -94,6 +109,15 @@ export interface ResponseModeControlProps {
  * crossed 768px, so a reader who learned the order on a laptop would find it
  * inverted on a phone. One control, one direction — first is quietest, wherever
  * it is drawn.
+ *
+ * **The pointer and the keyboard both point, and the last one to move wins.**
+ * Two pieces of state, not one, and the split is the same lesson
+ * `AgentChipPicker` paid for: the aim decides the tab stop and pulls DOM focus,
+ * so a pointer allowed to write it would drag the cursor around the control on
+ * hover. Hover writes its own value instead, a key press clears it, and leaving
+ * a rung hands the answer back to wherever the keyboard is. What both feed is
+ * one derived rung — the consequence line and {@link ResponseModeControlProps.onPreview}
+ * read the same expression, so there is nothing left to disagree.
  */
 export function ResponseModeControl({
   memberName,
@@ -102,6 +126,7 @@ export function ResponseModeControl({
   onChange,
   engagedWindow,
   disabledReasonId = null,
+  onPreview,
   className,
 }: ResponseModeControlProps) {
   const isMobile = useIsMobile();
@@ -114,6 +139,15 @@ export function ResponseModeControl({
    * preview never outlives the reader looking at it.
    */
   const [aimed, setAimed] = useState<ResponseRung | null>(null);
+  /**
+   * The rung the pointer is over, which is deliberately NOT the aim.
+   *
+   * Hover must not move the tab stop or pull focus, and the aim does both. Kept
+   * apart, hovering can rewrite what is being contemplated without touching
+   * where the keyboard is — and a key press clears it, so the two never argue
+   * about who is pointing.
+   */
+  const [hovered, setHovered] = useState<ResponseRung | null>(null);
   const buttons = useRef(new Map<ResponseRung, HTMLButtonElement | null>());
 
   const offered = rungsFor(roomKind);
@@ -122,6 +156,10 @@ export function ResponseModeControl({
   // a tab stop or the reader without a selection to see.
   const selected = rungOf(modeForRung(value, roomKind), roomKind);
   const focused = aimed ?? selected;
+  /** What the reader is pointing at, by either means, or nothing. */
+  const contemplated = hovered ?? aimed;
+  /** Whose consequence is written under the rungs. */
+  const shown = contemplated ?? selected;
 
   useEffect(() => {
     // Only ever chases the keyboard. A null aim is the resting state, and
@@ -129,6 +167,35 @@ export function ResponseModeControl({
     if (aimed === null) return;
     buttons.current.get(aimed)?.focus();
   }, [aimed]);
+
+  /**
+   * The latest `onPreview`, so reporting can depend on what is being pointed at
+   * rather than on the identity of the callback.
+   *
+   * Callers build this per row, so it is a new function every render; making it
+   * a dependency below would fire the report on every render and, for a caller
+   * whose handler builds an object, loop.
+   */
+  const onPreviewRef = useRef(onPreview);
+  useEffect(() => {
+    onPreviewRef.current = onPreview;
+  });
+
+  useEffect(() => {
+    // Pointing at what is already stored is not a hypothetical. This is also
+    // what clears the preview the moment a commit lands: `selected` follows the
+    // write, catches up with the rung being pointed at, and the report goes
+    // null on its own rather than leaving the outcome dressed as a proposal.
+    onPreviewRef.current?.(contemplated === selected ? null : contemplated);
+  }, [contemplated, selected]);
+
+  useEffect(
+    // A scale that is put away is not being pointed at. Without this, closing
+    // the row mid-hover leaves whatever is reading the preview stuck on a
+    // hypothetical about a control that is no longer on screen.
+    () => () => onPreviewRef.current?.(null),
+    []
+  );
 
   /** Move the aim by `step` through the rungs, wrapping at both ends. */
   function moveAim(step: 1 | -1) {
@@ -144,19 +211,25 @@ export function ResponseModeControl({
       case 'ArrowRight':
       case 'ArrowDown':
         event.preventDefault();
+        // The keyboard has spoken, so a pointer resting on some other rung
+        // stops answering for the reader until it moves again.
+        setHovered(null);
         moveAim(1);
         return;
       case 'ArrowLeft':
       case 'ArrowUp':
         event.preventDefault();
+        setHovered(null);
         moveAim(-1);
         return;
       case 'Home':
         event.preventDefault();
+        setHovered(null);
         setAimed(offered[0]!.rung);
         return;
       case 'End':
         event.preventDefault();
+        setHovered(null);
         setAimed(offered[offered.length - 1]!.rung);
     }
   }
@@ -266,7 +339,7 @@ export function ResponseModeControl({
     );
   }
 
-  const explanation = explainRung(focused, roomKind, engagedWindow);
+  const explanation = explainRung(shown, roomKind, engagedWindow);
   const explanationId = `${groupId}-explanation`;
   return (
     <div
@@ -282,6 +355,12 @@ export function ResponseModeControl({
               key={option.rung}
               {...radioProps(option.rung)}
               aria-describedby={describedBy(explanationId)}
+              // Hover only where hover exists. The phone's list has no pointer
+              // to follow — which is why it prints all four consequences at once
+              // — and wiring these there would fire a preview on the tap that is
+              // already a commit.
+              onMouseEnter={() => setHovered(option.rung)}
+              onMouseLeave={() => setHovered(null)}
               className={cn(
                 'focus-visible:ring-ring h-9 flex-1 border-r px-1 text-xs outline-hidden transition-colors last:border-r-0 focus-visible:ring-2 focus-visible:ring-inset',
                 checked
@@ -294,10 +373,14 @@ export function ResponseModeControl({
           );
         })}
       </div>
-      {/* Follows the KEYBOARD, not the value: moving across the rungs rewrites
-          this without committing anything, which is how the model is learned
-          without help text. It is also each radio's description, so a screen
-          reader hears the consequence as it arrives on the rung. */}
+      {/* Follows whatever is being POINTED at, not the value: moving across the
+          rungs — with the mouse or with the arrow keys — rewrites this without
+          committing anything, which is how the model is learned without help
+          text. It is also each radio's description, so a screen reader hears the
+          consequence as it arrives on the rung. A pointer can rewrite a
+          description a focused radio owns, and that is the right trade: the two
+          are never in use at the same instant, and the alternative is a panel
+          previewing one rung at the top of the sheet and a different one here. */}
       <div id={explanationId} className="mt-2 space-y-1">
         <p className="text-sm">{explanation.sentence}</p>
         {explanation.note !== null && (
