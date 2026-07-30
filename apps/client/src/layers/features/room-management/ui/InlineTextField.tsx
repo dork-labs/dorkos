@@ -91,21 +91,41 @@ export function InlineTextField({
   /** Whether this edit has already been decided. First Enter or Escape wins. */
   const committedRef = useRef(false);
 
+  /**
+   * Put the cursor in the editor the moment there is one, and select what it
+   * holds.
+   *
+   * **`fieldRef` is a real dependency, not a lint concession.** It is
+   * `inputRef ?? ownRef` rather than a `useRef` result, so a caller handing
+   * over a different ref object is naming a different editor and this effect
+   * should follow it there. Both branches are stable at every call site today,
+   * so in practice it still runs once per edit — but it is written to be safe
+   * if one ever is not, which is why the "has this edit been decided" flag is
+   * reset where an edit BEGINS rather than in here.
+   *
+   * The node is read here rather than inside the frame, because it is already
+   * mounted by the time an effect runs: the deferral is about WHEN focus is
+   * taken, not about when the field exists. A frame late is what lets it win —
+   * a dialog opening around this field places focus from `onOpenAutoFocus` in
+   * the same commit, and the field it lands on is the one this then selects.
+   */
   useEffect(() => {
     if (!isEditing) return;
-    committedRef.current = false;
-    // After the commit that swaps the line for the field.
+    const field = fieldRef.current;
     requestAnimationFrame(() => {
-      fieldRef.current?.focus();
-      fieldRef.current?.select();
+      field?.focus();
+      field?.select();
     });
-  }, [isEditing]);
+  }, [isEditing, fieldRef]);
 
   const beginEditing = () => {
     // Seeded here rather than kept in step with `value`: the draft belongs to
     // one edit, and a room renamed in another tab mid-edit must not rewrite
     // what somebody is typing.
     setDraft(value);
+    // A new edit has not been decided yet. An edit that starts on mount —
+    // `startEditing` — is covered by the ref's own initial value.
+    committedRef.current = false;
     setIsEditing(true);
   };
 
