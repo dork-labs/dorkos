@@ -13,7 +13,7 @@ import {
   useUpdateSidebarPrefs,
   setChannelsCollapsed,
 } from '@/layers/entities/config';
-import { ChannelCreateDialog } from '@/layers/features/room-membership';
+import { ChannelCreateDialog } from '@/layers/features/room-management';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';

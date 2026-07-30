@@ -32,8 +32,18 @@ import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
 
-/** Which half of the panel the reader asked for, so that half gets the focus. */
-export type MembersDialogIntent = 'roster' | 'add';
+/**
+ * Which part of the panel the reader asked for, so that part gets the focus.
+ *
+ * Named for what the reader wanted to see rather than for a section of this
+ * file: the panel is on its way to holding everything about a room, and an
+ * entry point that says `'topic'` is describing its own menu item, not
+ * predicting the layout it will land in. `'topic'` is accepted and currently
+ * lands on the roster, because the topic is not in this panel yet — an entry
+ * point that names it is honest about where it came from, and starts working
+ * the moment the field exists.
+ */
+export type RoomDetailsFocus = 'members' | 'add' | 'topic';
 
 /**
  * The least this panel needs to know about a room.
@@ -44,16 +54,16 @@ export type MembersDialogIntent = 'roster' | 'add';
  * panel reads the room itself anyway, so an id and enough to name it is all it
  * ever needed.
  */
-export type MembersDialogRoom = Pick<Room, 'id' | 'kind' | 'slug' | 'title'>;
+export type RoomDetailsRoom = Pick<Room, 'id' | 'kind' | 'slug' | 'title'>;
 
-interface RoomMembersDialogProps {
+interface RoomDetailsDialogProps {
   /** The room whose roster is being managed. */
-  room: MembersDialogRoom;
+  room: RoomDetailsRoom;
   /** Whether the panel is on screen. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Which entry point opened it — "Members…" lands on the roster, "Add agents…" on the picker. */
-  intent: MembersDialogIntent;
+  focus: RoomDetailsFocus;
 }
 
 /**
@@ -78,7 +88,7 @@ interface RoomMembersDialogProps {
  * a room you created would make it invisible with no route back, which is the
  * same reason there is no "Leave".
  */
-export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMembersDialogProps) {
+export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetailsDialogProps) {
   // Read here rather than handed down: this panel opens from three places (the
   // sidebar row, the room header, the empty state) and only one of them has a
   // fleet to give it.
@@ -95,7 +105,7 @@ export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMemb
   const confirmRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLElement | null>(null);
-  /** Whether the "add" intent has already been handed its field. Once only. */
+  /** Whether the "add" entry point has already been handed its field. Once only. */
   const searchFocused = useRef(false);
 
   /**
@@ -104,19 +114,19 @@ export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMemb
    *
    * `onOpenAutoFocus` fires once, when the dialog opens, and the field it wants
    * arrives later than that whenever the fleet has to be read first. So the
-   * intent is honoured again here — once, and only while focus is still inside
+   * request is honoured again here — once, and only while focus is still inside
    * the dialog, so a reader who has already tabbed somewhere else does not have
    * it yanked back mid-keystroke.
    */
   useEffect(() => {
-    if (intent !== 'add' || searchFocused.current) return;
+    if (focus !== 'add' || searchFocused.current) return;
     const field = searchRef.current;
     if (!field) return;
     const content = contentRef.current;
     if (content && !content.contains(document.activeElement)) return;
     searchFocused.current = true;
     field.focus();
-  }, [intent, agents.isLoading, agents.isError]);
+  }, [focus, agents.isLoading, agents.isError]);
 
   // The confirmation takes the focus so it can be answered from the keyboard
   // without hunting for it, and so a screen reader reads what it is confirming.
@@ -196,7 +206,7 @@ export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMemb
         // sidebar. Focus placed by the dialog is inside its focus scope, which
         // Radix defends against exactly that.
         //
-        // With intent "add" the field may not exist YET — the panel reads its
+        // With a `focus` of "add" the field may not exist YET — the panel reads its
         // own fleet, so the picker draws a shape while that lands. Focus goes
         // to the content in the meantime and {@link useFocusSearchWhenReady}
         // hands it on the moment the field appears; without that, "Add
@@ -204,7 +214,7 @@ export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMemb
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const target =
-            intent === 'add' ? (searchRef.current ?? event.currentTarget) : event.currentTarget;
+            focus === 'add' ? (searchRef.current ?? event.currentTarget) : event.currentTarget;
           contentRef.current = event.currentTarget as HTMLElement;
           (target as HTMLElement | null)?.focus();
         }}

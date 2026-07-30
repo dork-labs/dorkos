@@ -1,7 +1,7 @@
 /**
  * The fleet, as every agent picker in a room surface reads it.
  *
- * @module features/room-membership/model/use-agent-picker-candidates
+ * @module features/room-management/model/use-agent-picker-candidates
  */
 import { useCallback, useMemo } from 'react';
 import {

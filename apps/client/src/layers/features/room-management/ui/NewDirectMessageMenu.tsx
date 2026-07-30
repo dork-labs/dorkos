@@ -54,7 +54,7 @@ interface NewDirectMessageMenuProps {
 export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
   // Read here rather than taken as a prop: the fleet is this slice's business,
   // and asking for it directly is what keeps the sidebar from having to know
-  // about it (see the module doc on `features/room-membership`).
+  // about it (see the module doc on `features/room-management`).
   const roster = useAgentPickerCandidates();
   const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);

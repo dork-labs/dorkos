@@ -23,7 +23,7 @@ import { DirectMessagesSection } from '../ui/rooms/DirectMessagesSection';
 const { mockRosterRef } = vi.hoisted(() => ({
   mockRosterRef: { current: null as unknown },
 }));
-vi.mock('@/layers/features/room-membership/model/use-agent-picker-candidates', () => ({
+vi.mock('@/layers/features/room-management/model/use-agent-picker-candidates', () => ({
   useAgentPickerCandidates: () => mockRosterRef.current,
 }));
 

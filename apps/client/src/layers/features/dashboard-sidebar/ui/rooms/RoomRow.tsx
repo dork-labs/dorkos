@@ -36,7 +36,7 @@ import {
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
 import { RoomRowMenuItems } from './RoomRowMenuItems';
-import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
+import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
 import { RoomTopicDialog } from './RoomTopicDialog';
 
 /** Longest room name the server accepts (`UpdateRoomRequestSchema.title`). */
@@ -89,7 +89,7 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
   const [renameValue, setRenameValue] = useState(room.title);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [topicOpen, setTopicOpen] = useState(false);
-  const [membersIntent, setMembersIntent] = useState<MembersDialogIntent | null>(null);
+  const [detailsFocus, setDetailsFocus] = useState<RoomDetailsFocus | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLButtonElement>(null);
   const committedRef = useRef(false);
@@ -211,8 +211,8 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
     hasUnread: unread,
     soleAgentPath,
     onMarkRead: handleMarkRead,
-    onAddAgents: () => setMembersIntent('add'),
-    onOpenMembers: () => setMembersIntent('roster'),
+    onAddAgents: () => setDetailsFocus('add'),
+    onOpenMembers: () => setDetailsFocus('members'),
     onOpenAgentProfile,
     onRename: startRename,
     onEditTopic: () => setTopicOpen(true),
@@ -330,12 +330,12 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
       {topicOpen && (
         <RoomTopicDialog room={room} open onOpenChange={(next) => !next && setTopicOpen(false)} />
       )}
-      {membersIntent !== null && (
-        <RoomMembersDialog
+      {detailsFocus !== null && (
+        <RoomDetailsDialog
           room={room}
           open
-          onOpenChange={(next) => !next && setMembersIntent(null)}
-          intent={membersIntent}
+          onOpenChange={(next) => !next && setDetailsFocus(null)}
+          focus={detailsFocus}
         />
       )}
     </SidebarMenuItem>

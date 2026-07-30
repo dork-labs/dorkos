@@ -15,7 +15,7 @@ import {
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { RoomMembersDialog } from '../ui/RoomMembersDialog';
+import { RoomDetailsDialog, type RoomDetailsFocus } from '../ui/RoomDetailsDialog';
 
 /**
  * The fleet this surface reads for itself.
@@ -101,7 +101,7 @@ const FLEET = settled([
 function renderPanel(
   opts: {
     transport?: Transport;
-    intent?: 'roster' | 'add';
+    focus?: RoomDetailsFocus;
     agents?: ReturnType<typeof settled>;
     onOpenChange?: (open: boolean) => void;
     /** The room the panel is opened over. Defaults to the channel above. */
@@ -126,11 +126,11 @@ function renderPanel(
   // Set before render: the picker reads the roster on its first pass.
   mockRosterRef.current = opts.agents ?? FLEET;
   const utils = render(
-    <RoomMembersDialog
+    <RoomDetailsDialog
       room={opts.room ?? ROOM}
       open
       onOpenChange={opts.onOpenChange ?? vi.fn()}
-      intent={opts.intent ?? 'roster'}
+      focus={opts.focus ?? 'members'}
     />,
     { wrapper }
   );
@@ -167,7 +167,7 @@ afterEach(cleanup);
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('RoomMembersDialog', () => {
+describe('RoomDetailsDialog', () => {
   it('lists the agents in the room and leaves the operator out of the roster', async () => {
     renderPanel({
       transport: createMockTransport({
@@ -494,15 +494,27 @@ describe('RoomMembersDialog', () => {
     // `onOpenAutoFocus` fires once, at open, so without a second pass the
     // reader is left with focus on the dialog and nowhere to type.
     const loading = { candidates: [], isLoading: true, isError: false, retry: vi.fn() };
-    const { rerender } = renderPanel({ intent: 'add', agents: loading });
+    const { rerender } = renderPanel({ focus: 'add', agents: loading });
 
     expect(screen.queryByRole('combobox', { name: 'Search agents' })).not.toBeInTheDocument();
 
     mockRosterRef.current = FLEET;
-    rerender(<RoomMembersDialog room={ROOM} open onOpenChange={vi.fn()} intent="add" />);
+    rerender(<RoomDetailsDialog room={ROOM} open onOpenChange={vi.fn()} focus="add" />);
 
     const search = await screen.findByRole('combobox', { name: 'Search agents' });
     await waitFor(() => expect(search).toHaveFocus());
+  });
+
+  it('opens on the roster for an entry point that asked for the topic', async () => {
+    // The topic is not in this panel yet, so "topic" lands where "members"
+    // lands. What it must NOT do is take the cursor — an entry point whose
+    // field does not exist here has no claim on the search box, and a reader
+    // who asked about the topic typing into "Search agents" is worse than
+    // landing nowhere in particular.
+    renderPanel({ focus: 'topic' });
+
+    await rosterList();
+    expect(screen.getByRole('combobox', { name: 'Search agents' })).not.toHaveFocus();
   });
 
   it('says there is nobody left to add rather than showing an empty picker', async () => {

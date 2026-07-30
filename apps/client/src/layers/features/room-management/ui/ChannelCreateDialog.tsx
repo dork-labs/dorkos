@@ -58,7 +58,7 @@ interface ChannelCreateDialogProps {
  */
 export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCreateDialogProps) {
   // The fleet is read here rather than handed down, so the sidebar that mounts
-  // this never has to hold it — see the module doc on `features/room-membership`.
+  // this never has to hold it — see the module doc on `features/room-management`.
   const agents = useAgentPickerCandidates();
   const [name, setName] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);

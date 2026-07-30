@@ -3,7 +3,7 @@ import { useSearch } from '@tanstack/react-router';
 import { MessagesSquare } from 'lucide-react';
 import { Skeleton } from '@/layers/shared/ui';
 import { useMarkRoomRead, useRoom, useRoomEntries, useRoomStream } from '@/layers/entities/room';
-import { RoomMembersDialog, type MembersDialogIntent } from '@/layers/features/room-membership';
+import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { RoomComposer } from './RoomComposer';
@@ -29,7 +29,7 @@ export function ChannelsPage() {
   // roster and the empty state — and both open the one panel the sidebar's row
   // menu opens. The panel reads its own fleet, which is what lets this page
   // open it without holding one; the sidebar may be a closed drawer here.
-  const [membersIntent, setMembersIntent] = useState<MembersDialogIntent | null>(null);
+  const [detailsFocus, setDetailsFocus] = useState<RoomDetailsFocus | null>(null);
 
   const room = roomQuery.data;
   const entries = useMemo(() => entriesQuery.data ?? [], [entriesQuery.data]);
@@ -87,7 +87,7 @@ export function ChannelsPage() {
           lastReadSeq={null}
           isLoading
           error={null}
-          onAddAgents={() => setMembersIntent('add')}
+          onAddAgents={() => setDetailsFocus('add')}
         />
       </div>
     );
@@ -107,7 +107,7 @@ export function ChannelsPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <RoomHeader room={room} onOpenMembers={() => setMembersIntent('roster')} />
+      <RoomHeader room={room} onOpenMembers={() => setDetailsFocus('members')} />
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <RoomTimeline
           entries={entries}
@@ -115,7 +115,7 @@ export function ChannelsPage() {
           lastReadSeq={frozenReadSeq}
           isLoading={entriesQuery.isLoading}
           error={entriesQuery.error}
-          onAddAgents={() => setMembersIntent('add')}
+          onAddAgents={() => setDetailsFocus('add')}
         />
       </div>
       {/* A room that has stopped listening looks exactly like a quiet one, so it
@@ -151,12 +151,12 @@ export function ChannelsPage() {
 
       {/* Mounted only while open: it reads the room itself, and a closed one
           would hold a roster from before the last change under it. */}
-      {membersIntent !== null && (
-        <RoomMembersDialog
+      {detailsFocus !== null && (
+        <RoomDetailsDialog
           room={room}
           open
-          onOpenChange={(next) => !next && setMembersIntent(null)}
-          intent={membersIntent}
+          onOpenChange={(next) => !next && setDetailsFocus(null)}
+          focus={detailsFocus}
         />
       )}
     </div>

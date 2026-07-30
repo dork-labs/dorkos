@@ -13,12 +13,12 @@ import { ChannelsSection } from '../ui/rooms/ChannelsSection';
 /**
  * The fleet the create dialog reads for itself. Mocked at the hook, because the
  * dialog fetches it rather than taking it from this section — see the module
- * doc on `features/room-membership`.
+ * doc on `features/room-management`.
  */
 const { mockRosterRef } = vi.hoisted(() => ({
   mockRosterRef: { current: null as unknown },
 }));
-vi.mock('@/layers/features/room-membership/model/use-agent-picker-candidates', () => ({
+vi.mock('@/layers/features/room-management/model/use-agent-picker-candidates', () => ({
   useAgentPickerCandidates: () => mockRosterRef.current,
 }));
 

@@ -12,7 +12,7 @@ import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/roo
 import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { RoomSectionHeader } from './RoomSectionHeader';
 import { RoomRow } from './RoomRow';
-import { NewDirectMessageMenu } from '@/layers/features/room-membership';
+import { NewDirectMessageMenu } from '@/layers/features/room-management';
 
 /** Skeleton rows shown while the first room list loads. */
 const SKELETON_ROWS = 2;
