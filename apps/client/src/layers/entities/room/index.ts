@@ -14,6 +14,8 @@ export type { RoomsByKind } from './model/use-rooms';
 export { useRoom, useRoomEntries } from './model/use-room';
 export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
 export type { RoomStreamState } from './model/use-room-stream';
+export { useRoomPresence, useRoomPresenceStore, PRESENCE_TICK_MS } from './model/use-room-presence';
+export type { RoomPresenceAuthor } from './model/use-room-presence';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useRoomDraft, useRoomDraftStore } from './model/room-drafts';

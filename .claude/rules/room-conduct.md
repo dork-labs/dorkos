@@ -60,6 +60,16 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   ran a turn and chose to say nothing (conduct, not a fault), and the depth
   refusal against an agent's own un-provenanced post (nothing was triggered, and
   no damping key exists that would keep a notice from spraying).
+- **An indicator releases into something durable.** The working indicator a room
+  shows exists only while the dispatcher holds a claim (`room-trigger.ts`'s
+  `holdClaim` / `releaseClaim`, etiquette E16a), and when it goes it may only go
+  into one of four things: a post, a fresh notice, a notice already standing
+  under that `(room, agent)` damping key, or the one named exception — a turn
+  that ran and chose to say nothing. A release with no durable sibling, new or
+  standing, is a defect. Publish `done` **after** the durable write, never
+  before, so the indicator never drops ahead of the entry that explains it. Any
+  new path that drops a claim — RP8's halt is the next one — releases through
+  the same seam rather than deleting from the map itself.
 - **A slow turn is late, never lost.** The room's wait deadline bounds the WAIT,
   never the turn. An answer that outruns it is posted when it lands, saying how
   long it took. Never post a fragment of an unfinished answer as though it were
@@ -88,9 +98,16 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 ## The known gaps, so you do not re-discover them
 
-Current as of 2026-07-28; fix them rather than working around them.
+Current as of 2026-07-30; fix them rather than working around them.
 
-- The room composer has **no mention autocomplete at all**; resolution is a regex
-  over whatever was typed.
 - Telegram's adapter has no `is_bot` filter and answers every message in every
   group. Two bots in one group is an unbounded loop.
+- Telegram's typing indicator still starts when a message is RECEIVED and blind-
+  caps at 60s, so it can show typing for an agent that never runs — the shape
+  E16a forbids. The rooms path no longer works this way; the adapter has not
+  caught up yet.
+
+Two gaps that were listed here are gone, so nothing should be written around
+them any more: the room composer has a mention picker
+(`features/mentions`), and a room shows an in-flight working indicator
+(`entities/room/model/use-room-presence.ts`, `widgets/room-view/ui/RoomPresenceLine.tsx`).

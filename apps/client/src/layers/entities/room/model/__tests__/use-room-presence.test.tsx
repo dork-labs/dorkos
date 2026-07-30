@@ -1,0 +1,310 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
+import type { Transport } from '@dorkos/shared/transport';
+import type { RoomEntry, RoomEvent, RoomSignalEvent } from '@dorkos/shared/room-schemas';
+import { SSE_RESILIENCE } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
+import { useRoomStream } from '../use-room-stream';
+import {
+  PRESENCE_TICK_MS,
+  PRESENCE_TTL_MS,
+  useRoomPresence,
+  useRoomPresenceStore,
+} from '../use-room-presence';
+
+const ROOM = 'room-1';
+
+/** A presence publish, shaped exactly as the dispatcher puts it on the wire. */
+function signal(
+  authorId: string,
+  state: 'working' | 'working_late' | 'done',
+  entryId: string,
+  since = '2026-07-30T10:00:00.000Z'
+): RoomSignalEvent {
+  return { type: 'signal', signal: 'progress', authorId, at: since, state, entryId, since };
+}
+
+/** A committed entry, as the room's stream delivers it. */
+function entry(seq: number, authorId: string): RoomEntry {
+  return {
+    roomId: ROOM,
+    seq,
+    id: `entry-${seq}`,
+    authorId,
+    kind: 'post',
+    body: { text: `line ${seq}` },
+    mentions: [],
+    sessionId: null,
+    cascadeRoot: `entry-${seq}`,
+    cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
+    signature: null,
+    createdAt: '2026-07-30T10:00:00.000Z',
+  };
+}
+
+/** The store's own indicator key, so a test never spells the separator itself. */
+function key(authorId: string, entryId: string): string {
+  return `${authorId}\u0000${entryId}`;
+}
+
+/** The store's view of one room, as a sorted list of `(author, entry)` keys. */
+function keysIn(roomId: string): string[] {
+  return Object.keys(useRoomPresenceStore.getState().rooms[roomId] ?? {}).sort();
+}
+
+beforeEach(() => {
+  useRoomPresenceStore.setState({ rooms: {} });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+describe('the presence store', () => {
+  it('keys an indicator on (author, entry), so one agent can be on two things', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z'));
+    store.observe(ROOM, signal('kai', 'working', 'entry-2', '2026-07-30T10:00:05.000Z'));
+    store.observe(ROOM, signal('ana', 'working', 'entry-1', '2026-07-30T10:00:01.000Z'));
+
+    expect(keysIn(ROOM)).toEqual([
+      key('ana', 'entry-1'),
+      key('kai', 'entry-1'),
+      key('kai', 'entry-2'),
+    ]);
+  });
+
+  it('ignores a signal with no lifecycle on it — a `typing` is not an indicator', () => {
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, { type: 'signal', signal: 'typing', authorId: 'kai', at: 'now' });
+
+    expect(keysIn(ROOM)).toEqual([]);
+  });
+
+  it('deletes only the claim a `done` names', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'working', 'entry-1'));
+    store.observe(ROOM, signal('kai', 'working', 'entry-2'));
+
+    store.observe(ROOM, signal('kai', 'done', 'entry-1'));
+
+    // The other claim is still true, and a `done` that cleared both would have
+    // stranded the room with no indicator for work that is still running.
+    expect(keysIn(ROOM)).toEqual([key('kai', 'entry-2')]);
+  });
+
+  it('drops every one of an author’s claims when that author posts', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'working', 'entry-1'));
+    store.observe(ROOM, signal('kai', 'working_late', 'entry-2'));
+    store.observe(ROOM, signal('ana', 'working', 'entry-3'));
+
+    store.clearAuthor(ROOM, 'kai');
+
+    expect(keysIn(ROOM)).toEqual([key('ana', 'entry-3')]);
+  });
+
+  it('forgets a whole room at once', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'working', 'entry-1'));
+    store.observe('room-2', signal('ana', 'working', 'entry-9'));
+
+    store.clearRoom(ROOM);
+
+    expect(keysIn(ROOM)).toEqual([]);
+    expect(keysIn('room-2')).toEqual([key('ana', 'entry-9')]);
+  });
+
+  it('prunes what nothing has restated, and keeps what has', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'working', 'entry-1'), 1_000);
+    store.observe(ROOM, signal('ana', 'working', 'entry-2'), 1_000);
+    // Ana's claim was republished; Kai's was not.
+    store.observe(ROOM, signal('ana', 'working', 'entry-2'), 1_000 + PRESENCE_TTL_MS - 1);
+
+    store.prune(1_000 + PRESENCE_TTL_MS);
+
+    expect(keysIn(ROOM)).toEqual([key('ana', 'entry-2')]);
+  });
+});
+
+describe('useRoomPresence', () => {
+  it('shows one row per agent, at its older claim, oldest agent first', () => {
+    const store = useRoomPresenceStore.getState();
+    store.observe(ROOM, signal('kai', 'working', 'entry-2', '2026-07-30T10:00:30.000Z'));
+    store.observe(ROOM, signal('kai', 'working_late', 'entry-1', '2026-07-30T10:00:00.000Z'));
+    store.observe(ROOM, signal('ana', 'working', 'entry-3', '2026-07-30T10:00:10.000Z'));
+
+    const { result } = renderHook(() => useRoomPresence(ROOM));
+
+    // Two claims for Kai, one name — and the state that carries is the OLDER
+    // claim's, which is the one that has been running long enough to be late.
+    expect(result.current.map((agent) => [agent.authorId, agent.state, agent.since])).toEqual([
+      ['kai', 'working_late', '2026-07-30T10:00:00.000Z'],
+      ['ana', 'working', '2026-07-30T10:00:10.000Z'],
+    ]);
+  });
+
+  it('counts up on its own clock, with nothing arriving', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, signal('kai', 'working', 'entry-1', '2026-07-30T10:00:00.000Z'));
+
+    const { result } = renderHook(() => useRoomPresence(ROOM));
+    expect(result.current[0]!.elapsedMs).toBe(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3 * PRESENCE_TICK_MS);
+    });
+
+    expect(result.current[0]!.elapsedMs).toBe(3 * PRESENCE_TICK_MS);
+  });
+
+  it('lets an indicator nothing restates expire, and stops its own timer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
+    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
+
+    const { result } = renderHook(() => useRoomPresence(ROOM));
+    expect(result.current).toHaveLength(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(PRESENCE_TTL_MS);
+    });
+
+    expect(result.current).toHaveLength(0);
+    expect(keysIn(ROOM)).toEqual([]);
+    // Nothing left to draw, so nothing left to tick: the room key is gone, which
+    // is what tells the hook to clear its interval.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('never draws an indicator that expired while nobody was looking', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-30T10:00:00.000Z'));
+    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
+
+    // The room was closed for the whole of the TTL, so no timer ran and nothing
+    // pruned. Opening it must not show a stale line for the second it takes the
+    // first tick to arrive.
+    vi.setSystemTime(new Date('2026-07-30T10:01:00.000Z'));
+    const { result } = renderHook(() => useRoomPresence(ROOM));
+
+    expect(result.current).toHaveLength(0);
+  });
+
+  it('answers for the room asked about, and nothing for no room', () => {
+    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
+
+    expect(renderHook(() => useRoomPresence('room-2')).result.current).toHaveLength(0);
+    expect(renderHook(() => useRoomPresence(null)).result.current).toHaveLength(0);
+  });
+});
+
+/** A stream that yields `events` and then stays open until the hook aborts it. */
+function delivers(events: RoomEvent[], signalToWatch: AbortSignal): AsyncIterable<RoomEvent> {
+  return (async function* () {
+    for (const event of events) yield event;
+    await new Promise<void>((resolve) => {
+      if (signalToWatch.aborted) return resolve();
+      signalToWatch.addEventListener('abort', () => resolve(), { once: true });
+    });
+  })();
+}
+
+function wrapperFor(transport: Transport, queryClient: QueryClient) {
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+function makeQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } },
+  });
+}
+
+describe('the room stream feeds the store', () => {
+  it('parks a presence signal instead of dropping it', async () => {
+    const transport = createMockTransport();
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, abort: AbortSignal) =>
+        delivers([signal('kai', 'working', 'entry-1')], abort)
+      );
+
+    renderHook(() => useRoomStream(ROOM, true), {
+      wrapper: wrapperFor(transport, makeQueryClient()),
+    });
+
+    await vi.waitFor(() => expect(keysIn(ROOM)).toEqual([key('kai', 'entry-1')]));
+  });
+
+  it('retires an author’s indicators when that author’s own entry arrives', async () => {
+    // The reconnect-after-reply case, seeded exactly as it happens: the reply is
+    // durable and replays, the `done` beside it was ephemeral and does not. With
+    // no `done` on this stream at all, the entry has to be what clears the line.
+    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
+    const transport = createMockTransport();
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, abort: AbortSignal) =>
+        delivers([{ type: 'entry', seq: 2, entry: entry(2, 'kai') }], abort)
+      );
+
+    renderHook(() => useRoomStream(ROOM, true), {
+      wrapper: wrapperFor(transport, makeQueryClient()),
+    });
+
+    await vi.waitFor(() => expect(keysIn(ROOM)).toEqual([]));
+  });
+
+  it('leaves another author’s indicator alone', async () => {
+    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
+    const transport = createMockTransport();
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, abort: AbortSignal) =>
+        delivers([{ type: 'entry', seq: 2, entry: entry(2, 'ana') }], abort)
+      );
+
+    const { result } = renderHook(() => useRoomStream(ROOM, true), {
+      wrapper: wrapperFor(transport, makeQueryClient()),
+    });
+
+    await vi.waitFor(() => expect(result.current.stalled).toBe(false));
+    expect(keysIn(ROOM)).toEqual([key('kai', 'entry-1')]);
+  });
+
+  it('claims to know nothing once the stream has given up', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
+    const transport = createMockTransport();
+    transport.subscribeRoom = vi.fn().mockImplementation(() =>
+      (async function* (): AsyncIterable<RoomEvent> {
+        throw new Error('socket closed');
+      })()
+    );
+
+    const { result } = renderHook(() => useRoomStream(ROOM, true), {
+      wrapper: wrapperFor(transport, makeQueryClient()),
+    });
+
+    await vi.waitFor(() => expect(result.current.stalled).toBe(true));
+    expect(transport.subscribeRoom).toHaveBeenCalledTimes(SSE_RESILIENCE.DISCONNECTED_THRESHOLD);
+    expect(keysIn(ROOM)).toEqual([]);
+  });
+});

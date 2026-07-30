@@ -67,6 +67,18 @@ export class RoomsPage {
   /** Every `notice` — the room speaking about itself — in the open room. */
   readonly notices: Locator;
 
+  /** The line under the composer naming whoever is working on the room. */
+  readonly presenceLine: Locator;
+
+  /**
+   * The live region a screen reader hears the presence line through.
+   *
+   * Separate from {@link RoomsPage.presenceLine} and always in the page, which
+   * is the point of it: a live region that arrives with its text already in it
+   * is the case assistive technology does not announce.
+   */
+  readonly presenceAnnouncer: Locator;
+
   /** The line the room shows once its live stream has given up. */
   readonly stalledNotice: Locator;
 
@@ -84,6 +96,8 @@ export class RoomsPage {
     this.scroller = page.locator('[data-testid="room-timeline"]').locator('xpath=..');
     this.entries = page.getByTestId('room-entry');
     this.notices = page.getByTestId('room-notice');
+    this.presenceLine = page.getByTestId('room-presence');
+    this.presenceAnnouncer = page.getByTestId('room-presence-announcer');
     this.stalledNotice = page.getByText("New messages aren't coming through right now.");
     this.reconnectButton = page.getByRole('button', { name: 'Reconnect' });
   }

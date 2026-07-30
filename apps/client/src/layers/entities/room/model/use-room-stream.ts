@@ -30,6 +30,7 @@ import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { useRoomPresenceStore } from './use-room-presence';
 
 /**
  * Insert an entry into a room's cached history, keeping it ordered by `seq` and
@@ -151,10 +152,19 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
           );
           for await (const event of stream) {
             if (controller.signal.aborted) return;
-            // Signals (typing, presence) are live-only and carry no `seq`.
-            // Nothing renders them yet, so they are read off the wire and
-            // dropped rather than parked in a store no view consumes.
-            if (event.type !== 'entry') continue;
+            // Signals (typing, presence) are live-only and carry no `seq`, so
+            // they never enter the history — they go to the presence store,
+            // which expires them rather than keeping them.
+            if (event.type === 'signal') {
+              useRoomPresenceStore.getState().observe(roomId, event);
+              continue;
+            }
+            // An author's own entry retires that author's indicators here. It
+            // has to happen on the way in, beside the merge: the entry replays
+            // on a reconnect and the `done` beside it does not, so a client that
+            // waited for the release would draw "working" under an answer that
+            // is already on screen (`use-room-presence` explains the rest).
+            useRoomPresenceStore.getState().clearAuthor(roomId, event.entry.authorId);
             // Only the history. The same post also fans out globally as
             // `room_activity`, which `useRoomListStream` turns into the list
             // refresh — so refreshing here too would just do it twice.
@@ -173,6 +183,10 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         if (Date.now() - openedAt >= SSE_RESILIENCE.STABILITY_WINDOW_MS) failures = 0;
         failures += 1;
         if (failures >= SSE_RESILIENCE.DISCONNECTED_THRESHOLD) {
+          // Whatever was working is now unknowable: the releases would have come
+          // down the stream that just died. A frozen "· 42s" under a banner
+          // saying nothing is coming through is the lingering-dots lie.
+          useRoomPresenceStore.getState().clearRoom(roomId);
           setStalledRoomId(roomId);
           return;
         }
