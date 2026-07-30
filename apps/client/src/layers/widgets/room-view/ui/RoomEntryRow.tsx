@@ -182,8 +182,18 @@ export function RoomEntryRow({
             chat already has it, with its actions last. `order` moves the box
             without moving the reading order, and the sticky clamp is computed on
             the laid-out box, so it survives the move.
+
+            `items-start` is load-bearing, not tidiness. This is a flex row of
+            height ZERO, and a flex row's default `align-items: stretch` sizes a
+            child to the line's cross size — so the toolbar was squashed to
+            nothing and shipped as a 6px capsule with its own 24px buttons
+            hanging 9px out of it top and bottom, reading as a line ruled
+            through the icons. Session chat never hit this: its `corner` anchor
+            is `absolute`, so it is out of flow and no flex line ever sizes it.
+            Pinned by "the toolbar encloses the buttons it is drawn around" in
+            `room-entry-actions.spec.ts`.
           */}
-          <div className="pointer-events-none sticky top-1 z-20 order-first flex h-0 justify-end pr-2">
+          <div className="pointer-events-none sticky top-1 z-20 order-first flex h-0 items-start justify-end pr-2">
             <EntryActionBar
               ref={barRef}
               actions={actions}

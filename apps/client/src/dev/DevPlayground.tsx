@@ -27,6 +27,7 @@ import { TransportProvider, useTheme } from '@/layers/shared/model';
 import { ChevronLeft, LayoutDashboard, Sun, Monitor, Moon, Search } from 'lucide-react';
 import { createPlaygroundTransport } from './playground-transport';
 import { ChatPage } from './pages/ChatPage';
+import { EntryActionsPage } from './pages/EntryActionsPage';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { TokensPage } from './pages/TokensPage';
 import { FormsPage } from './pages/FormsPage';
@@ -88,6 +89,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   forms: FormsPage,
   components: ComponentsPage,
   chat: ChatPage,
+  'entry-actions': EntryActionsPage,
   features: FeaturesPage,
   topology: TopologyPage,
   promos: PromosPage,

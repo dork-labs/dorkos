@@ -41,9 +41,17 @@ export const messageItem = tv({
      * unhittable-but-present click target would eat drags that start in its
      * corner. Pointer events come back on hover, and on focus-within so the
      * keyboard path still reaches it without a pointer ever being involved.
+     *
+     * `bg-popover` is opaque in both themes (`0 0% 100%` / `0 0% 4%`, no alpha),
+     * which is what a control drawn ON TOP of a paragraph needs — the words
+     * underneath must not show through the icons. `shadow-elevated` rather than
+     * `shadow-soft` because this floats over content instead of sitting in the
+     * page: it is one rung up the same `--elevation-*` ladder, and that ladder
+     * is tuned per theme (0.05 alpha light, 0.5 dark) where a raw `shadow-md`
+     * would all but vanish against a near-black background.
      */
     actions:
-      'bg-popover shadow-soft pointer-events-none z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
+      'bg-popover shadow-elevated pointer-events-none z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
     // desktop-darwin:select-text: the desktop shell defaults chrome to
     // non-selectable (index.css), but message bodies — text, code blocks,
     // command output — are exactly what a user copies out of a chat, so this
