@@ -16,6 +16,7 @@ import {
   ShoppingBag,
   WandSparkles,
   MapPin,
+  Hash,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -35,6 +36,7 @@ import {
   SETTINGS_SECTIONS,
   MARKETPLACE_SECTIONS,
   GEN_UI_SECTIONS,
+  ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
 } from './playground-registry';
 
@@ -225,6 +227,16 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'app-shell',
     sections: SETTINGS_SECTIONS,
     path: 'settings',
+  },
+  {
+    id: 'rooms',
+    label: 'Rooms',
+    description:
+      'The room sheet and everything in it — roster rows, the loudness scale and its meter, the agent picker, and the removal confirmation.',
+    icon: Hash,
+    group: 'agents',
+    sections: ROOMS_SECTIONS,
+    path: 'rooms',
   },
   // ── Marketplace ──
   {

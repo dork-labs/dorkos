@@ -17,6 +17,7 @@ export type Page =
   | 'settings'
   | 'marketplace'
   | 'gen-ui'
+  | 'rooms'
   | 'tour-spotlight';
 
 /** A single searchable/navigable section in the playground. */
@@ -49,6 +50,7 @@ export { TABLES_SECTIONS } from './sections/tables-sections';
 export { SETTINGS_SECTIONS } from './sections/settings-sections';
 export { MARKETPLACE_SECTIONS } from './sections/marketplace-sections';
 export { GEN_UI_SECTIONS } from './sections/gen-ui-sections';
+export { ROOMS_SECTIONS } from './sections/rooms-sections';
 export { TOUR_SPOTLIGHT_SECTIONS } from './sections/tour-spotlight-sections';
 
 // Imported under aliases to compose the full registry without circular re-export issues.
@@ -68,6 +70,7 @@ import { TABLES_SECTIONS as tables } from './sections/tables-sections';
 import { SETTINGS_SECTIONS as settings } from './sections/settings-sections';
 import { MARKETPLACE_SECTIONS as marketplace } from './sections/marketplace-sections';
 import { GEN_UI_SECTIONS as genUi } from './sections/gen-ui-sections';
+import { ROOMS_SECTIONS as rooms } from './sections/rooms-sections';
 import { TOUR_SPOTLIGHT_SECTIONS as tourSpotlight } from './sections/tour-spotlight-sections';
 
 /**
@@ -92,5 +95,6 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...settings,
   ...marketplace,
   ...genUi,
+  ...rooms,
   ...tourSpotlight,
 ];
