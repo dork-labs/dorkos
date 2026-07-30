@@ -84,7 +84,23 @@ export function InlineTextField({
   className,
 }: InlineTextFieldProps) {
   const [isEditing, setIsEditing] = useState(startEditing);
-  const [draft, setDraft] = useState(value);
+  /**
+   * What has been TYPED, or `null` while nothing has been.
+   *
+   * Seeding this with `value` looks simpler and is wrong for one entry point:
+   * an edit that begins on mount — `startEditing` — is seeded from whatever the
+   * caller was holding, and the sheet opens on the summary its caller already
+   * had while the detail read is still in flight. A stale seed then commits the
+   * old text over the new one on Enter. Left `null`, an untouched draft simply
+   * IS the freshest value, and the first keystroke is what makes it the
+   * reader's — after which a value moving underneath (a rename in another
+   * window) can no longer rewrite what is under the cursor.
+   *
+   * `''` is a typed value, not an empty one: clearing the field is a real edit
+   * where {@link InlineTextFieldProps.commitEmpty} says it is.
+   */
+  const [typed, setTyped] = useState<string | null>(null);
+  const draft = typed ?? value;
   const ownRef = useRef<HTMLInputElement>(null);
   const fieldRef = inputRef ?? ownRef;
   const lineRef = useRef<HTMLButtonElement>(null);
@@ -119,10 +135,10 @@ export function InlineTextField({
   }, [isEditing, fieldRef]);
 
   const beginEditing = () => {
-    // Seeded here rather than kept in step with `value`: the draft belongs to
-    // one edit, and a room renamed in another tab mid-edit must not rewrite
-    // what somebody is typing.
-    setDraft(value);
+    // Nothing typed yet, so this edit starts on whatever is stored now — see
+    // {@link typed}. Cleared rather than seeded, so the last edit's text cannot
+    // arrive in this one.
+    setTyped(null);
     // A new edit has not been decided yet. An edit that starts on mount —
     // `startEditing` — is covered by the ref's own initial value.
     committedRef.current = false;
@@ -168,7 +184,7 @@ export function InlineTextField({
         value={draft}
         maxLength={maxLength}
         aria-label={label}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => setTyped(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={commit}
         className={cn(

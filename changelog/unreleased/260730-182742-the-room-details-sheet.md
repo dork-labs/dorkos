@@ -24,6 +24,7 @@ covers:
   - 'fix(rooms): pressing the setting you already have writes nothing'
   - 'fix(rooms): two removals at once, two ways back'
   - 'fix(rooms): an archived room stops being one you can staff'
+  - 'fix(rooms): three small things the reviewer caught'
 ---
 
 ### Changed

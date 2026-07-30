@@ -292,12 +292,14 @@ describe('the page itself draws every section', () => {
     );
     await settle();
 
-    // Ten meters: five levels at two sizes, live — and ten more dormant.
-    const meters = document.querySelectorAll('[data-slot="loudness-meter"]');
-    expect(meters.length).toBeGreaterThanOrEqual(20);
-    expect(document.querySelectorAll('[data-slot="loudness-meter"][data-dormant]')).toHaveLength(
-      10
-    );
+    // The meter gallery, counted exactly and counted where the number is
+    // knowable: five levels at two sizes, live, and the same five again
+    // dormant. A page-wide count would be an assertion about every OTHER
+    // showcase's meters too — it was `>= 20` against a real 33, which is a
+    // number that only ever goes up and so could not fail.
+    const gallery = document.getElementById('loudnessmeter')!;
+    expect(gallery.querySelectorAll('[data-slot="loudness-meter"]')).toHaveLength(20);
+    expect(gallery.querySelectorAll('[data-slot="loudness-meter"][data-dormant]')).toHaveLength(10);
 
     // Four sections of rungs: a channel, a direct message, the engaged rung a
     // direct message could not reach until it had four, and the dormant one.

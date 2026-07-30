@@ -32,4 +32,3 @@ export { ChannelCreateDialog } from './ui/ChannelCreateDialog';
 export { NewDirectMessageMenu } from './ui/NewDirectMessageMenu';
 export { RoomDetailsDialog } from './ui/RoomDetailsDialog';
 export type { RoomDetailsFocus, RoomDetailsRoom } from './model/room-details';
-export { useAgentPickerCandidates } from './model/use-agent-picker-candidates';
