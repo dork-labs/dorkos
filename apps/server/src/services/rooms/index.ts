@@ -14,6 +14,7 @@ import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { configManager } from '../core/config-manager.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { AuthorRegistry } from './author-registry.js';
+import type { EngagedWindow } from './engagement.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
@@ -112,6 +113,26 @@ function readRoomMinutesMs(field: 'replyWaitMinutes' | 'lateReplyCeilingMinutes'
   }
 }
 
+/**
+ * The live engaged-window ceilings, degrading to the shipped defaults the same
+ * way {@link readMaxAgentDepth} does.
+ *
+ * Failing to the defaults keeps the window BOUNDED, which is the only direction
+ * it is safe to fail in: an unreadable config must never be able to leave an
+ * agent engaged forever.
+ */
+function readEngagedWindow(): EngagedWindow {
+  try {
+    const rooms = configManager.get('rooms');
+    return { minutes: rooms.engagedWindowMinutes, posts: rooms.engagedWindowPosts };
+  } catch {
+    return {
+      minutes: USER_CONFIG_DEFAULTS.rooms.engagedWindowMinutes,
+      posts: USER_CONFIG_DEFAULTS.rooms.engagedWindowPosts,
+    };
+  }
+}
+
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
   try {
@@ -153,6 +174,9 @@ export function createRoomSubsystem(opts: {
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,
+    // Read per dispatch, for the same reason: shortening the window in Settings
+    // has to bind the very next message, not the next server start.
+    engagedWindow: readEngagedWindow,
     // Read per check for the same reason, and for one more: an install becomes
     // owned partway through its life (the enable-login flow), so a value
     // captured at boot would leave the rooms domain believing forever that the

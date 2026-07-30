@@ -1,0 +1,340 @@
+{
+  "spec": "specs/connections-redesign/02-specification.md",
+  "slug": "connections-redesign",
+  "generatedAt": "2026-07-29T23:47:51Z",
+  "mode": "full",
+  "slices": {
+    "R1": "Page inversion + states — curated catalog leads, providers demoted to Advanced, custody chips true by construction, every empty/error/loading/degraded state, breadcrumb fixed",
+    "R2": "Copy + engine setup + import — Composio named before the consent screen, guided key retrieval, honest Nango tense, and adopting accounts that already exist in the aggregator",
+    "R3": "Chat front door — the agent, the session readout, and the dashboard learn to offer connections without nagging",
+    "R4": "Try-it-now — one tap from a fresh connection to a session with the account attached and a role-aware prompt in the composer"
+  },
+  "tasks": [
+    {
+      "id": "R1.1",
+      "slice": "R1",
+      "title": "Carry custody on the aggregated toolkit DTO so a per-tile chip can never guess",
+      "files": [
+        "packages/shared/src/connector-provider.ts",
+        "apps/server/src/services/connectors/registry.ts",
+        "apps/server/src/services/connectors/__tests__/registry.test.ts",
+        "apps/server/src/services/connectors/providers/test-mode.ts"
+      ],
+      "acceptance": [
+        "ConnectorToolkitSchema gains a required `custody: ConnectorCustodySchema` field with TSDoc explaining that the client's custody chip reads it and must never infer custody.",
+        "registry.listToolkits() sets `custody` from the yielding provider's getCapabilities().custody; the dedupe-by-slug keeps the higher-precedence stance using the SAME managed > self-host > external order routing.ts already documents (extract the shared precedence constant rather than duplicating the map).",
+        "Every provider path that returns toolkits (composio, nango, raw-mcp, test-mode, FakeConnectorProvider in @dorkos/test-utils) satisfies the widened schema; connectorConformance still passes unchanged.",
+        "No client code is touched in this task; the field is additive and the server always populates it."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/__tests__/registry.test.ts — new cases: a single managed provider yields custody 'managed'; the same slug from a managed AND a self-host provider dedupes to 'managed' (revert the precedence and it must go red); an external-only slug yields 'external'. pnpm vitest run packages/shared/src/__tests__ for schema parse. pnpm --filter @dorkos/shared build (dist freshness) then pnpm --filter @dorkos/server typecheck && lint.",
+      "dependencies": []
+    },
+    {
+      "id": "R1.2",
+      "slice": "R1",
+      "title": "Curated service catalog + custody-chip derivation, as pure tested data and functions",
+      "files": [
+        "apps/client/src/layers/features/connections/config/service-catalog.ts",
+        "apps/client/src/layers/features/connections/lib/custody-chip.ts",
+        "apps/client/src/layers/features/connections/__tests__/custody-chip.test.ts",
+        "apps/client/src/layers/features/connections/index.ts"
+      ],
+      "acceptance": [
+        "service-catalog.ts exports SERVICE_CATALOG: one entry per known service with { slug, displayName, capabilityLine, facet?, route: 'engine' | 'relay', mark? }; 12-14 entries sized per spec OQ4, every capabilityLine one plain sentence naming what an agent can do, no hype, no counts, no pricing (writing-for-humans).",
+        "Slack's entry is route: 'relay' and no entry anywhere claims a direct route (founder decision 6).",
+        "custody-chip.ts exports a pure `custodyChipFor(entry, toolkits)` whose ONLY custody input is ConnectorToolkit.custody from the server (spec D4). There is no client-side direct-slug list and no inference from 'which provider is configured'.",
+        "The derivation is a switch over ConnectorCustody with a `never`-typed fallthrough guard mirroring assertUnreachableCustody (apps/server/src/services/connectors/custody-disclosure.ts:114), so widening the enum is a compile error here until the chip handles it.",
+        "It handles today's three members: 'managed' -> `via Composio`, 'self-host' -> `Self-hosted`, 'external' -> `Direct` (sentence: connects straight to the service, no other company holds this sign-in). The 'direct' branch and its own sentence ('the key stays on your machine') are written now and become reachable when specs/direct-connect D1.5 adds the enum member; zero `direct` toolkits is the normal tested state until then.",
+        "A catalog entry with route: 'relay' resolves to `DorkOS adapter` regardless of toolkits; a service no live toolkit lists resolves to `Needs setup`, and that label contains NO vendor name — asserted, because it is the claim that must never be wrong.",
+        "TSDoc on every export; barrel exports only."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/connections/__tests__/custody-chip.test.ts — one case per handled custody value ('managed', 'self-host', 'external'), plus: a relay-routed entry ignores toolkits; a slug with no toolkit yields Needs setup whose label contains neither 'Composio' nor 'Nango'; a cast-in 'direct' value returns the Direct chip with the key-stays-on-your-machine sentence (pins the branch before the enum widens). Add a type-level check that removing a switch arm fails typecheck (pnpm --filter @dorkos/client typecheck) — that is the real regression gate. No DOM needed.",
+      "dependencies": ["R1.1"]
+    },
+    {
+      "id": "R1.3",
+      "slice": "R1",
+      "title": "Rewrite the tile and build ServiceCatalog with all four data states",
+      "files": [
+        "apps/client/src/layers/features/connections/ui/ServiceCatalog.tsx",
+        "apps/client/src/layers/features/connections/ui/ServiceGrid.tsx",
+        "apps/client/src/layers/features/connections/lib/presentation.ts",
+        "apps/client/src/layers/features/connections/__tests__/ServiceCatalog.test.tsx",
+        "apps/client/src/layers/features/connections/index.ts"
+      ],
+      "acceptance": [
+        "ServiceTile renders mark-or-fallback glyph, name, capabilityLine (two-line clamp), the custody chip, the facet chip when known, and exactly one action per the spec §2 state table (Connect / Connect another / Reconnect); the action is NEVER disabled.",
+        "ServiceCatalog renders every SERVICE_CATALOG tile immediately from local data — before any query resolves — with only the chip row and connected state in a skeleton; there is no full-grid spinner and no empty state, because the catalog cannot be empty.",
+        "Provider-discovered toolkits absent from the catalog render in a collapsed `More services (N)` disclosure: name + Connect, no facet, no invented copy; absent entirely when N is 0.",
+        "Toolkit-query error renders a role=alert above the grid with the verbatim message and a Try again control, and the tiles stay interactive.",
+        "Per-provider warnings[] render verbatim beneath the grid (shipped copy preserved).",
+        "Design tokens only, focus-visible rings, aria-label on every icon-only control; grid is 1 col at base, 2 at sm, 3 at md, 4 at lg."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/connections/__tests__/ServiceCatalog.test.tsx with createMockTransport + TransportProvider: tiles present with getConnectorToolkits still pending (assert a known displayName before any await); a managed toolkit turns that tile's chip to 'via Composio'; an unknown toolkit slug appears only inside More services; a rejected toolkits query renders the verbatim error AND leaves a tile's Connect clickable; warnings render verbatim. Update the shipped ServiceGrid cases in ConnectionsSurfaces.test.tsx rather than deleting coverage.",
+      "dependencies": ["R1.2"]
+    },
+    {
+      "id": "R1.4",
+      "slice": "R1",
+      "title": "Restructure ConnectionsPage: accounts-when-present, catalog always, Advanced collapsed, rejected-key notice on top",
+      "files": [
+        "apps/client/src/layers/widgets/connections/ui/ConnectionsPage.tsx",
+        "apps/client/src/layers/features/connections/ui/AdvancedDisclosure.tsx",
+        "apps/client/src/layers/features/connections/ui/AccountsList.tsx",
+        "apps/client/src/layers/features/connections/__tests__/ConnectionsPage.test.tsx",
+        "apps/client/src/layers/features/connections/index.ts"
+      ],
+      "acceptance": [
+        "Page order is: header, optional rejected-key notice, `Your accounts` (rendered only when at least one account exists), `Services`, collapsed `Advanced`. The old three-stacked-sections layout and the 'Providers' top-level section are gone, not hidden.",
+        "When any provider reports configured && !registered, a page-level role=alert carries the vendor's verbatim error and a control that expands Advanced and moves focus to that provider's key field.",
+        "AccountsList keeps its shipped behavior verbatim (per-account server custody sentence, status badge, disconnect-with-confirm) and simply stops rendering its own empty-state sentence, because the section is absent when empty.",
+        "Advanced is a single collapsed disclosure holding the engine cards slot, the import slot, and one paragraph about connectors.rawMcpServers; collapsed is the default on every load (no persistence).",
+        "At 390px width the first interactive element is a tile's Connect and no empty panel sits above it — verified in a real browser and recorded in the PR, not asserted in jsdom.",
+        "The circular empty-state copy ('add a provider key under Providers below' / 'pick a service above') no longer exists anywhere in the surface."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/connections/__tests__/ConnectionsPage.test.tsx: zero accounts renders no 'Your accounts' heading but does render tiles; one account renders the section above the catalog; a configured-but-unregistered provider renders the notice with the verbatim error and expanding it reveals the key field; Advanced starts collapsed (its key input is not in the document until opened). Browser check at 390x844 and 1440x900 with screenshots in the PR.",
+      "dependencies": ["R1.3"]
+    },
+    {
+      "id": "R1.5",
+      "slice": "R1",
+      "title": "The topbar stops saying Dashboard on every unrouted page",
+      "files": [
+        "apps/client/src/layers/features/top-nav/ui/ConnectionsHeader.tsx",
+        "apps/client/src/layers/features/top-nav/ui/WorkspacesHeader.tsx",
+        "apps/client/src/layers/features/top-nav/index.ts",
+        "apps/client/src/AppShell.tsx",
+        "apps/client/src/__tests__/route-headers.test.tsx"
+      ],
+      "acceptance": [
+        "useHeaderSlot has explicit cases for '/connections' and '/workspaces'; each renders a PageHeader with the matching title, following MarketplaceHeader exactly.",
+        "A test enumerates every registered route path and asserts the resolved header key is 'dashboard' only for '/' — so the next added route cannot silently inherit the wrong title.",
+        "The default branch keeps DashboardHeader for genuinely unknown paths, with a comment saying why."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/__tests__/route-headers.test.tsx — assert per-path header keys; break it by deleting the '/connections' case and confirm it goes red. pnpm --filter @dorkos/client typecheck && lint.",
+      "dependencies": []
+    },
+    {
+      "id": "R1.6",
+      "slice": "R1",
+      "title": "Move the browser proof and the playground with the pixels",
+      "files": [
+        "apps/e2e/tests/connections/connections.spec.ts",
+        "apps/client/src/dev/showcases/ConnectionsShowcases.tsx",
+        "apps/client/src/dev/sections/features-sections.ts"
+      ],
+      "acceptance": [
+        "The shipped Playwright flow passes again: it opens the Advanced disclosure before touching provider-card-test-connector, and every existing assertion (unconfigured -> key saved -> connect twice -> custody before auth -> attach -> detach) is preserved, not weakened.",
+        "New browser coverage: /connections with NO key saved shows a populated catalog (assert two known service names and one enabled Connect).",
+        "New browser coverage: a refused key renders the page-level notice carrying the provider's verbatim message.",
+        "Dev Playground shows the new ServiceTile in each of its states and the rejected-key notice; features-sections entries updated so the showcase is findable (maintaining-dev-playground)."
+      ],
+      "testPlan": "Read .claude/skills/browser-testing/SKILL.md and apps/e2e/GOTCHAS.md first. Run the chromium-connections project locally; keep the single-spec-file rule (the provider credential is server-global state). Visit /dev to confirm the showcases render.",
+      "dependencies": ["R1.4"]
+    },
+    {
+      "id": "R2.0",
+      "slice": "R2",
+      "title": "One curl before any import code: does a Composio project key list the project's accounts?",
+      "files": ["specs/connections-redesign/02-specification.md"],
+      "acceptance": [
+        "Run, with the founder's real project API key (the one created for the #617 retest), a single GET against Composio's v3.1 connected-accounts endpoint with NO user_ids filter, and record the verbatim status and body shape in the PR description (key redacted, never committed).",
+        "Answer recorded as one of two outcomes, in the spec's OQ2 entry: YES (the project's accounts come back) -> R2.2 and R2.3 proceed exactly as specced; NO (403/scope refusal or an empty list that is provably filtered) -> R2.2 and R2.3 SHRINK to the connect-again-through-DorkOS path alone: no listImportableAccounts, no importable route, no adopt route, no import panel, and Advanced instead carries the one honest line from OQ2.",
+        "Also record what user_id the pre-existing dashboard accounts carry, because it decides OQ3 (whether an adopted account's tools can resolve).",
+        "No production code changes in this task. If the outcome is NO, edit OQ2 to say so and stop — do not invent a scope, an org key, or a second credential."
+      ],
+      "testPlan": "Manual, one command, at EXECUTE start. No test suite. The deliverable is the recorded answer plus the scope decision for R2.2/R2.3, written into 02-specification.md OQ2 so the next agent inherits the fact rather than the assumption.",
+      "dependencies": []
+    },
+    {
+      "id": "R2.1",
+      "slice": "R2",
+      "title": "Engine setup that names Composio before the consent screen does, and hands you the right key",
+      "files": [
+        "apps/client/src/layers/features/connections/ui/EngineSetupPanel.tsx",
+        "apps/client/src/layers/features/connections/ui/ProviderSetupCard.tsx",
+        "apps/client/src/layers/features/connections/ui/ProviderSetup.tsx",
+        "apps/client/src/layers/features/connections/__tests__/ConnectionsSurfaces.test.tsx"
+      ],
+      "acceptance": [
+        "The Composio card renders, in reading order: title + state badge, the plain lead, the consent-preview sentence ('the sign-in page will say Composio, not DorkOS'), the server's custody sentence verbatim, the three-step key retrieval (dashboard API-keys link, 'copy the project API key', 'a key starting with uak_ is your CLI key and the API will refuse it'), the key form, and one link-out about plans.",
+        "No pricing number, tier name, quota, or date appears in any string on this surface (founder decision 4).",
+        "The Nango card shows a client-owned conditional lead while configured === false and the server's custody sentence once configured === true — the present-tense claim about a server the reader may not have is gone.",
+        "The Nango card carries the honest self-host note about the missing tool server, phrased as what DorkOS does about it.",
+        "The configured-but-unregistered badge reads 'Key not working' (was 'Not running'); 'Ready' is unchanged because PR #617 made it true.",
+        "The ConnectDialog gains a first step for a service with no live route: the same disclosure and key-retrieval content inline, so the first long-tail Connect IS the setup moment and never a dead end."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/connections/__tests__/ConnectionsSurfaces.test.tsx (extended): the consent-preview sentence and the uak_ warning are in the document before any key is typed; an unconfigured Nango card does NOT contain the server's present-tense sentence and does contain the conditional lead; a configured Nango card does contain the server sentence; the refusal badge reads 'Key not working' with the verbatim error; a regex over the rendered container finds no digits followed by a currency or 'calls' (the no-pricing assertion). ConnectDialog test: opening Connect for a service with no recommendation shows the setup step, not the 'add a provider key under Providers' dead end.",
+      "dependencies": ["R1.4"]
+    },
+    {
+      "id": "R2.2",
+      "slice": "R2",
+      "title": "Server: list the accounts already in the aggregator, and adopt one honestly",
+      "files": [
+        "packages/shared/src/connector-provider.ts",
+        "packages/shared/src/transport.ts",
+        "apps/server/src/services/connectors/registry.ts",
+        "apps/server/src/services/connectors/providers/composio.ts",
+        "apps/server/src/services/connectors/providers/composio-client.ts",
+        "apps/server/src/services/connectors/providers/nango.ts",
+        "apps/server/src/services/connectors/providers/test-mode.ts",
+        "apps/server/src/routes/connectors.ts",
+        "apps/server/src/routes/__tests__/connectors.test.ts",
+        "apps/client/src/layers/shared/lib/http-transport.ts"
+      ],
+      "acceptance": [
+        "ConnectorProvider gains OPTIONAL listImportableAccounts?(): Promise<ConnectedAccount[]>; connectorConformance is unchanged and raw-MCP implements nothing.",
+        "Composio implements it by listing connected accounts WITHOUT the user_ids filter. R2.0 has already answered whether that works; if R2.0 came back NO, this task and R2.3 are cancelled in favour of the connect-again-only path and the honest Advanced line (spec OQ2).",
+        "GET /api/connectors/accounts/importable returns { accounts: PublicConnectedAccount[], warnings } with any id already bound in connected_accounts filtered out, aggregating per provider and degrading to warnings[] exactly like the other aggregate reads (ADR-0310).",
+        "POST /api/connectors/accounts/:accountId/adopt records the binding via registry.recordConnect, then probes provider.toolServerForAccount and returns { account, toolsReachable, error? }; a probe failure is reported, never thrown; an unknown id is 404.",
+        "Transport gains getImportableConnectorAccounts() and adoptConnectorAccount(accountId), implemented in HttpTransport and honestly in DirectTransport; createMockTransport in @dorkos/test-utils covers both.",
+        "test-mode implements listImportableAccounts with scripted rows so e2e can drive the flow; OpenAPI regenerated.",
+        "No secret, credential reference, or vendor handle beyond the existing opaque id crosses either response."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/routes/__tests__/connectors.test.ts: importable filters an already-bound id; a provider that throws yields a warning and a 200; adopt writes the binding and returns toolsReachable true; adopt with a null toolServerForAccount returns toolsReachable false plus the reason and still 200; adopt of an unknown id is 404. pnpm vitest run apps/server/src/services/connectors/providers/__tests__/composio.test.ts for the unfiltered list shape against the fixture client. Rebuild @dorkos/shared before running client tests.",
+      "dependencies": ["R2.0"]
+    },
+    {
+      "id": "R2.3",
+      "slice": "R2",
+      "title": "Import UX: see what is already connected, bring it in, and hear the truth if its tools do not answer",
+      "files": [
+        "apps/client/src/layers/entities/connectors/model/use-importable-accounts.ts",
+        "apps/client/src/layers/entities/connectors/api/query-keys.ts",
+        "apps/client/src/layers/entities/connectors/index.ts",
+        "apps/client/src/layers/features/connections/ui/ImportAccountsPanel.tsx",
+        "apps/client/src/layers/features/connections/__tests__/ImportAccountsPanel.test.tsx"
+      ],
+      "acceptance": [
+        "An `Accounts already in Composio (N)` panel renders inside Advanced only when N > 0, with one custody line above the list ('these sign-ins stay where they are... DorkOS just starts using them') and one `Bring it in` per row.",
+        "A one-line pointer appears near the top of the page when N > 0 and nothing is connected yet, so the founder's case is discoverable without opening Advanced.",
+        "A successful adopt invalidates the accounts query so the row appears under `Your accounts`, and disappears from the import list.",
+        "An adopt that reports toolsReachable false renders the verbatim reason plus a Connect button that starts a normal connect flow for that service — the row never silently claims success.",
+        "Loading renders skeleton rows; a failed read renders role=alert with the verbatim message; per-provider warnings render verbatim.",
+        "Query hooks follow the shipped entity patterns (query-key factory, Transport via useTransport, TSDoc, barrel export)."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/connections/__tests__/ImportAccountsPanel.test.tsx with createMockTransport: rows render with the custody line; clicking Bring it in calls adoptConnectorAccount with the id; toolsReachable false renders the verbatim reason and a Connect control; empty response renders nothing at all; a rejected read renders the verbatim error.",
+      "dependencies": ["R2.2", "R1.4"]
+    },
+    {
+      "id": "R2.4",
+      "slice": "R2",
+      "title": "Docs describe the page that now exists",
+      "files": [
+        "docs/connectors/index.mdx",
+        "docs/connectors/composio.mdx",
+        "docs/connectors/nango.mdx",
+        "docs/connectors/raw-mcp.mdx"
+      ],
+      "acceptance": [
+        "The walkthrough matches the shipped order: open Connections, pick a service, and (for the long tail) set up the connection engine inside Advanced when asked.",
+        "The Composio page states plainly that the sign-in page will show Composio's name, and which key to copy (project key, not the uak_ CLI key). No pricing numbers; one link out.",
+        "The Nango page no longer asserts a self-hosted server the reader may not have, and explains the tool-server gap DorkOS fills.",
+        "Importing accounts already in Composio is documented, including the honest 'brought in but tools unreachable' outcome and what to do about it.",
+        "Alpha callouts stay; every sentence passes writing-for-humans (no em dashes, no hype, nothing claimed that is not verified)."
+      ],
+      "testPlan": "Read the pages end to end against the running UI (pnpm dev:dogfood) and confirm every step exists as written. Run /docs:coverage. No claim about an unverified surface working.",
+      "dependencies": ["R2.1", "R2.3"]
+    },
+    {
+      "id": "R3.1",
+      "slice": "R3",
+      "title": "Point agents at the page that exists, and let DorkBot offer the capability",
+      "files": [
+        "apps/server/src/services/connectors/connector-capabilities.ts",
+        "apps/server/src/services/connectors/__tests__/connector-capabilities.test.ts",
+        "apps/server/src/services/core/self-description/dorkos-registry.ts"
+      ],
+      "acceptance": [
+        "Every capability description and error string that says 'Settings -> Connections' names the actual surface instead ('the Connections page'); a grep across apps/server for 'Settings \\u2192 Connections' returns nothing.",
+        "A test asserts no connector capability description contains the string 'Settings' — an assertion that goes red if the old copy returns.",
+        "DorkOS's agent-facing self-description gains one sentence teaching the connect sequence (recommend, then start_connect, then show the sign-in link and custody line verbatim), placed with the other capability guidance and phrased for an agent, not a user.",
+        "No tool signature, tier, or approval semantics change — attach stays destructive-tier."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/__tests__/connector-capabilities.test.ts (new copy assertions) plus the self-description test that snapshots the composed text. pnpm --filter @dorkos/server typecheck && lint.",
+      "dependencies": []
+    },
+    {
+      "id": "R3.2",
+      "slice": "R3",
+      "title": "The session readout stops being silent about connectors",
+      "files": [
+        "apps/client/src/layers/features/connections/ui/SessionConnectorsGroup.tsx",
+        "apps/client/src/layers/features/connections/__tests__/SessionConnectorsGroup.test.tsx"
+      ],
+      "acceptance": [
+        "The null-when-nothing-connected branch is replaced by one quiet line plus a `Connect a service` ghost control to /connections, justified in a comment by the host's own contract (SessionInspector: 'everything about the session, always, because you opened it on purpose').",
+        "The same control is available when accounts exist, below the attached rows.",
+        "Embedded (Obsidian) mode suppresses navigation controls exactly as the shipped Manage link does.",
+        "No other surface gains connector chrome; the status line and composer are untouched.",
+        "Attached rows, exposure badges, and null-branch warnings keep their shipped behavior."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/connections/__tests__/SessionConnectorsGroup.test.tsx: with zero accounts the group renders the line and the control (previously rendered nothing); with one attached account both rows and control render; embedded mode renders neither navigation control; existing warning cases still pass.",
+      "dependencies": []
+    },
+    {
+      "id": "R3.3",
+      "slice": "R3",
+      "title": "Two more doors: the page points at chat, and one dashboard card stops fighting for the word connect",
+      "files": [
+        "apps/client/src/layers/widgets/connections/ui/ConnectionsPage.tsx",
+        "apps/client/src/layers/features/feature-promos/model/promo-registry.ts",
+        "apps/client/src/layers/features/feature-promos/model/promo-types.ts",
+        "apps/client/src/layers/features/feature-promos/model/use-promo-context.ts",
+        "apps/client/src/layers/features/feature-promos/__tests__/use-promo-slot.test.ts"
+      ],
+      "acceptance": [
+        "The Connections header carries one line offering the chat path with a concrete example, and an `Ask your agent` control that opens a fresh session with that sentence prefilled: mint a UUID and navigate to /session with { session, prompt }. No attach call, so this task has no R4 dependency.",
+        "The relay promo is retitled to name notifications ('Get notified in Slack or Telegram'), so it no longer competes with account connections for the verb.",
+        "A new connections promo ('Let your agents use your accounts') navigates to /connections, sits between the relay and schedules priorities, and shows only when connectedAccountCount === 0.",
+        "PromoContext gains connectedAccountCount, sourced in usePromoContext from useConnectorAccounts following the existing gated-query pattern; the promo-slot test fixture is updated.",
+        "Copy passes writing-for-humans and claims nothing about an unverified surface."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/feature-promos/__tests__/use-promo-slot.test.ts: the connections promo shows at zero accounts and is filtered out at one; the relay promo's new title is asserted. Page test with a mocked useNavigate: the Ask your agent control navigates to /session with a session id and the prompt search param.",
+      "dependencies": []
+    },
+    {
+      "id": "R4.1",
+      "slice": "R4",
+      "title": "Curated try-it prompts, selected by the role recommender that already ships",
+      "files": [
+        "apps/client/src/layers/features/connections/config/try-it-prompts.ts",
+        "apps/client/src/layers/features/connections/lib/try-it-now.ts",
+        "apps/client/src/layers/features/connections/__tests__/try-it-prompts.test.ts"
+      ],
+      "acceptance": [
+        "TRY_IT_PROMPTS covers the eight slugs CONNECTOR_DISPLAY_NAMES already names, each with a default prompt and optional byRole overrides keyed by CanonRoleId; every prompt is a sentence a person would actually type.",
+        "pickTryItPrompt(slug, roles) uses recommendForRoles(roles) to find the role that recommended this service and prefers its byRole prompt, falling back to the default; an unknown slug returns undefined so the affordance is simply absent.",
+        "The function is pure and deterministic; no I/O, no randomness.",
+        "TSDoc explains that recommendForRoles is the role signal (founder decision 5) and that prompts are curated, never generated."
+      ],
+      "testPlan": "pnpm vitest run apps/client/src/layers/features/connections/__tests__/try-it-prompts.test.ts: a role whose recommendation includes the slug gets the byRole prompt; a role that does not gets the default; unknown slug returns undefined; empty roles returns the default; role order does not change the result for a single-slug lookup. Revert the byRole branch and confirm a case goes red.",
+      "dependencies": []
+    },
+    {
+      "id": "R4.2",
+      "slice": "R4",
+      "title": "One tap from connected to working: attach, navigate, prefill, and one restrained arrival",
+      "files": [
+        "apps/client/src/layers/features/connections/lib/try-it-now.ts",
+        "apps/client/src/layers/features/connections/ui/ConnectDialog.tsx",
+        "apps/client/src/layers/features/connections/ui/AccountsList.tsx",
+        "apps/client/src/layers/features/connections/ui/ImportAccountsPanel.tsx",
+        "apps/client/src/layers/features/connections/__tests__/try-it-now.test.tsx",
+        "apps/server/src/routes/__tests__/session-connectors.test.ts",
+        "apps/e2e/tests/connections/connections.spec.ts"
+      ],
+      "acceptance": [
+        "startTryItNow mints a UUID, calls attachSessionConnector(sessionId, accountId), and only then navigates to /session with { session, prompt }; a failed attach shows the verbatim error in a role=alert and does NOT navigate.",
+        "The attach-before-the-session-exists behavior is pinned as a CONTRACT, not left as an accident: a new case in apps/server/src/routes/__tests__/session-connectors.test.ts attaches a known account to a session id that has never been created and asserts 200 with the disclosure, carrying a comment that names try-it-now (specs/connections-redesign §7) as the dependent so anyone adding session-id validation reads why first. The hole is deliberately NOT closed.",
+        "The connect dialog's connected step and an adopted import row both offer `Try it now` with the exact prompt visible above it; the composer is prefilled and nothing is auto-sent.",
+        "The affordance is absent when pickTryItPrompt returns undefined.",
+        "The newly connected account row animates once (160ms fade and rise, motion, tokens only); under prefers-reduced-motion there is no motion and the row carries a `Just connected` chip until the next interaction, so feedback is never simply dropped.",
+        "The animation is suppressed while any provider-rejected notice is on screen — nothing celebrates during an incident."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/routes/__tests__/session-connectors.test.ts for the never-created-session attach contract (this one first: it is the dependency everything else rides on). pnpm vitest run apps/client/src/layers/features/connections/__tests__/try-it-now.test.tsx with createMockTransport and a mocked useNavigate: happy path asserts attach called with the minted id then navigate with { session, prompt }; a rejected attach asserts navigate was NOT called and the verbatim message renders; no prompt for the slug means no button; matchMedia reduced-motion true renders the chip and applies no motion class. Playwright: after the test provider's connect completes, click Try it now and assert the URL carries session + prompt and the composer holds the prompt text. jsdom cannot measure the animation itself; say so in the test rather than asserting a proxy.",
+      "dependencies": ["R4.1", "R1.4", "R2.3"]
+    }
+  ]
+}

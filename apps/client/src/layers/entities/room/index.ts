@@ -43,7 +43,7 @@ export type {
   SetResponseModeInput,
 } from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
-export { RESPONSE_MODE_OPTIONS } from './lib/response-mode';
+export { responseModeOptionsFor } from './lib/response-mode';
 export type { ResponseModeOption } from './lib/response-mode';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';

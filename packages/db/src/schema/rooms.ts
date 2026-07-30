@@ -121,10 +121,21 @@ export const rooms = sqliteTable(
  *
  * `response_mode` is the per-room override of the agent manifest's default
  * (`AgentBehaviorSchema.responseMode`). It is always written explicitly at join
- * time — seeded from the manifest for a DM and `'mention-only'` for a channel —
- * so the stored value is inspectable and there is no dynamic rule to reason
- * about later. There is no third seed: a thread is a position inside a channel,
- * so a reply there reads the channel's row (ADR 260728-022013).
+ * time — seeded from the manifest for a DM and `'engaged'` for a channel — so
+ * the stored value is inspectable and there is no dynamic rule to reason about
+ * later. There is no third seed: a thread is a position inside a channel, so a
+ * reply there reads the channel's row (ADR 260728-022013).
+ *
+ * **The column stores no provenance**, which is why migration 0039 could rewrite
+ * `'mention-only'` to `'engaged'` for agent memberships in LIVE channels once
+ * and can never do it again: it cannot tell a seeded default from a value
+ * somebody chose. It was safe only because the members panel that first exposed
+ * the field shipped one day earlier (room-participation spec §9.4).
+ *
+ * ARCHIVED channels were deliberately skipped, so their rows still read
+ * `'mention-only'`. An archived room refuses its own voice, so it could not be
+ * given the notice every widened room got — and widening what cannot be
+ * announced is the one thing §9.4 forbids.
  */
 export const roomMembers = sqliteTable(
   'room_members',
@@ -132,7 +143,7 @@ export const roomMembers = sqliteTable(
     roomId: text('room_id').notNull(),
     authorId: text('author_id').notNull(),
 
-    /** `'always' | 'direct-only' | 'mention-only' | 'silent'`. */
+    /** `'always' | 'engaged' | 'direct-only' | 'mention-only' | 'silent'`. */
     responseMode: text('response_mode').notNull(),
 
     joinedAt: text('joined_at').notNull(),
@@ -237,8 +248,21 @@ export const roomEntries = sqliteTable(
     // NOT indexed: it is a residual filter on a `(room_id, seq)` range the
     // primary key already serves, and an index whose predicate matches most of
     // the table saves nothing.
+    //
+    // **`seq` IS THE THIRD COLUMN BECAUSE OF THE PLANNER, NOT BECAUSE OF THE
+    // FILTER** (migration 0040). `listRecentPostsByOthers` asks for the NEWEST
+    // few rows of a thread, so it carries `ORDER BY seq DESC LIMIT n` — and
+    // against the two-column index that ordering could only be satisfied by
+    // sorting the matches, which made the `(room_id, seq)` primary key look
+    // cheaper to a planner with no statistics. Nothing in DorkOS runs `ANALYZE`,
+    // so "no statistics" IS the shipped state: the planner took the primary key
+    // and, for a thread holding fewer rows than the limit, walked the room's
+    // ENTIRE log before giving up. Measured on a 50k-entry channel: 5.5ms per
+    // call against 0.0025ms with `seq` here, and the query runs once per engaged
+    // agent per message. With `seq` in the index the planner needs no statistics
+    // and no hint — it reads the rows in order and stops at the limit.
     index('idx_room_entries_thread_root')
-      .on(table.roomId, table.threadRootEntryId)
+      .on(table.roomId, table.threadRootEntryId, table.seq)
       .where(sql`"thread_root_entry_id" IS NOT NULL`),
   ]
 );

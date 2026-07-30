@@ -138,11 +138,16 @@ export interface ComposioConnectorProviderOpts {
  * distinct connects of one toolkit (distinguished by `alias`) yield distinct
  * `ca_…` handles, each an independently-addressable {@link ConnectedAccountId}.
  *
- * **Throw-free contract** (a Composio API call can fail — a stale key's 401, a
+ * **Degrade contract** (a Composio API call can fail — a stale key's 401, a
  * 5xx, a `fetch` timeout — so each method declares how it degrades):
  *
- * - `listToolkits`, `listAccounts` — throw-free; a transport failure degrades to
- *   an empty list (logged). The registry aggregation records a warning upstream.
+ * - `listToolkits`, `listAccounts` — a transport failure PROPAGATES. Every
+ *   caller reaches these through the registry's aggregation paths, which turn a
+ *   rejection into an honest per-provider `warnings[]` entry (ADR-0310).
+ *   Swallowing the failure into an empty list is exactly what made a real 401
+ *   from a wrong-kind API key render as a silently dead /connections grid
+ *   (DOR-703 live verification) — an empty success and a failure must never be
+ *   indistinguishable.
  * - `toolServerForAccount` — throw-free; a transport failure resolves `null` (the
  *   surfaced per-account null branch), because its consumer
  *   (`session-exposure.attach`) awaits it unguarded and a throw would 500 the
@@ -186,26 +191,15 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   }
 
   async listToolkits(): Promise<ConnectorToolkit[]> {
-    try {
-      const toolkits = await this._client.listToolkits();
-      return toolkits.map((tk) => ({
-        slug: tk.slug,
-        displayName: tk.name,
-        authKind: toAuthKind(tk.authScheme),
-        ...(typeof tk.maxAccountsPerToolkit === 'number' && {
-          maxAccountsPerUser: tk.maxAccountsPerToolkit,
-        }),
-      }));
-    } catch (err) {
-      // Throw-free: a transport failure degrades to an empty list. The registry
-      // aggregation still records a warning upstream (it also races each provider
-      // under a timeout), but the adapter itself must not throw through the port.
-      if (isTransportError(err)) {
-        logger.warn(`[Connectors] composio listToolkits degraded: ${errText(err)}`);
-        return [];
-      }
-      throw err;
-    }
+    // A failure propagates on purpose: the registry aggregation converts it to
+    // a per-provider warning the client renders. Degrading to [] here made a
+    // real 401 look like "no services" with no explanation (DOR-703).
+    const toolkits = await this._client.listToolkits();
+    return toolkits.map((tk) => ({
+      slug: tk.slug,
+      displayName: tk.name,
+      authKind: toAuthKind(tk.authScheme),
+    }));
   }
 
   async startConnect(toolkit: string, opts?: { label?: string }): Promise<ConnectStart> {
@@ -251,17 +245,9 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   }
 
   async listAccounts(opts?: { toolkit?: string }): Promise<ConnectedAccount[]> {
-    try {
-      const accounts = await this._client.listConnectedAccounts(opts);
-      return accounts.map((account) => this._toPortAccount(account));
-    } catch (err) {
-      // Throw-free: a transport failure degrades to an empty list (see listToolkits).
-      if (isTransportError(err)) {
-        logger.warn(`[Connectors] composio listAccounts degraded: ${errText(err)}`);
-        return [];
-      }
-      throw err;
-    }
+    // Propagates on failure — see listToolkits.
+    const accounts = await this._client.listConnectedAccounts(opts);
+    return accounts.map((account) => this._toPortAccount(account));
   }
 
   async disconnect(accountId: ConnectedAccountId): Promise<void> {

@@ -252,8 +252,11 @@ describe('ComposioConnectorProvider — managed-custody semantics', () => {
 // The mock suite structurally can't catch this: the fake client never errors on
 // its own, so these lock the degrade contract by forcing the client to reject.
 // Session-exposure awaits toolServerForAccount UNGUARDED — a throw here would 500
-// the attach route instead of degrading to attach-recorded-with-warning.
-describe('ComposioConnectorProvider — throw-free degrade on transport failure', () => {
+// the attach route instead of degrading to attach-recorded-with-warning. The two
+// LIST reads are the opposite: they must PROPAGATE, because the registry turns a
+// rejection into a per-provider warning and a swallowed 401 renders as a silent,
+// dead /connections grid (DOR-703 live verification).
+describe('ComposioConnectorProvider — degrade contract on transport failure', () => {
   const errors: Array<{ label: string; err: () => Error }> = [
     {
       label: 'ComposioApiError 401 (stale key)',
@@ -277,18 +280,18 @@ describe('ComposioConnectorProvider — throw-free degrade on transport failure'
       await expect(provider.toolServerForAccount(account.id)).resolves.toBeNull();
     });
 
-    it(`listToolkits returns empty on ${label}`, async () => {
+    it(`listToolkits PROPAGATES ${label} (the registry turns it into a warning)`, async () => {
       const client = new FakeComposioClient();
       client.failWith(err());
       const provider = new ComposioConnectorProvider({ client });
-      await expect(provider.listToolkits()).resolves.toEqual([]);
+      await expect(provider.listToolkits()).rejects.toThrow();
     });
 
-    it(`listAccounts returns empty on ${label}`, async () => {
+    it(`listAccounts PROPAGATES ${label} (never a silent empty list)`, async () => {
       const client = new FakeComposioClient();
       client.failWith(err());
       const provider = new ComposioConnectorProvider({ client });
-      await expect(provider.listAccounts()).resolves.toEqual([]);
+      await expect(provider.listAccounts()).rejects.toThrow();
     });
 
     it(`pollConnect maps ${label} to a failure-typed result`, async () => {

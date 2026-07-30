@@ -99,6 +99,30 @@ describe('connectors router', () => {
     expect(gmail.body.recommendations[0]).toMatchObject({ kind: 'gateway', provider: 'composio' });
   });
 
+  it('GET /toolkits surfaces a failing provider as a warning — never a silent empty list', async () => {
+    // The founder's first-contact failure (DOR-703): Composio 401ed on every
+    // call and the page showed an empty grid with warnings: []. A provider
+    // failure must reach the DTO's warnings, message included.
+    const failing = new HungProvider();
+    failing.listToolkits = () =>
+      Promise.reject(new Error('Composio request failed (401): Invalid API key: uak**SGn9'));
+    const bounded = new ConnectorRegistry({ db, providerTimeoutMs: 50 });
+    bounded.register(failing);
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api/connectors',
+      createConnectorsRouter({ registry: bounded, flowBindings: new ConnectorFlowBindings() })
+    );
+
+    const res = await request(app).get('/api/connectors/toolkits');
+    expect(res.status).toBe(200);
+    expect(res.body.toolkits).toEqual([]);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0]).toMatchObject({ provider: 'hung' });
+    expect(res.body.warnings[0].message).toMatch(/401/);
+  });
+
   it('GET /recommend 400s without a service param', async () => {
     const res = await request(buildApp()).get('/api/connectors/recommend');
     expect(res.status).toBe(400);

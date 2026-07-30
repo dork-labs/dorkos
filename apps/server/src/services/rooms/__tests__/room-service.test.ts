@@ -129,13 +129,13 @@ describe('RoomService', () => {
   });
 
   describe('seeding responseMode', () => {
-    it('seeds a channel membership to mention-only, whatever the manifest says', () => {
+    it('seeds a channel membership to engaged, whatever the manifest says', () => {
       const room = service.createRoom(
         { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
         human
       );
       const member = service.addMember(room.id, human, { agentPath: '/agents/ana' });
-      expect(member.responseMode).toBe('mention-only');
+      expect(member.responseMode).toBe('engaged');
     });
 
     it('seeds a DM membership from the agent manifest', () => {
@@ -1061,7 +1061,7 @@ describe('RoomService — only the operator changes a roster', () => {
     );
     expect(
       service.getRoom(roomId, human)?.members.find((m) => m.authorId === bo)?.responseMode
-    ).toBe('mention-only');
+    ).toBe('engaged');
   });
 
   it('refuses an agent removing a member', () => {

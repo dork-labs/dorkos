@@ -13,9 +13,18 @@
  *
  * Reload (`reload('composio' | 'nango')`) re-runs the same factory and swaps
  * the registration atomically (unregister-if-present → `maybeCreate*` →
- * register-if-non-null), so saving a vendor key through
+ * connection check → register-if-it-answers), so saving a vendor key through
  * `PUT /api/connectors/providers/:provider/credential` registers the provider
  * live and deleting it unregisters — no restart ever required.
+ *
+ * **Registered means it actually answers.** Before a provider is registered
+ * (at boot and on every reload), the bootstrapper runs one cheap authenticated
+ * read against it. First real contact (DOR-703) proved why: a wrong-kind
+ * Composio key (the CLI's `uak_…` user key instead of a project key) passes
+ * the credential gate and then 401s on every call — without the check the UI
+ * said Ready over a dead service grid. A failed check leaves the provider
+ * unregistered and carries the API's own secret-free error message on the
+ * status DTO, where the provider card renders it verbatim.
  *
  * Under `DORKOS_TEST_RUNTIME` a third credential-gated spec, `test-connector`,
  * joins the set so e2e can exercise the save-key step end to end; its factory
@@ -32,11 +41,16 @@ import { logger } from '../../lib/logger.js';
 import type { CredentialProvider } from '../core/credential-provider.js';
 import { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
 import type { ConnectorRegistry } from './registry.js';
-import { maybeCreateComposioProvider, COMPOSIO_API_KEY_REF } from './providers/composio.js';
+import {
+  maybeCreateComposioProvider,
+  COMPOSIO_API_KEY_REF,
+  type MaybeCreateComposioProviderDeps,
+} from './providers/composio.js';
 import {
   maybeCreateNangoProvider,
   NangoEncryptionKeyError,
   NANGO_SECRET_KEY_REF,
+  type MaybeCreateNangoProviderDeps,
 } from './providers/nango.js';
 import type { NangoProxyMcp } from './providers/nango-proxy-mcp.js';
 import { RawMcpConnectorProvider, type RawMcpServerDescriptor } from './providers/raw-mcp.js';
@@ -79,6 +93,14 @@ export interface ConnectorProviderBootstrapperOpts {
    * key revokes live sessions too — not just new connections.
    */
   onUnregistered?: (providerType: string) => void;
+  /**
+   * Test-only client-factory passthroughs for the two vendor providers, so the
+   * post-registration connection check (`_swap`'s probe) never touches the
+   * network in tests. Production omits both and gets the real fetch clients.
+   */
+  makeComposioClient?: MaybeCreateComposioProviderDeps['makeClient'];
+  /** See {@link makeComposioClient} — the Nango counterpart. */
+  makeNangoClient?: MaybeCreateNangoProviderDeps['makeClient'];
 }
 
 /** One credential-gated provider the bootstrapper owns end to end. */
@@ -113,8 +135,8 @@ export class ConnectorProviderBootstrapper {
   private readonly _rawMcpServers: () => RawMcpServerDescriptor[];
   private readonly _onUnregistered: ((providerType: string) => void) | undefined;
   private readonly _specs = new Map<string, ManagedProviderSpec>();
-  /** Last refusal message per provider type, surfaced on the status DTO. */
-  private readonly _lastRefusal = new Map<string, string>();
+  /** Last refusal/connection-check failure per provider type, surfaced on the status DTO. */
+  private readonly _lastError = new Map<string, string>();
 
   /**
    * Construct the bootstrapper over its provider factories.
@@ -135,7 +157,11 @@ export class ConnectorProviderBootstrapper {
         custody: 'managed',
         credentialName: credentialNameOf(COMPOSIO_API_KEY_REF),
         configured: async () => (await credentials.resolve(COMPOSIO_API_KEY_REF)).ok,
-        create: () => maybeCreateComposioProvider({ credentials }),
+        create: () =>
+          maybeCreateComposioProvider({
+            credentials,
+            ...(opts.makeComposioClient && { makeClient: opts.makeComposioClient }),
+          }),
         isRefusal: () => false,
       },
       {
@@ -152,6 +178,7 @@ export class ConnectorProviderBootstrapper {
             proxy: nangoProxy,
             ...(env.baseUrl !== undefined && { baseUrl: env.baseUrl }),
             ...(env.encryptionKey !== undefined && { encryptionKey: env.encryptionKey }),
+            ...(opts.makeNangoClient && { makeClient: opts.makeNangoClient }),
           });
         },
         // Configured-but-unsafe refuses loudly and is skipped; the server boots.
@@ -199,12 +226,16 @@ export class ConnectorProviderBootstrapper {
 
   /**
    * Re-run one provider's factory and swap its registration atomically:
-   * unregister-if-present → `maybeCreate*` → register-if-non-null. Called by
-   * the credential routes after a key write/delete; no restart ever required.
+   * unregister-if-present → `maybeCreate*` → connection check →
+   * register-if-it-answers. Called by the credential routes after a key
+   * write/delete; no restart ever required. A factory or connection-check
+   * failure never throws — it lands on the returned status as `error` with
+   * `registered: false`, so a wrong key answers the PUT honestly instead of
+   * 500ing.
    *
    * @param provider - A provider type this bootstrapper owns.
    * @returns The provider's fresh status.
-   * @throws If `provider` is unknown, or the factory failed with a non-refusal error.
+   * @throws If `provider` is unknown.
    */
   async reload(provider: string): Promise<ConnectorProviderStatus> {
     const spec = this._specs.get(provider);
@@ -220,24 +251,35 @@ export class ConnectorProviderBootstrapper {
     return Promise.all([...this._specs.values()].map((spec) => this._statusFor(spec)));
   }
 
-  /** Unregister → create → register-if-non-null, recording any refusal. */
+  /** Unregister → create → probe → register-if-it-answers, recording any failure. */
   private async _swap(spec: ManagedProviderSpec): Promise<void> {
     const wasRegistered = this._registry.resolveProvider(spec.type) !== undefined;
     this._registry.unregister(spec.type);
-    this._lastRefusal.delete(spec.type);
+    this._lastError.delete(spec.type);
     try {
       const provider = await spec.create();
       if (provider) {
+        // "Registered" must mean "actually answers", not "a key is stored":
+        // probe with the cheapest authenticated read before registering. First
+        // real contact (DOR-703) showed a wrong-kind API key passing the
+        // credential gate and 401ing on every call — without this check the
+        // card said Ready over a dead service grid. The failure message
+        // (Composio's own, secret-free) lands on the status DTO instead.
+        await provider.listAccounts();
         this._registry.register(provider);
         logger.info(`[Connectors] ${spec.logLabel} registered`);
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       if (spec.isRefusal(err)) {
-        const message = err instanceof Error ? err.message : String(err);
         logger.error(`[Connectors] ${spec.logLabel} refused: ${message}`);
-        this._lastRefusal.set(spec.type, message);
+        this._lastError.set(spec.type, message);
       } else {
-        throw err;
+        // The connection check failed (or the factory hit a transport error).
+        // Record it and leave the provider unregistered — a key re-save
+        // re-probes; the server keeps booting either way.
+        logger.error(`[Connectors] ${spec.logLabel} failed its connection check: ${message}`);
+        this._lastError.set(spec.type, message);
       }
     } finally {
       // A swap that took a live provider AWAY revokes what it was serving:
@@ -251,7 +293,7 @@ export class ConnectorProviderBootstrapper {
 
   /** Build one provider's reference-free status DTO. */
   private async _statusFor(spec: ManagedProviderSpec): Promise<ConnectorProviderStatus> {
-    const error = this._lastRefusal.get(spec.type);
+    const error = this._lastError.get(spec.type);
     return {
       type: spec.type,
       configured: await spec.configured(),

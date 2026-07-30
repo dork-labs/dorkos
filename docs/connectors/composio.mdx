@@ -8,24 +8,24 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 # Composio (managed)
 
-Composio is the simple default for connecting a service. It handles the sign-in for you and holds your login in its own secure vault. You give DorkOS one Composio key, and it will let you connect services like Gmail, Slack, and Notion.
+Composio is the simple default for connecting a service. It handles the sign-in for you and holds your login in its own secure vault. You give DorkOS one Composio key, and it lets you connect services like Gmail, Slack, and Notion.
 
 <Callout type="warn">
-  This path is built but not yet confirmed end to end. It is in alpha. Try it in a safe account
-  first.
+  This path is built and browser-tested against a test provider, but not yet confirmed with a real
+  Composio account. It is in alpha. Try it in a safe account first.
 </Callout>
 
 ## Before you connect: where your login lives
 
-DorkOS shows you this before you connect, and again on each connected account. Read it once so there are no surprises:
+DorkOS shows you this before you connect, and again on each connected account. For Gmail it reads:
 
-> Connecting Gmail takes you to Google to sign in. Composio stores your connected accounts' login access in its own secure vault, not on your computer. Your agents can then act for you; your password is never shared, and you can disconnect anytime.
+> Connecting gmail takes you to that service to sign in. Composio stores your connected accounts' login access in its own secure vault, not on your computer. Your agents can then act for you; your password is never shared, and you can disconnect anytime.
 
 In short: your password never touches DorkOS or Composio. Composio holds a token that lets your agents act, and you can disconnect at any time.
 
 ## What DorkOS stores
 
-DorkOS keeps only your Composio key, saved as a safe reference (not plain text on disk). It does not store the logins for Gmail, Slack, or any other service you connect. Those live in Composio's vault. That is the whole point of the managed path.
+DorkOS keeps only your Composio key, saved in its encrypted secret store (never plain text on disk, never sent to the browser, never written to a log). It does not store the logins for Gmail, Slack, or any other service you connect. Those live in Composio's vault. That is the whole point of the managed path.
 
 ## Set it up
 
@@ -43,7 +43,7 @@ Create an account at Composio and copy your API key. This one key lets DorkOS re
 
 ### Give the key to DorkOS
 
-Save the key in DorkOS settings. DorkOS stores it as a secure reference, the same way it stores every other secret.
+Open **Connections** in the sidebar and scroll to **Providers**. Paste the key into the Composio card and click **Save key**. The card shows **Ready** right away, and the services Composio can reach appear in the grid above. Removing the key later turns the provider off again, and any sessions using its accounts are told, not left guessing.
 
 </Step>
 
@@ -51,7 +51,9 @@ Save the key in DorkOS settings. DorkOS stores it as a secure reference, the sam
 
 ### Connect a service
 
-Ask to connect a service (for example, "Connect to my Gmail"). DorkOS opens the sign-in page for that service. You sign in there, not in DorkOS. When you come back, the account shows up with its label.
+Click **Connect** on a service tile (for example, Gmail). DorkOS shows the custody sentence first, then a button that opens the service's sign-in page in a new tab. You sign in there, not in DorkOS. When the sign-in completes, the account shows up under **Connected accounts**.
+
+You can also do this from a chat: ask your agent to connect the service, and it replies with the sign-in link and the same custody sentence.
 
 </Step>
 
@@ -59,7 +61,7 @@ Ask to connect a service (for example, "Connect to my Gmail"). DorkOS opens the 
 
 ### Connect a second account (optional)
 
-Connect another account of the same service and give it a label, like "work". Both accounts show up in your list, each with its own label and its own custody line.
+Connect the same service again and give it a label, like "personal". DorkOS suggests one when a first account already exists. Both accounts show up in your list, each with its own label and its own custody line.
 
 </Step>
 
@@ -67,4 +69,4 @@ Connect another account of the same service and give it a label, like "work". Bo
 
 ## Use it in a session
 
-Attach a connected account to a session to let that session's agent use it. Only accounts you attach are available. If an account's login has expired, DorkOS shows a "reconnect" note instead of quietly dropping it.
+Attach a connected account to a session to let that session's agent use it. In the session view, open the right panel's **Session** tab and use the **Connectors** group. Only accounts you attach are available to that session. If an account's login has expired, its row says so and the session view tells you to reconnect it under Connections, instead of quietly dropping it.

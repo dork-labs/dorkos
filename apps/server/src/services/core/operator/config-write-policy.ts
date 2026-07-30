@@ -215,6 +215,14 @@ export const CONFIG_WRITE_POLICY = {
   // hold the bill whatever these say.
   'rooms.replyWaitMinutes': 'agent-writable',
   'rooms.lateReplyCeilingMinutes': 'agent-writable',
+  // How long an agent stays addressable after somebody talks to it, and how many
+  // other people's messages end that. Operator-only, on the far side of the line
+  // the two waits above sit on: these decide when a turn RUNS, not how long the
+  // room waits for one that was already going to. An agent that could lengthen
+  // its own window would be voting itself back into every conversation it was
+  // ever addressed in — the widening this whole mode exists to bound.
+  'rooms.engagedWindowMinutes': 'operator-only',
+  'rooms.engagedWindowPosts': 'operator-only',
 
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',

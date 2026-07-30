@@ -97,10 +97,10 @@
       "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat-mock.spec.ts",
       "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
-      "lastRun": "2026-07-03T01:22:11.501Z",
+      "lastRun": "2026-07-29T21:33:47.473Z",
       "lastStatus": "passed",
-      "runCount": 10,
-      "passCount": 1,
+      "runCount": 11,
+      "passCount": 2,
       "failCount": 8,
       "relatedCode": [],
       "lastModified": ""
@@ -179,6 +179,30 @@
         "apps/client/src/layers/entities/room/lib/room-display.ts",
         "apps/client/src/layers/features/dashboard-sidebar/ui/rooms/RoomRow.tsx"
       ],
+      "lastModified": ""
+    },
+    "marketplace-connectors": {
+      "specFile": "tests/connections/marketplace-connectors.spec.ts",
+      "feature": "connections",
+      "description": "shows the CONNECTOR badge and narrows the grid with the Connectors facet",
+      "lastRun": "2026-07-29T22:37:53.760Z",
+      "lastStatus": "passed",
+      "runCount": 7,
+      "passCount": 7,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "connections": {
+      "specFile": "tests/connections/connections.spec.ts",
+      "feature": "connections",
+      "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
+      "lastRun": "2026-07-29T22:37:53.760Z",
+      "lastStatus": "passed",
+      "runCount": 7,
+      "passCount": 5,
+      "failCount": 2,
+      "relatedCode": [],
       "lastModified": ""
     }
   },
@@ -443,6 +467,69 @@
       "failed": 0,
       "skipped": 0,
       "duration": 46274
+    },
+    {
+      "id": "2026-07-29T19-21-24",
+      "timestamp": "2026-07-29T19:21:24.207Z",
+      "total": 3,
+      "passed": 2,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 55813
+    },
+    {
+      "id": "2026-07-29T19-24-43",
+      "timestamp": "2026-07-29T19:24:43.247Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 42068
+    },
+    {
+      "id": "2026-07-29T19-25-48",
+      "timestamp": "2026-07-29T19:25:48.793Z",
+      "total": 9,
+      "passed": 6,
+      "failed": 3,
+      "skipped": 0,
+      "duration": 47959
+    },
+    {
+      "id": "2026-07-29T19-27-41",
+      "timestamp": "2026-07-29T19:27:41.704Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 47845
+    },
+    {
+      "id": "2026-07-29T19-28-15",
+      "timestamp": "2026-07-29T19:28:15.417Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 26239
+    },
+    {
+      "id": "2026-07-29T21-33-47",
+      "timestamp": "2026-07-29T21:33:47.473Z",
+      "total": 18,
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 56280
+    },
+    {
+      "id": "2026-07-29T22-37-53",
+      "timestamp": "2026-07-29T22:37:53.760Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 46086
     }
   ]
 }

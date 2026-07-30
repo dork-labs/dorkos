@@ -1,0 +1,403 @@
+{
+  "spec": "specs/direct-connect/02-specification.md",
+  "slug": "direct-connect",
+  "generatedAt": "2026-07-29T23:49:47Z",
+  "mode": "full",
+  "slices": {
+    "D0": "Spike — carry ONE vendor (Linear) end to end against a real grant; its findings size the catalog and answer OQ1/OQ3",
+    "D1": "OAuth machinery — token/account stores, loopback listener, the SDK-backed ladder, the three spec MUSTs the SDK misses, custody + failure copy",
+    "D2": "Multi-account + the pollConnect fabricated-success fix, identity dedupe, refresh/revocation, routes + honest UI states, e2e",
+    "D3": "Persistence — session attachments survive a restart (critique P5)",
+    "D4": "Google Workspace — DorkOS-registered client by default, BYO client id as the Advanced hatch",
+    "D5": "Catalog — ship-pinned, flag-gated, Slack excluded, per-entry verification status; plus docs truthing",
+    "D6": "CIMD hosting on dorkos.ai — the client_id document, its stability contract, and the flip that enables ladder rung 2"
+  },
+  "tasks": [
+    {
+      "id": "D0.1",
+      "slice": "D0",
+      "title": "Linear spike — discovery → client identity → real grant → token → authenticated tool call → two accounts in one session",
+      "files": [
+        "research/20260730_direct-mcp-linear-spike.md",
+        "(throwaway scripts under the session scratchpad — nothing committed to apps/ or packages/)"
+      ],
+      "acceptance": [
+        "A research report exists at research/<date>_direct-mcp-linear-spike.md following the repo's report conventions, recording every item below VERBATIM (secrets redacted, never omitted-and-summarized).",
+        "Discovery evidence: the unauthenticated response from https://mcp.linear.app/mcp with its full WWW-Authenticate header text; the RFC 9728 protected-resource-metadata document body; the authorization-server metadata body.",
+        "Ladder evidence: whether the AS metadata carries client_id_metadata_document_supported (records whether rung 2 is even available for Linear); the exact value of code_challenge_methods_supported; whether registration_endpoint is present. Which rung produced the client identity, with the DCR request body and response recorded (client_secret redacted).",
+        "application_type evidence: whether the registration was accepted WITH application_type:'native', and — as a separate control probe — whether it is accepted without it. This is the only way to know whether SEP-837 is enforced by a real server today.",
+        "Authorize evidence: the authorize URL with its parameters listed (code_challenge, code_challenge_method, redirect_uri, resource, state, prompt) and a screenshot of the consent screen. Records whether the screen named DorkOS, and whether it displayed the localhost-redirect warning the MCP spec directs auth servers to show.",
+        "Callback evidence: whether an iss parameter came back (RFC 9207), and whether the AS advertised authorization_response_iss_parameter_supported.",
+        "OQ1 answer: whether Linear accepted a loopback redirect_uri on a port OUTSIDE the registered set (RFC 8252 §7.3 any-port behavior) — probe with a deliberately unregistered port.",
+        "Token evidence: the token response shape — expires_in, whether a refresh_token was issued, the granted scope. One successful refresh performed, recording whether the refresh token rotated.",
+        "MCP evidence: the authenticated initialize result (serverInfo, negotiated protocolVersion, tool count), and ONE real authenticated tool call with its result (redacted).",
+        "Identity evidence: which identityHint rung produced a value — userinfo_endpoint (rung 1), JWT sub (rung 2, i.e. whether Linear's access token is even a JWT), or none (rung 3).",
+        "OQ3 answer: whether prompt=login produced a fresh Linear sign-in, or was silently ignored.",
+        "Multi-account evidence: a SECOND grant against a second Linear workspace, and a screenshot or transcript showing both tool servers live and distinctly named in ONE DorkOS session.",
+        "A per-vendor findings TABLE TEMPLATE (the columns above as rows) that the D5 catalog sizing reuses unchanged for every subsequent vendor.",
+        "An explicit verdict paragraph: does the ladder work end to end against a real vendor, and what would have broken without each of the three SDK gap closures."
+      ],
+      "testPlan": "Manual, evidence-driven — this task's deliverable IS its evidence. Run against the real mcp.linear.app with a real Linear account; a fake or mocked server invalidates the whole point. Use throwaway scripts in the session scratchpad; commit nothing but the report. Do NOT build production code here — anything worth keeping is re-derived in D1 with tests. Two real Linear workspaces are required; if only one is available, say so in the report and mark the multi-account row unproven rather than simulating it.",
+      "dependencies": []
+    },
+    {
+      "id": "D1.1",
+      "slice": "D1",
+      "title": "Durable direct-account state — direct_mcp_accounts table + token/registration blobs in the encrypted store",
+      "files": [
+        "packages/db/src/schema/direct-mcp-accounts.ts",
+        "packages/db/src/schema/index.ts",
+        "packages/db/drizzle/<next>_direct_connect.sql",
+        "packages/db/src/__tests__/direct-mcp-accounts.test.ts",
+        "apps/server/src/services/connectors/direct/token-store.ts",
+        "apps/server/src/services/connectors/direct/accounts-store.ts",
+        "apps/server/src/services/connectors/direct/__tests__/token-store.test.ts"
+      ],
+      "acceptance": [
+        "direct_mcp_accounts table per spec §Data model: accountId PK, slug, serverUrl, issuer, clientId, tokensRef, scope, expiresAt, identityHint, identityHintSource, protocolVersion, lastVerifiedAt, createdAt. Every column is a reference or metadata — a schema-level assertion in the test enumerates the columns and fails if any name suggests a secret.",
+        "DirectTokenStore writes ONE JSON blob per account via credentialStore.put under 'direct-mcp:<accountId>:tokens' ({ access_token, refresh_token?, expires_at?, scope? }) — one atomic write per grant, so no partial-refresh window exists. Reads go through CredentialProvider.resolve, never a direct file read.",
+        "Client registrations (which may carry a DCR-issued client_secret) are stored separately under 'direct-mcp-client:<serverKey>' — no client secret ever reaches SQLite.",
+        "Deleting an account deletes both credential entries and the row; delete is idempotent.",
+        "The drizzle migration is generated (not hand-written) and packages/db/src/__tests__/migrations.test.ts is extended with the new table name.",
+        "TSDoc on every export; the table's module doc states plainly that it holds refs, never secrets, and why."
+      ],
+      "testPlan": "pnpm vitest run packages/db/src/__tests__/direct-mcp-accounts.test.ts (insert/read/delete, PK conflict, column enumeration). pnpm vitest run packages/db/src/__tests__/migrations.test.ts. pnpm vitest run apps/server/src/services/connectors/direct/__tests__/token-store.test.ts against a fake CredentialStore: round-trip, rotation overwrite, idempotent delete, and a leak assertion that the serialized row for a stored account contains no substring of the token. pnpm --filter @dorkos/db test && pnpm --filter @dorkos/server typecheck.",
+      "dependencies": []
+    },
+    {
+      "id": "D1.2",
+      "slice": "D1",
+      "title": "Loopback callback listener — 127.0.0.1 port ladder, one-shot state, hardened surface",
+      "files": [
+        "apps/server/src/services/connectors/direct/loopback-listener.ts",
+        "apps/server/src/services/connectors/direct/__tests__/loopback-listener.test.ts",
+        "packages/shared/src/connector-provider.ts"
+      ],
+      "acceptance": [
+        "A single process-wide listener, refcounted across concurrent flows, bound to the 127.0.0.1 interface EXPLICITLY (never 0.0.0.0 or ::) — asserted by inspecting the bound address.",
+        "Port ladder 4266 → 4269, walked on EADDRINUSE; all four taken resolves a typed 'listener-unavailable' failure naming the ports, never a throw. The ladder lives in ONE exported constant that apps/site imports-by-duplication-with-test in D6.",
+        "The listener binds BEFORE startConnect returns its authorizeUrl, so DorkOS only ever issues a redirect URI on a port it already holds.",
+        "Only GET /oauth/callback is served; every other path and method returns a bodyless 404. The response HTML is static, reflects no query parameter (reuse the escapeHtml helper pattern from routes/runtimes.ts), loads no external asset, and links back to the cockpit on its in-process port.",
+        "state is 32 random bytes base64url and ONE-SHOT: the verifier is claimed-and-nulled exactly as OpenRouterOAuthStore.claimVerifier does, so a replayed callback cannot re-exchange. Unknown or expired state returns a generic 400 that never echoes input.",
+        "Flows expire after 10 minutes; the listener closes when the last flow terminates and on process exit.",
+        "No log line anywhere in this module can carry a code, verifier, token, or state — the log shape is { slug, flowId, outcome } and a test asserts it against a captured logger."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/loopback-listener.test.ts: bind succeeds on 4266; with 4266 pre-occupied by a stub server it walks to 4267; with all four occupied it returns the typed failure; a real HTTP GET to the callback path with a valid state resolves the flow once and a second identical GET is refused; GET /other and POST /oauth/callback both 404; the response body contains no injected marker passed via query; TTL expiry prunes; a captured logger contains no state/code substring. Use ephemeral stub servers, never a fixed sleep.",
+      "dependencies": []
+    },
+    {
+      "id": "D1.3",
+      "slice": "D1",
+      "title": "FakeMcpAuthServer — the switchable auth server every later test drives",
+      "files": [
+        "apps/server/src/services/connectors/direct/__tests__/fake-mcp-auth-server.ts",
+        "apps/server/src/services/connectors/direct/__tests__/fake-mcp-auth-server.test.ts"
+      ],
+      "acceptance": [
+        "An in-process HTTP server that can: 401 with WWW-Authenticate carrying a resource_metadata pointer; serve RFC 9728 PRM and RFC 8414 AS metadata; and toggle each of client_id_metadata_document_supported, registration_endpoint presence, code_challenge_methods_supported (present-with-S256 / present-without-S256 / absent), and authorization_response_iss_parameter_supported.",
+        "A DCR endpoint that can accept or refuse, and that RECORDS the received request body so a test can assert on application_type.",
+        "An authorize endpoint that validates redirect_uri exact-match, records code_challenge/code_challenge_method/resource/prompt, and can return a correct iss, no iss, or a deliberately WRONG iss.",
+        "A token endpoint supporting the authorization_code and refresh_token grants, with switchable refresh-token rotation, and a switchable RFC 7009 revocation endpoint.",
+        "An MCP endpoint that answers a JSON-RPC initialize with a valid result when a correct bearer is present, 401s without or with a wrong one, and can be switched to a transport error / 5xx.",
+        "Zero network egress; binds an ephemeral port; a single start()/stop() pair usable from any test file. Self-tested: its own test file proves each switch changes the observable response.",
+        "OQ5 noted in the module doc — this is deliberately local to the server package for now, and what would justify graduating it to @dorkos/test-utils."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/fake-mcp-auth-server.test.ts — one case per switch, asserting the observable HTTP response changes. This task's real payoff is measured by D1.4/D2.1 landing without inventing new mocks; if either needs a switch this fake lacks, the switch is added here, not stubbed there.",
+      "dependencies": []
+    },
+    {
+      "id": "D1.4",
+      "slice": "D1",
+      "title": "The ladder — DirectOAuthClientProvider over the MCP SDK, plus the three MUSTs the SDK does not implement",
+      "files": [
+        "apps/server/src/services/connectors/direct/oauth-client-provider.ts",
+        "apps/server/src/services/connectors/direct/discovery.ts",
+        "apps/server/src/services/connectors/direct/__tests__/oauth-ladder.test.ts"
+      ],
+      "acceptance": [
+        "DirectOAuthClientProvider implements the SDK's OAuthClientProvider: clientInformation/saveClientInformation over the registration blob, tokens/saveTokens over DirectTokenStore, codeVerifier/saveCodeVerifier server-side only, state() from the loopback flow, redirectUrl from the bound listener port, and redirectToAuthorization CAPTURING the URL (server-side — it never redirects).",
+        "auth() from @modelcontextprotocol/sdk/client/auth.js drives the ladder; a test proves each rung is selected under the right metadata: pre-registered → CIMD (client_id_metadata_document_supported true AND clientMetadataUrl set) → DCR (registration_endpoint present) → rung 4, which fails with a typed 'registration-refused' and a sentence telling the user this server needs a client id they must supply.",
+        "GAP 1 — application_type:'native' is present in the DCR POST body. The SDK's OAuthClientMetadataSchema is .strip() and lacks the field while registerClient POSTs {...clientMetadata} raw, so this works today and could silently regress. A test asserts the field on the body FakeMcpAuthServer recorded. The clientMetadata constant is exported and shared with D6's CIMD document so the two cannot drift.",
+        "GAP 2 — RFC 9207 issuer validation. The expected issuer from AS metadata is recorded on the flow; the callback compares the iss parameter and on mismatch DISCARDS THE CODE WITHOUT EXCHANGING IT, failing 'issuer-mismatch'. A missing iss when the AS advertised authorization_response_iss_parameter_supported is also a mismatch; a missing iss from an AS that never advertised it is accepted with a debug log.",
+        "GAP 3 — S256-absent refusal. code_challenge_methods_supported absent, or present without S256, fails 'no-pkce-s256' BEFORE any authorize URL is produced (the SDK only checks when the field is present, auth.js:696).",
+        "RFC 8707: validateResourceURL is implemented to assert the resource matches the server being connected and to record it on the flow; a test asserts the resource parameter reaches both the authorize and token requests.",
+        "prompt is MERGED, never appended. The SDK already APPENDS prompt=consent whenever the resolved scope includes offline_access (auth.js:719-724, .append not .set), so naively adding ours emits the parameter twice — forbidden by RFC 6749 §3.1 and inexpressible in OIDC, where prompt is one space-delimited value list. The merge happens in redirectToAuthorization(url), which receives the built mutable URL: read every existing prompt value, union with ours, set ONE space-delimited value. Default 'login', overridable per entry via authParams.",
+        "A test asserts the authorize URL carries EXACTLY ONE prompt parameter when the resolved scope includes offline_access, and that the merged value contains both the SDK's consent and our login (deduped, not concatenated). This bites Google in D4 first, whose desired value is already multi-valued (select_account consent) and overlaps the SDK's consent.",
+        "The module doc states honestly that honoring prompt at all is unproven per vendor and cites OQ3 plus whatever D0 observed against Linear.",
+        "No secret in any thrown error, log line, or returned value from any module in this task."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/oauth-ladder.test.ts against FakeMcpAuthServer: one case per rung; application_type asserted on the recorded DCR body AND a control case proving the assertion would fail if it were dropped; wrong-iss case asserts the token endpoint was NEVER called; absent-and-no-S256 cases both refuse before an authorize URL exists; resource present on both requests; the single-prompt assertion with an offline_access scope AND with a plain scope. pnpm --filter @dorkos/server typecheck && lint. D0.1's report is read first — its OQ1 (any-port loopback) and OQ3 (prompt honored?) findings are inputs to this task, not afterthoughts.",
+      "dependencies": ["D0.1", "D1.1", "D1.2", "D1.3"]
+    },
+    {
+      "id": "D1.5",
+      "slice": "D1",
+      "title": "Custody class 'direct' + the server-owned failure-copy module",
+      "files": [
+        "packages/shared/src/connector-provider.ts",
+        "packages/db/src/schema/connected-accounts.ts",
+        "apps/server/src/services/connectors/custody-disclosure.ts",
+        "apps/server/src/services/connectors/direct/failure-copy.ts",
+        "apps/server/src/services/connectors/__tests__/custody-disclosure.test.ts",
+        "apps/server/src/services/connectors/direct/__tests__/failure-copy.test.ts"
+      ],
+      "acceptance": [
+        "ConnectorCustodySchema gains 'direct'; the drizzle connected_accounts custody enum list gains it too. NO SQL migration — the column is plain text NOT NULL with no CHECK constraint (drizzle/0029_clear_gateway.sql:6); the task must confirm this by inspecting the generated SQL rather than assuming, and say so in the PR body.",
+        "custodyDisclosure gains the 'direct' branch. The existing never-typed assertUnreachableCustody guard (custody-disclosure.ts:114) means this is a compile error until written — verify the compile error appears before writing the copy, so the guard is proven to work.",
+        "Copy, through writing-for-humans: 'You sign in to {service} yourself. DorkOS keeps the key for this connection on this computer, encrypted — nothing about it leaves your machine. You can disconnect anytime.' The 'external' branch stays for the token-free-server case and its copy is unchanged.",
+        "failure-copy.ts maps a typed DirectConnectFailureCode union to exactly one plain sentence each, with its own never-typed exhaustiveness guard copied from custody-disclosure.ts — a new failure mode cannot ship without copy. Codes: unknown-flow, user-cancelled, state-mismatch, issuer-mismatch, no-pkce-s256, registration-refused, token-exchange-failed, unauthenticated-probe, server-unreachable, listener-unavailable, duplicate-identity.",
+        "No sentence names a port, a URL, an internal module, or an RFC — each says what happened and what to do. The duplicate-identity sentence names the browser-profile workaround.",
+        "The failure code union is exported from @dorkos/shared so the client can branch on it without string matching."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/__tests__/custody-disclosure.test.ts — the direct branch returns a non-empty sentence containing the service name; the existing managed copy-drift byte assertion still passes untouched. pnpm vitest run .../failure-copy.test.ts — every code in the union yields a distinct non-empty sentence (iterate the union, so an added code without copy fails the test, not just the compiler). pnpm --filter @dorkos/shared build then --filter @dorkos/server typecheck (stale-dist gotcha).",
+      "dependencies": []
+    },
+    {
+      "id": "D1.6",
+      "slice": "D1",
+      "title": "verifyAuthenticatedMcp — the authenticated initialize probe that gates 'connected'",
+      "files": [
+        "apps/server/src/services/connectors/direct/probe.ts",
+        "apps/server/src/services/connectors/direct/__tests__/probe.test.ts"
+      ],
+      "acceptance": [
+        "verifyAuthenticatedMcp(url, accessToken) POSTs a JSON-RPC initialize with Authorization: Bearer, Accept: 'application/json, text/event-stream', and the MCP-Protocol-Version header, bounded at 10s on the existing boundedFetch pattern.",
+        "Returns a DISCRIMINATED result, never a boolean: authenticated-ok (carrying serverInfo and the negotiated protocolVersion), unauthenticated (401/403), unreachable (transport error or 5xx). pollConnect's three-way branch in D2.1 depends on the distinction — a boolean would collapse 'the token is wrong' into 'the network is down' and resurrect a softer version of the fabricated-success bug.",
+        "A 2xx whose body is NOT a valid initialize result counts as unreachable, not ok — a proxy or captive portal returning 200 HTML must never read as authenticated.",
+        "The same probe is reusable UNAUTHENTICATED (no bearer) so D2.1's legacy-row reconciliation can distinguish a no-auth server that genuinely works from a fabricated row.",
+        "No token in any log line, thrown error, or returned value.",
+        "Split from D1.4 deliberately: this depends only on FakeMcpAuthServer, so it parallelizes off the ladder's critical path."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/probe.test.ts against FakeMcpAuthServer: 2xx with a valid initialize result → authenticated-ok with serverInfo and protocolVersion; 401 and 403 → unauthenticated; 5xx, socket hangup, and a 2xx-with-HTML-body → unreachable; the 10s bound is enforced against a deliberately stalled endpoint; the no-bearer variant returns ok against a no-auth server and unauthenticated against a protected one; a captured logger contains no token substring.",
+      "dependencies": ["D1.3"]
+    },
+    {
+      "id": "D2.1",
+      "slice": "D2",
+      "title": "The direct provider — raw-mcp rewritten multi-account, and pollConnect stops fabricating success",
+      "files": [
+        "apps/server/src/services/connectors/providers/direct-mcp.ts",
+        "apps/server/src/services/connectors/providers/raw-mcp.ts",
+        "apps/server/src/services/connectors/bootstrap.ts",
+        "apps/server/src/services/connectors/index.ts",
+        "apps/server/src/services/connectors/providers/__tests__/direct-mcp.test.ts"
+      ],
+      "acceptance": [
+        "providers/raw-mcp.ts is RENAMED to providers/direct-mcp.ts and RawMcpConnectorProvider to DirectMcpConnectorProvider — the old file is gone, not left as a re-export shim. type stays 'mcp' so the registry key, the :provider route segment, and connected_accounts.provider rows all stay valid with no migration.",
+        "getCapabilities returns supportsMultiAccount: true and custody: 'direct'; the single-account rejection at the old raw-mcp.ts:117-122 is DELETED. maxAccountsPerUser per toolkit: undefined for an OAuth-protected server, 1 for one needing no auth.",
+        "Account ids are 'mcp:<slug>:<8-hex>' — opaque and multi-account-safe.",
+        "startConnect returns a REAL authorize URL from the D1.4 ladder — never the MCP endpoint URL, which is the shipped defect (raw-mcp.ts:128). A test asserts the returned authorizeUrl host is the authorization server's, not the resource server's.",
+        "pollConnect implements the spec §5 table exactly and CANNOT return 'connected' without a 2xx authenticated initialize. A 401/403 probe discards the tokens (no half-account); a transport error keeps them and retries up to 3 attempts before failing 'server-unreachable'. Every non-connected outcome carries a failureCode plus its failure-copy sentence.",
+        "A regression test named for the defect asserts that a flow whose callback never arrived polls 'pending', and that a flow whose probe 401s polls 'failed' — the two states the shipped code reported as 'connected'.",
+        "toolServerForAccount returns { transport, url, headers: { Authorization: 'Bearer …' } }; headers already plumb through to the runtime unchanged (claude-code/mcp-server-config.ts:25-38) so no new seam is added. Still returns null (never throws) for expired/revoked/unreachable.",
+        "RawMcpServerConfigSchema gains authKind (ConnectorAuthKindSchema, default 'oauth2') per the adding-config-fields skill. Today the config schema has no such field while the descriptor defaults authKind ?? 'oauth2', so every hand-configured no-auth server is mislabeled as OAuth — a user cannot currently declare a no-auth server truthfully.",
+        "Legacy-row reconciliation ADOPTS, DROPS, or DEFERS per spec §1 — never a blanket purge. A legacy mcp:<slug> row for a NO-AUTH server was genuinely working (the old toolServerForAccount returned server.connection with no bearer), so deleting it would destroy a live connection. The discriminator is an UNAUTHENTICATED initialize probe (D1.6's no-bearer variant), NOT the declared authKind, which cannot be trusted for the reason above.",
+        "Reconciliation table, one case each: server no longer configured → drop; unauthenticated initialize 2xx → re-adopt into direct_mcp_accounts with custody 'external' and no tokensRef; 401/403 → drop (the fabricated artifact); unreachable/5xx → keep, mark expired, retry next boot (never destroy user state on ambiguity).",
+        "Idempotency is inherent and asserted: a dropped row cannot be dropped twice, an adopted row now has a direct_mcp_accounts row and is skipped, a deferred row resolves on a later boot. No marker field is needed.",
+        "Any DROP raises a ONE-TIME USER-VISIBLE NOTICE, not a log line: a durable activity event naming each dropped service and why (e.g. 'Linear was listed as connected but was never actually signed in'), plus a warnings[] entry on the accounts aggregation so /connections shows it immediately. Silently deleting something the UI called connected would be the same class of dishonesty this task exists to remove. Copy through writing-for-humans.",
+        "The rewritten provider passes connectorConformance on the supportsMultiAccount: true branch."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/providers/__tests__/direct-mcp.test.ts against FakeMcpAuthServer: full connect happy path; the two named defect-regression cases; the 401-discards-tokens case asserting the credential store is empty afterwards; the retry-then-fail case; two sequential grants yielding two distinct account ids and two distinct bearer headers; toolServerForAccount null branches. pnpm vitest run for the connectorConformance suite. pnpm vitest run apps/server/src/services/connectors/__tests__/bootstrap.test.ts extended with one case per reconciliation-table row, PLUS: a no-auth row survives and is re-adopted (the regression that a blanket purge would have caused); a drop emits exactly one activity event naming the service; a second boot emits none; a deferred (unreachable) row is retried and resolves when the server comes back. pnpm vitest run for the authKind conf migration.",
+      "dependencies": ["D1.4", "D1.5", "D1.6"]
+    },
+    {
+      "id": "D2.2",
+      "slice": "D2",
+      "title": "Identity ladder, duplicate-account detection, and label resolution",
+      "files": [
+        "apps/server/src/services/connectors/direct/identity.ts",
+        "apps/server/src/services/connectors/providers/direct-mcp.ts",
+        "apps/server/src/services/connectors/direct/__tests__/identity.test.ts"
+      ],
+      "acceptance": [
+        "The identityHint ladder resolves in order: (1) OIDC userinfo_endpoint when advertised AND the openid scope was granted → identityHintSource 'verified'; (2) sub + iss of the access token when it parses as a JWT → 'unverified'; (3) none → 'none'. Each rung records its source so no surface can imply more certainty than we have.",
+        "The rung-2 JWT is NOT signature-verified and the module doc says so explicitly: it is a local dedupe key and must never be an authorization input. A test asserts no code path uses the parsed claims for anything but comparison.",
+        "A new grant whose identityHint matches an existing account for the SAME server fails 'duplicate-identity' — never a silent duplicate row. startConnect({ allowDuplicateIdentity: true }) overrides it, for when our hint is wrong.",
+        "Label resolution, in order: explicit caller label → resolved identityHint → '<slug>-<n>'. Two Linears become linear-dorian-personal / linear-dorian-work when identity resolves and linear / linear-2 when it does not.",
+        "Per-account tool-server naming needs NO new code — session-exposure.ts:_mintServerName already derives toolkit-label and suffixes collisions, pinned for the session lifetime. A test asserts two accounts of one toolkit land on two distinct server names end to end.",
+        "Whatever D0 found about Linear's identity rung is reflected in the module doc as a live data point, not a guess."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/identity.test.ts against FakeMcpAuthServer: rung 1 with a userinfo endpoint; rung 2 with a synthetic JWT access token; rung 3 with an opaque token; duplicate refused; duplicate accepted under override; all three label-resolution paths. Plus a session-exposure integration case asserting two same-toolkit accounts get two distinct pinned server names.",
+      "dependencies": ["D2.1"]
+    },
+    {
+      "id": "D2.3",
+      "slice": "D2",
+      "title": "Token refresh (single-flight), vendor revocation on disconnect, and per-account live invalidation",
+      "files": [
+        "apps/server/src/services/connectors/providers/direct-mcp.ts",
+        "apps/server/src/services/connectors/direct/token-store.ts",
+        "apps/server/src/services/connectors/session-exposure.ts",
+        "apps/server/src/routes/connectors.ts",
+        "apps/server/src/services/connectors/direct/__tests__/refresh-revocation.test.ts"
+      ],
+      "acceptance": [
+        "toolServerForAccount is the single refresh point: when expires_at is within 60s it refreshes via the SDK's refreshAuthorization. No background poller.",
+        "Refresh is SINGLE-FLIGHT per account via an in-flight promise map — many auth servers rotate the refresh token and a lost race would invalidate the account. A test drives two concurrent resolves and asserts exactly ONE token request reached the fake server.",
+        "A rotated refresh token is persisted atomically (one blob write); a failed refresh marks the account 'expired' and returns null, landing in the surfaced per-account warning path that already exists (session-exposure.ts:254-257) with its reconnect affordance.",
+        "disconnect(accountId) POSTs the revocation_endpoint when the AS advertised one (RFC 7009: refresh_token first, then best-effort access_token), bounded, failures LOGGED not thrown; then deletes both credential entries, deletes the direct_mcp_accounts row, and calls registry.recordDisconnect.",
+        "SessionConnectorService gains invalidateAccount(accountId) beside the shipped invalidateProvider(providerType), called from the disconnect path so a revoked account stops serving LIVE sessions, not just new ones. The existing bootstrapper onUnregistered seam is unchanged and still covers whole-provider removal.",
+        "A test asserts revocation is skipped without a throw when the AS advertises no revocation_endpoint, and that disconnect still fully cleans up locally in that case."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/refresh-revocation.test.ts against FakeMcpAuthServer: near-expiry triggers exactly one refresh; two concurrent resolves produce one token request; rotation persisted and reused; refresh failure → status expired + null + warning; revocation called with the refresh token when advertised, skipped when not, and a 500 from the revocation endpoint does not fail the disconnect. Plus a session-exposure case asserting a disconnected account's tool server disappears from an already-attached live session.",
+      "dependencies": ["D2.1"]
+    },
+    {
+      "id": "D2.4",
+      "slice": "D2",
+      "title": "Routes, shared schema, and honest connect-dialog states",
+      "files": [
+        "packages/shared/src/connector-provider.ts",
+        "apps/server/src/routes/connectors.ts",
+        "apps/server/src/routes/__tests__/connectors.test.ts",
+        "apps/client/src/layers/features/connections/ui/ConnectDialog.tsx",
+        "apps/client/src/layers/entities/connectors/model/use-connect-flow.ts",
+        "apps/client/src/layers/features/connections/__tests__/ConnectionsSurfaces.test.tsx"
+      ],
+      "acceptance": [
+        "POST /api/connectors/:provider/connect accepts allowDuplicateIdentity?: boolean (Zod-validated, Express 5 empty-body safe per the existing req.body ?? {} pattern).",
+        "GET /api/connectors/flows/:flowId returns failureCode beside its existing error sentence; ConnectorConnectPollResponseSchema is extended and the code union exported from @dorkos/shared.",
+        "No McpAppServerConnection — which now carries a bearer header — can reach the client. The existing strip is re-asserted with a test that fails if a headers field ever appears in a serialized response.",
+        "ConnectDialog renders the direct custody sentence BEFORE the authorize URL is opened (the shipped disclosure-before-URL consent invariant, unchanged), and renders each failure state from the server's sentence — the client composes no copy of its own.",
+        "A 'Connect another' affordance exists for a multi-account toolkit; the duplicate-identity failure offers connect-anyway, which re-issues the flow with allowDuplicateIdentity.",
+        "Nothing in the client displays a 'connected' state that the server did not report as connected. The out-of-scope catalog/page redesign is NOT started here (critique P2 is a separate surface spec) — this task changes states and copy only.",
+        "Mobile, tablet, and desktop verified for the dialog's new states."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/routes/__tests__/connectors.test.ts (allowDuplicateIdentity plumbed; failureCode surfaced; the headers-leak assertion). pnpm vitest run apps/client/src/layers/features/connections/__tests__/ConnectionsSurfaces.test.tsx with a mock Transport: disclosure precedes URL open; each failure code renders the server sentence verbatim; connect-another issues a second flow; connect-anyway sets the override. pnpm --filter @dorkos/client typecheck && lint.",
+      "dependencies": ["D2.2", "D2.3"]
+    },
+    {
+      "id": "D2.5",
+      "slice": "D2",
+      "title": "Playwright coverage of the direct connect flow against the fake auth server",
+      "files": [
+        "apps/e2e/tests/connections/direct-connect.spec.ts",
+        "apps/server/src/services/connectors/direct/__tests__/fake-mcp-auth-server.ts",
+        "apps/e2e/README or fixture wiring as the browser-testing skill directs"
+      ],
+      "acceptance": [
+        "Under DORKOS_TEST_RUNTIME the test-mode server can point the direct provider at a locally-running FakeMcpAuthServer with auto-consent, following the shipped test-connector precedent — no real vendor, no network egress.",
+        "Covered flows: connect → connected (an account row appears and reports exposed); connect a second account → two rows with distinct labels; each failure state renders its sentence; disconnect removes the row.",
+        "The spec states plainly, in a comment at the top, that a REAL vendor grant cannot be automated: it is hand-carried in D0 and re-carried per catalog entry in D5, and this file proves the UI states only.",
+        "Follows the browser-testing skill (no arbitrary waits, resilient selectors, runs in CI's test-mode server)."
+      ],
+      "testPlan": "Run the spec per the browser-testing skill's local invocation, then confirm it passes in CI's test-mode configuration. Deliberately break the server's connected branch once and confirm the test fails — a green e2e over the old fabricated-success behavior would be the worst possible outcome here.",
+      "dependencies": ["D2.4"]
+    },
+    {
+      "id": "D3.1",
+      "slice": "D3",
+      "title": "Persist session attachments across restarts (critique P5)",
+      "files": [
+        "packages/db/src/schema/session-connector-attachments.ts",
+        "packages/db/src/schema/index.ts",
+        "packages/db/drizzle/<next>_session_connector_attachments.sql",
+        "apps/server/src/services/connectors/session-exposure.ts",
+        "apps/server/src/services/connectors/__tests__/session-exposure.test.ts",
+        "packages/db/src/__tests__/migrations.test.ts"
+      ],
+      "acceptance": [
+        "session_connector_attachments table: sessionId, accountId, serverName, attachedAt; PK (sessionId, accountId); index on sessionId. serverName PERSISTS — a restart that renumbered a tool server would break the tool names an in-flight session already learned, which is the whole reason a name is pinned at attach today (session-exposure.ts:141-147).",
+        "attach/detach write through to the table; the in-memory map stays the read path.",
+        "Rehydration is LAZY — on the first attach/status/mcpServersForSession for a session, not at boot. Booting every session's attachments would waste work on connections that may be dead.",
+        "Self-healing: a row whose account no longer exists is dropped during rehydration, not surfaced as an error. Rows are deleted with their session via the existing session-delete path.",
+        "The startup sweep covers THREE leaks, and the third is the one the two obvious sweeps miss: attach accepts a session id that does not exist and never validates it (routes/session-connectors.ts:47-51 404s only on an unknown ACCOUNT), and the redesign's try-it-now flow makes this routine by minting a speculative client-side UUID and attaching BEFORE the user sends anything. A user who closes the tab leaves a row whose session will never exist. Sweep drops rows (a) whose account is gone, (b) whose session was deleted, and (c) whose session id matches no session at all AND whose attachedAt is older than 24h.",
+        "The 24h retention window is load-bearing, not arbitrary: a legitimately speculative attach made seconds before its session is created must never be swept out from under a live flow. The window is a named constant with the reasoning in a comment.",
+        "invalidateProvider and the new invalidateAccount still only drop the in-memory cached connection — the rows survive, because consent was given and a re-registered provider re-resolves.",
+        "The module doc's 'Durability (deferred)' block (session-exposure.ts:36-44) is REWRITTEN to describe what now happens — no stale comment claiming attachments are lost on restart.",
+        "The stated prerequisite is met: an 'attach to new sessions by default' affordance would now be keepable. Do NOT build that affordance here; just record that its blocker is gone."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/__tests__/session-exposure.test.ts: attach then construct a FRESH SessionConnectorService over the same db and assert the attachment and its serverName survive; a detach is durable; an attachment whose account is gone is dropped on rehydration; two same-toolkit accounts keep their distinct pinned names across the restart; invalidateProvider leaves rows intact. Sweep cases, one each: account-gone row dropped; deleted-session row dropped; never-created-session row OLDER than 24h dropped; never-created-session row YOUNGER than 24h KEPT (the regression that would break try-it-now). pnpm vitest run packages/db/src/__tests__/migrations.test.ts extended. pnpm --filter @dorkos/db test.",
+      "dependencies": ["D2.1"]
+    },
+    {
+      "id": "D4.1",
+      "slice": "D4",
+      "title": "Google Workspace direct — DorkOS-registered client by default, BYO client id as the Advanced hatch",
+      "files": [
+        "apps/server/src/services/connectors/direct/google-workspace.ts",
+        "packages/shared/src/config-schema.ts",
+        "apps/server/src/services/core/config-manager.ts",
+        "apps/server/src/services/connectors/direct/__tests__/google-workspace.test.ts",
+        "docs (config reference touched per the adding-config-fields skill)"
+      ],
+      "acceptance": [
+        "Google is rung 1 of the SAME ladder, not a special flow: PRM discovery is skipped (all six probed MCP endpoints 405 with no WWW-Authenticate) and the AS is accounts.google.com via its OIDC discovery document. The module doc states this reasoning so nobody re-adds a Google branch to the generic code.",
+        "connectors.direct.google config block added per the adding-config-fields skill end to end (Zod field, defaults, semver-keyed conf migration, docs): { clientId?: string (BYO, plain — a client id is not a secret and visibility aids debugging), clientSecretRef?: string (a keychain:/env:/file: reference, BYO only), products?: enum[] }.",
+        "The DorkOS default client id is a BUILD-TIME constant, not a credential-store entry — it is not a user secret. BYO config overrides it wholly (id and secret together, never mixed).",
+        "OQ4 RESOLVED BY PROBE, not by assumption: the task must determine whether Google's token endpoint accepts a PKCE-only public client for these MCP scopes. If a client_secret is required, it ships as a build-time constant WITH the plain disclosure — in code comment and in docs — that it is not, and cannot be, secret (Google's own docs say so; RFC 8252 §8.5). The finding is recorded in the PR body either way.",
+        "Per-product server URLs (<product>mcp.googleapis.com/mcp/v1) and the narrowest scopes that work, per product. authParams sets prompt='select_account consent' for Google, which honors it.",
+        "The consent-verification and CASA process is NOT code — spec Appendix A is the founder checklist. This task does not block on it: the BYO hatch works with no verification at all, and Google-with-the-DorkOS-client stays alpha-labeled until verification lands (demo-claim gate).",
+        "No Google credential, default or BYO, appears in any log, response, or DB column."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/google-workspace.test.ts: the default path builds a flow with the constant client id; a BYO clientId in config overrides it; a BYO clientSecretRef resolves through CredentialProvider and never appears in a log; the AS is accounts.google.com and PRM discovery is not attempted; prompt=select_account consent is present; an unknown product is rejected at config parse. pnpm vitest run for the conf migration test. Manual probe against Google's real token endpoint for OQ4 — record the result in the PR body; a probe that cannot be run is an unresolved OQ4, not a pass.",
+      "dependencies": ["D2.1"]
+    },
+    {
+      "id": "D5.1",
+      "slice": "D5",
+      "title": "Flag-gated built-in catalog — ship-pinned, Slack excluded, verification status per entry",
+      "files": [
+        "apps/server/src/services/connectors/direct/catalog.ts",
+        "packages/shared/src/config-schema.ts",
+        "apps/server/src/services/connectors/bootstrap.ts",
+        "apps/server/src/services/connectors/direct/__tests__/catalog.test.ts",
+        "apps/server/src/services/connectors/__tests__/routing.test.ts"
+      ],
+      "acceptance": [
+        "connectors.direct.catalogEnabled: boolean, DEFAULT FALSE (founder decision 1 — counsel review pending), per the adding-config-fields skill. DORKOS_DIRECT_CATALOG=1 overrides for the founder's machine and the spike.",
+        "catalog.ts is a ship-pinned code constant of DirectCatalogEntry per spec §9: slug, displayName, url, transport, capability ('read-only' | 'read-write' | 'interactive' — Claude's directory vocabulary), authVerification ('live-verified' | 'registration-only' | 'unverified' | 'incompatible'), authParams?, rateLimit?, notes?.",
+        "Catalog entries merge with connectors.rawMcpServers and a USER entry wins on slug collision — explicit config beats our default. A test asserts the precedence.",
+        "authVerification is HAND-FILLED from a real grant. Registration success does not prove authorize-time acceptance (Vercel, Square, and Figma all document client allowlists), so no automated process may write this field. A comment says so at the field's definition.",
+        "OQ6 recommendation followed: ship with ZERO entries and the flag off. Adding an entry is a separate, per-vendor PR carrying its own hand-grant evidence. The type, the merge, the flag, and the tests all ship now; the list starts empty.",
+        "D0.1's per-vendor findings table is the sizing input and is cited in the module doc — the spike exists precisely to size this list, so its report must be read before any entry is contemplated. The entry TYPE must be able to express every column D0 found worth recording; if it cannot, the type is wrong, not the report.",
+        "Slack is ABSENT, with a code comment citing the written prohibition on unlisted apps using MCP. A routing test asserts recommendConnector('slack') still ranks the Relay adapter at 0 and the catalog contributes nothing.",
+        "The direct provider joins the bootstrapper's reload() set so flipping the flag or editing rawMcpServers takes effect without a restart. This is only safe because direct accounts are durable (D1.1/D2.1) — a test asserts a reload preserves existing accounts rather than forgetting them.",
+        "Per-entry rateLimit is recorded for entries that need it (Sentry: 60 requests / 60 seconds per authenticated user) and surfaced as an honest slow-down note, never as a failure."
+      ],
+      "testPlan": "pnpm vitest run apps/server/src/services/connectors/direct/__tests__/catalog.test.ts: flag off yields no catalog toolkits; flag on yields the (initially empty) list; a user rawMcpServers entry wins a slug collision against a seeded test entry; every entry in the shipped constant type-checks and none has slug 'slack' (an explicit assertion, so a future addition trips it). pnpm vitest run apps/server/src/services/connectors/__tests__/routing.test.ts for the Slack rank-0 relay assertion. pnpm vitest run .../bootstrap.test.ts for reload-preserves-accounts. pnpm vitest run for the conf migration.",
+      "dependencies": ["D0.1", "D2.1"]
+    },
+    {
+      "id": "D5.2",
+      "slice": "D5",
+      "title": "Docs truthing — direct custody, adding your own server, BYO Google, and the catalog flag's real state",
+      "files": [
+        "docs/connectors/*.mdx",
+        "contributing/adding-a-connector.md",
+        "changelog/unreleased/<id>-direct-connect.md"
+      ],
+      "acceptance": [
+        "docs/connectors covers: what a direct connection is and where the key lives (the custody sentence verbatim from the server module, never paraphrased); adding your own MCP server via connectors.rawMcpServers; connecting more than one account of the same service; the BYO Google client; and the catalog flag's ACTUAL state (off, pending review) rather than an aspirational description.",
+        "contributing/adding-a-connector.md gains the direct path and how to drive FakeMcpAuthServer, per the writing-developer-guides skill.",
+        "Demo-claim gate honored: no vendor is described as working unless a real grant has been carried against it and recorded. Google-with-the-DorkOS-client is labeled alpha until verification lands.",
+        "All prose through the writing-for-humans skill — readable by a smart 9th grader who does not code.",
+        "One changelog fragment describing what a person can now do, not what was built.",
+        "Lands LAST in the slice, after D4 and D5.1, so the acceptance ties to shipped behavior rather than to the plan."
+      ],
+      "testPlan": "Read every changed page against the shipped behavior and the writing-for-humans bar; verify each claim against a passing test or recorded grant evidence, and delete any claim that has neither. /docs:coverage for INDEX tracking. Fragment validated by the fragment-present CI gate.",
+      "dependencies": ["D4.1", "D5.1"]
+    },
+    {
+      "id": "D6.1",
+      "slice": "D6",
+      "title": "Host the CIMD client-metadata document on dorkos.ai and enable ladder rung 2",
+      "files": [
+        "apps/site/src/app/oauth/dorkos-client.json/route.ts",
+        "apps/site/src/__tests__/oauth-client-metadata.test.ts",
+        "apps/server/src/services/connectors/direct/oauth-client-provider.ts"
+      ],
+      "acceptance": [
+        "A force-static Next.js route handler (the llms.txt/route.ts pattern) serves https://dorkos.ai/oauth/dorkos-client.json with Content-Type application/json, Cache-Control 'public, max-age=3600, s-maxage=86400', and Access-Control-Allow-Origin '*'. The URL IS the client_id; the SDK requires HTTPS with a NON-ROOT pathname (isHttpsUrl, auth.js:233), which this path satisfies.",
+        "Body = the clientMetadata constant from D1.4 plus a self-referential client_id equal to the document URL, including application_type:'native', the four 127.0.0.1 redirect URIs, grant_types [authorization_code, refresh_token], response_types [code], token_endpoint_auth_method 'none', client_name 'DorkOS', client_uri, logo_uri, tos_uri (/terms), policy_uri (/privacy). Verify /terms and /privacy resolve on the live site before shipping.",
+        "A site-side test PINS the redirect-URI array bytes and asserts application_type:'native' is present, and asserts the port list is identical to the server's exported constant — app and site cannot drift.",
+        "The stability contract is documented in the route file's header comment and enforced by the test: the path never changes; a redirect_uris entry is only ever ADDED, never removed or reordered; client_name never changes because it is the name on every consent screen; the document must be reachable with no auth, no redirect, and no 4xx/5xx, because a fetch failure breaks every direct connect for every user at once.",
+        "DEPLOY ORDERING recorded in the PR body: the site ships FIRST, the app second. The app must never issue a redirect URI the published document does not yet list.",
+        "OQ2 RESOLVED HERE, as the LAST criterion: DIRECT_CIMD_URL is flipped from empty to the live URL only after the document is confirmed live in production. Until then clientMetadataUrl returns undefined and the ladder falls through to DCR — an advertised-CIMD server with a 404 document would break where DCR would have worked.",
+        "A live-URL verification is recorded: fetch the production URL and paste the response headers and body into the PR."
+      ],
+      "testPlan": "pnpm vitest run apps/site/src/__tests__/oauth-client-metadata.test.ts (body shape, pinned redirect URIs, application_type present, port-constant parity with the server). pnpm --filter @dorkos/site build && lint. After deploy: curl the production URL and confirm 200, application/json, and the exact body; only then flip DIRECT_CIMD_URL and re-run the D1.4 CIMD-rung test against FakeMcpAuthServer with the real URL configured.",
+      "dependencies": ["D1.4"]
+    }
+  ]
+}

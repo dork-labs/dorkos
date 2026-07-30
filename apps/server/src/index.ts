@@ -165,6 +165,7 @@ import { createDb, runMigrations, agents } from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
+import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
@@ -1084,7 +1085,14 @@ async function start() {
   // endpoints over Nango's credentialed proxy, mounted below beside the
   // connector routes. Created before the bootstrapper because every Nango
   // provider instance (boot and reload alike) exposes tools through it.
-  const nangoProxyMcp = new NangoProxyMcp({ localOrigin: `http://127.0.0.1:${PORT}` });
+  // Minted from the DIAL form of the bind host, not `127.0.0.1`: the server
+  // binds env.DORKOS_HOST (default `localhost`), which Node resolves to ONE
+  // family — on hosts where that is ::1, a 127.0.0.1 URL is connection-refused
+  // (proven by the connections browser spec against the test-mode provider).
+  // `localDialHost` also keeps the URL honest where the bind host itself is
+  // not dialable: Docker's 0.0.0.0 wildcard, and bare IPv6 literals.
+  const localOrigin = `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`;
+  const nangoProxyMcp = new NangoProxyMcp({ localOrigin });
   // Created before the bootstrapper so its unregister hook can revoke cached
   // session attachments the moment a credential is deleted.
   const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
@@ -1095,8 +1103,9 @@ async function start() {
   // the server still boots. The credential routes call `reload()` after a key
   // write/delete, so saving a vendor key registers its provider live, no
   // restart required. In test mode the `test-connector` spec joins so e2e can
-  // exercise the save-key step; its scripted provider arrives with Slice E —
-  // until then the factory resolves null (key saved, nothing registered).
+  // exercise the save-key step; its scripted provider is dynamic-imported
+  // inside the factory (same pattern as TestModeRuntime above) so the
+  // production module graph never loads it.
   const connectorBootstrapper = new ConnectorProviderBootstrapper({
     registry: connectorRegistry,
     credentials: credentialProvider,
@@ -1111,7 +1120,19 @@ async function start() {
         displayName: server.displayName,
         connection: { transport: server.transport, url: server.url },
       })),
-    ...(env.DORKOS_TEST_RUNTIME && { testConnector: { create: async () => null } }),
+    ...(env.DORKOS_TEST_RUNTIME && {
+      testConnector: {
+        create: async () => {
+          const { maybeCreateTestModeConnectorProvider } =
+            await import('./services/connectors/providers/test-mode.js');
+          return maybeCreateTestModeConnectorProvider({
+            credentials: credentialProvider,
+            // Same dial origin as the Nango proxy — see localOrigin above.
+            localOrigin,
+          });
+        },
+      },
+    }),
     // Deleting a key (or a reload that refuses) revokes LIVE surfaces too:
     // cached session attachments stop injecting the provider's tool servers,
     // and the Nango proxy forgets its per-account tokens so the endpoint 401s.

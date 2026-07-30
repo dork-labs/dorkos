@@ -53,7 +53,10 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   writes a durable room notice in the room's own voice. All four live in
   `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
   `turn_failed`); a new way to go quiet earns a new code there, never a
-  free-text line. Two silences are deliberate and pinned by tests: an agent that
+  free-text line. `RoomNoticeCodeSchema` carries a fifth, `addressing_changed`,
+  and it is deliberately not in that module: migration 0039 wrote it once, into
+  every channel whose members it moved to `engaged`, and nothing at runtime
+  writes it. Two silences are deliberate and pinned by tests: an agent that
   ran a turn and chose to say nothing (conduct, not a fault), and the depth
   refusal against an agent's own un-provenanced post (nothing was triggered, and
   no damping key exists that would keep a notice from spraying).

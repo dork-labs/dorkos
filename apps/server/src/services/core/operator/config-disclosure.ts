@@ -174,6 +174,8 @@ export const CONFIG_DISCLOSURE = {
   'rooms.maxAutomaticTurnsTotalPerHour': 'expose',
   'rooms.replyWaitMinutes': 'expose',
   'rooms.lateReplyCeilingMinutes': 'expose',
+  'rooms.engagedWindowMinutes': 'expose',
+  'rooms.engagedWindowPosts': 'expose',
 
   'onboarding.completedSteps': 'expose',
   'onboarding.skippedSteps': 'expose',

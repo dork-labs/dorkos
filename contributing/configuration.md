@@ -98,6 +98,8 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `rooms.maxAutomaticTurnsTotalPerHour`   | integer (0--100000)                                                      | `240`              | The most automatic replies this DorkOS may run per hour across every room. The ceiling on what automatic replies can cost                                                                                                                                              |
 | `rooms.replyWaitMinutes`                | integer (1--120)                                                         | `10`               | How long a room waits for an agent's answer before carrying on. The agent is not stopped; a late answer is posted when it lands, saying which message it answers                                                                                                       |
 | `rooms.lateReplyCeilingMinutes`         | integer (1--1440)                                                        | `60`               | When a room gives up on a turn that never finishes and reports it as failed                                                                                                                                                                                            |
+| `rooms.engagedWindowMinutes`            | integer (0--1440)                                                        | `10`               | How long an agent keeps answering in a room after somebody talks to it, before it goes back to needing an @mention. Talking to it again starts the clock over; `0` means an @mention every time                                                                        |
+| `rooms.engagedWindowPosts`              | integer (0--100)                                                         | `5`                | How many messages from other members end that window, whichever runs out first                                                                                                                                                                                         |
 | `uploads.maxFileSize`                   | integer                                                                  | `10485760` (10 MB) | Maximum file size in bytes per uploaded file                                                                                                                                                                                                                           |
 | `uploads.maxFiles`                      | integer (1--50)                                                          | `10`               | Maximum number of files per upload request                                                                                                                                                                                                                             |
 | `uploads.allowedTypes`                  | string[]                                                                 | `["*/*"]`          | Allowed MIME types (e.g., `["image/*", "text/plain"]`)                                                                                                                                                                                                                 |
@@ -663,6 +665,23 @@ Set either to `0` to stop automatic replies entirely.
 ```bash
 dorkos config set rooms.maxAutomaticTurnsPerRoomPerHour 120
 dorkos config set rooms.maxAutomaticTurnsTotalPerHour 480
+```
+
+### rooms.engagedWindowMinutes / rooms.engagedWindowPosts
+
+The two ceilings behind the `engaged` response mode, which is what a channel seeds a new agent member to (room-participation spec §9).
+
+`engaged` answers when the agent is addressed **and** for a bounded window afterwards. That window is not stored anywhere: it is a predicate over the room log, read fresh on every message, so there is no state to reset on restart and nothing that can disagree with what was actually said. It ends when either ceiling runs out — ten minutes, or five messages from other members — and being addressed again starts both over, because the new mention simply becomes the anchor.
+
+The window is **thread-scoped**. Being addressed inside a thread engages an agent in that thread and nowhere else, and being addressed at the channel's top level does not engage it inside every open thread.
+
+Neither number is measured. No vendor publishes a figure for how long a person expects to keep talking to something without naming it again, and no study establishes one (`meta/agent-etiquette.md` §9). These are ours, to be tuned by using the product.
+
+Both are **ceilings, not settings**: a room can hold an agent to a shorter window, never a longer one. Set either to `0` and `engaged` behaves exactly like `mention-only`. Operator-only — an agent that could lengthen its own window would be voting itself back into every conversation it was ever addressed in.
+
+```bash
+dorkos config set rooms.engagedWindowMinutes 3
+dorkos config set rooms.engagedWindowPosts 2
 ```
 
 ### uploads

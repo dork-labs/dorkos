@@ -4188,6 +4188,7 @@
             "type": "string",
             "enum": [
               "always",
+              "engaged",
               "direct-only",
               "mention-only",
               "silent"
@@ -5144,11 +5145,12 @@
             "type": "string",
             "enum": [
               "always",
+              "engaged",
               "direct-only",
               "mention-only",
               "silent"
             ],
-            "description": "Per-room override, written explicitly at join time. Seeded from the manifest for a DM and \"mention-only\" for a channel. A thread is a position inside a channel rather than a room of its own, so a reply there reads the channel's value."
+            "description": "Per-room override, written explicitly at join time. Seeded from the manifest for a DM and \"engaged\" for a channel. A thread is a position inside a channel rather than a room of its own, so a reply there reads the channel's value — but the engaged window itself is thread-scoped, so being addressed in a thread does not engage the agent across the whole channel."
           },
           "joinedAt": {
             "type": "string"
@@ -5371,7 +5373,8 @@
           "cascade_stopped",
           "budget_reached",
           "agent_busy",
-          "turn_failed"
+          "turn_failed",
+          "addressing_changed"
         ]
       },
       "PostToRoomResponse": {
@@ -5432,11 +5435,12 @@
             "type": "string",
             "enum": [
               "always",
+              "engaged",
               "direct-only",
               "mention-only",
               "silent"
             ],
-            "description": "Omit to seed from the room kind: the agent manifest for a DM, \"mention-only\" for a channel."
+            "description": "Omit to seed from the room kind: the agent manifest for a DM, \"engaged\" for a channel."
           }
         }
       },
@@ -5447,6 +5451,7 @@
             "type": "string",
             "enum": [
               "always",
+              "engaged",
               "direct-only",
               "mention-only",
               "silent"

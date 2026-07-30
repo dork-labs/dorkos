@@ -22,9 +22,9 @@ Before you connect, DorkOS shows you this:
 > You're connecting through your own Nango server. The keys to this connection are stored in your
 > database, on infrastructure you control. Nothing about this connection leaves your systems.
 
-DorkOS never stores the login tokens for a self-host connection. It holds only two things: a
-reference to your Nango secret key, kept encrypted, and the address of your Nango server. The tokens
-themselves live in your Nango database.
+DorkOS never stores the login tokens for a self-host connection. It holds only two things: your
+Nango secret key, kept in its encrypted secret store, and the address of your Nango server. The
+tokens themselves live in your Nango database.
 
 ## Before you start
 
@@ -51,30 +51,35 @@ Set that same value in two places:
 
 DorkOS checks the key you give it. It must decode from base64 to exactly 32 bytes. If the key is
 missing or the wrong size, DorkOS refuses to start the self-host connector and tells you why. That
-refusal is on purpose. It stops a silent, unsafe setup where your logins would sit unencrypted.
+refusal is on purpose. It stops a silent, unsafe setup where your logins would sit unencrypted. The
+exact reason shows on the Nango card of the Connections page, so you can fix it without reading a
+log file.
 
 ## Point DorkOS at your Nango
 
-Set two more values in DorkOS:
+Two more values:
 
-- `NANGO_BASE_URL`: the address of your Nango server, for example `http://localhost:3003`.
-- Your Nango **secret key**, kept in DorkOS's encrypted store so it never sits in a plain config
-  file.
+- `NANGO_BASE_URL`: the address of your Nango server, for example `http://localhost:3003`. A
+  malformed address fails at startup with a clear message instead of failing later.
+- Your Nango **secret key**: open **Connections** in the sidebar, scroll to **Providers**, paste it
+  into the Nango card, and click **Save key**. It lands in DorkOS's encrypted secret store, so it
+  never sits in a plain config file. Saving it turns the connector on right away; no restart.
 
-When both of these and a valid `NANGO_ENCRYPTION_KEY` are set, DorkOS turns on the self-host
-connector at startup. When any of them is missing, DorkOS leaves the connector off. Nothing breaks.
-You just do not see it until it is fully set up.
+When the base URL, the secret key, and a valid `NANGO_ENCRYPTION_KEY` are all set, the self-host
+connector is on. When any of them is missing, DorkOS leaves it off and the Providers card says what
+is missing. Nothing breaks.
 
-## What works today, and what does not yet
+## How your agent uses a self-host account
 
-Connecting an account works. You sign in through your own Nango, and the account shows up with its
-custody marked as self-host. You can hold more than one account for the same service, and disconnect
-any of them.
+Once an account is connected and attached to a session, the agent gets one tool for it: a request
+tool that can call the service's API through your self-hosted Nango. Nango adds the sign-in to each
+request from your own database, so the agent can act for you while the keys never leave your
+systems. It is one honest, low-level tool per account, not a polished catalog of service-specific
+tools. That richer catalog may come later.
 
-One piece is not wired up yet: letting an agent use those accounts as tools. The free Nango does not
-include a tool server, and DorkOS does not use Nango's paid one. The part that turns your Nango proxy
-into agent tools is a separate step that is not built yet. So for now, a self-host account is
-connected and safely held, but an agent cannot act through it. That part is coming.
+Connecting works the same as every other path: click **Connect** on a service, read the custody
+sentence, sign in through your own Nango, and the account appears with its custody marked as
+self-host. You can hold more than one account for the same service, and disconnect any of them.
 
 ## Other ways to connect
 

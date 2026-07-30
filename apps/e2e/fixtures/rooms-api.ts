@@ -82,13 +82,14 @@ export interface SeededRoom {
 }
 
 /**
- * Every agent registered for a room test is `silent`, whatever the room kind.
+ * Every agent in a room test is `silent`, whatever the room kind — as its
+ * manifest default, which is what seeds a DIRECT MESSAGE membership, and again
+ * on the membership itself for a channel, which does not read the manifest at
+ * all ({@link RoomsApi.silenceAgents}).
  *
- * A DM member's response mode is seeded from the agent's own manifest, and the
- * shipped default is `always` — so posting into a seeded DM on the default
- * runtime would trigger a real agent turn, which is neither fast nor
- * deterministic and costs money. Nothing in this suite is about an agent
- * replying, so nothing here asks one to.
+ * Posting into a seeded room on the default runtime would otherwise trigger a
+ * real agent turn, which is neither fast nor deterministic and costs money.
+ * Nothing in this suite is about an agent replying, so nothing here asks one to.
  */
 const SILENT = { responseMode: 'silent' } as const;
 
@@ -203,16 +204,62 @@ export class RoomsApi {
    * @param slug - The channel's `#name`, which must be unique among live channels.
    * @param title - Its display title. Defaults to the slug.
    * @param agents - Agents to seed onto the roster, for a test that needs a
-   *   channel with somebody in it. A channel's memberships seed to
-   *   `mention-only`, and every seeded agent is silent, so nobody is triggered.
+   *   channel with somebody in it. Every one of them is silenced immediately
+   *   after the room exists — see {@link RoomsApi.silenceAgents}.
    */
   async createChannel(slug: string, title = slug, agents: SeededAgent[] = []): Promise<SeededRoom> {
-    return this.createRoom({
+    const room = await this.createRoom({
       kind: 'channel',
       slug,
       title,
       agentPaths: agents.map((a) => a.path),
     });
+    await this.silenceAgents(room, agents.length);
+    return room;
+  }
+
+  /**
+   * Set every agent member of a room to `silent`, so nothing in this suite can
+   * start a turn.
+   *
+   * **A channel does not read the manifest, which is why this exists.** The
+   * manifest `silent` that {@link RoomsApi.registerAgent} writes only seeds a
+   * DIRECT MESSAGE membership; a channel seeds every agent to the channel
+   * default, which is `engaged` (room-participation spec §9.4). So a spec that
+   * types an `@mention` — and one of them does, deliberately — would otherwise
+   * ask a real runtime for a real turn, which is neither fast nor free.
+   *
+   * Stated as a fixture guarantee rather than left resting on whatever the
+   * shipped default happens to be: this suite runs with no API key, and a
+   * default it does not control is not something it should be betting on.
+   *
+   * **It counts, and throws when the count is wrong.** A silencer that quietly
+   * does nothing is worse than no silencer: the suite goes on believing agents
+   * cannot answer, and the way that failure shows up is a real runtime taking a
+   * real turn and spending real money. So a roster shape this did not expect —
+   * a create that dropped an agent, a response shape that changed — is loud
+   * here rather than expensive later.
+   *
+   * @param room - The room whose roster to quieten.
+   * @param expected - How many agent memberships the caller asked for.
+   */
+  private async silenceAgents(room: SeededRoom, expected: number): Promise<void> {
+    const agents = room.members.filter((member) => member.author.kind === 'agent');
+    if (agents.length !== expected) {
+      throw new Error(
+        `Seeded ${expected} agent(s) into ${room.id} but its roster came back with ` +
+          `${agents.length}: [${room.members.map((m) => `${m.author.kind}:${m.author.displayName}`).join(', ')}]. ` +
+          `Nothing was silenced, so a turn here would reach a real runtime.`
+      );
+    }
+    for (const member of agents) {
+      const res = await this.request.patch(`/api/rooms/${room.id}/members/${member.author.id}`, {
+        data: SILENT,
+      });
+      if (!res.ok()) {
+        throw new Error(`Could not silence ${member.author.displayName}: ${await res.text()}`);
+      }
+    }
   }
 
   /**

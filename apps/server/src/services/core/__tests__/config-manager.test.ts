@@ -1511,6 +1511,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAutomaticTurnsTotalPerHour: 240,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 10,
+      engagedWindowPosts: 5,
     });
   });
 
@@ -1531,6 +1533,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       // block that predates them, which is the additive half of the same rule.
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 10,
+      engagedWindowPosts: 5,
     });
   });
 
@@ -1549,6 +1553,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAutomaticTurnsTotalPerHour: 0,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 10,
+      engagedWindowPosts: 5,
     });
   });
 
@@ -1564,6 +1570,28 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAutomaticTurnsTotalPerHour: 240,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 10,
+      engagedWindowPosts: 5,
+    });
+  });
+
+  it('adds the engaged-window ceilings to a rooms block that predates them', () => {
+    // The upgrade that matters for RP4: `engaged` becomes the channel default in
+    // the same release, so an install whose `rooms` block was written before
+    // these keys existed would run the new mode with no window bounding it at
+    // all — conf's shallow merge never reaches a nested key on a block already
+    // on disk. A shorter window somebody chose survives, because the backfill
+    // only fills what is absent.
+    const store = createMockStore({ rooms: { maxAgentDepth: 3, engagedWindowMinutes: 2 } });
+    backfillRoomsDefaults(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 3,
+      maxAutomaticTurnsPerRoomPerHour: 60,
+      maxAutomaticTurnsTotalPerHour: 240,
+      replyWaitMinutes: 10,
+      lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 2,
+      engagedWindowPosts: 5,
     });
   });
 
@@ -1581,6 +1609,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       maxAutomaticTurnsTotalPerHour: 240,
       replyWaitMinutes: 10,
       lateReplyCeilingMinutes: 60,
+      engagedWindowMinutes: 10,
+      engagedWindowPosts: 5,
     });
   });
 });

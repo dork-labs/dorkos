@@ -1,0 +1,36 @@
+{
+  "name": "e2e-connector-fixture",
+  "owner": {
+    "name": "DorkOS e2e",
+    "email": "hello@dorkos.ai"
+  },
+  "metadata": {
+    "description": "Browser-test fixture marketplace: one connector adapter and one plain adapter, so the CONNECTOR badge and the Connectors filter have something honest to assert against.",
+    "version": "0.1.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "e2e-gmail-connector",
+      "source": "./plugins/e2e-gmail-connector",
+      "description": "Fixture connector-gateway adapter (browser tests only).",
+      "author": {
+        "name": "DorkOS e2e"
+      },
+      "license": "MIT",
+      "category": "integrations",
+      "tags": ["e2e", "connector"]
+    },
+    {
+      "name": "e2e-plain-adapter",
+      "source": "./plugins/e2e-plain-adapter",
+      "description": "Fixture non-connector adapter (browser tests only).",
+      "author": {
+        "name": "DorkOS e2e"
+      },
+      "license": "MIT",
+      "category": "integrations",
+      "tags": ["e2e", "adapter"]
+    }
+  ]
+}

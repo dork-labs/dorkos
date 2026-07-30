@@ -266,7 +266,7 @@ describe('NangoConnectorProvider — self-host-custody semantics', () => {
 
 // The mock suite structurally can't catch this: the fake client never errors on
 // its own, so these lock the degrade contract by forcing the client to reject.
-describe('NangoConnectorProvider — throw-free degrade on transport failure', () => {
+describe('NangoConnectorProvider — degrade contract on transport failure', () => {
   const errors: Array<{ label: string; err: () => Error }> = [
     { label: 'NangoApiError 401 (stale key)', err: () => new NangoApiError(401, 'unauthorized') },
     {
@@ -277,18 +277,18 @@ describe('NangoConnectorProvider — throw-free degrade on transport failure', (
   ];
 
   for (const { label, err } of errors) {
-    it(`listToolkits returns empty on ${label}`, async () => {
+    it(`listToolkits PROPAGATES ${label} (the registry turns it into a warning)`, async () => {
       const client = new FakeNangoClient();
       client.failWith(err());
       const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
-      await expect(provider.listToolkits()).resolves.toEqual([]);
+      await expect(provider.listToolkits()).rejects.toThrow();
     });
 
-    it(`listAccounts returns empty on ${label}`, async () => {
+    it(`listAccounts PROPAGATES ${label} (never a silent empty list)`, async () => {
       const client = new FakeNangoClient();
       client.failWith(err());
       const provider = new NangoConnectorProvider({ client, proxy: makeProxy() });
-      await expect(provider.listAccounts()).resolves.toEqual([]);
+      await expect(provider.listAccounts()).rejects.toThrow();
     });
 
     it(`pollConnect maps ${label} to a failure-typed result`, async () => {

@@ -62,6 +62,11 @@ export function PersonalityTab({
   nopeContent: initialNopeContent,
   onUpdate,
 }: PersonalityTabProps) {
+  /**
+   * What this agent's manifest stores today, which decides both the selected
+   * option and whether the fifth one is listed at all — see the picker below.
+   */
+  const responseMode = agent.behavior?.responseMode ?? 'always';
   const [traits, setTraits] = useState<Traits>((agent.traits ?? DEFAULT_TRAITS) as Traits);
   const [conventions, setConventions] = useState<Conventions>(
     agent.conventions ?? { soul: true, nope: true, dorkosKnowledge: true }
@@ -203,7 +208,7 @@ export function PersonalityTab({
             description="Controls when this agent responds to messages automatically"
           >
             <Select
-              value={agent.behavior?.responseMode ?? 'always'}
+              value={responseMode}
               onValueChange={(v) =>
                 onUpdate({
                   behavior: {
@@ -216,11 +221,34 @@ export function PersonalityTab({
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
+              {/*
+                Four of the enum's five to CHOOSE from, and the fifth appears
+                only when it is already stored — the same rule
+                `responseModeOptionsFor` applies to a direct message's roster,
+                for the same two reasons.
+
+                Not offered: `engaged` is a room disposition that decays over a
+                room's log, and the only thing this manifest value does is seed
+                a DIRECT MESSAGE membership, where there is no window to be in
+                and it would behave as "only when mentioned" wearing a different
+                name. A person picks `engaged` per room, in the members panel.
+
+                Not hidden either: `UpdateAgentRequestSchema` `.pick()`s
+                `behavior` off the manifest whole, so `PATCH /api/mesh/agents/:id`
+                accepts the full enum and a script — or a hand-edited
+                `agent.json` re-saved through that route — can really store it
+                here. Listing only four left Radix with no item matching the
+                value and it rendered the trigger EMPTY, which is a setting
+                nobody can read and nobody can fix.
+              */}
               <SelectContent>
                 <SelectItem value="always">Always respond</SelectItem>
                 <SelectItem value="direct-only">Direct messages only</SelectItem>
                 <SelectItem value="mention-only">Only when mentioned</SelectItem>
                 <SelectItem value="silent">Never respond automatically</SelectItem>
+                {responseMode === 'engaged' && (
+                  <SelectItem value="engaged">Stays in the conversation (per room)</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </SettingRow>

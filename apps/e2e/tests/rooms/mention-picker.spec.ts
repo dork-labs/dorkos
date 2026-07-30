@@ -65,8 +65,9 @@ async function announcedNameAmong(page: Page, composer: Locator, names: string[]
  * cursor crossing a section boundary is covered in jsdom, where a roster with
  * two humans can simply be handed to the component.
  *
- * No Claude SDK or API key: the seeded agents are `silent` and a channel seeds
- * its memberships to `mention-only`, so nothing here triggers a turn.
+ * No Claude SDK or API key: the fixture sets every agent member of a channel to
+ * `silent` on the membership itself, so the `@mention` this test types addresses
+ * an agent for real and still starts no turn.
  */
 test.describe('Rooms — the @ mention picker @smoke', () => {
   test('announces the row it inserts, and addresses that agent for real', async ({

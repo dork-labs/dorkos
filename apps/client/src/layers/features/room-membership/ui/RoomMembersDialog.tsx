@@ -26,7 +26,7 @@ import {
   useRemoveRoomMember,
   useRoom,
   useSetMemberResponseMode,
-  RESPONSE_MODE_OPTIONS,
+  responseModeOptionsFor,
 } from '@/layers/entities/room';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
@@ -262,9 +262,13 @@ export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMemb
                     </div>
 
                     {/* The mode gets its own line rather than sharing one with
-                        the name: the longest label does not fit beside an agent
-                        name at this width, and a truncated "Replies only when
-                        @me…" is a setting you cannot read. */}
+                        the name: the longest label — "Replies while it is in the
+                        conversation" — does not fit beside an agent name at this
+                        width, and a setting truncated to "Replies while it i…"
+                        is one you cannot read. The full-width trigger clamps at
+                        one line too, so `room-conversation.spec.ts` measures the
+                        label against its box in a real browser; jsdom has no
+                        layout and would report every width as zero. */}
                     <Select
                       value={member.responseMode}
                       onValueChange={(value) => handleModeChange(member, value as ResponseMode)}
@@ -275,8 +279,12 @@ export function RoomMembersDialog({ room, open, onOpenChange, intent }: RoomMemb
                       >
                         <SelectValue />
                       </SelectTrigger>
+                      {/* Offered per membership, not per panel: a direct
+                          message withholds `engaged`, whose label is untrue
+                          there — unless this membership already holds it, in
+                          which case hiding it would blank the control. */}
                       <SelectContent>
-                        {RESPONSE_MODE_OPTIONS.map((option) => (
+                        {responseModeOptionsFor(room.kind, member.responseMode).map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
                           </SelectItem>

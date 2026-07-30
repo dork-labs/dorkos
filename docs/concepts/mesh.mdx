@@ -121,7 +121,7 @@ Every registered agent has a manifest stored in `.dork/agent.json`:
 | **description**       | What the agent does                                                                                                                                        |
 | **runtime**           | Agent platform (e.g., `claude-code`, `cursor`, `codex`, `windsurf`, `gemini`, `cline`, `roo-code`, `copilot`, `amazon-q`, `continue`, `other`)             |
 | **capabilities**      | Capability tags (e.g., "typescript", "testing")                                                                                                            |
-| **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`                                                                                        |
+| **behavior**          | Response mode: `always`, `direct-only`, `mention-only`, or `silent`. Only seeds a direct message; a channel seeds `engaged` and every room can override it |
 | **namespace**         | Derived from project path relative to scan root                                                                                                            |
 | **persona**           | Optional system prompt text injected into Claude sessions                                                                                                  |
 | **personaEnabled**    | Whether persona text is injected (default: true)                                                                                                           |
