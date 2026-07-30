@@ -38,9 +38,15 @@
  *    collide. The one silence that stays silent is an agent that ran a turn and
  *    chose to say nothing, because that is conduct rather than a fault.
  *
- * 4. **A slow turn is late, never lost.** When a turn outruns the room's wait
- *    the room stops waiting, not the turn — the answer is posted when it lands,
- *    saying how long it took (room-participation spec, §5 edge case 6).
+ * 4. **A slow turn is late, never lost, and never looks idle.** When a turn
+ *    outruns the room's wait the room stops waiting, not the turn — the answer
+ *    is posted when it lands, saying how long it took (room-participation spec,
+ *    §5 edge case 6). The CLAIM outlives the wait too: it is released when the
+ *    turn reaches a terminal, not when the room gives up waiting. Releasing it
+ *    at the deadline made an agent that was still working read as idle for up
+ *    to the difference between the two settings — 50 minutes on the shipped
+ *    defaults — to the cascade guard and to every room-mate reading
+ *    `room_context.working` (room-presence spec §3.1).
  *
  * The turn itself is behind {@link RoomTurnRunner}, so this file has no
  * knowledge of sessions, runtimes or locks — `room-turn-runner.ts` holds that,
@@ -127,6 +133,13 @@ export interface RoomTurnResult extends RoomTurnReply {
    * when it finally closes, and its answer is posted then — late, and saying
    * so. Cancelling instead was considered and rejected: silence is the worse
    * failure (room-participation spec, constraint 6).
+   *
+   * **Settling this promise is what releases the turn's claim**, and nothing
+   * else does: `runOne` hands the claim over the moment this field is present.
+   * A runner that returns a promise it never settles leaves that agent reading
+   * as working for the life of the process. `collectReply`'s ceiling
+   * (`room-turn-runner.ts`) is what bounds it in production, so a new runner
+   * owes the room the same guarantee — resolve or reject, always, eventually.
    */
   late?: Promise<LateRoomReply>;
 }
@@ -490,8 +503,11 @@ export class RoomTriggerDispatcher {
         roomId: room.id,
         cascadeRoot: entry.cascadeRoot,
         authorId: target.authorId,
+        entryId: entry.id,
+        sessionId: target.sessionId,
         depth: target.depth,
         claimedAt: new Date().toISOString(),
+        pastDeadline: false,
       });
     }
     return affordable;
@@ -519,6 +535,11 @@ export class RoomTriggerDispatcher {
    * The deepest in-flight turn wins when an agent is answering in more than one
    * room at once: the room a post lands in cannot say which turn produced it, so
    * the conservative choice is the one closest to the ceiling.
+   *
+   * "In flight" now includes a turn the room stopped waiting for, which closes a
+   * window where this returned `undefined` for an agent that was demonstrably
+   * mid-turn — so a post it made during its own late window was read as a post
+   * with nothing behind it. Provenance follows the turn; the turn had not ended.
    *
    * @param authorId - The author writing a post.
    * @returns The cascade to inherit, or `undefined` when this author has no turn running.
@@ -570,6 +591,13 @@ export class RoomTriggerDispatcher {
           sessionId: result.sessionId,
           late: result.late,
         });
+        // Marked only AFTER the release above is armed, and the order is the
+        // whole safety of it: the `finally` below reads this flag to decide
+        // whether the turn is still running, so a claim marked before
+        // `deliverLate` had attached its handlers would be held by a promise
+        // chain that never existed and released by nothing.
+        const claim = this.claimed.get(key);
+        if (claim) claim.pastDeadline = true;
       }
       this.deliver({ room, entry, target, reply: result, sessionId: result.sessionId });
     } catch (err) {
@@ -584,7 +612,13 @@ export class RoomTriggerDispatcher {
       });
       this.reportSilence(room, entry, target, 'failed');
     } finally {
-      this.claimed.delete(key);
+      // `runner.run()` resolving is the end of the WAIT, which is only the end
+      // of the TURN when the turn beat the deadline. A late turn is still
+      // running and must still read as working — to the guard, to a room-mate
+      // reading `room_context.working`, and (once the publisher lands) to the
+      // person watching. {@link RoomTriggerDispatcher.deliverLate} releases it
+      // when the answer finally settles, whichever way it settles.
+      if (this.claimed.get(key)?.pastDeadline !== true) this.claimed.delete(key);
     }
   }
 
@@ -636,12 +670,23 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * Post an answer the room stopped waiting for, once it lands.
+   * Post an answer the room stopped waiting for, once it lands — and release
+   * the claim that has been saying, all along, that the agent is still on it.
    *
    * The turn was never cancelled, so this is the answer to a real question that
    * a real person asked — it goes in, saying how long it took. The claim on
-   * `(room, cascade, author)` is already gone by then, which is correct: the
-   * cascade stamp is passed explicitly, so the guard still sees the hop.
+   * `(room, cascade, author)` is still held when this runs (see
+   * {@link RoomTriggerDispatcher.runOne}'s `finally`), which is what makes the
+   * late window honest rather than a hole; the cascade stamp is passed
+   * explicitly regardless, so the guard sees the hop either way.
+   *
+   * **The release is in `finally`, and it is deliberately the last thing.** It
+   * has to run on both settlements — the answer landing and the delivery
+   * throwing — because a claim nothing clears is an agent that is "working"
+   * until the process restarts. And it has to run AFTER the durable write above,
+   * because the claim is the assertion that this agent owes the room something:
+   * dropping it before the post or the notice is on the log is a promise
+   * withdrawn a moment before it is kept.
    *
    * @param opts.late - The runner's promise of the eventual outcome.
    */
@@ -652,6 +697,7 @@ export class RoomTriggerDispatcher {
     sessionId: string;
     late: Promise<LateRoomReply>;
   }): void {
+    const key = claimKey(opts.room.id, opts.entry.cascadeRoot, opts.target.authorId);
     this.inFlight += 1;
     void opts.late
       .then((reply) =>
@@ -670,8 +716,18 @@ export class RoomTriggerDispatcher {
           authorId: opts.target.authorId,
           error: err instanceof Error ? err.message : String(err),
         });
+        // An infrastructure failure this deep into a turn used to leave a log
+        // line and nothing else: the room had shown the agent working for up to
+        // an hour and then simply stopped, with no answer and nothing on the log
+        // to explain either. It gets the same damped `turn_failed` notice every
+        // other failure gets — best-effort, and damped on `(room, agent)` like
+        // the rest, so a run of them is still one line.
+        this.reportSilence(opts.room, opts.entry, opts.target, 'failed');
       })
-      .finally(() => this.settleOne());
+      .finally(() => {
+        this.claimed.delete(key);
+        this.settleOne();
+      });
   }
 
   /**
@@ -786,18 +842,53 @@ export class RoomTriggerDispatcher {
    * defers, and adding any of that would be the arbitration this domain has
    * declined twice (ADR 260726-170125).
    *
+   * Includes turns the room has stopped WAITING for, because they are still
+   * running. Those used to be missing, so the longest turns — the ones a
+   * colleague most wants to know about before starting the same work — were the
+   * only ones nobody was told about.
+   *
+   * **One entry per agent, at its earliest claim.** The map's grain is
+   * `(room, cascade, author)`, so one agent can legitimately hold several claims
+   * here at once — the shipped `engaged` default produces it on the ordinary
+   * path, when a held-late agent is re-triggered by the next message inside its
+   * window. Walking the map raw then said the same name twice, and the roster
+   * block an agent reads rendered "Working right now: Ana, Ana". A reader wants
+   * to know Ana is busy and since when, not how many claims the scheduler is
+   * holding, so the count collapses and the OLDEST `since` wins — an elapsed
+   * time must measure how long the agent has been working, not how long ago it
+   * was most recently interrupted.
+   *
+   * ISO-8601 strings from `toISOString()` are fixed-width and UTC, so `<` on the
+   * string is `<` on the instant. No parsing, no clock.
+   *
    * @param roomId - The room being described.
    */
   private workingIn(roomId: string): Array<{ authorId: string; since: string }> {
-    const working: Array<{ authorId: string; since: string }> = [];
+    const earliest = new Map<string, string>();
     for (const claim of this.claimed.values()) {
-      if (claim.roomId === roomId)
-        working.push({ authorId: claim.authorId, since: claim.claimedAt });
+      if (claim.roomId !== roomId) continue;
+      const seen = earliest.get(claim.authorId);
+      if (seen === undefined || claim.claimedAt < seen)
+        earliest.set(claim.authorId, claim.claimedAt);
     }
-    return working;
+    return [...earliest].map(([authorId, since]) => ({ authorId, since }));
   }
 
-  /** Author ids with a turn in flight in one cascade. */
+  /**
+   * Author ids with a turn in flight in one cascade.
+   *
+   * Unioned with the durable ancestry query, so the guard reads the same rule
+   * whether an agent has already answered or is still answering. Holding a claim
+   * past the wait deadline strengthens that union in one visible way: an author
+   * whose late turn ends up saying nothing never lands a durable stamp, so a
+   * re-trigger of it in the same cascade during the late window is now refused
+   * where it once bought a second turn. That refusal is correct — the author
+   * really does have a turn in flight on that `(room, agent)` session — and it is
+   * pinned in `room-presence-claims.test.ts` rather than left to be rediscovered.
+   *
+   * @param roomId - The room the cascade is running in.
+   * @param cascadeRoot - The entry the exchange began at.
+   */
   private claimsIn(roomId: string, cascadeRoot: string): string[] {
     const authors: string[] = [];
     for (const claim of this.claimed.values()) {
@@ -809,14 +900,53 @@ export class RoomTriggerDispatcher {
   }
 }
 
-/** One turn in flight: which cascade it belongs to, and how deep it sits. */
+/**
+ * One turn in flight: which cascade it belongs to, how deep it sits, what it is
+ * answering, and whether the room has stopped waiting for it.
+ *
+ * A claim is taken before its turn runs and released when that turn reaches a
+ * terminal — an answer, a notice, or the agent choosing to say nothing. It is
+ * the only live record that an agent is working, so three readers depend on it
+ * today, and holding it for the whole turn changed what each of them sees:
+ *
+ * 1. {@link RoomTriggerDispatcher.claimsIn} — the cascade guard's in-flight
+ *    union. A late turn that ends up silent is now in the cascade it is
+ *    answering, so it cannot be triggered again inside that cascade.
+ * 2. {@link RoomTriggerDispatcher.workingIn} — `room_context.working`. A late
+ *    turn is now reported, once per agent, from its earliest claim.
+ * 3. {@link RoomTriggerDispatcher.activeTurnFor} — the provenance an agent's own
+ *    direct post inherits. **This is the one whose behaviour moved furthest.** A
+ *    post an agent makes during its own late window used to be read as a post
+ *    with no turn behind it and stamped at the ceiling, which silently refused
+ *    everything downstream of it; it now carries the real cascade, so a message
+ *    it addresses is triggered and a turn runs that previously did not.
+ *
+ * A fourth reader is next: the presence a room publishes to the person waiting,
+ * which is why `entryId` and `sessionId` are recorded here rather than derived
+ * later — by the time a turn ends, the entry it answered is no longer in hand
+ * (room-presence spec §3.1).
+ */
 interface ActiveClaim {
   roomId: string;
   cascadeRoot: string;
   authorId: string;
+  /**
+   * The entry whose trigger this claim answers. NOT interchangeable with
+   * `cascadeRoot`: the two coincide only at depth 0, and every deeper hop
+   * answers a reply rather than the message that began the exchange.
+   */
+  entryId: string;
+  /** The `(room, agent)` session the turn runs on, bound at claim time. */
+  sessionId: string;
   depth: number;
   /** When the claim was taken — what `room_context.working` reports as `since`. */
   claimedAt: string;
+  /**
+   * The room stopped waiting; the turn did not stop. Set once the runner reports
+   * the wait deadline passed, and the reason this claim outlives
+   * {@link RoomTriggerDispatcher.runOne} — see the `finally` there.
+   */
+  pastDeadline: boolean;
 }
 
 /** One agent that survived the guard, with the depth its reply will carry. */
