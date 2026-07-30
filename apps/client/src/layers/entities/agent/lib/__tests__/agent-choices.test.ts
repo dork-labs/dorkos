@@ -54,6 +54,32 @@ describe('toAgentPickerCandidates', () => {
     expect(candidate.visual).toEqual({ color: '#6366f1', emoji: '🔍' });
   });
 
+  it('carries what an agent says it is for, in the agent’s own words', () => {
+    const [candidate] = toAgentPickerCandidates(
+      { '/w/ana': 'Ana' },
+      { '/w/ana': { id: '01JAAAAAAAAAAAAAAAAAAAAAAA', description: 'Reviews pull requests' } }
+    );
+
+    expect(candidate.description).toBe('Reviews pull requests');
+  });
+
+  it('says nothing rather than nothing-shaped when the agent has not', () => {
+    // `description` defaults to `''` on the manifest, so most agents have one
+    // that says nothing. A picker draws a second line for a description and NO
+    // second line for the absence of one, so the two have to be told apart here
+    // — red if `''` or a field of spaces ever reaches a caller as a value.
+    const candidates = toAgentPickerCandidates(
+      { '/w/a': 'A', '/w/b': 'B', '/w/c': 'C' },
+      {
+        '/w/a': { id: '01JAAAAAAAAAAAAAAAAAAAAAAA', description: '' },
+        '/w/b': { id: '01JBBBBBBBBBBBBBBBBBBBBBBB', description: '   ' },
+        '/w/c': { id: '01JCCCCCCCCCCCCCCCCCCCCCCC' },
+      }
+    );
+
+    expect(candidates.map((c) => c.description)).toEqual([null, null, null]);
+  });
+
   it('carries no face at all for an agent whose manifest could not be read', () => {
     // The directory is right there and hashing it would produce a stable,
     // confident face — one that matches nothing the rest of the cockpit draws.

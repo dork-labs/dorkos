@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
+  Button,
   ResponsivePopover,
   ResponsivePopoverTrigger,
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
   SidebarGroupAction,
 } from '@/layers/shared/ui';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
@@ -50,6 +52,12 @@ interface NewDirectMessageMenuProps {
  *
  * The picker is mounted by the open popover and unmounted with it, so a
  * half-assembled conversation is forgotten rather than waiting there next time.
+ *
+ * **A fleet with nobody in it is answered with the button, not with an
+ * instruction.** "Add one to start a direct message with it" is a next step
+ * made out of a person: it names something to go and find and then leaves. The
+ * room sheet stopped doing that; this is the same panel, offering the same way
+ * out of the same sentence.
  */
 export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
   // Read here rather than taken as a prop: the fleet is this slice's business,
@@ -58,6 +66,20 @@ export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
   const roster = useAgentPickerCandidates();
   const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Leave for the place agents are made.
+   *
+   * This panel closes first, and that is the decision rather than an omission:
+   * it is a modal popover, so it holds the focus scope, and raising a dialog
+   * inside one leaves two things claiming the keyboard. There is nothing here
+   * worth keeping either — this button only exists on a fleet with nobody in
+   * it, so there is no half-assembled conversation to lose.
+   */
+  const startAgentCreation = () => {
+    setOpen(false);
+    useAgentCreationStore.getState().open();
+  };
 
   return (
     <ResponsivePopover open={open} onOpenChange={setOpen} modal fullHeight>
@@ -97,7 +119,12 @@ export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
             onStart(chosen);
           }}
           submitLabel={(count) => (count > 1 ? 'Start group conversation' : 'Start conversation')}
-          emptyRosterMessage="You have not added any agents yet. Add one to start a direct message with it."
+          emptyRosterMessage="You have not added any agents yet."
+          emptyRosterAction={
+            <Button type="button" size="sm" variant="outline" onClick={startAgentCreation}>
+              Create agent
+            </Button>
+          }
           allChosenMessage="Everyone you have added is already in this conversation."
         />
       </ResponsivePopoverContent>

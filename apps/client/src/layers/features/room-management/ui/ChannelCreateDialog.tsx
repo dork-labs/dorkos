@@ -156,6 +156,15 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
                     ? 'Create channel with 1 agent'
                     : `Create channel with ${count} agents`
               }
+              // No "Create agent" button beside this one, unlike the room sheet
+              // and the direct-message panel. Two reasons, and neither is
+              // inertia. Making an agent means a modal over this modal, and
+              // answering the inner one reaches the outer as an interaction
+              // from outside it — so both would close, taking the name already
+              // typed with them. And this sentence is not the dead end that one
+              // is: it names the next step, and the button that does it is on
+              // screen underneath. An empty fleet is not a reason you cannot
+              // make a channel.
               emptyRosterMessage="You have not added any agents yet. You can still make the channel and put agents in it later."
               allChosenMessage="That is every agent you have."
               isSubmitting={createChannel.isPending}

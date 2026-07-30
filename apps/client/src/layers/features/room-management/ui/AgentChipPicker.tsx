@@ -140,6 +140,18 @@ interface AgentChipPickerProps {
  * unconditionally and always highlights the first one, so there is no state in
  * which Enter can mean "commit this selection".
  *
+ * **The field stays, however small the fleet is.** The reasonable-sounding rule
+ * — no search box until there are eight or so candidates, because Slack shows
+ * one for four members and that is chrome before content — is about a search
+ * box, and this is not one. It is the combobox that HOLDS the selection: the
+ * chips live in it, Backspace takes the last one back, the arrows aim from it,
+ * `aria-activedescendant` announces from it, and all three surfaces that mount
+ * this picker place the cursor in it when they open. Hiding it under a
+ * threshold would give one component two interaction models, delete two
+ * guaranteed behaviours below the line, and leave a reader with four agents no
+ * keyboard path at all. Slack's box filters a checkbox list and can be removed
+ * without taking anything with it; this one cannot.
+ *
  * **Mobile-first, with `md:` for the compact panel** — one 768px breakpoint,
  * shared with the responsive shells that hold this. Three flex rules carry the
  * layout, and each is load-bearing at a size the others are not. The field and
@@ -376,6 +388,15 @@ export function AgentChipPicker({
               id={`${listId}-${index}`}
               role="option"
               aria-selected={index === activeIndex}
+              // Named explicitly, and described separately, for the reason the
+              // rung list is: left to its contents an option would announce as
+              // "Ana Reviews every pull request and…", a name and its own
+              // description read as one string, which is what a reader arrows
+              // through and what a voice-control user has to say out loud. The
+              // name stays the visible display name; the second line becomes a
+              // description, and is only wired when there is one.
+              aria-label={candidate.displayName}
+              aria-describedby={candidate.description === null ? undefined : `${listId}-${index}-d`}
               // The input keeps focus, so the highlight belongs to the
               // keyboard. Hover is a CSS tint and nothing else: it says "this
               // is what you would click", not "this is what Enter will do".
@@ -412,7 +433,27 @@ export function AgentChipPicker({
                 emoji={candidate.visual?.emoji}
                 fallback={initialOf(candidate.displayName)}
               />
-              <span className="min-w-0 flex-1 truncate">{candidate.displayName}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{candidate.displayName}</span>
+                {/* Only where there is something to read. This is the line that
+                    answers "which of these do I want?" — two agents can share a
+                    name, and the disambiguated `server (acme)` says which
+                    directory without saying what it is FOR. It is the agent's
+                    own words, from the same manifest the face comes out of.
+                    Nothing is invented to fill it: an agent that has said
+                    nothing gets no line, because a column of empty rows pushed
+                    apart for a value nobody wrote is the filler this list
+                    already replaced once. */}
+                {candidate.description !== null && (
+                  <span
+                    id={`${listId}-${index}-d`}
+                    data-slot="candidate-description"
+                    className="text-muted-foreground block truncate text-xs"
+                  >
+                    {candidate.description}
+                  </span>
+                )}
+              </span>
             </li>
           ))}
         </ul>

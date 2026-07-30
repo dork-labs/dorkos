@@ -17,8 +17,18 @@ import { AgentRosterPicker } from '../ui/AgentRosterPicker';
 
 afterEach(cleanup);
 
-const ANA: AgentPickerCandidate = { agentPath: '/w/ana', displayName: 'Ana', visual: null };
-const KAI: AgentPickerCandidate = { agentPath: '/w/kai', displayName: 'Kai', visual: null };
+const ANA: AgentPickerCandidate = {
+  agentPath: '/w/ana',
+  displayName: 'Ana',
+  visual: null,
+  description: null,
+};
+const KAI: AgentPickerCandidate = {
+  agentPath: '/w/kai',
+  displayName: 'Kai',
+  visual: null,
+  description: null,
+};
 
 /** The copy the picker shows a person who genuinely has no agents. */
 const EMPTY_COPY = 'You have not added any agents yet.';

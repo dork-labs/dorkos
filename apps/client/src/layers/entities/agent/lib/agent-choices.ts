@@ -34,6 +34,21 @@ export interface AgentPickerCandidate {
    * `authors` row. Draw a letter instead; a letter is honest about not knowing.
    */
   visual: AgentVisual | null;
+  /**
+   * What this agent says it is for, in its own words — or `null` when it has
+   * not said.
+   *
+   * `null` and not `''`, because the two decide different renderings: a picker
+   * draws a second line for a description and draws NO second line for the
+   * absence of one. An empty string sliding through as a value is how a list
+   * grows a row of blank lines that push everything apart for nothing.
+   *
+   * The field is the operator's own (`description` on the manifest, editable in
+   * the agent's settings) and defaults to empty, so most fleets will have a mix.
+   * That is the right shape for a second line: it appears where somebody wrote
+   * something worth reading and stays out of the way everywhere else.
+   */
+  description: string | null;
 }
 
 /**
@@ -61,9 +76,34 @@ export interface AgentRoster {
   retry: () => void;
 }
 
+/** A manifest, as much of it as a candidate is built from. */
+type CandidateSource = AgentVisualSource & { description?: string };
+
 /**
  * Turn a `path → display name` map into the sorted list every agent picker
  * reads, with each agent's face on it.
+ *
+ * **Alphabetical, and that is a conclusion rather than a default.** The obvious
+ * improvement is recently-used first, and the cockpit has no honest signal for
+ * it. The three that look like one are all false in a way a reader could not
+ * see:
+ *
+ * - A room list is warm everywhere, but `RoomSummary.participants` is carried
+ *   for direct messages only and is `null` for every channel, always — the
+ *   server resolves it for `kind === 'dm'` and nothing else. A count or an
+ *   order built on it would be *direct messages* wearing the word "rooms", and
+ *   would report zero for an agent sitting in six channels.
+ * - `agentActivity` on the recent-sessions read is an agent's latest session
+ *   `updatedAt` across every session it has, of any origin. It cannot tell a
+ *   room turn from a coding session opened against the same directory, and it
+ *   is only warm while the dashboard sidebar is mounted — so the same picker
+ *   would offer two different orders depending on where it was opened from.
+ * - Per-room rosters would answer it exactly, and cost one request per room.
+ *
+ * So the list is ordered the way `useRooms` orders channels, for the same
+ * reason: a list that stops moving is one you learn, and you can hit the same
+ * row without reading it. An order that looks meaningful and is not would be
+ * worse than this one.
  *
  * Sorted by the name on screen rather than by path, because that is the order
  * the reader is scanning in. `localeCompare` rather than `<`, so accented names
@@ -79,17 +119,25 @@ export interface AgentRoster {
  * @param displayNames - Display names keyed by agent directory, as
  *   `disambiguateDisplayNames` returns them.
  * @param agents - Resolved manifests keyed by the same directories. A path that
- *   is missing, `null` or `undefined` here yields a candidate with no face.
+ *   is missing, `null` or `undefined` here yields a candidate with no face and
+ *   nothing to say about itself.
  * @returns The candidates, sorted by display name.
  */
 export function toAgentPickerCandidates(
   displayNames: Record<string, string>,
-  agents: Record<string, AgentVisualSource | null | undefined>
+  agents: Record<string, CandidateSource | null | undefined>
 ): AgentPickerCandidate[] {
   return Object.entries(displayNames)
     .map(([agentPath, displayName]) => {
       const agent = agents[agentPath];
-      return { agentPath, displayName, visual: agent ? resolveAgentVisual(agent) : null };
+      return {
+        agentPath,
+        displayName,
+        visual: agent ? resolveAgentVisual(agent) : null,
+        // Trimmed before it is judged: a manifest holding only whitespace has
+        // said nothing, and would otherwise buy a blank second line.
+        description: agent?.description?.trim() || null,
+      };
     })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }

@@ -17,8 +17,13 @@ import { AgentChipPicker } from '../ui/AgentChipPicker';
 afterEach(cleanup);
 
 const FLEET: AgentPickerCandidate[] = [
-  { agentPath: '/w/ana', displayName: 'Ana', visual: { color: '#6366f1', emoji: '🔍' } },
-  { agentPath: '/w/bo', displayName: 'Bo', visual: null },
+  {
+    agentPath: '/w/ana',
+    displayName: 'Ana',
+    visual: { color: '#6366f1', emoji: '🔍' },
+    description: null,
+  },
+  { agentPath: '/w/bo', displayName: 'Bo', visual: null, description: null },
 ];
 
 /**
@@ -28,7 +33,7 @@ const FLEET: AgentPickerCandidate[] = [
  */
 const TRIO: AgentPickerCandidate[] = [
   ...FLEET,
-  { agentPath: '/w/kai', displayName: 'Kai', visual: null },
+  { agentPath: '/w/kai', displayName: 'Kai', visual: null, description: null },
 ];
 
 function renderPicker(submitDisabled: boolean) {
@@ -274,5 +279,45 @@ describe('AgentChipPicker: the announced row IS the Enter target', () => {
 
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Remove Ana' })).toBeInTheDocument();
+  });
+
+  describe('the second line', () => {
+    /** A fleet where one agent has said what it is for and one has not. */
+    const MIXED: AgentPickerCandidate[] = [
+      {
+        agentPath: '/w/ana',
+        displayName: 'Ana',
+        visual: null,
+        description: 'Reviews pull requests',
+      },
+      { agentPath: '/w/bo', displayName: 'Bo', visual: null, description: null },
+    ];
+
+    it('draws it only for the agent that has something to say', () => {
+      // The line that answers "which of these do I want?" — two agents can
+      // share a name, and `server (acme)` says which directory without saying
+      // what it is FOR. Red if a row grows an empty second line: a column of
+      // them pushes the list apart for a value nobody wrote, which is the
+      // filler this list was rebuilt to stop being.
+      renderFresh(MIXED);
+
+      const line = (name: string) =>
+        screen.getByRole('option', { name }).querySelector('[data-slot="candidate-description"]');
+      expect(line('Ana')).toHaveTextContent('Reviews pull requests');
+      expect(line('Bo')).toBeNull();
+    });
+
+    it('keeps the name the name, and makes the line a description', () => {
+      // Left to its contents an option announces as "Ana Reviews pull
+      // requests" — a name and its own description read as one string, which is
+      // what a reader arrows through and what a voice-control user says out
+      // loud. Red if the two collapse into each other.
+      renderFresh(MIXED);
+
+      const option = screen.getByRole('option', { name: 'Ana' });
+      expect(option).toHaveAccessibleName('Ana');
+      expect(option).toHaveAccessibleDescription('Reviews pull requests');
+      expect(screen.getByRole('option', { name: 'Bo' })).toHaveAccessibleDescription('');
+    });
   });
 });

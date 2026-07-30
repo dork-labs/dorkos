@@ -104,8 +104,8 @@ function settled(candidates: AgentPickerCandidate[]) {
 }
 
 const FLEET = settled([
-  { agentPath: '/repo/ana', displayName: 'Ana', visual: null },
-  { agentPath: '/repo/bo', displayName: 'Bo', visual: null },
+  { agentPath: '/repo/ana', displayName: 'Ana', visual: null, description: null },
+  { agentPath: '/repo/bo', displayName: 'Bo', visual: null, description: null },
 ]);
 
 function renderPanel(
@@ -374,7 +374,9 @@ describe('RoomDetailsDialog', () => {
     // fix, and a button under it would be inviting somebody to solve a problem
     // they do not have.
     renderPanel({
-      agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana', visual: null }]),
+      agents: settled([
+        { agentPath: '/repo/ana', displayName: 'Ana', visual: null, description: null },
+      ]),
     });
     await rosterSection();
     openAddRow();
@@ -763,7 +765,9 @@ describe('RoomDetailsDialog', () => {
       // turns the absence into a decision. An offer raised for Ana too makes
       // this count two.
       const { transport } = renderPanel({
-        agents: settled([{ agentPath: '/repo/bo', displayName: 'Bo', visual: null }]),
+        agents: settled([
+          { agentPath: '/repo/bo', displayName: 'Bo', visual: null, description: null },
+        ]),
         transport: createMockTransport({
           getRoom: vi
             .fn()
@@ -1343,7 +1347,9 @@ describe('RoomDetailsDialog', () => {
 
   it('says there is nobody left to add rather than showing an empty picker', async () => {
     renderPanel({
-      agents: settled([{ agentPath: '/repo/ana', displayName: 'Ana', visual: null }]),
+      agents: settled([
+        { agentPath: '/repo/ana', displayName: 'Ana', visual: null, description: null },
+      ]),
     });
     await rosterSection();
     openAddRow();

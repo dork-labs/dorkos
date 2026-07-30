@@ -74,8 +74,8 @@ describe('useAgentPickerCandidates', () => {
     await waitFor(() => expect(result.current.candidates).toHaveLength(2));
     // The subject, not a count: these two agents, in the order a reader scans.
     expect(result.current.candidates).toEqual([
-      { agentPath: '/w/ana', displayName: 'ana', visual: null },
-      { agentPath: '/w/kai', displayName: 'kai', visual: null },
+      { agentPath: '/w/ana', displayName: 'ana', visual: null, description: null },
+      { agentPath: '/w/kai', displayName: 'kai', visual: null, description: null },
     ]);
     expect(result.current.isError).toBe(false);
   });
@@ -95,7 +95,7 @@ describe('useAgentPickerCandidates', () => {
     // directory, and the face is dropped rather than hashed out of the path,
     // which would be a confident guess this agent wears nowhere else.
     expect(result.current.candidates).toEqual([
-      { agentPath: '/w/ana', displayName: 'ana', visual: null },
+      { agentPath: '/w/ana', displayName: 'ana', visual: null, description: null },
     ]);
   });
 
