@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useIsMobile } from '../model';
-import { useLongPress } from '../model';
+import { useLongPress, type LongPressState } from '../model';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -60,6 +60,15 @@ interface ResponsiveContextMenuTriggerProps {
   asChild?: boolean;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Where the long press is in its life, on a touch screen.
+   *
+   * Opt-in, and mobile-only by construction: a desktop right-click has no press
+   * to acknowledge. A surface that wants to give under the finger (a room's
+   * message does) listens; everything else passes nothing and behaves exactly as
+   * it did.
+   */
+  onPressStateChange?: (state: LongPressState) => void;
 }
 
 /** Trigger element — right-click on desktop, long-press on mobile. */
@@ -67,6 +76,7 @@ function ResponsiveContextMenuTrigger({
   asChild,
   children,
   className,
+  onPressStateChange,
 }: ResponsiveContextMenuTriggerProps) {
   const { isDesktop } = React.useContext(ResponsiveContextMenuContext);
 
@@ -79,17 +89,22 @@ function ResponsiveContextMenuTrigger({
   }
 
   return (
-    <MobileTrigger asChild={asChild} className={className}>
+    <MobileTrigger asChild={asChild} className={className} onPressStateChange={onPressStateChange}>
       {children}
     </MobileTrigger>
   );
 }
 
 /** Mobile trigger that opens the drawer on long-press (pointer hold). */
-function MobileTrigger({ asChild, children, className }: ResponsiveContextMenuTriggerProps) {
+function MobileTrigger({
+  asChild,
+  children,
+  className,
+  onPressStateChange,
+}: ResponsiveContextMenuTriggerProps) {
   const { open } = React.useContext(ResponsiveContextMenuContext);
 
-  const longPressHandlers = useLongPress({ onLongPress: open });
+  const longPressHandlers = useLongPress({ onLongPress: open, onPressStateChange });
 
   if (asChild && React.isValidElement(children)) {
     // Spread long-press handlers onto the child element directly
@@ -205,7 +220,20 @@ function ResponsiveContextMenuSeparator({
   return null;
 }
 
+/**
+ * The open menu's own frame and controls.
+ *
+ * Exported so content INSIDE the menu can do what a menu item does — close the
+ * surface after acting — without being a menu item. A room's drawer opens with a
+ * row of emoji rather than a list row, and a reaction that left the drawer
+ * standing open would hide the pill it just added.
+ */
+function useResponsiveContextMenu() {
+  return React.useContext(ResponsiveContextMenuContext);
+}
+
 export {
+  useResponsiveContextMenu,
   ResponsiveContextMenu,
   ResponsiveContextMenuTrigger,
   ResponsiveContextMenuContent,

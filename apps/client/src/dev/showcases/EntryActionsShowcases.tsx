@@ -11,12 +11,15 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import {
   BENCH_AGENT,
   BENCH_AGENT_REF,
+  BENCH_FREQUENTS,
+  BENCH_NAMES,
   BENCH_ROOM_ID,
   BENCH_VIEWER,
   BENCH_VIEWER_ID,
   BENCH_VIEWER_REF,
   TALL_TEXT,
   benchEntry,
+  benchReaction,
 } from './entry-actions-showcase-data';
 
 /** The toolbar's own look, taken from the variant the rooms surface uses. */
@@ -31,6 +34,8 @@ interface BenchRowProps {
   authorRef?: AuthorRef | undefined;
   /** Where the row sits in its author group. */
   grouping?: MessageGrouping;
+  /** True to draw the row as a room whose live stream has given up. */
+  stalled?: boolean;
 }
 
 /**
@@ -45,6 +50,7 @@ function BenchRow({
   author = BENCH_AGENT,
   authorRef = BENCH_AGENT_REF,
   grouping = { position: 'only' },
+  stalled,
 }: BenchRowProps) {
   return (
     <RoomEntryRow
@@ -53,6 +59,9 @@ function BenchRow({
       author={author}
       authorRef={authorRef}
       viewerAuthorId={BENCH_VIEWER_ID}
+      authorNames={BENCH_NAMES}
+      reactionFrequents={BENCH_FREQUENTS}
+      streamStalled={stalled}
       grouping={grouping}
     />
   );
@@ -148,6 +157,97 @@ const MINE_ENTRY = benchEntry('shipping it now', {
 const THEIRS_ENTRY = benchEntry('the cache was cold, so every package rebuilt');
 const DEPARTED_ENTRY = benchEntry('I moved the job to the nightly runner before I left');
 
+const ONE_REACTION = benchEntry('rerunning it clean now', {
+  reactions: [benchReaction('👍', [BENCH_VIEWER_ID])],
+});
+const THREE_REACTIONS = benchEntry('green on the second run — the cache was just cold', {
+  reactions: [
+    benchReaction('👍', ['author-lifeos', BENCH_VIEWER_ID]),
+    benchReaction('🎉', ['author-mio']),
+    benchReaction('👀', ['author-lifeos', 'author-mio', 'author-gone']),
+  ],
+});
+const MANY_REACTIONS = benchEntry('shipped — thanks everyone', {
+  reactions: [
+    ...['👍', '❤️', '🎉', '🚀', '🔥', '👀', '💯', '🙏', '👏', '⭐'].map((emoji, i) =>
+      benchReaction(emoji, i === 0 ? ['author-lifeos', BENCH_VIEWER_ID] : ['author-lifeos'])
+    ),
+    benchReaction('🏆', ['author-mio']),
+    benchReaction('✨', ['author-mio']),
+    benchReaction('🧠', ['author-mio']),
+  ],
+});
+const STALLED_REACTIONS = benchEntry('the room stopped listening while this was on screen', {
+  reactions: [benchReaction('👍', [BENCH_VIEWER_ID])],
+});
+
+/** The pills under a message, at every count the design has an answer for. */
+function ReactionsSection() {
+  return (
+    <PlaygroundSection
+      title="Reactions under a message"
+      description="Five behaviours, all approved (design record §2). The pill you added carries the accent and IS the toggle; hovering names names rather than counting; arrival pops with a ring burst while removal is a plain fade; and once a message has any reaction a faint 🙂+ ends the row. A message with none draws nothing here at all — no rail, no ghost — which is the behaviour the first row below exists to show."
+    >
+      <div>
+        <ShowcaseLabel>None — the clean case</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Nothing under the words. Not a faint +, not an empty band: the capsule is the whole
+          affordance until there is a reaction for a ghost to sit beside.
+        </p>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={benchEntry('nobody has reacted to this one')} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>One — and it is yours</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          The accent border and warmer fill mark the pill as yours; press it again and it goes.
+          Hover it to read who is on it. The 🙂+ at the row&apos;s end opens the same picker the
+          capsule&apos;s does.
+        </p>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={ONE_REACTION} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>Three — one yours, two not</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Only the first glows. The last pill includes somebody who has since left the room, whose
+          tooltip says exactly that rather than showing a raw id.
+        </p>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={THREE_REACTIONS} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>Thirteen — wraps to ten, then “+3 more”</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Past ten the row would be taller than the message it is about, so it stops and offers the
+          rest. Press it: a count with nowhere to go would be naming reactions you cannot reach.
+        </p>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={MANY_REACTIONS} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>A room that has stopped listening</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Reactions go with the composer (design record §4). The pill, the ghost + and the
+          capsule&apos;s quick row all refuse the press, because a write whose answer would never
+          come back is worse than a control that says it cannot be used.
+        </p>
+        <ShowcaseDemo responsive>
+          <BenchRow entry={STALLED_REACTIONS} stalled />
+        </ShowcaseDemo>
+      </div>
+    </PlaygroundSection>
+  );
+}
+
 /** Inert stand-ins for the action set, so the pill can be seen at each width. */
 const SPECIMEN_ACTIONS: EntryAction[] = [
   { id: 'reply', label: 'Reply in thread', icon: Reply, run: () => {} },
@@ -155,16 +255,24 @@ const SPECIMEN_ACTIONS: EntryAction[] = [
   { id: 'mention', label: 'Mention Ana', icon: AtSign, run: () => {} },
 ];
 
+/** An inert quick row, so the capsule can be drawn at its live width. */
+const SPECIMEN_REACTIONS = {
+  quick: BENCH_FREQUENTS,
+  mine: ['👍'],
+  onToggle: () => {},
+};
+
 /**
  * A standalone bar, shown without hover so the pill's shape can be read at each
  * width. `opacity-100` is the only thing overridden — an appearance the row
  * itself only reaches on hover, held open here so a still image can carry it.
  */
-function Specimen({ count }: { count: number }) {
+function Specimen({ count, withReactions }: { count: number; withReactions?: boolean }) {
   return (
     <div className="flex justify-start">
       <EntryActionBar
         actions={SPECIMEN_ACTIONS.slice(0, count)}
+        reactions={withReactions === true ? SPECIMEN_REACTIONS : undefined}
         onExit={() => {}}
         className={cn(railActions, 'pointer-events-auto opacity-100')}
       />
@@ -177,7 +285,7 @@ function ActionCountSection() {
   return (
     <PlaygroundSection
       title="How many actions"
-      description="Reply and Copy are always offered; Mention appears only when an @ would actually reach the author — so a live row carries two or three. The leftmost positions are held for quick reactions, which are designed but not built, so the bar is also shown below at widths no live row produces today."
+      description="Reply and Copy are always offered; Mention appears only when an @ would actually reach the author — so a live capsule carries six or seven slots once its three quick reactions and the picker are counted. The bar is also shown below at widths no live row produces today."
     >
       <div>
         <ShowcaseLabel>Two — your own message</ShowcaseLabel>
@@ -205,6 +313,22 @@ function ActionCountSection() {
         <ShowcaseLabel>Three — somebody else, still in the room</ShowcaseLabel>
         <ShowcaseDemo>
           <BenchRow entry={THEIRS_ENTRY} />
+        </ShowcaseDemo>
+      </div>
+
+      <div>
+        <ShowcaseLabel>The whole capsule — reactions, divider, commands</ShowcaseLabel>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Seven buttons at its widest: three quick emoji, the picker, then reply, copy and mention,
+          with a divider ruled between the reactions and the commands. The 👍 is drawn as one the
+          reader already left, which is how a quick-row button says the message already carries
+          yours.
+        </p>
+        <ShowcaseDemo>
+          <div className="flex flex-col items-start gap-3">
+            <Specimen count={3} withReactions />
+            <Specimen count={2} withReactions />
+          </div>
         </ShowcaseDemo>
       </div>
 
@@ -306,6 +430,7 @@ export function EntryActionsShowcases() {
     <>
       <StraddleSection />
       <RevealSection />
+      <ReactionsSection />
       <StickyRailSection />
       <ActionCountSection />
       <GroupingSection />

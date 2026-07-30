@@ -28,6 +28,10 @@ interface RoomTimelineProps {
   members: RoomRosterEntry[];
   /** The reader's `(member, room)` cursor, or null when they are not a member. */
   lastReadSeq: number | null;
+  /** This reader's three most-used emoji, as the room read resolved them. */
+  reactionFrequents: readonly string[];
+  /** True when the room's live stream has given up — reactions go with it. */
+  streamStalled?: boolean;
   /** True while the first page of history is loading. */
   isLoading: boolean;
   /** Set when the history could not be read. */
@@ -86,11 +90,19 @@ export function RoomTimeline({
   entries,
   members,
   lastReadSeq,
+  reactionFrequents,
+  streamStalled,
   isLoading,
   error,
   onAddAgents,
 }: RoomTimelineProps) {
   const authors = useMemo(() => authorsById(members), [members]);
+  // Names only — a reaction names who reacted, and the roster is the only place
+  // that can say. An id it does not hold belongs to somebody who has left.
+  const authorNames = useMemo(
+    () => new Map([...authors].map(([id, author]) => [id, author.displayName])),
+    [authors]
+  );
   // Ticked rather than read at render, so "Today" becomes "Yesterday" on its own
   // for a room left open across midnight.
   const now = useNow();
@@ -161,6 +173,9 @@ export function RoomTimeline({
               author={toMessageAuthor(entry.authorId, authors)}
               authorRef={authors.get(entry.authorId)}
               viewerAuthorId={viewerAuthorId}
+              authorNames={authorNames}
+              reactionFrequents={reactionFrequents}
+              streamStalled={streamStalled}
               grouping={row.grouping}
               orphanedReply={orphaned.has(entry.id)}
             />
@@ -169,7 +184,10 @@ export function RoomTimeline({
                 roomId={roomId}
                 replies={replies}
                 authors={authors}
+                authorNames={authorNames}
                 viewerAuthorId={viewerAuthorId}
+                reactionFrequents={reactionFrequents}
+                streamStalled={streamStalled}
                 now={now}
               />
             )}

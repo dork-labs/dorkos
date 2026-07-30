@@ -47,6 +47,8 @@ import type {
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
+  ToggleReactionRequest,
+  ToggleReactionResponse,
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
@@ -779,6 +781,14 @@ export const roomStubs = {
   },
 
   async replyInThread(_id: string, _req: PostThreadReplyRequest): Promise<PostToRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async toggleReaction(
+    _id: string,
+    _entryId: string,
+    _req: ToggleReactionRequest
+  ): Promise<ToggleReactionResponse> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 

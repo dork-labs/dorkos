@@ -302,6 +302,15 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listRoomEntries: vi.fn().mockResolvedValue([]),
     postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
     replyInThread: vi.fn().mockResolvedValue({ accepted: true, entryId: 'reply-mock', seq: 2 }),
+    // Answers as if the emoji went ON, and hands back the shipped quick row —
+    // the shape a capsule reads without a second request.
+    toggleReaction: vi.fn().mockResolvedValue({
+      accepted: true,
+      entryId: 'entry-mock',
+      emoji: '👍',
+      reacted: true,
+      frequents: ['👍', '❤️', '🎉'],
+    }),
     addRoomMember: vi.fn(),
     updateRoomMember: vi.fn(),
     removeRoomMember: vi.fn().mockResolvedValue(undefined),

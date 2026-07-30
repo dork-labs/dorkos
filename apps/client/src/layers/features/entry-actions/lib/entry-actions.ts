@@ -11,8 +11,18 @@
  */
 import type { LucideIcon } from 'lucide-react';
 
-/** Which action this is. Stable — tests and telemetry name these. */
-export type EntryActionId = 'reply' | 'copy' | 'mention';
+/** One position in the capsule. Stable — tests and telemetry name these. */
+export type EntryActionSlot = 'react' | 'react-more' | 'reply' | 'copy' | 'mention';
+
+/**
+ * Which action this is.
+ *
+ * The slots a COMMAND can fill — a button with an icon that does one thing. The
+ * two reaction slots are excluded deliberately: `react` is however many quick
+ * emoji this reader has, and `react-more` opens a picker rather than running,
+ * so neither is one of these.
+ */
+export type EntryActionId = Exclude<EntryActionSlot, 'react' | 'react-more'>;
 
 /** One thing you can do to a message. */
 export interface EntryAction {
@@ -32,15 +42,23 @@ export interface EntryAction {
 }
 
 /**
- * The order actions are drawn in, everywhere.
+ * The order the capsule is drawn in, everywhere.
  *
- * **The leftmost positions are reserved for quick reactions**, which land in
- * this same surface later and are deliberately not part of it now: there is no
- * reactions backend, and how an agent should behave around a reaction is an
- * open etiquette question (`meta/agent-etiquette.md`). Reserving the space
- * means reactions are PREPENDED to this array when they arrive — the three
- * actions below keep their order relative to each other, so the muscle memory
- * built now survives. A test pins that order, which is what makes this a
- * reservation rather than a note.
+ * **Reactions are its leftmost tenants** (`specs/room-messaging-design` §2):
+ * this reader's three most-used emoji, then the button that opens the full
+ * picker, then a divider, then reply / copy / mention — which kept the order
+ * they had before reactions arrived, so the muscle memory built on the earlier
+ * capsule survives.
+ *
+ * One array, three renderings. The toolbar maps over it, the right-click menu
+ * and the touch drawer render the commands from it in the same order, and a test
+ * pins the sequence — which is what makes this the single source rather than a
+ * note that three files currently agree with.
  */
-export const ENTRY_ACTION_ORDER: readonly EntryActionId[] = ['reply', 'copy', 'mention'];
+export const ENTRY_ACTION_ORDER: readonly EntryActionSlot[] = [
+  'react',
+  'react-more',
+  'reply',
+  'copy',
+  'mention',
+];

@@ -25,6 +25,8 @@ import {
   type RoomRosterEntry,
   type RoomSummary,
   type RoomWithRoster,
+  type ToggleReactionRequest,
+  type ToggleReactionResponse,
   type UpdateMembershipRequest,
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
@@ -90,6 +92,23 @@ export function createRoomMethods(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify(req),
       });
+    },
+
+    /**
+     * Toggle one emoji on one entry. The 202 says which way this caller's own
+     * click went; the entry's whole new set arrives on `subscribeRoom`, which
+     * is what a pill must ultimately be drawn from.
+     */
+    toggleReaction(
+      id: string,
+      entryId: string,
+      req: ToggleReactionRequest
+    ): Promise<ToggleReactionResponse> {
+      return fetchJSON<ToggleReactionResponse>(
+        baseUrl,
+        `/rooms/${id}/entries/${encodeURIComponent(entryId)}/reactions`,
+        { method: 'POST', body: JSON.stringify(req) }
+      );
     },
 
     addRoomMember(id: string, req: AddRoomMemberRequest): Promise<RoomRosterEntry> {

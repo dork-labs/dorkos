@@ -11,7 +11,7 @@
  * cannot be compared against a screenshot.
  */
 import type { MessageAuthor } from '@/layers/shared/model';
-import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
+import type { AuthorRef, RoomEntry, RoomEntryReaction } from '@/layers/entities/room';
 
 /** The room every seeded entry belongs to. */
 export const BENCH_ROOM_ID = 'bench-room';
@@ -81,6 +81,32 @@ export function benchEntry(text: string, overrides: Partial<RoomEntry> = {}): Ro
     createdAt: '2026-07-30T10:42:00.000Z',
     ...overrides,
   };
+}
+
+/** The bench's roster as a reaction's "who reacted" line reads it. */
+export const BENCH_NAMES: ReadonlyMap<string, string> = new Map([
+  [BENCH_AGENT.id, BENCH_AGENT.displayName],
+  [BENCH_VIEWER_ID, BENCH_VIEWER.displayName],
+  ['author-lifeos', 'LifeOS'],
+  ['author-mio', 'Mio PM'],
+]);
+
+/**
+ * The quick row a fresh install offers. Spelled out rather than imported from
+ * the schema so the bench keeps drawing three even if the default ever changes
+ * — a bench that silently follows its subject cannot show a regression in it.
+ */
+export const BENCH_FREQUENTS = ['👍', '❤️', '🎉'];
+
+/**
+ * One seeded pill.
+ *
+ * @param emoji - The reaction.
+ * @param authorIds - Who is on it, oldest first. Include {@link BENCH_VIEWER_ID}
+ *   to draw the accent glow the reader's own pill carries.
+ */
+export function benchReaction(emoji: string, authorIds: string[]): RoomEntryReaction {
+  return { emoji, authorIds, firstAt: '2026-07-30T10:42:00.000Z' };
 }
 
 /**

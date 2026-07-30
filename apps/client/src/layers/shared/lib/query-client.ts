@@ -72,7 +72,18 @@ export function createQueryClientConfig(): QueryClientConfig {
         // went wrong — "Couldn't send your message — This room is archived" —
         // which is what the generic line below can never do.
         const label = mutation.meta?.errorLabel as string | undefined;
-        toast.error(label ? `${label} — ${error.message}` : 'Action failed. Please try again.');
+        // `errorToastId` collapses repeats. A mutation a person can only fire
+        // once wants one toast per failure; a mutation they can fire ten times
+        // in three seconds — tapping a reaction in a room that has stopped
+        // answering — wants the tenth failure to REPLACE the first line rather
+        // than stack a column of identical ones. Sonner keys on the id.
+        const id = mutation.meta?.errorToastId as string | undefined;
+        const line = label ? `${label} — ${error.message}` : 'Action failed. Please try again.';
+        // Called with ONE argument when there is no id, not with an empty
+        // options object: the difference is invisible to Sonner and very visible
+        // to every test that pins what this handler said.
+        if (id === undefined) toast.error(line);
+        else toast.error(line, { id });
       },
     }),
     defaultOptions: {

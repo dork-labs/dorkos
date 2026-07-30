@@ -1,14 +1,21 @@
-import { useRef, type KeyboardEvent } from 'react';
-import type { MessageGrouping, MessageAuthor } from '@/layers/shared/model';
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import type { MessageGrouping, MessageAuthor, LongPressState } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { MarkdownContent } from '@/layers/shared/ui';
-import type { AuthorRef, RoomEntry } from '@/layers/entities/room';
+import {
+  hasReacted,
+  useToggleReaction,
+  type AuthorRef,
+  type RoomEntry,
+} from '@/layers/entities/room';
 import { MessageAuthorAvatar, messageItem } from '@/layers/features/chat';
 import {
   EntryActionBar,
   EntryActionMenu,
+  EntryReactionRow,
   useEntryActions,
   type EntryActionBarHandle,
+  type RovingGroupHandle,
 } from '@/layers/features/entry-actions';
 
 interface RoomEntryRowProps {
@@ -26,6 +33,19 @@ interface RoomEntryRowProps {
   authorRef: AuthorRef | undefined;
   /** The reader's own author id here, so they are not offered to themselves. */
   viewerAuthorId: string;
+  /**
+   * Display names by author id, from the room's roster — the only place a
+   * reaction's "You and LifeOS reacted 👍" can honestly come from.
+   */
+  authorNames: ReadonlyMap<string, string>;
+  /** This reader's three most-used emoji, as the server counted them. */
+  reactionFrequents: readonly string[];
+  /**
+   * True when the room's live stream has given up. Reactions go with the
+   * composer: a write whose result would never come back is worse than a
+   * control that says it cannot be used (design record §4).
+   */
+  streamStalled?: boolean;
   /** Where this entry sits in its author group. */
   grouping: MessageGrouping;
   /**
@@ -73,13 +93,40 @@ export function RoomEntryRow({
   author,
   authorRef,
   viewerAuthorId,
+  authorNames,
+  reactionFrequents,
+  streamStalled,
   grouping,
   orphanedReply,
 }: RoomEntryRowProps) {
   const time = formatTime(entry.createdAt);
   const rowRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<EntryActionBarHandle>(null);
+  const pillsRef = useRef<RovingGroupHandle>(null);
   const actions = useEntryActions({ roomId, entry, author: authorRef, viewerAuthorId });
+  const toggleReaction = useToggleReaction();
+  // How the touch press is going, so the message can give under the finger
+  // (design record §5.6). Idle on a pointer device, which never reports one.
+  const [press, setPress] = useState<LongPressState | null>(null);
+
+  const reactions = useMemo(() => entry.reactions ?? [], [entry.reactions]);
+  const mine = useMemo(
+    () => reactions.filter((r) => hasReacted(r, viewerAuthorId)).map((r) => r.emoji),
+    [reactions, viewerAuthorId]
+  );
+  const toggle = useCallback(
+    (emoji: string) => toggleReaction.mutate({ roomId, entryId: entry.id, emoji, viewerAuthorId }),
+    [toggleReaction, roomId, entry.id, viewerAuthorId]
+  );
+  const quickRow = useMemo(
+    () => ({
+      quick: reactionFrequents,
+      mine,
+      onToggle: toggle,
+      disabled: streamStalled === true,
+    }),
+    [reactionFrequents, mine, toggle, streamStalled]
+  );
 
   if (entry.kind === 'notice') {
     return (
@@ -98,16 +145,28 @@ export function RoomEntryRow({
   const showAuthorHeader = grouping.position === 'first' || grouping.position === 'only';
   const styles = messageItem({ position: grouping.position, anchor: 'rail' });
 
-  /** From the message itself, an arrow or Enter moves into its actions. */
+  /**
+   * From the message itself, an arrow or Enter moves into its buttons.
+   *
+   * A message has two groups now and the key says which: the capsule is ABOVE
+   * the message, so ArrowUp / ArrowRight / Enter reach it; the pills are BELOW,
+   * so ArrowDown reaches those. A message with no reactions has no down group,
+   * and ArrowDown does what it always did.
+   */
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowDown' && event.key !== 'Enter') return;
+    const { key } = event;
+    if (key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Enter') return;
     event.preventDefault();
+    if (key === 'ArrowDown' && reactions.length > 0) {
+      pillsRef.current?.focusFirst();
+      return;
+    }
     barRef.current?.focusFirst();
   };
 
   return (
-    <EntryActionMenu actions={actions}>
+    <EntryActionMenu actions={actions} reactions={quickRow} onPressStateChange={setPress}>
       {/*
         A message is a non-interactive container that must still be focusable and
         must still hear an arrow key: it is the single tab stop its own actions
@@ -127,7 +186,15 @@ export function RoomEntryRow({
         onKeyDown={handleKeyDown}
         className={cn(
           styles.root(),
-          'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
+          'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
+          // The press acknowledgment (design record §5.6). Touch-only in
+          // practice: nothing else reports a press state. The squish is a
+          // transition and the spring-back is an animation, which is what makes
+          // a CANCELLED press snap back with neither — a reader who started
+          // scrolling gets no celebration for the gesture they abandoned.
+          'origin-center',
+          press === 'pressing' && 'motion-safe:animate-press-in',
+          press === 'released' && 'motion-safe:animate-press-release'
         )}
       >
         <div className={styles.gutter()}>
@@ -168,6 +235,19 @@ export function RoomEntryRow({
           <div data-slot="message-content" className={styles.content()}>
             <MarkdownContent content={entry.body.text} linkSafety />
           </div>
+          {/* The pills, under the words they are about. A message with no
+              reactions renders nothing here at all — no rail, no ghost — which
+              is what keeps a quiet room quiet (design record §2, behaviour 4). */}
+          <EntryReactionRow
+            ref={pillsRef}
+            reactions={reactions}
+            viewerAuthorId={viewerAuthorId}
+            names={authorNames}
+            frequents={reactionFrequents}
+            onToggle={toggle}
+            disabled={streamStalled}
+            onExit={() => rowRef.current?.focus()}
+          />
           {/*
             The rail is the strip of gutter the capsule lives in — exactly one
             capsule tall, sitting directly ABOVE the message's first line, so the
@@ -221,6 +301,7 @@ export function RoomEntryRow({
             <EntryActionBar
               ref={barRef}
               actions={actions}
+              reactions={quickRow}
               onExit={() => rowRef.current?.focus()}
               className={styles.actions()}
             />

@@ -178,6 +178,7 @@ export {
   ResponsiveDropdownMenuSeparator,
 } from './responsive-dropdown-menu';
 export {
+  useResponsiveContextMenu,
   ResponsiveContextMenu,
   ResponsiveContextMenuTrigger,
   ResponsiveContextMenuContent,

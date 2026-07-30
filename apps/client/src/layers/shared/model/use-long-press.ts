@@ -1,11 +1,27 @@
 import { useRef, useCallback } from 'react';
 import { LONG_PRESS_DRIFT_PX, TIMING } from '@/layers/shared/lib';
 
+/**
+ * Where a press is in its life, for a surface that acknowledges being pressed.
+ *
+ * `released` and `cancelled` are deliberately different endings. A press the
+ * reader completed earns the spring-back the design draws; a press they
+ * abandoned mid-gesture — they started scrolling, or selecting text — gets
+ * nothing, because animating a gesture somebody walked away from is the surface
+ * celebrating something that did not happen.
+ */
+export type LongPressState = 'pressing' | 'released' | 'cancelled';
+
 interface UseLongPressOptions {
   /** Delay in ms before the long-press fires. Default: 500 (TIMING.LONG_PRESS_MS). */
   ms?: number;
   /** Called when long-press is detected. */
   onLongPress: () => void;
+  /**
+   * Called as the press starts, completes, or is abandoned. Optional: a caller
+   * that only wants the menu never hears about it.
+   */
+  onPressStateChange?: (state: LongPressState) => void;
 }
 
 interface UseLongPressReturn {
@@ -32,26 +48,46 @@ interface UseLongPressReturn {
 export function useLongPress({
   onLongPress,
   ms = TIMING.LONG_PRESS_MS,
+  onPressStateChange,
 }: UseLongPressOptions): UseLongPressReturn {
   const timerRef = useRef<number | null>(null);
   const originRef = useRef<{ x: number; y: number } | null>(null);
 
-  const clear = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-    originRef.current = null;
-  }, []);
+  /**
+   * Stand the press down. `ending` is how it ended, which the acknowledgment
+   * animation reads — and it is only reported when a press was actually running,
+   * so a stray `pointerleave` over a row nobody pressed says nothing.
+   */
+  const clear = useCallback(
+    (ending: Exclude<LongPressState, 'pressing'>) => {
+      const wasPressing = originRef.current !== null;
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      originRef.current = null;
+      if (wasPressing) onPressStateChange?.(ending);
+    },
+    [onPressStateChange]
+  );
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // Only fire on primary pointer (left click / single touch)
       if (e.button !== 0) return;
       originRef.current = { x: e.clientX, y: e.clientY };
-      timerRef.current = window.setTimeout(onLongPress, ms);
+      onPressStateChange?.('pressing');
+      timerRef.current = window.setTimeout(() => {
+        // The menu is opening and takes the gesture from here, so the press is
+        // over as far as the pressed surface is concerned — it springs back
+        // rather than sitting squashed under an open drawer.
+        originRef.current = null;
+        timerRef.current = null;
+        onPressStateChange?.('released');
+        onLongPress();
+      }, ms);
     },
-    [onLongPress, ms]
+    [onLongPress, ms, onPressStateChange]
   );
 
   const onPointerMove = useCallback(
@@ -61,7 +97,7 @@ export function useLongPress({
       const drifted =
         Math.abs(e.clientX - origin.x) > LONG_PRESS_DRIFT_PX ||
         Math.abs(e.clientY - origin.y) > LONG_PRESS_DRIFT_PX;
-      if (drifted) clear();
+      if (drifted) clear('cancelled');
     },
     [clear]
   );
@@ -69,8 +105,8 @@ export function useLongPress({
   return {
     onPointerDown,
     onPointerMove,
-    onPointerUp: clear,
-    onPointerLeave: clear,
-    onPointerCancel: clear,
+    onPointerUp: () => clear('released'),
+    onPointerLeave: () => clear('cancelled'),
+    onPointerCancel: () => clear('cancelled'),
   };
 }
