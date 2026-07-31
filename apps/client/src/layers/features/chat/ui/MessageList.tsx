@@ -12,7 +12,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ChatMessage } from '../model/use-chat-session';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { FEED_ARTICLE_ATTR, useAppStore } from '@/layers/shared/model';
+import { Feed } from '@/layers/shared/ui';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useSessionRuntime } from '@/layers/entities/session';
 import { WIDGET_FENCE_MARKER } from '@/layers/features/gen-ui';
@@ -23,7 +24,16 @@ import type { ListRow } from '../lib/build-list-rows';
 import { resolveMessageAuthor } from '../lib/resolve-message-author';
 import type { MessageAuthorContext } from '../lib/resolve-message-author';
 import { useUnreadCursor } from '../model/view/use-unread-cursor';
+import { useStreamingAnnouncer } from '../model/stream/use-streaming-announcer';
 import { ScrollThumb } from './ScrollThumb';
+
+/**
+ * What the transcript is called when a screen reader lands in it.
+ *
+ * Generic on purpose: a session's chat has no title of its own on screen, and
+ * inventing one would name the feed after something the reader cannot see.
+ */
+export const TRANSCRIPT_FEED_LABEL = 'Conversation';
 
 /**
  * How close to the bottom (px) still counts as "pinned". Within this band the
@@ -73,6 +83,40 @@ interface MessageListProps {
   runtimeLabel?: string;
 }
 
+/**
+ * The session's transcript: a virtualized list of messages, day boundaries and
+ * the rule marking where you left off.
+ *
+ * **It is a feed** (WAI-ARIA `role="feed"`), which is what makes crossing a long
+ * conversation bearable without a mouse: Page Down and Page Up step message to
+ * message however much each one carries, and Ctrl+Home / Ctrl+End leave for the
+ * controls around it. Every message is a named article that says where it sits,
+ * so a screen reader can say "message 12 of 30, DorkBot" rather than reading the
+ * transcript out as one wall of text. `Feed` explains why the mechanics live in
+ * `shared` rather than here.
+ *
+ * **The browsable history and the turn in flight are different things.** History
+ * is the feed: it announces what you land on and nothing on its own. The answer
+ * still being written is mirrored into a small `role="log"` region so it is
+ * heard as it arrives — and when the turn settles, the message becomes an
+ * ordinary article and is not read out a second time
+ * ({@link useStreamingAnnouncer}).
+ *
+ * Verified in a browser, because what Ctrl+End actually reaches is a fact about
+ * the page and not about this file: Ctrl+Home lands on the panel control in the
+ * header above, and Ctrl+End on the jump-to-latest affordance while it is
+ * showing, else the composer. That affordance is a real control that appears
+ * precisely when a reader has scrolled up — which is when Ctrl+End is pressed —
+ * so it is left in the tab order rather than hidden from the way out.
+ *
+ * Only the rows on screen exist in the DOM, which is the one place a
+ * virtualized feed differs from the room's. Page Down at the edge of that
+ * window would otherwise dead-end at message 9 of 30 with the key swallowed and
+ * nothing rendered to move to, so the feed hands the edge back
+ * (`onBeyondRendered`) and this scrolls the next article into existence and
+ * lands the focus on it. `aria-posinset`/`aria-setsize` are what tell the two
+ * ends apart: the end of the window is not the end of the history.
+ */
 export const MessageList = forwardRef<MessageListHandle, MessageListProps>(function MessageList(
   {
     messages,
@@ -125,6 +169,17 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }),
     [currentAgent, runtime]
   );
+
+  // The turn happening NOW, mirrored into a live region below. The feed itself
+  // announces nothing — that is what a feed is — so this is the only thing that
+  // says an answer is arriving without the reader having to go and look.
+  const newest = messages[messages.length - 1];
+  const streamingTail = newest?.role === 'assistant' ? newest : undefined;
+  const announcement = useStreamingAnnouncer({
+    messageId: streamingTail?.id,
+    text: streamingTail?.content ?? '',
+    isStreaming: streamingTail !== undefined && isTextStreaming === true,
+  });
 
   const newestMessageId = messages[messages.length - 1]?.id;
   const { lastSeenMessageId, markSeen } = useUnreadCursor(sessionId, newestMessageId);
@@ -257,6 +312,42 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     virtualizer.scrollToEnd();
   }, [virtualizer]);
 
+  // Page Down at the edge of the rendered window. Only a few messages either
+  // side of the viewport exist in the DOM, so without this a reader crossing a
+  // long conversation stops dead at whatever the window happens to end on —
+  // message 9 of 30 — with the key swallowed and nothing to show for it. The
+  // feed asks for the next article, this scrolls it into existence, and the
+  // effect below lands the focus on it once it has rendered.
+  const pendingFocusRef = useRef<number | null>(null);
+  const handleBeyondRendered = useCallback(
+    (direction: 'next' | 'previous', edge: HTMLElement) => {
+      const position = Number(edge.getAttribute('aria-posinset'));
+      const wanted = direction === 'next' ? position + 1 : position - 1;
+      const rowIndex = rows.findIndex(
+        (row) => row.kind === 'message' && row.messageIndex === wanted - 1
+      );
+      if (rowIndex === -1) return;
+      pendingFocusRef.current = wanted;
+      virtualizer.scrollToIndex(rowIndex, { align: direction === 'next' ? 'end' : 'start' });
+    },
+    [rows, virtualizer]
+  );
+
+  // Focus what the scroll above went to fetch, on the first render that has it.
+  // Runs every render rather than on a dep, because the render that finally
+  // holds the row is caused by the virtualizer's own measurement rather than by
+  // anything in this component's props.
+  useEffect(() => {
+    const wanted = pendingFocusRef.current;
+    if (wanted === null) return;
+    const article = scrollRef.current?.querySelector<HTMLElement>(
+      `[${FEED_ARTICLE_ATTR}][aria-posinset="${wanted}"]`
+    );
+    if (article === null || article === undefined) return;
+    pendingFocusRef.current = null;
+    article.focus();
+  });
+
   // The virtualizer re-renders this component on scroll, so these reads are
   // fresh each render. `isAtEnd()` honors the near-bottom threshold above.
   const isAtBottom = virtualizer.isAtEnd();
@@ -324,6 +415,11 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         inputZoneToolCallId={inputZoneToolCallId}
         textEffect={textEffect}
         runtimeLabel={runtimeLabel}
+        // Counted over the messages themselves, which is exactly the set of
+        // articles this feed holds: the day and unread rules are separators
+        // between articles, so numbering them would promise stops Page Down
+        // never makes.
+        feedPosition={{ index: messageIndex + 1, total: messages.length }}
       />
     );
   }
@@ -335,30 +431,53 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         className="chat-scroll-area h-full scrollbar-none overflow-y-auto px-3 pt-12"
         style={{ overflowAnchor: 'none' }}
       >
-        <div
-          style={{
-            height: virtualizer.getTotalSize(),
-            position: 'relative',
-            width: '100%',
-          }}
+        <Feed
+          label={TRANSCRIPT_FEED_LABEL}
+          data-testid="transcript-feed"
+          onBeyondRendered={handleBeyondRendered}
         >
-          {virtualizer.getVirtualItems().map((virtualRow) => (
-            <div
-              key={rows[virtualRow.index].key}
-              data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
-              {renderRow(rows[virtualRow.index])}
-            </div>
-          ))}
-        </div>
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: 'relative',
+              width: '100%',
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => (
+              <div
+                key={rows[virtualRow.index].key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                {renderRow(rows[virtualRow.index])}
+              </div>
+            ))}
+          </div>
+        </Feed>
+      </div>
+      {/*
+        The turn happening now, said out loud as it arrives — sentence by
+        sentence, never the whole answer again (see `useStreamingAnnouncer`).
+        Rendered ALWAYS, and emptied a few seconds after it speaks: a live
+        region added to the page with words already in it is read out whole by
+        most screen readers, so one left holding the last sentence would say it
+        again on the next mount. Clearing is itself silent.
+      */}
+      <div
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
+        data-testid="transcript-announcer"
+        className="sr-only"
+      >
+        {announcement}
       </div>
       <ScrollThumb scrollRef={scrollRef} />
     </div>

@@ -2,7 +2,8 @@ import type { RefObject } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowDown } from 'lucide-react';
 import { useAgentBirthRecord } from '@/layers/shared/model';
-import { MessageList } from './MessageList';
+import { Feed } from '@/layers/shared/ui';
+import { MessageList, TRANSCRIPT_FEED_LABEL } from './MessageList';
 import type { MessageListHandle, ScrollState } from './MessageList';
 import { ChatEmptyState } from './ChatEmptyState';
 import { TypingDots } from './primitives';
@@ -93,12 +94,20 @@ export function ChatMessageArea({
   return (
     <div className="relative min-h-0 flex-1">
       {isLoadingHistory ? (
-        <div className="flex h-full items-center justify-center">
+        // The same feed the loaded conversation renders, saying it is BUSY —
+        // which is what the pattern asks for, and what turns a silent wait into
+        // one a screen reader can report.
+        <Feed
+          label={TRANSCRIPT_FEED_LABEL}
+          busy
+          className="flex h-full items-center justify-center"
+          data-testid="transcript-feed-loading"
+        >
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <TypingDots />
             Loading conversation...
           </div>
-        </div>
+        </Feed>
       ) : messages.length === 0 ? (
         <div className="flex h-full items-center justify-center">
           <ChatEmptyState birthRecord={birthRecord} firstLightRecord={firstLightRecord} />

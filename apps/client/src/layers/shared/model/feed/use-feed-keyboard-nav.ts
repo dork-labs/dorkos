@@ -11,7 +11,7 @@
  *
  * @module shared/model/feed/use-feed-keyboard-nav
  */
-import { useCallback, useRef, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
 
 /**
  * The marker an element carries to be one of the feed's articles.
@@ -64,6 +64,31 @@ function tabStopOutside(container: HTMLElement, side: 'before' | 'after'): HTMLE
   return before[before.length - 1] ?? null;
 }
 
+/**
+ * What a feed does when the article it is asked for has not been rendered.
+ *
+ * Only a VIRTUALIZED feed needs this. A feed that renders all of its articles
+ * runs out of them exactly when it runs out of history, and stopping at the end
+ * of history is correct. A feed that renders a window over its history runs out
+ * of them constantly — at message 9 of 30 — and stopping there strands a reader
+ * mid-transcript with nothing but the mouse to get further.
+ *
+ * @param direction - Which way the reader was moving.
+ * @param edge - The last rendered article in that direction. Its
+ *   `aria-posinset` says which one it is; the article wanted is the one after
+ *   (or before) it.
+ */
+export type FeedBeyondRenderedHandler = (direction: 'next' | 'previous', edge: HTMLElement) => void;
+
+/** Optional behaviour a surface can add to the feed's keys. */
+export interface FeedKeyboardNavOptions {
+  /**
+   * Called instead of stopping at the edge of what is rendered, when the set
+   * says there is more. Omit for a feed that renders all of its articles.
+   */
+  onBeyondRendered?: FeedBeyondRenderedHandler;
+}
+
 /** What the feed container needs to be a feed. */
 export interface FeedKeyboardNav {
   /** Attach to the `role="feed"` element. */
@@ -97,8 +122,15 @@ export interface FeedKeyboardNav {
  * touching what the reader is standing on — the article they focused is the
  * same element, still focused, now further down the set.
  */
-export function useFeedKeyboardNav(): FeedKeyboardNav {
+export function useFeedKeyboardNav(options?: FeedKeyboardNavOptions): FeedKeyboardNav {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Read through a ref so the handler stays stable: the surface's callback
+  // closes over its own render state (a virtualizer, a row list) and would
+  // otherwise re-identify this handler on every token that arrives.
+  const beyondRef = useRef(options?.onBeyondRendered);
+  useEffect(() => {
+    beyondRef.current = options?.onBeyondRendered;
+  }, [options?.onBeyondRendered]);
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
     const container = containerRef.current;
@@ -141,6 +173,25 @@ export function useFeedKeyboardNav(): FeedKeyboardNav {
           );
 
     const next = event.key === 'PageDown' ? from + 1 : from - 1;
+
+    // Off the end of what is RENDERED, which in a virtualized feed is not the
+    // end of the history. `aria-posinset`/`aria-setsize` are the only things
+    // that know the difference — they count the whole set, while the DOM holds
+    // a window over it — so they decide whether there is anywhere left to go.
+    if (next < 0 || next > articles.length - 1) {
+      const forward = event.key === 'PageDown';
+      const edge = articles[forward ? articles.length - 1 : 0]!;
+      const position = Number(edge.getAttribute('aria-posinset'));
+      const total = Number(edge.getAttribute('aria-setsize'));
+      const more = forward ? position < total : position > 1;
+      const beyond = beyondRef.current;
+      if (more && Number.isFinite(position) && beyond !== undefined) {
+        event.preventDefault();
+        beyond(forward ? 'next' : 'previous', edge);
+        return;
+      }
+    }
+
     const target = articles[Math.min(Math.max(next, 0), articles.length - 1)];
     if (target === undefined) return;
     event.preventDefault();

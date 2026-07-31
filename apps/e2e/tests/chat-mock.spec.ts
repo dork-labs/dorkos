@@ -64,8 +64,12 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage('Hello');
 
-    // simple-text scenario echoes: "Echo: Hello"
-    await expect(page.getByText(/Echo:/)).toBeVisible({ timeout: 10_000 });
+    // simple-text scenario echoes: "Echo: Hello". Scoped to the transcript
+    // because the words are in the DOM twice while the turn is live — the
+    // message, and the screen-reader announcer mirroring it (see GOTCHAS).
+    await expect(page.getByTestId('transcript-feed').getByText(/Echo:/)).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test('renders tool call card for tool-call scenario', async ({ page, request }) => {

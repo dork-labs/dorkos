@@ -42,7 +42,11 @@ export { useNow } from './use-now';
 // panel both reach for `Feed` itself, and a hook a later surface has to go
 // fishing for is a hook that surface reimplements.
 export { useFeedKeyboardNav, FEED_ARTICLE_ATTR } from './feed/use-feed-keyboard-nav';
-export type { FeedKeyboardNav } from './feed/use-feed-keyboard-nav';
+export type {
+  FeedKeyboardNav,
+  FeedKeyboardNavOptions,
+  FeedBeyondRenderedHandler,
+} from './feed/use-feed-keyboard-nav';
 export { feedArticleProps } from './feed/feed-articles';
 export type { FeedPosition, FeedArticleProps } from './feed/feed-articles';
 export {

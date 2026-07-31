@@ -6,6 +6,7 @@ Anti-patterns and hard-won lessons discovered during test creation. Read this be
 
 - Avoid `getByText()` on dynamic content that changes between runs (timestamps, session IDs, message previews)
 - Sidebar session items re-render on SSE updates; grab locators fresh after any navigation that triggers a sync
+- **An agent's streamed words are in the DOM TWICE while the turn is live**: once in the message, and once in the transcript's screen-reader announcer (`[data-testid="transcript-announcer"]`, a `role="log"` region that mirrors each new sentence and empties itself a few seconds later). A bare `page.getByText(/…/)` on assistant text therefore resolves to two elements and fails the strict-mode check. Scope it to where you mean — `page.getByTestId('transcript-feed').getByText(…)` for what the reader sees, the announcer for what a screen reader hears.
 
 ## Timing & Waits
 
