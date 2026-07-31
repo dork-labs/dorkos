@@ -10,6 +10,7 @@
  *
  * @module shared/lib/transport/room-methods
  */
+
 import {
   RoomEventSchema,
   type AddRoomMemberRequest,
@@ -35,6 +36,59 @@ import {
 import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
+
+/**
+ * A room's event stream answered with an HTTP error rather than a stream.
+ *
+ * Its own class so the retry loop can read the STATUS rather than the sentence.
+ * "Briefly unreachable" and "this room is not yours to read" both arrive here as
+ * a rejected promise, and only the status tells them apart — a distinction the
+ * loop needs because it now retries forever, and forever is the wrong answer to
+ * a room that has been deleted or access that has been revoked.
+ *
+ * The in-process adapter (`DirectTransport`, Obsidian) never throws one, and
+ * that is correct: it has no HTTP status to report, so everything it throws is
+ * treated as retryable — which it is.
+ */
+export class RoomStreamHttpError extends Error {
+  /** The HTTP status the room's event route answered with. */
+  readonly status: number;
+
+  /**
+   * Build the error the room's event route answered with.
+   *
+   * @param status - The HTTP status.
+   * @param statusText - The reason phrase, for the log line.
+   */
+  constructor(status: number, statusText: string) {
+    super(`HTTP ${status}: ${statusText}`);
+    this.name = 'RoomStreamHttpError';
+    this.status = status;
+  }
+}
+
+/**
+ * Statuses that mean trying again cannot help.
+ *
+ * The server has ANSWERED, and its answer is that this reader may not read this
+ * room: it is gone (404), or they are not signed in (401), or they are not a
+ * member (403). Every other failure — a dropped socket, a 5xx, a restart, an
+ * offline laptop — is a reason to keep trying.
+ */
+const FATAL_STREAM_STATUSES: ReadonlySet<number> = new Set([401, 403, 404]);
+
+/**
+ * Is this the server telling a reader the room is not theirs to read?
+ *
+ * Anything it cannot recognise is retryable, deliberately: the cost of retrying
+ * a genuinely fatal error is a notice that says "reconnecting" too long, and the
+ * cost of giving up on a retryable one is a room frozen for the session.
+ *
+ * @param err - Whatever the stream threw.
+ */
+export function isFatalStreamError(err: unknown): boolean {
+  return err instanceof RoomStreamHttpError && FATAL_STREAM_STATUSES.has(err.status);
+}
 
 /** Create the room methods bound to a base URL. */
 export function createRoomMethods(baseUrl: string) {
@@ -209,7 +263,12 @@ export function createRoomMethods(baseUrl: string) {
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          // Carries the status, because the retry loop above has to tell a
+          // server that is briefly unreachable from one that has answered — a
+          // room that was deleted, or access that was revoked while it was open.
+          // Retrying the first forever is right; retrying the second forever is
+          // a reconnecting notice that will never come true.
+          throw new RoomStreamHttpError(response.status, response.statusText);
         }
         for await (const frame of parseSSEStream(response.body.getReader())) {
           heard();

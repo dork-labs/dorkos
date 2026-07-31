@@ -1,15 +1,28 @@
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
+  findLandedEcho,
+  PENDING_SLOW_MS,
+  roomKeys,
   usePendingPostStore,
   usePostToRoom,
   useReplyInThread,
   type PendingPost,
+  type RoomEntry,
 } from '@/layers/entities/room';
 
 interface RoomPendingRowProps {
   /** The message that has been sent and not yet come back. */
   post: PendingPost;
+  /**
+   * This reader's own author id in the room.
+   *
+   * Read only on a retry, to tell this reader's own words apart from an
+   * identical sentence somebody else happened to send — see {@link findLandedEcho}.
+   */
+  viewerAuthorId: string;
 }
 
 /**
@@ -26,25 +39,41 @@ interface RoomPendingRowProps {
  * rather than in a status area somewhere else: the point is that the sentence is
  * still there, in the place it was going.
  *
- * **Two states, and the second one is the one that matters.** In flight it is
- * the same words at the same place, dimmed, with a quiet spinner — nothing to
- * read, nothing to do. Refused, it says so and offers the two things a person
- * actually wants: send it again, or throw it away. Nothing here can lose the
- * words without somebody choosing to.
+ * **Three states.** In flight it is the same words at the same place, dimmed,
+ * with a quiet spinner and nothing to press — there is nothing to decide, and a
+ * control under every message anybody sends would be clutter over a state that
+ * normally lasts a moment. Past {@link PENDING_SLOW_MS} it grows a Discard,
+ * because "normally" has stopped applying and a row with no way out is a row
+ * that can be stuck on screen for the rest of the session. Refused, it says so
+ * and offers both. Nothing here can lose the words without somebody choosing to.
  *
  * The retry re-fires the same mutation with the same client id, so the row moves
  * back into flight in place rather than a second copy of the sentence appearing
- * underneath the first.
+ * underneath the first — and it looks first, because a request that timed out
+ * after the server committed it is indistinguishable from one that never landed
+ * (see {@link findLandedEcho}, and the copy below, which says so out loud).
  *
- * @param props - The pending message to draw.
+ * @param props - The pending message to draw, and who is reading.
  */
-export function RoomPendingRow({ post }: RoomPendingRowProps) {
+export function RoomPendingRow({ post, viewerAuthorId }: RoomPendingRowProps) {
   const send = usePostToRoom();
   const reply = useReplyInThread();
+  const queryClient = useQueryClient();
   const failed = post.status === 'failed';
+  const slow = useIsSlow(post);
+
+  const discard = () => usePendingPostStore.getState().discard(post.clientId);
 
   const retry = () => {
     const { clientId, roomId, threadRootId, text } = post;
+    // Look before leaping. If these exact words from this reader are already in
+    // the room, the send DID land and the confirmation is what went missing —
+    // sending again would post it twice and spend a second agent turn on it.
+    const held = queryClient.getQueryData<RoomEntry[]>(roomKeys.entries(roomId));
+    if (findLandedEcho(held, post, viewerAuthorId) !== undefined) {
+      discard();
+      return;
+    }
     if (threadRootId === null) {
       send.mutate({ roomId, text, clientId });
       return;
@@ -74,11 +103,15 @@ export function RoomPendingRow({ post }: RoomPendingRowProps) {
       {failed ? (
         <div className="text-status-warning flex flex-wrap items-center gap-2 text-xs">
           <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
-          {/* What went wrong is already in the toast, in the server's own
-              sentence. This line says what is TRUE OF THIS MESSAGE — that it is
-              still here and has not been sent — which the toast cannot, because
-              by the time somebody reads this the toast is gone. */}
-          <span>Not sent.</span>
+          {/* WHY it failed is already in the toast, in the server's own
+              sentence. This line says what is true of THIS message — and the
+              second half is not hedging: a request that times out after the
+              server has committed it fails in exactly the same way as one that
+              never arrived, so "not sent" alone would be a claim this client
+              cannot make. Telling somebody to look before re-sending is the
+              honest version until the send carries an idempotency key the
+              server dedupes on (DOR-786). */}
+          <span>Not sent — or it went through and the confirmation got lost.</span>
           <button
             type="button"
             onClick={retry}
@@ -88,20 +121,57 @@ export function RoomPendingRow({ post }: RoomPendingRowProps) {
           </button>
           <button
             type="button"
-            onClick={() => usePendingPostStore.getState().discard(post.clientId)}
+            onClick={discard}
             className="focus-ring text-muted-foreground hover:text-foreground rounded underline underline-offset-2"
           >
             Discard
           </button>
         </div>
       ) : (
-        <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+        <p className="text-muted-foreground flex flex-wrap items-center gap-2 text-xs">
           <Loader2 aria-hidden className="size-3 shrink-0 motion-safe:animate-spin" />
-          Sending…
+          <span>{slow ? 'Still sending…' : 'Sending…'}</span>
+          {slow && (
+            <button
+              type="button"
+              onClick={discard}
+              className="focus-ring hover:text-foreground rounded underline underline-offset-2"
+            >
+              Discard
+            </button>
+          )}
         </p>
       )}
     </div>
   );
+}
+
+/**
+ * Whether this attempt has been in flight long enough to need a way out.
+ *
+ * A timer rather than a clock read during render: nothing else re-renders this
+ * row while it waits, so asking "is it slow yet?" during a render that never
+ * happens answers nothing. It is armed for the REMAINING time rather than a
+ * fixed delay, so a row that mounts onto an attempt already older than the
+ * threshold — reopening a room you left mid-send — is slow immediately.
+ *
+ * @param post - The attempt on screen.
+ */
+function useIsSlow(post: PendingPost): boolean {
+  const [slow, setSlow] = useState(() => Date.now() - post.at >= PENDING_SLOW_MS);
+  const { at, status } = post;
+
+  useEffect(() => {
+    if (status !== 'sending' || slow) return;
+    // Always through a timer, never set straight from the effect body: an
+    // attempt that is ALREADY past the threshold is handled by the initialiser
+    // above, so the only thing a synchronous set here would add is a cascading
+    // render for a state the row was mounted in.
+    const timer = setTimeout(() => setSlow(true), Math.max(0, at + PENDING_SLOW_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [at, status, slow]);
+
+  return slow;
 }
 
 /**
@@ -113,13 +183,20 @@ export function RoomPendingRow({ post }: RoomPendingRowProps) {
  * somebody typed.
  *
  * @param props.posts - The pending messages, oldest first.
+ * @param props.viewerAuthorId - This reader's own author id in the room.
  */
-export function RoomPendingList({ posts }: { posts: readonly PendingPost[] }) {
+export function RoomPendingList({
+  posts,
+  viewerAuthorId,
+}: {
+  posts: readonly PendingPost[];
+  viewerAuthorId: string;
+}) {
   if (posts.length === 0) return null;
   return (
     <div className="flex flex-col">
       {posts.map((post) => (
-        <RoomPendingRow key={post.clientId} post={post} />
+        <RoomPendingRow key={post.clientId} post={post} viewerAuthorId={viewerAuthorId} />
       ))}
     </div>
   );

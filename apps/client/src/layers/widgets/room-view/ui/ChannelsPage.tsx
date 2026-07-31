@@ -199,6 +199,7 @@ export function ChannelsPage() {
       entries={entries}
       reactionFrequents={room.reactionFrequents}
       streamStalled={stream.stalled}
+      streamUnavailable={stream.unavailable}
       onRetryStream={stream.retry}
       historyLoaded={entriesQuery.isSuccess}
       historyFailed={entriesQuery.isError}
@@ -230,7 +231,9 @@ export function ChannelsPage() {
       {/* Directly above the composer, because the state it describes is about
           what happens after you press Enter. `RoomStalledNotice` explains why
           the composer beside it stays open. */}
-      {stream.stalled && <RoomStalledNotice onRetry={stream.retry} />}
+      {stream.stalled && (
+        <RoomStalledNotice onRetry={stream.retry} unavailable={stream.unavailable} />
+      )}
       {/* Keyed on the room so opening a conversation gives you a composer that
           is focused and freshly sized for that room's draft. Switching to an
           already-read room takes none of the early returns above, so without

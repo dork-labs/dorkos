@@ -20,7 +20,14 @@ export type { PresenceScope, RoomPresenceAuthor } from './model/use-room-presenc
 export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
-export { usePendingPosts, usePendingPostStore, newPendingId } from './model/pending-posts';
+export {
+  usePendingPosts,
+  usePendingPostStore,
+  newPendingId,
+  findLandedEcho,
+  PENDING_SLOW_MS,
+  PENDING_ECHO_WINDOW_MS,
+} from './model/pending-posts';
 export type { PendingPost, PendingPostStatus } from './model/pending-posts';
 export { useReplyInThread } from './model/use-reply-in-thread';
 export { useToggleReaction } from './model/use-toggle-reaction';

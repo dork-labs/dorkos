@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomEvent, RoomNoticeCode } from '@dorkos/shared/room-schemas';
-import { SSE_RESILIENCE } from '@/layers/shared/lib';
+import { RoomStreamHttpError, SSE_RESILIENCE } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { useRoomPresenceStore } from '../model/use-room-presence';
@@ -301,6 +301,108 @@ describe('useRoomStream', () => {
       // reset this room would have been declared dead at attempt 5, on the
       // strength of failures it had already recovered from.
       expect(result.current.stalled).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('stops trying when the server says the room is not this reader’s to read', async () => {
+    // A room deleted, or access revoked, while it was open. Retrying that
+    // forever draws "reconnecting" over something that is never coming back —
+    // a worse lie than the frozen room the infinite retry was written to fix.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi.fn().mockImplementation(() =>
+      (async function* (): AsyncIterable<RoomEvent> {
+        throw new RoomStreamHttpError(404, 'Not Found');
+      })()
+    );
+
+    const { result, unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(result.current.unavailable).toBe(true));
+      // Everything that stands down on a stalled room stands down on this one
+      // too — only the words change.
+      expect(result.current.stalled).toBe(true);
+      // One attempt, and then it stops. The budget is for a server that might
+      // come back; this one has answered.
+      expect(subscribeCallCount(transport)).toBe(1);
+
+      // And it stays stopped, which is the assertion the budget test cannot
+      // make: give the loop every chance to try again and find it did not.
+      await act(async () => {});
+      expect(subscribeCallCount(transport)).toBe(1);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('keeps trying on a server error, which is not the same thing at all', async () => {
+    // 5xx is a server having a bad minute. Only the statuses that mean "answered,
+    // and the answer is no" are fatal.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi.fn().mockImplementation(() =>
+      (async function* (): AsyncIterable<RoomEvent> {
+        throw new RoomStreamHttpError(503, 'Service Unavailable');
+      })()
+    );
+
+    const { result, unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(result.current.stalled).toBe(true));
+      expect(result.current.unavailable).toBe(false);
+      const atStall = subscribeCallCount(transport);
+      await waitFor(() => expect(subscribeCallCount(transport)).toBeGreaterThan(atStall));
+    } finally {
+      unmount();
+    }
+  });
+
+  it('coalesces a burst of wake-ups into one reconnect', async () => {
+    // A laptop coming out of sleep fires all three within milliseconds of each
+    // other. Acting on each is three teardowns and three reopens of one socket
+    // to reach the state the first would have reached.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) => staysOpen(signal));
+
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(subscribeCallCount(transport)).toBe(1));
+
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      // Real elapsed time, and less than the coalescing window. React's own
+      // batching already folds together anything raised in ONE tick, so two
+      // events in one tick would measure React rather than this hook — and a
+      // gap longer than the window is two genuine wake-ups that deserve two
+      // reconnects.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+
+      await waitFor(() => expect(subscribeCallCount(transport)).toBe(2));
+      // Long enough for an uncoalesced second wake to have opened a third.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      });
+      expect(subscribeCallCount(transport)).toBe(2);
     } finally {
       unmount();
     }

@@ -82,16 +82,24 @@ function noticeEntry(code: RoomNoticeCode, text: string): RoomEntry {
   };
 }
 
-/** One pending row, with everything the store would have filled in. */
-function pending(status: PendingPost['status'], text: string): PendingPost {
+/**
+ * One pending row, with everything the store would have filled in.
+ *
+ * `at` is the one field a demo has to choose deliberately: a row grows a way out
+ * once it has been in flight for `PENDING_SLOW_MS`, so "just sent" has to be
+ * genuinely just sent and "taking too long" has to be genuinely old. The
+ * just-sent row below therefore does become the slow one after fifteen seconds
+ * on this page — which is the behaviour, not a bench artefact.
+ */
+function pending(status: PendingPost['status'], text: string, at = Date.now()): PendingPost {
   return {
-    clientId: `bench-${status}`,
+    clientId: `bench-${status}-${at}`,
     roomId: THREAD_ROOM_ID,
     threadRootId: null,
     text,
     status,
     entryId: null,
-    at: 0,
+    at,
   };
 }
 
@@ -128,16 +136,30 @@ function PendingSection() {
   return (
     <PlaygroundSection
       title="RoomPendingRow"
-      description="What holds your words between pressing Enter and the room echoing them back. A post is trigger-only — the entry arrives on the room's stream, not in the response — so without this the sentence was simply gone for the length of the round trip, and gone for good under a stream that had stopped listening. In flight it is the same words in the same place, dimmed; refused, it says so and offers the only two things worth offering. Nothing here can lose the words without somebody choosing to."
+      description="What holds your words between pressing Enter and the room echoing them back. A post is trigger-only — the entry arrives on the room's stream, not in the response — so without this the sentence was simply gone for the length of the round trip, and gone for good under a stream that had stopped listening. In flight it is the same words in the same place, dimmed and with nothing to press; once it has been in flight too long it grows a Discard, because a row with no way out is one that can be stuck on screen for the session; refused, it says so and offers both. Nothing here can lose the words without somebody choosing to."
     >
-      <ShowcaseLabel>In flight</ShowcaseLabel>
+      <ShowcaseLabel>In flight, just sent</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomPendingRow post={pending('sending', 'is the build still stuck?')} />
+        <RoomPendingRow
+          post={pending('sending', 'is the build still stuck?')}
+          viewerAuthorId="author-you"
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Refused — the words are still here</ShowcaseLabel>
       <ShowcaseDemo>
-        <RoomPendingRow post={pending('failed', 'is the build still stuck?')} />
+        <RoomPendingRow
+          post={pending('failed', 'is the build still stuck?')}
+          viewerAuthorId="author-you"
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>In flight too long — a way out appears</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RoomPendingRow
+          post={pending('sending', 'is the build still stuck?', 0)}
+          viewerAuthorId="author-you"
+        />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

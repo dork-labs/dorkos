@@ -3,11 +3,13 @@
  *
  * @module entities/room/model/use-room
  */
+import { useEffect } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { usePendingPostStore } from './pending-posts';
 
 /**
  * Fetch one room with its roster.
@@ -77,7 +79,24 @@ function roomEntriesQuery(transport: Transport, roomId: string | null) {
  */
 export function useRoomEntries(roomId: string | null): UseQueryResult<RoomEntry[]> {
   const transport = useTransport();
-  return useQuery({ ...roomEntriesQuery(transport, roomId), enabled: roomId !== null });
+  const query = useQuery({ ...roomEntriesQuery(transport, roomId), enabled: roomId !== null });
+  const entries = query.data;
+
+  // A message this reader sent can reach the screen through this read as well as
+  // through the stream, and only the stream used to retire the row holding it.
+  // Any refetch while a post was in flight — a room reopened after its cache was
+  // collected, a hydrate that raced a send — therefore left a permanent
+  // "Sending…" row directly under the message it was waiting for, with nothing
+  // on it to press. Whatever puts an entry on screen has to be able to end that.
+  useEffect(() => {
+    if (roomId === null || entries === undefined) return;
+    usePendingPostStore.getState().settleMany(
+      roomId,
+      entries.map((entry) => entry.id)
+    );
+  }, [roomId, entries]);
+
+  return query;
 }
 
 /**

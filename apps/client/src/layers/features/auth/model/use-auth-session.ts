@@ -11,9 +11,25 @@
  */
 import { useCallback, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { setAuthRequired } from '@/layers/shared/lib';
+import { isStreamOwnedQuery, setAuthRequired } from '@/layers/shared/lib';
 import { useAuthClient } from './auth-client-context';
 import type { AuthError, AuthSession, AuthUser } from './auth-client';
+
+/**
+ * Everything a sign-in or sign-out may safely re-read.
+ *
+ * Signing in or out changes who the server thinks you are, so nearly every
+ * cached answer is suspect and a whole-cache sweep is the honest response. The
+ * exception is a cache kept current by a durable subscription of its own: those
+ * resume from a cursor and are gap-free, so re-reading one replaces live state
+ * with a page the server happens to return and loses whatever the socket
+ * delivered while the read was in flight. See {@link isStreamOwnedQuery}.
+ *
+ * @param query - Any query the cache holds.
+ */
+function refetchableOnAuthChange(query: { meta?: Record<string, unknown> }): boolean {
+  return !isStreamOwnedQuery(query);
+}
 
 /** TanStack Query key for the current auth session. */
 export const authSessionKey = ['auth', 'session'] as const;
@@ -63,7 +79,7 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
         return { ok: false, error: err };
       }
       setAuthRequired(false);
-      await queryClient.invalidateQueries();
+      await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
       return { ok: true };
     },
     [client, queryClient]
@@ -119,7 +135,7 @@ export function useSignOut(): AuthActionState<[]> {
       return { ok: false, error: err };
     }
     queryClient.setQueryData<AuthSession | null>(authSessionKey, null);
-    await queryClient.invalidateQueries();
+    await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
     return { ok: true };
   }, [client, queryClient]);
 

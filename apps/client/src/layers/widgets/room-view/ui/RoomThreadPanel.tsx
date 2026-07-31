@@ -37,6 +37,8 @@ interface RoomThreadPanelProps {
   reactionFrequents: readonly string[];
   /** True when the room's live stream has given up. */
   streamStalled?: boolean;
+  /** True when it has given up for good — see `RoomStreamState.unavailable`. */
+  streamUnavailable?: boolean;
   /**
    * Ask the room's stream to try now.
    *
@@ -108,6 +110,7 @@ export function RoomThreadPanel({
   entries,
   reactionFrequents,
   streamStalled,
+  streamUnavailable,
   onRetryStream,
   historyLoaded,
   historyFailed = false,
@@ -359,7 +362,7 @@ export function RoomThreadPanel({
             Below the feed rather than in it, for the same reason the room's are
             below its own: a reply the server has not accepted is not one of the
             panel's numbered articles. */}
-        <RoomPendingList posts={pending} />
+        <RoomPendingList posts={pending} viewerAuthorId={room.viewerAuthorId} />
       </div>
 
       {/* On a phone the thread REPLACES the room, so the room's own copy of
@@ -367,7 +370,7 @@ export function RoomThreadPanel({
           conversation had stopped hearing. Beside a room that is drawing one,
           repeating it would just be the same sentence twice. */}
       {pushed && streamStalled === true && onRetryStream !== undefined && (
-        <RoomStalledNotice onRetry={onRetryStream} />
+        <RoomStalledNotice onRetry={onRetryStream} unavailable={streamUnavailable} />
       )}
 
       {/* Writes into THIS thread because it is mounted here — no aim, no

@@ -14,6 +14,7 @@ import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import { isStreamOwnedQuery } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { useCreateChannel } from '../model/use-create-room';
 import { useRoomEntries } from '../model/use-room';
 import { useRoomStream } from '../model/use-room-stream';
 
@@ -158,6 +159,37 @@ describe('useRoomEntries — the stream owns this cache', () => {
       await act(async () => {
         onlineManager.setOnline(false);
         onlineManager.setOnline(true);
+      });
+
+      expect(transport.listRoomEntries).toHaveBeenCalledTimes(1);
+      expect(heldSeqs(queryClient)).toEqual([1, 2, 3]);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('survives creating a channel while the room is open', async () => {
+    // The reviewer executed this one: `useCreateChannel` invalidated
+    // `roomKeys.all`, which is the PREFIX ['rooms'] — so it matched
+    // ['rooms','entries',<id>] as well, and making a channel from the sidebar
+    // discarded the open room's history and refetched the trailing page. Every
+    // entry the stream had merged beyond that page was gone, with nothing that
+    // would ever re-send it. The `meta.streamOwned` flag does not help here:
+    // an explicit `queryKey` filter never consults it.
+    const transport = openRoomTransport();
+    transport.createRoom = vi.fn().mockResolvedValue({ id: 'room-2' });
+    const queryClient = makeQueryClient();
+
+    const { result, unmount } = renderHook(
+      () => ({ room: useOpenRoom(), create: useCreateChannel() }),
+      { wrapper: wrapperFor(transport, queryClient) }
+    );
+
+    try {
+      await waitFor(() => expect(heldSeqs(queryClient)).toEqual([1, 2, 3]));
+
+      await act(async () => {
+        await result.current.create.mutateAsync({ title: 'somewhere else', agentPaths: [] });
       });
 
       expect(transport.listRoomEntries).toHaveBeenCalledTimes(1);

@@ -3,10 +3,39 @@
  *
  * @module entities/room/model/use-create-room
  */
-import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+  type UseMutationResult,
+} from '@tanstack/react-query';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+
+/**
+ * Re-read every room list, roster and thread — and nothing else.
+ *
+ * A new room changes what the sidebar holds, so something has to refetch. It
+ * used to be `roomKeys.all`, and that was a quiet data-loss bug: `all` is the
+ * PREFIX `['rooms']`, which matches `['rooms','entries',<id>]` as well. So
+ * creating a channel while a room was open discarded that room's history and
+ * refetched it — and the read answers with the trailing page, so every entry
+ * the live stream had merged beyond it was simply gone, with nothing that would
+ * ever re-send it.
+ *
+ * The three keys below are every room read that a create can actually change.
+ * A room's history is not one of them: it belongs to that room's own stream.
+ *
+ * @param queryClient - The cache to refresh.
+ */
+function invalidateRoomReads(queryClient: QueryClient): Promise<void> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: roomKeys.lists() }),
+    queryClient.invalidateQueries({ queryKey: roomKeys.details() }),
+    queryClient.invalidateQueries({ queryKey: roomKeys.threads() }),
+  ]).then(() => undefined);
+}
 
 /** What a new channel is called, and who is in it from the start. */
 export interface CreateChannelInput {
@@ -52,7 +81,7 @@ export function useCreateChannel(): UseMutationResult<RoomWithRoster, Error, Cre
   return useMutation({
     mutationFn: ({ title, agentPaths }: CreateChannelInput) =>
       transport.createRoom({ kind: 'channel', title, members: [], agentPaths }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: roomKeys.all }),
+    onSuccess: () => invalidateRoomReads(queryClient),
   });
 }
 
@@ -83,6 +112,6 @@ export function useStartDirectMessage(): UseMutationResult<
   return useMutation({
     mutationFn: ({ agentPaths, title }: StartDirectMessageInput) =>
       transport.createRoom({ kind: 'dm', title, members: [], agentPaths }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: roomKeys.all }),
+    onSettled: () => invalidateRoomReads(queryClient),
   });
 }

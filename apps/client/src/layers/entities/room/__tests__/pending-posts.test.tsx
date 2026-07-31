@@ -12,6 +12,7 @@ import { usePendingPostStore, usePendingPosts } from '../model/pending-posts';
 import { useRoomDraftStore } from '../model/room-drafts';
 import { usePostToRoom } from '../model/use-post-to-room';
 import { useReplyInThread } from '../model/use-reply-in-thread';
+import { useRoomEntries } from '../model/use-room';
 import { useRoomStream } from '../model/use-room-stream';
 
 const ROOM = 'room-1';
@@ -159,6 +160,51 @@ describe('a message in flight', () => {
     act(() => result.current.post.mutate({ roomId: ROOM, text: 'ok', clientId: 'c1' }));
 
     await waitFor(() => expect(result.current.pending).toHaveLength(0));
+  });
+
+  it('is retired by a history READ that carries it, not only by the stream', async () => {
+    // The reviewer's repro. `settle` used to be called from the stream handler
+    // alone, so any refetch of the room's history while a post was in flight
+    // delivered the entry through the READ and left the row saying "Sending…"
+    // directly under the message it was waiting for — with nothing on it to
+    // press, because Try again and Discard were failed-only.
+    const transport = createMockTransport();
+    transport.postToRoom = vi
+      .fn()
+      .mockResolvedValue({ accepted: true, entryId: 'entry-mine', seq: 9 });
+
+    // The read is held open until the test lets it answer, so the 202 is
+    // recorded FIRST. Without that ordering the row is retired on the way back
+    // from the post (`reconcilePendingPost` checks the cache), and this file
+    // would be asserting that path a second time rather than the read's.
+    let answerRead!: (entries: RoomEntry[]) => void;
+    transport.listRoomEntries = vi
+      .fn()
+      .mockReturnValue(new Promise<RoomEntry[]>((resolve) => (answerRead = resolve)));
+    // No stream at all, so nothing but the read can possibly settle this.
+    transport.subscribeRoom = vi.fn().mockImplementation(() =>
+      (async function* (): AsyncIterable<RoomEvent> {
+        await new Promise<void>(() => {});
+      })()
+    );
+
+    const { result } = renderHook(
+      () => ({
+        post: usePostToRoom(),
+        entries: useRoomEntries(ROOM),
+        pending: usePendingPosts(ROOM, null),
+      }),
+      { wrapper: wrapperFor(transport, makeQueryClient()) }
+    );
+
+    act(() => result.current.post.mutate({ roomId: ROOM, text: 'ok', clientId: 'c1' }));
+    await waitFor(() => expect(result.current.pending[0]?.entryId).toBe('entry-mine'));
+
+    // And now the page lands, carrying the entry the row is waiting for.
+    await act(async () => answerRead([entry(9, 'entry-mine')]));
+
+    await waitFor(() => expect(result.current.entries.data).toHaveLength(1));
+    expect(result.current.pending).toHaveLength(0);
   });
 
   it('goes to a failed row rather than back into the composer', async () => {

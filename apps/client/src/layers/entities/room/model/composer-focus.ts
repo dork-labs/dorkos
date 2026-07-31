@@ -19,8 +19,9 @@
  * aim back when a reply was refused. The thread panel retired all of it (design
  * record §3). A thread reply is now written in the panel, which is unmissably
  * the thread — so there is no aim to state, no way for the room's box to
- * silently be pointed somewhere else, and nothing to restore: a refusal gives
- * its words back to the panel's own draft, which is where they were typed.
+ * silently be pointed somewhere else, and nothing to restore: a refused reply
+ * stays on its own pending row in the thread it was typed in (`pending-posts`),
+ * and never goes near anybody's composer.
  *
  * @module entities/room/model/composer-focus
  */

@@ -28,6 +28,29 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import type { RoomEntry } from '@dorkos/shared/room-schemas';
+
+/**
+ * How long a message may be in flight before its row offers a way out.
+ *
+ * A row in flight has nothing to do and nothing to decide, so it starts with no
+ * controls at all — a Discard button under every message anybody sends would be
+ * clutter over a state that normally lasts a few hundred milliseconds. Past
+ * this, "normally" has stopped applying: something is wrong, and a row with no
+ * way to dismiss it is a row that can be stuck on screen forever.
+ */
+export const PENDING_SLOW_MS = 15_000;
+
+/**
+ * How far back to look for a message that may have landed without saying so.
+ *
+ * Generous, because it is compared across two clocks — `createdAt` is the
+ * server's and `at` is this browser's — and the failure it guards against
+ * (posting the same message twice) is worse than the one it risks (offering to
+ * try again when there was no need). A browser running more than five minutes
+ * fast simply falls back to re-sending, which is where this started.
+ */
+export const PENDING_ECHO_WINDOW_MS = 5 * 60_000;
 
 /** Where a message that has been sent has got to. */
 export type PendingPostStatus = 'sending' | 'failed';
@@ -110,6 +133,20 @@ interface PendingPostActions {
    */
   settle: (roomId: string, entryId: string) => void;
   /**
+   * Retire every attempt a whole page of history accounts for.
+   *
+   * The stream is not the only way an entry reaches this client, and assuming
+   * it was left a hole: any refetch of a room's history while a post was in
+   * flight — a reconnect sweep, a room reopened after its cache was collected —
+   * delivers the entry through the READ, so the row that was holding those
+   * words sat there saying "Sending…" underneath the message it was waiting
+   * for, with no way to dismiss it.
+   *
+   * @param roomId - The room the page belongs to.
+   * @param entryIds - Every id the page holds.
+   */
+  settleMany: (roomId: string, entryIds: readonly string[]) => void;
+  /**
    * Throw an attempt away at the reader's request.
    *
    * The only way words leave this store unsent, and it is deliberately a
@@ -181,6 +218,21 @@ export const usePendingPostStore = create<PendingPostState & PendingPostActions>
           'pendingPosts/settle'
         ),
 
+      settleMany: (roomId, entryIds) =>
+        set(
+          (held) => {
+            if (entryIds.length === 0) return held;
+            const landed = new Set(entryIds);
+            const kept = held.posts.filter(
+              (post) =>
+                !(post.roomId === roomId && post.entryId !== null && landed.has(post.entryId))
+            );
+            return kept.length === held.posts.length ? held : { posts: kept };
+          },
+          false,
+          'pendingPosts/settleMany'
+        ),
+
       discard: (clientId) =>
         set(
           (held) => {
@@ -194,6 +246,49 @@ export const usePendingPostStore = create<PendingPostState & PendingPostActions>
     { name: 'PendingPostStore' }
   )
 );
+
+/**
+ * The message this attempt may already have become, if the failure was only the
+ * confirmation getting lost.
+ *
+ * **The residual risk this narrows, and cannot close.** A post that times out
+ * after the server has committed it looks identical to one that never arrived:
+ * the request rejected either way. Trying again then sends the message twice
+ * and spends a second agent turn on it. Closing that properly needs the SERVER
+ * to treat `clientId` as an idempotency key and answer a repeat with the
+ * original entry — deferred to DOR-786, and deliberately not attempted here.
+ *
+ * What this does instead is look before it leaps: if the room's own history
+ * already holds a message with these exact words from this reader, inside
+ * {@link PENDING_ECHO_WINDOW_MS}, the send did land and the row should retire
+ * rather than re-post. It is a heuristic on purpose and it is the conservative
+ * side of one — matching wrongly costs a message the reader has to type again,
+ * which is recoverable and visible; matching too little costs a duplicate,
+ * which is neither.
+ *
+ * Text and author, never text alone: "ok" is the most repeated sentence in any
+ * room, and half of them are somebody else's.
+ *
+ * @param entries - The room's loaded history, or undefined when none is.
+ * @param post - The attempt about to be retried.
+ * @param viewerAuthorId - This reader's own author id in that room.
+ * @returns The entry this attempt appears to have become, or `undefined`.
+ */
+export function findLandedEcho(
+  entries: readonly RoomEntry[] | undefined,
+  post: PendingPost,
+  viewerAuthorId: string
+): RoomEntry | undefined {
+  if (entries === undefined) return undefined;
+  const floor = post.at - PENDING_ECHO_WINDOW_MS;
+  return entries.find((entry) => {
+    if (entry.kind !== 'post') return false;
+    if (entry.authorId !== viewerAuthorId) return false;
+    if (entry.body.text !== post.text) return false;
+    const at = Date.parse(entry.createdAt);
+    return !Number.isNaN(at) && at >= floor;
+  });
+}
 
 /** One shared empty answer, so the usual case never re-renders its reader. */
 const NOTHING_PENDING: PendingPost[] = [];

@@ -251,7 +251,7 @@ export function RoomTimeline({
       {/* Below the log, at the tail, where the message is about to appear —
           and outside the feed, because a message the server has not accepted
           yet is not one of its numbered articles. */}
-      <RoomPendingList posts={pending} />
+      <RoomPendingList posts={pending} viewerAuthorId={viewerAuthorId} />
     </>
   );
 }

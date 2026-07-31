@@ -1,6 +1,16 @@
 interface RoomStalledNoticeProps {
   /** Ask the room's stream to try now, rather than waiting out its backoff. */
   onRetry: () => void;
+  /**
+   * True when the server has answered that this reader may not read this room —
+   * it is gone, or they are signed out, or they are no longer a member.
+   *
+   * A different sentence, because "reconnecting" is a promise nothing is going
+   * to keep: the loop has stopped, deliberately, and telling somebody to wait
+   * for a room that no longer exists is worse than the frozen-room bug this
+   * notice was written for.
+   */
+  unavailable?: boolean;
 }
 
 /**
@@ -25,24 +35,46 @@ interface RoomStalledNoticeProps {
  *
  * @param props - How to ask for a retry.
  */
-export function RoomStalledNotice({ onRetry }: RoomStalledNoticeProps) {
+export function RoomStalledNotice({ onRetry, unavailable = false }: RoomStalledNoticeProps) {
   return (
     <div
       role="status"
       data-testid="room-stalled"
+      data-unavailable={unavailable ? 'true' : undefined}
       className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-4 py-2 text-xs"
     >
-      <span>
-        New messages aren&apos;t coming through right now. You can still send — anything that
-        doesn&apos;t get through will say so.
-      </span>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="focus-ring hover:text-foreground rounded underline underline-offset-2"
-      >
-        Reconnect
-      </button>
+      {unavailable ? (
+        <>
+          <span>
+            This room is no longer available. It may have been deleted, or you may no longer have
+            access to it.
+          </span>
+          {/* Still offered, because one of the three ways to get here — a signed-
+              out session — is one a person fixes in another tab and comes back
+              from. It just does not promise anything. */}
+          <button
+            type="button"
+            onClick={onRetry}
+            className="focus-ring hover:text-foreground rounded underline underline-offset-2"
+          >
+            Try again
+          </button>
+        </>
+      ) : (
+        <>
+          <span>
+            New messages aren&apos;t coming through right now. You can still send — anything that
+            doesn&apos;t get through will say so.
+          </span>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="focus-ring hover:text-foreground rounded underline underline-offset-2"
+          >
+            Reconnect
+          </button>
+        </>
+      )}
     </div>
   );
 }

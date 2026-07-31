@@ -1,13 +1,16 @@
 ---
 covers:
   - 'fix(rooms): a room comes back on its own, and says what it is doing while it cannot (DOR-783)'
+  - "fix(rooms): review round — settle pending on any path, and stop sweeping the room's history (DOR-783)"
 ---
 
 ### Fixed
 
 - A room whose live connection dropped used to freeze for as long as you left the tab open. It now keeps trying on its own — and comes back the moment your network does, you switch back to the tab, or the rest of the app reconnects.
 - Coming back to a room after a while no longer quietly loses recent messages. The room's history is kept by its live connection now, so nothing goes back and overwrites it.
-- Messages you send stay on screen while they are in the air. If one doesn't get through, it says so where you typed it, with a Try again button — instead of disappearing.
+- Messages you send stay on screen while they are in the air. If one doesn't get through, it says so where you typed it, with a Try again button — instead of disappearing. Try again checks whether the message actually landed first, so pressing it won't send the same thing twice.
+- Making a new channel while you had a room open no longer loses recent messages from that room.
+- A room you no longer have access to — deleted, or you were removed — now says so, instead of saying it is reconnecting forever.
 - Your agent no longer looks like it is still working after a turn has failed.
 - On a phone, the message box stays above the keyboard instead of hiding behind it.
 

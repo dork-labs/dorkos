@@ -27,7 +27,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { SSE_RESILIENCE } from '@/layers/shared/lib';
+import { isFatalStreamError, SSE_RESILIENCE } from '@/layers/shared/lib';
 import { streamManager } from '@/layers/shared/lib/transport';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
@@ -106,6 +106,17 @@ function backoffMs(failures: number): number {
   return Math.random() * ceiling;
 }
 
+/**
+ * How long a browser-raised wake-up waits for its siblings.
+ *
+ * A laptop coming out of sleep fires all three within a few milliseconds —
+ * `online`, the tab coming forward, and the global stream reconnecting — and
+ * acting on each is three teardowns and three reopens of one socket to reach
+ * the state the first would have reached. Long enough to gather them, short
+ * enough that nobody could see it.
+ */
+const WAKE_COALESCE_MS = 50;
+
 /** Wait `ms`, or return early the moment `signal` aborts. */
 function wait(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -135,8 +146,25 @@ export interface RoomStreamState {
    * **It is a statement about now, not a terminal state.** The loop keeps
    * retrying underneath it at the backoff cap, and clears it the moment a stream
    * is demonstrably alive again.
+   *
+   * **Latched once per OUTAGE, not once per failed attempt.** Since the loop no
+   * longer stops, a per-attempt latch would re-clear the presence store every
+   * thirty seconds for as long as a server stayed down, and would re-announce a
+   * state the reader has already been told about.
    */
   stalled: boolean;
+  /**
+   * True when the room is not live AND will not become live on its own: the
+   * server answered that this reader may not read it — deleted, signed out, or
+   * no longer a member.
+   *
+   * It refines {@link RoomStreamState.stalled} rather than replacing it, so
+   * everything that already stands down on a stalled room (reactions, the
+   * notice) keeps working without knowing which of the two happened. Only the
+   * words change, and they have to: "reconnecting" over a room that is never
+   * coming back is a worse lie than the one the infinite retry fixed.
+   */
+  unavailable: boolean;
   /** Try again from the newest entry the reader holds. */
   retry: () => void;
 }
@@ -175,18 +203,45 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
   // Which room gave up, not whether one did: switching rooms must not carry the
   // dead-stream notice across to a room whose stream is perfectly alive.
   const [stalledRoomId, setStalledRoomId] = useState<string | null>(null);
+  // Which room the server has said this reader may not have — see
+  // `isFatalStreamStatus`. Held per room for the same reason the stall is.
+  const [goneRoomId, setGoneRoomId] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   /**
-   * Whether the subscription loop is currently between streams.
+   * Whether the subscription loop is between streams RIGHT NOW — in a backoff
+   * wait, rather than holding an open subscription.
    *
    * Read by the wake-ups below, so a tab switch over a perfectly healthy room
-   * does not tear down a live socket to open an identical one.
+   * does not tear down a live socket to open an identical one. It is cleared at
+   * the top of every attempt rather than only once a stream has proved itself:
+   * proof takes up to the stability window, and treating those ten seconds as
+   * "between streams" made a brief alt-tab tear down a stream that was fine.
    */
   const betweenStreamsRef = useRef(false);
 
   // Re-running the effect is the whole of a retry: the cycle below clears the
   // stall itself, so there is nothing to reset here.
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  /**
+   * A retry asked for by the browser rather than by a person.
+   *
+   * Coalesced, because a laptop waking up fires all three of these within a few
+   * milliseconds of each other — `online`, the tab coming forward, and the
+   * global stream reconnecting — and three retries in three ticks is three
+   * teardowns and three reopens of the same socket to reach the state the first
+   * one already reached. A person pressing Reconnect gets {@link retry}, which
+   * is immediate: they are watching, and a delay they can see is worse than a
+   * redundant connect they cannot.
+   */
+  const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wake = useCallback(() => {
+    if (wakeTimer.current !== null) return;
+    wakeTimer.current = setTimeout(() => {
+      wakeTimer.current = null;
+      setAttempt((n) => n + 1);
+    }, WAKE_COALESCE_MS);
+  }, []);
 
   // The three wake-ups. Each is a fact about the network rather than a guess,
   // and each is cheap: a retry re-opens from the cursor the reader already
@@ -196,7 +251,7 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
 
     // `online` means the machine had no network and now does, so whatever
     // socket was open is dead by definition — no health check needed.
-    const onOnline = () => retry();
+    const onOnline = () => wake();
 
     // A tab that was in the background long enough for a browser to cull its
     // connections comes back to a socket that may be dead without anything
@@ -212,7 +267,7 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
       }
       const hiddenFor = hiddenAt === null ? 0 : Date.now() - hiddenAt;
       hiddenAt = null;
-      if (betweenStreamsRef.current || hiddenFor >= SSE_RESILIENCE.VISIBILITY_GRACE_MS) retry();
+      if (betweenStreamsRef.current || hiddenFor >= SSE_RESILIENCE.VISIBILITY_GRACE_MS) wake();
     };
 
     // The global stream recovering says the server is reachable again. It is
@@ -223,7 +278,7 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     const unsubscribe = streamManager.subscribeListConnectionState((state) => {
       const recovered = state === 'connected' && previous === 'reconnecting';
       previous = state;
-      if (recovered) retry();
+      if (recovered) wake();
     });
 
     window.addEventListener('online', onOnline);
@@ -232,8 +287,12 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
       window.removeEventListener('online', onOnline);
       document.removeEventListener('visibilitychange', onVisibility);
       unsubscribe();
+      if (wakeTimer.current !== null) {
+        clearTimeout(wakeTimer.current);
+        wakeTimer.current = null;
+      }
     };
-  }, [roomId, retry]);
+  }, [roomId, wake]);
 
   useEffect(() => {
     if (roomId === null || !hydrated) return;
@@ -247,6 +306,7 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
       // coming through. Clearing on the way IN also covers the retry button and
       // a re-hydrate, which are the only other ways a cycle begins.
       setStalledRoomId(null);
+      setGoneRoomId(null);
       betweenStreamsRef.current = false;
       let failures = 0;
       // Said once per outage, not once per failed attempt: the loop no longer
@@ -265,6 +325,11 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
 
       while (!controller.signal.aborted) {
         const openedAt = Date.now();
+        // The wait is over and a subscription is about to exist. Cleared HERE
+        // rather than once the stream has proved itself, because proof takes up
+        // to the stability window and a live-but-unproven stream is not one the
+        // wake-ups should be tearing down.
+        betweenStreamsRef.current = false;
         // A room can be healthy and completely silent, so "an event arrived" is
         // not the only proof of life — a stream still open after the stability
         // window is the other, and it is the one that takes the notice back down
@@ -325,6 +390,18 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         } catch (err) {
           if (controller.signal.aborted) return;
           console.warn('[rooms] live stream dropped', { roomId, err });
+          // The server ANSWERED, and its answer was that this reader may not
+          // read this room — it is gone, or they are signed out, or they are no
+          // longer a member. Retrying that forever draws "reconnecting" over a
+          // room that is never coming back, which is a worse lie than the one
+          // the infinite retry was introduced to fix.
+          if (isFatalStreamError(err)) {
+            useRoomPresenceStore.getState().clearRoom(roomId);
+            setGoneRoomId(roomId);
+            setStalledRoomId(roomId);
+            clearTimeout(stable);
+            return;
+          }
         } finally {
           clearTimeout(stable);
         }
@@ -355,5 +432,9 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     return () => controller.abort();
   }, [roomId, hydrated, transport, queryClient, attempt]);
 
-  return { stalled: stalledRoomId !== null && stalledRoomId === roomId, retry };
+  return {
+    stalled: stalledRoomId !== null && stalledRoomId === roomId,
+    unavailable: goneRoomId !== null && goneRoomId === roomId,
+    retry,
+  };
 }
