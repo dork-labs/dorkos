@@ -1,14 +1,30 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RoomPresenceAuthor } from '@/layers/entities/room';
 import { memberSecondaryLine } from '../lib/member-line';
 
 const JOINED = '2026-07-26T10:00:00.000Z';
+
+// Pin "now" mid-afternoon, well clear of any local-midnight rollover, so
+// every `Date.now() - Nm` timestamp below lands on the same calendar day
+// regardless of the machine's timezone. See member-line.test.ts history for
+// why: a wall-clock-relative assertion here is red for ~45 minutes after
+// every local midnight.
+const NOW = new Date('2026-07-26T15:00:00.000Z');
 
 function claim(state: RoomPresenceAuthor['state'], elapsedMs: number): RoomPresenceAuthor {
   return { authorId: 'author-Ana', state, since: JOINED, elapsedMs };
 }
 
 describe('memberSecondaryLine', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('says what the agent is doing now, over anything it did before', () => {
     // Red if the priority inverts: a row would report a message from Tuesday
     // while the agent is mid-turn in front of the reader.
