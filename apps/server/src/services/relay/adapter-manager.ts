@@ -506,6 +506,23 @@ export class AdapterManager {
     return this.configs.map((config) => this.buildAdapterView(config));
   }
 
+  /**
+   * The ids of the saved integrations the last load could not read.
+   *
+   * They are not running and never will be until someone fixes them, and —
+   * because nothing about them could be understood — any token they hold is
+   * still in the file in plain text. `GET /api/health/deep` reports the count
+   * so an operator finds out without reading server logs.
+   *
+   * An entry too broken to carry a readable id contributes an empty string, so
+   * the count still matches the number of unreadable entries.
+   *
+   * @returns One id per unreadable entry, in file order.
+   */
+  listUnparsedEntryIds(): string[] {
+    return this.unparsedConfigEntries.map((entry) => unparsedEntryId(entry) ?? '');
+  }
+
   /** Get a single adapter's config and status. Sensitive fields are masked. */
   getAdapter(id: string): { config: AdapterConfig; status: AdapterStatus } | undefined {
     const config = this.configs.find((c) => c.id === id);

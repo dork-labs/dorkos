@@ -22,6 +22,7 @@
     "evals": "pnpm --filter @dorkos/evals run evals --",
     "evals:local": "pnpm --filter @dorkos/evals run evals -- --suite core --tier claude-code-cheap --isolation child-process --budget 2",
     "evals:sweep": "pnpm --filter @dorkos/evals run sweep",
+    "doctor:dev": "tsx packages/cli/scripts/doctor-dev.ts",
     "knip": "knip",
     "knip:fix": "knip --fix",
     "q3:contention": "tsx scripts/q3-contention/run.ts",

@@ -965,6 +965,30 @@ export class RoomStore {
   }
 
   /**
+   * Every room-to-session binding stored, across every room.
+   *
+   * A whole-table read with nothing to scope it — cost grows with how many
+   * rooms the install has ever had members in. That is fine for its one
+   * caller, `GET /api/health/deep`, which an operator invokes by hand and
+   * which needs every binding to answer whether any of them point at a
+   * conversation that is gone. It is the wrong shape for anything a person
+   * triggers by using the app: a room-scoped read belongs in
+   * {@link RoomStore.getRoomSession}.
+   *
+   * @returns One entry per bound room member.
+   */
+  listRoomSessions(): Array<{ roomId: string; authorId: string; sessionId: string }> {
+    return this.db
+      .select({
+        roomId: roomSessions.roomId,
+        authorId: roomSessions.authorId,
+        sessionId: roomSessions.sessionId,
+      })
+      .from(roomSessions)
+      .all();
+  }
+
+  /**
    * Bind an agent member's session for this room. First write wins, mirroring
    * the runtime binding it will carry (ADR-0255).
    *

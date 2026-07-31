@@ -61,10 +61,46 @@ function isGatedPath(path: string): boolean {
 }
 
 /**
+ * The one path under `/api/health` that the gate still protects.
+ *
+ * The liveness probe is exempt because a load balancer, the desktop shell, and
+ * the tunnel all have to reach it before anyone signs in, and it says only that
+ * the server is up. `/api/health/deep` is a different thing wearing the same
+ * prefix: it reports how many rooms, integrations, and agents this machine has
+ * and which of them are broken. That is for the operator, so it needs the
+ * operator's credential.
+ */
+const GATED_HEALTH_PATHS = ['/api/health/deep'];
+
+/**
+ * Whether a path reaches a gated health route, however it is spelled.
+ *
+ * Express matches non-strictly and collapses nothing, so `/api/health/deep/`
+ * and `/api/health/deep//` reach the same handler as `/api/health/deep`. An
+ * exact-string carve-out out of a prefix exemption therefore leaks: the
+ * trailing-slash spelling misses the carve-out, matches the `/api/health/`
+ * exemption, and returns the whole report with no credential. Match the way
+ * the router does — normalize, then compare as a prefix.
+ *
+ * Case is already handled: the caller lowercases before any gate check.
+ *
+ * @param path - The lowercased request path.
+ * @returns `true` when the request would reach a gated health route.
+ */
+function isGatedHealthPath(path: string): boolean {
+  const collapsed = path.replace(/\/{2,}/g, '/');
+  const normalized = collapsed.length > 1 ? collapsed.replace(/\/+$/, '') : collapsed;
+  return GATED_HEALTH_PATHS.some(
+    (gated) => normalized === gated || normalized.startsWith(`${gated}/`)
+  );
+}
+
+/**
  * Paths that always pass while login is enabled: the Better Auth endpoints (so
  * sign-in is reachable) and the health probe.
  */
 function isExemptPath(path: string): boolean {
+  if (isGatedHealthPath(path)) return false;
   return (
     path.startsWith('/api/auth/') ||
     path === '/api/health' ||

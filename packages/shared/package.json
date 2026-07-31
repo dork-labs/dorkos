@@ -197,6 +197,10 @@
       "types": "./src/room-schemas.ts",
       "default": "./dist/room-schemas.js"
     },
+    "./health-schemas": {
+      "types": "./src/health-schemas.ts",
+      "default": "./dist/health-schemas.js"
+    },
     "./untrusted-text": {
       "types": "./src/untrusted-text.ts",
       "default": "./dist/untrusted-text.js"

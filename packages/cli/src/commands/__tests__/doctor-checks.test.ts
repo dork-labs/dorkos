@@ -13,6 +13,8 @@ import {
   checkAuthConfig,
   checkTunnelConfig,
   checkClaudeAuth,
+  checkFileDescriptors,
+  readFileDescriptorLimit,
 } from '../doctor-checks.js';
 
 describe('checkDorkHomeWritable', () => {
@@ -126,6 +128,40 @@ describe('checkClaudeAuth', () => {
       expect(checkClaudeAuth(dir).status).toBe('info');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('checkFileDescriptors', () => {
+  it('passes with plenty of headroom', () => {
+    const result = checkFileDescriptors(1048576);
+    expect(result.status).toBe('pass');
+    expect(result.label).toContain('1048576');
+  });
+
+  it('passes exactly at the floor', () => {
+    expect(checkFileDescriptors(1024).status).toBe('pass');
+  });
+
+  it('warns below the floor and says how to raise it', () => {
+    const result = checkFileDescriptors(256);
+    expect(result.status).toBe('warn');
+    expect(result.fix).toContain('ulimit -n');
+  });
+
+  it('says nothing useful is knowable when the platform reports no limit', () => {
+    expect(checkFileDescriptors(null).status).toBe('info');
+  });
+});
+
+describe('readFileDescriptorLimit', () => {
+  it('reads a number on a platform that has the limit, or null where it does not', () => {
+    const limit = readFileDescriptorLimit();
+    if (process.platform === 'win32') {
+      expect(limit).toBeNull();
+    } else {
+      expect(typeof limit).toBe('number');
+      expect(limit).toBeGreaterThan(0);
     }
   });
 });
