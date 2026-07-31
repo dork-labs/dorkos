@@ -122,8 +122,9 @@ export const SESSIONS = {
   /**
    * Inactivity window before a detached turn is declared stalled: the watchdog
    * interrupts the runtime and closes the turn with a typed error. Resets on
-   * every StreamEvent; suspended while the session lifecycle is 'blocked'
-   * (a pending approval or question can legitimately sit for hours).
+   * every StreamEvent; suspended while the session holds a live pending
+   * interaction (an approval, question or elicitation can legitimately sit for
+   * as long as the person takes, bounded by INTERACTION_TIMEOUT_MS).
    * Trade-off: a legitimately silent tool run longer than this is interrupted.
    */
   TURN_STALL_TIMEOUT_MS: 10 * 60 * 1000,

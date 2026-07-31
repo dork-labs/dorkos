@@ -51,11 +51,13 @@ describe('slugForCanonicalPath', () => {
     );
   });
 
-  it('normalizes to NFC BEFORE replacing, so a decomposed accent loses its base letter too', () => {
-    // The distinction is visible in the PREFIX, not just the hash: NFD's bare
-    // `e` survives the character class, NFC's precomposed `é` does not.
-    const composed = canonicalizeCwd('/Users/f/café'.normalize('NFC'));
-    expect(slugForCanonicalPath(composed)).toBe('-Users-f-caf-');
+  it('replaces a precomposed accent whole, leaving no base letter behind', () => {
+    // Why the normalization form changes the ANSWER, not just the bytes: NFC's
+    // single `é` is one non-alphanumeric character, so the slug keeps `caf`.
+    // NFD is `e` + a combining accent, so the base letter survives the character
+    // class and the slug keeps `cafe`. Two different directories.
+    expect(slugForCanonicalPath('/Users/f/café'.normalize('NFC'))).toBe('-Users-f-caf-');
+    expect(slugForCanonicalPath('/Users/f/café'.normalize('NFD'))).toBe('-Users-f-cafe-');
   });
 });
 
@@ -98,5 +100,19 @@ describe('canonicalizeCwd', () => {
 
   it('resolves a relative path against the process cwd', () => {
     expect(canonicalizeCwd('.')).toBe(canonicalizeCwd(process.cwd()));
+  });
+
+  it('folds decomposed Unicode to NFC on macOS ONLY, matching the SDK gate', () => {
+    // The SDK gates this on `process.platform === "darwin"` because HFS+/APFS
+    // hand back decomposed names. Normalizing everywhere would rewrite a path
+    // the SDK leaves alone, so parity means mirroring the gate, not the intent.
+    const decomposed = path.join(root, 'cafe\u0301');
+    const canonical = canonicalizeCwd(decomposed);
+    if (process.platform === 'darwin') {
+      expect(canonical).toBe(path.resolve(decomposed).normalize('NFC'));
+      expect(canonical.normalize('NFD')).not.toBe(canonical);
+    } else {
+      expect(canonical).toBe(path.resolve(decomposed));
+    }
   });
 });

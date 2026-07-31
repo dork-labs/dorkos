@@ -124,6 +124,35 @@ describe('SessionLockManager — activity-extended TTL (DOR-782)', () => {
     expect(mgr.isLocked(SESSION)).toBe(false);
   });
 
+  it('reclaims a lock whose holder is parked on a wait that has itself expired', () => {
+    // DOR-782 regression. `waitingOnPerson` reports liveness with no clock of
+    // its own, so a holder whose pending interaction STRANDS (an SDK stream that
+    // throws with an approval outstanding never re-drains its queue) would hold
+    // the lock for the process's lifetime. The projector bounds that by the
+    // interaction timeout; this pins that the lock honors the bound rather than
+    // trusting the probe forever.
+    const mgr = new SessionLockManager();
+    let personIsWaiting = true;
+    const res: SseResponse & LockActivity = {
+      on: vi.fn(),
+      lastActivityAt: () => (personIsWaiting ? Date.now() : acquiredMoment),
+    };
+    const acquiredMoment = Date.now();
+    expect(mgr.acquireLock(SESSION, CLIENT, res)).toBe(true);
+
+    // While someone really is waiting, the lock survives any number of windows.
+    for (let i = 0; i < 100; i += 1) {
+      vi.advanceTimersByTime(SESSIONS.LOCK_TTL_MS);
+      expect(mgr.isLocked(SESSION)).toBe(true);
+    }
+
+    // The wait expires (the projector stops counting it). The holder is now
+    // silent, so one TTL later the lock is reclaimable.
+    personIsWaiting = false;
+    expect(mgr.isLocked(SESSION)).toBe(false);
+    expect(mgr.acquireLock(SESSION, 'client-B', fakeRes())).toBe(true);
+  });
+
   it('cleanup() reaps a dark lock but spares a live one', () => {
     const mgr = new SessionLockManager();
     const live = livingRes();

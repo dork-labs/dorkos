@@ -589,10 +589,13 @@ export async function* executeSdkQuery(
   // That is not true at SDK 0.3.177 and the claim caused a real misdiagnosis
   // (DOR-782): a foreground `Task` subagent's tool calls are routed to the SAME
   // `can_use_tool` callback, tagged with `agentID` (`sdk.d.ts` `CanUseTool`), so
-  // they raise a normal approval card. Only BACKGROUNDED subagents differ, and
-  // they do not reach here either — the CLI auto-denies their asks upstream
-  // (`decisionReason: {type:'asyncAgent'}`) and reports the denial as a
-  // `permission_denied` system message.
+  // they raise a normal approval card. That is pinned by a test in
+  // interactive-handlers.test.ts.
+  //
+  // Whether BACKGROUNDED (async) subagents also arrive here is UNRESOLVED and is
+  // not asserted either way (DOR-795) — the reasoning lives in the native CLI
+  // binary rather than the shipped JS. Replacing one confident unverified claim
+  // with another is how the first one survived this long.
   sdkOptions.hooks = {
     PreToolUse: [
       {

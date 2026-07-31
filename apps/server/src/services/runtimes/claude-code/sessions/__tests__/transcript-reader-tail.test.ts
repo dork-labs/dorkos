@@ -174,7 +174,10 @@ describe('TranscriptReader tail read on the list path (fleet-context-health)', (
     // no separate tail overlay — so a single-session read carries the exact same
     // contextTokens and auto-compaction marker the list row does.
     const vaultRoot = '/work/gs';
-    const slug = vaultRoot.replace(/[^a-zA-Z0-9-]/g, '-');
+    // Ask the reader for the slug rather than re-deriving it: the inline regex
+    // this used to carry is the superseded approximation (DOR-782), and it
+    // disagrees with the real one whenever the fixture root is symlinked.
+    const slug = reader.getProjectSlug(vaultRoot);
     hoisted.configDir = dir;
     const projectDir = join(dir, 'projects', slug);
     await mkdir(projectDir, { recursive: true });

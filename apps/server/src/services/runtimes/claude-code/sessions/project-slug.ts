@@ -16,8 +16,8 @@
  * verified byte-identically against an on-disk 207-character truncated name.
  *
  * Three clauses matter and all three were missing before DOR-782 — a symlinked
- * checkout, a decomposed-Unicode path, and a path past 200 characters each
- * produced a slug that pointed nowhere.
+ * checkout, a decomposed-Unicode path on macOS, and a path past 200 characters
+ * each produced a slug that pointed nowhere.
  *
  * @module services/runtimes/claude-code/sessions/project-slug
  */
@@ -48,8 +48,22 @@ function pathHash(value: string): number {
 }
 
 /**
+ * Apply the SDK's Unicode normalization, which is **macOS-only** (`sdk.mjs`'s
+ * `Or`/`fT`: `process.platform === "darwin" ? e.normalize("NFC") : e`).
+ *
+ * The gate is not incidental and must be mirrored, not "improved". HFS+/APFS
+ * hand back decomposed (NFD) filenames, so on macOS the SDK folds them to NFC
+ * before slugging; every other platform stores the bytes it was given, and
+ * normalizing there would rewrite a path the SDK left alone — turning parity
+ * into a new divergence on exactly the platforms that do not have the problem.
+ */
+function normalizeLikeSdk(value: string): string {
+  return process.platform === 'darwin' ? value.normalize('NFC') : value;
+}
+
+/**
  * Put a working directory into the canonical form the SDK slugs: resolved
- * against the process cwd, then through `realpath`, then NFC-normalized.
+ * against the process cwd, then through `realpath`, then (on macOS) NFC.
  *
  * `realpath` is why a symlinked checkout works at all — the agent subprocess
  * runs in the real directory, so that is the name its transcript lands under.
@@ -68,7 +82,7 @@ export function canonicalizeCwd(cwd?: string): string {
   } catch {
     real = resolved;
   }
-  return real.normalize('NFC');
+  return normalizeLikeSdk(real);
 }
 
 /**

@@ -175,6 +175,70 @@ describe('SessionStateProjector', () => {
     expect(pending[0]?.remainingMs).toBe(TIMEOUT_MS);
   });
 
+  // Failure mode (DOR-782): hasPendingInteractions is what keeps the stall
+  // watchdog from firing and the write-lock from expiring, so an entry it reads
+  // as "still waiting" forever makes a turn IMMORTAL — the watchdog can never
+  // close it and the lock can never be reclaimed. Entries do strand: a runtime
+  // stream that throws with an approval outstanding never re-drains its event
+  // queue, so the interaction_cancelled never arrives. Reading `interactions.size`
+  // directly was exactly that bug, and it also regressed markInterrupted (below).
+  it('stops counting a pending interaction once it passes the interaction timeout', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('s1');
+    p.ingest({
+      type: 'approval_required',
+      id: 'stranded-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    expect(p.hasPendingInteractions()).toBe(true);
+
+    // One tick short of the exclusive boundary: still a live wait.
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS - 1);
+    expect(p.hasPendingInteractions()).toBe(true);
+
+    // At and past the boundary the entry is stale — nobody is waiting on a
+    // person any more, whatever the map still holds. It agrees with the DTO
+    // selector, so the two answers to "what is pending" cannot diverge.
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS);
+    expect(p.hasPendingInteractions()).toBe(false);
+    expect(p.getPendingInteractions()).toHaveLength(0);
+
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS * 100);
+    expect(p.hasPendingInteractions()).toBe(false);
+  });
+
+  it('does not treat an interrupted turn as still waiting on a person', () => {
+    // markInterrupted leaves `interactions` populated by design, so the raw-size
+    // read made every interrupted turn look permanently blocked — a turn the
+    // pre-DOR-782 watchdog would have closed became one it never could.
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'approval_required',
+      id: 'int-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    p.markInterrupted();
+    expect(p.getStatus().lifecycle).toBe('interrupted');
+
+    // Still inside the window, the wait is real and the guard stays paused.
+    expect(p.hasPendingInteractions()).toBe(true);
+    // Past it, the guard is armed again and the lock is reclaimable.
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS);
+    expect(p.hasPendingInteractions()).toBe(false);
+  });
+
   // Failure mode (drift pin): the projector's switch enumerates the three
   // blocking interactions by hand, because a switch cannot be driven by a
   // constant. A fourth member added to BLOCKING_INTERACTION_EVENT_TYPES would

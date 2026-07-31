@@ -492,14 +492,20 @@ export interface ToolApprovalContext {
   toolUseID: string;
   /**
    * The subagent this call came from, when it came from one (SDK 0.3.177,
-   * `CanUseTool`'s `agentID`). Absent on the main thread.
+   * `CanUseTool`'s `agentID`; `agent_id` on the wire). Absent on the main thread.
    *
    * Its presence is the standing evidence that a subagent's tool calls DO reach
-   * this gate — for foreground `Task` subagents the CLI routes them to the same
+   * this gate: for foreground `Task` subagents the CLI routes them to the same
    * `can_use_tool` callback, so they raise a normal approval card and pause the
-   * stall watchdog like any other. Backgrounded (async) subagents are the
-   * exception and never arrive here at all: the CLI auto-denies their asks
-   * upstream with `decisionReason: {type:'asyncAgent'}`.
+   * stall watchdog like any other. That much is pinned by a test.
+   *
+   * What BACKGROUNDED (async) subagents do is an open question, deliberately not
+   * asserted here (DOR-795). `SDKControlPermissionRequest` lists `asyncAgent`
+   * among its `decision_reason_type` values, which suggests those asks are
+   * escalated to this callback too rather than resolved upstream — but the
+   * deciding logic lives in the native CLI binary, not in the shipped JS, so it
+   * cannot be read from here and has not been observed live. Do not build on
+   * either answer without checking.
    */
   agentID?: string;
   title?: string;

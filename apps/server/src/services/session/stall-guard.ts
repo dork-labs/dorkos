@@ -10,12 +10,17 @@
  * hung `codex exec`) stops yielding entirely, so an idle-gap clock catches
  * exactly the pathological case while never bounding honest work.
  *
- * Why check-at-expiry pause rather than pause/resume bookkeeping: the projector
- * already tracks `blocked` (a pending approval/question the operator may
- * legitimately sit on for hours) precisely, so the guard just asks `isPaused()`
- * when the timer fires and re-arms if so. No subscription plumbing, no
- * paused-duration accounting; the worst case is detection one full threshold
- * after an unblock, which is acceptable for a 10-minute failsafe.
+ * Why check-at-expiry pause rather than pause/resume bookkeeping: the caller
+ * can already answer "is this turn parked on a person?" precisely, so the guard
+ * just asks `isPaused()` when the timer fires and re-arms if so. No
+ * subscription plumbing, no paused-duration accounting; the worst case is
+ * detection one full threshold after an unblock, which is acceptable for a
+ * 10-minute failsafe. What that probe reads matters (DOR-782): it is the
+ * projector's live pending-interaction set, NOT its `blocked` lifecycle, which a
+ * concurrent turn's `turn_start` overwrites with `streaming` — that once
+ * un-paused the guard for a turn still holding an unanswered approval. The set
+ * carries its own expiry, so a stranded interaction cannot pause the guard
+ * forever either.
  *
  * Abandoned-source suppression: once the stall fires, the guard NEVER consumes
  * another source event; the pending `next()` is detached (rejection-silenced)

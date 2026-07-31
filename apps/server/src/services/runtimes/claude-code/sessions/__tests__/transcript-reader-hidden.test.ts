@@ -145,7 +145,10 @@ describe('TranscriptReader hidden-session filtering (DOR-410)', () => {
 
   it('getSession still returns a hidden (sidechain) session when fetched directly by id', async () => {
     const vaultRoot = '/work/hidden-getsession';
-    const slug = vaultRoot.replace(/[^a-zA-Z0-9-]/g, '-');
+    // Ask the reader for the slug rather than re-deriving it: the inline regex
+    // this used to carry is the superseded approximation (DOR-782), and it
+    // disagrees with the real one whenever the fixture root is symlinked.
+    const slug = reader.getProjectSlug(vaultRoot);
     hoisted.configDir = dir;
     const projectDir = join(dir, 'projects', slug);
     await mkdir(projectDir, { recursive: true });

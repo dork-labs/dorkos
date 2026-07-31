@@ -591,22 +591,35 @@ export class SessionStateProjector {
     return this.counter;
   }
 
-  /** A copy of the held status projection. */
   /**
    * Whether this session is parked on something only a person can answer — a
-   * tool approval, a question, or an MCP elicitation.
+   * tool approval, a question, or an MCP elicitation that is STILL LIVE.
    *
    * The authoritative answer to "is this turn's silence legitimate?", and the
    * probe the stall watchdog and the session write-lock both ask (DOR-782).
    * Prefer it over reading `getStatus().lifecycle === 'blocked'`: the lifecycle
-   * is a projection that any later `status_change` may overwrite, whereas this
-   * map is the pending set itself, added to on each prompt and emptied only by
-   * a resolution or a cancellation.
+   * is a projection that a concurrent turn's `turn_start` overwrites with
+   * `streaming`, whereas the pending set cannot be overwritten that way.
+   *
+   * Expiry is not optional here, and the map's raw size is the wrong answer.
+   * An entry is normally removed by a resolution or an `interaction_cancelled`,
+   * but both are events that must traverse the whole pipeline, and an entry CAN
+   * strand: {@link markInterrupted} leaves the set populated, and a runtime
+   * stream that throws with an approval outstanding never re-drains its event
+   * queue. A stranded entry read as "still waiting" would be permanent — the
+   * watchdog could never fire and the lock could never expire, so a turn frozen
+   * before DOR-782 would become immortal after it. Delegating to
+   * {@link listPendingInteractions} bounds that by the same
+   * `INTERACTION_TIMEOUT_MS` the recovery DTOs already use, so the two answers
+   * to "what is pending" cannot disagree.
+   *
+   * @param now - Server epoch ms to evaluate expiry against (injected for tests).
    */
-  hasPendingInteractions(): boolean {
-    return this.interactions.size > 0;
+  hasPendingInteractions(now = Date.now()): boolean {
+    return listPendingInteractions(this.interactions, now).length > 0;
   }
 
+  /** A copy of the held status projection. */
   getStatus(): SessionStatus {
     return { ...this.status };
   }
