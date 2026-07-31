@@ -153,9 +153,17 @@ export class SessionStore {
    *
    * For new sessions, sdkSessionId is assigned after the first query() init message.
    * For resumed sessions, the sessionId IS the sdkSessionId.
+   *
+   * "Already here" means ANY id the session answers to, not just its map key.
+   * A caller that holds an older link in the rename chain — a room binding
+   * persists the first SDK id it saw and keeps asking with it — was otherwise
+   * handed a second session object for a conversation that is already live,
+   * shadowing the real one on every later lookup (DOR-778). Once the session
+   * is evicted its whole alias chain goes with it, so the same id asked again
+   * is a genuine new session and is created as one.
    */
   ensureSession(sessionId: string, opts: SessionOpts): void {
-    if (this.sessions.has(sessionId)) return;
+    if (this.resolveMapKey(sessionId)) return;
 
     if (this.sessions.size >= SESSIONS.MAX_SESSIONS) {
       throw new Error(
@@ -336,8 +344,8 @@ export class SessionStore {
         permissionMode: opts.permissionMode ?? this.defaultPermissionMode,
         hasStarted: false,
       });
-      this.sessions.get(sessionId)!.needsTranscriptCheck = true;
-      session = this.sessions.get(sessionId)!;
+      session = this.findSession(sessionId)!;
+      session.needsTranscriptCheck = true;
     }
     // Write-through: persist the operator's choice first so it is durable even
     // if the live query rejects the change or the session is later evicted
