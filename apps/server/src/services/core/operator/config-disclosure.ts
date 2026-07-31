@@ -183,6 +183,7 @@ export const CONFIG_DISCLOSURE = {
   'onboarding.startedAt': 'expose',
   'onboarding.dismissedAt': 'expose',
   'onboarding.completedAt': 'expose',
+  'onboarding.runtimeDefaultSetAt': 'expose',
 
   'tours.seen': 'expose',
   'tours.declined': 'expose',

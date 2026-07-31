@@ -132,6 +132,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'onboarding.startedAt',
   'onboarding.dismissedAt',
   'onboarding.completedAt',
+  'onboarding.runtimeDefaultSetAt',
   'tours.seen',
   'tours.declined',
   // The user profile (spec user-profile-onboarding): empty/null defaults send

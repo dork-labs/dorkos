@@ -88,6 +88,14 @@ vi.mock('@/layers/entities/discovery', () => ({
 
 vi.mock('@/layers/entities/mesh', () => ({ useRegisterAgent: () => ({ mutate: vi.fn() }) }));
 
+// The conversation asks whether the default runtime can actually run the first
+// session. Nothing here is about that, so every runtime answers ready.
+vi.mock('@/layers/entities/runtime', () => ({
+  PRIMARY_RUNTIME_TYPES: ['claude-code', 'codex', 'opencode'] as const,
+  useRuntimeRequirements: () => ({ data: { runtimes: { 'claude-code': { state: 'ready' } } } }),
+  selectRuntimeReadiness: () => ({ state: 'ready' }),
+}));
+
 vi.mock('@/layers/features/chat', () => ({
   MessageItem: ({ message }: { message: { content: string } }) => (
     <div data-testid="msg">{message.content}</div>

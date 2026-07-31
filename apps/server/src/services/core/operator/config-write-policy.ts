@@ -230,6 +230,10 @@ export const CONFIG_WRITE_POLICY = {
   'onboarding.startedAt': 'agent-writable',
   'onboarding.dismissedAt': 'agent-writable',
   'onboarding.completedAt': 'agent-writable',
+  // A timestamp saying the first-run flow already picked a default runtime. It
+  // grants nothing and guards nothing; an agent rewriting it can at most let
+  // first-run setup ask the question again on a machine that is past it.
+  'onboarding.runtimeDefaultSetAt': 'agent-writable',
 
   'tours.seen': 'agent-writable',
   'tours.declined': 'agent-writable',

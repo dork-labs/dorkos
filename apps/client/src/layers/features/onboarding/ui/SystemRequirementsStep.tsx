@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { ChevronDown, RefreshCw } from 'lucide-react';
+import { Check, ChevronDown, RefreshCw } from 'lucide-react';
 import { DorkLogo } from '@dorkos/icons/logos';
 import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import {
@@ -18,7 +18,15 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
+  ResponsivePopover,
+  ResponsivePopoverTrigger,
+  ResponsivePopoverContent,
+  ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
+import {
+  useOnboardingRuntimeDefault,
+  chooseDefaultRuntime,
+} from '../model/use-onboarding-runtime-default';
 
 /**
  * Two phases: `checking` keeps the original scan animation; `done` reveals the
@@ -50,6 +58,12 @@ interface SystemRequirementsStepProps {
    * every state renders deterministically without a transport.
    */
   simulatedResult?: SystemRequirements;
+  /**
+   * Pre-baked answer to "which runtime did setup pick" — dev playground only.
+   * Makes the disclosure and its picker showable without a config round trip,
+   * and keeps the tap local: a showcase never writes anybody's default.
+   */
+  simulatedDefaultRuntime?: string;
 }
 
 /**
@@ -71,6 +85,7 @@ export function SystemRequirementsStep({
   onContinue,
   renderConnect,
   simulatedResult,
+  simulatedDefaultRuntime,
 }: SystemRequirementsStepProps) {
   const reducedMotion = useReducedMotion();
   const query = useRuntimeRequirements();
@@ -128,13 +143,35 @@ export function SystemRequirementsStep({
           ? HEADING_READY
           : HEADING_CONNECT;
 
+  // Which runtime new conversations will start on. Decided here, once, the
+  // moment the scan settles on something ready — and disclosed in the sentence
+  // below rather than done quietly (spec `execution-defaults` §7).
+  // A simulated result is the dev playground rendering every state on one page,
+  // and none of those states is a person finishing setup — deciding from one
+  // would rewrite the developer's own default three times per page load.
+  const live = useOnboardingRuntimeDefault({
+    readyTypes,
+    settled: phase === 'done' && !errored && simulatedResult === undefined,
+    settleToken: query.dataUpdatedAt,
+  });
+  const [simulatedChoice, setSimulatedChoice] = useState<string | null>(null);
+  const simulated = simulatedDefaultRuntime
+    ? {
+        runtime: simulatedChoice ?? simulatedDefaultRuntime,
+        current: simulatedChoice ?? simulatedDefaultRuntime,
+        choose: setSimulatedChoice,
+        error: null,
+      }
+    : null;
+  const defaultRuntime = simulated ?? live;
+
   const subtitle =
     phase === 'checking'
       ? 'Looking for coding agents on your machine.'
       : errored
         ? "We couldn't check your setup just now."
         : hasReady
-          ? connectedSentence(readyTypes)
+          ? connectedSentence(readyTypes, defaultRuntime.runtime)
           : 'DorkOS drives coding agents. Set one up to get started. It takes about a minute.';
 
   const isActive = phase === 'checking';
@@ -175,6 +212,23 @@ export function SystemRequirementsStep({
           {subtitle}
         </motion.p>
       </AnimatePresence>
+
+      {/* The one tap that changes what the sentence just disclosed. Gated on the
+          scan, not on the decision: a write that failed leaves no decision to
+          disclose, and that is exactly when a person needs the way to set it. */}
+      {phase === 'done' && !errored && hasReady && (
+        <DefaultRuntimePicker
+          chosen={defaultRuntime.current}
+          readyTypes={readyTypes}
+          otherTypes={notReadyTypes}
+          onChoose={defaultRuntime.choose}
+        />
+      )}
+      {defaultRuntime.error && (
+        <p className="text-destructive mt-2 text-xs" data-testid="default-runtime-error">
+          {defaultRuntime.error}
+        </p>
+      )}
 
       {/* Scan animation */}
       <AnimatePresence>{isActive && <ScanningIndicator key="scanning" />}</AnimatePresence>
@@ -377,15 +431,110 @@ function ScanningIndicator() {
   );
 }
 
+// ── The default-runtime disclosure ───────────────────────────
+
 /**
- * Human-readable sentence naming the connected runtime(s), e.g.
- * "Claude Code is connected." or "Claude Code and Codex are connected."
+ * Change what new conversations start on, without leaving onboarding.
+ *
+ * Every runtime the scan knows about is offered, not only the connected ones:
+ * a person who is about to install OpenCode may well want to point the default
+ * at it now, and the same field in Settings takes an unconnected runtime for
+ * exactly that reason. The ones that are not connected say so, so the choice is
+ * informed rather than hidden. A bottom drawer on phones, a popover on desktop
+ * (design §6).
  */
-function connectedSentence(types: string[]): string {
+function DefaultRuntimePicker({
+  chosen,
+  readyTypes,
+  otherTypes,
+  onChoose,
+}: {
+  chosen: string;
+  readyTypes: string[];
+  otherTypes: string[];
+  onChoose: (type: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  // The chosen runtime always appears, even if the scan never saw it.
+  const options = [...readyTypes, ...otherTypes];
+  if (!options.includes(chosen)) options.unshift(chosen);
+
+  return (
+    <ResponsivePopover open={open} onOpenChange={setOpen}>
+      <ResponsivePopoverTrigger
+        className="text-muted-foreground hover:text-foreground mt-1 inline-flex items-center gap-1 text-xs underline-offset-2 transition-colors hover:underline"
+        data-testid="default-runtime-change"
+      >
+        Change
+        <ChevronDown className="size-3" />
+      </ResponsivePopoverTrigger>
+      <ResponsivePopoverContent align="center" className="p-1">
+        <ResponsivePopoverTitle>Start new chats with</ResponsivePopoverTitle>
+        <div className="flex flex-col" role="listbox" aria-label="Start new chats with">
+          {options.map((type) => {
+            const isChosen = type === chosen;
+            return (
+              <button
+                key={type}
+                type="button"
+                role="option"
+                aria-selected={isChosen}
+                onClick={() => {
+                  onChoose(type);
+                  setOpen(false);
+                }}
+                className="hover:bg-accent flex items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors"
+                data-testid={`default-runtime-option-${type}`}
+              >
+                <span className="flex flex-col">
+                  <span>{getRuntimeDescriptor(type).label}</span>
+                  {!readyTypes.includes(type) && (
+                    <span className="text-muted-foreground text-xs">Not connected yet</span>
+                  )}
+                </span>
+                {isChosen && <Check className="size-3.5 shrink-0" aria-hidden />}
+              </button>
+            );
+          })}
+        </div>
+      </ResponsivePopoverContent>
+    </ResponsivePopover>
+  );
+}
+
+/**
+ * What the scan found, and what it means for the next conversation, e.g.
+ * "Claude Code is connected. New chats will start with it." or
+ * "Claude Code and Codex are connected. New chats will start with Codex."
+ *
+ * The second half is the disclosure for a setting first-run setup writes on the
+ * person's behalf. It appears only once the write has been decided, so the
+ * sentence never promises a default that is not yet true.
+ */
+function connectedSentence(types: string[], defaultRuntime: string | null): string {
   const names = types.map((t) => getRuntimeDescriptor(t).label);
-  if (names.length === 0) return 'An agent is connected.';
-  if (names.length === 1) return `${names[0]} is connected.`;
-  if (names.length === 2) return `${names[0]} and ${names[1]} are connected.`;
-  const last = names[names.length - 1];
-  return `${names.slice(0, -1).join(', ')}, and ${last} are connected.`;
+  const connected =
+    names.length === 0
+      ? 'An agent is connected.'
+      : names.length === 1
+        ? `${names[0]} is connected.`
+        : names.length === 2
+          ? `${names[0]} and ${names[1]} are connected.`
+          : `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]} are connected.`;
+
+  if (!defaultRuntime) return connected;
+  // "it" only reads correctly when there is exactly one thing it could mean.
+  if (types.length === 1 && types[0] === defaultRuntime) {
+    return `${connected} New chats will start with it.`;
+  }
+  const label = getRuntimeDescriptor(defaultRuntime).label;
+  if (types.includes(defaultRuntime)) return `${connected} New chats will start with ${label}.`;
+  // "Once it's connected" alone would leave the next chat unaccounted for, and
+  // the next chat is the one this screen is about to start. Name the runtime it
+  // will really run on — the same fallback the conversation applies.
+  const meanwhile = chooseDefaultRuntime(types, defaultRuntime);
+  const meanwhileLabel = meanwhile ? getRuntimeDescriptor(meanwhile).label : null;
+  return meanwhileLabel
+    ? `${connected} New chats will start with ${label} once it's connected — until then they'll use ${meanwhileLabel}.`
+    : `${connected} New chats will start with ${label} once it's connected.`;
 }

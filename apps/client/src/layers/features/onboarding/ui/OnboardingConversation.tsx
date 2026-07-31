@@ -30,6 +30,8 @@ import {
 import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { useUpdateAgent } from '@/layers/entities/agent';
+import { useRuntimeRequirements, selectRuntimeReadiness } from '@/layers/entities/runtime';
+import { chooseDefaultRuntime } from '../model/use-onboarding-runtime-default';
 import { useOnboarding } from '../model/use-onboarding';
 import { useProfile } from '../model/use-profile';
 import {
@@ -73,6 +75,25 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   // two can never disagree and this adds no second request.
   const defaultRuntime = config?.executionDefaults?.runtime ?? 'claude-code';
 
+  // …but the FIRST session has to actually start. The default may point at a
+  // runtime this machine has not connected — the setup step deliberately lets a
+  // person choose one they are about to install — and onboarding ends by sending
+  // a message, not by offering the choice again. So this one session falls back
+  // to something that is ready, while the person's default stays exactly as they
+  // set it and takes effect the moment that runtime is connected.
+  //
+  // A requirements answer nobody has is never evidence against: while the query
+  // is still out, the configured default is used unchanged.
+  const { data: requirements } = useRuntimeRequirements();
+  const firstSessionRuntime = useMemo(() => {
+    if (!requirements) return defaultRuntime;
+    const ready = Object.keys(requirements.runtimes).filter(
+      (type) => selectRuntimeReadiness(requirements, type, true).state === 'ready'
+    );
+    if (ready.length === 0 || ready.includes(defaultRuntime)) return defaultRuntime;
+    return chooseDefaultRuntime(ready, defaultRuntime) ?? defaultRuntime;
+  }, [requirements, defaultRuntime]);
+
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
   const [profileRoles, setProfileRoles] = useState<string[]>([]);
   const { saveRoles } = useProfile();
@@ -112,7 +133,9 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         agentId: 'dorkbot',
         bornAt: new Date().toISOString(),
         path: defaultAgentDir,
-        runtime: defaultRuntime,
+        // The certificate says what this session RUNS on, so it names the same
+        // runtime the session is launched with.
+        runtime: firstSessionRuntime,
         kickoffMessage: text,
       };
       useAgentBirthStore.getState().register(newSessionId, record);
@@ -121,7 +144,14 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       void fireCelebration().then((stop) => {
         setTimeout(stop, CELEBRATION_MAX_MS);
       });
-      navigate({ to: '/session', search: { dir: defaultAgentDir, session: newSessionId } });
+      // `runtime` is the launch-time selection the first message POST carries as
+      // its binding hint — the lever that makes the fallback above real rather
+      // than cosmetic, since the server would otherwise resolve this session
+      // from the manifest and the configured default.
+      navigate({
+        to: '/session',
+        search: { dir: defaultAgentDir, session: newSessionId, runtime: firstSessionRuntime },
+      });
       onComplete();
     },
   };

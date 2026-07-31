@@ -79,6 +79,25 @@ vi.mock('@/layers/entities/discovery', () => ({
 
 vi.mock('@/layers/entities/mesh', () => ({ useRegisterAgent: () => ({ mutate: vi.fn() }) }));
 
+/**
+ * What the requirements scan says, for the one question this screen asks it:
+ * can the configured default actually run the first session? `undefined` is the
+ * answer nobody has yet, which must never override anything.
+ */
+let mockRequirements: { runtimes: Record<string, { state: string }> } | undefined;
+vi.mock('@/layers/entities/runtime', () => ({
+  // The real order — the fallback's tie-break is the product's own, and a mock
+  // that invented one would test the mock.
+  PRIMARY_RUNTIME_TYPES: ['claude-code', 'codex', 'opencode'] as const,
+  useRuntimeRequirements: () => ({ data: mockRequirements }),
+  selectRuntimeReadiness: (
+    reqs: { runtimes: Record<string, { state: string }> },
+    type: string
+  ) => ({
+    state: reqs.runtimes[type]?.state ?? 'connect',
+  }),
+}));
+
 vi.mock('@/layers/features/chat', () => ({
   MessageItem: ({ message }: { message: { content: string } }) => (
     <div data-testid="msg">{message.content}</div>
@@ -150,6 +169,15 @@ describe('OnboardingConversation', () => {
     vi.clearAllMocks();
     mockOnboardingConfig = {
       agents: { defaultDirectory: '/home/kai/.dork/agents', defaultAgent: 'dorkbot' },
+    };
+    // Every runtime ready unless a test says otherwise, so the fallback stays
+    // out of the way of the cases that are not about it.
+    mockRequirements = {
+      runtimes: {
+        'claude-code': { state: 'ready' },
+        codex: { state: 'ready' },
+        opencode: { state: 'ready' },
+      },
     };
     useAgentBirthStore.setState({ records: {} });
     useAppStore.setState({ requestedTour: null });
@@ -336,6 +364,48 @@ describe('OnboardingConversation', () => {
     expect(records[0]).toMatchObject({ runtime: 'codex' });
   });
 
+  // Setup lets a person point the default at a runtime they have not connected
+  // yet — honest, and the same thing the Settings field allows. Onboarding then
+  // ends by SENDING a message, so that one session has to land somewhere that
+  // can actually answer.
+  it('falls back to a connected runtime for the first session, and leaves the default alone', async () => {
+    mockOnboardingConfig = {
+      agents: { defaultDirectory: '/home/kai/.dork/agents', defaultAgent: 'dorkbot' },
+      executionDefaults: { runtime: 'opencode' },
+    };
+    mockRequirements = {
+      runtimes: { 'claude-code': { state: 'connect' }, codex: { state: 'ready' } },
+    };
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await reachDiscovery();
+    fireEvent.click(screen.getByText('Not now'));
+    await screen.findByTestId('composer');
+    fireEvent.change(screen.getByTestId('composer'), { target: { value: 'hello' } });
+    fireEvent.click(screen.getByTestId('send'));
+
+    // The certificate names what it runs on…
+    const records = Object.values(useAgentBirthStore.getState().records);
+    expect(records[0]).toMatchObject({ runtime: 'codex' });
+    // …and the session is LAUNCHED on it, which is the half that is not cosmetic.
+    expect(mockNavigate.mock.calls[0][0].search.runtime).toBe('codex');
+  });
+
+  it('a scan that has not answered yet never overrides the configured default', async () => {
+    mockOnboardingConfig = {
+      agents: { defaultDirectory: '/home/kai/.dork/agents', defaultAgent: 'dorkbot' },
+      executionDefaults: { runtime: 'opencode' },
+    };
+    mockRequirements = undefined;
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await reachDiscovery();
+    fireEvent.click(screen.getByText('Not now'));
+    await screen.findByTestId('composer');
+    fireEvent.change(screen.getByTestId('composer'), { target: { value: 'hello' } });
+    fireEvent.click(screen.getByTestId('send'));
+
+    expect(mockNavigate.mock.calls[0][0].search.runtime).toBe('opencode');
+  });
+
   it('the first message registers a first-message birth record and navigates into a session', async () => {
     const onComplete = vi.fn();
     render(<OnboardingConversation onComplete={onComplete} />);
@@ -363,7 +433,7 @@ describe('OnboardingConversation', () => {
     const sessionId = Object.keys(useAgentBirthStore.getState().records)[0];
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { dir: REGISTERED_DIR, session: sessionId },
+      search: { dir: REGISTERED_DIR, session: sessionId, runtime: 'claude-code' },
     });
     const navDir = mockNavigate.mock.calls[0][0].search.dir as string;
     expect(navDir).not.toContain('~');

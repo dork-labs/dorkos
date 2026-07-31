@@ -83,6 +83,7 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     startedAt: null,
     dismissedAt: null,
     completedAt: null,
+    runtimeDefaultSetAt: null,
   },
   agentContext: {
     relayTools: true,

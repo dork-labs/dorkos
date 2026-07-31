@@ -129,6 +129,24 @@ export const OnboardingStateSchema = z.object({
    * helper. Both null means a brand-new install that has not onboarded yet.
    */
   completedAt: z.string().nullable().default(null),
+  /**
+   * ISO timestamp of the moment first-run setup decided which runtime new
+   * conversations start on (`runtimes.default`, spec `execution-defaults` §7).
+   *
+   * **This field exists to make the decision happen exactly once.** The
+   * requirements step can only pick the runtime that is actually ready, and
+   * readiness is not a fixed fact — a person connects Codex from a card mid-flow
+   * and the answer changes. So the pick has to wait for readiness to settle
+   * rather than run at boot, and something has to remember that it ran. It
+   * cannot be inferred from `runtimes.default` itself: that field has a default
+   * value, so "claude-code" is indistinguishable from a choice somebody made.
+   *
+   * Non-null means the question is closed forever. Reopening onboarding, a
+   * mid-flow refresh, or a later install of another runtime never re-decides —
+   * the person owns the setting from that moment on, and Settings → Runtimes is
+   * where they change it.
+   */
+  runtimeDefaultSetAt: z.string().nullable().default(null),
 });
 
 export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
@@ -864,6 +882,7 @@ export const UserConfigSchema = z.object({
     startedAt: null,
     dismissedAt: null,
     completedAt: null,
+    runtimeDefaultSetAt: null,
   })),
   tours: ToursStateSchema.default(() => ({ seen: [], declined: [] })),
   /** Who the user is, in their own words. Local-only — see {@link UserProfileSchema}. */

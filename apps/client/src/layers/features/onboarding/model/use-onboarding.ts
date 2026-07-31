@@ -33,6 +33,7 @@ export function useOnboarding() {
     startedAt: null,
     dismissedAt: null,
     completedAt: null,
+    runtimeDefaultSetAt: null,
   };
 
   const state: OnboardingState = config?.onboarding
@@ -41,11 +42,16 @@ export function useOnboarding() {
         skippedSteps: config.onboarding.skippedSteps as OnboardingStep[],
         startedAt: config.onboarding.startedAt,
         dismissedAt: config.onboarding.dismissedAt,
-        // `?? null` guards the upgrade window: an on-disk onboarding block
-        // written before `completedAt` existed arrives without the field (conf's
-        // top-level defaults-merge is shallow and never adds a nested default),
-        // so normalize it rather than let `undefined` read as "complete".
+        // The server always sends this filled — a config written before the
+        // field existed still reads back through the schema's default — so this
+        // is not about an upgrade window on disk. It guards the ONE payload
+        // shape where the difference bites: a cockpit talking to a server old
+        // enough to omit the field entirely, where `undefined !== null` would
+        // read as "onboarding finished" and hide first-run setup for good.
         completedAt: config.onboarding.completedAt ?? null,
+        // No such guard needed here: absent and null both read as "not decided",
+        // which is the honest answer for a server that cannot tell us.
+        runtimeDefaultSetAt: config.onboarding.runtimeDefaultSetAt,
       }
     : DEFAULT_STATE;
 

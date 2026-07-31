@@ -135,21 +135,22 @@ router.get('/', async (_req, res) => {
       scanRoots: configManager.get('mesh')?.scanRoots ?? [],
       ...(getMeshInitError() && { initError: getMeshInitError() }),
     },
-    // Normalize completedAt: an on-disk block written before the field existed
-    // omits it (conf's nested defaults-merge is shallow), but the wire contract
-    // promises string | null.
-    onboarding: (() => {
-      const onboarding = configManager.get('onboarding');
-      return onboarding
-        ? { ...onboarding, completedAt: onboarding.completedAt ?? null }
-        : {
-            completedSteps: [],
-            skippedSteps: [],
-            startedAt: null,
-            dismissedAt: null,
-            completedAt: null,
-          };
-    })(),
+    // Sent whole. A block written before a field existed still reads back with
+    // that field — `ConfigManager` loads through the schema, so every leaf
+    // arrives filled from its default — which is what lets the wire contract
+    // promise `string | null` for timestamps nobody has ever written. Per-field
+    // `?? null` normalization here would be dead code; the guarantee is pinned
+    // by an upgrade-path test in `__tests__/config.test.ts` rather than
+    // re-asserted per field. The fallback covers only a config with no
+    // `onboarding` block at all.
+    onboarding: configManager.get('onboarding') ?? {
+      completedSteps: [],
+      skippedSteps: [],
+      startedAt: null,
+      dismissedAt: null,
+      completedAt: null,
+      runtimeDefaultSetAt: null,
+    },
     tours: configManager.get('tours') ?? { seen: [], declined: [] },
     // Who the user is, in their own words (spec user-profile-onboarding).
     // Local-only; the fallback covers the pre-migration read window.
