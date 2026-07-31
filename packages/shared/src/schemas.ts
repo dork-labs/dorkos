@@ -14,6 +14,10 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // resolved at validation time, not module-load time — no initialization hazard.
 import { ClientContextSchema } from './additional-context.js';
 import { SidebarPrefsSchema, ShapeUserPrefsSchema, StatusBarPrefsSchema } from './config-schema.js';
+// The effort ladder itself lives in the dependency-free constants module so this
+// file and `config-schema.ts` (which this file already imports) can both build
+// their enums from ONE list — see `EFFORT_LEVELS` for why it cannot live in either.
+import { EFFORT_LEVELS } from './constants.js';
 // Type-only import: `ui-widget.ts` value-imports `UiCommandSchema` from this
 // module, so a value import of `WidgetDocumentSchema` here would form a
 // load-time cycle. The canvas `widget` content carries the document typed but
@@ -104,9 +108,7 @@ export type QuestionItem = z.infer<typeof QuestionItemSchema>;
 
 // === Session Types ===
 
-export const EffortLevelSchema = z
-  .enum(['none', 'minimal', 'low', 'medium', 'high', 'max', 'xhigh'])
-  .openapi('EffortLevel');
+export const EffortLevelSchema = z.enum(EFFORT_LEVELS).openapi('EffortLevel');
 export type EffortLevel = z.infer<typeof EffortLevelSchema>;
 
 export const SessionOriginSchema = z

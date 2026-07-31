@@ -1267,6 +1267,56 @@ export function backfillClaudeCodeRuntimeDefaults(store: {
  * already-tagged version is silently excluded by conf's `(storedVersion,
  * projectVersion]` window, so it never runs for upgrading users).
  */
+/**
+ * Migration body: backfill the per-runtime execution defaults
+ * (`defaultModel` on all three runtime sections, `defaultEffort` on claude-code
+ * and codex only) onto `runtimes` blocks already on disk.
+ *
+ * Needed for the same reason {@link backfillClaudeCodeRuntimeDefaults} is:
+ * conf's defaults-merge is SHALLOW, so an existing `runtimes.claudeCode` object
+ * never gains a new nested key from the schema default alone.
+ *
+ * Additive + idempotent — each leaf is written only when absent, and every value
+ * is `null`, which means "let the runtime choose". An upgrade therefore starts
+ * nobody's sessions on a model they did not pick.
+ *
+ * OpenCode deliberately gets `defaultModel` and no `defaultEffort`: its prompt API
+ * accepts no effort, so the field would be a setting that does nothing.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillRuntimeExecutionDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const current = runtimes as Record<string, unknown>;
+
+  /** Add the named leaves to one runtime section, leaving anything already set alone. */
+  const seed = (section: string, leaves: readonly string[]): Record<string, unknown> | null => {
+    const value = current[section];
+    if (value == null || typeof value !== 'object') return null;
+    const block = value as Record<string, unknown>;
+    const missing = leaves.filter((leaf) => !(leaf in block));
+    if (missing.length === 0) return null;
+    return { ...block, ...Object.fromEntries(missing.map((leaf) => [leaf, null])) };
+  };
+
+  const claudeCode = seed('claudeCode', ['defaultModel', 'defaultEffort']);
+  const codex = seed('codex', ['defaultModel', 'defaultEffort']);
+  const opencode = seed('opencode', ['defaultModel']);
+  if (!claudeCode && !codex && !opencode) return;
+
+  store.set('runtimes', {
+    ...current,
+    ...(claudeCode ? { claudeCode } : {}),
+    ...(codex ? { codex } : {}),
+    ...(opencode ? { opencode } : {}),
+  });
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -1481,6 +1531,12 @@ export const CONFIG_MIGRATIONS = {
     // Additive + idempotent; seeds "no account chosen, none registered", which
     // is exactly today's inherit-the-environment behavior.
     backfillClaudeCodeRuntimeDefaults(store);
+    // The per-runtime execution defaults (`defaultModel` everywhere,
+    // `defaultEffort` on claude-code and codex; spec execution-defaults E1).
+    // Runs AFTER the claudeCode backfill above so the section it seeds into
+    // exists on every config. Additive + idempotent; every leaf seeds `null`,
+    // which is "let the runtime choose" — today's behavior exactly.
+    backfillRuntimeExecutionDefaults(store);
   },
 } as const;
 
@@ -1606,9 +1662,26 @@ const confSchema = jsonSchemaProperties as unknown as Schema<UserConfig>;
  * singleton and read like a restart — the very thing those tests must not
  * simulate. Production code uses the singleton.
  */
+/**
+ * What a settings write tells its subscribers.
+ *
+ * Only the sections, never the values: a listener that cares reads the value it
+ * cares about back off the manager, which keeps this event from going stale
+ * between the write and the read, and keeps a credential out of an event object
+ * that anything may subscribe to.
+ */
+export interface ConfigChange {
+  /** Top-level sections this write touched, e.g. `['runtimes']`. */
+  sections: readonly string[];
+}
+
+/** Called after a settings write lands. See {@link ConfigManager.onChange}. */
+export type ConfigChangeListener = (change: ConfigChange) => void;
+
 export class ConfigManager {
   private store: Conf<UserConfig>;
   private _isFirstRun = false;
+  private listeners = new Set<ConfigChangeListener>();
 
   constructor(dorkHome: string) {
     const configDir = dorkHome;
@@ -1724,6 +1797,69 @@ export class ConfigManager {
     const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key, value);
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
+    this.emitChange([key as string]);
+  }
+
+  /**
+   * Subscribe to settings changes made through this manager.
+   *
+   * ## Why this exists
+   *
+   * Most settings are read at use, so a change simply applies to the next thing
+   * that reads them. A few are APPLIED once — `runtimes.default` is set on the
+   * registry at boot and never re-read — and shipping a Settings screen over a
+   * field like that is a quiet lie: the person changes it, the screen agrees,
+   * and nothing happens until they restart. This is the seam that lets the
+   * applied ones re-apply (spec `execution-defaults` §3.2).
+   *
+   * ## What it does and does not see
+   *
+   * It fires on every write **this process** makes: `PATCH /api/config` (via
+   * `applyConfigPatch`), the `config_patch` operator tool, and every internal
+   * `set`/`setDot`/`reset` caller — including a write that changes nothing,
+   * since it reports the sections a write TOUCHED rather than diffing them.
+   * Subscribers are therefore expected to be idempotent, which the one that
+   * exists is: re-applying the same default runtime is a no-op and says nothing.
+   *
+   * It does NOT see `dorkos config set` run in a terminal, or somebody editing
+   * `~/.dork/config.json` by hand while the server runs — those still take effect
+   * at the next restart, exactly as today.
+   *
+   * That boundary was chosen over conf's own file watcher (`watch: true`), which
+   * would cover the out-of-process cases too. Three reasons not to: conf's
+   * `onDidChange` is unreachable from outside this class (the store is private,
+   * and exposing it hands every caller the unvalidated store), a live `fs.watch`
+   * on the config file is a handle held by every `ConfigManager` a test
+   * constructs, and the case this feature was actually asked for — a person
+   * changing a setting in the cockpit and expecting it to hold — is in-process
+   * by construction. If out-of-process live-apply is ever the complaint, the
+   * upgrade is `watch: true` plus an internal `onDidChange` bridge into this same
+   * emitter; nothing above this line changes.
+   *
+   * Listener errors are caught and logged: a subscriber that throws must not
+   * turn somebody's settings write into a 500 after the value has been persisted.
+   *
+   * @param listener - Called after a write lands, with the sections it touched.
+   * @returns An unsubscribe function.
+   */
+  onChange(listener: ConfigChangeListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /** Notify subscribers that the named top-level sections were just written. */
+  private emitChange(sections: string[]): void {
+    if (this.listeners.size === 0) return;
+    const change: ConfigChange = { sections };
+    for (const listener of this.listeners) {
+      try {
+        listener(change);
+      } catch (err) {
+        logger.warn('[Config] a change listener threw; the write itself is unaffected', { err });
+      }
+    }
   }
 
   /** Set a nested value via dot-path. Returns warning if key is sensitive. */
@@ -1736,6 +1872,9 @@ export class ConfigManager {
     const floorBefore = this.standingGrantVoidFloor();
     this.store.set(key as keyof UserConfig, value as UserConfig[keyof UserConfig]);
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
+    // Subscribers speak in top-level sections, so a dot-path reports the section
+    // it wrote into: `runtimes.default` and `runtimes` are the same news.
+    this.emitChange([key.split('.')[0]!]);
     return result;
   }
 
@@ -1776,6 +1915,9 @@ export class ConfigManager {
       restoreProtectedState(this.store, stored, 'Reset your config');
     }
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
+    // A whole-config reset is news about every section, so subscribers that
+    // applied something once get to apply it again.
+    this.emitChange(key ? [key] : Object.keys(this.store.store));
   }
 
   /**

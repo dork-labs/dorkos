@@ -1,5 +1,15 @@
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/types';
+import { EffortLevelSchema } from '@dorkos/shared/schemas';
+// The module directly rather than the `../session/index.js` barrel. There is no
+// cycle to dodge today — nothing that barrel exports imports this file, and
+// `room-turn-runner.ts` does take the same resolver through it. The reason is
+// coupling: the barrel is the whole session surface, and importing it here would
+// put every module it re-exports on this one's load path to reach a single leaf
+// function — so the first session module that ever imports the registry would
+// close a cycle nobody edited. The direct import keeps that more than one
+// re-export away.
+import { resolveSessionDefaults } from '../session/resolve-session-defaults.js';
 import { sessionMetadata, eq, inArray, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { traceRuntime } from '../observability/index.js';
@@ -12,13 +22,32 @@ type SettingsRow = {
   fastMode: boolean | null;
 };
 
-/** Map a settings DB row (NULLs) to a `SessionSettings` object (omitted keys). */
+/**
+ * Map a settings DB row (NULLs) to a `SessionSettings` object (omitted keys).
+ *
+ * `effort` is the one column parsed rather than cast. It is a free-form TEXT
+ * column, so what comes back is whatever was written — including a rung that a
+ * later release removed from the ladder, or anything a person put there by hand.
+ * A cast made that string travel as an `EffortLevel` all the way into an adapter,
+ * where claude-code's own mapper drops it (harmless) and codex's
+ * `EFFORT_TO_REASONING` lookup yields `undefined` and sends
+ * `modelReasoningEffort: undefined` into the SDK. An unreadable value means "no
+ * preference" — the same thing NULL means — so it is dropped here, once, rather
+ * than at three adapter edges.
+ */
 function rowToSettings(row: SettingsRow): SessionSettings {
   const settings: SessionSettings = {};
   if (row.permissionMode != null)
     settings.permissionMode = row.permissionMode as SessionSettings['permissionMode'];
   if (row.model != null) settings.model = row.model;
-  if (row.effort != null) settings.effort = row.effort as SessionSettings['effort'];
+  if (row.effort != null) {
+    const effort = EffortLevelSchema.safeParse(row.effort);
+    if (effort.success) settings.effort = effort.data;
+    else
+      logger.warn('[RuntimeRegistry] ignoring an unreadable stored effort level', {
+        stored: row.effort,
+      });
+  }
   if (row.fastMode != null) settings.fastMode = row.fastMode;
   return settings;
 }
@@ -134,6 +163,10 @@ export class RuntimeRegistry {
    * it is left untouched. Session ownership is immutable once assigned — the
    * first write wins. Call this once at session-creation time.
    *
+   * The server's execution defaults ride the same INSERT (see
+   * {@link RuntimeRegistry.seedForNewRow}), which is what makes them a seed
+   * rather than an override: they land only on a row this call creates.
+   *
    * @param sessionId - Session identifier (any runtime's session id)
    * @param runtime - Runtime type string (e.g. `'claude-code'`, `'codex'`)
    * @param agentPath - Optional path to the agent that owns this session
@@ -155,6 +188,7 @@ export class RuntimeRegistry {
         runtime,
         agentPath: agentPath ?? null,
         createdAt: new Date().toISOString(),
+        ...this.seedForNewRow(runtime),
       })
       .onConflictDoNothing();
     // better-sqlite3 RunResult: `changes` is the number of rows actually written
@@ -264,9 +298,46 @@ export class RuntimeRegistry {
     if (Object.keys(patch).length === 0) return;
     const runtime = await this.getSessionRuntimeType(sessionId);
     db.insert(sessionMetadata)
-      .values({ sessionId, runtime, createdAt: new Date().toISOString(), ...patch })
+      // The seed goes on the INSERT branch only, UNDER the patch, so an explicit
+      // value always wins and only the keys this write does not carry are
+      // filled. This path creates the row whenever a setting is changed before
+      // the first message — which E3's pre-launch picker makes the normal way a
+      // session starts — and a seed that rode only the first-message insert
+      // would be silently dropped for exactly those sessions.
+      .values({
+        sessionId,
+        runtime,
+        createdAt: new Date().toISOString(),
+        ...this.seedForNewRow(runtime),
+        ...patch,
+      })
+      // The UPDATE branch carries the patch alone: an existing row is a running
+      // session, and nothing about a server default may reach it.
       .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
       .run();
+  }
+
+  /**
+   * The execution settings a row created RIGHT NOW should carry, as DB columns.
+   *
+   * Every path that can mint a `session_metadata` row goes through this, because
+   * "the session's first write" is not one caller: the first message writes the
+   * runtime binding, and a settings change before that message writes the row
+   * first. Seeding at one of them only would mean whichever happened second
+   * silently lost the defaults (spec `execution-defaults` E1).
+   *
+   * On a row-less session the runtime is the INFERRED one (see
+   * {@link RuntimeRegistry.getSessionRuntimeType}), so a settings change before
+   * the first message seeds whichever runtime the inference named. That is
+   * consistent by construction — the same inference fills the `runtime` column
+   * on the row being created — so when it is wrong, the seeded model and the
+   * binding are wrong together rather than in two different directions. The
+   * inference itself is DOR-764's subject, not this seam's.
+   *
+   * @param runtime - The runtime type the row is being created for.
+   */
+  private seedForNewRow(runtime: string): Partial<typeof sessionMetadata.$inferInsert> {
+    return pickSettings(resolveSessionDefaults({ runtimeType: runtime }));
   }
 
   /**
@@ -425,6 +496,64 @@ export function applyConfiguredDefaultRuntime(
     return true;
   }
   return false;
+}
+
+/**
+ * The settings this module reads, and the news that it changed — the whole of
+ * `ConfigManager` this needs, named as a port so the watcher is testable without
+ * a config file.
+ */
+export interface DefaultRuntimeConfigSource {
+  /** The `runtimes.default` value as it stands right now. */
+  read(): string;
+  /** Subscribe to settings writes; returns an unsubscribe function. */
+  onChange(listener: (change: { sections: readonly string[] }) => void): () => void;
+}
+
+/**
+ * Apply `runtimes.default` now, and keep applying it when it changes.
+ *
+ * The default runtime is the one execution setting that is APPLIED rather than
+ * read at use: the registry holds it, and everything that mints a session asks
+ * the registry. Without this, changing it in Settings would agree with the person
+ * and then do nothing until they restarted the server — which is the reason the
+ * change-subscription primitive exists at all (spec `execution-defaults` §3.2).
+ *
+ * The model and effort defaults need nothing like this. They are read at the
+ * moment a session is created, so a change simply governs the next session.
+ *
+ * @param registry - The registry with all production runtimes registered.
+ * @param source - Where the value is read from and where the news comes from.
+ * @returns An unsubscribe function.
+ */
+export function applyAndWatchConfiguredDefaultRuntime(
+  registry: RuntimeRegistry,
+  source: DefaultRuntimeConfigSource
+): () => void {
+  const apply = (): void => {
+    const configured = source.read();
+    if (applyConfiguredDefaultRuntime(registry, configured)) return;
+    // An unregistered value keeps the built-in default rather than failing —
+    // silently, when the two already agree (a fresh install naming 'claude-code'
+    // before the adapter registers is not news).
+    if (configured !== registry.getDefaultType()) {
+      logger.warn('[Runtime] configured runtimes.default is not registered; keeping built-in', {
+        configured,
+        active: registry.getDefaultType(),
+      });
+    }
+  };
+
+  apply();
+  return source.onChange((change) => {
+    if (!change.sections.includes('runtimes')) return;
+    const before = registry.getDefaultType();
+    apply();
+    const after = registry.getDefaultType();
+    if (before !== after) {
+      logger.info('[Runtime] default runtime changed without a restart', { before, after });
+    }
+  });
 }
 
 /**

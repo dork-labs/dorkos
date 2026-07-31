@@ -172,6 +172,8 @@ function fullyPopulatedConfig(): Record<string, unknown> {
           { path: '/Users/me/.claude', label: 'Acme Corp' },
           { path: '/Users/me/.claude2', label: null },
         ],
+        defaultModel: 'opus',
+        defaultEffort: 'high',
       },
       opencode: {
         enabled: true,
@@ -179,11 +181,15 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         port: 0,
         provider: 'openrouter',
         baseURL: null,
+        // No `defaultEffort` sibling: OpenCode's API takes no effort at all.
+        defaultModel: 'openrouter/anthropic/claude-opus-4.6',
       },
       codex: {
         enabled: true,
         binaryPath: '/opt/homebrew/bin/codex',
         credentialRef: 'file:LEAK-6-codex-key-file',
+        defaultModel: 'gpt-5.3-codex',
+        defaultEffort: 'medium',
       },
     },
     providers: {

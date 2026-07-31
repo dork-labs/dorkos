@@ -314,6 +314,11 @@ router.post('/:id/reload-plugins', async (req, res) => {
  * Subsequent `POST /:id/messages` calls for the same `sessionId` do NOT
  * re-run this — `persistSessionRuntime` is first-write-wins, so the row
  * set by the first call is authoritative.
+ *
+ * The runtime is chosen FIRST because the other two execution defaults hang off
+ * it: which model and effort a new session starts with is a per-runtime question
+ * (`services/session/resolve-session-defaults.ts`), answered against the runtime
+ * this returns, and seeded onto the same first write.
  */
 async function resolveRuntimeTypeForNewSession(opts: {
   runtimeHint?: string;
@@ -420,6 +425,10 @@ router.post('/:id/messages', async (req, res) => {
   if (!runtimeRegistry.has(runtimeType)) {
     return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
   }
+  // The registry seeds this session's model/effort from the server defaults if
+  // this call is what creates its row — see `resolveSessionDefaults`. Nothing is
+  // written for a session that already has one, so a running conversation keeps
+  // whatever it is running with.
   const isNewSession = await runtimeRegistry.persistSessionRuntime(
     sessionId,
     runtimeType,

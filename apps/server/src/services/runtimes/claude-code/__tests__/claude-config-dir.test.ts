@@ -21,7 +21,13 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
 } {
   const runtimes: UserConfig['runtimes'] = {
     ...USER_CONFIG_DEFAULTS.runtimes,
-    claudeCode: { activeAccount: null, accounts: [], ...claudeCode },
+    claudeCode: {
+      activeAccount: null,
+      accounts: [],
+      defaultModel: null,
+      defaultEffort: null,
+      ...claudeCode,
+    },
   };
   return {
     get: (<K extends keyof UserConfig>(key: K) =>

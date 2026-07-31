@@ -709,6 +709,26 @@ describe('CodexRuntime', () => {
       );
     });
 
+    it('runs a seeded new session on the model and effort the server chose', async () => {
+      // The other half of the execution-defaults seam (spec execution-defaults
+      // E1): the server writes its per-runtime default onto `session_metadata`
+      // at the session's first write, and this adapter reads that row like any
+      // other persisted setting. Nothing in Codex knows about config.
+      const { runtime } = makeRuntime();
+      const port: SessionSettingsPort = {
+        getSessionSettings: vi.fn().mockResolvedValue({ model: 'gpt-5.3-codex', effort: 'low' }),
+        saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+      };
+      runtime.setSessionSettings(port);
+      const sessionId = crypto.randomUUID();
+
+      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
+
+      expect(sdkMocks.startThread).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'gpt-5.3-codex', modelReasoningEffort: 'low' })
+      );
+    });
+
     it('prepends systemPromptAppend and additional context, keeping content last and unmutated', async () => {
       const { runtime } = makeRuntime();
       const sessionId = crypto.randomUUID();

@@ -18,6 +18,7 @@
  * @module config-schema
  */
 import { z } from 'zod';
+import { EFFORT_LEVELS } from './constants.js';
 
 /**
  * How long a new standing permission lasts by default, in minutes (eight hours —
@@ -598,6 +599,44 @@ export const ClaudeCodeAccountSchema = z.object({
 /** One known Claude Code account. See {@link ClaudeCodeAccountSchema}. */
 export type ClaudeCodeAccount = z.infer<typeof ClaudeCodeAccountSchema>;
 
+/**
+ * The model a NEW session on one runtime starts on, or `null` to let that
+ * runtime pick its own — which is exactly the behavior before this field existed.
+ *
+ * **Per runtime, and it has to be.** A model id is only meaningful inside the
+ * runtime that offers it: `opus` means nothing to Codex, `gpt-5.3-codex` nothing
+ * to Claude Code, and OpenCode addresses models as `provider/model`. One shared
+ * `runtimes.defaultModel` would therefore be wrong for at least two of the three
+ * the moment anybody set it, and the failure would be silent — a runtime asked
+ * for a model it has never heard of. Three leaves cost three rows in the
+ * exhaustiveness tables and buy an answer that is true for whichever runtime a
+ * session lands on.
+ *
+ * Not validated against a live catalog here. The catalogs are per-runtime, remote,
+ * and change under us; a schema that rejects tomorrow's model id is worse than a
+ * value the runtime declines. An unrecognized id surfaces as the warning chip
+ * (design §3.4), never as a refused write.
+ */
+const DefaultModelSchema = z.string().min(1).nullable().default(null);
+
+/**
+ * The reasoning effort a NEW session on one runtime starts at, or `null` to let
+ * the runtime pick — again byte-for-byte today's behavior.
+ *
+ * The value space is the shared {@link EFFORT_LEVELS} ladder, never a per-runtime
+ * fork. What differs per runtime is what a rung MEANS: claude-code and codex clamp
+ * `none`/`minimal` differently, which the two clamp sites document precisely
+ * because one shared default makes the divergence visible to a person.
+ *
+ * **OpenCode has no such leaf, on purpose.** Its prompt API takes no effort field
+ * in either the pinned or the current SDK — effort exists there only as
+ * config-file variants with no API selection. A schema field would imply a setting
+ * that does nothing, so the honest shape is a section that simply does not have
+ * one, and the UI says "Not supported by OpenCode" rather than hiding the row
+ * (design §4, "unsupported means said").
+ */
+const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -1136,8 +1175,17 @@ export const UserConfigSchema = z.object({
            * that are not accounts at all (D4).
            */
           accounts: z.array(ClaudeCodeAccountSchema).default(() => []),
+          /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
+          defaultModel: DefaultModelSchema,
+          /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
+          defaultEffort: DefaultEffortSchema,
         })
-        .default(() => ({ activeAccount: null, accounts: [] })),
+        .default(() => ({
+          activeAccount: null,
+          accounts: [],
+          defaultModel: null,
+          defaultEffort: null,
+        })),
       opencode: z
         .object({
           enabled: z.boolean().default(true),
@@ -1156,6 +1204,12 @@ export const UserConfigSchema = z.object({
            * `OPENAI_BASE_URL` into the sidecar env). `null` = the provider default.
            */
           baseURL: z.string().nullable().default(null),
+          /**
+           * Model a new OpenCode session starts on, as `provider/model`. See
+           * {@link DefaultModelSchema}. There is deliberately no `defaultEffort`
+           * sibling — OpenCode's API takes no effort at all.
+           */
+          defaultModel: DefaultModelSchema,
         })
         .default(() => ({
           enabled: true,
@@ -1163,6 +1217,7 @@ export const UserConfigSchema = z.object({
           port: 0,
           provider: null,
           baseURL: null,
+          defaultModel: null,
         })),
       codex: z
         .object({
@@ -1176,14 +1231,37 @@ export const UserConfigSchema = z.object({
            * `CodexOptions.env` — so this reference feeds the delegated-login path.
            */
           credentialRef: CredentialReferenceSchema.nullable().default(null),
+          /** Model a new codex session starts on. See {@link DefaultModelSchema}. */
+          defaultModel: DefaultModelSchema,
+          /** Effort a new codex session starts at. See {@link DefaultEffortSchema}. */
+          defaultEffort: DefaultEffortSchema,
         })
-        .default(() => ({ enabled: true, binaryPath: null, credentialRef: null })),
+        .default(() => ({
+          enabled: true,
+          binaryPath: null,
+          credentialRef: null,
+          defaultModel: null,
+          defaultEffort: null,
+        })),
     })
     .default(() => ({
       default: 'claude-code',
-      claudeCode: { activeAccount: null, accounts: [] },
-      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
-      codex: { enabled: true, binaryPath: null, credentialRef: null },
+      claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+      opencode: {
+        enabled: true,
+        binaryPath: null,
+        port: 0,
+        provider: null,
+        baseURL: null,
+        defaultModel: null,
+      },
+      codex: {
+        enabled: true,
+        binaryPath: null,
+        credentialRef: null,
+        defaultModel: null,
+        defaultEffort: null,
+      },
     })),
   auth: z
     .object({

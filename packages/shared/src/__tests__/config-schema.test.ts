@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { EFFORT_LEVELS } from '../constants.js';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
@@ -104,9 +105,22 @@ describe('UserConfigSchema', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        claudeCode: { activeAccount: null, accounts: [] },
-        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
-        codex: { enabled: true, binaryPath: null, credentialRef: null },
+        claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+        opencode: {
+          enabled: true,
+          binaryPath: null,
+          port: 0,
+          provider: null,
+          baseURL: null,
+          defaultModel: null,
+        },
+        codex: {
+          enabled: true,
+          binaryPath: null,
+          credentialRef: null,
+          defaultModel: null,
+          defaultEffort: null,
+        },
       },
       auth: { enabled: false },
       approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
@@ -415,9 +429,22 @@ describe('USER_CONFIG_DEFAULTS', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        claudeCode: { activeAccount: null, accounts: [] },
-        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
-        codex: { enabled: true, binaryPath: null, credentialRef: null },
+        claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+        opencode: {
+          enabled: true,
+          binaryPath: null,
+          port: 0,
+          provider: null,
+          baseURL: null,
+          defaultModel: null,
+        },
+        codex: {
+          enabled: true,
+          binaryPath: null,
+          credentialRef: null,
+          defaultModel: null,
+          defaultEffort: null,
+        },
       },
       auth: { enabled: false },
       approvals: { standingGrants: false, trustWindowMinutes: 480, standingGrantsVoidBefore: null },
@@ -684,9 +711,23 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      claudeCode: { activeAccount: null, accounts: [] },
-      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
-      codex: { enabled: true, binaryPath: null, credentialRef: null },
+      claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+      opencode: {
+        enabled: true,
+        binaryPath: null,
+        port: 0,
+        provider: null,
+        baseURL: null,
+        // OpenCode gets a model default and no effort default: its API takes none.
+        defaultModel: null,
+      },
+      codex: {
+        enabled: true,
+        binaryPath: null,
+        credentialRef: null,
+        defaultModel: null,
+        defaultEffort: null,
+      },
     });
   });
 
@@ -694,9 +735,23 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      claudeCode: { activeAccount: null, accounts: [] },
-      opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
-      codex: { enabled: true, binaryPath: null, credentialRef: null },
+      claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+      opencode: {
+        enabled: true,
+        binaryPath: null,
+        port: 0,
+        provider: null,
+        baseURL: null,
+        // OpenCode gets a model default and no effort default: its API takes none.
+        defaultModel: null,
+      },
+      codex: {
+        enabled: true,
+        binaryPath: null,
+        credentialRef: null,
+        defaultModel: null,
+        defaultEffort: null,
+      },
     });
   });
 
@@ -709,6 +764,7 @@ describe('UserConfigSchema runtimes', () => {
       port: 0,
       provider: null,
       baseURL: null,
+      defaultModel: null,
     });
   });
 
@@ -723,6 +779,7 @@ describe('UserConfigSchema runtimes', () => {
       port: 0,
       provider: null,
       baseURL: null,
+      defaultModel: null,
     });
   });
 
@@ -755,6 +812,61 @@ describe('UserConfigSchema runtimes', () => {
   });
 });
 
+describe('UserConfigSchema runtimes.*.defaultModel / defaultEffort (spec execution-defaults)', () => {
+  it('ships null everywhere, so an upgrade starts nobody somewhere new', () => {
+    const runtimes = UserConfigSchema.parse({ version: 1 }).runtimes;
+    expect(runtimes.claudeCode.defaultModel).toBeNull();
+    expect(runtimes.claudeCode.defaultEffort).toBeNull();
+    expect(runtimes.codex.defaultModel).toBeNull();
+    expect(runtimes.codex.defaultEffort).toBeNull();
+    expect(runtimes.opencode.defaultModel).toBeNull();
+  });
+
+  it('keeps a model and an effort a person chose', () => {
+    const result = UserConfigSchema.parse({
+      version: 1,
+      runtimes: {
+        claudeCode: { defaultModel: 'opus', defaultEffort: 'max' },
+        opencode: { defaultModel: 'openrouter/anthropic/claude-opus-4.6' },
+      },
+    });
+    expect(result.runtimes.claudeCode.defaultModel).toBe('opus');
+    expect(result.runtimes.claudeCode.defaultEffort).toBe('max');
+    expect(result.runtimes.opencode.defaultModel).toBe('openrouter/anthropic/claude-opus-4.6');
+  });
+
+  it('takes the effort ladder and nothing else', () => {
+    // The value space is the shared EFFORT_LEVELS ladder, never a per-runtime
+    // fork: an id outside it is a typo, not a new rung.
+    for (const level of EFFORT_LEVELS) {
+      expect(
+        UserConfigSchema.parse({ version: 1, runtimes: { codex: { defaultEffort: level } } })
+          .runtimes.codex.defaultEffort
+      ).toBe(level);
+    }
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, runtimes: { codex: { defaultEffort: 'ludicrous' } } })
+    ).toThrow();
+  });
+
+  it('has no effort field on OpenCode at all', () => {
+    // "Unsupported means said, not hidden": OpenCode's API accepts no effort, so
+    // the field does not exist rather than existing and doing nothing. Zod
+    // strips the unknown key, which is the assertion.
+    const result = UserConfigSchema.parse({
+      version: 1,
+      runtimes: { opencode: { defaultEffort: 'high' } },
+    });
+    expect('defaultEffort' in result.runtimes.opencode).toBe(false);
+  });
+
+  it('rejects an empty model string', () => {
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, runtimes: { claudeCode: { defaultModel: '' } } })
+    ).toThrow();
+  });
+});
+
 describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () => {
   it('defaults to no account chosen and none registered', () => {
     // The default IS today's behavior: nothing selected, so resolution falls
@@ -762,6 +874,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
     expect(UserConfigSchema.parse({ version: 1 }).runtimes.claudeCode).toEqual({
       activeAccount: null,
       accounts: [],
+      defaultModel: null,
+      defaultEffort: null,
     });
   });
 
@@ -772,7 +886,12 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       version: 1,
       runtimes: { opencode: { enabled: false } },
     });
-    expect(result.runtimes.claudeCode).toEqual({ activeAccount: null, accounts: [] });
+    expect(result.runtimes.claudeCode).toEqual({
+      activeAccount: null,
+      accounts: [],
+      defaultModel: null,
+      defaultEffort: null,
+    });
   });
 
   it('keeps an active account and a labelled roster verbatim', () => {
@@ -794,6 +913,8 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
         { path: '/Users/me/.claude', label: 'Acme Corp' },
         { path: '/Users/me/.claude2', label: null },
       ],
+      defaultModel: null,
+      defaultEffort: null,
     });
   });
 

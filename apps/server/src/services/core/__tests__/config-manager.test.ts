@@ -39,6 +39,7 @@ import {
   backfillTelemetryAiMetadataChannel,
   scrubRetiredOnboardingSteps,
   backfillProfileDefaults,
+  backfillRuntimeExecutionDefaults,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import fs from 'fs';
@@ -53,9 +54,23 @@ import { execSync } from 'child_process';
  */
 const RUNTIMES_DEFAULTS = {
   default: 'claude-code',
-  claudeCode: { activeAccount: null, accounts: [] },
-  opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
-  codex: { enabled: true, binaryPath: null, credentialRef: null },
+  claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+  opencode: {
+    enabled: true,
+    binaryPath: null,
+    port: 0,
+    provider: null,
+    baseURL: null,
+    // No `defaultEffort`: OpenCode's API accepts no effort at all.
+    defaultModel: null,
+  },
+  codex: {
+    enabled: true,
+    binaryPath: null,
+    credentialRef: null,
+    defaultModel: null,
+    defaultEffort: null,
+  },
 };
 
 /** Minimal stand-in for the `conf` store used by migration bodies. */
@@ -1159,8 +1174,15 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
     CONFIG_MIGRATIONS['0.57.0'](store);
     expect(store.data.runtimes).toEqual({
       default: 'claude-code',
-      codex: { enabled: true, binaryPath: null },
-      claudeCode: { activeAccount: null, accounts: [] },
+      // The execution-defaults backfill rides the same composite, and rides it
+      // AFTER the section above exists.
+      codex: { enabled: true, binaryPath: null, defaultModel: null, defaultEffort: null },
+      claudeCode: {
+        activeAccount: null,
+        accounts: [],
+        defaultModel: null,
+        defaultEffort: null,
+      },
     });
   });
 });
@@ -1298,7 +1320,12 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
       const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
         runtimes: Record<string, unknown>;
       };
-      expect(onDisk.runtimes.claudeCode).toEqual({ activeAccount: null, accounts: [] });
+      expect(onDisk.runtimes.claudeCode).toEqual({
+        activeAccount: null,
+        accounts: [],
+        defaultModel: null,
+        defaultEffort: null,
+      });
       // The upgrade adds a section; it changes no runtime the person configured.
       expect(onDisk.runtimes).toMatchObject(priorRuntimes);
     } finally {
@@ -1337,6 +1364,8 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
           { path: '/Users/me/.claude', label: 'Acme Corp' },
           { path: '/Users/me/.claude3', label: null },
         ],
+        defaultModel: null,
+        defaultEffort: null,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -2920,5 +2949,167 @@ describe('Tier 1 opt-in defaults (real conf + Ajv)', () => {
     expect(manager.get('telemetry').install).toBe(true);
     expect(manager.get('telemetry').usage).toBe(true);
     expect(manager.validate()).toEqual({ valid: true });
+  });
+});
+
+describe('backfillRuntimeExecutionDefaults migration (execution-defaults E1)', () => {
+  it('seeds the new leaves onto runtime sections already on disk', () => {
+    // The case it exists for: conf's defaults-merge is shallow, so a `runtimes`
+    // block written by an earlier release never gains a nested key on its own.
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        claudeCode: { activeAccount: null, accounts: [] },
+        opencode: { enabled: true, binaryPath: null, port: 0, provider: null, baseURL: null },
+        codex: { enabled: true, binaryPath: null, credentialRef: null },
+      },
+    });
+
+    backfillRuntimeExecutionDefaults(store);
+
+    expect(store.data.runtimes).toEqual({
+      default: 'claude-code',
+      claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+      opencode: {
+        enabled: true,
+        binaryPath: null,
+        port: 0,
+        provider: null,
+        baseURL: null,
+        // OpenCode gets a model and no effort: its API accepts none, so a field
+        // there would be a setting that does nothing.
+        defaultModel: null,
+      },
+      codex: {
+        enabled: true,
+        binaryPath: null,
+        credentialRef: null,
+        defaultModel: null,
+        defaultEffort: null,
+      },
+    });
+  });
+
+  it('never overwrites a value somebody already chose', () => {
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        claudeCode: { activeAccount: null, accounts: [], defaultModel: 'opus' },
+      },
+    });
+
+    backfillRuntimeExecutionDefaults(store);
+    backfillRuntimeExecutionDefaults(store);
+
+    expect((store.data.runtimes as Record<string, unknown>).claudeCode).toEqual({
+      activeAccount: null,
+      accounts: [],
+      defaultModel: 'opus',
+      defaultEffort: null,
+    });
+  });
+
+  it('leaves a config with no runtimes block alone', () => {
+    // The section-level backfills that run before it own that case.
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillRuntimeExecutionDefaults(store);
+    expect(store.data.runtimes).toBeUndefined();
+  });
+
+  it('rides the newest migration key, after the section it seeds into exists', () => {
+    const store = createMockStore({ runtimes: { default: 'claude-code' } });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect((store.data.runtimes as Record<string, unknown>).claudeCode).toEqual({
+      activeAccount: null,
+      accounts: [],
+      defaultModel: null,
+      defaultEffort: null,
+    });
+  });
+});
+
+describe('ConfigManager.onChange (the live-apply primitive)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = path.join(os.tmpdir(), 'test-dork-onchange-' + Date.now() + Math.random());
+    fs.mkdirSync(dir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports the section a whole-section write touched', () => {
+    const manager = new ConfigManager(dir);
+    const seen: string[][] = [];
+    manager.onChange((change) => seen.push([...change.sections]));
+
+    manager.set('runtimes', { ...manager.get('runtimes'), default: 'codex' });
+
+    expect(seen).toEqual([['runtimes']]);
+  });
+
+  it('reports the SECTION a dot-path write touched, not the path', () => {
+    // Subscribers ask "did my settings change?", and `runtimes.default` and
+    // `runtimes` are the same news.
+    const manager = new ConfigManager(dir);
+    const seen: string[][] = [];
+    manager.onChange((change) => seen.push([...change.sections]));
+
+    manager.setDot('runtimes.default', 'codex');
+
+    expect(seen).toEqual([['runtimes']]);
+  });
+
+  it('reports every section on a whole-config reset', () => {
+    const manager = new ConfigManager(dir);
+    const seen: string[][] = [];
+    manager.onChange((change) => seen.push([...change.sections]));
+
+    manager.reset();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain('runtimes');
+    expect(seen[0]).toContain('ui');
+  });
+
+  it('stops calling a listener that unsubscribed', () => {
+    const manager = new ConfigManager(dir);
+    const listener = vi.fn();
+    manager.onChange(listener)();
+
+    manager.setDot('runtimes.default', 'codex');
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('lets a throwing listener neither break the write nor silence the next one', () => {
+    // The write has already landed by the time listeners run; a subscriber that
+    // throws must not turn somebody's settings change into an error.
+    const manager = new ConfigManager(dir);
+    const second = vi.fn();
+    manager.onChange(() => {
+      throw new Error('listener blew up');
+    });
+    manager.onChange(second);
+
+    expect(() => manager.setDot('runtimes.default', 'codex')).not.toThrow();
+    expect(manager.getDot('runtimes.default')).toBe('codex');
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('fires for a write made through PATCH /api/config', () => {
+    // The path that matters: the Settings screen and the `config_patch` operator
+    // tool both reach the store through `applyConfigPatch`, and a person who
+    // changes the default runtime there expects it to hold without a restart.
+    const manager = initConfigManager(dir);
+    const seen: string[][] = [];
+    manager.onChange((change) => seen.push([...change.sections]));
+
+    const result = applyConfigPatch({ runtimes: { default: 'codex' } });
+
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual([['runtimes']]);
   });
 });

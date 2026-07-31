@@ -13,7 +13,7 @@ import {
 } from './services/runtimes/opencode/index.js';
 import {
   runtimeRegistry,
-  applyConfiguredDefaultRuntime,
+  applyAndWatchConfiguredDefaultRuntime,
   registerOptionalRuntime,
 } from './services/core/runtime-registry.js';
 import { initAuth, seedLegacyMcpApiKey, resolveMcpLocalToken } from './services/core/auth/index.js';
@@ -662,18 +662,14 @@ async function start() {
     }
 
     // Apply the user's configured default runtime (runtimes.default) once all
-    // production runtimes are registered. An unregistered value (disabled
-    // runtime, typo) keeps the built-in default rather than failing boot.
-    const configuredDefault = configManager.get('runtimes').default;
-    if (
-      !applyConfiguredDefaultRuntime(runtimeRegistry, configuredDefault) &&
-      configuredDefault !== runtimeRegistry.getDefaultType()
-    ) {
-      logger.warn('[Runtime] configured runtimes.default is not registered; keeping built-in', {
-        configured: configuredDefault,
-        active: runtimeRegistry.getDefaultType(),
-      });
-    }
+    // production runtimes are registered — and keep applying it, so changing it
+    // in Settings takes effect on the next session rather than the next restart.
+    // An unregistered value (disabled runtime, typo) keeps the built-in default
+    // rather than failing boot.
+    applyAndWatchConfiguredDefaultRuntime(runtimeRegistry, {
+      read: () => configManager.get('runtimes').default,
+      onChange: (listener) => configManager.onChange(listener),
+    });
     initCloudLinkManager(); // real fetch, real defaults — behavior-preserving
   }
 

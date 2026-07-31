@@ -278,6 +278,8 @@ DorkOS runs three agent runtimes: Claude Code (the default), Codex, and OpenCode
 
 You do not have to edit this file. Open Settings and go to Runtimes: you can add your accounts there, name them, and choose the one in use. Once you have more than one, the account also shows in the status bar at the bottom of a new session, so you can switch before you send.
 
+**You can also say which model a new chat should start with, and how hard it should think.** Each runtime has its own pair of settings — `defaultModel` and `defaultEffort` — because a model name only means something to the runtime that offers it. Leave them `null`, which is how they ship, and each runtime keeps picking for itself, exactly as before. Set one and every new chat on that runtime starts there; chats you already have keep what they are running with. Effort is one of `none`, `minimal`, `low`, `medium`, `high`, `max`, or `xhigh`. OpenCode has a model setting but no effort setting: OpenCode gives no way to ask for more or less thinking, so DorkOS does not pretend to offer one. If you edit the file by hand, only add settings that exist — writing one that does not, like `runtimes.opencode.defaultEffort`, makes DorkOS treat the whole file as damaged: it keeps a copy next to it as `config.json.bak` and starts fresh from the defaults. Settings is the safer place to change any of this.
+
 <TypeTable
   type={{
     'runtimes.default': {
@@ -297,6 +299,18 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
         'The Claude accounts you have told DorkOS about, each with a path and a name you choose (or `null` for no name). DorkOS never goes looking for accounts on its own.',
       type: 'Array<{ path: string; label: string | null }>',
       default: '[]',
+    },
+    'runtimes.claudeCode.defaultModel': {
+      description:
+        'The model a new Claude Code chat starts on. When `null`, Claude Code picks. Chats you already have are not changed.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.claudeCode.defaultEffort': {
+      description:
+        'How hard a new Claude Code chat thinks by default: none, minimal, low, medium, high, max, or xhigh. When `null`, Claude Code picks.',
+      type: 'string | null',
+      default: 'null',
     },
     'runtimes.opencode.enabled': {
       description: 'Register the OpenCode runtime on server startup.',
@@ -326,6 +340,12 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
       type: 'string | null',
       default: 'null',
     },
+    'runtimes.opencode.defaultModel': {
+      description:
+        'The model a new OpenCode chat starts on, written as `provider/model`. When `null`, OpenCode picks. There is no effort setting here: OpenCode gives no way to ask for more or less thinking.',
+      type: 'string | null',
+      default: 'null',
+    },
     'runtimes.codex.enabled': {
       description: 'Register the Codex runtime on server startup.',
       type: 'boolean',
@@ -340,6 +360,18 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
     'runtimes.codex.credentialRef': {
       description:
         'Credential reference for Codex’s API key (never a raw secret). `null` delegates to `codex login`.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.codex.defaultModel': {
+      description:
+        'The model a new Codex chat starts on. When `null`, Codex picks. Chats you already have are not changed.',
+      type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.codex.defaultEffort': {
+      description:
+        'How hard a new Codex chat thinks by default: none, minimal, low, medium, high, max, or xhigh. Codex has no “none” or “max” of its own, so it takes the nearest level it does have.',
       type: 'string | null',
       default: 'null',
     },

@@ -35,3 +35,22 @@ export const SDK_TOOL_NAMES = {
  * so a pixel ceiling would be a lie at exactly the widths that matter.
  */
 export const STATUS_VALUE_MAX_CHARS = 13;
+
+/**
+ * The normalized reasoning-effort ladder, lowest to highest.
+ *
+ * Exactly OpenAI's six variants ∪ Anthropic's `max` — the union, not a DorkOS
+ * invention, so every runtime maps INTO it rather than the other way round. It
+ * lives in this dependency-free module because two schema files need it and they
+ * sit on opposite sides of one import edge: `schemas.ts` builds `EffortLevelSchema`
+ * from it, and `config-schema.ts` builds the per-runtime `defaultEffort` leaves
+ * from it. Importing one from the other would close a load-time cycle
+ * (`schemas.ts` already imports `config-schema.ts`), and copying the list into
+ * both is how the enum silently forks.
+ *
+ * Not every runtime honors every rung: claude-code and codex clamp `none`/`minimal`
+ * differently (documented at both clamp sites), and OpenCode's API accepts no
+ * effort at all. Those are mapping decisions at the adapter edge, never a reason
+ * to fork the ladder.
+ */
+export const EFFORT_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'max', 'xhigh'] as const;

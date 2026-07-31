@@ -52,6 +52,15 @@ export interface ThinkingResolution {
  * SDK's lowest level, `low`. Any value outside the SDK set returns undefined so we never
  * forward an unsupported effort string.
  *
+ * **Codex reads those same two rungs differently, on purpose.** There, `none`
+ * clamps UP to `minimal` (Codex always reasons) and `minimal` stays `minimal`;
+ * and Codex clamps `max` DOWN to `xhigh`, while the Claude SDK accepts `max`
+ * as it stands. See
+ * `EFFORT_TO_REASONING` in `runtimes/codex/turn-input.ts`. The divergence was
+ * invisible while effort was only ever set per session; a per-runtime DEFAULT
+ * makes one word land two ways for the same person, so both sites carry this
+ * note and neither mapping moves without the other.
+ *
  * @param effort - The DorkOS session effort level, if set.
  */
 function toSdkEffort(effort: EffortLevel | undefined): SdkEffortLevel | undefined {

@@ -10,8 +10,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomTurnRequest } from '../room-trigger.js';
+import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 
 const persistSessionRuntime = vi.fn().mockResolvedValue(true);
+/** What `session_metadata` holds for the session under test — `null` = no row. */
+let storedSettings: Record<string, unknown> | null = null;
 const getCapabilities = vi.fn().mockReturnValue({ logBackedHistory: false, nativeContext: [] });
 
 /**
@@ -24,6 +27,7 @@ let internalSessionId: (sessionId: string) => string | undefined = () => undefin
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
+    getSessionSettings: () => Promise.resolve(storedSettings),
     get: () => ({
       getCapabilities: () => getCapabilities(),
       acquireLock: () => true,
@@ -39,6 +43,17 @@ vi.mock('../../core/runtime-registry.js', () => ({
 
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: () => Promise.resolve(null) }));
 
+/**
+ * The stored `runtimes` section the real `resolveSessionDefaults` reads. The
+ * resolver runs for real here — a room turn inheriting the server's default model
+ * is the claim, and a stubbed resolver would prove nothing about it.
+ */
+let runtimesConfig: UserConfig['runtimes'] = USER_CONFIG_DEFAULTS.runtimes;
+
+vi.mock('../../core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'runtimes' ? runtimesConfig : undefined) },
+}));
+
 /** The projector the stub is handed, as this file drives it. */
 interface TestProjector {
   ingest: (event: Record<string, unknown>) => unknown;
@@ -50,6 +65,8 @@ interface TriggerCall {
   projector: TestProjector;
   content: string;
   roomContext?: RoomContextData;
+  /** The execution settings the runner resolved for this turn (model, effort). */
+  settings?: Record<string, unknown>;
   /** The runtime port the real `triggerTurn` resolves the canonical id through. */
   deps: { getInternalSessionId: (sessionId: string) => string | undefined };
 }
@@ -441,5 +458,61 @@ describe('what a room turn actually sends (ADR-0273)', () => {
       true
     );
     expect(triggered[0].roomContext?.members.find((m) => m.handle === 'ana')?.isPerson).toBe(false);
+  });
+});
+
+describe('what a room turn runs with (execution defaults)', () => {
+  beforeEach(() => {
+    triggered.length = 0;
+    persistSessionRuntime.mockClear();
+    turnBehaviour = saysAndCloses('green');
+    storedSettings = null;
+    runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
+  });
+
+  it("starts a room agent's first turn on the server's default model and effort", async () => {
+    // The gap this closes: a room turn had NO model or effort path at all. Its
+    // session row is written only after the turn starts, so reading the row —
+    // the way every other session inherits — would always come back empty on
+    // the turn that matters.
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      claudeCode: {
+        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+        defaultModel: 'opus',
+        defaultEffort: 'high',
+      },
+    };
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].settings).toEqual({ model: 'opus', effort: 'high' });
+    // The row itself is written by the registry, which resolves the same
+    // defaults on the INSERT that creates it — so the SECOND turn inherits them
+    // the ordinary way rather than through this path.
+    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+      expect.any(String),
+      'claude-code',
+      '/repo/ana'
+    );
+  });
+
+  it('leaves a room session that already has settings alone', async () => {
+    // "Applies to new conversations — running ones keep their settings." A room
+    // conversation with a row is a running one, whatever the default now says.
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
+    };
+    storedSettings = { model: 'sonnet' };
+
+    await createSessionRoomTurnRunner().run(request({ sessionId: 'room-session-with-a-row' }));
+
+    expect(triggered[0].settings).toEqual({});
+  });
+
+  it('sends no model at all when nothing is configured', async () => {
+    await createSessionRoomTurnRunner().run(request());
+    expect(triggered[0].settings).toEqual({});
   });
 });
