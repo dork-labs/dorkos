@@ -389,22 +389,8 @@ describe('AccessControl', () => {
       expect(acl.listRules()).toEqual([]);
     });
 
-    it('handles corrupt JSON gracefully (defaults to empty rules)', () => {
-      fs.writeFileSync(path.join(tmpDir, 'access-rules.json'), '{not valid json', 'utf-8');
-
-      acl = new AccessControl(tmpDir);
-
-      expect(acl.checkAccess('relay.any', 'relay.other').allowed).toBe(true);
-      expect(acl.listRules()).toEqual([]);
-    });
-
-    it('handles non-array JSON gracefully (defaults to empty rules)', () => {
-      fs.writeFileSync(path.join(tmpDir, 'access-rules.json'), '{"not": "array"}', 'utf-8');
-
-      acl = new AccessControl(tmpDir);
-
-      expect(acl.listRules()).toEqual([]);
-    });
+    // Corrupt and non-array files used to load as "no rules", i.e. as
+    // default-allow. They now quarantine — see the fail-closed block below.
   });
 
   // -------------------------------------------------------------------------
@@ -440,6 +426,110 @@ describe('AccessControl', () => {
       }
 
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
+    }, 10_000);
+  });
+
+  // -------------------------------------------------------------------------
+  // Unreadable rules — quarantine
+  // -------------------------------------------------------------------------
+
+  describe('a rules file that exists but cannot be read', () => {
+    /** Write raw text (valid or not) to access-rules.json. */
+    function writeRaw(dir: string, text: string): void {
+      fs.writeFileSync(path.join(dir, 'access-rules.json'), text, 'utf-8');
+    }
+
+    it('denies every check when the JSON is truncated', () => {
+      writeRaw(tmpDir, '[{"from":"relay.a","to":"relay.b","action":"deny","priority');
+      acl = new AccessControl(tmpDir);
+
+      expect(acl.isQuarantined()).toBe(true);
+      const result = acl.checkAccess('relay.agent.projectA.backend', 'relay.human.telegram.t.1');
+      expect(result.allowed).toBe(false);
+      // The denial names the file, so an operator is told what to repair rather
+      // than hunting for a rule that does not exist.
+      expect(result.matchedRule).toBeUndefined();
+      expect(result.reason).toContain('access-rules.json');
+    });
+
+    it('denies when the file holds something that is not a rule list', () => {
+      writeRaw(tmpDir, '{"rules": []}');
+      acl = new AccessControl(tmpDir);
+
+      expect(acl.isQuarantined()).toBe(true);
+      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
+    });
+
+    it('denies when one entry in an otherwise good file is not a rule', () => {
+      // A rule we cannot read is as likely to be the deny protecting something
+      // as anything else, so one bad entry quarantines rather than being dropped.
+      writeRaw(
+        tmpDir,
+        JSON.stringify([
+          { from: 'relay.a', to: 'relay.b', action: 'deny', priority: 10 },
+          { from: 'relay.c', action: 'nonsense' },
+        ])
+      );
+      acl = new AccessControl(tmpDir);
+
+      expect(acl.isQuarantined()).toBe(true);
+      expect(acl.checkAccess('relay.x', 'relay.y').allowed).toBe(false);
+    });
+
+    it('leaves the absent-file default-allow untouched', () => {
+      // The pinned posture for "nobody has written a rule yet" is unchanged:
+      // only a file that EXISTS and cannot be read fails closed.
+      acl = new AccessControl(tmpDir);
+
+      expect(acl.isQuarantined()).toBe(false);
+      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
+    });
+
+    it('says so once, loudly', () => {
+      const errors: unknown[][] = [];
+      writeRaw(tmpDir, 'not json at all');
+      acl = new AccessControl(tmpDir, { error: (...args) => errors.push(args) });
+
+      expect(errors).toHaveLength(1);
+      expect(String(errors[0]?.[0])).toContain('Refusing to deliver');
+    });
+
+    it('recovers when the file is repaired', async () => {
+      writeRaw(tmpDir, '{{{');
+      acl = new AccessControl(tmpDir);
+      expect(acl.isQuarantined()).toBe(true);
+
+      // Let chokidar finish attaching before the file moves under it.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      writeRulesFile(tmpDir, [makeRule('relay.a', 'relay.b', 'deny', 10)]);
+
+      const start = Date.now();
+      while (Date.now() - start < 3000 && acl.isQuarantined()) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      expect(acl.isQuarantined()).toBe(false);
+      // The repaired rules are in effect, and unrelated traffic flows again.
+      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
+      expect(acl.checkAccess('relay.x', 'relay.y').allowed).toBe(true);
+    }, 10_000);
+
+    it('recovers when the broken file is deleted', async () => {
+      writeRaw(tmpDir, '{{{');
+      acl = new AccessControl(tmpDir);
+      expect(acl.isQuarantined()).toBe(true);
+
+      // Let chokidar finish attaching before the file moves under it.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      fs.rmSync(path.join(tmpDir, 'access-rules.json'));
+
+      const start = Date.now();
+      while (Date.now() - start < 3000 && acl.isQuarantined()) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      expect(acl.isQuarantined()).toBe(false);
+      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
     }, 10_000);
   });
 

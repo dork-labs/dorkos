@@ -335,6 +335,21 @@ describe('TelegramAdapter', () => {
     );
   });
 
+  it('bounds autoRetry so a failing call eventually surfaces', async () => {
+    // The library's own defaults are `maxRetryAttempts: Infinity` and
+    // `maxDelaySeconds: Infinity`, and it wraps `getUpdates` too. Left
+    // unbounded, a revoked token or a dead network retried in silence forever
+    // while the adapter still reported `connected` — no error, no reconnect,
+    // no message. The cap also bounds shutdown: the library's retry sleep is a
+    // timer it never unrefs, so it holds the process open for the whole delay.
+    await adapter.start(mockRelay);
+
+    const { autoRetry } = await import('@grammyjs/auto-retry');
+    expect(autoRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ maxRetryAttempts: 3, maxDelaySeconds: 60 })
+    );
+  });
+
   it('start() transitions state to connected', async () => {
     await adapter.start(mockRelay);
     expect(adapter.getStatus().state).toBe('connected');

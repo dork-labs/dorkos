@@ -15,6 +15,7 @@
  * @module relay/adapters/webhook
  */
 import crypto from 'node:crypto';
+import { z } from 'zod';
 import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import type {
   AdapterContext,
@@ -32,6 +33,24 @@ const NONCE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /** How often expired nonces are pruned from the in-memory map. */
 const NONCE_PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Header carrying how many relay hops the message being sent out has taken. */
+const HOP_COUNT_HEADER = 'X-Relay-Hop-Count';
+
+/** Header carrying the hop ceiling that applies to it. */
+const MAX_HOPS_HEADER = 'X-Relay-Max-Hops';
+
+/**
+ * The hop budget an inbound request claims to be continuing.
+ *
+ * Coerced from header text, and only believed when it is a sane non-negative
+ * integer; anything else is treated as no claim at all, which starts a fresh
+ * budget exactly as before.
+ */
+const InboundHopBudgetSchema = z.object({
+  hopCount: z.coerce.number().int().min(0).max(1_000),
+  maxHops: z.coerce.number().int().min(1).max(1_000).optional(),
+});
 
 // === Manifest ===
 
@@ -93,7 +112,15 @@ This secret is used to verify that incoming webhook requests are authentic. Shar
     {
       key: 'outbound.headers',
       label: 'Custom Headers',
-      type: 'textarea',
+      // Declared `password`, not `textarea`. This field is where an
+      // `Authorization: Bearer …` goes, and every secret-handling rule in the
+      // server keys off this one word: masking in the API response, preserving
+      // the stored value when the form sends back the mask, and moving the
+      // value into the encrypted credential store instead of leaving it in
+      // `adapters.json`. Declared as text, an API key pasted here sat on disk
+      // in the clear and was echoed back on every read.
+      type: 'password',
+      valueShape: 'json-object',
       required: false,
       placeholder: '{"Authorization": "Bearer xxx"}',
       description: 'JSON object of custom HTTP headers for outbound requests.',
@@ -258,6 +285,7 @@ export class WebhookAdapter extends BaseRelayAdapter {
 
       const result = await this.relay.publish(this.config.inbound.subject, payload, {
         from: `relay.webhook.${this.id}`,
+        ...(this.continuedBudget(headers) ?? {}),
       });
 
       // Check for rejected publishes (e.g. rate-limited)
@@ -309,6 +337,11 @@ export class WebhookAdapter extends BaseRelayAdapter {
           'X-Signature': signature,
           'X-Timestamp': timestamp,
           'X-Nonce': nonce,
+          // State the hop budget this message is travelling on, so a service
+          // that answers back through our inbound endpoint continues the chain
+          // rather than resetting it (see `continuedBudget`).
+          [HOP_COUNT_HEADER]: String(envelope.budget.hopCount),
+          [MAX_HOPS_HEADER]: String(envelope.budget.maxHops),
           ...this.config.outbound.headers,
         },
         body,
@@ -327,6 +360,53 @@ export class WebhookAdapter extends BaseRelayAdapter {
       this.recordError(err);
       return { success: false, error, durationMs: Date.now() - startTime };
     }
+  }
+
+  /**
+   * Read the hop budget an inbound request is continuing, if it declares one.
+   *
+   * A webhook can be pointed back at DorkOS — directly, or through a service
+   * that answers every message with one of its own. Each lap used to arrive as
+   * a brand-new message with a brand-new budget, so the hop counter reset to
+   * zero every time and the loop guard, which exists precisely to stop this,
+   * never fired: the conversation ran until somebody noticed.
+   *
+   * {@link deliver} therefore states the budget it is sending on
+   * ({@link HOP_COUNT_HEADER}), and a request that echoes it back continues the
+   * chain instead of restarting it. One more hop is counted here, the same way
+   * every other adapter's reply does it.
+   *
+   * A caller could of course send a smaller number — but only a caller holding
+   * the inbound secret gets this far at all, and one who does could simply omit
+   * the header. This closes the accidental loop, which is the one that happens;
+   * it is not a defence against the holder of your own signing key.
+   *
+   * @param headers - The inbound request headers.
+   * @returns Publish options carrying the continued budget, or `undefined`.
+   */
+  private continuedBudget(
+    headers: Record<string, string | string[] | undefined>
+  ): { budget: { hopCount: number; maxHops?: number } } | undefined {
+    const declared = normalizeHeader(headers[HOP_COUNT_HEADER.toLowerCase()]);
+    if (!declared) return undefined;
+
+    const parsed = InboundHopBudgetSchema.safeParse({
+      hopCount: declared,
+      maxHops: normalizeHeader(headers[MAX_HOPS_HEADER.toLowerCase()]) || undefined,
+    });
+    if (!parsed.success) {
+      this.logger.debug?.(
+        `ignoring an unreadable ${HOP_COUNT_HEADER} on an inbound webhook for '${this.id}'`
+      );
+      return undefined;
+    }
+
+    return {
+      budget: {
+        hopCount: parsed.data.hopCount + 1,
+        ...(parsed.data.maxHops !== undefined ? { maxHops: parsed.data.maxHops } : {}),
+      },
+    };
   }
 
   /** Remove expired nonces from the in-memory map. */

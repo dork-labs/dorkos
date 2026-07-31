@@ -9,6 +9,19 @@
  * Rules are persisted in `access-rules.json` within the Relay data
  * directory and hot-reloaded via chokidar when the file changes on disk.
  *
+ * ## No rules and unreadable rules are different answers
+ *
+ * A **missing** file means nobody has written a rule yet, so the D-Bus-style
+ * default-allow applies and everything is delivered. A file that **exists but
+ * cannot be read as rules** means somebody wrote rules and we cannot tell what
+ * they say — and the rule we cannot read is exactly as likely to be the `deny`
+ * protecting a private namespace as anything else. Treating that as "no rules"
+ * silently converts a locked-down machine into an open one at the moment its
+ * config breaks, which is the worst possible time. So an unreadable file puts
+ * the evaluator into a **quarantined** state that denies every check until the
+ * file is fixed or removed; the chokidar watcher lifts the quarantine on the
+ * next good load, with no restart.
+ *
  * @module relay/access-control
  */
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -16,8 +29,12 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { matchesPattern } from './subject-matcher.js';
+import { RelayAccessRuleSchema } from '@dorkos/shared/relay-schemas';
 import type { RelayAccessRule } from '@dorkos/shared/relay-schemas';
-import type { AccessResult } from './types.js';
+import type { AccessResult, RelayLogger } from './types.js';
+
+/** The logger surface {@link AccessControl} uses to report a quarantine. */
+export type AccessControlLogger = Partial<RelayLogger>;
 
 /** Filename for the persisted access rules. */
 const RULES_FILENAME = 'access-rules.json';
@@ -35,20 +52,24 @@ function byPriorityDesc(a: RelayAccessRule, b: RelayAccessRule): number {
 /**
  * Parse a JSON string into an array of access rules.
  *
- * Returns an empty array if the input is invalid JSON or not an array.
+ * Every entry is validated against {@link RelayAccessRuleSchema}: a rule that
+ * does not hold is not silently dropped, because a dropped rule is a rule that
+ * stops protecting something. One bad entry fails the whole file, which the
+ * caller turns into a quarantine rather than into "no rules".
  *
- * @param raw - Raw JSON string from disk
+ * @param raw - Raw JSON string from disk.
+ * @returns The parsed rules, or `null` when the text is not a valid rule list.
  */
-function parseRules(raw: string): RelayAccessRule[] {
+function parseRules(raw: string): RelayAccessRule[] | null {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed as RelayAccessRule[];
+    parsed = JSON.parse(raw);
   } catch {
-    return [];
+    return null;
   }
+  if (!Array.isArray(parsed)) return null;
+  const result = RelayAccessRuleSchema.array().safeParse(parsed);
+  return result.success ? result.data : null;
 }
 
 /**
@@ -74,6 +95,15 @@ export class AccessControl {
   private rules: RelayAccessRule[] = [];
   private watcher: FSWatcher | null = null;
   private readonly rulesPath: string;
+  /**
+   * Why the rules file could not be read, when it exists but is unreadable.
+   *
+   * Non-null puts the evaluator in the quarantined state described in the
+   * module doc: {@link checkAccess} denies everything. Cleared on the next
+   * successful load, so fixing or deleting the file recovers without a restart.
+   */
+  private quarantineReason: string | null = null;
+  private readonly logger?: AccessControlLogger;
 
   /**
    * Create a new AccessControl instance.
@@ -82,17 +112,28 @@ export class AccessControl {
    * and starts a chokidar file watcher for hot-reload.
    *
    * @param dataDir - Directory containing (or to contain) `access-rules.json`
+   * @param logger - Optional logger; the quarantine is otherwise invisible.
    */
-  constructor(dataDir: string) {
+  constructor(dataDir: string, logger?: AccessControlLogger) {
     this.rulesPath = path.join(dataDir, RULES_FILENAME);
+    this.logger = logger;
     this.loadRules();
     this.startWatcher();
+  }
+
+  /**
+   * Whether the evaluator is quarantined because `access-rules.json` exists but
+   * cannot be read as a rule list. While quarantined every check is denied.
+   */
+  isQuarantined(): boolean {
+    return this.quarantineReason !== null;
   }
 
   /**
    * Check whether communication from one subject to another is allowed.
    *
    * Evaluation algorithm:
+   * 0. If the rules file is unreadable, deny — see the module doc
    * 1. Rules are sorted by priority (highest first)
    * 2. For each rule, check if `matchesPattern(from, rule.from)` AND `matchesPattern(to, rule.to)`
    * 3. First match wins — return the corresponding allow/deny result
@@ -103,6 +144,16 @@ export class AccessControl {
    * @returns An {@link AccessResult} indicating whether delivery is allowed
    */
   checkAccess(from: string, to: string): AccessResult {
+    if (this.quarantineReason !== null) {
+      return {
+        allowed: false,
+        reason:
+          `the relay access rules at ${this.rulesPath} cannot be read ` +
+          `(${this.quarantineReason}), so nothing is being delivered until they are ` +
+          `fixed or the file is removed`,
+      };
+    }
+
     for (const rule of this.rules) {
       if (matchesPattern(from, rule.from) && matchesPattern(to, rule.to)) {
         return {
@@ -176,17 +227,61 @@ export class AccessControl {
   /**
    * Load rules from disk synchronously.
    *
-   * If the file doesn't exist or contains invalid JSON, the rules
-   * array is reset to empty (default-allow for all).
+   * Three outcomes, and the difference between the last two is the whole point
+   * (see the module doc):
+   *
+   * - **File read and parsed** — those are the rules; any quarantine is lifted.
+   * - **File absent (`ENOENT`)** — nobody has written a rule; default-allow.
+   * - **File present but unreadable or unparseable** — quarantine: deny
+   *   everything until it is fixed or removed.
    */
   private loadRules(): void {
+    let raw: string;
     try {
-      const raw = fs.readFileSync(this.rulesPath, 'utf-8');
-      this.rules = parseRules(raw);
-      this.rules.sort(byPriorityDesc);
-    } catch {
-      // File doesn't exist yet or is unreadable — start with no rules
-      this.rules = [];
+      raw = fs.readFileSync(this.rulesPath, 'utf-8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.rules = [];
+        this.clearQuarantine();
+        return;
+      }
+      // The file is there and we cannot read it (permissions, I/O). We do not
+      // know what it says, so we do not get to assume it says nothing.
+      this.enterQuarantine(err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    const parsed = parseRules(raw);
+    if (parsed === null) {
+      this.enterQuarantine('the file is not a valid list of access rules');
+      return;
+    }
+
+    this.rules = parsed;
+    this.rules.sort(byPriorityDesc);
+    this.clearQuarantine();
+  }
+
+  /** Enter the deny-everything state and say so once, loudly. */
+  private enterQuarantine(reason: string): void {
+    this.rules = [];
+    if (this.quarantineReason !== reason) {
+      this.logger?.error?.(
+        `[Relay] Refusing to deliver messages: ${this.rulesPath} exists but ${reason}. ` +
+          `Access control cannot be evaluated, so every message is denied until the file ` +
+          `is repaired or deleted.`
+      );
+    }
+    this.quarantineReason = reason;
+  }
+
+  /** Leave the deny-everything state after a good load. */
+  private clearQuarantine(): void {
+    if (this.quarantineReason !== null) {
+      this.quarantineReason = null;
+      this.logger?.warn?.(
+        `[Relay] ${this.rulesPath} is readable again — access control is back in effect.`
+      );
     }
   }
 
@@ -236,6 +331,13 @@ export class AccessControl {
 
     // Also reload if the file is created after construction
     this.watcher.on('add', () => {
+      this.loadRules();
+    });
+
+    // Deleting a broken rules file is a legitimate repair — it returns the
+    // machine to "nobody has written a rule". Without this the quarantine would
+    // outlive the file that caused it, until the next restart.
+    this.watcher.on('unlink', () => {
       this.loadRules();
     });
   }

@@ -958,12 +958,30 @@ async function start() {
       }
 
       // Enforce the DOR-239 "agent may start conversations" consent at the relay
-      // delivery layer (DOR-277). This is the authoritative gate: every
+      // delivery layer (DOR-277). Installed in the same tick `initialize()`
+      // resolves in, and `initialize()` brings the binding subsystem up before
+      // it queues any adapter start, so no adapter can be connected — let alone
+      // carrying a message — before this line runs. This is the authoritative
+      // gate: every
       // agent-initiated send to a bound human channel — relay_send*, A2A, or any
-      // other publish path — is denied unless the binding is enabled and
-      // canInitiate. Without a binding store there is no consent to resolve.
+      // other publish path — is denied unless the binding is enabled, consents,
+      // and belongs to the sending agent. Until it is installed the relay denies
+      // every send to a bound human channel, so failing to reach this line
+      // silences chat integrations rather than opening them.
       if (bindingStore) {
-        relayCore.setInitiateConsentGate(createInitiateConsentGate({ bindingStore }));
+        relayCore.setInitiateConsentGate(
+          createInitiateConsentGate({
+            bindingStore,
+            // Same derivation the sender side uses (`resolveSenderIdentity` →
+            // `getSubjectByPath`), so the two subjects are comparable.
+            // No mesh means no agent can be shown to be the bound one, so the
+            // gate denies rather than waves through.
+            resolveAgentSubject: (agentId) => {
+              const projectPath = meshCore?.getProjectPath(agentId);
+              return projectPath ? meshCore?.getSubjectByPath(projectPath)?.subject : undefined;
+            },
+          })
+        );
       }
 
       logger.info('[Relay] AdapterManager initialized');

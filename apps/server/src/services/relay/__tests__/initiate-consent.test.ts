@@ -25,15 +25,43 @@ function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
   } as AdapterBinding;
 }
 
-/** A store that always resolves the given binding (or none). */
+/**
+ * A store that resolves the given binding for the expected channel, and nothing
+ * for any other.
+ *
+ * It used to ignore its arguments entirely, which meant every gate test passed
+ * whether or not the gate looked the channel up at all — a double that cannot
+ * fail the thing it exists to check.
+ */
 function storeFor(binding: AdapterBinding | undefined): ConsentBindingStore {
-  return { resolve: () => binding };
+  return {
+    resolve: (adapterId, chatId) => {
+      expect(adapterId).toBe('tg1');
+      expect(chatId).toBe('chat-42');
+      return binding;
+    },
+  };
 }
 
 /** The canonical agent-initiated subject for tg1/chat-42. */
 const HUMAN = 'relay.human.telegram.tg1.chat-42';
 /** A registered agent's server-injected principal. */
 const AGENT = 'relay.agent.ns.agent-1';
+/** Another registered agent on the same machine — not the bound one. */
+const OTHER_AGENT = 'relay.agent.ns.agent-2';
+
+/** The mesh lookup: the bound agent `agent-1` publishes as {@link AGENT}. */
+const resolveAgentSubject = (agentId: string): string | undefined =>
+  agentId === 'agent-1' ? AGENT : undefined;
+
+/**
+ * Build a gate over one binding, wired to the mesh lookup above.
+ *
+ * @param binding - The binding the store resolves, or undefined for none.
+ */
+function gateFor(binding: AdapterBinding | undefined) {
+  return createInitiateConsentGate({ bindingStore: storeFor(binding), resolveAgentSubject });
+}
 
 describe('bindingAllowsInitiate (shared consent predicate)', () => {
   it('is true only when enabled AND canInitiate', () => {
@@ -67,55 +95,43 @@ describe('isConsentExemptPrincipal (trusted server-injected principals)', () => 
 describe('createInitiateConsentGate — the DOR-277 delivery-layer gate', () => {
   describe('agent-initiated principals are GATED', () => {
     it('denies an agent send when canInitiate is off', () => {
-      const gate = createInitiateConsentGate({
-        bindingStore: storeFor(makeBinding({ canInitiate: false })),
-      });
+      const gate = gateFor(makeBinding({ canInitiate: false }));
       const d = gate(AGENT, HUMAN);
       expect(d.allowed).toBe(false);
       expect(d.code).toBe('INITIATE_NOT_ALLOWED');
     });
 
     it('allows an agent send when the binding is enabled and canInitiate', () => {
-      const gate = createInitiateConsentGate({
-        bindingStore: storeFor(makeBinding({ canInitiate: true })),
-      });
+      const gate = gateFor(makeBinding({ canInitiate: true }));
       expect(gate(AGENT, HUMAN).allowed).toBe(true);
     });
 
     it('denies an agent send when the binding is paused (enabled=false)', () => {
-      const gate = createInitiateConsentGate({
-        bindingStore: storeFor(makeBinding({ enabled: false, canInitiate: true })),
-      });
+      const gate = gateFor(makeBinding({ enabled: false, canInitiate: true }));
       expect(gate(AGENT, HUMAN).allowed).toBe(false);
     });
 
     it('denies fail-closed when no binding resolves (guessed/unbound integration)', () => {
-      const gate = createInitiateConsentGate({ bindingStore: storeFor(undefined) });
+      const gate = gateFor(undefined);
       const d = gate(AGENT, HUMAN);
       expect(d.allowed).toBe(false);
       expect(d.code).toBe('NO_BINDING');
     });
 
     it('gates a non-registered session principal', () => {
-      const gate = createInitiateConsentGate({
-        bindingStore: storeFor(makeBinding({ canInitiate: false })),
-      });
+      const gate = gateFor(makeBinding({ canInitiate: false }));
       expect(gate('relay.session.scratch', HUMAN).allowed).toBe(false);
     });
 
     it('gates the external MCP principal', () => {
-      const gate = createInitiateConsentGate({
-        bindingStore: storeFor(makeBinding({ canInitiate: false })),
-      });
+      const gate = gateFor(makeBinding({ canInitiate: false }));
       expect(gate('relay.external.mcp', HUMAN).allowed).toBe(false);
     });
 
     it('gates the in-app console principal reaching an EXTERNAL integration', () => {
       // The console operator (or a spoofer of it) may not start a conversation
       // on a bound external integration when canInitiate is off.
-      const gate = createInitiateConsentGate({
-        bindingStore: storeFor(makeBinding({ canInitiate: false })),
-      });
+      const gate = gateFor(makeBinding({ canInitiate: false }));
       expect(gate('relay.human.console', HUMAN).allowed).toBe(false);
     });
   });
@@ -123,9 +139,7 @@ describe('createInitiateConsentGate — the DOR-277 delivery-layer gate', () => 
   describe('trusted server-injected principals are EXEMPT', () => {
     // A canInitiate=false binding is used throughout to prove the bypass is by
     // principal, not because consent happened to be on.
-    const gate = createInitiateConsentGate({
-      bindingStore: storeFor(makeBinding({ canInitiate: false })),
-    });
+    const gate = gateFor(makeBinding({ canInitiate: false }));
 
     it('allows the reply-forwarding principal (agent:) — replies always flow', () => {
       expect(gate('agent:session-abc', HUMAN).allowed).toBe(true);
@@ -140,10 +154,64 @@ describe('createInitiateConsentGate — the DOR-277 delivery-layer gate', () => 
     });
   });
 
-  describe('targets outside the external-human channel are not gated', () => {
-    const gate = createInitiateConsentGate({
-      bindingStore: storeFor(makeBinding({ canInitiate: false })),
+  describe('consent belongs to the agent it was granted to', () => {
+    // `canInitiate` is a switch flipped for ONE agent on ONE channel. Checking
+    // only the channel made it a property of the channel: every agent and
+    // session on the machine could reach that chat as the user's own bot, on a
+    // permission somebody else was given.
+
+    it('allows the agent the binding names', () => {
+      expect(gateFor(makeBinding({ agentId: 'agent-1' }))(AGENT, HUMAN).allowed).toBe(true);
     });
+
+    it('denies a different agent riding a consenting binding', () => {
+      const decision = gateFor(makeBinding({ agentId: 'agent-1' }))(OTHER_AGENT, HUMAN);
+      expect(decision.allowed).toBe(false);
+      expect(decision.code).toBe('INITIATE_NOT_ALLOWED');
+      expect(decision.reason).toContain(OTHER_AGENT);
+    });
+
+    it('denies an unregistered session principal even when the channel consents', () => {
+      expect(
+        gateFor(makeBinding({ agentId: 'agent-1' }))('relay.session.scratch', HUMAN).allowed
+      ).toBe(false);
+    });
+
+    it('denies the external MCP principal even when the channel consents', () => {
+      expect(
+        gateFor(makeBinding({ agentId: 'agent-1' }))('relay.external.mcp', HUMAN).allowed
+      ).toBe(false);
+    });
+
+    it('denies when the bound agent is no longer in the mesh', () => {
+      // Nothing can be shown to be that agent, so nothing is treated as it.
+      const decision = gateFor(makeBinding({ agentId: 'ghost' }))(AGENT, HUMAN);
+      expect(decision.allowed).toBe(false);
+      expect(decision.code).toBe('NO_BINDING');
+    });
+
+    it("lets the operator's own console through — they own every binding here", () => {
+      expect(
+        gateFor(makeBinding({ agentId: 'agent-1' }))('relay.human.console', HUMAN).allowed
+      ).toBe(true);
+      expect(
+        gateFor(makeBinding({ agentId: 'agent-1' }))('relay.human.console.client-9', HUMAN).allowed
+      ).toBe(true);
+    });
+
+    it('still refuses the console when the channel itself says no', () => {
+      // Sender scoping exempts the console; `canInitiate` does not.
+      expect(
+        gateFor(makeBinding({ agentId: 'agent-1', canInitiate: false }))(
+          'relay.human.console',
+          HUMAN
+        ).allowed
+      ).toBe(false);
+    });
+  });
+
+  describe('targets outside the external-human channel are not gated', () => {
+    const gate = gateFor(makeBinding({ canInitiate: false }));
 
     it('allows agent→agent sends (relay.agent.*)', () => {
       expect(gate(AGENT, 'relay.agent.ns.other').allowed).toBe(true);

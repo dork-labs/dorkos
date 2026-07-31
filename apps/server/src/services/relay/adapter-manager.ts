@@ -162,6 +162,12 @@ export class AdapterManager {
   private configWatcher: FSWatcher | null = null;
   private readonly configPath: string;
   private configs: AdapterConfig[] = [];
+  /**
+   * Entries the last load of `adapters.json` could not read, held verbatim and
+   * written back on every save so editing one integration cannot delete
+   * another (see {@link LoadedAdapterConfigs}).
+   */
+  private unparsedConfigEntries: unknown[] = [];
   private readonly deps: AdapterManagerDeps;
   private manifests = new Map<string, AdapterManifest>();
   private bindingSubsystem?: BindingSubsystem;
@@ -246,7 +252,12 @@ export class AdapterManager {
    * written to `adapters.json` (DOR-280). Rewrites `this.configs` in place.
    */
   private persistConfigs(): Promise<void> {
-    return persistAdapterConfigs(this.configPath, this.configs, this.secretsCtx);
+    return persistAdapterConfigs(
+      this.configPath,
+      this.configs,
+      this.secretsCtx,
+      this.unparsedConfigEntries
+    );
   }
 
   /** Load config, start enabled adapters, begin watching for changes. */
@@ -254,13 +265,15 @@ export class AdapterManager {
     this.populateBuiltinManifests();
     await this.enrichManifestsWithDocs();
     await ensureDefaultAdapterConfig(this.configPath);
-    this.configs = await loadAdapterConfig(this.configPath);
+    ({ adapters: this.configs, unparsed: this.unparsedConfigEntries } = await loadAdapterConfig(
+      this.configPath
+    ));
 
     // Migrate any legacy cleartext bot tokens into the encrypted credential
     // store, rewriting adapters.json to hold references (DOR-280). An
     // already-bound bot keeps working: its token is moved, not invalidated.
     if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) {
-      await saveAdapterConfig(this.configPath, this.configs);
+      await saveAdapterConfig(this.configPath, this.configs, this.unparsedConfigEntries);
     }
 
     // Correct builtin flag on user-created adapters.
@@ -273,7 +286,7 @@ export class AdapterManager {
       }
     }
     if (needsSave) {
-      await saveAdapterConfig(this.configPath, this.configs);
+      await saveAdapterConfig(this.configPath, this.configs, this.unparsedConfigEntries);
       logger.info('[AdapterManager] Corrected builtin flag on user-created adapter(s)');
     }
 
@@ -291,7 +304,14 @@ export class AdapterManager {
     });
   }
 
-  /** Initialize the binding subsystem. Non-fatal on failure — logs and continues. */
+  /**
+   * Initialize the binding subsystem.
+   *
+   * Fatal on failure, deliberately: it runs before any adapter starts, so a
+   * throw here means `initialize()` rejects and no chat integration comes up.
+   * An integration that connects without binding routing looks healthy and
+   * answers nobody (see {@link BindingSubsystem.init}).
+   */
   private async initBindingSubsystem(): Promise<void> {
     if (!this.deps.relayCore || !this.deps.meshCore) {
       logger.info(
@@ -326,13 +346,15 @@ export class AdapterManager {
     const oldConfigIds = new Set(this.configs.map((c) => c.id));
     // Capture names before reloading config (entries may be removed)
     const oldNames = new Map([...oldConfigIds].map((id) => [id, this.resolveAdapterName(id)]));
-    this.configs = await loadAdapterConfig(this.configPath);
+    ({ adapters: this.configs, unparsed: this.unparsedConfigEntries } = await loadAdapterConfig(
+      this.configPath
+    ));
 
     // Migrate any cleartext token a user hand-added to adapters.json into the
     // encrypted store, so every load path — not just initialize() and the API
     // persist funnel — leaves references at rest (DOR-280).
     if (await materializeAdapterSecrets(this.configs, this.secretsCtx)) {
-      await saveAdapterConfig(this.configPath, this.configs);
+      await saveAdapterConfig(this.configPath, this.configs, this.unparsedConfigEntries);
     }
 
     // Stop adapters that are no longer in config or are now disabled

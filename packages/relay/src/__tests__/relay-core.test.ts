@@ -1450,6 +1450,10 @@ describe('reliability pipeline integration', () => {
         dataDir: tmpDir,
         adapterRegistry: failingAdapter,
       });
+      // This test is about dead-lettering, not consent. A human-channel subject
+      // needs a consent decision to reach delivery at all (a relay with no gate
+      // installed denies them), so stand one in that says yes.
+      relayPartial.setInitiateConsentGate(() => ({ allowed: true }));
       await relayPartial.registerEndpoint('relay.human.telegram.bot.chat');
 
       const result = await relayPartial.publish(

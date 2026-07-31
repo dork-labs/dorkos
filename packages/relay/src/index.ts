@@ -194,6 +194,15 @@ export {
   type RuntimeType,
 } from './lib/subjects.js';
 
+// Which subjects a person's consent has to cover — shared by the publish
+// pipeline's fail-closed default and the host's binding-aware gate.
+export {
+  requiresInitiateConsent,
+  isConsoleSubject,
+  HUMAN_SUBJECT_PREFIX,
+  CONSOLE_SUBJECT_PREFIX,
+} from './lib/consent-scope.js';
+
 // Plugin loader
 export { loadAdapters, validateAdapterShape } from './adapter-plugin-loader.js';
 export type {

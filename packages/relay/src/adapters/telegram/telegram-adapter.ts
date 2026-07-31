@@ -221,6 +221,34 @@ export class TelegramAdapter extends BaseRelayAdapter {
   /** Reconnection delay schedule (ms) -- exponential backoff. */
   private static readonly RECONNECT_DELAYS = [5_000, 10_000, 30_000, 60_000, 60_000];
 
+  /**
+   * How many times a single Telegram API call is retried before the error is
+   * allowed through.
+   *
+   * `autoRetry()`'s own defaults are `maxRetryAttempts: Infinity` and
+   * `maxDelaySeconds: Infinity`, and it wraps `getUpdates` along with every
+   * other call. Unbounded, a bot whose token was revoked — or whose network is
+   * gone — retried in silence forever while the adapter still reported
+   * `connected`: no error surfaced, no reconnect scheduled, no message
+   * delivered. A bounded retry hands the failure back to grammy, which routes
+   * it to {@link handlePollingError} (backoff, `setReconnecting`, and a recorded
+   * error) or to `bot.catch` for a one-off call. Three attempts and a one-minute
+   * cap absorb a rate-limit spike, which is what auto-retry is for.
+   */
+  private static readonly MAX_API_RETRIES = 3;
+
+  /**
+   * Longest single `retry_after` this adapter waits out (seconds).
+   *
+   * The cap is also what bounds shutdown. `@grammyjs/auto-retry` sleeps on a
+   * plain `setTimeout` it never `unref`s (`pause()` in its `mod.js`), so a
+   * pending retry holds the Node process open for the whole delay; the library
+   * exposes no hook to change that. Uncapped, a server told to stop could sit
+   * waiting on a Telegram `retry_after` of an hour. Capped, the worst case is a
+   * minute.
+   */
+  private static readonly MAX_RETRY_DELAY_SECS = 60;
+
   private readonly config: TelegramAdapterConfig;
   private bot: Bot | null = null;
   private webhookServer: Server | null = null;
@@ -357,7 +385,12 @@ export class TelegramAdapter extends BaseRelayAdapter {
    * message handler would leave approval buttons dead after a network blip.
    */
   private wireBot(bot: Bot, relay: RelayPublisher): void {
-    bot.api.config.use(autoRetry());
+    bot.api.config.use(
+      autoRetry({
+        maxRetryAttempts: TelegramAdapter.MAX_API_RETRIES,
+        maxDelaySeconds: TelegramAdapter.MAX_RETRY_DELAY_SECS,
+      })
+    );
     bot.on('message', (ctx) =>
       handleInboundMessage(
         ctx,

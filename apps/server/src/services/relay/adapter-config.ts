@@ -11,7 +11,6 @@ import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { z } from 'zod';
 import type { AdapterConfig } from '@dorkos/relay';
-import { AdaptersConfigFileSchema } from '@dorkos/shared/relay-schemas';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
 import { carryForwardAdapterDefaults, warnOnOpenDmPolicy } from './safe-defaults.js';
@@ -242,15 +241,46 @@ function stripRemovedAdapterTypes(raw: unknown): unknown {
 }
 
 /**
+ * The outcome of reading `adapters.json`.
+ *
+ * Two lists, because one entry failing to parse must not decide anything about
+ * the others — neither what runs nor what is written back.
+ */
+export interface LoadedAdapterConfigs {
+  /** Entries that parsed. These are the adapters that run. */
+  adapters: AdapterConfig[];
+  /**
+   * Entries that did not parse, kept exactly as they were on disk.
+   *
+   * They are not started — nothing here is understood well enough to start.
+   * They are carried so that {@link saveAdapterConfig} can write them back
+   * untouched: a save that dropped them would turn a typo in one integration
+   * into the permanent deletion of it, at the next unrelated edit.
+   */
+  unparsed: unknown[];
+}
+
+/** The shell of `adapters.json`, before anything is said about each entry. */
+const AdaptersFileShellSchema = z.object({ adapters: z.array(z.unknown()) });
+
+/**
  * Read and parse the adapter config file.
  *
- * Handles missing file (empty adapter list) and malformed JSON (logs
- * warning and falls back to empty list). Never throws.
+ * Handles a missing file (empty adapter list) and malformed content. Never
+ * throws.
+ *
+ * **Entries are parsed one at a time.** They used to be parsed as one array, so
+ * a single unreadable entry failed the whole file and returned nothing — and
+ * because the caller then persisted what it held, the next "add an
+ * integration" wrote that empty list to disk and erased every integration the
+ * person had. Now a bad entry is skipped and reported, its neighbours load, and
+ * it is handed back in {@link LoadedAdapterConfigs.unparsed} so writing the
+ * file cannot delete it.
  *
  * @param configPath - Absolute path to adapters.json
- * @returns Parsed adapter configs, or empty array on failure
+ * @returns The entries that parsed, plus the raw entries that did not
  */
-export async function loadAdapterConfig(configPath: string): Promise<AdapterConfig[]> {
+export async function loadAdapterConfig(configPath: string): Promise<LoadedAdapterConfigs> {
   try {
     const raw = await readFile(configPath, 'utf-8');
     // Bot tokens live as credential references at rest (DOR-280), but a legacy
@@ -262,24 +292,45 @@ export async function loadAdapterConfig(configPath: string): Promise<AdapterConf
     const sanitized = stripRemovedAdapterTypes(JSON.parse(raw));
     // Stamp legacy entries before any schema default can fire — once
     // `SlackAdapterConfigSchema` applies its own default the old value is gone.
-    const parsed = AdaptersConfigFileSchema.safeParse(carryForwardAdapterDefaults(sanitized));
-    if (parsed.success) {
-      warnOnOpenDmPolicy(parsed.data.adapters);
-      return parsed.data.adapters;
-    } else {
-      logger.warn(
-        '[AdapterConfig] Malformed config, skipping invalid entries:',
-        z.flattenError(parsed.error)
+    const shell = AdaptersFileShellSchema.safeParse(carryForwardAdapterDefaults(sanitized));
+    if (!shell.success) {
+      // Not even shaped like the file: there is no per-entry reading to do, and
+      // nothing to hand back, because we cannot tell where an entry begins.
+      logger.error(
+        `[AdapterConfig] ${configPath} is not a valid adapters file, so no integration ` +
+          `could be read from it. The file has been left exactly as it is:`,
+        z.flattenError(shell.error)
       );
-      return [];
+      return { adapters: [], unparsed: [] };
     }
+
+    const adapters: AdapterConfig[] = [];
+    const unparsed: unknown[] = [];
+    for (const entry of shell.data.adapters) {
+      const parsed = AdapterConfigSchema.safeParse(entry);
+      if (parsed.success) {
+        adapters.push(parsed.data as AdapterConfig);
+      } else {
+        unparsed.push(entry);
+        const id = (entry as { id?: unknown })?.id;
+        logger.error(
+          `[AdapterConfig] Skipping integration${typeof id === 'string' ? ` '${id}'` : ''}: ` +
+            `its saved settings could not be read. It will not start, and it has been left ` +
+            `in the file untouched so nothing is lost:`,
+          z.flattenError(parsed.error)
+        );
+      }
+    }
+
+    warnOnOpenDmPolicy(adapters);
+    return { adapters, unparsed };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       // No config file = no adapters (not an error)
-      return [];
+      return { adapters: [], unparsed: [] };
     } else {
       logger.warn('[AdapterConfig] Failed to read config:', err);
-      return [];
+      return { adapters: [], unparsed: [] };
     }
   }
 }
@@ -326,19 +377,27 @@ async function repairAdapterConfigPermissions(configPath: string): Promise<void>
  * which materializes any cleartext secret into a reference before this write —
  * this function does not itself guard against cleartext.
  *
+ * Entries that could not be read on load are written back verbatim alongside
+ * the parsed ones (see {@link LoadedAdapterConfigs.unparsed}), so saving one
+ * integration never deletes another that this version could not understand.
+ *
  * @param configPath - Absolute path to adapters.json
  * @param configs - The adapter configs to write
+ * @param unparsed - Raw entries carried through from the last load
  */
 export async function saveAdapterConfig(
   configPath: string,
-  configs: AdapterConfig[]
+  configs: AdapterConfig[],
+  unparsed: readonly unknown[] = []
 ): Promise<void> {
   // `writeFileAtomic` re-asserts the mode after the rename: a pre-existing
   // file's perms survive `rename`, and the tmp file's create mode is subject to
   // the process umask.
-  await writeFileAtomic(configPath, JSON.stringify({ adapters: configs }, null, 2), {
-    mode: ADAPTER_CONFIG_MODE,
-  });
+  await writeFileAtomic(
+    configPath,
+    JSON.stringify({ adapters: [...configs, ...unparsed] }, null, 2),
+    { mode: ADAPTER_CONFIG_MODE }
+  );
 }
 
 /**

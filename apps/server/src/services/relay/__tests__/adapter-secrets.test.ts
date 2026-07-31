@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { AdapterConfig } from '@dorkos/relay';
-import { TELEGRAM_MANIFEST, SLACK_MANIFEST } from '@dorkos/relay';
+import { TELEGRAM_MANIFEST, SLACK_MANIFEST, WEBHOOK_MANIFEST } from '@dorkos/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import type {
   CredentialProvider,
@@ -13,6 +13,7 @@ import {
   deleteAdapterSecrets,
   secretFieldKeys,
 } from '../adapter-secrets.js';
+import { maskSensitiveFields } from '../adapter-config.js';
 
 /** In-memory {@link CredentialStore} that mimics the `file:` scheme. */
 class FakeCredentialStore implements CredentialStore {
@@ -186,5 +187,108 @@ describe('deleteAdapterSecrets — cleanup', () => {
     await expect(
       deleteAdapterSecrets(telegramConfig('env:TELEGRAM_BOT_TOKEN'), { store, manifests })
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('a secret field that holds a MAP of secrets (webhook outbound headers)', () => {
+  // `outbound.headers` is where an `Authorization: Bearer …` goes. Declared as
+  // a plain textarea it was excluded from every secret-handling rule, so an API
+  // key sat in `adapters.json` in the clear and came back on every read.
+
+  let store: FakeCredentialStore;
+  let webhookManifests: Map<string, AdapterManifest>;
+
+  /** A webhook config with the given outbound headers. */
+  function webhookConfig(headers: Record<string, string>): AdapterConfig {
+    return {
+      id: 'wh-1',
+      type: 'webhook',
+      enabled: true,
+      config: {
+        inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16-chars' },
+        outbound: { url: 'https://example.com/hook', secret: 'outbound-secret-16-ch', headers },
+      },
+    } as AdapterConfig;
+  }
+
+  /** The headers block of a config, as stored. */
+  function storedHeaders(config: AdapterConfig): Record<string, string> {
+    return (config.config as { outbound: { headers: Record<string, string> } }).outbound.headers;
+  }
+
+  beforeEach(() => {
+    store = new FakeCredentialStore();
+    webhookManifests = new Map<string, AdapterManifest>([['webhook', WEBHOOK_MANIFEST]]);
+  });
+
+  it('is declared a secret field by the manifest', () => {
+    expect(secretFieldKeys(WEBHOOK_MANIFEST)).toContain('outbound.headers');
+  });
+
+  it('moves every header value into the credential store', async () => {
+    const config = webhookConfig({ Authorization: 'Bearer sk-live-abc', 'X-Trace': 'on' });
+
+    const changed = await materializeAdapterSecrets([config], {
+      store,
+      manifests: webhookManifests,
+    });
+
+    expect(changed).toBe(true);
+    expect(storedHeaders(config)).toEqual({
+      Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization',
+      'X-Trace': 'file:relay-adapter-wh-1-outbound-headers-X-Trace',
+    });
+    // The value is in the encrypted store, not in the file.
+    expect(store.secrets.get('relay-adapter-wh-1-outbound-headers-Authorization')).toBe(
+      'Bearer sk-live-abc'
+    );
+    expect(JSON.stringify(config)).not.toContain('sk-live-abc');
+  });
+
+  it('resolves the references back for the adapter, in memory only', async () => {
+    const config = webhookConfig({ Authorization: 'Bearer sk-live-abc' });
+    await materializeAdapterSecrets([config], { store, manifests: webhookManifests });
+
+    const resolved = await resolveAdapterSecrets(config, {
+      provider: new FakeCredentialProvider(store),
+      manifests: webhookManifests,
+    });
+
+    expect(storedHeaders(resolved)).toEqual({ Authorization: 'Bearer sk-live-abc' });
+    // The stored config still holds only the reference.
+    expect(storedHeaders(config).Authorization).toMatch(/^file:/);
+  });
+
+  it('leaves an already-migrated header alone', async () => {
+    const config = webhookConfig({ Authorization: 'Bearer sk-live-abc' });
+    await materializeAdapterSecrets([config], { store, manifests: webhookManifests });
+
+    const changed = await materializeAdapterSecrets([config], {
+      store,
+      manifests: webhookManifests,
+    });
+
+    expect(changed).toBe(false);
+  });
+
+  it('deletes the stored header secrets when the adapter is removed', async () => {
+    const config = webhookConfig({ Authorization: 'Bearer sk-live-abc', 'X-Key': 'k' });
+    await materializeAdapterSecrets([config], { store, manifests: webhookManifests });
+
+    await deleteAdapterSecrets(config, { store, manifests: webhookManifests });
+
+    expect(store.secrets.size).toBe(0);
+  });
+
+  it('is masked out of an API read, like any other secret field', () => {
+    const masked = maskSensitiveFields(
+      {
+        inbound: { subject: 's', secret: 'inbound-secret-16-chars' },
+        outbound: { url: 'u', secret: 'x', headers: { Authorization: 'Bearer sk-live-abc' } },
+      },
+      WEBHOOK_MANIFEST
+    );
+
+    expect(JSON.stringify(masked)).not.toContain('sk-live-abc');
   });
 });
