@@ -3,7 +3,7 @@
  *
  * @module widgets/room-view/model/use-stick-to-bottom
  */
-import { useCallback, useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 /**
  * How far from the bottom still counts as being at it. A few pixels of rounding
@@ -12,10 +12,29 @@ import { useCallback, useEffect, useRef, type RefObject } from 'react';
  */
 const AT_BOTTOM_SLACK_PX = 64;
 
+/**
+ * How many frames a freshly attached scroller is given to finish laying out.
+ *
+ * A room mounts with its history already in the cache, but the ELEMENT can be
+ * inserted before it has a height — the phone's thread push lays out its
+ * enclosing surface over the following frames. Measured coming back from a
+ * thread: the scroller attached at `scrollHeight` 538 against a `clientHeight`
+ * of 680, so there was nothing to scroll and the pin was a no-op, and only
+ * later did the content settle to 1317. Ten frames is about 160ms — long enough
+ * for that, short enough that a reader cannot meaningfully scroll inside it.
+ */
+const SETTLE_FRAMES = 10;
+
 /** What the scroll container needs from its host. */
 export interface StickToBottom {
-  /** Attach to the scrolling element. */
-  scrollRef: RefObject<HTMLDivElement | null>;
+  /**
+   * Attach to the scrolling element.
+   *
+   * A callback ref rather than a ref object, and that is load-bearing: the
+   * scroller can unmount and come back while this hook stays mounted, and only
+   * a callback ref is TOLD when that happens. See {@link useStickToBottom}.
+   */
+  scrollRef: (el: HTMLDivElement | null) => void;
   /** Attach to that element's `onScroll`. */
   onScroll: () => void;
 }
@@ -33,6 +52,21 @@ export interface StickToBottom {
  * renders from it, and a scroll handler that re-rendered the timeline on every
  * wheel tick would cost more than the guard saves.
  *
+ * **The scroller is restored whenever it re-attaches**, which is not a detail:
+ * on a phone the thread panel is a full-screen push, so opening a thread
+ * UNMOUNTS the room while this hook — living in the page above — stays mounted
+ * with all its refs intact. Coming back mounts a brand new element at
+ * `scrollTop` 0, and neither `roomId` nor `newestEntryId` has changed, so the
+ * effect below never runs and nothing puts the reader back. Measured on a
+ * 390x844 viewport: 1148px before opening a thread, 0px after closing it — the
+ * room silently jumped to its oldest message. A callback ref is the only thing
+ * that hears an element arrive, which is why this is one rather than the ref
+ * object it used to be.
+ *
+ * It restores the POSITION, not just the bottom: somebody reading back through
+ * history who opens a thread and closes it should find the message they were
+ * reading, not the newest one.
+ *
  * @param roomId - The room on screen, or `null` when none is.
  * @param newestEntryId - Id of the newest entry held, or `null` for an empty or
  *   still-loading room. Keyed on the entry rather than the array so a live
@@ -42,14 +76,85 @@ export function useStickToBottom(
   roomId: string | null,
   newestEntryId: string | null
 ): StickToBottom {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const elRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
+  /** Where the reader had scrolled to, so a remount can put them back. */
+  const lastTopRef = useRef(0);
   const lastRoomIdRef = useRef<string | null>(null);
 
+  /**
+   * True while a freshly attached scroller is still being pinned.
+   *
+   * **Scroll events fired during that window are layout, not the reader**, and
+   * telling them apart is the whole point of this flag. A scroller that attaches
+   * short and then grows emits a scroll event whose geometry says "637px from
+   * the bottom" — indistinguishable, to {@link onScroll}, from somebody reading
+   * back through history. Believing it recorded the reader as scrolled up, and
+   * the restore then faithfully returned them to the top of the room they had
+   * never left. That is the bug this flag exists for.
+   */
+  const pinPendingRef = useRef(false);
+
   const onScroll = useCallback(() => {
-    const el = scrollRef.current;
+    const el = elRef.current;
     if (!el) return;
+    // Ignored while pinning: see `pinPendingRef`. The reader has not touched
+    // anything yet, so nothing they did can be recorded from it.
+    if (pinPendingRef.current) return;
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_SLACK_PX;
+    lastTopRef.current = el.scrollTop;
+  }, []);
+
+  const scrollRef = useCallback((el: HTMLDivElement | null) => {
+    elRef.current = el;
+    if (!el) return;
+
+    // Runs on the first mount too, where it simply opens the room at its newest
+    // message — the same thing the effect below would have done, one commit
+    // earlier and without a visible jump.
+    const target = atBottomRef.current ? null : lastTopRef.current;
+    pinPendingRef.current = true;
+
+    /** Put the scroller where it belongs, and say whether it landed. */
+    const apply = (): boolean => {
+      // The element may have been swapped again since this was scheduled.
+      if (elRef.current !== el) return true;
+      el.scrollTop = target ?? el.scrollHeight;
+      // **A scroller with nothing to scroll has NOT landed**, and that
+      // distinction is the whole fix. An element whose content has not been
+      // laid out yet reports `scrollHeight === clientHeight`, which satisfies
+      // "you are at the bottom" trivially — so the pin declared success against
+      // 680px of content, released the guard, and the room then grew to 1317px
+      // and fired the scroll event that recorded the reader as scrolled up.
+      // Requiring something to actually scroll is what keeps the guard up until
+      // the content is real.
+      return target === null
+        ? el.scrollHeight > el.clientHeight &&
+            el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_SLACK_PX
+        : el.scrollTop === target;
+    };
+
+    // Re-applied across the next few frames rather than once, because the
+    // element can attach before it has a height — see {@link SETTLE_FRAMES}. It
+    // stops the moment the position takes, so a room that lays out immediately
+    // (every case but the push) costs exactly one assignment.
+    let frames = 0;
+    const settle = () => {
+      if (elRef.current !== el) {
+        pinPendingRef.current = false;
+        return;
+      }
+      const landed = apply();
+      frames += 1;
+      if (landed || frames >= SETTLE_FRAMES) {
+        pinPendingRef.current = false;
+        return;
+      }
+      requestAnimationFrame(settle);
+    };
+
+    if (!apply()) requestAnimationFrame(settle);
+    else pinPendingRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -57,11 +162,15 @@ export function useStickToBottom(
     // yet opens at the bottom, whether or not it has anything in it yet.
     const roomChanged = lastRoomIdRef.current !== roomId;
     lastRoomIdRef.current = roomId;
-    if (roomChanged) atBottomRef.current = true;
+    if (roomChanged) {
+      atBottomRef.current = true;
+      lastTopRef.current = 0;
+    }
 
-    const el = scrollRef.current;
+    const el = elRef.current;
     if (!el || newestEntryId === null || !atBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
+    lastTopRef.current = el.scrollTop;
   }, [roomId, newestEntryId]);
 
   return { scrollRef, onScroll };

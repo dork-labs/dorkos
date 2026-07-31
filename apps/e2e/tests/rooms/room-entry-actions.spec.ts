@@ -276,7 +276,7 @@ test.describe('Rooms — every message gets a menu', () => {
 
     // And still operable where it landed.
     await toolbar.getByRole('button', { name: 'Reply in thread' }).click();
-    await expect(roomsPage.replyBanner).toBeVisible();
+    await expect(roomsPage.threadPanel).toBeVisible();
   });
 
   test('right-click offers the same actions as the toolbar', async ({
@@ -300,7 +300,7 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(menu.getByRole('menuitem')).toHaveText(['Reply in thread', 'Copy text']);
 
     await menu.getByRole('menuitem', { name: 'Reply in thread' }).click();
-    await expect(roomsPage.replyBanner).toBeVisible();
+    await expect(roomsPage.threadPanel).toBeVisible();
   });
 
   test('the keyboard alone reaches the actions and lands in the composer', async ({
@@ -344,8 +344,10 @@ test.describe('Rooms — every message gets a menu', () => {
     for (let i = 0; i < 4; i += 1) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
 
-    await expect(roomsPage.replyBanner).toBeVisible();
-    // The caret went with it: the point of pressing Reply is to type.
+    await expect(roomsPage.threadPanel).toBeVisible();
+    // The caret went with it: the point of pressing Reply is to type. The panel
+    // opened from the capsule asks for the composer rather than taking focus
+    // itself — the two ways in mean different things (`OpenThread.focusComposer`).
     await expect(roomsPage.threadComposer).toBeFocused();
   });
 
@@ -401,11 +403,16 @@ test.describe('Rooms — every message gets a menu', () => {
     expect(snapshot.split('You').length - 1).toBe(1);
   });
 
-  test('a reply gathers under the message it answers, and a reply to a reply joins it', async ({
+  test('a reply lands in the panel beside the room, and a reply to a reply joins it', async ({
     page,
     roomsApi,
     roomsPage,
   }) => {
+    // The rewrite of the retired inline-gathering test. What it pins is
+    // unchanged in substance — a reply reaches the thread it answers, and
+    // answering a reply joins that same thread rather than nesting — but the
+    // PLACE moved: replies are no longer drawn in the room's own scroll, so the
+    // room keeps exactly one quiet line per thread and the thread has a panel.
     const slug = `e2e-actions-reply-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
     await roomsApi.postEntries(room.id, ['why is the build slow?']);
@@ -414,47 +421,185 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
 
     const root = roomsPage.entries.first();
-    await root.hover();
-    await roomsPage.actionsIn(root).getByRole('button', { name: 'Reply in thread' }).click();
+    // A thread nobody has replied to has no row at all — the room stays clean.
+    await expect(roomsPage.replyRow(root)).toHaveCount(0);
 
-    await expect(roomsPage.replyBanner).toBeVisible();
-    await roomsPage.threadComposer.fill('the cache is cold');
-    await roomsPage.threadComposer.press('Enter');
+    await roomsPage.replyInThreadFrom(root);
+    await expect(roomsPage.threadPanel).toBeVisible();
+    // The root is IN the panel, so the thread reads as a conversation rather
+    // than as a list of answers to something you have to scroll back for.
+    await expect(roomsPage.threadEntries).toHaveCount(1);
+    await expect(roomsPage.threadEntries.first()).toContainText('why is the build slow?');
+
+    await roomsPage.replyInThread('the cache is cold');
 
     // Nothing is drawn until the server's own copy arrives on the room's stream
     // — the same path a second reader, and every agent the reply triggers, sees
     // it on. So this assertion is the round trip, not an optimistic insert.
-    const thread = roomsPage.threadUnder(root);
-    await expect(thread).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(thread).toContainText('the cache is cold');
-    await expect(thread).toContainText('1 reply');
-    // Under the root, not loose beside it: two rows on screen, one of them
-    // inside the group.
-    await expect(roomsPage.entries).toHaveCount(2);
-    await expect(thread.getByTestId('room-entry')).toHaveCount(1);
+    await expect(roomsPage.threadEntries).toHaveCount(2, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(roomsPage.threadEntries.nth(1)).toContainText('the cache is cold');
+    // One connector per reply, and none for the root: the root is the thing the
+    // replies hang off, not one of them.
+    await expect(roomsPage.threadConnectors).toHaveCount(1);
 
-    // Now answer the REPLY. The server refuses a reply to a reply, so the
-    // client aims at the root instead — and the reader is never shown an error
-    // about it, because there is nothing here they did wrong.
-    const firstReply = thread.getByTestId('room-entry').first();
-    await firstReply.hover();
-    await roomsPage.actionsIn(firstReply).getByRole('button', { name: 'Reply in thread' }).click();
-    await roomsPage.threadComposer.fill('warming it now');
-    await roomsPage.threadComposer.press('Enter');
+    // The room did NOT grow a message. It grew a line saying there is a thread,
+    // which is the whole of what the room pays for an aside of any length.
+    await expect(roomsPage.entries).toHaveCount(1);
+    await expect(roomsPage.replyCount(root)).toHaveText('1');
+    await expect(roomsPage.replyRow(root)).toContainText('1 reply');
+    // The row says which thread the panel is showing, in the tree a screen
+    // reader reads rather than in a colour.
+    await expect(roomsPage.replyRow(root)).toHaveAttribute('aria-expanded', 'true');
 
-    await expect(thread).toContainText('warming it now', { timeout: SERVER_ROUND_TRIP_MS });
-    await expect(thread).toContainText('2 replies');
-    // One thread, not a second one hanging off the first reply.
-    await expect(roomsPage.threads).toHaveCount(1);
+    // Now answer the REPLY, from inside the panel. The server refuses a reply
+    // to a reply, so the client aims at the root instead — and the reader is
+    // never shown an error about it, because there is nothing here they did
+    // wrong.
+    await roomsPage.replyInThreadFrom(roomsPage.threadEntries.nth(1));
+    await roomsPage.replyInThread('warming it now');
+
+    await expect(roomsPage.threadEntries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(roomsPage.threadEntries.nth(2)).toContainText('warming it now');
+    await expect(roomsPage.replyCount(root)).toHaveText('2');
+    // One thread, not a second one hanging off the first reply — asserted on
+    // the room, where a second thread would have to show as a second row.
+    await expect(roomsPage.replyRows).toHaveCount(1);
     // And no refusal reached the reader.
     await expect(page.getByText("Couldn't send your reply")).toHaveCount(0);
 
-    // The aim survives sending, so the exchange can continue — and it says so
-    // the whole time rather than quietly going back to addressing the room.
-    await expect(roomsPage.replyBanner).toBeVisible();
-    await roomsPage.replyBanner.getByRole('button', { name: /^Stop replying/ }).click();
-    await expect(roomsPage.replyBanner).toHaveCount(0);
+    // The panel is a place, not an aim: it stays open and its composer keeps
+    // writing here, so the exchange continues without being re-pointed. There
+    // is no banner to dismiss any more — the room's own composer is untouched
+    // beside it, still addressing the room.
+    await expect(roomsPage.threadComposer).toBeVisible();
     await expect(roomsPage.composer(`#${slug}`)).toBeVisible();
+  });
+
+  test('a reply row opens the thread it counts, and Escape closes it again', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The reader's other way in, and the one the design is really about: you
+    // are scrolling a room, you see there were three answers, you open them.
+    // Seeded server-side so the panel is opening onto a thread it did not
+    // watch arrive — which is also the only way to reach the "already there,
+    // drawn at rest" branch of `useThreadArrivals`.
+    const slug = `e2e-actions-row-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, [
+      'why is the build slow?',
+      'unrelated, but the disk is full',
+    ]);
+    const [rootId] = await roomsApi.entryIds(room.id);
+    await roomsApi.postThreadReply(room.id, rootId!, 'the cache is cold');
+    await roomsApi.postThreadReply(room.id, rootId!, 'warming it now');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(2, { timeout: SERVER_ROUND_TRIP_MS });
+
+    const root = roomsPage.entries.first();
+    const row = roomsPage.replyRow(root);
+    // Two replies, one row, and it hangs off the ROOT rather than off the
+    // unrelated message below it — which is what the positional locator is for.
+    await expect(row).toContainText('2 replies');
+    await expect(roomsPage.replyRows).toHaveCount(1);
+    await expect(row).toHaveAttribute('aria-expanded', 'false');
+    await expect(roomsPage.threadPanel).toHaveCount(0);
+
+    await row.click();
+    await expect(roomsPage.threadPanel).toBeVisible();
+    await expect(row).toHaveAttribute('aria-expanded', 'true');
+    // Root first, then its replies in the order they were written.
+    await expect(roomsPage.threadEntries).toHaveCount(3);
+    await expect(roomsPage.threadEntries.nth(0)).toContainText('why is the build slow?');
+    await expect(roomsPage.threadEntries.nth(1)).toContainText('the cache is cold');
+    await expect(roomsPage.threadEntries.nth(2)).toContainText('warming it now');
+
+    // Opened to READ, so the keyboard stays shut and the panel itself holds
+    // focus. That is not politeness: Escape only reaches the panel's handler
+    // from inside it, so a panel opened this way that did not take focus could
+    // be opened by keyboard and not closed by one.
+    await expect(roomsPage.threadPanel).toBeFocused();
+    await expect(roomsPage.threadComposer).not.toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(roomsPage.threadPanel).toHaveCount(0);
+    await expect(row).toHaveAttribute('aria-expanded', 'false');
+
+    // And the close button is the same way out, under a name that says where it
+    // goes rather than what it looks like.
+    await row.click();
+    await expect(roomsPage.closeThread).toBeVisible();
+    await roomsPage.closeThread.click();
+    await expect(roomsPage.threadPanel).toHaveCount(0);
+  });
+
+  test('a reply that arrives after you last looked wears the accent', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // Unread is DERIVED from the reader's frozen read cursor, not stored — so
+    // the only honest way to test it is to give the reader a real cursor and
+    // then land a reply above it. Two loads is what buys that: the first marks
+    // the room read, the second opens with a cursor at the room's newest.
+    const slug = `e2e-actions-unread-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['why is the build slow?']);
+    const [rootId] = await roomsApi.entryIds(room.id);
+    await roomsApi.postThreadReply(room.id, rootId!, 'the cache is cold');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+    // Reading a room is what marks it read, and the cursor moves past thread
+    // replies too. Waiting on that rather than reloading straight away is what
+    // makes the reload deterministic.
+    await roomsApi.waitForUnread(room.id, 0);
+
+    await page.reload();
+    const root = roomsPage.entries.first();
+    const row = roomsPage.replyRow(root);
+    // Everything in this thread is behind the cursor, so the row is quiet: no
+    // accent, no count of new ones, just what is there.
+    await expect(row).toContainText('1 reply');
+    await expect(row).not.toHaveAttribute('data-unread', '');
+    await expect(row).not.toContainText('new');
+
+    // Now one arrives, from outside this reader's cursor, over the live stream.
+    await roomsApi.postThreadReply(room.id, rootId!, 'warming it now');
+
+    await expect(row).toHaveAttribute('data-unread', '', { timeout: SERVER_ROUND_TRIP_MS });
+    await expect(row).toContainText('2 replies');
+    // The count the colour is ABOUT, said out loud — a screen reader gets no
+    // accent, so the words have to carry it.
+    await expect(row).toContainText('1 new');
+  });
+
+  test('a thread has an address, and a reload lands back on it', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    const slug = `e2e-actions-link-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['why is the build slow?']);
+    const [rootId] = await roomsApi.entryIds(room.id);
+    await roomsApi.postThreadReply(room.id, rootId!, 'the cache is cold');
+
+    // Straight to the thread's own address, with no click to open it: a panel
+    // you cannot link to is a panel you lose on every refresh.
+    await page.goto(`/channels?id=${room.id}&thread=${rootId}`);
+    await expect(roomsPage.threadPanel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(roomsPage.threadEntries).toHaveCount(2);
+    await expect(roomsPage.threadEntries.first()).toContainText('why is the build slow?');
+
+    // Closing writes the address back, so the URL and the screen never disagree
+    // — and it REPLACES rather than pushes, so Back leaves the room instead of
+    // walking through every thread that was glanced at.
+    await roomsPage.closeThread.click();
+    await expect(roomsPage.threadPanel).toHaveCount(0);
+    await expect(page).not.toHaveURL(/thread=/);
   });
 });
 
@@ -504,6 +649,114 @@ test.describe('Rooms — the menu on a touch screen', () => {
     await expect(drawer.getByRole('button', { name: 'Copy text' })).toBeVisible();
 
     await drawer.getByRole('button', { name: 'Reply in thread' }).click();
-    await expect(roomsPage.replyBanner).toBeVisible();
+    await expect(roomsPage.threadPanel).toBeVisible();
+  });
+});
+
+test.describe('Rooms — a thread on a phone', () => {
+  // The same iPhone the room-sheet phone spec measures on (`PHONE`), with touch
+  // emulation, because both halves matter here too: under 768px `useIsMobile`
+  // chooses the push over the side panel, and the pointer decides how it is
+  // reached.
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test('the thread takes the whole screen, and Back returns to the room', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // A phone has no room for a column beside a column, so the thread IS the
+    // screen — a real drill-in push, not a sheet over a room you cannot use.
+    // What makes that a claim rather than a class name is geometry plus
+    // absence: the panel fills the viewport, and the room is genuinely gone.
+    const slug = `e2e-thread-phone-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['why is the build slow?']);
+    const [rootId] = await roomsApi.entryIds(room.id);
+    await roomsApi.postThreadReply(room.id, rootId!, 'the cache is cold');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+
+    const root = roomsPage.entries.first();
+    await roomsPage.replyRow(root).click();
+    await expect(roomsPage.threadPanel).toBeVisible();
+
+    // The room is unmounted, which is the honest reading of a push: there is
+    // one screen, and this is it. A drawer would have left the timeline behind
+    // it and this assertion is what tells the two apart.
+    await expect(roomsPage.entries).toHaveCount(0);
+    await expect(roomsPage.composer(`#${slug}`)).toHaveCount(0);
+
+    // Full width, and reaching the bottom of the window. Measured against the
+    // viewport rather than against a class.
+    //
+    // Polled to its resting place first: the push really slides in now (it
+    // enters from 16px to the right), so a single measurement taken on the way
+    // catches it mid-travel — this read 14px before the poll was added. What is
+    // being asserted is where the panel COMES TO REST, not where it passes
+    // through.
+    await expect
+      .poll(async () => (await roomsPage.threadPanel.boundingBox())!.x)
+      .toBeLessThanOrEqual(1);
+    const panel = (await roomsPage.threadPanel.boundingBox())!;
+    expect(panel.width).toBeGreaterThanOrEqual(389);
+    expect(panel.y + panel.height).toBeGreaterThan(844 - 8);
+
+    // Back rather than close, and it names where it goes — the difference
+    // between the two shapes is a promise to the reader, not styling.
+    await expect(roomsPage.closeThread).toHaveCount(0);
+    const back = roomsPage.backToRoom(`#${slug}`);
+    await expect(back).toBeVisible();
+
+    await back.click();
+    await expect(roomsPage.threadPanel).toHaveCount(0);
+    await expect(roomsPage.entries).toHaveCount(1);
+    await expect(roomsPage.composer(`#${slug}`)).toBeVisible();
+  });
+
+  test('coming back from a thread leaves the room where it was', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The push UNMOUNTS the room, so coming back mounts a brand new scroller at
+    // the top — and neither the room id nor its newest entry changed, so
+    // nothing in `useStickToBottom` would re-pin it. Measured before the fix on
+    // this exact viewport: 1148px before opening the thread, 0px after closing
+    // it. The reader pressed Back and silently landed on the oldest message in
+    // the room.
+    const slug = `e2e-thread-scroll-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    // Enough history that the room genuinely scrolls on a 844px-tall phone.
+    await roomsApi.postEntries(
+      room.id,
+      Array.from({ length: 30 }, (_, i) => `message number ${i + 1}`)
+    );
+    const ids = await roomsApi.entryIds(room.id);
+    // The thread hangs off the NEWEST message, so its reply row is already on
+    // screen at the bottom. That matters: clicking a row that is scrolled out
+    // of view would scroll the room to reach it, and the position this test is
+    // about would have been changed by the test itself.
+    await roomsApi.postThreadReply(room.id, ids[ids.length - 1]!, 'answering the last one');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(30, { timeout: SERVER_ROUND_TRIP_MS });
+
+    // A room opens at its newest message, so it is already scrolled down.
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
+    const before = await roomsPage.scrollTop();
+    expect(before).toBeGreaterThan(0);
+
+    await roomsPage.replyRow(roomsPage.entries.last()).click();
+    await expect(roomsPage.threadPanel).toBeVisible();
+    await expect(roomsPage.entries).toHaveCount(0);
+
+    await roomsPage.backToRoom(`#${slug}`).click();
+    await expect(roomsPage.entries).toHaveCount(30);
+
+    // Back at the newest message, not thrown to the top of the history.
+    await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
+    expect(await roomsPage.scrollTop()).toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -71,6 +71,7 @@ function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> =
       isLoading={false}
       error={null}
       onAddAgents={vi.fn()}
+      onOpenThread={vi.fn()}
       {...overrides}
     />,
     {
@@ -177,10 +178,11 @@ describe('RoomTimeline', () => {
 
 /**
  * A thread is a relation between entries in this room's log, not a room of its
- * own (ADR 260728-022013): a reply carries a pointer at the entry it answers,
- * and the timeline draws it there.
+ * own (ADR 260728-022013). The timeline no longer draws the replies themselves
+ * — the inline gathering was retired for the side panel (design record §3) —
+ * so what it owes each thread root is one quiet, honest row.
  */
-describe('RoomTimeline — replies', () => {
+describe('RoomTimeline — thread reply rows', () => {
   /** A reply to `entry-<parentSeq>`, at depth one. */
   function reply(seq: number, parentSeq: number, overrides: Partial<RoomEntry> = {}): RoomEntry {
     return entry(seq, {
@@ -190,82 +192,117 @@ describe('RoomTimeline — replies', () => {
     });
   }
 
-  it('draws a reply under the message it answers, out of the room’s flow', () => {
+  it('shows a reply row under the root and keeps the replies out of the flow', () => {
     renderTimeline({ entries: [entry(1), reply(2, 1), entry(3)] });
 
-    const flow = screen.getByTestId('room-timeline');
-    const rows = Array.from(flow.children).filter((child) =>
-      ['room-entry', 'room-thread'].includes(child.getAttribute('data-testid') ?? '')
-    );
-    // Two rows in the room's own flow — the reply is not one of them.
-    expect(rows.filter((r) => r.getAttribute('data-testid') === 'room-entry')).toHaveLength(2);
+    // Two rows in the room's own flow. The reply is not one of them, and its
+    // text is nowhere on screen — that is the whole point of the panel.
+    expect(screen.getAllByTestId('room-entry')).toHaveLength(2);
+    expect(screen.queryByText('line 2')).not.toBeInTheDocument();
 
-    const thread = screen.getByRole('group', { name: '1 reply' });
-    expect(within(thread).getByText('line 2')).toBeInTheDocument();
-    // And it hangs off `entry-1`, not off the entry that happens to precede it.
-    expect(rows[0]).toHaveTextContent('line 1');
-    expect(rows[1]).toBe(thread);
+    const row = screen.getByTestId('room-thread-replies');
+    expect(row).toHaveTextContent('1 reply');
   });
 
-  it('counts a thread rather than repeating the word for every reply', () => {
+  it('hangs the row off its own root, not off whatever precedes it', () => {
+    const { container } = renderTimeline({ entries: [entry(1), reply(2, 1), entry(3)] });
+
+    const rows = Array.from(
+      container.querySelectorAll(
+        '[data-testid="room-timeline"] [data-testid="room-entry"], [data-testid="room-timeline"] [data-testid="room-thread-replies"]'
+      )
+    );
+    expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual([
+      'room-entry',
+      'room-thread-replies',
+      'room-entry',
+    ]);
+    expect(rows[0]).toHaveTextContent('line 1');
+  });
+
+  it('counts the thread rather than repeating the word for every reply', () => {
     renderTimeline({
       members: [member('ana', 'Ana'), member('bo', 'Bo')],
       entries: [entry(1), reply(2, 1), reply(3, 1, { authorId: 'bo' })],
     });
 
-    const thread = screen.getByRole('group', { name: '2 replies' });
-    expect(within(thread).getAllByTestId('room-entry')).toHaveLength(2);
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('2 replies');
+  });
+
+  it('stays one quiet row however long the thread gets', () => {
+    // The reason the inline gathering was retired: forty replies used to run
+    // 1,364px — 1.6 viewports — and bury the room's own next message.
+    const replies = Array.from({ length: 40 }, (_, i) => reply(i + 2, 1));
+    renderTimeline({ entries: [entry(1), ...replies, entry(42)] });
+
+    expect(screen.getAllByTestId('room-thread-replies')).toHaveLength(1);
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('40 replies');
+    expect(screen.getAllByTestId('room-entry')).toHaveLength(2);
+  });
+
+  it('dates the thread by its newest reply', () => {
+    renderTimeline({
+      entries: [
+        entry(1),
+        reply(2, 1, { createdAt: '2026-07-26T08:00:00.000Z' }),
+        reply(3, 1, { createdAt: '2026-07-26T11:30:00.000Z' }),
+      ],
+    });
+
+    const row = screen.getByTestId('room-thread-replies');
+    const expected = new Date('2026-07-26T11:30:00.000Z').toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    expect(row).toHaveTextContent(`last ${expected}`);
+  });
+
+  it('opens the thread when the row is pressed', async () => {
+    const user = userEvent.setup();
+    const onOpenThread = vi.fn();
+    renderTimeline({ entries: [entry(1), reply(2, 1)], onOpenThread });
+
+    await user.click(screen.getByTestId('room-thread-replies'));
+
+    // The ROOT's id — the panel is opened on the thread's head.
+    expect(onOpenThread).toHaveBeenCalledWith('entry-1');
+  });
+
+  it('says which thread is already open', () => {
+    renderTimeline({ entries: [entry(1), reply(2, 1)], openThreadId: 'entry-1' });
+
+    expect(screen.getByTestId('room-thread-replies')).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('accents the row and counts what arrived since the reader last looked', () => {
+    // Derived from the same cursor the unread rule is drawn from — no schema,
+    // and nothing that can disagree with the line a few pixels above it.
+    renderTimeline({ entries: [entry(1), reply(2, 1), reply(3, 1)], lastReadSeq: 2 });
+
+    const row = screen.getByTestId('room-thread-replies');
+    expect(row).toHaveAttribute('data-unread');
+    expect(row).toHaveTextContent('1 new');
+  });
+
+  it('leaves a read thread unaccented and says nothing about new replies', () => {
+    renderTimeline({ entries: [entry(1), reply(2, 1)], lastReadSeq: 9 });
+
+    const row = screen.getByTestId('room-thread-replies');
+    expect(row).not.toHaveAttribute('data-unread');
+    expect(row).not.toHaveTextContent('new');
+  });
+
+  it('claims nothing unread for a reader who is not a member', () => {
+    renderTimeline({ entries: [entry(1), reply(2, 1)], lastReadSeq: null });
+
+    expect(screen.getByTestId('room-thread-replies')).not.toHaveAttribute('data-unread');
   });
 
   it('leaves a room with no threads exactly as it was', () => {
     renderTimeline({ entries: [entry(1), entry(2), entry(3)] });
 
     expect(screen.getAllByTestId('room-entry')).toHaveLength(3);
-    expect(screen.queryByTestId('room-thread')).not.toBeInTheDocument();
-  });
-
-  it('shows three replies and puts the rest one press away', async () => {
-    const user = userEvent.setup();
-    // Forty inline runs 1,364px in the browser — 1.6 viewports — which buries
-    // the room's own next message under one aside.
-    const replies = Array.from({ length: 40 }, (_, i) => reply(i + 2, 1));
-    renderTimeline({ entries: [entry(1), ...replies, entry(42)] });
-
-    const thread = screen.getByRole('group', { name: '40 replies' });
-    expect(within(thread).getAllByTestId('room-entry')).toHaveLength(3);
-
-    // Named for what pressing it does, and the count is the number still hidden.
-    const more = within(thread).getByRole('button', { name: 'Show 37 more' });
-    expect(more).toHaveAttribute('aria-expanded', 'false');
-
-    await user.click(more);
-
-    expect(within(thread).getAllByTestId('room-entry')).toHaveLength(40);
-    expect(within(thread).getByRole('button', { name: 'Show fewer replies' })).toHaveAttribute(
-      'aria-expanded',
-      'true'
-    );
-  });
-
-  it('asks nothing when the whole thread already fits', () => {
-    renderTimeline({ entries: [entry(1), reply(2, 1), reply(3, 1), reply(4, 1)] });
-
-    const thread = screen.getByRole('group', { name: '3 replies' });
-    expect(within(thread).getAllByTestId('room-entry')).toHaveLength(3);
-    // Named by what it would say rather than "no buttons at all": every reply
-    // now carries its own action toolbar, so a bare `queryByRole('button')`
-    // would be answering a question about the toolbar and not about the count.
-    expect(within(thread).queryByRole('button', { name: /^Show / })).not.toBeInTheDocument();
-  });
-
-  it('names the reply group once, not twice', () => {
-    // An `aria-label` carrying the same words as the visible line makes a
-    // screen reader announce the count, then announce it again (DOR-583).
-    renderTimeline({ entries: [entry(1), reply(2, 1)] });
-
-    const thread = screen.getByRole('group', { name: '1 reply' });
-    expect(thread).not.toHaveAttribute('aria-label');
-    expect(thread).toHaveAttribute('aria-labelledby');
+    expect(screen.queryByTestId('room-thread-replies')).not.toBeInTheDocument();
   });
 
   it('says a reply is a reply when its thread head is out of the window', () => {
@@ -273,11 +310,11 @@ describe('RoomTimeline — replies', () => {
     // renders in the flow — it must not read as a brand new remark.
     renderTimeline({ entries: [reply(9, 1), entry(10)] });
 
-    const orphan = screen.getByTestId('room-entry-orphan');
-    expect(orphan).toHaveTextContent('Replying to an earlier message');
-    // Exactly one: the entry that is genuinely top-level says nothing.
+    expect(screen.getByTestId('room-entry-orphan')).toHaveTextContent(
+      'Replying to an earlier message'
+    );
     expect(screen.getAllByTestId('room-entry-orphan')).toHaveLength(1);
-    expect(screen.queryByTestId('room-thread')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('room-thread-replies')).not.toBeInTheDocument();
   });
 
   it('keeps the unread rule between two rows the reader can see', () => {
@@ -365,6 +402,19 @@ describe('groupByThread', () => {
     expect(result.topLevel.map((e) => e.seq)).toEqual([1]);
     expect(result.orphaned.has('entry-1')).toBe(true);
     expectNothingLost(input, result);
+  });
+
+  it('never stores an empty reply list, which is what makes the row safe', () => {
+    // `threadReplySummary` requires at least one reply and throws otherwise.
+    // This is the other half of that contract: a key exists here only because
+    // something hangs off it, so the row can never be asked to summarise
+    // nothing.
+    const input = [entry(1), reply(2, 'entry-1'), entry(3)];
+    const result = groupByThread(input);
+
+    for (const replies of result.repliesByRoot.values()) {
+      expect(replies.length).toBeGreaterThan(0);
+    }
   });
 
   it('never loses a line: an orphaned reply joins the flow rather than vanishing', () => {

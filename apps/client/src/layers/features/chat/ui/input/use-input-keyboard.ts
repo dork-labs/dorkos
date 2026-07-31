@@ -212,19 +212,35 @@ export function useInputKeyboard({
 
       // --- Escape priority ladder ---
       // palette dismiss → cancel queue edit → stop streaming → double-tap clear.
+      //
+      // **A rung that acts CONSUMES the key, and says so with `preventDefault`.**
+      // Escape has no default browser action in a textarea, so this is not about
+      // suppressing one — it is the signal an enclosing surface reads to find out
+      // whether the key was already spoken for. The thread panel closes on
+      // Escape, and without this an Escape aimed at the mention palette dismissed
+      // the palette AND shut the whole thread, losing the reader's place for a
+      // keystroke that had already done its job.
+      //
+      // `preventDefault` and deliberately NOT `stopPropagation`: an ancestor that
+      // does not check `defaultPrevented` keeps behaving exactly as it did, so
+      // this cannot silently break a dialog that closes on a bubbled Escape.
+      // Marking is a claim about what happened, not a veto on who else hears it.
       if (e.key === 'Escape') {
         if (isPaletteOpen) {
           onEscape?.();
+          e.preventDefault();
           // Deliberately no arming: closing a palette must not arm the
           // draft-wiping second Escape. Clearing takes two bare taps.
           return;
         }
         if (editingQueueItem) {
           onCancelEdit?.();
+          e.preventDefault();
           return;
         }
         if (isStreaming) {
           onStop?.();
+          e.preventDefault();
           return;
         }
         if (value.trim() && clearArmed) {
@@ -236,9 +252,16 @@ export function useInputKeyboard({
           if (textarea) clearThroughUndoStack(textarea);
           onClear?.();
           disarm();
+          e.preventDefault();
         } else {
           onEscape?.();
           arm();
+          // Arming only counts as consuming the key when there is something to
+          // wipe: that is the case that puts a hint on screen, so the keystroke
+          // visibly did something. Escape in an EMPTY composer changes nothing a
+          // reader can see, and must stay available to the surface around it —
+          // otherwise a thread panel could never be closed from its own box.
+          if (value.trim()) e.preventDefault();
         }
         return;
       }

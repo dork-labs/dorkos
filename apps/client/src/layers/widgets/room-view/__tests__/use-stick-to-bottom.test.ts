@@ -33,20 +33,55 @@ function scrollContainer(initialScrollTop: number): HTMLDivElement {
   } as HTMLDivElement;
 }
 
-/** Mount the hook against a container already scrolled to `scrollTop`. */
+/**
+ * Mount the hook, then scroll the reader to `scrollTop`.
+ *
+ * In that order, because that is the order a browser does it in: an element
+ * mounts at the top, the hook takes it to the newest message, and only then
+ * can somebody scroll away. Setting the position BEFORE attaching would be a
+ * state no browser produces — and would quietly hide the fact that attaching
+ * is itself one of the moments this hook acts on.
+ */
 function mountWith(scrollTop: number, roomId = 'room-1') {
-  const el = scrollContainer(scrollTop);
+  const el = scrollContainer(0);
   const view = renderHook(
     ({ room, newest }: { room: string; newest: string | null }) => useStickToBottom(room, newest),
     { initialProps: { room: roomId, newest: 'entry-1' as string | null } }
   );
-  view.result.current.scrollRef.current = el;
+  view.result.current.scrollRef(el);
+  el.scrollTop = scrollTop;
   // The container reports its position the way a browser does: on scroll.
   view.result.current.onScroll();
   return { el, ...view };
 }
 
 describe('useStickToBottom', () => {
+  it('puts the reader back where they were when the scroller remounts', () => {
+    // The phone's thread panel is a full-screen push, so opening a thread
+    // unmounts the room while this hook stays mounted. Coming back mounts a
+    // BRAND NEW element at scrollTop 0, and no dependency has changed — so
+    // nothing else in the hook would ever put the reader back. Measured on a
+    // real 390x844 viewport before this was fixed: 1148px before, 0px after.
+    const { result } = mountWith(200);
+
+    // The room unmounts, then a fresh scroller arrives at the top.
+    result.current.scrollRef(null);
+    const remounted = scrollContainer(0);
+    result.current.scrollRef(remounted);
+
+    expect(remounted.scrollTop).toBe(200);
+  });
+
+  it('returns a remounted scroller to the bottom for a reader who was at it', () => {
+    const { result } = mountWith(MAX_SCROLL_TOP);
+
+    result.current.scrollRef(null);
+    const remounted = scrollContainer(0);
+    result.current.scrollRef(remounted);
+
+    expect(remounted.scrollTop).toBe(MAX_SCROLL_TOP);
+  });
+
   it('follows a new entry when the reader is already at the bottom', () => {
     // 1000 - 700 - 300 = 0px from the bottom.
     const { el, rerender } = mountWith(MAX_SCROLL_TOP);

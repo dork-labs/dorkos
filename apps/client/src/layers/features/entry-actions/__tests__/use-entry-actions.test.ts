@@ -2,7 +2,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 import type { AuthorRef, RoomEntry } from '@dorkos/shared/room-schemas';
-import { useRoomDraftStore, useRoomReplyTargetStore } from '@/layers/entities/room';
+import {
+  threadDraftKey,
+  useComposerFocusStore,
+  useRoomDraftStore,
+  useRoomOpenThreadStore,
+} from '@/layers/entities/room';
 import { useEntryActions } from '../model/use-entry-actions';
 
 const VIEWER = 'author-you';
@@ -18,7 +23,8 @@ afterEach(() => {
   toastSuccess.mockClear();
   toastError.mockClear();
   useRoomDraftStore.setState({ drafts: {} });
-  useRoomReplyTargetStore.setState({ targets: {}, focusRequests: {} });
+  useComposerFocusStore.setState({ focusRequests: {} });
+  useRoomOpenThreadStore.setState({ open: {} });
 });
 
 function entry(overrides: Partial<RoomEntry> = {}): RoomEntry {
@@ -79,10 +85,39 @@ describe('useEntryActions — the action set', () => {
     expect(actionsFor(entry()).current.map((a) => a.id)).toEqual(['reply', 'copy', 'mention']);
   });
 
-  it('aims a reply at the entry itself when that entry heads its own thread', () => {
+  it('opens the thread panel on the entry itself when that entry heads its own thread', () => {
     actionsFor(entry({ id: 'root-1' })).current[0]!.run();
 
-    expect(useRoomReplyTargetStore.getState().targets['room-1']).toBe('root-1');
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.rootEntryId).toBe('root-1');
+  });
+
+  it('asks the panel’s composer for the caret, because reply means write', () => {
+    // Both routes to the one composer, because it may or may not exist yet.
+    // The flag on the open covers the press that MOUNTS the box; the focus
+    // request covers the press made while the panel is already open — most
+    // often on a reply inside it, where the open is a no-op and a request is
+    // the only thing that can move the caret.
+    actionsFor(entry({ id: 'root-1' })).current[0]!.run();
+
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.focusComposer).toBe(true);
+    expect(useComposerFocusStore.getState().focusRequests[threadDraftKey('room-1', 'root-1')]).toBe(
+      1
+    );
+    // And nothing asked the ROOM's composer for anything.
+    expect(useComposerFocusStore.getState().focusRequests['room-1']).toBeUndefined();
+  });
+
+  it('still moves the caret when the panel is already open on that thread', () => {
+    // Answering a reply from inside the panel: `openThread` returns unchanged
+    // state, so the open cannot be what focuses — and without the request the
+    // reader would press reply and watch nothing happen.
+    const result = actionsFor(entry({ id: 'root-1' }));
+    result.current[0]!.run();
+    result.current[0]!.run();
+
+    expect(useComposerFocusStore.getState().focusRequests[threadDraftKey('room-1', 'root-1')]).toBe(
+      2
+    );
   });
 
   it('aims a reply to a REPLY at the thread root, not at the reply', () => {
@@ -93,7 +128,7 @@ describe('useEntryActions — the action set', () => {
       entry({ id: 'reply-9', parentEntryId: 'root-1', threadRootEntryId: 'root-1' })
     ).current[0]!.run();
 
-    expect(useRoomReplyTargetStore.getState().targets['room-1']).toBe('root-1');
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.rootEntryId).toBe('root-1');
   });
 
   it('falls back to the parent pointer when only that one is set', () => {
@@ -102,7 +137,7 @@ describe('useEntryActions — the action set', () => {
     // the right thread rather than starting a new one.
     actionsFor(entry({ id: 'reply-9', parentEntryId: 'root-1' })).current[0]!.run();
 
-    expect(useRoomReplyTargetStore.getState().targets['room-1']).toBe('root-1');
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.rootEntryId).toBe('root-1');
   });
 
   it('copies the message text, and says it did', async () => {
@@ -145,7 +180,7 @@ describe('useEntryActions — the action set', () => {
     actionsFor(entry()).current[2]!.run();
 
     expect(useRoomDraftStore.getState().drafts['room-1']).toBe('good point @ana ');
-    expect(useRoomReplyTargetStore.getState().focusRequests['room-1']).toBe(1);
+    expect(useComposerFocusStore.getState().focusRequests['room-1']).toBe(1);
   });
 
   it('does not offer to mention an author no @ can reach', () => {
@@ -171,13 +206,11 @@ describe('useEntryActions — the action set', () => {
     ).toEqual(['reply', 'copy']);
   });
 
-  it('counts two replies in a row as two requests for the caret', () => {
-    // A flag would already be true for the second press, so the composer would
-    // never hear it — and the caret would sit wherever the last click left it.
+  it('still asks for the caret on a second reply press', () => {
     const result = actionsFor(entry());
     result.current[0]!.run();
     result.current[0]!.run();
 
-    expect(useRoomReplyTargetStore.getState().focusRequests['room-1']).toBe(2);
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.focusComposer).toBe(true);
   });
 });

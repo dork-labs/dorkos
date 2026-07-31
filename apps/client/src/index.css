@@ -246,6 +246,17 @@
      to spring back after a long press is released. The squish going IN uses the
      same value as a transition, so the gesture feels symmetrical. */
   --msg-press-release: 200ms;
+  /* The thread panel's three motions (design record §5.3–5.5). The connector's
+     140ms is the number the approved demo names; the reply that lands on it
+     runs longer because its 2px bounce needs somewhere to settle, and the
+     hand-off is paced to read as ONE gesture — the "working" line leaving as
+     the answer rises into the space it left, rather than two things happening
+     near each other. All well inside the 300ms every motion here resolves
+     within, and every call site gates them with `motion-safe:`. */
+  --msg-thread-draw: 140ms;
+  --msg-thread-reply: 220ms;
+  --msg-presence-handoff: 200ms;
+  --msg-count-flip: 220ms;
 
   /* === Shape tokens === */
   --msg-radius: 1.25rem;
@@ -802,6 +813,107 @@ body {
 
 @utility animate-press-release {
   animation: press-release var(--msg-press-release) cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+/* The thread panel's connector drawing itself downward as a reply arrives
+   (design record §5.3). `scaleY` from a top origin rather than an animated
+   `height`: height is a layout property, so animating it would reflow the
+   panel's whole reply list on every frame — and the design's own rule is that
+   motion here is transform and opacity only.
+
+   `transform-origin: top` is the whole gesture. From the centre it would grow
+   both ways and read as a line appearing; from the top it extends DOWNWARD,
+   which is the direction the reply it is announcing comes from. */
+@keyframes thread-line-draw {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@utility animate-thread-line-draw {
+  animation: thread-line-draw var(--msg-thread-draw) cubic-bezier(0.3, 1.2, 0.4, 1);
+  transform-origin: top;
+}
+
+/* The reply landing on that connector (design record §5.3): it comes down from
+   above, overshoots 2px, and settles. The bounce is stated as a KEYFRAME for
+   the same reason `capsule-in`'s pixel is — a curve alone cannot carry a 7px
+   travel 2px past its landing and have it read as weight. */
+@keyframes thread-reply-in {
+  from {
+    opacity: 0;
+    transform: translateY(-7px);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-thread-reply-in {
+  animation: thread-reply-in var(--msg-thread-reply) cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+/* The presence hand-off (design record §5.4): the answer settles UPWARD into
+   the space the "working…" line is vacating, so the indicator visibly becomes
+   the answer rather than being replaced by it.
+
+   Upward — from +4px to 0 — and that direction is the entire point. The
+   presence line sits below the replies, so an answer rising into place is the
+   one motion that reads as the wait resolving into words. Coming down would
+   read as a new message arriving on top of an unrelated line.
+
+   Only this half is CSS. The "working…" line's fade-out is `motion`'s, because
+   an exit is the one thing CSS cannot animate on an unmounting element — the
+   same split `EntryReactionRow` documents for the reaction pill. */
+@keyframes reply-settle {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-reply-settle {
+  animation: reply-settle var(--msg-presence-handoff) cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+/* The reply row's count advancing (design record §5.5): it flips up 3px with a
+   scale snap, flashes the accent once, and returns to muted — a mechanical
+   counter turning over.
+
+   The colour flash is the one place this file's motion is not purely transform
+   and opacity, and it is deliberate rather than an oversight: §5.5 asks for the
+   flash by name, and it is what distinguishes "the count changed" from "the row
+   moved". It returns to `currentColor` so the row's resting colour still comes
+   from its own class — an unread row settles back to accent, a read one to
+   muted, and this keyframe does not have to know which. */
+@keyframes count-flip {
+  from {
+    transform: translateY(0) scale(1);
+  }
+  40% {
+    color: var(--primary);
+    transform: translateY(-3px) scale(1.15);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@utility animate-count-flip {
+  animation: count-flip var(--msg-count-flip) cubic-bezier(0.2, 1.6, 0.4, 1);
+  display: inline-block;
 }
 
 @keyframes health-pulse {

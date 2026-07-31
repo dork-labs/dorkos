@@ -332,6 +332,40 @@ export class RoomsApi {
   }
 
   /**
+   * Reply inside a thread through the API — the way another reader would.
+   *
+   * A separate route from {@link RoomsApi.postEntries} because writing into a
+   * thread is a separate route in the product (`POST /:id/threads`): the target
+   * is required rather than an omitted parameter. Same 202-then-poll shape for
+   * the same reason — the reply is accepted, not yet stored, and a caller that
+   * loads the cockpit on the 202 races its own seed.
+   *
+   * Returns the reply's own id, which is the only handle a caller has on it: a
+   * thread reply is not in the room's top-level flow, so `entryIds` order alone
+   * cannot name it, and presence claims are keyed on exactly this id.
+   *
+   * @param roomId - The room the thread lives in.
+   * @param rootEntryId - The entry heading the thread.
+   * @param text - What the reply says.
+   */
+  async postThreadReply(roomId: string, rootEntryId: string, text: string): Promise<string> {
+    const res = await this.request.post(`/api/rooms/${roomId}/threads`, {
+      data: { rootEntryId, text },
+    });
+    if (res.status() !== 202) {
+      throw new Error(`Replying in ${rootEntryId} answered ${res.status()}: ${await res.text()}`);
+    }
+    const { entryId } = (await res.json()) as { entryId: string };
+
+    const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    for (;;) {
+      if ((await this.entryIds(roomId)).includes(entryId)) return entryId;
+      if (Date.now() > deadline) throw new Error(`Reply ${entryId} was accepted but never stored`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  /**
    * The ids of a room's entries, oldest first — what a reaction attaches to.
    *
    * @param roomId - The room to read.

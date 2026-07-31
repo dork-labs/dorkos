@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomEntryReaction } from '@dorkos/shared/room-schemas';
-import { useRoomDraftStore, useRoomReplyTargetStore } from '@/layers/entities/room';
+import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomEntryRow } from '../ui/RoomEntryRow';
@@ -40,7 +40,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   useRoomDraftStore.setState({ drafts: {} });
-  useRoomReplyTargetStore.setState({ targets: {}, focusRequests: {} });
+  useRoomOpenThreadStore.setState({ open: {} });
 });
 
 function entry(overrides: Partial<RoomEntry> = {}): RoomEntry {
@@ -267,13 +267,13 @@ describe('RoomEntryRow — the action surface', () => {
     expect(within(row).getByRole('button', { name: 'the run' })).toBeInTheDocument();
   });
 
-  it('aims the composer at the thread when the reply button is pressed', () => {
+  it('opens the thread panel when the reply button is pressed', () => {
     renderRow(entry({ id: 'reply-9', parentEntryId: 'root-1', threadRootEntryId: 'root-1' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'Reply in thread' }));
 
     // The root, not the reply that was pressed — see `replyRootFor`.
-    expect(useRoomReplyTargetStore.getState().targets['room-1']).toBe('root-1');
+    expect(useRoomOpenThreadStore.getState().open['room-1']?.rootEntryId).toBe('root-1');
   });
 
   it('gives a notice no actions at all', () => {

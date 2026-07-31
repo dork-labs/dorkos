@@ -7,7 +7,7 @@ import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
 import { authorsById, groupByThread, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
 import { RoomEntryRow } from './RoomEntryRow';
-import { RoomThreadReplies } from './RoomThreadReplies';
+import { RoomThreadReplyRow } from './RoomThreadReplyRow';
 
 interface RoomTimelineProps {
   /** The room on screen. Every entry's actions act on it. */
@@ -41,6 +41,10 @@ interface RoomTimelineProps {
    * here, so this is what makes that promise a button (spec `rooms` §14.3).
    */
   onAddAgents: () => void;
+  /** The thread the panel is showing, so its row can say it is open. */
+  openThreadId?: string;
+  /** Open one thread's panel. */
+  onOpenThread: (rootEntryId: string) => void;
 }
 
 /** Placeholder rows shown while a room's history loads. */
@@ -75,11 +79,14 @@ export function RoomTimelineSkeleton() {
  * boundaries, and the rule marking where you left off — with more than two
  * people in them.
  *
- * A reply hangs under the entry that heads its thread rather than landing in
- * the room's flow, because a thread is a relation between entries and not a
- * room of its own (ADR 260728-022013). A reply whose thread head is older than
- * the loaded history renders in the flow and says that it is answering
- * something out of view.
+ * A thread does NOT render here. An entry with replies carries one quiet
+ * "↳ N replies · last 9:45 AM" row, and the replies themselves live in the side
+ * panel (design record §3) — so the room's scroll stays the room's however long
+ * a thread gets. The inline gathering this replaced is retired.
+ *
+ * A reply whose thread head is older than the loaded history still renders in
+ * the flow and says that it is answering something out of view: it is a real
+ * line in this room's log and nothing may drop it.
  *
  * The unread rule reads the membership cursor rather than anything in this
  * browser, so where you left off is the same on every device you open.
@@ -95,6 +102,8 @@ export function RoomTimeline({
   isLoading,
   error,
   onAddAgents,
+  openThreadId,
+  onOpenThread,
 }: RoomTimelineProps) {
   const authors = useMemo(() => authorsById(members), [members]);
   // Names only — a reaction names who reacted, and the roster is the only place
@@ -180,15 +189,12 @@ export function RoomTimeline({
               orphanedReply={orphaned.has(entry.id)}
             />
             {replies && (
-              <RoomThreadReplies
-                roomId={roomId}
+              <RoomThreadReplyRow
+                rootEntryId={entry.id}
                 replies={replies}
-                authors={authors}
-                authorNames={authorNames}
-                viewerAuthorId={viewerAuthorId}
-                reactionFrequents={reactionFrequents}
-                streamStalled={streamStalled}
-                now={now}
+                lastReadSeq={lastReadSeq}
+                open={openThreadId === entry.id}
+                onOpen={() => onOpenThread(entry.id)}
               />
             )}
           </Fragment>

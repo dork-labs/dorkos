@@ -231,6 +231,55 @@ describe('useRoomPresence', () => {
     expect(result.current).toHaveLength(0);
   });
 
+  /**
+   * Presence follows you into a thread (design record §3.2): the panel draws
+   * the claims triggered inside the thread it is showing, and the room's own
+   * line draws everything else — so one claim is one line, in one place.
+   */
+  describe('scoped to a thread', () => {
+    const inThread = { replyIds: new Set(['reply-1']), inside: true };
+    const outsideThread = { replyIds: new Set(['reply-1']), inside: false };
+
+    it('draws a claim triggered by a thread reply inside the thread', () => {
+      useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'reply-1'));
+
+      expect(renderHook(() => useRoomPresence(ROOM, inThread)).result.current).toHaveLength(1);
+    });
+
+    it('keeps that same claim OUT of the room’s own line, so it is not drawn twice', () => {
+      useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'reply-1'));
+
+      expect(renderHook(() => useRoomPresence(ROOM, outsideThread)).result.current).toHaveLength(0);
+    });
+
+    it('leaves a claim on a room message in the room, not in the thread', () => {
+      useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-9'));
+
+      expect(renderHook(() => useRoomPresence(ROOM, inThread)).result.current).toHaveLength(0);
+      expect(renderHook(() => useRoomPresence(ROOM, outsideThread)).result.current).toHaveLength(1);
+    });
+
+    it('treats work triggered by the thread’s ROOT as the room’s, not the thread’s', () => {
+      // The root is the thread's head AND an ordinary message in the room's
+      // flow. An agent answering it was triggered before any thread existed and
+      // its answer lands top-level, so drawing that line inside the panel would
+      // move a room's wait into an aside it has nothing to do with. Only the
+      // REPLIES scope a thread's presence.
+      useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'root-1'));
+      const scoped = { replyIds: new Set(['reply-1']), inside: true };
+
+      expect(renderHook(() => useRoomPresence(ROOM, scoped)).result.current).toHaveLength(0);
+    });
+
+    it('answers with everything when nothing scopes it', () => {
+      const store = useRoomPresenceStore.getState();
+      store.observe(ROOM, signal('kai', 'working', 'reply-1'));
+      store.observe(ROOM, signal('ana', 'working', 'entry-9'));
+
+      expect(renderHook(() => useRoomPresence(ROOM)).result.current).toHaveLength(2);
+    });
+  });
+
   it('answers for the room asked about, and nothing for no room', () => {
     useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
 

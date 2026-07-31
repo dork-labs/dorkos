@@ -199,3 +199,20 @@ export function unreadPlacement(
   // so everything on screen is unread.
   return { lastSeenId: null, fromStart: true };
 }
+
+/**
+ * The DOM id of the reply row that opens one thread.
+ *
+ * A real id rather than a ref passed around, because the two ends are far
+ * apart and only one of them is ever mounted at a time: on a phone the thread
+ * panel UNMOUNTS the room, so a ref captured when the row was clicked points at
+ * a node that no longer exists by the time the panel closes. Looking the row up
+ * after the close has been painted is the only version that works on both
+ * shapes, and it is what puts a keyboard reader back on the row they opened
+ * rather than on `document.body`.
+ *
+ * @param rootEntryId - The entry heading the thread the row counts.
+ */
+export function threadRowId(rootEntryId: string): string {
+  return `thread-row-${rootEntryId}`;
+}

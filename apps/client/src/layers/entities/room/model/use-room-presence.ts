@@ -246,6 +246,29 @@ export const useRoomPresenceStore = create<RoomPresenceStoreState & RoomPresence
 const NOBODY: RoomPresenceAuthor[] = [];
 
 /**
+ * Which half of a room's presence a line is asking for, when a thread is open.
+ *
+ * **Presence follows you into a thread** (design record §3.2): the panel draws
+ * the claims triggered inside the thread it is showing, and the room's line
+ * draws everything else. The two are complements, so one claim renders exactly
+ * once — without `inside: false` on the room's line, an agent working on a
+ * thread reply would be announced twice, in two places, for the same work.
+ *
+ * **Scoped on the REPLIES, and deliberately not on the root.** A claim's
+ * `entryId` is the entry whose trigger it answers, and the root is two things
+ * at once: the head of the thread, and an ordinary message in the room's flow.
+ * An agent triggered by the root was triggered before the thread existed and
+ * its answer lands top-level, so counting the root in would move a room's wait
+ * into an aside that has nothing to do with it. A reply is unambiguous.
+ */
+export interface PresenceScope {
+  /** The ids of the open thread's replies. The root is not one of them. */
+  replyIds: ReadonlySet<string>;
+  /** `true` for the thread's own claims, `false` for everything else. */
+  inside: boolean;
+}
+
+/**
  * Collapse a room's indicators to one row per agent.
  *
  * A person cares that Kai is working, not how many claims the dispatcher holds
@@ -271,12 +294,20 @@ const NOBODY: RoomPresenceAuthor[] = [];
  * event's own `at` rather than to invent a correction here. Only the running-slow
  * half is guarded: a negative age clamps to `0s` rather than counting backwards.
  */
-function summarize(indicators: Record<string, PresenceRecord> | undefined): RoomPresenceAuthor[] {
+function summarize(
+  indicators: Record<string, PresenceRecord> | undefined,
+  scope: PresenceScope | undefined
+): RoomPresenceAuthor[] {
   if (indicators === undefined) return NOBODY;
   const now = Date.now();
   const oldest = new Map<string, PresenceRecord>();
   for (const record of Object.values(indicators)) {
     if (now - record.lastSeenAt >= PRESENCE_TTL_MS) continue;
+    // Filtered BEFORE the collapse to one row per agent, which matters: an
+    // agent holding a claim in the room and another in the open thread is two
+    // lines, in two places. Collapsing first would pick one claim for both and
+    // draw the agent wherever that one happened to land.
+    if (scope !== undefined && scope.replyIds.has(record.entryId) !== scope.inside) continue;
     const held = oldest.get(record.authorId);
     if (held === undefined || Date.parse(record.since) < Date.parse(held.since)) {
       oldest.set(record.authorId, record);
@@ -302,9 +333,15 @@ function summarize(indicators: Record<string, PresenceRecord> | undefined): Room
  * costs nothing — and the moment the last one expires it stops itself.
  *
  * @param roomId - The room on screen, or `null` when none is.
+ * @param scope - Which half of the room's presence to answer with while a
+ *   thread panel is open. Omit for all of it, which is the case whenever no
+ *   thread is open — see {@link PresenceScope}.
  * @returns One entry per agent, oldest claim first. Empty when nobody is working.
  */
-export function useRoomPresence(roomId: string | null): RoomPresenceAuthor[] {
+export function useRoomPresence(
+  roomId: string | null,
+  scope?: PresenceScope
+): RoomPresenceAuthor[] {
   const indicators = useRoomPresenceStore((held) =>
     roomId === null ? undefined : held.rooms[roomId]
   );
@@ -324,5 +361,5 @@ export function useRoomPresence(roomId: string | null): RoomPresenceAuthor[] {
   // function of the clock, so a cache keyed on the store would be a cache of
   // stale numbers. A room with nothing in it answers with one shared empty
   // array, so the quiet case — which is nearly always — costs nothing.
-  return summarize(indicators);
+  return summarize(indicators, scope);
 }

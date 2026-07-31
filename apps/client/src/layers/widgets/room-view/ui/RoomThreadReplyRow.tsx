@@ -1,0 +1,122 @@
+import { useState } from 'react';
+import { cn } from '@/layers/shared/lib';
+import { threadReplySummary, type RoomEntry } from '@/layers/entities/room';
+import { threadRowId } from '../lib/room-timeline';
+
+interface RoomThreadReplyRowProps {
+  /** The entry heading this thread — the row's identity, and what it opens. */
+  rootEntryId: string;
+  /** The replies hanging off one entry. Never empty — no replies, no row. */
+  replies: RoomEntry[];
+  /** The reader's read cursor, frozen at the room's open, or null for a non-member. */
+  lastReadSeq: number | null;
+  /** True while this thread is the one the panel is showing. */
+  open: boolean;
+  /** Open this thread's panel. */
+  onOpen: () => void;
+}
+
+/**
+ * Short time display (HH:MM) for a timestamp, or `''` when it is not a time at
+ * all. `toLocaleTimeString` renders "Invalid Date" rather than throwing, so the
+ * guard has to be the parse.
+ */
+function formatTime(timestamp: string): string {
+  const ms = Date.parse(timestamp);
+  if (Number.isNaN(ms)) return '';
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * The quiet line under a thread's root: "↳ 3 replies · last 9:45 AM".
+ *
+ * **This replaces the inline reply gathering, which is retired** (design record
+ * §3). Replies used to hang under their root in the room's own scroll, capped
+ * at three with the rest one press away. The operator chose the side panel over
+ * that, and the reason it is a replacement rather than an addition is the whole
+ * point of the decision: a room with threads drawn in it has two idioms for one
+ * conversation, and the scroll belongs to whichever thread is longest. Now the
+ * room shows a room, and a thread has a place to be.
+ *
+ * The row is a button because it is the way in — the affordance the old bare
+ * count could not have been, because there was nowhere for it to go.
+ *
+ * **Unread is derived, never stored** (design record §3.3): a reply above the
+ * reader's cursor is one they have not seen, so the row renders in accent and
+ * counts them. `threadReplySummary` owns that arithmetic and says why the
+ * cursor it reads is the frozen one.
+ *
+ * The reply COUNT flips when it advances (design record §5.5) — the one-shot
+ * mechanical-counter snap, keyed the way `EntryReactionRow` keys its rolling
+ * count: a ref seeded `null` at mount, so a row arriving with three replies
+ * already on it is drawn at rest and only a genuine increment moves.
+ */
+export function RoomThreadReplyRow({
+  rootEntryId,
+  replies,
+  lastReadSeq,
+  open,
+  onOpen,
+}: RoomThreadReplyRowProps) {
+  const { count, lastAt, unread } = threadReplySummary(replies, lastReadSeq);
+  const time = formatTime(lastAt);
+
+  // Whether this count has MOVED since the row was drawn, which is what
+  // separates "the thread just gained a reply" from "this row has three replies
+  // and always did". Only the first one is motion.
+  //
+  // State adjusted during render — the pattern React recommends for "reset some
+  // state when a prop changes" and the one `useFrozenReadCursor` already uses
+  // here. React re-runs the component and throws the first pass away, so the
+  // extra pass costs a render rather than a frame of the wrong thing. A ref
+  // would answer the same question and is what `EntryReactionRow` reaches for,
+  // but this row's answer is a plain scalar comparison, and state keeps it out
+  // of render entirely.
+  const [seen, setSeen] = useState({ count, bumped: false });
+  if (seen.count !== count) setSeen({ count, bumped: true });
+  const bumped = seen.count === count && seen.bumped;
+
+  return (
+    <button
+      type="button"
+      // Addressable, so closing the panel can put the caret back on the row
+      // that opened it — see `threadRowId`.
+      id={threadRowId(rootEntryId)}
+      data-testid="room-thread-replies"
+      data-unread={unread > 0 ? '' : undefined}
+      aria-expanded={open}
+      onClick={onOpen}
+      className={cn(
+        'focus-ring ml-[calc(var(--msg-padding-x)_+_var(--msg-gutter-width)_+_var(--msg-gap))]',
+        'mb-1 w-fit rounded px-1 py-0.5 text-left text-xs transition-colors',
+        // Accent is the unread signal, and it colours the WHOLE row rather than
+        // a badge on the end of it: the row is small and quiet by design, and a
+        // reader scanning a long history is looking for colour, not for a
+        // number they have to find first.
+        unread > 0
+          ? 'text-primary hover:text-primary/80 font-medium'
+          : 'text-muted-foreground hover:text-foreground'
+      )}
+    >
+      <span aria-hidden className="mr-1">
+        ↳
+      </span>
+      {/* Only the number is animated, not the words around it: a scale snap on
+          the whole sentence would shift the row's width and nudge its
+          neighbours. `key` remounts the span so the one-shot restarts. */}
+      <span
+        key={count}
+        className={cn(bumped && 'motion-safe:animate-count-flip')}
+        data-testid="room-thread-reply-count"
+      >
+        {count}
+      </span>
+      {count === 1 ? ' reply' : ' replies'}
+      {time.length > 0 && ` · last ${time}`}
+      {/* The count the accent is ABOUT, said out loud. The colour alone is a
+          signal a reader has to have been taught; the words are for everybody,
+          and for the screen reader that gets no colour at all. */}
+      {unread > 0 && ` · ${unread} new`}
+    </button>
+  );
+}

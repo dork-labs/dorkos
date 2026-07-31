@@ -14,12 +14,34 @@
  *   all (`:77`, gated on `hasListeners()`). State that dies with the component
  *   cannot hold a guarantee that outlives it.
  *
- * Keyed by room id, so one conversation's draft can never surface in another.
+ * Keyed by room id, so one conversation's draft can never surface in another —
+ * and by {@link threadDraftKey} for a thread panel's composer, which is a
+ * second box on screen at the same time as the room's own and must not share
+ * its text. Every method takes that key opaquely; nothing here parses one.
  *
  * @module entities/room/model/room-drafts
  */
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+
+/**
+ * The draft key for a thread panel's composer.
+ *
+ * A room can have its own composer and a thread panel's on screen together, so
+ * "the draft" is no longer one string per room. The panel gets a key of its
+ * own, per thread: typing in a thread does not disturb the sentence waiting in
+ * the room, and closing the panel and reopening it finds what you were writing
+ * — the same promise the room's own draft already makes.
+ *
+ * `#` cannot appear in an entry id (they are uuids), so no room id can ever
+ * collide with a thread key.
+ *
+ * @param roomId - The room holding the thread.
+ * @param rootEntryId - The entry heading the open thread.
+ */
+export function threadDraftKey(roomId: string, rootEntryId: string): string {
+  return `${roomId}#${rootEntryId}`;
+}
 
 /** Unsent text, per room. */
 interface RoomDraftState {
